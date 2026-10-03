@@ -1,0 +1,205 @@
+@use '../benchmark-shared' as shared;
+
+:host {
+  // The panel's column, as .benchmark-tab-content gives it to its direct children.
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@include shared.shared-5;
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 15px;
+}
+
+@include shared.shared-6;
+
+@include shared.shared-7;
+
+@include shared.shared-9;
+
+/* .questions-list and .question-list-item live in styles.scss, in the question-card family
+   shared with the question generation workspace. */
+
+.profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-item-card {
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 16px;
+  container-type: inline-size;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+
+  &:hover {
+    border-color: #444;
+    background-color: #191919;
+  }
+
+  .profile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+
+    .profile-identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+
+      h4 {
+        margin: 0;
+        color: #fff;
+        font-size: 15px;
+      }
+    }
+  }
+
+  .default-badge {
+    background: rgba(76, 175, 80, 0.2);
+    color: #81c784;
+    border: 1px solid #4caf50;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .profile-card-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .profile-weights {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .weight-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #101010;
+    border: 1px solid #2a2a2a;
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+
+    .weight-dim {
+      color: #888;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+    }
+
+    .weight-val {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+  }
+
+  .profile-spec-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 0 0 12px 0;
+    padding: 12px 0;
+    border-top: 1px solid #262626;
+    border-bottom: 1px solid #262626;
+  }
+
+  .profile-spec {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    dt {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #8a8a8a;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    dd {
+      font-size: 14px;
+      color: #e8e8e8;
+      margin: 0;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .profile-spec-levels {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    color: #888;
+
+    .levels-caption {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #8a8a8a;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .levels-code-wrapper {
+      overflow-x: auto;
+      flex: 1;
+      min-width: 0;
+    }
+
+    code {
+      color: var(--primary-color);
+      font-size: 12px;
+      font-family: monospace;
+      white-space: nowrap;
+    }
+  }
+}
+
+@include shared.shared-13;
+
+@include shared.shared-16;
+
+@include shared.shared-17;
+
+@include shared.shared-18;
+
+@include shared.shared-19;
+
+@include shared.shared-20;
+
+@include shared.shared-21;
+
+@include shared.shared-25;
+
+@include shared.shared-26;
+
+@include shared.shared-27;
+.ml-10 { margin-left: 10px; }
+
+@include shared.shared-28;
+.align-items-center { align-items: center; }
+
+@include shared.shared-29;

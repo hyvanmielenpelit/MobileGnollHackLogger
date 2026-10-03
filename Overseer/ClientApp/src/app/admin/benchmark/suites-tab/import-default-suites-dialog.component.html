@@ -1,0 +1,159 @@
+<!--
+  IMPORT DEFAULT SUITES DIALOG
+
+  closedby="any" for light dismiss; the fallback for browsers without `closedby` (Safari, at
+  the time of writing) is attached from ngAfterViewInit rather than a template binding, since
+  nothing here needs to stop propagation to an ancestor dialog the way the legend dialog does.
+-->
+<dialog #importDefaultSuitesDialog class="gh-dialog benchmark-form-dialog benchmark-import-suites-dialog" aria-labelledby="importDefaultSuitesTitle" closedby="any">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="importDefaultSuitesTitle">Create Default Suites</h3>
+        @if (!loadingDefaultSuiteCatalog && defaultSuiteCatalog.length > 0) {
+          <p class="dialog-subtitle">{{ selectableDefaultSuiteCount }} available</p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close import default suites" (click)="importDefaultSuitesDialog.close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p class="dialog-intro">
+        Choose one or more default suites to import. Importing a suite already present creates
+        a numbered copy — it never overwrites an existing suite.
+      </p>
+
+      @if (defaultSuiteDialogError) {
+        <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-body">{{ defaultSuiteDialogError }}</div>
+          </div>
+        </div>
+      }
+
+      @if (loadingDefaultSuiteCatalog) {
+        <div class="loading-spinner">Loading default suites...</div>
+      } @else if (defaultSuiteCatalog.length === 0) {
+        <div class="empty-state alert alert-info" role="status">
+          <div class="alert-content">
+            <div class="alert-body">No default suite files were found on the server.</div>
+          </div>
+        </div>
+      } @else {
+        <fieldset class="form-section default-suite-picker">
+          <legend>Default suites available</legend>
+          <ul class="default-suite-list" role="list">
+            @for (entry of defaultSuiteCatalog; track entry.key ?? entry.fileName) {
+              @if (entry.error) {
+                <li class="default-suite-card default-suite-row-invalid">
+                  <div class="default-suite-card-header">
+                    <span class="default-suite-name">{{ entry.fileName }}</span>
+                  </div>
+                  <div class="alert alert-danger" role="alert">
+                    <div class="alert-content">
+                      <div class="alert-body">{{ entry.error }}</div>
+                    </div>
+                  </div>
+                </li>
+              } @else {
+                <li class="default-suite-card">
+                  <div class="default-suite-card-header">
+                    <label class="checkbox-label align-start" [for]="'dsp-' + entry.key!">
+                      <input type="checkbox" [id]="'dsp-' + entry.key!"
+                             [attr.aria-describedby]="'dsp-meta-' + entry.key!"
+                             [checked]="isDefaultSuiteSelected(entry.key!)"
+                             (change)="toggleDefaultSuite(entry.key!)">
+                      <span class="default-suite-name">{{ entry.name }}</span>
+                    </label>
+                    <div class="default-suite-badges" [id]="'dsp-meta-' + entry.key!">
+                      <span class="question-count-badge">{{ entry.questionCount }} questions</span>
+                      @if (entry.alreadyImportedCount > 0) {
+                        <span class="status-badge badge-warning">Already imported ×{{ entry.alreadyImportedCount }}</span>
+                      }
+                    </div>
+                  </div>
+
+                  @if (difficultyBands(entry).length > 0) {
+                    <ul class="default-suite-bands" role="list" aria-label="Questions per difficulty">
+                      @for (b of difficultyBands(entry); track b.band) {
+                        <li class="difficulty-badge" [class]="'diff-' + b.band.toLowerCase()">
+                          {{ b.band }} <strong>{{ b.count }}</strong>
+                        </li>
+                      }
+                    </ul>
+                  }
+
+                  @if (entry.description) {
+                    <div class="default-suite-description">
+                      <app-collapsible-markdown [text]="entry.description"
+                                                [label]="'description of ' + entry.name"
+                                                [collapsedMaxHeight]="140" />
+                    </div>
+                  }
+
+                  @if (entry.alreadyImportedNames.length > 0 || entry.nameMatchedSuiteNames.length > 0) {
+                    <dl class="default-suite-provenance">
+                      @if (entry.alreadyImportedNames.length > 0) {
+                        <dt>Existing copies</dt>
+                        <dd>{{ entry.alreadyImportedNames.join(', ') }}</dd>
+                      }
+                      @if (entry.nameMatchedSuiteNames.length > 0) {
+                        <dt>Possibly imported earlier</dt>
+                        <dd>{{ entry.nameMatchedSuiteNames.join(', ') }} <span class="text-muted">(matched by name)</span></dd>
+                      }
+                    </dl>
+                  }
+                </li>
+              }
+            }
+          </ul>
+        </fieldset>
+      }
+    </div>
+
+    <div class="dialog-status-bar" id="importDefaultSuitesHint"
+         [class.is-ready]="selectedDefaultSuiteKeys.size > 0">
+      <svg class="status-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        @if (selectedDefaultSuiteKeys.size > 0) {
+          <polyline points="20 6 9 17 4 12"></polyline>
+        } @else {
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        }
+      </svg>
+      @if (selectedDefaultSuiteKeys.size > 0) {
+        <span class="selection-count-badge">{{ selectedDefaultSuiteKeys.size }} of {{ selectableDefaultSuiteCount }}</span>
+        <span>suites selected.</span>
+      } @else {
+        <span>Select at least one suite to import.</span>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="importDefaultSuitesDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh"
+              [attr.aria-disabled]="!canImportDefaultSuites"
+              aria-describedby="importDefaultSuitesHint"
+              (click)="importSelectedDefaultSuites()">
+        @if (importingDefaultSuites) {
+          Importing…
+        } @else {
+          Import selected
+        }
+      </button>
+    </div>
+  </div>
+</dialog>
+

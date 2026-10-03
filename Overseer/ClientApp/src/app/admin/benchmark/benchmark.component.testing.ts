@@ -1,5 +1,7 @@
 import type { MockedObject } from 'vitest';
+import { Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of } from 'rxjs';
@@ -11,6 +13,18 @@ import { SystemService } from '../../services/system.service';
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY } from './run-report-frame/key-figures-image';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
+import { BenchmarkWorkspaceStore } from './state/benchmark-workspace.store';
+import { BenchmarkLauncherState } from './state/benchmark-launcher.state';
+import { BenchmarkActiveRunMonitor } from './state/benchmark-active-run.monitor';
+import { BenchmarkDifficultyJobService } from './state/benchmark-difficulty-job.service';
+import { BenchmarkComparisonState } from './state/benchmark-comparison.state';
+import { BenchmarkShellBridge } from './state/benchmark-shell-bridge.service';
+import { BenchmarkViewSync } from './state/benchmark-view-sync.service';
+import { BenchmarkRunTabComponent } from './run-tab/benchmark-run-tab.component';
+import { BenchmarkHistoryTabComponent } from './history-tab/benchmark-history-tab.component';
+import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.component';
+import { BenchmarkProfilesTabComponent } from './profiles-tab/benchmark-profiles-tab.component';
+import { BenchmarkComparisonTabComponent } from './comparison-tab/benchmark-comparison-tab.component';
 
 // Spec helper for the AdminBenchmarkComponent spec files, which are split by area and share this
 // setup. Imported by specs only.
@@ -85,6 +99,53 @@ export interface AdminBenchmarkSpecContext {
   fixture: ComponentFixture<AdminBenchmarkComponent>;
   benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
   systemServiceMock: MockedObject<SystemService>;
+  /** The state services AdminBenchmarkComponent provides. */
+  workspace: BenchmarkWorkspaceStore;
+  launcher: BenchmarkLauncherState;
+  monitor: BenchmarkActiveRunMonitor;
+  difficulty: BenchmarkDifficultyJobService;
+  comparison: BenchmarkComparisonState;
+  bridge: BenchmarkShellBridge;
+  viewSync: BenchmarkViewSync;
+  /** The sub-tab components; each exists only while its sub-tab is selected and rendered. */
+  runTab(): BenchmarkRunTabComponent;
+  historyTab(): BenchmarkHistoryTabComponent;
+  suitesTab(): BenchmarkSuitesTabComponent;
+  profilesTab(): BenchmarkProfilesTabComponent;
+  comparisonTab(): BenchmarkComparisonTabComponent;
+  /** Announces a service state change set directly by a test, then runs change detection. */
+  refresh(): void;
+}
+
+/** The services and sub-tab accessors of a fixture of AdminBenchmarkComponent. */
+export function benchmarkSpecHandles(fixture: ComponentFixture<AdminBenchmarkComponent>) {
+  const injector = fixture.debugElement.injector;
+  const tab = <T>(type: Type<T>): T => {
+    const el = fixture.debugElement.query(By.directive(type));
+    if (!el) {
+      throw new Error(`${type.name} is not rendered; select its sub-tab and run change detection first.`);
+    }
+    return el.componentInstance as T;
+  };
+  const viewSync = injector.get(BenchmarkViewSync);
+  return {
+    workspace: injector.get(BenchmarkWorkspaceStore),
+    launcher: injector.get(BenchmarkLauncherState),
+    monitor: injector.get(BenchmarkActiveRunMonitor),
+    difficulty: injector.get(BenchmarkDifficultyJobService),
+    comparison: injector.get(BenchmarkComparisonState),
+    bridge: injector.get(BenchmarkShellBridge),
+    viewSync,
+    runTab: () => tab(BenchmarkRunTabComponent),
+    historyTab: () => tab(BenchmarkHistoryTabComponent),
+    suitesTab: () => tab(BenchmarkSuitesTabComponent),
+    profilesTab: () => tab(BenchmarkProfilesTabComponent),
+    comparisonTab: () => tab(BenchmarkComparisonTabComponent),
+    refresh: () => {
+      viewSync.notify();
+      fixture.detectChanges();
+    }
+  };
 }
 
 /** Configures the TestBed with the service mocks, creates the component and runs its first change detection. */
@@ -345,5 +406,5 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
   ];
   fixture.detectChanges();
 
-  return { component, fixture, benchmarkServiceMock, systemServiceMock };
+  return { component, fixture, benchmarkServiceMock, systemServiceMock, ...benchmarkSpecHandles(fixture) };
 }

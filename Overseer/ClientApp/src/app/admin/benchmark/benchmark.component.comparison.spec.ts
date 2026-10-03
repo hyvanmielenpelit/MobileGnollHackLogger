@@ -1,5 +1,4 @@
 import type { MockedObject } from "vitest";
-import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { of, throwError, Subject } from 'rxjs';
@@ -9,10 +8,11 @@ import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
 import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
 import {
-  clearStoredState, createAdminBenchmarkFixture, COMPARISON_SELECTION_KEY, COMPARISON_LAUNCHER_KEY
+  AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture, COMPARISON_SELECTION_KEY, COMPARISON_LAUNCHER_KEY
 } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -22,7 +22,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   // ---------------------------------------------------------------------------
@@ -73,9 +74,9 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     beforeEach(() => {
-      component.historyRuns = [buildRun(1, 5), buildRun(2, 5), buildRun(3, 6)];
-      component.runGroups = [buildGroup(11, 5), buildGroup(12, 6)];
-      fixture.detectChanges();
+      ctx.workspace.historyRuns = [buildRun(1, 5), buildRun(2, 5), buildRun(3, 6)];
+      ctx.workspace.runGroups = [buildGroup(11, 5), buildGroup(12, 6)];
+      ctx.refresh();
     });
 
     // --- The sticky-container regression guard ---
@@ -122,8 +123,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('reports no pending selection in the launcher, and offers no control that could change one', () => {
-      component.comparisonRunIds = [1, 2];
-      component.comparisonGroupIds = [11];
+      ctx.comparison.comparisonRunIds = [1, 2];
+      ctx.comparison.comparisonGroupIds = [11];
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
@@ -186,7 +187,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(JSON.parse(localStorage.getItem(COMPARISON_LAUNCHER_KEY)!)).toEqual({ howItWorksOpen: false });
 
       // As a page reload does: the state is read from storage again on the next showing.
-      component.comparisonHowItWorksOpen = null;
+      ctx.comparison.comparisonHowItWorksOpen = null;
       fixture.nativeElement.querySelector('#bm-tab-run').click();
       fixture.detectChanges();
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
@@ -200,7 +201,7 @@ describe('AdminBenchmarkComponent', () => {
       details.dispatchEvent(new Event('toggle'));
       expect(JSON.parse(localStorage.getItem(COMPARISON_LAUNCHER_KEY)!)).toEqual({ howItWorksOpen: true });
 
-      component.comparisonHowItWorksOpen = null;
+      ctx.comparison.comparisonHowItWorksOpen = null;
       fixture.nativeElement.querySelector('#bm-tab-run').click();
       fixture.detectChanges();
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
@@ -225,7 +226,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(details.open).toBe(true);
       details.open = false;
       expect(() => details.dispatchEvent(new Event('toggle'))).not.toThrow();
-      expect(component.comparisonHowItWorksOpen).toBe(false);
+      expect(ctx.comparison.comparisonHowItWorksOpen).toBe(false);
     });
 
     // --- The Comparison reports card ---
@@ -284,13 +285,13 @@ describe('AdminBenchmarkComponent', () => {
 
       // The wizard's Report Pack may have written documents.
       component.onComparisonWizardClose();
-      fixture.detectChanges();
+      ctx.refresh();
       expect(comparisonReportLoads()).toBe(3);
     });
 
     it('states what the last comparison produced once one exists', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
-      component.comparison = {
+      ctx.comparison.comparison = {
         baselineSuiteName: 'Suite 5',
         pricingBasis: 'Current',
         pricingBasisLabel: 'Current prices',
@@ -299,7 +300,7 @@ describe('AdminBenchmarkComponent', () => {
         computedAtUtc: '2026-09-08T10:00:00Z'
       } as any;
       // As runComparison does on its response.
-      (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+      ctx.refresh();
 
       const state = fixture.nativeElement.querySelector('.mc-launcher .mc-launcher-state');
       expect(state).toBeTruthy();
@@ -394,28 +395,28 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getComparabilityIndex.mockClear();
 
       // A new suite scope is a new set of offered sources, so it re-indexes them.
-      component.onComparisonSuiteChange(5);
+      ctx.comparison.onComparisonSuiteChange(5);
 
       expect(benchmarkServiceMock.getComparabilityIndex).toHaveBeenCalledWith({
         runIds: [1, 2],
         groupIds: [11]
       });
-      expect(component.comparabilityIndex).toBeTruthy();
+      expect(ctx.comparison.comparabilityIndex).toBeTruthy();
 
       benchmarkServiceMock.getComparabilityIndex.mockReturnValue(throwError(() => ({ error: 'The index could not be built.' })));
-      component.onComparisonSuiteChange(6);
+      ctx.comparison.onComparisonSuiteChange(6);
 
       // Non-fatal: the Condition column falls back to a dash and Compare still works.
-      expect(component.comparabilityIndex).toBeNull();
-      expect(component.comparabilityIndexError).toContain('could not be built');
+      expect(ctx.comparison.comparabilityIndex).toBeNull();
+      expect(ctx.comparison.comparabilityIndexError).toContain('could not be built');
     });
 
     it('derives the wizard band notices from the index, the selection and the pricing basis', () => {
       // One owner: the picker's checkboxes and the wizard's band both read this list, so neither
       // can hold its own account of what the selection costs.
-      component.comparabilityIndexError = null;
-      component.comparabilityIndexLoading = false;
-      component.comparabilityIndex = {
+      ctx.comparison.comparabilityIndexError = null;
+      ctx.comparison.comparabilityIndexLoading = false;
+      ctx.comparison.comparabilityIndex = {
         computedAtUtc: '2026-09-07T12:00:00Z',
         entries: [
           {
@@ -454,41 +455,41 @@ describe('AdminBenchmarkComponent', () => {
         degradingKeyNames: ['PricingSnapshot']
       } as any;
 
-      component.comparisonRunIds = [1, 2];
-      component.comparisonGroupIds = [];
-      expect(component.comparisonSelectionNotices).toEqual([]);
+      ctx.comparison.comparisonRunIds = [1, 2];
+      ctx.comparison.comparisonGroupIds = [];
+      expect(ctx.comparison.comparisonSelectionNotices).toEqual([]);
 
-      component.comparisonRunIds = [1, 2, 3];
-      expect(component.comparisonSelectionNotices.map(notice => notice.id))
+      ctx.comparison.comparisonRunIds = [1, 2, 3];
+      expect(ctx.comparison.comparisonSelectionNotices.map(notice => notice.id))
         .toEqual(['cross-condition']);
 
-      component.comparabilityIndex = null;
-      component.comparabilityIndexError = 'The index could not be built.';
-      const failed = component.comparisonSelectionNotices;
+      ctx.comparison.comparabilityIndex = null;
+      ctx.comparison.comparabilityIndexError = 'The index could not be built.';
+      const failed = ctx.comparison.comparisonSelectionNotices;
       expect(failed.map(notice => notice.id)).toEqual(['index-error']);
       expect(failed[0].severity).toBe('error');
       expect(failed[0].body).toContain('The index could not be built.');
     });
 
     it('drops the payload when the selection changes, so Compare is asked for again', () => {
-      component.comparison = { entries: [] } as any;
-      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      ctx.comparison.comparison = { entries: [] } as any;
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
 
       // The figures on hand describe the previous set of sources. It is also what the wizard reads
       // to know Compare has not run for this selection yet.
-      expect(component.comparison).toBeNull();
+      expect(ctx.comparison.comparison).toBeNull();
     });
 
     // --- The selection band's chips ---
 
     it('names every selected source for the band, runs then groups, skipping one outside suite scope', () => {
-      component.comparisonSuiteId = 5;
-      component.comparisonRunIds = [1, 3, 2];
-      component.comparisonGroupIds = [11, 12];
+      ctx.comparison.comparisonSuiteId = 5;
+      ctx.comparison.comparisonRunIds = [1, 3, 2];
+      ctx.comparison.comparisonGroupIds = [11, 12];
 
       // Run 3 and group 12 belong to suite 6, which the current scope no longer offers: skipped
       // rather than rendered as a placeholder, same as the picker's own checkboxes.
-      expect(component.comparisonSelectedSources).toEqual([
+      expect(ctx.comparison.comparisonSelectedSources).toEqual([
         { kind: 'run', id: 1, label: 'Model 1', provider: 'Google', detail: '#1' },
         { kind: 'run', id: 2, label: 'Model 2', provider: 'Google', detail: '#2' },
         { kind: 'group', id: 11, label: 'Group 11', provider: null, detail: '3 runs' }
@@ -496,27 +497,27 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('names a group of one run in the singular', () => {
-      component.runGroups = [...component.runGroups, { ...buildGroup(13, 5), runCount: 1 }];
-      component.comparisonGroupIds = [13];
+      ctx.workspace.runGroups = [...ctx.workspace.runGroups, { ...buildGroup(13, 5), runCount: 1 }];
+      ctx.comparison.comparisonGroupIds = [13];
 
-      expect(component.comparisonSelectedSources).toEqual([
+      expect(ctx.comparison.comparisonSelectedSources).toEqual([
         { kind: 'group', id: 13, label: 'Group 13', provider: null, detail: '1 run' }
       ]);
     });
 
     it('removes one source through the same path every other selection change takes', () => {
-      component.comparisonRunIds = [1, 2];
-      component.comparisonGroupIds = [11];
-      component.comparison = { entries: [] } as any;
+      ctx.comparison.comparisonRunIds = [1, 2];
+      ctx.comparison.comparisonGroupIds = [11];
+      ctx.comparison.comparison = { entries: [] } as any;
 
-      component.onComparisonRemoveSource(
+      ctx.comparison.onComparisonRemoveSource(
         { kind: 'run', id: 1, label: 'Model 1', provider: 'Google', detail: '#1' });
 
-      expect(component.comparisonRunIds).toEqual([2]);
-      expect(component.comparisonGroupIds).toEqual([11]);
+      expect(ctx.comparison.comparisonRunIds).toEqual([2]);
+      expect(ctx.comparison.comparisonGroupIds).toEqual([11]);
       // Persistence, the dropped payload and the Compare reset are onComparisonSelectionChange's
       // job, so routing through it is what keeps them all in force after a chip is removed.
-      expect(component.comparison).toBeNull();
+      expect(ctx.comparison.comparison).toBeNull();
     });
 
     // --- The .gh-dialog-fullscreen lift ---
@@ -524,16 +525,18 @@ describe('AdminBenchmarkComponent', () => {
     it('leaves the suite health dialog opening and closing after the full-screen lift', () => {
       // Its viewport sizing, transition and backdrop now come from styles.scss, and it is the only
       // other consumer of that block, so this is the regression guard for the move.
+      component.selectSubTab('suites');
+      fixture.detectChanges();
       const dialog = fixture.nativeElement
         .querySelector('.benchmark-suite-health-dialog') as HTMLDialogElement;
       expect(dialog.classList.contains('gh-dialog-fullscreen')).toBe(true);
 
-      component.suiteHealthSuiteId = null;
-      component.openSuiteHealth({ id: 5, name: 'Suite 5', questionCount: 4 } as any);
+      ctx.suitesTab().suiteHealthSuiteId = null;
+      ctx.suitesTab().openSuiteHealth({ id: 5, name: 'Suite 5', questionCount: 4 } as any);
       fixture.detectChanges();
       expect(dialog.open).toBe(true);
 
-      component.closeSuiteHealth();
+      ctx.suitesTab().closeSuiteHealth();
       fixture.detectChanges();
       expect(dialog.open).toBe(false);
     });
@@ -547,6 +550,7 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.compareModels.mockClear();
 
       component.selectSubTab('modelcomparison');
+      fixture.detectChanges();
 
       expect(benchmarkServiceMock.getRuns).toHaveBeenCalled();
       expect(benchmarkServiceMock.getRunGroups).toHaveBeenCalled();
@@ -556,10 +560,10 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('issues one request carrying the selected ids and the basis name', () => {
-      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
       benchmarkServiceMock.compareModels.mockClear();
 
-      component.runComparison();
+      ctx.comparison.runComparison();
 
       expect(benchmarkServiceMock.compareModels).toHaveBeenCalledTimes(1);
       expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith({
@@ -570,39 +574,39 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('refuses an empty selection rather than sending a request the server will reject', () => {
-      component.clearComparisonSelection();
+      ctx.comparison.clearComparisonSelection();
       benchmarkServiceMock.compareModels.mockClear();
 
-      component.runComparison();
+      ctx.comparison.runComparison();
 
       expect(benchmarkServiceMock.compareModels).not.toHaveBeenCalled();
-      expect(component.comparisonError).toContain('at least one run');
+      expect(ctx.comparison.comparisonError).toContain('at least one run');
     });
 
     it('reports the server error text rather than a generic failure', () => {
       benchmarkServiceMock.compareModels.mockReturnValue(throwError(() => ({ error: 'Run(s) not found: 4' })));
-      component.onComparisonSelectionChange({ runIds: [4], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [4], groupIds: [] });
 
-      component.runComparison();
+      ctx.comparison.runComparison();
 
-      expect(component.comparisonError).toBe('Run(s) not found: 4');
-      expect(component.comparison).toBeNull();
-      expect(component.comparisonLoading).toBe(false);
+      expect(ctx.comparison.comparisonError).toBe('Run(s) not found: 4');
+      expect(ctx.comparison.comparison).toBeNull();
+      expect(ctx.comparison.comparisonLoading).toBe(false);
     });
 
     it('discards an out-of-order response so the older payload never overwrites the newer', () => {
       const first = new Subject<any>();
       const second = new Subject<any>();
       benchmarkServiceMock.compareModels.mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
-      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
 
-      component.runComparison();
-      component.runComparison();
+      ctx.comparison.runComparison();
+      ctx.comparison.runComparison();
 
       second.next({ entries: [], explanation: 'newer' });
       first.next({ entries: [], explanation: 'older' });
 
-      expect((component.comparison as any).explanation).toBe('newer');
+      expect((ctx.comparison.comparison as any).explanation).toBe('newer');
     });
 
     // --- Cancelling, and never trapping the operator in the wizard while loading ---
@@ -610,29 +614,29 @@ describe('AdminBenchmarkComponent', () => {
     it('cancels the comparison in flight, releasing the request and ignoring its late result', () => {
       const request = new Subject<any>();
       benchmarkServiceMock.compareModels.mockReturnValue(request as any);
-      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
 
-      component.runComparison();
-      expect(component.comparisonLoading).toBe(true);
+      ctx.comparison.runComparison();
+      expect(ctx.comparison.comparisonLoading).toBe(true);
       expect(request.observed).toBe(true);
 
-      component.cancelComparison();
+      ctx.comparison.cancelComparison();
 
-      expect(component.comparisonLoading).toBe(false);
+      expect(ctx.comparison.comparisonLoading).toBe(false);
       // Unsubscribed, so the HTTP request is aborted and the server stops pricing.
       expect(request.observed).toBe(false);
       request.next({ entries: [], explanation: 'late' });
-      expect(component.comparison).toBeNull();
+      expect(ctx.comparison.comparison).toBeNull();
     });
 
     it('releases a superseded request when Compare runs again', () => {
       const first = new Subject<any>();
       const second = new Subject<any>();
       benchmarkServiceMock.compareModels.mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
-      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
 
-      component.runComparison();
-      component.runComparison();
+      ctx.comparison.runComparison();
+      ctx.comparison.runComparison();
 
       expect(first.observed).toBe(false);
       expect(second.observed).toBe(true);
@@ -641,29 +645,29 @@ describe('AdminBenchmarkComponent', () => {
     it('drops the request in flight when the selection changes under it', () => {
       const request = new Subject<any>();
       benchmarkServiceMock.compareModels.mockReturnValue(request as any);
-      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
-      component.runComparison();
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      ctx.comparison.runComparison();
 
-      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
       request.next({ entries: [], explanation: 'for the previous selection' });
 
       // The older response would otherwise chart the previous selection and advance the wizard.
-      expect(component.comparison).toBeNull();
-      expect(component.comparisonLoading).toBe(false);
+      expect(ctx.comparison.comparison).toBeNull();
+      expect(ctx.comparison.comparisonLoading).toBe(false);
       expect(request.observed).toBe(false);
     });
 
     it('treats a cancel with nothing in flight as a no-op', () => {
-      const detectChanges = vi.spyOn((component as any).cdr, 'detectChanges');
+      const notify = vi.spyOn(ctx.viewSync, 'notify');
 
-      component.cancelComparison();
+      ctx.comparison.cancelComparison();
 
-      expect(component.comparisonLoading).toBe(false);
-      expect(detectChanges).not.toHaveBeenCalled();
+      expect(ctx.comparison.comparisonLoading).toBe(false);
+      expect(notify).not.toHaveBeenCalled();
     });
 
     it('never refuses Escape because a comparison is loading', () => {
-      component.comparisonLoading = true;
+      ctx.comparison.comparisonLoading = true;
       component.comparisonWizard = { exporting: false } as any;
       const event = { preventDefault: vi.fn().mockName('preventDefault') } as unknown as Event;
 
@@ -685,13 +689,13 @@ describe('AdminBenchmarkComponent', () => {
     it('keeps the projected picker live and the wizard uncovered while a comparison loads', () => {
       const request = new Subject<any>();
       benchmarkServiceMock.compareModels.mockReturnValue(request as any);
-      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
       component.openComparisonWizard();
       fixture.detectChanges();
 
-      component.runComparison();
+      ctx.comparison.runComparison();
       fixture.detectChanges();
-      expect(component.comparisonLoading).toBe(true);
+      expect(ctx.comparison.comparisonLoading).toBe(true);
 
       const dialog = fixture.nativeElement
         .querySelector('dialog.benchmark-model-comparison-dialog') as HTMLDialogElement;
@@ -710,54 +714,54 @@ describe('AdminBenchmarkComponent', () => {
     // --- Suite scope ---
 
     it('scopes both offered lists to the suite scope', () => {
-      component.onComparisonSuiteChange(5);
+      ctx.comparison.onComparisonSuiteChange(5);
 
-      expect(component.comparisonRunOptions.map(r => r.id)).toEqual([1, 2]);
-      expect(component.comparisonGroupOptions.map(g => g.id)).toEqual([11]);
+      expect(ctx.comparison.comparisonRunOptions.map(r => r.id)).toEqual([1, 2]);
+      expect(ctx.comparison.comparisonGroupOptions.map(g => g.id)).toEqual([11]);
 
-      component.onComparisonSuiteChange(null);
-      expect(component.comparisonRunOptions.length).toBe(3);
-      expect(component.comparisonGroupOptions.length).toBe(2);
+      ctx.comparison.onComparisonSuiteChange(null);
+      expect(ctx.comparison.comparisonRunOptions.length).toBe(3);
+      expect(ctx.comparison.comparisonGroupOptions.length).toBe(2);
     });
 
     it('drops out-of-scope ids when the suite scope changes', () => {
-      component.onComparisonSelectionChange({ runIds: [1, 3], groupIds: [11, 12] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1, 3], groupIds: [11, 12] });
 
-      component.onComparisonSuiteChange(5);
+      ctx.comparison.onComparisonSuiteChange(5);
 
       // Run 3 and group 12 belong to suite 6: leaving them selected is how a figure ends up with
       // a model the picker does not show.
-      expect(component.comparisonRunIds).toEqual([1]);
-      expect(component.comparisonGroupIds).toEqual([11]);
+      expect(ctx.comparison.comparisonRunIds).toEqual([1]);
+      expect(ctx.comparison.comparisonGroupIds).toEqual([11]);
     });
 
     it('clears the figures when nothing survives a suite scope change', () => {
-      component.onComparisonSelectionChange({ runIds: [3], groupIds: [] });
-      component.comparison = { entries: [] } as any;
+      ctx.comparison.onComparisonSelectionChange({ runIds: [3], groupIds: [] });
+      ctx.comparison.comparison = { entries: [] } as any;
 
-      component.onComparisonSuiteChange(5);
+      ctx.comparison.onComparisonSuiteChange(5);
 
-      expect(component.comparisonRunIds).toEqual([]);
-      expect(component.comparison).toBeNull();
+      expect(ctx.comparison.comparisonRunIds).toEqual([]);
+      expect(ctx.comparison.comparison).toBeNull();
     });
 
     // --- Pricing basis ---
 
     it('refetches at once on a pricing basis change, because it re-prices an unchanged set', () => {
-      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
       benchmarkServiceMock.compareModels.mockClear();
 
-      component.onComparisonPricingBasisChange('AsRun');
+      ctx.comparison.onComparisonPricingBasisChange('AsRun');
 
-      expect(component.comparisonPricingBasis).toBe('AsRun');
+      expect(ctx.comparison.comparisonPricingBasis).toBe('AsRun');
       expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith(expect.objectContaining({ pricingBasis: 'AsRun' }));
     });
 
     // --- Persistence ---
 
     it('remembers the selection, the scope and the basis across a reload', () => {
-      component.onComparisonSuiteChange(5);
-      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
+      ctx.comparison.onComparisonSuiteChange(5);
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
 
       const stored = JSON.parse(localStorage.getItem(COMPARISON_SELECTION_KEY)!);
       expect(stored).toEqual({
@@ -771,16 +775,17 @@ describe('AdminBenchmarkComponent', () => {
       }));
 
       component.selectSubTab('modelcomparison');
+      fixture.detectChanges();
 
       // getRuns and getRunGroups both resolve to [] under the default mocks, so the lists that
       // validate the restore are re-seeded here to what the tab actually offers.
-      component.historyRuns = [buildRun(1, 5)];
-      component.runGroups = [buildGroup(11, 5)];
-      (component as any).pruneComparisonSelection();
+      ctx.workspace.historyRuns = [buildRun(1, 5)];
+      ctx.workspace.runGroups = [buildGroup(11, 5)];
+      ctx.comparison.pruneComparisonSelection();
 
-      expect(component.comparisonRunIds).toEqual([1]);
-      expect(component.comparisonGroupIds).toEqual([11]);
-      expect(component.comparisonPricingBasis).toBe('AsRun');
+      expect(ctx.comparison.comparisonRunIds).toEqual([1]);
+      expect(ctx.comparison.comparisonGroupIds).toEqual([11]);
+      expect(ctx.comparison.comparisonPricingBasis).toBe('AsRun');
     });
 
     it('survives a localStorage read that throws, leaving every default standing', () => {
@@ -788,9 +793,12 @@ describe('AdminBenchmarkComponent', () => {
         throw new Error('private browsing');
       });
 
-      expect(() => component.selectSubTab('modelcomparison')).not.toThrow();
-      expect(component.comparisonRunIds).toEqual([]);
-      expect(component.comparisonPricingBasis).toBe('Current');
+      expect(() => {
+        component.selectSubTab('modelcomparison');
+        fixture.detectChanges();
+      }).not.toThrow();
+      expect(ctx.comparison.comparisonRunIds).toEqual([]);
+      expect(ctx.comparison.comparisonPricingBasis).toBe('Current');
     });
   });
 
@@ -815,11 +823,13 @@ describe('AdminBenchmarkComponent', () => {
 
     function showQuestions(): void {
       component.activeSubTab = 'suites';
-      component.suites = [{ ...suite }];
-      component.currentSuiteForQuestions = component.suites[0];
-      component.questions = questions.map(q => ({ ...q }));
-      component.loadingQuestions = false;
-      fixture.detectChanges();
+      // Renders the Suites tab, whose ngOnInit loads the suite list; the state below replaces it.
+      ctx.refresh();
+      ctx.workspace.suites = [{ ...suite }];
+      ctx.workspace.currentSuiteForQuestions = ctx.workspace.suites[0];
+      ctx.workspace.questions = questions.map(q => ({ ...q }));
+      ctx.workspace.loadingQuestions = false;
+      ctx.refresh();
     }
 
     it('renders the four toolbar icon buttons with their tooltips', () => {
@@ -856,8 +866,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(help.getAttribute('aria-label')).toBe('Open suite YAML import and export help');
       expect(tooltipTexts(toolbar)).toEqual(['Suite Import/Export Help']);
 
-      const openSuite = vi.spyOn(component.suiteYamlHelpDialog!, 'open').mockReturnValue(undefined);
-      const openQuestions = vi.spyOn(component.questionYamlHelpDialog!, 'open').mockReturnValue(undefined);
+      const openSuite = vi.spyOn(ctx.suitesTab().suiteYamlHelpDialog!, 'open').mockReturnValue(undefined);
+      const openQuestions = vi.spyOn(ctx.suitesTab().questionYamlHelpDialog!, 'open').mockReturnValue(undefined);
       help.click();
       expect(openSuite).toHaveBeenCalled();
       expect(openQuestions).not.toHaveBeenCalled();
@@ -873,7 +883,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(buttons[wizardIndex + 1].classList).toContain('action-btn');
       expect(buttons[wizardIndex].classList).toContain('btn-ghost');
 
-      const open = vi.spyOn(component.snapshotSuiteWizard!, 'open').mockReturnValue(undefined);
+      const open = vi.spyOn(ctx.suitesTab().snapshotSuiteWizard!, 'open').mockReturnValue(undefined);
       buttons[wizardIndex].click();
       expect(open).toHaveBeenCalled();
     });
@@ -881,24 +891,24 @@ describe('AdminBenchmarkComponent', () => {
     it('closes the suite help before opening the wizard it asks for', () => {
       showQuestions();
       const order: string[] = [];
-      vi.spyOn(component.suiteYamlHelpDialog!, 'close').mockImplementation(() => { order.push('close help'); });
-      vi.spyOn(component.snapshotSuiteWizard!, 'open').mockImplementation(() => { order.push('open wizard'); });
-      component.onSuiteWizardRequestedFromHelp();
+      vi.spyOn(ctx.suitesTab().suiteYamlHelpDialog!, 'close').mockImplementation(() => { order.push('close help'); });
+      vi.spyOn(ctx.suitesTab().snapshotSuiteWizard!, 'open').mockImplementation(() => { order.push('open wizard'); });
+      ctx.suitesTab().onSuiteWizardRequestedFromHelp();
       expect(order).toEqual(['close help', 'open wizard']);
     });
 
     it('opens the assessor for the current copy of the suite the wizard names', () => {
       showQuestions();
-      const assess = vi.spyOn(component, 'openDifficultyAssessorDialog').mockReturnValue(undefined);
-      const stale = { ...component.suites[0], questionCount: 0 };
-      component.onWizardAssessRequested(stale);
-      expect(assess).toHaveBeenCalledWith(component.suites[0]);
+      const assess = vi.spyOn(ctx.bridge, 'openDifficultyAssessorDialog').mockReturnValue(undefined);
+      const stale = { ...ctx.workspace.suites[0], questionCount: 0 };
+      ctx.suitesTab().onWizardAssessRequested(stale);
+      expect(assess).toHaveBeenCalledWith(ctx.workspace.suites[0]);
     });
 
     it('reloads the suites when the wizard applies a description', () => {
       showQuestions();
-      const load = vi.spyOn(component, 'loadSuites').mockReturnValue(undefined);
-      component.onWizardSuiteUpdated();
+      const load = vi.spyOn(ctx.workspace, 'loadSuites').mockReturnValue(undefined);
+      ctx.suitesTab().onWizardSuiteUpdated();
       expect(load).toHaveBeenCalled();
     });
 
@@ -909,23 +919,23 @@ describe('AdminBenchmarkComponent', () => {
         id: 7, name: 'Low HP', sanitizedText: 'GnollHack 4.2.0 Build 47', charCount: 24,
         sha256: 'a'.repeat(64), captureMethod: 'TextUpload', createdAtUtc: ''
       } as any));
-      const emptySnapshotSuite = { ...component.suites[0], questionCount: 0, gameSnapshotId: 7 };
-      const bare = { ...component.suites[0], questionCount: 0, gameSnapshotId: null };
-      expect(component.canExportSuite(emptySnapshotSuite)).toBe(true);
-      expect(component.canExportSuite(bare)).toBe(false);
+      const emptySnapshotSuite = { ...ctx.workspace.suites[0], questionCount: 0, gameSnapshotId: 7 };
+      const bare = { ...ctx.workspace.suites[0], questionCount: 0, gameSnapshotId: null };
+      expect(ctx.suitesTab().canExportSuite(emptySnapshotSuite)).toBe(true);
+      expect(ctx.suitesTab().canExportSuite(bare)).toBe(false);
 
       const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
-        await component.copySuiteYaml(emptySnapshotSuite);
+        await ctx.suitesTab().copySuiteYaml(emptySnapshotSuite);
         expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalled();
         const yaml = vi.mocked(writeText).mock.lastCall![0] as string;
         expect(yaml).toContain('\nquestions: []\n');
         expect(yaml).toContain('  snapshot:\n');
 
         writeText.mockClear();
-        await component.copySuiteYaml(bare);
+        await ctx.suitesTab().copySuiteYaml(bare);
         expect(writeText).not.toHaveBeenCalled();
       } finally {
         delete (navigator as { clipboard?: unknown }).clipboard;
@@ -935,16 +945,16 @@ describe('AdminBenchmarkComponent', () => {
 
     it('routes the import dialog help request by the mode the import was opened for', () => {
       showQuestions();
-      const openSuite = vi.spyOn(component.suiteYamlHelpDialog!, 'open').mockReturnValue(undefined);
-      const openQuestions = vi.spyOn(component.questionYamlHelpDialog!, 'open').mockReturnValue(undefined);
+      const openSuite = vi.spyOn(ctx.suitesTab().suiteYamlHelpDialog!, 'open').mockReturnValue(undefined);
+      const openQuestions = vi.spyOn(ctx.suitesTab().questionYamlHelpDialog!, 'open').mockReturnValue(undefined);
 
-      component.questionYamlImportDialog!.mode = 'suite';
-      component.onYamlHelpRequested();
+      ctx.suitesTab().questionYamlImportDialog!.mode = 'suite';
+      ctx.suitesTab().onYamlHelpRequested();
       expect(openSuite).toHaveBeenCalled();
       expect(openQuestions).not.toHaveBeenCalled();
 
-      component.questionYamlImportDialog!.mode = 'questions';
-      component.onYamlHelpRequested();
+      ctx.suitesTab().questionYamlImportDialog!.mode = 'questions';
+      ctx.suitesTab().onYamlHelpRequested();
       expect(openQuestions).toHaveBeenCalled();
     });
 
@@ -961,14 +971,14 @@ describe('AdminBenchmarkComponent', () => {
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
-        await component.copySuiteYaml(component.suites[0]);
+        await ctx.suitesTab().copySuiteYaml(ctx.workspace.suites[0]);
         expect(benchmarkServiceMock.getSnapshot).toHaveBeenCalledWith(7, true);
         const yaml = vi.mocked(writeText).mock.lastCall![0] as string;
         expect(yaml).toContain('  snapshot:\n');
         expect(yaml).toContain('    sha256: "' + 'a'.repeat(64) + '"');
         expect(yaml).toContain('    text: |\n');
         expect(yaml).toContain('      GnollHack 4.2.0 Build 47');
-        expect(component.suitesCopyStatus).toContain('Copied suite Default Suite as YAML');
+        expect(ctx.suitesTab().suitesCopyStatus).toContain('Copied suite Default Suite as YAML');
       } finally {
         delete (navigator as { clipboard?: unknown }).clipboard;
         if (original) Object.defineProperty(navigator, 'clipboard', original);
@@ -984,9 +994,9 @@ describe('AdminBenchmarkComponent', () => {
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
-        await component.copySuiteYaml(component.suites[0]);
+        await ctx.suitesTab().copySuiteYaml(ctx.workspace.suites[0]);
         expect(vi.mocked(writeText).mock.lastCall![0] as string).not.toContain('snapshot');
-        expect(component.suitesCopyStatus).toContain('Exported without the snapshot text');
+        expect(ctx.suitesTab().suitesCopyStatus).toContain('Exported without the snapshot text');
       } finally {
         delete (navigator as { clipboard?: unknown }).clipboard;
         if (original) Object.defineProperty(navigator, 'clipboard', original);
@@ -994,12 +1004,14 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('disables Upload Snapshot while a generation job runs on that suite', () => {
-      component.runningGenerationSuiteId = 1;
       showQuestions();
+      // Set once the Suites tab is shown: its suite load reads the running job from the server.
+      ctx.workspace.runningGenerationSuiteId = 1;
+      ctx.refresh();
       const button = host().querySelector('.suite-card .upload-snapshot-card-btn') as HTMLButtonElement;
       expect(button.getAttribute('aria-disabled')).toBe('true');
 
-      const open = vi.spyOn(component.snapshotUploadDialog!, 'open').mockReturnValue(undefined);
+      const open = vi.spyOn(ctx.suitesTab().snapshotUploadDialog!, 'open').mockReturnValue(undefined);
       button.click();
       expect(open).not.toHaveBeenCalled();
       expect(component.snapshotDeleteBlockedReason).toBeNull();
@@ -1011,9 +1023,9 @@ describe('AdminBenchmarkComponent', () => {
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
-        await component.copyQuestionYaml(component.questions[0]);
-        expect(writeText).toHaveBeenCalledWith(serializeQuestionsYaml([component.questions[0]], component.currentSuiteForQuestions));
-        expect(component.questionsCopyStatus).toBe('Copied question 1 as YAML.');
+        await ctx.suitesTab().questionsDialogCmp!.copyQuestionYaml(ctx.workspace.questions[0]);
+        expect(writeText).toHaveBeenCalledWith(serializeQuestionsYaml([ctx.workspace.questions[0]], ctx.workspace.currentSuiteForQuestions));
+        expect(ctx.suitesTab().questionsDialogCmp!.questionsCopyStatus).toBe('Copied question 1 as YAML.');
       } finally {
         delete (navigator as { clipboard?: unknown }).clipboard;
         if (original) Object.defineProperty(navigator, 'clipboard', original);
@@ -1025,20 +1037,20 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getQuestions.mockClear();
       benchmarkServiceMock.getSuites.mockClear();
 
-      component.onQuestionsImported({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] });
+      ctx.suitesTab().onQuestionsImported({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] });
       expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
 
       benchmarkServiceMock.getSuites.mockClear();
-      component.onSuiteImported({ ...suite, id: 5, name: 'Imported' });
+      ctx.suitesTab().onSuiteImported({ ...suite, id: 5, name: 'Imported' });
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
 
     it('patches the suite card after an upload', () => {
       showQuestions();
-      const card = component.suites[0];
+      const card = ctx.workspace.suites[0];
       Object.assign(card, { gameSnapshotId: null });
-      component.onSnapshotUploaded({
+      ctx.suitesTab().onSnapshotUploaded({
         board: { id: 40, name: 'New board', charCount: 321 } as any,
         suite: { ...suite, gameSnapshotId: 40, gameSnapshotName: 'New board', gameSnapshotCharCount: 321 }
       });
@@ -1050,13 +1062,13 @@ describe('AdminBenchmarkComponent', () => {
     it('clears the snapshot fields after a delete and reloads', () => {
       showQuestions();
       benchmarkServiceMock.getSuites.mockClear();
-      const card = component.suites[0];
+      const card = ctx.workspace.suites[0];
 
       component.onSnapshotDeleted(7);
 
       expect(card.gameSnapshotId).toBeNull();
       expect(card.gameSnapshotName).toBeNull();
-      expect(component.currentSuiteForQuestions!.gameSnapshotId).toBeNull();
+      expect(ctx.workspace.currentSuiteForQuestions!.gameSnapshotId).toBeNull();
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
   });

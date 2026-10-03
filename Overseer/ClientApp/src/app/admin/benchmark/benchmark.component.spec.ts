@@ -1,5 +1,4 @@
 import type { Mock, MockedObject } from "vitest";
-import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
@@ -7,9 +6,12 @@ import { AdminBenchmarkComponent } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
-import { clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import {
+  AdminBenchmarkSpecContext, benchmarkSpecHandles, clearStoredState, createAdminBenchmarkFixture
+} from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -19,7 +21,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   it('should open a run requested through openRunId exactly once, and report it handled', () => {
@@ -66,10 +69,11 @@ describe('AdminBenchmarkComponent', () => {
 
     it('selects Manage Suites, outlines and focuses the requested suite, and reports it handled once', async () => {
       component.navigation = { subTab: 'suites', suiteId: 7 };
+      ctx.refresh();
       await Promise.resolve();
 
       expect(component.activeSubTab).toBe('suites');
-      expect(component.linkedSuiteId).toBe(7);
+      expect(ctx.suitesTab().linkedSuiteId).toBe(7);
       const card: HTMLElement = fixture.nativeElement.querySelector('#bm-suite-7');
       expect(document.activeElement).toBe(card);
       expect(card.classList).toContain('suite-card-linked');
@@ -79,9 +83,10 @@ describe('AdminBenchmarkComponent', () => {
 
     it('lands on Manage Suites for a suite id without a sub-tab', () => {
       component.navigation = { subTab: null, suiteId: 7 };
+      ctx.refresh();
 
       expect(component.activeSubTab).toBe('suites');
-      expect(component.linkedSuiteId).toBe(7);
+      expect(ctx.suitesTab().linkedSuiteId).toBe(7);
     });
 
     it('selects the named sub-tab', () => {
@@ -100,23 +105,30 @@ describe('AdminBenchmarkComponent', () => {
 
     it('says the linked suite no longer exists and links nothing when it is absent', () => {
       component.navigation = { subTab: 'suites', suiteId: 99 };
+      ctx.refresh();
 
-      expect(component.actionErrorMessage).toBe('The linked suite (id 99) no longer exists.');
-      expect(component.linkedSuiteId).toBeNull();
+      expect(ctx.workspace.actionErrorMessage).toBe('The linked suite (id 99) no longer exists.');
+      expect(ctx.suitesTab().linkedSuiteId).toBeNull();
       expect(fixture.nativeElement.querySelectorAll('.suite-card-linked').length).toBe(0);
     });
 
     it('clears the linked suite when another sub-tab is selected', () => {
       component.navigation = { subTab: 'suites', suiteId: 7 };
-      expect(component.linkedSuiteId).toBe(7);
+      ctx.refresh();
+      expect(ctx.suitesTab().linkedSuiteId).toBe(7);
 
       component.selectSubTab('history');
+      ctx.refresh();
+      // The linked suite belongs to the Manage Suites view; returning to it shows none.
+      component.selectSubTab('suites');
+      ctx.refresh();
 
-      expect(component.linkedSuiteId).toBeNull();
+      expect(ctx.suitesTab().linkedSuiteId).toBeNull();
     });
 
     it('applies a request set before ngOnInit once, after it', async () => {
       const early = TestBed.createComponent(AdminBenchmarkComponent);
+      const earlyHandles = benchmarkSpecHandles(early);
       const earlyHandled = vi.spyOn(early.componentInstance.navigationHandled, 'emit').mockReturnValue(undefined);
       const select = vi.spyOn(early.componentInstance, 'selectSubTab');
       early.componentInstance.navigation = { subTab: 'suites', suiteId: 7 };
@@ -128,7 +140,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(select).toHaveBeenCalledTimes(1);
       expect(early.componentInstance.activeSubTab).toBe('suites');
-      expect(early.componentInstance.linkedSuiteId).toBe(7);
+      expect(earlyHandles.suitesTab().linkedSuiteId).toBe(7);
       expect(earlyHandled).toHaveBeenCalledTimes(1);
       early.destroy();
     });
@@ -136,12 +148,12 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should create and load suites', () => {
     expect(component).toBeTruthy();
-    expect(component.suites.length).toBe(1);
-    expect(component.suites[0].name).toBe('Default Suite');
+    expect(ctx.workspace.suites.length).toBe(1);
+    expect(ctx.workspace.suites[0].name).toBe('Default Suite');
   });
 
   it('should filter benchmarkCapableConfigs based on modelRole bitmask 4', () => {
-    expect(component.benchmarkCapableConfigs.length).toBe(1);
+    expect(ctx.workspace.benchmarkCapableConfigs.length).toBe(1);
     
     // Add non-benchmark model (modelRole = 3: Chat + Title)
     component.systemConfigs.push({
@@ -190,8 +202,8 @@ describe('AdminBenchmarkComponent', () => {
       note: null
     });
 
-    expect(component.benchmarkCapableConfigs.length).toBe(1);
-    expect(component.benchmarkCapableConfigs[0].id).toBe(1);
+    expect(ctx.workspace.benchmarkCapableConfigs.length).toBe(1);
+    expect(ctx.workspace.benchmarkCapableConfigs[0].id).toBe(1);
   });
 
   it('should format status strings correctly', () => {
@@ -211,7 +223,8 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should render suite description markdown via CollapsibleMarkdownComponent and sanitize XSS vectors', () => {
     component.activeSubTab = 'suites';
-    component.suites = [
+    ctx.refresh();
+    ctx.workspace.suites = [
       {
         id: 1,
         name: 'Markdown Suite',
@@ -223,7 +236,7 @@ describe('AdminBenchmarkComponent', () => {
         difficultyFullyAssessed: true
       }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
     const compEl = fixture.nativeElement.querySelector('.suite-desc-container app-collapsible-markdown');
     expect(compEl).toBeTruthy();
@@ -240,6 +253,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('labels the suite card buttons and the Reviewed badge without emoji or check-mark characters', () => {
     component.activeSubTab = 'suites';
+    ctx.refresh();
     const boardSuite = {
       createdAtUtc: '2026-09-01T00:00:00Z',
       modifiedAtUtc: null,
@@ -252,11 +266,11 @@ describe('AdminBenchmarkComponent', () => {
       gameSnapshotCharCount: 12000,
       hasGeneratedQuestions: true
     };
-    component.suites = [
+    ctx.workspace.suites = [
       { ...boardSuite, id: 1, name: 'Reviewed Board Suite', reviewedQuestionCount: 18 },
       { ...boardSuite, id: 2, name: 'Unreviewed Board Suite', reviewedQuestionCount: 3 }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
     const host = fixture.nativeElement as HTMLElement;
     const buttons = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'));
@@ -295,6 +309,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('sets generationDialogVisible and passes the suite to the child when Generate Questions is clicked', () => {
     component.activeSubTab = 'suites';
+    ctx.refresh();
     const suiteWithSnapshot = {
       id: 1,
       name: 'Board Suite',
@@ -307,8 +322,8 @@ describe('AdminBenchmarkComponent', () => {
       gameSnapshotId: 7,
       gameSnapshotName: 'Low HP'
     } as any;
-    component.suites = [suiteWithSnapshot];
-    fixture.detectChanges();
+    ctx.workspace.suites = [suiteWithSnapshot];
+    ctx.refresh();
 
     const host = fixture.nativeElement as HTMLElement;
     const generateBtn = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'))
@@ -320,13 +335,14 @@ describe('AdminBenchmarkComponent', () => {
     // calls service methods this spec does not stub) never fires.
     generateBtn!.click();
 
-    expect(component.generationDialogVisible).toBe(true);
-    expect(component.generationSuiteForJob).toBe(suiteWithSnapshot);
+    expect(ctx.suitesTab().generationDialogVisible).toBe(true);
+    expect(ctx.suitesTab().generationSuiteForJob).toBe(suiteWithSnapshot);
   });
 
   it('should render question expected criteria via CollapsibleMarkdownComponent in questions list', () => {
     component.activeSubTab = 'suites';
-    component.currentSuiteForQuestions = {
+    ctx.refresh();
+    ctx.workspace.currentSuiteForQuestions = {
       id: 1,
       name: 'Default Suite',
       description: 'Test',
@@ -336,7 +352,7 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 1,
       difficultyFullyAssessed: true
     };
-    component.questions = [
+    ctx.workspace.questions = [
       {
         id: 1,
         benchmarkSuiteId: 1,
@@ -350,7 +366,7 @@ describe('AdminBenchmarkComponent', () => {
         expectedPoints: '**REQUIRED** (accuracy + completeness)\n- Base AC 1\n- Confeers cold resistance and reflection\n\n**SOURCE** — src/objects.c'
       }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
     const criteriaBox = fixture.nativeElement.querySelector('.q-criteria-box');
     expect(criteriaBox).toBeTruthy();
@@ -363,12 +379,15 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('should edit the expected answer criteria through the markdown editor', () => {
-    component.questionForm = {
+    component.selectSubTab('suites');
+    ctx.refresh();
+    const questionsDialog = ctx.suitesTab().questionsDialogCmp!;
+    questionsDialog.questionForm = {
       questionText: 'What are the stats of silver dragon scale mail?',
       difficulty: 1,
       expectedPoints: '**REQUIRED**\n- Base AC 1'
     };
-    fixture.detectChanges();
+    ctx.refresh();
 
     const editors = fixture.debugElement.queryAll(By.directive(MarkdownEditorComponent));
     const editor = editors.find(e => e.componentInstance.inputId === 'qExpectedInput');
@@ -378,11 +397,12 @@ describe('AdminBenchmarkComponent', () => {
     // The two-way binding writes back through the component's own accessor.
     editor!.componentInstance.valueChange.emit('**REQUIRED**\n- Reflection');
     fixture.detectChanges();
-    expect(component.questionForm.expectedPoints).toBe('**REQUIRED**\n- Reflection');
+    expect(questionsDialog.questionForm.expectedPoints).toBe('**REQUIRED**\n- Reflection');
   });
 
   it('should mark the question form dialog as the wide markdown-editor variant', () => {
-    fixture.detectChanges();
+    component.selectSubTab('suites');
+    ctx.refresh();
 
     const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-question-form-dialog');
     expect(dialog).toBeTruthy();
@@ -390,7 +410,8 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('should mark the suite form dialog as the wide markdown-editor variant', () => {
-    fixture.detectChanges();
+    component.selectSubTab('suites');
+    ctx.refresh();
 
     const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-suite-form-dialog');
     expect(dialog).toBeTruthy();
@@ -398,8 +419,10 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('should render the suite description through the markdown editor and write back through suiteForm', () => {
-    component.suiteForm = { name: 'Core Mechanics', description: '**Bold**\n- Item' };
-    fixture.detectChanges();
+    component.selectSubTab('suites');
+    ctx.refresh();
+    ctx.suitesTab().suiteForm = { name: 'Core Mechanics', description: '**Bold**\n- Item' };
+    ctx.refresh();
 
     const editors = fixture.debugElement.queryAll(By.directive(MarkdownEditorComponent));
     const editor = editors.find(e => e.componentInstance.inputId === 'suiteDescInput');
@@ -408,7 +431,7 @@ describe('AdminBenchmarkComponent', () => {
 
     editor!.componentInstance.valueChange.emit('**Bold**\n- Changed');
     fixture.detectChanges();
-    expect(component.suiteForm.description).toBe('**Bold**\n- Changed');
+    expect(ctx.suitesTab().suiteForm.description).toBe('**Bold**\n- Changed');
   });
 
   describe('suite description generation and unsaved-changes guard', () => {
@@ -433,50 +456,51 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     beforeEach(() => {
-      fixture.detectChanges();
-      vi.spyOn(component.suiteDialog.nativeElement, 'showModal').mockReturnValue(undefined);
-      suiteClose = vi.spyOn(component.suiteDialog.nativeElement, 'close').mockReturnValue(undefined);
+      component.selectSubTab('suites');
+      ctx.refresh();
+      vi.spyOn(ctx.suitesTab().suiteDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      suiteClose = vi.spyOn(ctx.suitesTab().suiteDialog.nativeElement, 'close').mockReturnValue(undefined);
       confirmShowModal = vi.spyOn(component.confirmActionDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       vi.spyOn(component.confirmActionDialog.nativeElement, 'close').mockReturnValue(undefined);
     });
 
     it('disables Generate with AI in create mode and enables it for an existing suite', () => {
-      component.openCreateSuite();
-      fixture.detectChanges();
+      ctx.suitesTab().openCreateSuite();
+      ctx.refresh();
       expect(generateButton()).toBeTruthy();
       expect(generateButton()!.disabled).toBe(true);
 
-      component.openEditSuite(suite);
-      fixture.detectChanges();
+      ctx.suitesTab().openEditSuite(suite);
+      ctx.refresh();
       expect(generateButton()!.disabled).toBe(false);
     });
 
     it('sets descriptionGenerationVisible when Generate with AI is clicked', () => {
-      component.openEditSuite(suite);
-      fixture.detectChanges();
+      ctx.suitesTab().openEditSuite(suite);
+      ctx.refresh();
 
       // No detectChanges after the click, so the child's ngOnChanges never reaches unstubbed services.
       generateButton()!.click();
 
-      expect(component.descriptionGenerationVisible).toBe(true);
-      expect(component.descriptionGenerationSuite).toBe(suite);
+      expect(ctx.suitesTab().descriptionGenerationVisible).toBe(true);
+      expect(ctx.suitesTab().descriptionGenerationSuite).toBe(suite);
     });
 
     it('writes a generated description into the suite form and marks it dirty', () => {
-      component.openEditSuite(suite);
-      expect(component.suiteFormDirty).toBe(false);
+      ctx.suitesTab().openEditSuite(suite);
+      expect(ctx.suitesTab().suiteFormDirty).toBe(false);
 
-      component.onDescriptionGenerated('## Draft');
+      ctx.suitesTab().onDescriptionGenerated('## Draft');
 
-      expect(component.suiteForm.description).toBe('## Draft');
-      expect(component.suiteFormDirty).toBe(true);
+      expect(ctx.suitesTab().suiteForm.description).toBe('## Draft');
+      expect(ctx.suitesTab().suiteFormDirty).toBe(true);
     });
 
     it('closes an unchanged suite dialog without asking', () => {
-      component.openEditSuite(suite);
+      ctx.suitesTab().openEditSuite(suite);
       const titleBefore = component.confirmDialogTitle;
 
-      component.requestCloseSuiteDialog();
+      ctx.suitesTab().requestCloseSuiteDialog();
 
       expect(suiteClose).toHaveBeenCalled();
       expect(confirmShowModal).not.toHaveBeenCalled();
@@ -484,10 +508,10 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('asks before discarding an edited name, and closes on confirmation', () => {
-      component.openEditSuite(suite);
-      component.suiteForm.name = 'Renamed';
+      ctx.suitesTab().openEditSuite(suite);
+      ctx.suitesTab().suiteForm.name = 'Renamed';
 
-      component.requestCloseSuiteDialog();
+      ctx.suitesTab().requestCloseSuiteDialog();
 
       expect(suiteClose).not.toHaveBeenCalled();
       expect(confirmShowModal).toHaveBeenCalled();
@@ -498,11 +522,11 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('routes Escape on a dirty suite dialog through the confirmation', () => {
-      component.openEditSuite(suite);
-      component.suiteForm.description = 'Edited';
+      ctx.suitesTab().openEditSuite(suite);
+      ctx.suitesTab().suiteForm.description = 'Edited';
       const event = new Event('cancel', { cancelable: true });
 
-      component.onSuiteDialogCancel(event);
+      ctx.suitesTab().onSuiteDialogCancel(event);
 
       expect(event.defaultPrevented).toBe(true);
       expect(suiteClose).not.toHaveBeenCalled();
@@ -511,8 +535,13 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   describe('AI Auto-Rate All Difficulties disabled state', () => {
+    beforeEach(() => {
+      component.selectSubTab('suites');
+      ctx.refresh();
+    });
+
     it('is aria-disabled and inert while the question list is empty', () => {
-      component.currentSuiteForQuestions = {
+      ctx.workspace.currentSuiteForQuestions = {
         id: 1,
         name: 'Empty Suite',
         description: '',
@@ -522,11 +551,11 @@ describe('AdminBenchmarkComponent', () => {
         assessedQuestionCount: 0,
         difficultyFullyAssessed: false
       };
-      component.questions = [];
-      component.loadingQuestions = false;
-      fixture.detectChanges();
+      ctx.workspace.questions = [];
+      ctx.workspace.loadingQuestions = false;
+      ctx.refresh();
 
-      expect(component.canAutoRateAll).toBe(false);
+      expect(ctx.suitesTab().questionsDialogCmp!.canAutoRateAll).toBe(false);
 
       const button = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.questions-toolbar button'))
         .find(b => b.textContent?.trim() === 'AI Auto-Rate All Difficulties');
@@ -541,7 +570,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('is enabled once the suite has at least one question', () => {
-      component.currentSuiteForQuestions = {
+      ctx.workspace.currentSuiteForQuestions = {
         id: 1,
         name: 'Suite With Questions',
         description: '',
@@ -551,7 +580,7 @@ describe('AdminBenchmarkComponent', () => {
         assessedQuestionCount: 0,
         difficultyFullyAssessed: false
       };
-      component.questions = [{
+      ctx.workspace.questions = [{
         id: 1,
         benchmarkSuiteId: 1,
         orderIndex: 1,
@@ -559,10 +588,10 @@ describe('AdminBenchmarkComponent', () => {
         difficulty: 1,
         createdAtUtc: '2026-09-01T00:00:00Z'
       }] as any;
-      component.loadingQuestions = false;
-      fixture.detectChanges();
+      ctx.workspace.loadingQuestions = false;
+      ctx.refresh();
 
-      expect(component.canAutoRateAll).toBe(true);
+      expect(ctx.suitesTab().questionsDialogCmp!.canAutoRateAll).toBe(true);
 
       const button = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.questions-toolbar button'))
         .find(b => b.textContent?.trim() === 'AI Auto-Rate All Difficulties');
@@ -570,7 +599,8 @@ describe('AdminBenchmarkComponent', () => {
 
       vi.spyOn(component, 'openDifficultyAssessorDialog').mockReturnValue(undefined);
       button!.click();
-      expect(component.openDifficultyAssessorDialog).toHaveBeenCalledWith(component.currentSuiteForQuestions);
+      // The request reaches the shell through the bridge, which passes no question for a whole suite.
+      expect(component.openDifficultyAssessorDialog).toHaveBeenCalledWith(ctx.workspace.currentSuiteForQuestions, null);
     });
   });
 
@@ -697,7 +727,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should display "Create Default Suites" on the import button without hardcoded question count', () => {
     component.activeSubTab = 'suites';
-    fixture.detectChanges();
+    ctx.refresh();
 
     const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.suites-toolbar .btn-ghost'));
     const importBtn = buttons.find(b => b.textContent!.trim() === 'Create Default Suites');
@@ -720,23 +750,26 @@ describe('AdminBenchmarkComponent', () => {
       nameMatchedSuiteNames: []
     };
 
+    const importDialog = () => ctx.suitesTab().importDialogCmp!;
+
     beforeEach(() => {
       component.activeSubTab = 'suites';
-      vi.spyOn(component.importDefaultSuitesDialog.nativeElement, 'showModal').mockReturnValue(undefined);
-      vi.spyOn(component.importDefaultSuitesDialog.nativeElement, 'close').mockReturnValue(undefined);
+      ctx.refresh();
+      vi.spyOn(importDialog().importDefaultSuitesDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(importDialog().importDefaultSuitesDialog.nativeElement, 'close').mockReturnValue(undefined);
     });
 
     it('loads the catalog and renders one checkbox per entry, named for the suite', () => {
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
 
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
       expect(benchmarkServiceMock.getDefaultSuiteCatalog).toHaveBeenCalled();
-      expect(component.importDefaultSuitesDialog.nativeElement.showModal).toHaveBeenCalled();
+      expect(importDialog().importDefaultSuitesDialog.nativeElement.showModal).toHaveBeenCalled();
 
-      const dialogEl = component.importDefaultSuitesDialog.nativeElement;
+      const dialogEl = importDialog().importDefaultSuitesDialog.nativeElement;
       const label = dialogEl.querySelector('.default-suite-picker label.checkbox-label');
       expect(label).toBeTruthy();
       expect(label!.textContent).toContain(catalogEntry.name);
@@ -746,17 +779,17 @@ describe('AdminBenchmarkComponent', () => {
     it('keeps Import selected aria-disabled until a suite is checked', () => {
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
-      const dialogEl = component.importDefaultSuitesDialog.nativeElement;
+      const dialogEl = importDialog().importDefaultSuitesDialog.nativeElement;
       const importBtn = dialogEl.querySelector('.dialog-footer .btn-gh:not(.btn-gh-cancel)') as HTMLButtonElement;
       expect(importBtn.getAttribute('aria-disabled')).toBe('true');
 
-      component.toggleDefaultSuite(catalogEntry.key);
-      (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+      importDialog().toggleDefaultSuite(catalogEntry.key);
+      ctx.refresh();
 
-      expect(component.canImportDefaultSuites).toBe(true);
+      expect(importDialog().canImportDefaultSuites).toBe(true);
       expect(importBtn.getAttribute('aria-disabled')).toBe('false');
     });
 
@@ -767,17 +800,17 @@ describe('AdminBenchmarkComponent', () => {
         skipped: []
       } as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      component.toggleDefaultSuite(catalogEntry.key);
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      importDialog().toggleDefaultSuite(catalogEntry.key);
+      ctx.refresh();
 
-      component.importSelectedDefaultSuites();
+      importDialog().importSelectedDefaultSuites();
 
       expect(benchmarkServiceMock.importDefaultSuites).toHaveBeenCalledWith([catalogEntry.key]);
-      expect(component.importDefaultSuitesDialog.nativeElement.close).toHaveBeenCalled();
-      // Once from ngOnInit, once from the post-import reload.
-      expect(benchmarkServiceMock.getSuites).toHaveBeenCalledTimes(2);
-      expect(component.suiteActionAnnouncement).toContain(catalogEntry.name);
+      expect(importDialog().importDefaultSuitesDialog.nativeElement.close).toHaveBeenCalled();
+      // Once from ngOnInit, once as the Manage Suites sub-tab is created, once from the post-import reload.
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalledTimes(3);
+      expect(ctx.suitesTab().suiteActionAnnouncement).toContain(catalogEntry.name);
     });
 
     it('announces a skipped entry with its reason', () => {
@@ -787,13 +820,13 @@ describe('AdminBenchmarkComponent', () => {
         skipped: [{ key: catalogEntry.key, reason: 'Suite quota reached.' }]
       } as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      component.toggleDefaultSuite(catalogEntry.key);
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      importDialog().toggleDefaultSuite(catalogEntry.key);
+      ctx.refresh();
 
-      component.importSelectedDefaultSuites();
+      importDialog().importSelectedDefaultSuites();
 
-      expect(component.suiteActionAnnouncement).toContain('Suite quota reached.');
+      expect(ctx.suitesTab().suiteActionAnnouncement).toContain('Suite quota reached.');
     });
 
     it('shows an invalid catalog entry with its error and no checkbox', () => {
@@ -804,10 +837,10 @@ describe('AdminBenchmarkComponent', () => {
       };
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([invalidEntry] as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
-      const row = component.importDefaultSuitesDialog.nativeElement.querySelector('.default-suite-row-invalid');
+      const row = importDialog().importDefaultSuitesDialog.nativeElement.querySelector('.default-suite-row-invalid');
       expect(row).toBeTruthy();
       expect(row!.textContent).toContain('Missing "key" field.');
       expect(row!.querySelector('input[type="checkbox"]')).toBeNull();
@@ -816,10 +849,10 @@ describe('AdminBenchmarkComponent', () => {
     it('renders the description as HTML, not Markdown source', () => {
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
-      const dialogEl = component.importDefaultSuitesDialog.nativeElement;
+      const dialogEl = importDialog().importDefaultSuitesDialog.nativeElement;
       expect(dialogEl.querySelector('.default-suite-description .markdown-body strong')).toBeTruthy();
       expect(dialogEl.textContent).not.toContain('**');
     });
@@ -827,11 +860,11 @@ describe('AdminBenchmarkComponent', () => {
     it('renders one difficulty badge per band with its count', () => {
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
       const badges: HTMLElement[] = Array.from(
-        component.importDefaultSuitesDialog.nativeElement.querySelectorAll('.default-suite-bands .difficulty-badge'));
+        importDialog().importDefaultSuitesDialog.nativeElement.querySelectorAll('.default-suite-bands .difficulty-badge'));
       expect(badges.length).toBe(3);
       expect(badges[0].classList).toContain('diff-simple');
       expect(badges[0].textContent).toContain('Simple');
@@ -841,33 +874,33 @@ describe('AdminBenchmarkComponent', () => {
     it('shows the selection status bar and updates it on toggle', () => {
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
-      const bar = component.importDefaultSuitesDialog.nativeElement.querySelector('.dialog-status-bar') as HTMLElement;
+      const bar = importDialog().importDefaultSuitesDialog.nativeElement.querySelector('.dialog-status-bar') as HTMLElement;
       expect(bar).toBeTruthy();
       expect(bar.textContent).toContain('Select at least one suite');
       expect(bar.classList).not.toContain('is-ready');
 
-      component.toggleDefaultSuite(catalogEntry.key);
-      (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+      importDialog().toggleDefaultSuite(catalogEntry.key);
+      ctx.refresh();
 
       expect(bar.textContent).toContain('1 of 1');
       expect(bar.classList).toContain('is-ready');
     });
 
     it('is sized like the Manage Questions dialog', () => {
-      expect(component.importDefaultSuitesDialog.nativeElement.classList)
+      expect(importDialog().importDefaultSuitesDialog.nativeElement.classList)
         .toContain('benchmark-import-suites-dialog');
     });
 
     it('does not put the description inside the checkbox label', () => {
       benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
-      component.openImportDefaultSuitesDialog();
-      fixture.detectChanges();
+      ctx.suitesTab().openImportDefaultSuitesDialog();
+      ctx.refresh();
 
-      const label = component.importDefaultSuitesDialog.nativeElement
+      const label = importDialog().importDefaultSuitesDialog.nativeElement
         .querySelector('.default-suite-picker label.checkbox-label') as HTMLElement;
       expect(label).toBeTruthy();
       expect(label.querySelector('.default-suite-description')).toBeNull();
@@ -876,18 +909,18 @@ describe('AdminBenchmarkComponent', () => {
 
   it('shows the Manage Suites empty state and the Run Benchmark notice when no suites exist', () => {
     benchmarkServiceMock.getSuites.mockReturnValue(of([]));
-    component.loadSuites();
+    ctx.workspace.loadSuites();
     fixture.detectChanges();
 
     component.activeSubTab = 'suites';
-    fixture.detectChanges();
+    ctx.refresh();
 
     const suitesEmptyState = fixture.nativeElement.querySelector('.suites-grid .empty-state[role="status"]');
     expect(suitesEmptyState).toBeTruthy();
     expect(suitesEmptyState.textContent).toContain('No question suites yet');
 
     component.activeSubTab = 'run';
-    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+    ctx.refresh();
 
     const runNotice = fixture.nativeElement.querySelector('.setup-card .empty-state[role="status"]');
     expect(runNotice).toBeTruthy();
@@ -896,7 +929,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('keeps Start Benchmark aria-disabled with a hint naming the missing suite when none is selected', () => {
     benchmarkServiceMock.getSuites.mockReturnValue(of([]));
-    component.loadSuites();
+    ctx.workspace.loadSuites();
     fixture.detectChanges();
 
     const startBtn = fixture.nativeElement.querySelector('.form-actions .btn-gh') as HTMLButtonElement;
@@ -913,12 +946,13 @@ describe('AdminBenchmarkComponent', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(undefined as any);
     benchmarkServiceMock.deleteSuite.mockReturnValue(of(void 0));
     component.activeSubTab = 'suites';
-    component.suites = [
+    ctx.refresh();
+    ctx.workspace.suites = [
       { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, assessedQuestionCount: 0, difficultyFullyAssessed: false }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
-    component.deleteSuite(42);
+    ctx.suitesTab().deleteSuite(42);
 
     expect(window.confirm).not.toHaveBeenCalled();
     expect(component.confirmDialogTitle).toBe('Delete Benchmark Suite');
@@ -934,15 +968,16 @@ describe('AdminBenchmarkComponent', () => {
     benchmarkServiceMock.deleteSuite.mockReturnValue(throwError(() => ({ status: 409, error: refusal })));
     const logged = vi.spyOn(console, 'error').mockReturnValue(undefined);
     component.activeSubTab = 'suites';
-    component.suites = [
+    ctx.refresh();
+    ctx.workspace.suites = [
       { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, assessedQuestionCount: 0, difficultyFullyAssessed: false }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
-    component.deleteSuite(42);
+    ctx.suitesTab().deleteSuite(42);
     component.executeConfirmAction();
 
-    expect(component.actionErrorMessage).toBe(refusal);
+    expect(ctx.workspace.actionErrorMessage).toBe(refusal);
     expect(logged).not.toHaveBeenCalledWith('Failed to delete suite', expect.anything());
     const alert = fixture.nativeElement.querySelector('#bm-panel-suites .alert-danger .alert-message') as HTMLElement;
     expect(alert?.textContent?.trim()).toBe(refusal);
@@ -950,6 +985,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should open difficultyAssessorDialog on clicking Assess Question Difficulty without calling rateSuiteDifficulty immediately', () => {
     component.activeSubTab = 'suites';
+    ctx.refresh();
     const testSuite = {
       id: 1,
       name: 'Default Suite',
@@ -960,8 +996,8 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 10,
       difficultyFullyAssessed: false
     };
-    component.suites = [testSuite];
-    fixture.detectChanges();
+    ctx.workspace.suites = [testSuite];
+    ctx.refresh();
 
     vi.spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
@@ -973,7 +1009,7 @@ describe('AdminBenchmarkComponent', () => {
     expect(component.difficultyAssessmentTargetDescription).toBe('the 5 of 15 questions in Default Suite that do not yet have an assessed difficulty');
     expect(benchmarkServiceMock.startDifficultyAssessment).not.toHaveBeenCalled();
 
-    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+    ctx.refresh();
     const radios: HTMLInputElement[] = Array.from(fixture.nativeElement.querySelectorAll('.difficulty-scope-fieldset input[type="radio"]'));
     expect(radios.map(r => r.value)).toEqual(['unassessed', 'suite']);
     expect(radios[0].checked).toBe(true);
@@ -981,6 +1017,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should default the difficulty assessment scope to the whole suite when no question is assessed yet', () => {
     component.activeSubTab = 'suites';
+    ctx.refresh();
     const unassessedSuite = {
       id: 1,
       name: 'Default Suite',
@@ -991,12 +1028,12 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 0,
       difficultyFullyAssessed: false
     };
-    component.suites = [unassessedSuite];
-    fixture.detectChanges();
+    ctx.workspace.suites = [unassessedSuite];
+    ctx.refresh();
     vi.spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
     component.openDifficultyAssessorDialog(unassessedSuite);
-    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+    ctx.refresh();
 
     expect(component.difficultyAssessmentScope).toBe('suite');
     expect(fixture.nativeElement.querySelector('.difficulty-scope-fieldset')).toBeNull();
@@ -1004,6 +1041,7 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should default the difficulty assessment scope to the whole suite when every question is assessed', () => {
     component.activeSubTab = 'suites';
+    ctx.refresh();
     const assessedSuite = {
       id: 1,
       name: 'Default Suite',
@@ -1014,12 +1052,12 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 15,
       difficultyFullyAssessed: true
     };
-    component.suites = [assessedSuite];
-    fixture.detectChanges();
+    ctx.workspace.suites = [assessedSuite];
+    ctx.refresh();
     vi.spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
     component.openDifficultyAssessorDialog(assessedSuite);
-    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+    ctx.refresh();
 
     expect(component.difficultyAssessmentScope).toBe('suite');
     expect(fixture.nativeElement.querySelector('.difficulty-scope-fieldset')).toBeNull();
@@ -1063,8 +1101,8 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 10,
       difficultyFullyAssessed: false
     };
-    expect(component.difficultyProgressLabel(partialSuite)).toBe('Difficulty 10/18 Assessed');
-    expect(component.difficultyProgressClass(partialSuite)).toBe('partial');
+    expect(ctx.difficulty.difficultyProgressLabel(partialSuite)).toBe('Difficulty 10/18 Assessed');
+    expect(ctx.difficulty.difficultyProgressClass(partialSuite)).toBe('partial');
 
     const completeSuite = {
       id: 2,
@@ -1076,8 +1114,8 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 18,
       difficultyFullyAssessed: true
     };
-    expect(component.difficultyProgressLabel(completeSuite)).toBe('Difficulty 18/18 Assessed');
-    expect(component.difficultyProgressClass(completeSuite)).toBe('complete');
+    expect(ctx.difficulty.difficultyProgressLabel(completeSuite)).toBe('Difficulty 18/18 Assessed');
+    expect(ctx.difficulty.difficultyProgressClass(completeSuite)).toBe('complete');
 
     const emptySuite = {
       id: 3,
@@ -1089,7 +1127,7 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 0,
       difficultyFullyAssessed: false
     };
-    expect(component.difficultyProgressClass(emptySuite)).toBe('none');
+    expect(ctx.difficulty.difficultyProgressClass(emptySuite)).toBe('none');
   });
 
   it('should start difficulty assessment on confirm, set phase to progress, and start polling', () => {
@@ -1140,8 +1178,8 @@ describe('AdminBenchmarkComponent', () => {
     });
     expect(component.difficultyDialogPhase).toBe('progress');
     expect(benchmarkServiceMock.getDifficultyAssessment).toHaveBeenCalledWith('job-123');
-    expect(component.difficultyJob).toEqual(mockJob);
-    expect(component.difficultyJobIsRunning).toBe(true);
+    expect(ctx.difficulty.difficultyJob).toEqual(mockJob);
+    expect(ctx.difficulty.difficultyJobIsRunning).toBe(true);
   });
 
   it('should send onlyUnassessed when confirming the unassessed scope', () => {
@@ -1229,8 +1267,8 @@ describe('AdminBenchmarkComponent', () => {
     component.confirmDifficultyAssessment();
 
     expect(component.difficultyDialogPhase).toBe('progress');
-    expect(component.difficultyJob).toEqual(existingJob);
-    expect(component.difficultyJobIsRunning).toBe(true);
+    expect(ctx.difficulty.difficultyJob).toEqual(existingJob);
+    expect(ctx.difficulty.difficultyJobIsRunning).toBe(true);
   });
 
   it('should cancel running assessment on terminateDifficultyAssessment', () => {
@@ -1254,11 +1292,11 @@ describe('AdminBenchmarkComponent', () => {
       log: []
     };
 
-    component.difficultyJob = runningJob;
+    ctx.difficulty.difficultyJob = runningJob;
     benchmarkServiceMock.cancelDifficultyAssessment.mockReturnValue(of({ cancelled: true }));
     benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of({ ...runningJob, status: 'Cancelled' }));
 
-    component.terminateDifficultyAssessment();
+    ctx.difficulty.terminateDifficultyAssessment();
 
     expect(benchmarkServiceMock.cancelDifficultyAssessment).toHaveBeenCalledWith('job-to-cancel');
   });
@@ -1288,16 +1326,16 @@ describe('AdminBenchmarkComponent', () => {
       log: []
     };
 
-    component.difficultyJob = runningJob;
+    ctx.difficulty.difficultyJob = runningJob;
     component.difficultyDialogPhase = 'progress';
     benchmarkServiceMock.cancelDifficultyAssessment.mockReturnValue(of({ cancelled: true }));
     benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of(runningJob));
 
-    component.terminateDifficultyAssessment();
-    fixture.detectChanges();
+    ctx.difficulty.terminateDifficultyAssessment();
+    ctx.refresh();
 
-    expect(component.terminatingDifficultyJob).toBe(true);
-    expect(component.difficultyJobIsRunning).toBe(true);
+    expect(ctx.difficulty.terminatingDifficultyJob).toBe(true);
+    expect(ctx.difficulty.difficultyJobIsRunning).toBe(true);
     const terminatingButtons: HTMLButtonElement[] = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button'))
       .filter(b => b.textContent?.includes('Terminating…'));
     expect(terminatingButtons.length).toBeGreaterThan(0);
@@ -1314,18 +1352,18 @@ describe('AdminBenchmarkComponent', () => {
     };
     benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of(cancelledJob));
 
-    component.startDifficultyPolling('job-terminating');
-    component.stopDifficultyPolling();
-    fixture.detectChanges();
+    ctx.difficulty.startDifficultyPolling('job-terminating');
+    ctx.difficulty.stopDifficultyPolling();
+    ctx.refresh();
 
-    expect(component.terminatingDifficultyJob).toBe(false);
-    expect(component.difficultyJobIsTerminal).toBe(true);
+    expect(ctx.difficulty.terminatingDifficultyJob).toBe(false);
+    expect(ctx.difficulty.difficultyJobIsTerminal).toBe(true);
     expect(fixture.nativeElement.querySelectorAll('.job-status-chip.status-cancelled').length).toBe(2);
     expect(fixture.nativeElement.querySelectorAll('.job-status-chip.status-rated').length).toBe(1);
   });
 
   it('should clear the terminating state when the cancel request fails', () => {
-    component.difficultyJob = {
+    ctx.difficulty.difficultyJob = {
       id: 'job-cancel-fails',
       suiteId: 1,
       suiteName: 'Default Suite',
@@ -1346,10 +1384,10 @@ describe('AdminBenchmarkComponent', () => {
     };
     benchmarkServiceMock.cancelDifficultyAssessment.mockReturnValue(throwError(() => ({ status: 500, error: 'Boom' })));
 
-    component.terminateDifficultyAssessment();
+    ctx.difficulty.terminateDifficultyAssessment();
 
-    expect(component.terminatingDifficultyJob).toBe(false);
-    expect(component.actionErrorMessage).toBe('Boom');
+    expect(ctx.difficulty.terminatingDifficultyJob).toBe(false);
+    expect(ctx.workspace.actionErrorMessage).toBe('Boom');
   });
 
   it('should retry failed questions by starting assessment with failed question ids', () => {
@@ -1377,7 +1415,7 @@ describe('AdminBenchmarkComponent', () => {
       log: []
     };
 
-    component.difficultyJob = failedJob;
+    ctx.difficulty.difficultyJob = failedJob;
     benchmarkServiceMock.startDifficultyAssessment.mockReturnValue(of({ jobId: 'retry-job-1' }));
     benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of({ ...failedJob, id: 'retry-job-1', status: 'Running' }));
 
@@ -1416,8 +1454,8 @@ describe('AdminBenchmarkComponent', () => {
 
     beforeEach(() => {
       component.difficultyDialogPhase = 'progress';
-      component.difficultyJob = buildFailedJob();
-      fixture.detectChanges();
+      ctx.difficulty.difficultyJob = buildFailedJob();
+      ctx.refresh();
     });
 
     it('should write the diagnostics text to the clipboard, announce it, and reset after the timeout', fakeAsync(() => {
@@ -1465,10 +1503,10 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should disable start button and render warning notice when selected suite is not fully assessed', () => {
     component.activeSubTab = 'run';
-    component.selectedSuiteId = 1;
-    component.testedConfigId = 1;
-    component.assessorConfigId = 1;
-    component.suites = [
+    ctx.launcher.selectedSuiteId = 1;
+    ctx.launcher.testedConfigId = 1;
+    ctx.launcher.assessorConfigId = 1;
+    ctx.workspace.suites = [
       {
         id: 1,
         name: 'Incomplete Suite',
@@ -1480,9 +1518,9 @@ describe('AdminBenchmarkComponent', () => {
         difficultyFullyAssessed: false
       }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
-    expect(component.canStartRun).toBe(false);
+    expect(ctx.runTab().canStartRun).toBe(false);
 
     const warningEl = fixture.nativeElement.querySelector('.alert.alert-warning');
     expect(warningEl).toBeTruthy();
@@ -1495,7 +1533,8 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should render per-question assessor info and badges when assessed, or not assessed message', () => {
     component.activeSubTab = 'suites';
-    component.currentSuiteForQuestions = {
+    ctx.refresh();
+    ctx.workspace.currentSuiteForQuestions = {
       id: 1,
       name: 'Test Suite',
       description: null,
@@ -1505,7 +1544,7 @@ describe('AdminBenchmarkComponent', () => {
       assessedQuestionCount: 1,
       difficultyFullyAssessed: false
     };
-    component.questions = [
+    ctx.workspace.questions = [
       {
         id: 1,
         benchmarkSuiteId: 1,
@@ -1533,7 +1572,7 @@ describe('AdminBenchmarkComponent', () => {
         createdAtUtc: '2026-09-01T00:00:00Z'
       }
     ];
-    fixture.detectChanges();
+    ctx.refresh();
 
     const assessorInfos = fixture.nativeElement.querySelectorAll('.q-assessor-info');
     expect(assessorInfos.length).toBe(2);
@@ -1676,7 +1715,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should hand the selected suite to the Multi-Run Analysis panel', () => {
-      component.selectedSuiteId = 5;
+      ctx.launcher.selectedSuiteId = 5;
       fixture.nativeElement.querySelector('#bm-tab-multirun').click();
       fixture.detectChanges();
 
@@ -1688,12 +1727,14 @@ describe('AdminBenchmarkComponent', () => {
     it('should load history when the history tab is selected', () => {
       benchmarkServiceMock.getRuns.mockClear();
       component.selectSubTab('history');
+      ctx.refresh();
       expect(benchmarkServiceMock.getRuns).toHaveBeenCalled();
     });
 
     it('should load suites when the suites tab is selected', () => {
       benchmarkServiceMock.getSuites.mockClear();
       component.selectSubTab('suites');
+      ctx.refresh();
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
 
@@ -1711,6 +1752,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should load profiles when the profiles tab is selected', () => {
       benchmarkServiceMock.getScoringProfiles.mockClear();
       component.selectSubTab('profiles');
+      ctx.refresh();
       expect(benchmarkServiceMock.getScoringProfiles).toHaveBeenCalled();
     });
   });
@@ -1757,7 +1799,7 @@ describe('AdminBenchmarkComponent', () => {
     function forEachSubTab(check: (where: string) => void): void {
       for (const tab of ['run', 'history', 'suites', 'profiles'] as const) {
         component.activeSubTab = tab;
-        fixture.detectChanges();
+        ctx.refresh();
         check(tab);
       }
     }
@@ -1805,7 +1847,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should pair every icon-only action button with an interest-triggered tooltip', () => {
       component.activeSubTab = 'suites';
-      fixture.detectChanges();
+      ctx.refresh();
 
       const triggers = Array.from(
         fixture.nativeElement.querySelectorAll('button[interestfor]')
@@ -1831,7 +1873,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should announce active run progress in a live region', () => {
       component.activeSubTab = 'run';
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 7,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -1840,7 +1882,7 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      fixture.detectChanges();
+      ctx.refresh();
 
       const progress = fixture.nativeElement.querySelector('.banner-progress');
       expect(progress).toBeTruthy();
@@ -1854,24 +1896,27 @@ describe('AdminBenchmarkComponent', () => {
     const questionA = { id: 10, benchmarkSuiteId: 1, orderIndex: 0, questionText: 'A?', difficulty: 1, expectedPoints: '' } as any;
     const questionB = { id: 20, benchmarkSuiteId: 2, orderIndex: 0, questionText: 'B?', difficulty: 2, expectedPoints: '- point' } as any;
     let refreshQuestions: Mock;
+    const questionsDialog = () => ctx.suitesTab().questionsDialogCmp!;
 
     beforeEach(() => {
       (benchmarkServiceMock as any).updateQuestion = vi.fn().mockReturnValue(of(questionB));
       (benchmarkServiceMock as any).createQuestion = vi.fn().mockReturnValue(of(questionA));
-      component.openGenerationDialog(suiteB);
+      component.selectSubTab('suites');
+      ctx.refresh();
+      ctx.suitesTab().openGenerationDialog(suiteB);
       fixture.detectChanges();
       // The child's own reload also calls getQuestions, which would blur what the host reloaded.
-      refreshQuestions = vi.spyOn(component.generationDialog!, 'refreshQuestions').mockImplementation(() => {}) as unknown as Mock;
+      refreshQuestions = vi.spyOn(ctx.suitesTab().generationDialog!, 'refreshQuestions').mockImplementation(() => {}) as unknown as Mock;
       benchmarkServiceMock.getQuestions.mockClear();
       benchmarkServiceMock.getSuites.mockClear();
     });
 
     it('saves the edit when Manage Questions was never opened', () => {
-      expect(component.currentSuiteForQuestions).toBeNull();
+      expect(ctx.workspace.currentSuiteForQuestions).toBeNull();
 
-      component.onGenerationEditQuestion(questionB);
-      component.questionForm.questionText = 'B, edited?';
-      component.saveQuestion();
+      ctx.suitesTab().onGenerationEditQuestion(questionB);
+      questionsDialog().questionForm.questionText = 'B, edited?';
+      questionsDialog().saveQuestion();
 
       expect((benchmarkServiceMock as any).updateQuestion).toHaveBeenCalledWith(20, expect.objectContaining({ questionText: 'B, edited?' }));
       expect(refreshQuestions).toHaveBeenCalled();
@@ -1880,34 +1925,34 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('leaves another suite\'s Manage Questions list alone', () => {
-      component.currentSuiteForQuestions = suiteA;
-      component.questions = [questionA];
+      ctx.workspace.currentSuiteForQuestions = suiteA;
+      ctx.workspace.questions = [questionA];
 
-      component.onGenerationEditQuestion(questionB);
-      component.saveQuestion();
+      ctx.suitesTab().onGenerationEditQuestion(questionB);
+      questionsDialog().saveQuestion();
 
       expect((benchmarkServiceMock as any).updateQuestion).toHaveBeenCalledWith(20, expect.anything());
       expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalledWith(1);
-      expect(component.questions).toEqual([questionA]);
+      expect(ctx.workspace.questions).toEqual([questionA]);
       expect(refreshQuestions).toHaveBeenCalled();
     });
 
     it('reloads the Manage Questions list when it shows the same suite', () => {
-      component.currentSuiteForQuestions = suiteB;
+      ctx.workspace.currentSuiteForQuestions = suiteB;
 
-      component.onGenerationEditQuestion(questionB);
-      component.saveQuestion();
+      ctx.suitesTab().onGenerationEditQuestion(questionB);
+      questionsDialog().saveQuestion();
 
       expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(2);
       expect(refreshQuestions).toHaveBeenCalled();
     });
 
     it('still creates a new question in the Manage Questions suite', () => {
-      component.currentSuiteForQuestions = suiteA;
+      ctx.workspace.currentSuiteForQuestions = suiteA;
 
-      component.openCreateQuestion();
-      component.questionForm.questionText = 'New?';
-      component.saveQuestion();
+      questionsDialog().openCreateQuestion();
+      questionsDialog().questionForm.questionText = 'New?';
+      questionsDialog().saveQuestion();
 
       expect((benchmarkServiceMock as any).createQuestion).toHaveBeenCalledWith(1, expect.objectContaining({ questionText: 'New?' }));
       expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);

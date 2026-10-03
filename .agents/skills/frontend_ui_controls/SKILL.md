@@ -1172,7 +1172,7 @@ as plain TypeScript. The rules it guarantees, each with a spec in `table-state.s
   must not also match *FailedValidation*.
 
 > **The source list is the logic list; the view is only for rendering.**
-> `benchmark.component.ts`'s `instrumentChangeOf` locates a run by `indexOf` in `historyRuns`
+> `instrumentChangeOf` (`benchmark-run-format.ts`) locates a run by `indexOf` in `historyRuns`
 > and then treats later entries as chronologically earlier, and `completedRunsOfSelectedSuite`
 > takes `.slice(0, 5)` as "the five newest". Both are correct only against server order. Under
 > a user-chosen sort, in-place sorting would silently move the *INSTRUMENT CHANGED* badges onto
@@ -1195,7 +1195,7 @@ wrapper between the row and the cell.
   class that could disagree with what is announced.
 - The label is a real `<button>`, so keyboard operability and Enter/Space come free.
 
-> **`admin.component.html`'s users table is the old pattern — do not copy it.** It puts
+> **The Admin Users tab's table (`admin/users-tab/admin-users-tab.component.html`) is the old pattern — do not copy it.** It puts
 > `(click)` on a bare `<th>` with a `▲`/`▼` span and no `aria-sort`: it is not keyboard-operable
 > and announces nothing. It is out of scope rather than correct, and can adopt this layer later.
 

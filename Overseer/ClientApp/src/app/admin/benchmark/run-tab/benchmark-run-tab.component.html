@@ -1,0 +1,1103 @@
+<!--
+  Active Series Banner. A series replaces the single-run banner rather than sitting beside it:
+  while a series is live the interesting unit is "run n of N", and two banners describing the
+  same execution at two scales is how an operator ends up cancelling the wrong thing. Waiting
+  for run cap and Stopped are named states here, never a stalled spinner.
+-->
+<!-- The second operand is what narrows activeSeries for the template checker; the getter
+     already covers it, but a getter's null check does not narrow a field. -->
+@if (seriesBannerVisible && monitor.activeSeries) {
+  <div class="active-run-banner series-banner">
+    <div class="banner-header">
+      @if (monitor.seriesIsLive) {
+        <div class="pulse-indicator" aria-hidden="true"></div>
+      }
+      <div>
+        <h4>Benchmark Series #{{ monitor.activeSeries.id }} ({{ monitor.activeSeries.suiteName }})</h4>
+        <p class="text-muted">{{ seriesProgressLabel }}</p>
+        @if (monitor.completionSoundStatus) {
+          <p class="text-muted" role="status">{{ monitor.completionSoundStatus }}</p>
+        }
+      </div>
+    </div>
+    @if (monitor.seriesErrorMessage) {
+      <div class="alert alert-warning mb-10" role="alert" aria-live="polite">
+        <div class="alert-content">
+          <div class="alert-body">{{ monitor.seriesErrorMessage }}</div>
+        </div>
+      </div>
+    }
+    <div class="banner-progress" role="status">
+      @if (seriesIsWaitingForCap) {
+        <span class="series-state-chip state-waiting">Waiting for run cap</span>
+      }
+      @if (monitor.seriesIsStopped) {
+        <span class="series-state-chip state-stopped">Stopped</span>
+      }
+      @if (monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running') {
+        <span>Run #{{ monitor.activeRunDetail.id }}: answered {{ monitor.activeRunDetail.answers.length }} of {{ monitor.activeRunDetail.totalQuestionCount }}</span>
+      }
+      <button type="button" class="btn-gh" (click)="monitor.openMultiRunDialog()">
+        Show Series Progress
+      </button>
+      @if (monitor.seriesIsStopped) {
+        <button type="button" class="btn-gh" [disabled]="monitor.resumingSeries || !monitor.activeSeries.resumable"
+                (click)="monitor.resumeActiveSeries()">
+          {{ monitor.resumingSeries ? 'Continuing...' : seriesContinueLabel }}
+        </button>
+        @if (seriesInstrumentChanged) {
+          <button type="button" class="btn-gh btn-gh-delete" [disabled]="monitor.resumingSeries"
+                  (click)="monitor.resumeActiveSeries(true)">
+            Continue anyway (marks the group cross-condition)
+          </button>
+        }
+      }
+      @if (monitor.seriesIsLive) {
+        <button type="button" class="btn-gh btn-gh-delete" (click)="monitor.cancelActiveSeries()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          Cancel Series
+        </button>
+      }
+    </div>
+  </div>
+}
+
+<!-- Active Battery Banner: one battery run across its suites, with the member in flight. -->
+@if (batteryBannerVisible && monitor.activeBatteryRun) {
+  <div class="active-run-banner battery-banner">
+    <div class="banner-header">
+      @if (monitor.batteryIsLive) {
+        <div class="pulse-indicator" aria-hidden="true"></div>
+      }
+      <div>
+        <h4>Battery Run #{{ monitor.activeBatteryRun.id }} ({{ monitor.activeBatteryRun.batteryName }})</h4>
+        <p class="text-muted battery-progress-label">{{ batteryProgressLabel }}</p>
+        @if (monitor.completionSoundStatus) {
+          <p class="text-muted" role="status">{{ monitor.completionSoundStatus }}</p>
+        }
+      </div>
+    </div>
+    @if (monitor.batteryErrorMessage) {
+      <div class="alert alert-warning mb-10" role="alert" aria-live="polite">
+        <div class="alert-content">
+          <div class="alert-body">{{ monitor.batteryErrorMessage }}</div>
+        </div>
+      </div>
+    }
+    <div class="banner-progress" role="status">
+      @if (batteryIsWaitingForCap) {
+        <span class="series-state-chip state-waiting">Waiting for run cap</span>
+      }
+      @if (batteryIsStopped) {
+        <span class="series-state-chip state-stopped">Stopped</span>
+      }
+      @if (monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running') {
+        <span>Run #{{ monitor.activeRunDetail.id }}: answered {{ monitor.activeRunDetail.answers.length }} of {{ monitor.activeRunDetail.totalQuestionCount }}</span>
+      }
+      <button type="button" class="btn-gh battery-show-progress" (click)="monitor.openBatteryDialog()">
+        Show Battery Progress
+      </button>
+      @if (batteryCanContinue) {
+        <button type="button" class="btn-gh battery-continue" [disabled]="monitor.resumingBattery"
+                (click)="monitor.resumeActiveBattery('Continue')">
+          {{ monitor.resumingBattery ? 'Continuing...' : batteryContinueLabel }}
+        </button>
+      }
+      @if (batteryStoppedOnInstrumentChange) {
+        <button type="button" class="btn-gh battery-rerun" [disabled]="monitor.resumingBattery"
+                (click)="monitor.resumeActiveBattery('RerunUnderCurrentInstrument')">
+          {{ monitor.resumingBattery ? 'Starting over...' : 'Re-run under current instrument' }}
+        </button>
+      }
+      @if (monitor.batteryIsLive || batteryIsStopped) {
+        <button type="button" class="btn-gh btn-gh-delete battery-cancel" (click)="monitor.cancelActiveBattery()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+          Cancel Battery
+        </button>
+      }
+    </div>
+  </div>
+}
+
+<!-- Active Run Banner -->
+@if (!monitor.activeSeries && !monitor.batteryIsLive && monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running' && !monitor.isRunProgressDialogOpen) {
+  <div class="active-run-banner">
+    <div class="banner-header">
+      <div class="pulse-indicator" aria-hidden="true"></div>
+      <div>
+        <h4>Benchmark Run in Progress (Run #{{ monitor.activeRunDetail.id }})</h4>
+        <p class="text-muted">Suite: {{ monitor.activeRunDetail.suiteName }} | Model: {{ monitor.activeRunDetail.testedModelDisplayNameUsed }} | {{ monitor.activeRunDetail.isPanelRun ? 'Assessors' : 'Assessor' }}: {{ monitor.activeRunDetail.assessorModelDisplayNameUsed }}{{ monitor.activeRunDetail.isPanelRun ? ' + ' + monitor.activeRunDetail.coAssessorModelDisplayNameUsed : '' }}</p>
+      </div>
+    </div>
+    <div class="banner-progress" role="status">
+      <span>Answered: {{ monitor.activeRunDetail.answers.length }} of {{ monitor.activeRunDetail.totalQuestionCount }}</span>
+      <button type="button" class="btn-gh" (click)="bridge.openRunProgressDialog()">
+        Show Progress
+      </button>
+      <button type="button" class="btn-gh btn-gh-delete" (click)="monitor.cancelActiveRun()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        Cancel Run
+      </button>
+    </div>
+  </div>
+}
+
+<div class="benchmark-card setup-card">
+  <div class="card-header-with-actions">
+    <div>
+      <h3>New Benchmark Run</h3>
+    </div>
+  </div>
+
+  @if (monitor.runErrorMessage) {
+    <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
+      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <div class="alert-content">
+        <div class="alert-body">{{ monitor.runErrorMessage }}</div>
+      </div>
+    </div>
+  }
+
+  @if (!workspace.loadingSuites && workspace.suites.length === 0) {
+    <div class="empty-state alert alert-info mb-20" role="status">
+      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+      </svg>
+      <div class="alert-content">
+        <div class="alert-heading"><strong>No question suite available</strong></div>
+        <div class="alert-body">
+          A benchmark needs a question suite. Import a default suite or create one on the Manage Suites tab.
+        </div>
+        <div class="alert-actions">
+          <button type="button" class="alert-action-btn" (click)="bridge.selectSubTab('suites')">Go to Manage Suites</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <div class="form-group setup-primary-field">
+    <label id="bmTestedModelLabel">Model Under Test</label>
+    <div class="gh-field-row">
+      <app-model-picker class="tested-model-selector"
+                        labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
+                        [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                        [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.testedConfigId"
+                        (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
+      <app-info-tip trigger="click" tipId="bmTestedModelHint" subject="Model Under Test">
+        Answers every question. Speed Index is only comparable at the same thinking level.
+      </app-info-tip>
+    </div>
+  </div>
+
+  <div class="setup-groups-container">
+    <div class="setup-groups">
+      <fieldset class="gh-fieldset setup-group setup-group-test">
+        <legend>Test Setup</legend>
+
+        <fieldset class="gh-choice run-target-choice" role="radiogroup"
+                  aria-labelledby="runTargetLabel" aria-describedby="runTargetHint">
+          <legend>
+            <span id="runTargetLabel">Run Target</span>
+            <app-info-tip trigger="click" tipId="runTargetHint" subject="Run Target">
+              <dl>
+                <div>
+                  <dt><span class="gh-info-term">Single suite</span><span class="gh-info-badge">Default</span></dt>
+                  <dd>Runs one suite, once or as a series of replicate runs.</dd>
+                </div>
+                <div>
+                  <dt><span class="gh-info-term">Battery</span></dt>
+                  <dd>Runs every suite of a battery, one after another, and combines them into one Overall
+                    Index. Batteries are defined on the Multi-Suite tab.</dd>
+                </div>
+              </dl>
+            </app-info-tip>
+          </legend>
+          <label class="gh-radio">
+            <input type="radio" id="runTargetSuite" name="runTarget" value="suite"
+                   [checked]="launcher.runTargetKind === 'suite'" (change)="setRunTarget('suite')">
+            <span>Single suite</span>
+          </label>
+          <label class="gh-radio">
+            <input type="radio" id="runTargetBattery" name="runTarget" value="battery"
+                   [checked]="launcher.runTargetKind === 'battery'" (change)="setRunTarget('battery')">
+            <span>Battery</span>
+          </label>
+        </fieldset>
+
+        @if (launcher.isBatteryTarget) {
+          <div class="form-group">
+            <div class="label-with-action">
+              <label for="batterySelect">Battery</label>
+              <button type="button" class="link-subtle-btn" (click)="bridge.selectSubTab('multisuite')">Manage batteries →</button>
+            </div>
+            <div class="gh-field-row">
+              <select id="batterySelect" class="gh-input" [(ngModel)]="launcher.selectedBatteryId" (ngModelChange)="onSelectedBatteryChanged()"
+                      aria-describedby="batteryHint">
+                @if (launcher.runnableBatteries.length === 0) {
+                  <option [ngValue]="null" disabled>{{ workspace.loadingBatteries ? 'Loading batteries...' : 'No batteries available' }}</option>
+                }
+                @for (battery of launcher.runnableBatteries; track battery.id) {
+                  <option [ngValue]="battery.id">{{ battery.name }} ({{ battery.suites.length }} suites)</option>
+                }
+              </select>
+              <app-info-tip trigger="click" tipId="batteryHint" subject="Battery">
+                @if (launcher.selectedBattery) {
+                  <p>The suites run in this order. Their weights in the Overall Index ({{ selectedBatterySchemeLabel }}):</p>
+                  <dl>
+                    @for (row of selectedBatteryWeightRows; track $index) {
+                      <div>
+                        <dt><span class="gh-info-term">{{ row.name }}</span></dt>
+                        <dd>{{ row.percent != null ? (row.percent | number:'1.1-1') + '%' : 'Weight not defined' }}</dd>
+                      </div>
+                    }
+                  </dl>
+                } @else {
+                  Runs every suite of a battery for one model and combines them into one Overall Index.
+                }
+              </app-info-tip>
+            </div>
+            @if (selectedBatteryUnassessedSuites.length > 0) {
+              <div class="alert alert-warning mt-10" role="alert">
+                <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div class="alert-content">
+                  <div class="alert-body">
+                    Every question must have an assessed difficulty before this battery can be run. Not yet assessed:
+                    {{ selectedBatteryUnassessedSuites.join(', ') }}.
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        } @else {
+        <div class="form-group">
+          <div class="label-with-action">
+            <label for="suiteSelect">Benchmark Suite</label>
+            <button type="button" class="link-subtle-btn" (click)="bridge.selectSubTab('suites')">Manage suites →</button>
+          </div>
+          <div class="gh-field-row">
+            <select id="suiteSelect" class="gh-input" [(ngModel)]="launcher.selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
+                    aria-describedby="suiteHint">
+              @if (workspace.suites.length === 0) {
+                <option [ngValue]="null" disabled>{{ workspace.loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
+              }
+              @for (suite of workspace.suites; track suite.id) {
+                <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
+              }
+            </select>
+            <app-info-tip trigger="click" tipId="suiteHint" subject="Benchmark Suite">
+              Runs are only comparable within one suite; editing a question starts a new baseline.
+            </app-info-tip>
+          </div>
+          @if (launcher.selectedSuite && !launcher.selectedSuite.difficultyFullyAssessed) {
+            <div class="alert alert-warning mt-10" role="alert">
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <div class="alert-content">
+                <div class="alert-heading">
+                  <strong>{{ difficulty.difficultyProgressLabel(launcher.selectedSuite) }}</strong>
+                </div>
+                <div class="alert-body">
+                  Every question must have an assessed difficulty before this suite can be run.
+                </div>
+                <div class="alert-actions">
+                  <button type="button" class="alert-action-btn" (click)="bridge.openDifficultyAssessorDialog(launcher.selectedSuite)">
+                    Assess question difficulty
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+        }
+
+        <div class="form-group">
+          <div class="label-with-action">
+            <label for="profileSelect">Scoring Profile</label>
+            <button type="button" class="link-subtle-btn" (click)="bridge.selectSubTab('profiles')">Manage profiles →</button>
+          </div>
+          <div class="gh-field-row">
+            <select id="profileSelect" class="gh-input" [(ngModel)]="launcher.selectedScoringProfileId" (ngModelChange)="onReuseInputsChanged()"
+                    [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
+              @for (profile of workspace.scoringProfiles; track profile.id) {
+                <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
+              }
+            </select>
+            <app-info-tip trigger="click" tipId="profileHint" subject="Scoring Profile">
+              Turns the four dimension grades into indices; runs are only comparable under one profile.
+            </app-info-tip>
+          </div>
+          <!--
+            Profile fit. A high/max thinking model measured against a profile tuned for
+            interactive latency scores badly on Speed Index for a reason that has nothing to do
+            with the model being slow for its class, so the mismatch is called out before the
+            run rather than explained afterwards. It carries its own id: it is a second hint in
+            this group, and the one the profile-fit tests are about.
+          -->
+          @if (showProfileFitAdvisory) {
+            <span id="profileFitHint" class="form-hint">
+              This profile targets interactive latency. A high/max thinking model will score low
+              on Speed Index against it; consider a Reasoning Agent profile, or read the Speed
+              Index as advisory.
+            </span>
+          }
+        </div>
+
+        <div class="form-group">
+          <label for="candidateResponseStyle">Response Style</label>
+          <div class="gh-field-row">
+            <select id="candidateResponseStyle" class="gh-input"
+                    [(ngModel)]="launcher.candidateVerboseMode" (ngModelChange)="onReuseInputsChanged()"
+                    [attr.aria-describedby]="launcher.candidateVerboseMode ? 'candidateResponseStyleHint candidateResponseStyleNote' : 'candidateResponseStyleHint'">
+              <option [ngValue]="false">Concise — production default</option>
+              <option [ngValue]="true">Detailed — diagnostic</option>
+            </select>
+            <app-info-tip trigger="click" tipId="candidateResponseStyleHint" subject="Response Style">
+              Concise matches the production chat and stays comparable with earlier runs. Detailed is
+              diagnostic: only Accuracy stays comparable with concise runs; use it to tell prompt gaps
+              from model gaps.
+            </app-info-tip>
+          </div>
+          @if (launcher.candidateVerboseMode) {
+            <span id="candidateResponseStyleNote" class="form-hint">{{ candidateResponseStyleHint }}</span>
+          }
+        </div>
+
+        <div class="form-group">
+          <label for="candidateSourceCodeReferences">Source Code References</label>
+          <div class="gh-field-row">
+            <select id="candidateSourceCodeReferences" class="gh-input"
+                    [(ngModel)]="launcher.candidateAllowSourceCodeReferences" (ngModelChange)="onReuseInputsChanged()"
+                    aria-describedby="candidateSourceCodeReferencesHint">
+              <option [ngValue]="false">Disallowed — production default</option>
+              <option [ngValue]="true">Allowed — answers cite source files and lines</option>
+            </select>
+            <app-info-tip trigger="click" tipId="candidateSourceCodeReferencesHint" subject="Source Code References">
+              Regular users see source file and line references only when they turn on Show source code
+              references, so Disallowed matches what most of them get. Allowed lets the answers cite them.
+            </app-info-tip>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="gh-fieldset setup-group setup-group-grading">
+        <legend>Grading</legend>
+
+        <div class="grader-guide-row">
+          <button type="button" class="btn-ghost grader-guide-btn" (click)="bridge.openGraderGuide('roles')">How the graders work</button>
+        </div>
+
+        <div class="form-group">
+          <label id="bmAssessorModelLabel">Assessor</label>
+          <div class="gh-field-row">
+            <app-model-picker class="assessor-model-selector"
+                              labelledBy="bmAssessorModelLabel" describedBy="bmAssessorModelHint"
+                              [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                              [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.assessorConfigId"
+                              (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmAssessorModelHint" subject="Assessor">
+              <p>Grades every answer against its rubric on four dimensions and writes the run's summary. In a
+                single-assessor run its verdict is the score; in a panel it is half of it.</p>
+              <p><strong>Recommended:</strong> Claude Opus at medium effort. Not Claude Fable: it costs 2.5 times
+                as much, and grading does not need it. Avoid the highest effort levels: they are slower and fail
+                more often, with no gain seen in grading.</p>
+              <p>More: How the graders work.</p>
+            </app-info-tip>
+          </div>
+
+          @if (showAssessorChangeAdvisory) {
+            <div class="alert alert-info mt-10" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>Assessor differs from this suite's last run</strong></div>
+                <div class="alert-body">
+                  Run {{ launcher.lastAssessor?.runId }} was graded by
+                  <strong>{{ launcher.lastAssessor?.assessorModelDisplayNameUsed }}</strong>
+                  ({{ launcher.lastAssessor?.assessorModelProviderUsed }}). A suite's runs are comparable
+                  to each other only while the grader is the same one, so this run's Intelligence
+                  Index will not be directly comparable with it.
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="form-group">
+          <label id="bmCoAssessorModelLabel">Co-Assessor <span class="field-optional">Optional</span></label>
+          <div class="gh-field-row">
+            <app-model-picker class="co-assessor-model-selector"
+                              labelledBy="bmCoAssessorModelLabel" describedBy="bmCoAssessorModelHint"
+                              noneLabel="None — single assessor" [showPrice]="true"
+                              [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.coAssessorConfigId"
+                              (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmCoAssessorModelHint" subject="Co-Assessor">
+              <p>Makes a two-member panel: grades every answer beside the assessor, blind to it, and the score
+                is the mean of the two. Balancing two model families is fairer when candidates from both are
+                compared.</p>
+              <p><strong>Recommended:</strong> GPT Sol at medium effort, the OpenAI peer of the assessor. Not GPT
+                Astra: it costs 5 times as much. Never the model under test itself: when the candidate is the
+                newest GPT Sol, use the previous Sol version.</p>
+              <p>More: How the graders work.</p>
+            </app-info-tip>
+          </div>
+
+          <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
+          @if (showCoAssessorSameProviderAdvisory) {
+            <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>Panel members share a provider</strong></div>
+                <div class="alert-body">
+                  The assessor and the co-assessor both come from {{ selectedCoAssessorModel?.provider }}.
+                  A panel balances two families against each other, so its members must come from
+                  different providers.
+                </div>
+              </div>
+            </div>
+          }
+          @if (showCoAssessorCandidateAdvisory) {
+            <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>A panel member is the model under test</strong></div>
+                <div class="alert-body">
+                  The model under test would grade its own answers. In a panel run neither member
+                  may be the candidate model; choose an older or other model of the same family.
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- Second Opinion Assessor.
+             Optional, and off by default: a second opinion spends assessor tokens, and it is
+             only worth having from a *different* model, so there is no automatic fallback to
+             the assessor above. Selected here like every other model, never in configuration:
+             a System AI Config is a database row an administrator manages in this UI. -->
+        <div class="form-group">
+          <label id="bmSecondOpinionModelLabel">{{ launcher.isPanelLaunch ? 'Reference Reader' : 'Second Reader' }} <span class="field-optional">Optional</span></label>
+          <div class="gh-field-row">
+            <app-model-picker class="second-opinion-model-selector"
+                              labelledBy="bmSecondOpinionModelLabel"
+                              [describedBy]="showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint'"
+                              [noneLabel]="launcher.isPanelLaunch ? 'None — no reference reader' : 'None — no second reader'" [showPrice]="true"
+                              [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.secondOpinionConfigId"
+                              (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmSecondOpinionModelHint" [subject]="launcher.isPanelLaunch ? 'Reference Reader' : 'Second Reader'">
+              @if (launcher.isPanelLaunch) {
+                <p>A third model grades every answer blind and never scores. It checks that the panel is
+                  balanced between its members' own families (in Model Comparison), and marks answers where
+                  both members may be wrong the same way.</p>
+                <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort, the third family
+                  beside the two members. Use the same model on every run you compare.</p>
+              } @else {
+                <p>A second model grades answers again, independently and blind to the assessor's verdict. It
+                  never changes a score: when the two differ by more than 15 points or on a critical error, the
+                  answer is marked DISPUTED for you to review, and the run reports how often they agree.
+                  Coverage below sets which answers it reads.</p>
+                <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort, a provider
+                  different from the assessor. If the candidate is itself a Gemini Flash model, use a different
+                  Flash version.</p>
+              }
+              <p>More: How the graders work.</p>
+            </app-info-tip>
+          </div>
+          @if (showSecondOpinionSameModelNote) {
+            <span id="bmSecondOpinionSameModelNote" class="form-hint">
+              <strong>Same model as the assessor: it will mostly confirm its own verdict.</strong>
+            </span>
+          }
+
+          <!--
+            Second Opinion Mode. Inert without an assessor above, which is the hard gate that
+            silently produced the 2026-09-03 run's zero second verdicts — so the control is
+            disabled with a reason rather than left looking configured. Entries are in
+            coverage order and labelled for what they do, not for their enum names.
+          -->
+          @if (launcher.isPanelLaunch) {
+            <div class="form-group dependent-field second-opinion-mode-fixed" role="group" aria-labelledby="secondOpinionModeFixedLabel">
+              <span id="secondOpinionModeFixedLabel" class="field-caption">Coverage</span>
+              <span class="second-opinion-mode-fixed-value">Every answer, blind — a third reading. Fixed in a panel run.</span>
+            </div>
+          } @else {
+            <div class="form-group dependent-field">
+              <label for="secondOpinionModeSelect">Coverage</label>
+              <div class="gh-field-row">
+                <select id="secondOpinionModeSelect" class="gh-input"
+                        [(ngModel)]="launcher.secondOpinionMode" (ngModelChange)="onReuseInputsChanged()"
+                        [disabled]="secondOpinionModeDisabled"
+                        [attr.aria-describedby]="secondOpinionModeDisabled ? 'secondOpinionModeTip secondOpinionModeHint' : 'secondOpinionModeTip'">
+                  @for (option of secondOpinionModeOptions; track option.value) {
+                    <option [ngValue]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+                <app-info-tip trigger="click" tipId="secondOpinionModeTip" subject="Coverage">
+                  <dl>
+                    @for (option of secondOpinionModeOptions; track option.value) {
+                      <div>
+                        <dt>
+                          <span class="gh-info-term">{{ option.label }}</span>
+                          @if (option.recommended) {
+                            <span class="gh-info-badge">Recommended</span>
+                          }
+                        </dt>
+                        <dd>{{ option.hint }}</dd>
+                      </div>
+                    }
+                  </dl>
+                  <p>No coverage setting changes a score. More: How the graders work.</p>
+                </app-info-tip>
+              </div>
+              @if (secondOpinionModeDisabled) {
+                <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
+              }
+            </div>
+          }
+
+          @if (showAssessorPairingAdvisory) {
+            <div class="alert alert-info mt-10" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>Assessor and second reader share a provider</strong></div>
+                <div class="alert-body">
+                  Both graders come from {{ selectedAssessorModel?.provider }}. The second verdict
+                  is a weaker check than a cross-provider one: two models from one family share
+                  training data and failure modes, and can agree for reasons that have nothing to
+                  do with the answer.
+                </div>
+              </div>
+            </div>
+          }
+
+          @if (referenceReaderSharedFamilyRoles.length > 0) {
+            <div class="alert alert-info mt-10 reference-reader-family-advisory" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>Reference reader shares a provider</strong></div>
+                <div class="alert-body">
+                  {{ selectedSecondOpinionModel?.provider }} is also the provider of
+                  {{ referenceReaderSharedFamilyRoles.join(' and ') }}. The reference reader is the
+                  neutral anchor the panel's family gap is compared against, so it is best taken
+                  from a family that is neither a candidate nor a panel member.
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="form-group">
+          <label id="bmClaimVerifierModelLabel">Claim Verifier <span class="field-optional">Optional</span></label>
+          <div class="gh-field-row">
+            <app-model-picker class="claim-verifier-model-selector"
+                              labelledBy="bmClaimVerifierModelLabel" describedBy="bmClaimVerifierModelHint"
+                              noneLabel="None — no claim verification" [showPrice]="true"
+                              [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.claimVerifierConfigId"
+                              (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmClaimVerifierModelHint" subject="Claim Verifier">
+              <p>When a grader says a fact in an answer is wrong or unverifiable, the verifier looks it up in the
+                game source and wiki and rules it true, false or undecided. It changes no level. From scoring
+                method 13, its ruling on a critical-error quote settles a split between the two panel members.
+                It shows where a grader was wrong, so you know which answers to re-assess, which rubrics miss facts and
+                which facts the chat gets wrong. Use it on runs you will analyze or use to choose models, and
+                skip it for quick checks: it is often the most expensive grading role.</p>
+              <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort; high if its rulings
+                are often wrong, never low.</p>
+              <p>More: How the graders work.</p>
+            </app-info-tip>
+          </div>
+
+          @if (showClaimVerifierCandidateAdvisory) {
+            <div class="alert alert-info mt-10" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>Verifier is the candidate under test</strong></div>
+                <div class="alert-body">
+                  The model under test would be checking its own claims. The tools supply the evidence
+                  rather than the model's memory, so this is not worthless — but it is the weakest available
+                  pairing.
+                </div>
+              </div>
+            </div>
+          }
+
+          @if (claimVerifierSharedFamilyRoles.length > 0) {
+            <div class="alert alert-info mt-10 claim-verifier-family-advisory" role="note">
+              <div class="alert-content">
+                <div class="alert-heading"><strong>Verifier shares a provider</strong></div>
+                <div class="alert-body">
+                  {{ selectedClaimVerifierModel?.provider }} is also the provider of
+                  {{ claimVerifierSharedFamilyRoles.join(' and ') }}. The verifier checks both panel
+                  members' charges, so it is best taken from a family that is neither a candidate nor
+                  a panel member.
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="form-group">
+          <label id="bmReportWriterModelLabel">Report Writer <span class="field-optional">Optional</span></label>
+          <div class="gh-field-row">
+            <app-model-picker class="report-writer-model-selector"
+                              labelledBy="bmReportWriterModelLabel"
+                              [describedBy]="reportWriterLaunchRefusal ? 'bmReportWriterModelHint bmReportWriterRefusal' : 'bmReportWriterModelHint'"
+                              noneLabel="None — no AI-written reports" [showPrice]="true"
+                              [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.reportWriterConfigId"
+                              (selectionChange)="selectReportWriterModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmReportWriterModelHint" subject="Report Writer">
+              <p>After the run is scored, this model writes an Executive Summary and a Report for AI Researchers
+                and Developers once. Downloads render them without calling it again.</p>
+              <p>Use a strong model from another provider than the model under test, such as the one you use as
+                an assessor.</p>
+            </app-info-tip>
+          </div>
+
+          <!-- The server's report-writer refusal, shown before Start so the run is never sent. -->
+          @if (reportWriterLaunchRefusal) {
+            <p id="bmReportWriterRefusal" class="gh-field-error mt-10 report-writer-refusal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ reportWriterLaunchRefusal }}</span>
+            </p>
+          }
+          <!-- A writer of the model under test's provider: advisory; the server asks for the acknowledgment on Start. -->
+          @if (reportWriterLaunchWarning) {
+            <div class="alert alert-warning mt-10 report-writer-advisory" role="note">
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <div class="alert-content">
+                <div class="alert-body">{{ reportWriterLaunchWarning }}</div>
+              </div>
+            </div>
+          }
+        </div>
+      </fieldset>
+
+      <fieldset class="gh-fieldset setup-group setup-group-exec">
+        <legend>Execution</legend>
+
+        <div class="exec-fields">
+          <!--
+            Number of runs. The max is bound to the live configured MaxRunsPerDay from
+            GET runs/limits and never to a literal, so raising the cap raises this field with it —
+            and a series can never become a way around the spend guard, which is the point of
+            coupling the two. The server re-checks against the same guard; this bound is a courtesy.
+            For a battery the same field is Runs per Suite, bounded by maxMembersPerBattery over the
+            battery's suite count.
+          -->
+          <div class="exec-runs">
+            <div class="form-group">
+              <label for="runCountInput">{{ launcher.isBatteryTarget ? 'Runs per Suite' : 'Number of Runs' }}</label>
+              <div class="gh-field-row">
+                <input id="runCountInput" type="number" class="gh-input run-count-input"
+                       min="1"
+                       [attr.max]="launcher.runCountMax"
+                       [(ngModel)]="launcher.runCount" (ngModelChange)="onReuseInputsChanged()"
+                       aria-describedby="runCountHint">
+                @if (launcher.isBatteryTarget) {
+                  <app-info-tip trigger="click" tipId="runCountHint" subject="Runs per Suite">
+                    <p>Every suite of the battery runs this many times, round by round: all suites once, then all
+                      suites again. The battery has a result after the first round; more rounds narrow its interval.</p>
+                    @if (launcher.maxRunsPerSuite != null) {
+                      <p>Up to {{ launcher.maxRunsPerSuite }} for this battery, because one battery run plans at most
+                        {{ workspace.runLimits?.maxMembersPerBattery }} runs.</p>
+                    }
+                  </app-info-tip>
+                } @else {
+                <app-info-tip trigger="click" tipId="runCountHint" subject="Number of Runs">
+                  <p>Answers vary from run to run, so the scores of a single run include run-to-run noise.</p>
+                  <dl>
+                    <div>
+                      <dt><span class="gh-info-term">One run</span><span class="gh-info-badge">Default</span></dt>
+                      <dd>For a first look at a model, a check that a change works, or the lowest cost. Treat a small
+                        difference between two single runs with caution: it may be noise.</dd>
+                    </div>
+                    <div>
+                      <dt><span class="gh-info-term">Two or more runs</span></dt>
+                      <dd>
+                        @if (launcher.maxRunCountPerSeries != null) {
+                          Up to {{ launcher.maxRunCountPerSeries }}, run one at a time as a replicate set.
+                        } @else {
+                          Run one at a time as a replicate set; the daily run cap limits the count.
+                        }
+                        Multi-Run Analysis reports their mean and, from three runs, a reproducibility interval. Use
+                        it when the difference you are looking for is small, such as between two close models.
+                      </dd>
+                    </div>
+                  </dl>
+                  <p>Cost and duration grow with each run; the Series Projection estimates both once two or more
+                    runs are set.</p>
+                </app-info-tip>
+                }
+              </div>
+            </div>
+
+            @if (isMultiRunRequested || launcher.isBatteryTarget) {
+              <div class="form-group">
+                <div class="checkbox-with-tip">
+                  <label class="checkbox-label" for="allowCapWaitInput">
+                    <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="launcher.allowCapWait"
+                           aria-describedby="allowCapWaitHint">
+                    <span>Wait when the run cap blocks the next run</span>
+                  </label>
+                  <app-info-tip trigger="click" tipId="allowCapWaitHint" subject="Wait at the run cap">
+                    Otherwise the {{ launcher.isBatteryTarget ? 'battery' : 'series' }} stops at the cap and can be continued; finished runs are always kept.
+                    @if (launcher.isBatteryTarget) {
+                      A battery larger than the daily cap needs this.
+                    }
+                  </app-info-tip>
+                </div>
+              </div>
+            }
+
+            @if (launcher.isBatteryTarget) {
+              <div class="form-group">
+                <div class="checkbox-with-tip">
+                  <label class="checkbox-label" for="reuseEarlierRunsInput">
+                    <input id="reuseEarlierRunsInput" type="checkbox" [checked]="launcher.reuseEarlierRuns"
+                           aria-describedby="reuseEarlierRunsHint"
+                           (change)="onReuseEarlierRunsChange($any($event.target).checked)">
+                    <span>Reuse earlier runs</span>
+                  </label>
+                  <app-info-tip trigger="click" tipId="reuseEarlierRunsHint" subject="Reuse earlier runs">
+                    Fills a slot with the newest earlier run of the same suite and model under test that still matches the
+                    current instrument and the other runs, so only the remaining slots are launched. The Battery Projection
+                    lists the runs reused. Chosen for each start; never remembered.
+                  </app-info-tip>
+                </div>
+              </div>
+            }
+          </div>
+
+          <div class="form-group completion-signals" role="group" aria-labelledby="completionSignalsCaption">
+            <div class="exec-heading-row">
+              <span class="field-caption" id="completionSignalsCaption">Completion Alerts</span>
+              <app-info-tip trigger="click" tipId="completionSignalsHint" subject="Completion Alerts">
+                <dl>
+                  <div>
+                    <dt><span class="gh-info-term">Sound</span></dt>
+                    <dd>Plays a short chime. If the browser blocks audio, press Test sound once to allow it.</dd>
+                  </div>
+                  <div>
+                    <dt><span class="gh-info-term">Desktop notification</span></dt>
+                    <dd>Names the run and its final status. The browser asks for permission when you select it.</dd>
+                  </div>
+                  <div>
+                    <dt><span class="gh-info-term">Timing</span></dt>
+                    <dd>Alerts come from this page, so keep its tab open. A series or a battery alerts once,
+                      after its last run. In a background tab an alert can arrive up to a minute late.</dd>
+                  </div>
+                </dl>
+              </app-info-tip>
+            </div>
+            <label class="checkbox-label" for="completionSoundInput">
+              <input id="completionSoundInput" type="checkbox" [(ngModel)]="launcher.completionSound"
+                     aria-describedby="completionSignalsHint">
+              <span>Play a sound</span>
+            </label>
+            <label class="checkbox-label" for="completionNotificationInput">
+              <input id="completionNotificationInput" type="checkbox" [checked]="launcher.completionNotification"
+                     aria-describedby="completionSignalsHint"
+                     (change)="monitor.onCompletionNotificationChange($any($event.target).checked)">
+              <span>Show a desktop notification</span>
+            </label>
+            <p class="text-muted completion-signals-status" role="status" aria-live="polite"
+               [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
+            <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
+          </div>
+
+          @if (isMultiRunRequested) {
+            <fieldset class="series-projection-fieldset" role="region" aria-labelledby="seriesProjectionLegend">
+              <legend id="seriesProjectionLegend" class="series-projection-legend">
+                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                <span>Series Projection ({{ launcher.effectiveRunCount }} runs)</span>
+              </legend>
+
+              <div class="projection-grid" role="list">
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected wall time:</span>
+                  @if (projectedSeriesDurationLabel) {
+                    <span class="projection-value"><strong>{{ projectedSeriesDurationLabel }}</strong></span>
+                    <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × this suite's recent mean run duration)</span>
+                  } @else {
+                    <span class="projection-empty text-muted">no completed run of this suite to project from</span>
+                  }
+                </div>
+
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected cost:</span>
+                  @if (projectedSeriesCostLabel) {
+                    <span class="projection-value"><strong>{{ projectedSeriesCostLabel }}</strong></span>
+                    <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × this suite's recent mean run cost)</span>
+                  } @else {
+                    <span class="projection-empty text-muted">no priced run of this suite to project from</span>
+                  }
+                </div>
+
+                @if (workspace.runLimits) {
+                  <div class="projection-row" role="listitem">
+                    <span class="projection-label">Remaining daily headroom:</span>
+                    <span class="projection-value"><strong>{{ workspace.runLimits.remainingDailyHeadroom }}</strong> of {{ workspace.runLimits.maxRunsPerDay }}</span>
+                    <span class="projection-note text-muted">({{ workspace.runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ workspace.runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                  </div>
+                }
+              </div>
+
+              @if (seriesExceedsDailyHeadroom) {
+                <div class="alert alert-warning mt-10" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      This series asks for more runs than the rolling 24-hour window currently allows.
+                      @if (launcher.allowCapWait) {
+                        It will pause at the cap and continue when the window frees up.
+                      } @else {
+                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                        completed run and offering a Continue button.
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+            </fieldset>
+          }
+
+          @if (launcher.isBatteryTarget && launcher.selectedBattery) {
+            <fieldset class="series-projection-fieldset battery-projection" role="region" aria-labelledby="batteryProjectionLegend">
+              <legend id="batteryProjectionLegend" class="series-projection-legend">
+                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                <span>Battery Projection ({{ launcher.selectedBattery.suites.length }} suites × {{ launcher.effectiveRunCount }} = {{ batteryLaunchCount }} runs)</span>
+              </legend>
+
+              <div class="projection-grid" role="list">
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected wall time:</span>
+                  @if (projectedBatteryDurationLabel) {
+                    <span class="projection-value"><strong>{{ projectedBatteryDurationLabel }}</strong></span>
+                    @if (launcher.activeReusePreview) {
+                      <span class="projection-note text-muted">(each launched run at its suite's recent mean run duration)</span>
+                    } @else {
+                      <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × the sum of each suite's recent mean run duration)</span>
+                    }
+                  } @else {
+                    <span class="projection-empty text-muted">not every suite has a completed run to project from</span>
+                  }
+                </div>
+
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected cost:</span>
+                  @if (projectedBatteryCostLabel) {
+                    <span class="projection-value"><strong>{{ projectedBatteryCostLabel }}</strong></span>
+                    @if (launcher.activeReusePreview) {
+                      <span class="projection-note text-muted">(each launched run at its suite's recent mean run cost)</span>
+                    } @else {
+                      <span class="projection-note text-muted">({{ launcher.effectiveRunCount }} × the sum of each suite's recent mean run cost)</span>
+                    }
+                  } @else {
+                    <span class="projection-empty text-muted">not every suite has a priced run to project from</span>
+                  }
+                </div>
+
+                @if (launcher.reuseEarlierRuns) {
+                  <div class="projection-row battery-reuse-row" role="listitem">
+                    <span class="projection-label">Earlier runs:</span>
+                    <span class="projection-value battery-reuse-summary" role="status" aria-live="polite">{{ reuseProjectionText }}</span>
+                  </div>
+                }
+
+                @if (workspace.runLimits) {
+                  <div class="projection-row" role="listitem">
+                    <span class="projection-label">Remaining daily headroom:</span>
+                    <span class="projection-value"><strong>{{ workspace.runLimits.remainingDailyHeadroom }}</strong> of {{ workspace.runLimits.maxRunsPerDay }}</span>
+                    <span class="projection-note text-muted">({{ workspace.runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ workspace.runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                  </div>
+                }
+              </div>
+
+              @if (reuseUnfilledSlots.length > 0) {
+                <ul class="battery-reuse-reasons" aria-label="Slots no earlier run fills">
+                  @for (slot of reuseUnfilledSlots; track $index) {
+                    <li><span class="battery-reuse-slot">{{ slot.suiteName }}, round {{ slot.round }}:</span> {{ slot.reason }}</li>
+                  }
+                </ul>
+              }
+
+              @if (batteryExceedsDailyCap) {
+                <div class="alert alert-warning mt-10 battery-cap-warning" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      {{ batteryRunsToLaunch }} runs exceed the daily cap of {{ workspace.runLimits?.maxRunsPerDay }}, so this battery
+                      spans at least {{ batteryDaySpan }} days.
+                      @if (launcher.allowCapWait) {
+                        It will pause at the cap and continue as the rolling window frees up.
+                      } @else {
+                        Select <strong>Wait when the run cap blocks the next run</strong> to start it.
+                      }
+                    </div>
+                  </div>
+                </div>
+              } @else if (batteryExceedsDailyHeadroom) {
+                <div class="alert alert-warning mt-10 battery-headroom-warning" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      This battery asks for more runs than the rolling 24-hour window currently allows.
+                      @if (launcher.allowCapWait) {
+                        It will pause at the cap and continue when the window frees up.
+                      } @else {
+                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                        completed run and offering a Continue button.
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+            </fieldset>
+          }
+        </div>
+      </fieldset>
+    </div>
+  </div>
+
+  <div class="form-actions mt-20">
+    <button type="button"
+      class="btn-gh"
+      [attr.aria-disabled]="!canStartRun"
+      aria-describedby="startBenchmarkHint"
+      (click)="startBenchmark()">
+      @if (monitor.startingRun) {
+        Starting...
+      } @else {
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Start Benchmark
+      }
+    </button>
+    @if (!canStartRun && startBenchmarkHint) {
+      <div id="startBenchmarkHint" class="text-muted mt-10">{{ startBenchmarkHint }}</div>
+    }
+  </div>
+</div>
+
+
+<!-- SAME-PROVIDER WARNING DIALOG -->
+<dialog #sameProviderDialog class="gh-dialog benchmark-form-dialog">
+  @if (sameProviderWarning) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3>{{ sameProviderWarningIsReportWriter ? 'Same-Provider Report Writer' : 'Same-Provider Assessment Warning' }}</h3>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close same-provider warning" (click)="closeSameProviderDialog()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div class="alert alert-warning mb-15" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-heading"><strong>Methodological Notice</strong></div>
+            <div class="alert-body">
+              @if (sameProviderWarningIsReportWriter) {
+                The report writer, <strong>{{ sameProviderWarning.assessorModelDisplayName }}</strong>, and the model under
+                test both belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+              } @else {
+                Both candidate and assessor models belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+              }
+            </div>
+          </div>
+        </div>
+        <p class="mb-10 same-provider-roles">
+          <strong>Model Under Test:</strong> {{ sameProviderWarning.testedModelDisplayName }}<br>
+          @if (sameProviderWarningIsReportWriter) {
+            <strong>Report Writer:</strong> {{ sameProviderWarning.assessorModelDisplayName }}<br>
+          } @else {
+            <strong>Assessor Model:</strong> {{ sameProviderWarning.assessorModelDisplayName }}<br>
+          }
+          <strong>Provider Family:</strong> {{ sameProviderWarning.provider }}
+        </p>
+        @if (sameProviderWarningIsReportWriter) {
+          <p class="text-muted mb-15 same-provider-note">
+            The run's AI-written reports would be written by a model from the same provider as the model under test, which may describe it more favorably.
+          </p>
+        } @else {
+          <p class="text-muted mb-15 same-provider-note">
+            Evaluating a model with an assessor from the same provider family is methodologically weaker and may exhibit self-preference bias. Cross-provider assessment is generally recommended.
+          </p>
+        }
+        <p class="text-muted">
+          Would you like to acknowledge this warning and proceed with the benchmark run?
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeSameProviderDialog()">Cancel</button>
+        <button type="button" class="btn-gh" (click)="confirmSameProviderRun()"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Acknowledge & Start Run</button>
+      </div>
+    </div>
+  }
+</dialog>
+
+<!-- BOARD-QUOTE WARNING DIALOG -->
+<dialog #boardQuoteWarningDialog class="gh-dialog benchmark-form-dialog" (close)="launchBoardFactsCheck = null">
+  @if (launchBoardFactsCheck) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3>Rubric Quotes Missing from the Board</h3>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close board-quote warning" (click)="closeBoardQuoteWarningDialog()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <div class="alert alert-warning mb-15" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-heading"><strong>{{ launchBoardFactsCheck.missingLiterals.length }} rubric quote(s) not found on this suite's board</strong></div>
+            <div class="alert-body">
+              These rubrics quote text the board does not contain; grades on them will rest on stale facts.
+            </div>
+          </div>
+        </div>
+        <ul class="board-facts-missing-list mb-15">
+          @for (item of launchMissingBoardQuotes; track item.questionId + ':' + item.orderIndex + ':' + item.literal) {
+            <li>Q{{ item.orderIndex }}: "{{ item.literal }}"</li>
+          }
+          @if (launchMissingBoardQuotesOverflow > 0) {
+            <li>and {{ launchMissingBoardQuotesOverflow }} more</li>
+          }
+        </ul>
+        <p class="text-muted">
+          Would you like to acknowledge this warning and proceed with the benchmark run?
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeBoardQuoteWarningDialog()">Cancel</button>
+        <button type="button" class="btn-gh" (click)="confirmBoardQuoteWarningRun()"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Acknowledge & Start Run</button>
+      </div>
+    </div>
+  }
+</dialog>
+

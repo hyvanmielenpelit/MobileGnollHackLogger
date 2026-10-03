@@ -1,6 +1,19 @@
-import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, ViewChild, ElementRef, inject } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  OnChanges,
+  AfterViewInit,
+  SimpleChanges,
+  Input,
+  Output,
+  EventEmitter,
+  ChangeDetectorRef,
+  ViewChild,
+  ElementRef,
+  inject
+} from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import {
   AdminBenchmarkService,
   BenchmarkSuiteDto,
@@ -9,65 +22,25 @@ import {
   BenchmarkRunDetailDto,
   BenchmarkRunAnswerDto,
   BenchmarkRunOutcomeSummaryDto,
-  BenchmarkScoringProfileDto,
-  CreateBenchmarkSuiteRequest,
-  UpdateBenchmarkSuiteRequest,
-  CreateBenchmarkQuestionRequest,
-  UpdateBenchmarkQuestionRequest,
-  CreateBenchmarkScoringProfileRequest,
-  UpdateBenchmarkScoringProfileRequest,
-  StartBenchmarkRunRequest,
-  SameProviderWarningDto,
-  StartDifficultyAssessmentRequest,
   DifficultyAssessmentJobDto,
-  DifficultyAssessmentJobItemDto,
-  DifficultyAssessmentJobLogEntryDto,
-  BenchmarkFootprintDto,
   BenchmarkAssessorCalibrationDto,
   BenchmarkCalibrationTarget,
   BenchmarkCoAssessmentRecord,
   BenchmarkPanelMember,
-  BenchmarkLastAssessorDto,
   BenchmarkSecondOpinionMode,
   BENCHMARK_SECOND_OPINION_MODES,
   BENCHMARK_REFERENCE_READER_COVERAGE,
   BenchmarkGameSnapshotDto,
-  BenchmarkRunLimitsDto,
-  BenchmarkRunSeriesDto,
-  BenchmarkBatteryDto,
-  BenchmarkBatteryRunDto,
-  BenchmarkBatteryResumeMode,
-  BenchmarkBatteryAttachDto,
-  BenchmarkBatteryReusePreviewDto,
-  BenchmarkBatteryReusePreviewSlotDto,
-  StartBenchmarkBatteryRunRequest,
-  BenchmarkRunGroupDto,
-  BenchmarkRunGroupTierPreviewDto,
-  BenchmarkComparabilityResultDto,
-  BenchmarkComparabilityIndexDto,
-  BenchmarkModelComparisonDto,
-  BenchmarkModelComparisonPricingBasis,
   BenchmarkToolCallDto,
-  DefaultSuiteCatalogEntryDto,
-  ImportDefaultSuitesResultDto,
-  ImportBenchmarkQuestionsResultDto,
-  CaptureBenchmarkSnapshotResponse,
   BoardFactsCheckDto,
   BoardFactIssueDto,
-  BenchmarkRunReportDocumentsStatus,
-  BenchmarkRunReportJobDto
+  BenchmarkRunReportDocumentsStatus
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
-
-import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
-import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
-import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { BenchmarkBatteriesComponent } from './batteries/batteries.component';
 import { BatteryProgressDialogComponent } from './batteries/battery-progress-dialog.component';
-import { QuestionGenerationDialogComponent } from './question-generation/question-generation-dialog.component';
-import { SuiteDescriptionGenerationDialogComponent } from './description-generation/suite-description-generation-dialog.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
 import {
   BenchmarkGraderGuideComponent,
@@ -83,364 +56,201 @@ import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-v
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
-import { BenchmarkCompletionNotificationService, BenchmarkNotificationPermissionOutcome, BenchmarkNotifyOutcome } from '../../services/benchmark-completion-notification.service';
+import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
-import { BenchmarkPollTickerService, BenchmarkPollTickerHandle } from '../../services/benchmark-poll-ticker.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty } from '../../utils/model-badge-format.util';
-import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
-import { CardListChip, CardListFacet, CardListSort, CardListState } from '../../shared/data-table/card-list-state';
-import { FilterFacetComponent } from '../../shared/data-table/filter-facet.component';
 import {
-  COMPARISON_WIZARD_STEPS,
   ModelComparisonComponent
 } from './model-comparison/model-comparison.component';
 import {
-  ComparisonSourcePickerComponent,
-  ModelComparisonSelection
+  ComparisonSourcePickerComponent
 } from './model-comparison/comparison-source-picker.component';
-import {
-  ComparisonSelectedSource,
-  ComparisonSelectionNotice,
-  selectionNotices
-} from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
 import {
-  ModelPickerComponent, ModelPickerKey, ModelPickerModel, ModelPickerOption, toModelPickerOptions
+  ModelPickerComponent,
+  ModelPickerKey,
+  ModelPickerModel,
+  ModelPickerOption
 } from '../../shared/model-picker/model-picker.component';
 import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
-import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of } from 'rxjs';
-import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
-import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
-import { SnapshotSuiteWizardComponent } from './question-yaml/snapshot-suite-wizard.component';
-import {
-  ImportMode,
-  SnapshotExport,
-  questionYamlFileName,
-  serializeQuestionsYaml,
-  serializeSuiteYaml,
-  suiteYamlFileName
-} from './question-yaml/question-yaml-format';
-import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
+import { firstValueFrom, of } from 'rxjs';
 import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
 import {
-  ImageContext, KeyFigureKey, KeyFiguresAction, exportKeyFiguresImage, readKeyFigureCells,
-  readStoredImageDetailExclusions, readStoredKeyFigureExclusions, statusImageTone, storeImageDetailExclusions,
-  storeKeyFigureExclusions, toImageFactRows
+  ImageContext,
+  KeyFigureKey,
+  KeyFiguresAction,
+  exportKeyFiguresImage,
+  readKeyFigureCells,
+  readStoredImageDetailExclusions,
+  readStoredKeyFigureExclusions,
+  statusImageTone,
+  storeImageDetailExclusions,
+  storeKeyFigureExclusions,
+  toImageFactRows
 } from './run-report-frame/key-figures-image';
 import { KeyFiguresChooserComponent } from './run-report-frame/key-figures-chooser.component';
 import { RunFactsComponent } from './run-report-frame/run-facts.component';
 import {
-  RUN_FACT_PRIMARY_KEYS, RunFactBadge, RunFactRow, buildRunFacts, candidatePromptParts, formatCandidatePrompt,
-  runFactBadges, runFactPlainText, runFactsReadout
+  RUN_FACT_PRIMARY_KEYS,
+  RunFactRow,
+  buildRunFacts,
+  candidatePromptParts,
+  formatCandidatePrompt,
+  runFactPlainText,
+  runFactsReadout
 } from './run-report-frame/run-facts';
 import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { audienceLabel } from './report-pack/report-document-format';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
-import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
-import { reportWriterRefusal, reportWriterWarning } from './run-ai-reports/report-writer-policy';
-import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
+import { copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
 import { jobStatusLabel } from '../../utils/job-status-label.util';
+import {
+  COPY_STATUS_MS,
+  RUN_REPORT_TABS,
+  RunReportTabKey,
+  RUN_REPORT_TAB_STORAGE_KEY,
+  RUN_REPORT_HEADER_STORAGE_KEY,
+  readStoredRunHeaderDetailsOpen,
+  BenchmarkRunProgressRow,
+  BenchmarkToolFamilyName,
+  BENCHMARK_TOOL_FAMILY_LABELS,
+  classifyBenchmarkTool,
+  BenchmarkToolFamilyRow,
+  BenchmarkSourceShareCorrelations,
+  BenchmarkRunStage,
+  RunReportQuestionFilter,
+  RunReportRerunAction,
+  RunDiagnosticsFacts,
+  RunReportConfigRow,
+  BenchmarkNavigationRequest
+} from './benchmark.models';
+import {
+  formatCostAmount,
+  formatRunEstimatedCost,
+  reportDocumentsStatusOf,
+  formatStatus,
+  formatStatusLabel,
+  statusBadgeClass,
+  getScoreBadgeClass,
+  isAbortedRun,
+  elapsedBetweenTimestamps,
+  answerShortfallOf,
+  formatDuration,
+  formatElapsed,
+  DELIBERATING_THINKING_LEVELS,
+  INTERACTIVE_SPEED_TARGET_MAX_MS,
+  MISSING_BOARD_QUOTE_LIST_CAP
+} from './benchmark-run-format';
+import { BenchmarkWorkspaceStore } from './state/benchmark-workspace.store';
+import { BenchmarkLauncherState } from './state/benchmark-launcher.state';
+import { BenchmarkDifficultyJobService } from './state/benchmark-difficulty-job.service';
+import { BenchmarkComparisonState } from './state/benchmark-comparison.state';
+import { BenchmarkActiveRunMonitor } from './state/benchmark-active-run.monitor';
+import { BenchmarkViewSync } from './state/benchmark-view-sync.service';
+import { BenchmarkShellBridge, BenchmarkSubTab } from './state/benchmark-shell-bridge.service';
+import { BenchmarkRunTabComponent } from './run-tab/benchmark-run-tab.component';
+import { BenchmarkHistoryTabComponent } from './history-tab/benchmark-history-tab.component';
+import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.component';
+import { BenchmarkProfilesTabComponent } from './profiles-tab/benchmark-profiles-tab.component';
+import { BenchmarkComparisonTabComponent } from './comparison-tab/benchmark-comparison-tab.component';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
-const COPY_STATUS_MS = 3000;
-
-/** The run report's tabs, in order. */
-const RUN_REPORT_TABS = [
-  { key: 'summary', label: 'Summary' },
-  { key: 'integrity', label: 'Integrity' },
-  { key: 'synthesis', label: 'Synthesis' },
-  { key: 'questions', label: 'Questions' },
-  { key: 'difficulty', label: 'Difficulty' },
-  { key: 'tools', label: 'Tools' },
-  { key: 'cost', label: 'Cost' },
-  { key: 'configuration', label: 'Configuration' },
-  { key: 'reports', label: 'AI Reports' },
-  { key: 'calibration', label: 'Calibration' }
-] as const;
-
-export type RunReportTabKey = typeof RUN_REPORT_TABS[number]['key'];
-
-/** Where the run report's chosen tab is remembered, per viewer. */
-export const RUN_REPORT_TAB_STORAGE_KEY = 'overseer.benchmark.runReport.tab';
-
-/** Where the run report header's Run details open state is remembered, per viewer, as `{ version: 1, detailsOpen }`. */
-export const RUN_REPORT_HEADER_STORAGE_KEY = 'overseer.benchmark.runReport.header';
-
-/** Where Run History's Sort by order is remembered, per viewer, as `{ version: 1, sort }`. */
-export const RUN_HISTORY_VIEW_STORAGE_KEY = 'overseer.benchmark.runHistory.view';
-
-/** The orders Run History's Sort by offers. Run ids ascend with time, so the id stands in for the date. */
-export const RUN_HISTORY_SORTS: readonly CardListSort[] = [
-  { id: 'newest', label: 'Newest first', column: 'id', direction: 'desc' },
-  { id: 'oldest', label: 'Oldest first', column: 'id', direction: 'asc' },
-  { id: 'intelligence-desc', label: 'Intelligence Index, highest first', column: 'qualityIndex', direction: 'desc' },
-  { id: 'speed-desc', label: 'Speed Index, highest first', column: 'speedIndex', direction: 'desc' },
-  { id: 'cost-asc', label: 'Cost, lowest first', column: 'estimatedCost', direction: 'asc' },
-  { id: 'cost-desc', label: 'Cost, highest first', column: 'estimatedCost', direction: 'desc' },
-  { id: 'duration-asc', label: 'Duration, shortest first', column: 'durationMs', direction: 'asc' },
-  { id: 'tested-asc', label: 'Tested model (A–Z)', column: 'testedModelDisplayNameUsed', direction: 'asc' },
-  { id: 'suite-asc', label: 'Suite (A–Z)', column: 'suiteName', direction: 'asc' }
-];
-
-/** The Flags facet's values, in the order it lists them. */
-const RUN_HISTORY_FLAGS = [
-  'Degraded answers', 'Unanswered questions', 'Failed at the provider', 'Advisory timing', 'Pricing incomplete', 'None'
-] as const;
-
-/** The Changes facet's values, in the order it lists them. */
-const RUN_HISTORY_CHANGES = ['Instrument changed', 'Options changed', 'No change'] as const;
-
-/** The Started facet's ranges. */
-const RUN_HISTORY_STARTED_RANGES: readonly { value: string; label: string; hours: number }[] = [
-  { value: '24h', label: 'Last 24 hours', hours: 24 },
-  { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
-  { value: '30d', label: 'Last 30 days', hours: 24 * 30 }
-];
-
-/** The run count the runs endpoint returns at most; Run History says when it holds that many. */
-const RUN_HISTORY_LIMIT = 200;
-
-/** What each instrument label stands for, read after the short label by assistive technology. */
-const FINGERPRINT_LONG_NAMES: Record<BenchmarkFingerprintEntry['label'], string> = {
-  PROMPT: 'candidate system prompt',
-  GUIDES: 'tool guides',
-  KB: 'knowledge base',
-  WIKI: 'wiki',
-  SRC: 'source code'
-};
-
-/** The remembered Run details open state; closed when none is stored, it is unreadable or storage is unavailable. */
-function readStoredRunHeaderDetailsOpen(): boolean {
-  try {
-    const raw = localStorage.getItem(RUN_REPORT_HEADER_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) as { version?: unknown; detailsOpen?: unknown } | null : null;
-    return !!parsed && typeof parsed === 'object' && parsed.version === 1 && parsed.detailsOpen === true;
-  } catch {
-    return false;
-  }
-}
-
-const SNAPSHOT_TEXT_EXPORT_FAILED = 'Exported without the snapshot text: it could not be loaded.';
-
-/**
- * The Model Comparison selection, as it is remembered between visits and between sessions.
- *
- * The selection is persisted rather than the comparison: a stored payload would be re-priced stale
- * the moment the catalog moved, and re-issuing the request is cheap next to showing costs that are
- * no longer true.
- */
-interface BenchmarkComparisonSelection {
-  runIds: number[];
-  groupIds: number[];
-  suiteId: number | null;
-  pricingBasis: BenchmarkModelComparisonPricingBasis;
-}
-
-/**
- * One row of the run progress list: one of the run's answers, under its stored order index and
- * question text, or, during the run's first pass, a suite question with no answer yet. The
- * executor writes an answer row only after the model replies, so a question with no answer row
- * is either dispatched or not: `BenchmarkRunDetailDto.inFlightOrderIndexes` — server-side state
- * kept by `BenchmarkRunManager` — is what tells the two apart. In flight is 'Answering';
- * everything else with no answer is 'Pending'.
- */
-export interface BenchmarkRunProgressRow {
-  orderIndex: number;
-  questionText: string;
-  /** The answer this row shows; null or absent for a question the first pass has not answered yet. */
-  answer?: BenchmarkRunAnswerDto | null;
-  /**
-   * Formatted answer status, or 'Answering' while the provider request is in flight, or
-   * 'Pending' when the run has not dispatched this question yet, or 'Verifying' /
-   * 'SecondOpinion' while an already-scored answer is being re-read by a grading role.
-   */
-  status: string;
-  /** Formatted assessment status, or '' when there is no answer yet. */
-  assessmentStatus: string;
-  errorMessage: string | null;
-}
-
-/**
- * The functional families a benchmark tool belongs to. Mirrors `BenchmarkToolFamily` in
- * `Overseer/Services/Benchmarking/BenchmarkChatTransfer.cs`, which is what the report builder's
- * Tool Routing table classifies against.
- */
-export type BenchmarkToolFamilyName =
-  'SourceCode' | 'Wiki' | 'StructuredLookup' | 'KnowledgeBase' | 'Other';
-
-/**
- * U1. The one place tool-name membership is written on the client.
- *
- * This is a deliberate mirror of `BenchmarkChatTransfer.ClassifyTool`, and it exists as a single
- * exported constant rather than as lists spelled out at each call site because the report and this
- * screen must classify the same call the same way. Two inline copies of "which tools are source
- * tools" would agree on the day they were written and disagree the first time a tool is added — and
- * the disagreement would surface as an operator reading two different source shares for one run.
- *
- * When a tool is added on the server, it is added here in the same change.
- */
-export const BENCHMARK_TOOL_FAMILY_MEMBERSHIP: ReadonlyArray<readonly [BenchmarkToolFamilyName, readonly string[]]> = [
-  ['SourceCode', ['source_code_search', 'source_code_view', 'search_definitions',
-    'get_function_definition', 'get_constants', 'list_indexed_files']],
-  ['Wiki', ['wiki_search', 'wiki_view', 'nethack_wiki_search', 'nethack_wiki_view']],
-  ['StructuredLookup', ['monster_lookup', 'item_lookup', 'get_monster_stats', 'get_item_stats']],
-  ['KnowledgeBase', ['get_knowledge_article']]
-];
-
-/** Display order and labels, matching the report's Tool Routing table exactly. */
-export const BENCHMARK_TOOL_FAMILY_LABELS: ReadonlyArray<readonly [BenchmarkToolFamilyName, string]> = [
-  ['SourceCode', 'Source Code'],
-  ['Wiki', 'Wiki'],
-  ['StructuredLookup', 'Structured Lookup'],
-  ['KnowledgeBase', 'Knowledge Base'],
-  ['Other', 'Other']
-];
-
-/** One tool name to its family. Case- and whitespace-insensitive, as the server's switch is. */
-export function classifyBenchmarkTool(toolName: string | null | undefined): BenchmarkToolFamilyName {
-  const key = (toolName ?? '').trim().toLowerCase();
-  for (const [family, members] of BENCHMARK_TOOL_FAMILY_MEMBERSHIP) {
-    if (members.includes(key)) return family;
-  }
-  return 'Other';
-}
-
-/** One row of the Tool Routing block: a family, its call count, and its share of the run. */
-export interface BenchmarkToolFamilyRow {
-  family: BenchmarkToolFamilyName;
-  label: string;
-  count: number;
-  sharePercentage: number;
-}
-
-/**
- * U1. Pearson *r* of per-answer source-family share against model time and against quality, with
- * the sample size that produced them. A correlation without its *n* is not a finding.
- */
-export interface BenchmarkSourceShareCorrelations {
-  modelTimeR: number | null;
-  qualityR: number | null;
-  sampleSize: number;
-}
-
-/** Which pass of a run is executing, as the progress rail and the diagnostics name it. */
-export type BenchmarkRunStage = 'answering' | 'verifying' | 'secondopinion' | 'finalizing' | 'terminal';
-
-/** A question filter of the run report. A card is shown when it matches any pressed filter. */
-export type RunReportQuestionFilter = 'critical' | 'disputed' | 'disagree' | 'below70' | 'flagged';
-
-/** One item of the run report's Re-run popover; `reason` says why it is unavailable, or is null. */
-export interface RunReportRerunAction {
-  key: string;
-  label: string;
-  reason: string | null;
-  run: () => void;
-}
-
-/** The progress figures the diagnostics capture prints for one run. */
-interface RunDiagnosticsFacts {
-  answered: number;
-  total: number;
-  scored: number;
-  failed: BenchmarkRunAnswerDto[];
-  gradeable: number;
-  terminal: boolean;
-  /** Order indexes of the re-run in effect; empty when there is none. */
-  rerunScope: number[];
-  /** Answers with a claim verification, and with a second verdict, within the re-run scope. */
-  verifiedInScope: number;
-  secondOpinionInScope: number;
-  rows: BenchmarkRunProgressRow[];
-}
-
-/** One row of the run report's Run configuration list. */
-export interface RunReportConfigRow {
-  term: string;
-  value: string;
-  /** A hash or identifier, set in a monospace face. */
-  code?: boolean;
-}
-
-/**
- * One line of a run's instrument fingerprint stack: a short visible label, a colour class, the
- * eight-character hash prefix, and the tooltip carrying the corpus name and the full hash.
- *
- * The label is what makes the stack readable in greyscale and to a colour-blind reader, so the
- * colour class only reinforces it. `PROMPT`, `GUIDES`, `KB`, `WIKI` and `SRC` are the same labels
- * the Markdown group report prints, so all the surfaces read identically.
- */
-export interface BenchmarkFingerprintEntry {
-  label: 'PROMPT' | 'GUIDES' | 'KB' | 'WIKI' | 'SRC';
-  cssClass: 'fp-prompt' | 'fp-guides' | 'fp-kb' | 'fp-wiki' | 'fp-source';
-  short: string;
-  title: string;
-}
-
-/** A one-time request from the host page to show a sub-tab and, on Manage Suites, one suite. */
-export interface BenchmarkNavigationRequest {
-  subTab: string | null;
-  suiteId: number | null;
-}
-
-/**
- * The run setup an operator last started, remembered across reloads. Exactly the fields that make up a
- * run: not the same-provider acknowledgement, which is a per-run safety gate, and not the
- * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which belong
- * to other workflows on the same screen.
- *
- * Every field is nullable because a stored blob may predate a field, and because every id is re-validated
- * against the currently available list before it is applied.
- */
-interface BenchmarkRunSettings {
-  suiteId: number | null;
-  testedConfigId: number | null;
-  assessorConfigId: number | null;
-  /** Panel member B, or null for a single-assessor run. */
-  coAssessorConfigId: number | null;
-  secondOpinionConfigId: number | null;
-  claimVerifierConfigId: number | null;
-  /** The model that writes the run's AI-written reports, or null for none. */
-  reportWriterConfigId: number | null;
-  /** The operator's explicit override, or null to keep following the scoring profile's own default. */
-  secondOpinionMode: number | null;
-  scoringProfileId: number | null;
-  verboseMode: boolean | null;
-  /** Whether the candidate may cite source files and lines. Defaults to false when absent. */
-  allowSourceCodeReferences: boolean | null;
-  runCount: number | null;
-  /** Single suite or a battery of suites. Absent restores Single suite. */
-  targetKind: 'suite' | 'battery' | null;
-  /** The battery a battery run starts from; restored only while it is listed, unarchived and runnable. */
-  batteryId: number | null;
-  /** Whether a run or series completion plays the chime. Defaults to true when absent. */
-  completionSound: boolean | null;
-  /** Whether a run or series completion also raises a desktop notification. Defaults to false when absent. */
-  completionNotification: boolean | null;
-}
+export * from './benchmark.models';
 
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
-    SuiteHealthComponent,
-    SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
-    BenchmarkBatteriesComponent, BatteryProgressDialogComponent,
-    QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
-    FilterFacetComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
-    QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
-    SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
-    RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent,
-    RunAiReportsComponent, ReportDocumentsLauncherComponent
+    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent
   ],
   templateUrl: './benchmark.component.html',
-  styleUrls: ['./benchmark.component.scss']
+  styleUrls: ['./benchmark.component.scss'],
+  providers: [
+    BenchmarkViewSync, BenchmarkShellBridge, BenchmarkWorkspaceStore, BenchmarkLauncherState,
+    BenchmarkDifficultyJobService, BenchmarkComparisonState, BenchmarkActiveRunMonitor
+  ]
 })
 export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
-  @Input() systemConfigs: SystemAiConfigDto[] = [];
+  readonly workspace = inject(BenchmarkWorkspaceStore);
+  readonly launcher = inject(BenchmarkLauncherState);
+  readonly difficulty = inject(BenchmarkDifficultyJobService);
+  readonly comparison = inject(BenchmarkComparisonState);
+  readonly monitor = inject(BenchmarkActiveRunMonitor);
+  private benchmarkService = inject(AdminBenchmarkService);
+  private completionSoundService = inject(BenchmarkCompletionSoundService);
+  private completionNotificationService = inject(BenchmarkCompletionNotificationService);
+  private backgroundActivity = inject(BenchmarkBackgroundActivityService);
+  private systemService = inject(SystemService);
+  readonly secondOpinionModeOptions = BENCHMARK_SECOND_OPINION_MODES;
+  formatDifficulty(diff: string | number): string {
+    return formatDifficulty(diff);
+  }
+  readonly jobStatusLabel = jobStatusLabel;
+  formatThinkingLevel(level: string | null | undefined): string {
+    return formatThinkingLevel(level);
+  }
+  formatServiceTier(tier: string | null | undefined): string {
+    return formatServiceTier(tier);
+  }
+  showReasoningBadge(mode: string | null | undefined): boolean {
+    return showReasoningBadge(mode);
+  }
+  readonly formatCostAmount = formatCostAmount;
+  readonly formatStatus = formatStatus;
+  readonly reportDocumentsStatusOf = reportDocumentsStatusOf;
+  readonly formatDuration = formatDuration;
+  readonly formatElapsed = formatElapsed;
+  readonly isAbortedRun = isAbortedRun;
+  readonly formatStatusLabel = formatStatusLabel;
+  readonly statusBadgeClass = statusBadgeClass;
+  readonly elapsedBetweenTimestamps = elapsedBetweenTimestamps;
+  readonly formatRunEstimatedCost = formatRunEstimatedCost;
+  readonly getScoreBadgeClass = getScoreBadgeClass;
+  readonly answerShortfallOf = answerShortfallOf;
+
+  private readonly viewSync = inject(BenchmarkViewSync);
+  private readonly bridge = inject(BenchmarkShellBridge);
+
+  constructor() {
+    // Service state changes outside this component's own events; OnPush needs telling.
+    this.viewSync.changed$.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.cdr.markForCheck();
+      this.cdr.detectChanges();
+    });
+    // The sub-tabs and the state services reach the tab row and the dialogs hosted here.
+    const bridge = this.bridge;
+    bridge.selectSubTab$.pipe(takeUntilDestroyed()).subscribe(tab => this.selectSubTab(tab));
+    bridge.openRunReport$.pipe(takeUntilDestroyed()).subscribe(runId => this.viewRunDetail(runId));
+    bridge.openRunProgress$.pipe(takeUntilDestroyed()).subscribe(fromSeries => this.openRunProgressDialog(fromSeries));
+    bridge.openDifficultyAssessor$.pipe(takeUntilDestroyed())
+      .subscribe(request => this.openDifficultyAssessorDialog(request.suite, request.question));
+    bridge.openSnapshotViewer$.pipe(takeUntilDestroyed()).subscribe(snapshotId => this.openSnapshotViewer(snapshotId));
+    bridge.closeSnapshotViewerFor$.pipe(takeUntilDestroyed()).subscribe(snapshotId => {
+      if (this.snapshotViewer?.snapshotId === snapshotId && this.snapshotViewer.viewerDialog?.nativeElement?.open) {
+        this.snapshotViewer.close();
+      }
+    });
+    bridge.openGraderGuide$.pipe(takeUntilDestroyed()).subscribe(request => this.openGraderGuide(request.section, request.profile));
+    bridge.confirm$.pipe(takeUntilDestroyed()).subscribe(options => this.openConfirmDialog(options));
+    bridge.openComparisonWizard$.pipe(takeUntilDestroyed()).subscribe(() => this.openComparisonWizard());
+    bridge.runDeleted$.pipe(takeUntilDestroyed()).subscribe(runId => {
+      if (this.selectedRunDetail?.id === runId) {
+        this.closeRunDetail();
+      }
+    });
+  }
+
+  /** The admin page's configurations; the workspace store holds them for every sub-tab. */
+  @Input() set systemConfigs(configs: SystemAiConfigDto[]) {
+    this.workspace.setSystemConfigs(configs);
+  }
+
+  get systemConfigs(): SystemAiConfigDto[] {
+    return this.workspace.systemConfigs;
+  }
 
   /**
    * A run the host page asks to open in the run detail dialog. Opened once the view exists, after
@@ -456,6 +266,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @Output() openRunHandled = new EventEmitter<void>();
 
   private pendingOpenRunId: number | null = null;
+
   private viewInitialised = false;
 
   /**
@@ -472,33 +283,30 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @Output() navigationHandled = new EventEmitter<void>();
 
   private pendingNavigation: BenchmarkNavigationRequest | null = null;
+
   private initialised = false;
 
-  /** The suite a navigation request asked to bring into view, until the next suite list arrives. */
-  private pendingFocusSuiteId: number | null = null;
-
-  /** The suite card a navigation request brought into view; outlined until another sub-tab is selected. */
-  linkedSuiteId: number | null = null;
-
-  @ViewChild('suiteDialog') suiteDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('questionsDialog') questionsDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('questionFormDialog') questionFormDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runDetailDialog') runDetailDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('runDownloadCenter') runDownloadCenter?: BenchmarkDownloadCenterComponent;
+
   @ViewChild(RunReportFrameComponent) runReportFrame?: RunReportFrameComponent;
+
   @ViewChild('rerunPopover') rerunPopover?: ElementRef<HTMLElement>;
+
   @ViewChild('rerunTrigger') rerunTrigger?: ElementRef<HTMLButtonElement>;
-  @ViewChild('scoringProfileFormDialog') scoringProfileFormDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('sameProviderDialog') sameProviderDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('bulkDeleteDialog') bulkDeleteDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('confirmActionDialog') confirmActionDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('difficultyAssessorDialog') difficultyAssessorDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('difficultyProgressHeading') difficultyProgressHeading?: ElementRef<HTMLElement>;
+
   @ViewChild('retryDialog') retryDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('runProgressDialog') runProgressDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('runProgressHeading') runProgressHeading?: ElementRef<HTMLElement>;
-  @ViewChild('suiteHealthDialog') suiteHealthDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('suiteHealthHeading') suiteHealthHeading?: ElementRef<HTMLElement>;
 
   @ViewChild('comparisonWizardDialog') comparisonWizardDialog?: ElementRef<HTMLDialogElement>;
 
@@ -508,50 +316,28 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   @ViewChild(ModelComparisonComponent) comparisonWizard?: ModelComparisonComponent;
 
-  /** The wizard's steps, which the launcher lists under the same titles as the wizard's stepper. */
-  readonly comparisonWizardSteps = COMPARISON_WIZARD_STEPS;
-
-  /**
-   * Bumped when the wizard closes, since it may have written report documents. The Comparison
-   * reports card lives inside the tab's @if, so each showing of the tab creates it afresh and it
-   * counts the documents on init.
-   */
-  comparisonReportsReloadToken = 0;
-
-  /**
-   * Whether the launcher's "How the comparison works" disclosure is open; null until the tab is
-   * first shown, when it is read from storage.
-   */
-  comparisonHowItWorksOpen: boolean | null = null;
-
-  /**
-   * The criteria editor, for the one thing the host cannot reach through the DOM: putting it
-   * back on its Write tab before the dialog is shown again.
-   */
-  @ViewChild(MarkdownEditorComponent) expectedPointsEditor?: MarkdownEditorComponent;
-  @ViewChild('suiteDescriptionEditor') suiteDescriptionEditor?: MarkdownEditorComponent;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
+
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
+
   @ViewChild('batteriesPanel') batteriesPanel?: BenchmarkBatteriesComponent;
-  @ViewChild(QuestionGenerationDialogComponent) generationDialog?: QuestionGenerationDialogComponent;
-  @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
+
   @ViewChild('graderGuide') graderGuide?: BenchmarkGraderGuideComponent;
 
   /** The scoring profile whose settings the grader guide prints; null prints the Standard defaults. */
   graderGuideProfile: GraderGuideProfile | null = null;
-  @ViewChild('questionYamlImportDialog') questionYamlImportDialog?: QuestionYamlImportDialogComponent;
-  @ViewChild('questionYamlHelpDialog') questionYamlHelpDialog?: QuestionYamlHelpDialogComponent;
-  @ViewChild('suiteYamlHelpDialog') suiteYamlHelpDialog?: QuestionYamlHelpDialogComponent;
-  @ViewChild('snapshotSuiteWizard') snapshotSuiteWizard?: SnapshotSuiteWizardComponent;
-  @ViewChild('snapshotUploadDialog') snapshotUploadDialog?: SnapshotUploadDialogComponent;
-  suiteHealthInitialTab: SuiteHealthTab = 'items';
 
   // Confirm Action Dialog State
   confirmDialogTitle = '';
+
   confirmDialogMessage = '';
+
   confirmDialogDangerNotice = '';
+
   confirmDialogButtonText = 'Delete';
+
   confirmDialogButtonClass = 'btn-gh btn-gh-delete';
+
   /**
    * Whether the confirm dialog's affirmative button carries a trash icon.
    * 'none' for a plain confirmation, where the label alone is clearer than a
@@ -559,15 +345,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * its place.
    */
   confirmDialogIcon: 'delete' | 'none' = 'delete';
-  private pendingConfirmAction: (() => void) | null = null;
 
-  private benchmarkService = inject(AdminBenchmarkService);
-  private systemService = inject(SystemService);
-  private completionSoundService = inject(BenchmarkCompletionSoundService);
-  private completionNotificationService = inject(BenchmarkCompletionNotificationService);
-  private backgroundActivity = inject(BenchmarkBackgroundActivityService);
-  private pollTicker = inject(BenchmarkPollTickerService);
-  private cdr = inject(ChangeDetectorRef);
+  pendingConfirmAction: (() => void) | null = null;
+
+  cdr = inject(ChangeDetectorRef);
 
   activeSubTab: 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
 
@@ -610,746 +391,132 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     'DimensionOutlier'
   ];
 
-  // Suites
-  suites: BenchmarkSuiteDto[] = [];
-  selectedSuiteId: number | null = null;
-  loadingSuites = false;
-
-  // Import Default Suites dialog
-  defaultSuiteCatalog: DefaultSuiteCatalogEntryDto[] = [];
-  loadingDefaultSuiteCatalog = false;
-  selectedDefaultSuiteKeys = new Set<string>();
-  importingDefaultSuites = false;
-  defaultSuiteDialogError: string | null = null;
-  /** Result of the most recent suite-list action (import, for now), for the polite live region. */
-  suiteActionAnnouncement = '';
-
-  /** In band order, since `difficultyCounts` is a plain object with no guaranteed key order. */
-  private static readonly DIFFICULTY_BAND_ORDER: readonly string[] = ['Simple', 'Intermediate', 'Advanced'];
-
-  // Scoring Profiles
-  scoringProfiles: BenchmarkScoringProfileDto[] = [];
-  selectedScoringProfileId: number | null = null;
-  loadingProfiles = false;
-  editingProfileId: number | null = null;
-  profileForm: CreateBenchmarkScoringProfileRequest = {
-    name: '',
-    isDefault: false,
-    weightAccuracy: 0.55,
-    weightCompleteness: 0.25,
-    weightConciseness: 0.10,
-    weightReadability: 0.10,
-    levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
-    criticalErrorCeiling: 25,
-    notAttemptedScore: 50,
-    secondOpinionQualityThreshold: 50,
-    secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
-    secondOpinionOutlierDeltaPoints: 25,
-    secondOpinionBlind: true,
-    speedTargetMs: 2000,
-    speedDecayK: 12.0,
-    speedDifficultyScaling: 1.0,
-    maxParallelQuestions: 1
-  };
-  profileValidationErrors: string[] = [];
-
-  // Run Setup
-  testedConfigId: number | null = null;
-  assessorConfigId: number | null = null;
-  /**
-   * Optional third model: re-grades answers the assessor flagged with a critical error or
-   * scored below the profile's threshold. Null means no second opinion for this run, which is
-   * the default — it spends tokens, and one model checking its own verdict is not a second
-   * reading, so there is deliberately no fallback to the assessor.
-   */
-  secondOpinionConfigId: number | null = null;
-
-  /**
-   * Optional panel member B. When set, it grades every answer beside the assessor (member A), the
-   * published score is the mean of the two, and the second opinion becomes the reference reader.
-   * Null, the default, is a single-assessor run.
-   */
-  coAssessorConfigId: number | null = null;
-
-  /**
-   * Optional model: verifies unverified factual claims against the game source code and wiki
-   * using read-only tools. Null means no claim verification for this run, which is the default.
-   */
-  claimVerifierConfigId: number | null = null;
-
-  /**
-   * Optional model: writes the run's Executive Summary and Report for AI Researchers and Developers
-   * once, after the run is scored. Null means no AI-written reports, which is the default.
-   */
-  reportWriterConfigId: number | null = null;
-
-  /**
-   * Candidate system prompt response style: false for concise (the production default), true for
-   * detailed.
-   */
-  candidateVerboseMode = false;
-
-  /**
-   * Whether the candidate may cite source files and lines: false (the production default, which
-   * regular users see only with *Show source code references* on) or true.
-   */
-  candidateAllowSourceCodeReferences = false;
-
-  get candidateResponseStyleHint(): string {
-    return this.candidateVerboseMode
-      ? 'Only Accuracy stays comparable with concise runs; use it to tell prompt gaps from model gaps.'
-      : 'Matches the production chat; comparable with earlier runs.';
-  }
-
-  /**
-   * Per-run override of the scoring profile's second-opinion mode. Null follows the profile, so
-   * changing the profile changes the shown default until the operator picks something.
-   */
-  private secondOpinionModeOverride: number | null = null;
-
-  readonly secondOpinionModeOptions = BENCHMARK_SECOND_OPINION_MODES;
-
-  readonly jobStatusLabel = jobStatusLabel;
-
-  /**
-   * The assessor of the suite's most recent completed run, for the assessor-change advisory.
-   * Null until the lookup returns, and carries a null runId for a suite with no completed run.
-   */
-  lastAssessor: BenchmarkLastAssessorDto | null = null;
-
-  startingRun = false;
-  runErrorMessage: string | null = null;
-  sameProviderWarning: SameProviderWarningDto | null = null;
-
-  // Stored Footprint & Bulk Deletion
-  footprints: { [suiteId: number]: BenchmarkFootprintDto } = {};
-  suiteForBulkDelete: BenchmarkSuiteDto | null = null;
-  deletingSuiteRuns = false;
-
   /**
    * The harness version from which the second opinion and the final synthesis carry costs of
    * their own. Mirrors BenchmarkReportBuilder's PredatesHarnessVersion constants.
    */
   private static readonly PER_ROLE_COST_HARNESS_VERSION = 15;
 
-  // Active Run Tracking
-  private static readonly RUN_POLL_INTERVAL_MS = 2000;
-  private static readonly RUN_ELAPSED_TICK_MS = 1000;
-  /**
-   * A single failed poll is noise — a dropped request, a momentary 502 — and stopping the tab's
-   * only view of a run over one of those is worse than the failure itself. Five in a row, at the
-   * run poller's 2 s cadence, is ~10 s of the server genuinely not answering, which is when
-   * polling gives up rather than looping silently forever.
-   */
-  private static readonly MAX_CONSECUTIVE_POLL_FAILURES = 5;
-  private runElapsedInterval: any = null;
-  lastRunPollAtUtc: string | null = null;
-  lastRunPollError: string | null = null;
-  private runPollFailureCount = 0;
-  runQuestionsLoadError: string | null = null;
-  overseerBuildVersion: string | null = null;
-
-  activeRunId: number | null = null;
-  activeRunDetail: BenchmarkRunDetailDto | null = null;
-  private pollTickerHandle: BenchmarkPollTickerHandle | null = null;
-  /**
-   * Kept separate from visibilityChangeHandler, which belongs to difficulty polling.
-   * One shared field would let whichever poller stops last detach the other's listener.
-   */
-  private runVisibilityChangeHandler: (() => void) | null = null;
-
-  /**
-   * How long after a run that names a report writer is first seen Completed its poll continues while
-   * the run's report status is still NotRequested: the server queues the writing job just after
-   * scoring, and a job that never appears must not keep the poll going.
-   */
-  static readonly RUN_REPORT_STAGE_GRACE_MS = 30000;
-  /** When the active run was first seen terminal (client clock), for the report stage's start grace. */
-  private runTerminalSeenAt: { runId: number; atMs: number } | null = null;
-  /** The report stage's start grace was still open at the last terminal poll. */
-  private runReportGraceOpen = false;
-  /** The active run's report writing job, polled alongside the run while stage 4 is current. */
-  activeRunReportJob: BenchmarkRunReportJobDto | null = null;
-  /** When the last job view arrived (client clock), to advance the server's clock between polls. */
-  private activeRunReportJobReceivedAtMs = 0;
-  private runReportJobSub: Subscription | null = null;
-
-  // Run Progress Dialog
-  isRunProgressDialogOpen = false;
-  returnToSeriesOnClose = false;
-  runProgressQuestions: BenchmarkQuestionDto[] = [];
-  /**
-   * Suite the cached runProgressQuestions belong to; null means nothing is loaded. This,
-   * not the array's length, is what gates the fetch — a suite that genuinely has no
-   * questions would otherwise be re-fetched on every dialog open.
-   */
-  private runProgressQuestionsSuiteId: number | null = null;
   copiedRunDiagnostics = false;
+
   runDiagnosticsPanelOpen = false;
-  runDiagnosticsPanelCapturedAt = new Date(0);
+
   private copiedRunDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // --- Multi-run series ---
-  //
-  // A series is N executions of one identical request, strictly one at a time. Everything here is
-  // inert at runCount 1: no series row is created, startRun() is posted exactly as before, and the
-  // single-run banner and dialog are the only progress surfaces. That is the regression that
-  // matters most about this feature, so the branch is one `if` in startBenchmark and nowhere else.
-
-  private static readonly SERIES_POLL_INTERVAL_MS = 5000;
-
-  /**
-   * How many times to execute the configured request. Bound to a `type="number"` field whose max is
-   * `runLimits.maxRunCountPerSeries`, never a literal: raising the configured daily cap must raise
-   * the field with it, and the server re-checks against the live guard regardless.
-   */
-  runCount = 1;
-
-  /**
-   * On a cap denial: pause the series in WaitingForCap and retry, rather than stopping it. Either
-   * way every completed member is kept and the series stays resumable.
-   */
-  allowCapWait = false;
-
-  /** The caps and the live rolling-window counts. Null until GET runs/limits answers. */
-  runLimits: BenchmarkRunLimitsDto | null = null;
-
-  activeSeriesId: number | null = null;
-  activeSeries: BenchmarkRunSeriesDto | null = null;
-  private seriesPollTickerHandle: BenchmarkPollTickerHandle | null = null;
-  private seriesPollFailureCount = 0;
-  private seriesVisibilityChangeHandler: (() => void) | null = null;
-  /**
-   * The series whose poller is live, set before its first poll. While it is set the series owns the
-   * background lock, and the run poller that follows each member neither takes nor releases it.
-   */
-  private lockedSeriesId: number | null = null;
-
-  /** The Multi-Run Progress dialog's visibility. The dialog element itself belongs to that component. */
-  multiRunDialogVisible = false;
-
-  /**
-   * A series the operator asked to look at that this component is not driving — set by the
-   * Multi-Run Analysis tab's Series badge and cleared when the dialog closes. Kept apart from
-   * <see cref="activeSeriesId"/> so opening someone else's finished series cannot be mistaken for
-   * this page having one in flight.
-   */
-  seriesDialogId: number | null = null;
 
   /** Which series the progress dialog shows: an explicitly opened one, else the live one. */
   get dialogSeriesId(): number | null {
-    return this.seriesDialogId ?? this.activeSeriesId;
+    return this.monitor.seriesDialogId ?? this.monitor.activeSeriesId;
   }
-
-  seriesErrorMessage: string | null = null;
-  resumingSeries = false;
-
-  // --- Multi-suite battery runs ---
-  //
-  // A battery run executes every suite of a battery for one model configuration, one member run at
-  // a time, Runs per Suite rounds over the suites. The launcher's Run Target chooses it; its banner,
-  // poller and Web Lock mirror the series ones, and it signals completion once for all its members.
-
-  /** What Start launches: one suite (a run or a series) or a battery. */
-  runTargetKind: 'suite' | 'battery' = 'suite';
-
-  /** Every battery GET batteries returned; the launcher offers only `runnableBatteries`. */
-  launcherBatteries: BenchmarkBatteryDto[] = [];
-  loadingBatteries = false;
-  selectedBatteryId: number | null = null;
-
-  activeBatteryRunId: number | null = null;
-  activeBatteryRun: BenchmarkBatteryRunDto | null = null;
-  private batteryPollTickerHandle: BenchmarkPollTickerHandle | null = null;
-  private batteryPollFailureCount = 0;
-  private batteryVisibilityChangeHandler: (() => void) | null = null;
-  private lastBatteryPollAttemptAtMs = 0;
-  /** The battery run whose poller is live; while set it owns the background lock, as a series does. */
-  private lockedBatteryRunId: number | null = null;
-  /** Battery runs the poller has observed live; a terminal poll chimes only for one of these. */
-  private batteriesSeenLive = new Set<number>();
-
-  /** The Battery Progress dialog's visibility. The dialog element itself belongs to that component. */
-  batteryDialogVisible = false;
-
-  /** A battery run opened from the Multi-Suite tab rather than the one this page drives. */
-  batteryDialogRunId: number | null = null;
 
   /** Which battery run the progress dialog shows: an explicitly opened one, else the live one. */
   get dialogBatteryRunId(): number | null {
-    return this.batteryDialogRunId ?? this.activeBatteryRunId;
+    return this.monitor.batteryDialogRunId ?? this.monitor.activeBatteryRunId;
   }
-
-  batteryErrorMessage: string | null = null;
-  resumingBattery = false;
-
-  /** Closing the run progress dialog reopens the Battery Progress dialog it was opened from. */
-  returnToBatteryOnClose = false;
-
-  /** Reuse earlier runs at a battery start. A per-start decision, so never stored with the run settings. */
-  reuseEarlierRuns = false;
-  /** Which slots earlier runs would fill for the launcher's current battery request; null while none is known. */
-  reusePreview: BenchmarkBatteryReusePreviewDto | null = null;
-  reusePreviewLoading = false;
-  reusePreviewError: string | null = null;
-  /** The preview request in flight; a newer one unsubscribes it, which cancels the HTTP call. */
-  private reusePreviewSubscription: Subscription | null = null;
-
-  // --- Completion sound ---
-  //
-  // The chime plays once per run or series that was actually watched live, never for one opened
-  // from history already terminal. runsSeenLive and seriesSeenLive hold the ids pollRunDetail and
-  // pollSeries have observed Running/live; a terminal poll only chimes if its id is still in the
-  // set, and removes it either way so a later poll of the same id cannot chime twice. A run that is
-  // a member of a still-live series never chimes on its own — the series chimes once for all of
-  // them.
-
-  private static readonly HIDDEN_POLL_INTERVAL_MS = 15000;
-
-  /** Whether a run or series completion plays the chime. Bound to the Run tab's own checkbox. */
-  completionSound = true;
-
-  /** Set only when the last chime attempt was blocked by the browser's autoplay policy, or deferred by it. */
-  completionSoundStatus: string | null = null;
-  private lastCompletionSoundOutcome: 'played' | 'blocked' | 'unsupported' | 'duplicate' | 'deferred' | null = null;
-
-  /**
-   * Whether a run or series completion also raises a desktop notification. Independent of the
-   * sound: either, both or neither may be on. Bound to the Run tab's second checkbox.
-   */
-  completionNotification = false;
-
-  /** The reason a notification permission request did not end in `completionNotification` being on. */
-  completionNotificationStatus: string | null = null;
-
-  /** One `notify()` call per record, kept for the run diagnostics capture; last 10, oldest dropped first. */
-  private readonly notificationAttempts: {
-    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome;
-  }[] = [];
-  private static readonly MAX_NOTIFICATION_ATTEMPTS = 10;
-
-  /** Always-rendered status line beside the two checkboxes: whichever of the two has something to say. */
-  get completionSignalsStatusText(): string {
-    return [this.completionSoundStatus, this.completionNotificationStatus].filter((s): s is string => !!s).join(' ');
-  }
-
-  private runsSeenLive = new Set<number>();
-  private seriesSeenLive = new Set<number>();
-  /** Live-watched runs this page asked the server to cancel; consumed at their terminal poll. */
-  private readonly operatorCancelledRunIds = new Set<number>();
-
-  /** Last time either poller actually polled, hidden or not — what the hidden-tab cadence gates on. */
-  private lastRunPollAttemptAtMs = 0;
-  private lastSeriesPollAttemptAtMs = 0;
-
-  /**
-   * Set while the tab is hidden at the moment a chime-eligible completion is seen, so the tab strip
-   * shows the completion even when the sound itself is off or blocked. Restored, and the listener
-   * detached, the next time the tab becomes visible.
-   */
-  private originalDocumentTitleBeforeCompletion: string | null = null;
-  private titleRestoreVisibilityHandler: (() => void) | null = null;
-
-  // History
-  historyRuns: BenchmarkRunSummaryDto[] = [];
-  loadingHistory = false;
-
-  /**
-   * Sort and filter state for the Run History card list. `historyRuns` itself stays in the
-   * server's own order — `instrumentChangeOf` and `completedRunsOfSelectedSuite` both locate a
-   * run by its position in that list, and a user-chosen sort would make either misread the data.
-   * `view()` never mutates its input, so both keep reading `historyRuns` unaffected by this.
-   */
-  readonly historyTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
-    {
-      id: r => r.id,
-      suiteName: r => r.suiteName,
-      testedModelDisplayNameUsed: r => r.testedModelDisplayNameUsed,
-      assessorModelDisplayNameUsed: r => r.assessorModelDisplayNameUsed,
-      status: r => this.formatStatusLabel(r.status),
-      // Null sorts last automatically, which is right for a run that never scored.
-      qualityIndex: r => r.qualityIndex ?? r.finalScore,
-      speedIndex: r => r.speedIndex,
-      // The same expression the Duration metric displays, so the list sorts by what it shows.
-      durationMs: r => this.runDurationMs(r),
-      estimatedCost: r => r.estimatedCandidateCost ?? r.estimatedCost,
-      startedAtUtc: r => new Date(r.startedAtUtc)
-    },
-    {
-      search: customFilter((r, value) => this.historySearchText(r).includes(value.toLowerCase())),
-      suite: anyOfFilter(r => r.suiteName || null),
-      tested: anyOfFilter(r => r.testedModelDisplayNameUsed || null),
-      assessor: anyOfFilter(r => r.assessorModelDisplayNameUsed || null),
-      // Keyed on the same label the status badge shows, so the facet and the card always agree.
-      status: anyOfFilter(r => this.formatStatusLabel(r.status)),
-      flags: anyOfFilter(r => this.historyFlagsOf(r)),
-      changes: anyOfFilter(r => this.historyChangeOf(r)),
-      started: customFilter((r, value) => this.historyStartedWithin(r, value))
-    }
-  );
-
-  /** The Run History card list over `historyTable`: the search, Sort by, the facets, the chips and the batch. */
-  readonly historyList = new CardListState<BenchmarkRunSummaryDto>(this.historyTable, {
-    idPrefix: 'rh',
-    sorts: RUN_HISTORY_SORTS,
-    defaultSort: 'newest',
-    storageKey: RUN_HISTORY_VIEW_STORAGE_KEY,
-    facets: [
-      { column: 'suite', label: 'Suite', values: r => r.suiteName || null },
-      { column: 'tested', label: 'Tested model', values: r => r.testedModelDisplayNameUsed || null },
-      { column: 'assessor', label: 'Assessor', values: r => r.assessorModelDisplayNameUsed || null },
-      // The order of historyStatusOptions: the default string order.
-      { column: 'status', label: 'Status', values: r => this.formatStatusLabel(r.status), order: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-      { column: 'flags', label: 'Flags', values: r => this.historyFlagsOf(r), order: RUN_HISTORY_FLAGS },
-      { column: 'changes', label: 'Changes', values: r => this.historyChangeOf(r), order: RUN_HISTORY_CHANGES }
-    ],
-    singleFacets: [
-      {
-        column: 'started',
-        label: 'Started',
-        anyLabel: 'Any time',
-        options: RUN_HISTORY_STARTED_RANGES,
-        matches: (r, range) => this.historyStartedWithin(r, range),
-        listedWhen: rows => rows.filter(r => this.historyStartedAt(r) !== null).length >= 2
-      }
-    ],
-    // A debounced search applies outside any event handler, so the view is checked by hand.
-    onChange: () => this.cdr.detectChanges()
-  });
-
-  /** The orders Sort by offers. */
-  readonly historySorts = RUN_HISTORY_SORTS;
-
-  /** The cards on screen: the loaded runs filtered, sorted and cut to the batch. */
-  get historyView(): BenchmarkRunSummaryDto[] {
-    return this.historyList.view(this.historyRuns);
-  }
-
-  /** The listed facets of the filter bar, memoized on `historyRuns` and the list's revision. */
-  get historyFacets(): CardListFacet[] {
-    return this.historyList.facets(this.historyRuns);
-  }
-
-  /** The removable chips of the active filters. */
-  get historyChips(): CardListChip[] {
-    return this.historyList.chips(this.historyRuns);
-  }
-
-  /** The list's status line, with a note when the runs endpoint's limit was reached. */
-  get historyListStatus(): string {
-    const text = this.historyList.statusText(this.historyRuns, { one: 'run', many: 'runs' });
-    return text && this.historyRuns.length >= RUN_HISTORY_LIMIT
-      ? `${text} · Only the newest ${RUN_HISTORY_LIMIT} runs are loaded`
-      : text;
-  }
-
-  /** The statuses actually present in the loaded history, so a retired status drops out on its own. */
-  get historyStatusOptions(): string[] {
-    const seen = new Set<string>();
-    for (const run of this.historyRuns) {
-      seen.add(this.formatStatusLabel(run.status));
-    }
-    return Array.from(seen).sort();
-  }
-
-  /** The tested model's badges per run, built once per run object. */
-  private readonly historyBadgeCache = new WeakMap<BenchmarkRunSummaryDto, RunFactBadge[]>();
-
-  /** The tested model's badges on a Run History card: the run report's rules, without a service tier. */
-  historyModelBadges(run: BenchmarkRunSummaryDto): RunFactBadge[] {
-    let badges = this.historyBadgeCache.get(run);
-    if (!badges) {
-      badges = runFactBadges({
-        name: run.testedModelDisplayNameUsed || run.testedModelIdUsed || 'not recorded',
-        provider: run.testedModelProviderUsed || null,
-        thinkingLevel: run.testedModelThinkingLevelUsed ?? null,
-        reasoningMode: run.testedModelReasoningModeUsed ?? null,
-        serviceTier: null,
-        customEndpoint: false
-      });
-      this.historyBadgeCache.set(run, badges);
-    }
-    return badges;
-  }
-
-  /** An instrument label's long name, read after the short label by assistive technology. */
-  fingerprintLongName(entry: BenchmarkFingerprintEntry): string {
-    return FINGERPRINT_LONG_NAMES[entry.label];
-  }
-
-  /** A fingerprint's full description split into its name and its value, for the instrument info tip. */
-  fingerprintParts(entry: BenchmarkFingerprintEntry): { term: string; value: string } {
-    const at = entry.title.indexOf(': ');
-    return at < 0
-      ? { term: entry.title, value: '' }
-      : { term: entry.title.slice(0, at), value: entry.title.slice(at + 2) };
-  }
-
-  onHistorySearchInput(event: Event): void {
-    this.historyList.setSearchInput((event.target as HTMLInputElement).value);
-  }
-
-  /** Escape with text clears the search at once; in an empty field it passes through. */
-  onHistorySearchKeydown(event: KeyboardEvent): void {
-    if (this.historyList.clearSearchOnEscape(event)) {
-      this.cdr.detectChanges();
-    }
-  }
-
-  onHistorySortChange(event: Event): void {
-    if (this.historyList.setSort((event.target as HTMLSelectElement).value)) {
-      this.cdr.detectChanges();
-    }
-  }
-
-  onHistoryFacetChange(column: string, values: string[]): void {
-    this.historyList.setFacet(column, values);
-    this.cdr.detectChanges();
-  }
-
-  /** Removes a chip's filter, then focuses the chip now in its place, else the previous one, else the search. */
-  removeHistoryChip(chip: CardListChip): void {
-    const index = this.historyList.removeChip(chip, this.historyRuns);
-    this.cdr.detectChanges();
-    const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('#bm-panel-history .rh-filter-chips .gh-filter-chip'));
-    const target = index >= 0 ? chips[index] ?? chips[index - 1] : undefined;
-    (target ?? document.getElementById('rh-search'))?.focus();
-  }
-
-  /** Clears the search and every filter, then focuses the search. */
-  clearHistoryFilters(): void {
-    this.historyList.clearFilters();
-    this.cdr.detectChanges();
-    document.getElementById('rh-search')?.focus();
-  }
-
-  showMoreHistory(): void {
-    this.focusHistoryCard(this.historyList.showMore(this.historyRuns));
-  }
-
-  showAllHistory(): void {
-    this.focusHistoryCard(this.historyList.showAll(this.historyRuns));
-  }
-
-  /** Renders, then focuses the title of the card at `index` in the view, if there is one. */
-  private focusHistoryCard(index: number): void {
-    this.cdr.detectChanges();
-    const run = this.historyView[index];
-    if (run) {
-      document.getElementById(`rh-run-${run.id}-title`)?.focus();
-    }
-  }
-
-  /** After a delete: the card now at the deleted one's index, else the previous one, else the list's heading. */
-  private focusAfterHistoryDelete(index: number): void {
-    const view = this.historyView;
-    const run = view[index] ?? view[index - 1];
-    const target = run ? document.getElementById(`rh-run-${run.id}-title`) : null;
-    (target ?? document.getElementById('rh-list-title'))?.focus();
-  }
-
-  /** What the search matches a run against, lower-cased. */
-  private historySearchText(run: BenchmarkRunSummaryDto): string {
-    return [
-      `#${run.id}`,
-      run.suiteName,
-      run.testedModelDisplayNameUsed,
-      run.testedModelIdUsed,
-      run.testedModelProviderUsed,
-      run.assessorModelDisplayNameUsed,
-      this.formatStatusLabel(run.status),
-      run.harnessVersion,
-      run.candidateSystemPromptSha256,
-      run.toolGuidesSha256,
-      run.knowledgeBaseHeadSha,
-      run.wikiHeadSha,
-      run.sourceCodeHeadSha
-    ].filter(part => !!part).join(' ').toLowerCase();
-  }
-
-  /** The Flags facet's values of a run, from its counts; `None` when it has none of them. */
-  private historyFlagsOf(run: BenchmarkRunSummaryDto): string[] {
-    const flags: string[] = [];
-    if ((run.degradedAnswerCount ?? 0) > 0) flags.push('Degraded answers');
-    if ((run.unansweredQuestionCount ?? 0) > 0) flags.push('Unanswered questions');
-    if ((run.terminalFailureAnswerCount ?? 0) > 0) flags.push('Failed at the provider');
-    if (run.speedMeasurementDegraded) flags.push('Advisory timing');
-    if (run.pricingIncomplete) flags.push('Pricing incomplete');
-    return flags.length > 0 ? flags : ['None'];
-  }
-
-  /** The Changes facet's value of a run, from `instrumentChangeOf`. */
-  private historyChangeOf(run: BenchmarkRunSummaryDto): string {
-    const change = this.instrumentChangeOf(run);
-    return change ? (change.kind === 'options' ? 'Options changed' : 'Instrument changed') : 'No change';
-  }
-
-  private historyStartedAt(run: BenchmarkRunSummaryDto): Date | null {
-    if (!run.startedAtUtc) {
-      return null;
-    }
-    const started = parseServerUtcDate(run.startedAtUtc);
-    return Number.isNaN(started.getTime()) ? null : started;
-  }
-
-  /** Whether a run started within the Started facet's range `range` of now. */
-  private historyStartedWithin(run: BenchmarkRunSummaryDto, range: string): boolean {
-    const hours = RUN_HISTORY_STARTED_RANGES.find(r => r.value === range)?.hours;
-    const started = this.historyStartedAt(run);
-    if (hours === undefined || !started) {
-      return false;
-    }
-    return Date.now() - started.getTime() <= hours * 3600_000;
-  }
-
-  // --- Run History: series badge, group column and the group builder ---
-  //
-  // A run belongs to at most one series and to any number of analysis groups, so the badge is a
-  // property of the row while the group column is a lookup over the loaded groups.
-
-  runGroups: BenchmarkRunGroupDto[] = [];
-  loadingRunGroups = false;
-
-  /** Runs ticked in the history table, in selection order. A group is built out of exactly these. */
-  selectedRunIds = new Set<number>();
-
-  /**
-   * The tier the current selection would resolve to, previewed before anything is created. On a
-   * refusal it carries the keys that differ and the runs carrying them: a "no" with no reason is
-   * unusable in a group builder, which is why the preview endpoint exists at all.
-   */
-  groupTierPreview: BenchmarkComparabilityResultDto | null = null;
-  groupPreviewError: string | null = null;
-  previewingGroupTier = false;
-
-  groupBuilderName = '';
-  groupBuilderNotes = '';
-  /** Required to persist a Tier C group. Without it a cross-condition set is refused server-side. */
-  groupBuilderCrossCondition = false;
-  /** An existing group to add the selection to, or null to create a new one. */
-  groupBuilderTargetId: number | null = null;
-  creatingGroup = false;
-  groupBuilderError: string | null = null;
-  groupBuilderSuccess: string | null = null;
-
-  // --- Model Comparison ---
-  //
-  // The host owns the selection, the request and the two lists the picker offers; the picker and
-  // the comparison view are both presentational. One owner is what keeps the two panels of this
-  // sub-tab from disagreeing about what is selected.
-
-  comparison: BenchmarkModelComparisonDto | null = null;
-  comparisonLoading = false;
-  comparisonError: string | null = null;
-  comparisonRunIds: number[] = [];
-  comparisonGroupIds: number[] = [];
-  /** The picker's suite scope. Null offers every suite; independent of the Run Benchmark selection. */
-  comparisonSuiteId: number | null = null;
-  comparisonPricingBasis: BenchmarkModelComparisonPricingBasis = 'Current';
-
-  /**
-   * The wizard band's notices. Derived from the index and the selection this component owns, so
-   * the picker and the band cannot disagree about what the selection costs.
-   */
-  get comparisonSelectionNotices(): ComparisonSelectionNotice[] {
-    return selectionNotices({
-      index: this.comparabilityIndex,
-      indexLoading: this.comparabilityIndexLoading,
-      indexError: this.comparabilityIndexError,
-      runIds: this.comparisonRunIds,
-      groupIds: this.comparisonGroupIds,
-      pricingBasis: this.comparisonPricingBasis
-    });
-  }
-
-  /**
-   * Guards against an out-of-order comparison response. Compare can be clicked faster than the
-   * round trip returns, and an older payload rendered over a newer selection is worse than none —
-   * it charts models the operator is no longer looking at.
-   */
-  private comparisonToken = 0;
-
-  /** The comparison request in flight. Unsubscribing aborts it, and the server work with it. */
-  private comparisonSubscription: Subscription | null = null;
-
-  /**
-   * The comparability index for the sources on offer: which of them agree on every must-match key
-   * and may therefore be charted together. Read-only, and only ever a disclosure aid — the
-   * comparison endpoint decides what is actually comparable.
-   */
-  comparabilityIndex: BenchmarkComparabilityIndexDto | null = null;
-  comparabilityIndexLoading = false;
-  comparabilityIndexError: string | null = null;
-
-  /** The index's own out-of-order guard, for the same reason comparisonToken exists. */
-  private comparabilityIndexToken = 0;
 
   // Detail Modal
   selectedRunDetail: BenchmarkRunDetailDto | null = null;
+
   loadingDetail = false;
+
   /** The run the report dialog is showing or loading; the header names it while the detail is absent. */
   runDetailRequestedId: number | null = null;
+
   /** Why the run detail could not be loaded, or null. */
   runDetailLoadError: string | null = null;
+
   /** Discards a detail response that arrives after the dialog closed or moved to another run. */
   private runDetailLoadToken = 0;
+
   /** The pressed question filters of the run report. */
   questionFilters = new Set<RunReportQuestionFilter>();
+
   /** Whether the Re-run popover is open, from its toggle event; the trigger's aria-expanded. */
   rerunPopoverOpen = false;
+
   /** The run report's Copy diagnostics announcement. */
   runReportCopyStatus = '';
+
   private runReportCopyTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** A key-figures image is being composed; another export is refused until it finishes. */
   keyFiguresExporting = false;
+
   /** The key figures the Summary panel and the whole-strip image leave out, remembered for every run report. */
   keyFigureExclusions: string[] = readStoredKeyFigureExclusions();
+
   /** The run-fact rows the key-figures images leave out, remembered for every run report. */
   imageDetailExclusions: string[] = readStoredImageDetailExclusions();
+
   @ViewChild(KeyFiguresChooserComponent) keyFiguresChooser?: KeyFiguresChooserComponent;
+
   /** The run whose facts `selectedRunFacts` last built, and the rows it built. */
   private runFactsSource: BenchmarkRunDetailDto | null = null;
+
   private runFactsRows: RunFactRow[] = [];
+
   expandedQuestions = new Set<number>();
+
   expandedThoughts = new Set<number>();
+
   expandedArtifacts = new Set<number>();
+
   /**
    * Tool-call disclosure state, all keyed by `orderIndex` like the sets above — the fetch
    * itself needs the answer's database id, never `orderIndex`, so `toggleToolCalls` takes
    * the whole answer rather than a bare number.
    */
   expandedToolCalls = new Set<number>();
+
   /** Loaded rows per answer. Present as a key (even for an empty run) means "already fetched" — that is what stops a second expand from refetching. */
   toolCallsByAnswer = new Map<number, BenchmarkToolCallDto[]>();
+
   loadingToolCalls = new Set<number>();
+
   toolCallsErrorByAnswer = new Map<number, string>();
+
   /** Which individual call's arguments/result panel is open, keyed by `orderIndex:callId:field`. */
   expandedToolCallFields = new Set<string>();
+
   rescoringRun = false;
+
   detailPollInterval: any = null;
+
   reassessingAnswerId: number | null = null;
+
   trialReassessingAnswerId: number | null = null;
+
   rerunningAnswerId: number | null = null;
 
   // Calibration panel. A calibration grades a finished run with another model and records only
   // the agreement statistics — no score, level, flag or index moves — so this is where a
   // prospective assessor earns its promotion, beside what it cost.
   calibrations: BenchmarkAssessorCalibrationDto[] = [];
+
   loadingCalibrations = false;
+
   calibrating = false;
+
   calibrationErrorMessage: string | null = null;
+
   calibrationAssessorConfigId: number | null = null;
+
   /** What a panel run's calibration compares against. A single-assessor run sends none. */
   calibrationTarget: BenchmarkCalibrationTarget = 'Assessor';
+
   readonly calibrationTargetOptions: readonly { value: BenchmarkCalibrationTarget; label: string }[] = [
     { value: 'Assessor', label: 'Assessor A' },
     { value: 'CoAssessor', label: 'Co-assessor B' },
     { value: 'Panel', label: 'Panel (mean of A and B)' }
   ];
+
   private calibrationTargetOptionsSource: BenchmarkRunDetailDto | null = null;
+
   private calibrationTargetOptionsCache: ModelPickerOption<ModelPickerModel>[] = [];
+
   runningSynthesis = false;
+
   retryingAssessments = false;
+
   retryingClaimVerification = false;
 
   // Retry Dialog
@@ -1359,74 +526,40 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * screen, so the two are separate scopes rather than a flag on one.
    */
   retryScope: 'assessment' | 'trial' | 'question' | 'synthesis' | 'assessments' | 'claim-verification' | null = null;
+
   retryRunId: number | null = null;
+
   retryAnswer: BenchmarkRunAnswerDto | null = null;
+
   retryAssessorConfigId: number | null = null;
+
   /** The members a panel run's re-assessment re-grades. */
   retryPanelMember: BenchmarkPanelMember = 'Both';
+
   readonly retryPanelMemberOptions: readonly { value: BenchmarkPanelMember; label: string }[] = [
     { value: 'Both', label: 'Both members' },
     { value: 'A', label: 'Member A (assessor) only' },
     { value: 'B', label: 'Member B (co-assessor) only' }
   ];
 
-  // Suite Health. The suite whose full-screen dialog is open, or null. One at a time by
-  // construction: there is a single dialog element for every suite card.
-  suiteHealthSuiteId: number | null = null;
-
-  /**
-   * A question the Suite Health panel asked to edit, opened once the suite's questions have
-   * loaded. Cleared on use, so a later manual open of the same list does not reopen the editor.
-   */
-  private pendingQuestionEditId: number | null = null;
-
-  // Suite Dialogs
-  editingSuiteId: number | null = null;
-  suiteForm: CreateBenchmarkSuiteRequest = { name: '', description: '' };
-  private suiteFormBaseline: { name: string; description: string } = { name: '', description: '' };
-  descriptionGenerationVisible = false;
-  descriptionGenerationSuite: BenchmarkSuiteDto | null = null;
-
-  // Questions Dialog
-  currentSuiteForQuestions: BenchmarkSuiteDto | null = null;
-  questions: BenchmarkQuestionDto[] = [];
-  loadingQuestions = false;
   // Difficulty Assessor Dialog State
   suiteForDifficultyAssessment: BenchmarkSuiteDto | null = null;
+
   difficultyAssessorConfigId: number | null = null;
+
   difficultyAssessmentScope: 'suite' | 'unassessed' | 'question' = 'suite';
+
   questionIdForDifficultyAssessment: number | null = null;
 
   difficultyDialogPhase: 'select' | 'progress' = 'select';
-  difficultyJob: DifficultyAssessmentJobDto | null = null;
+
   difficultyJobStarting = false;
-  terminatingDifficultyJob = false;
-  private difficultyPollInterval: any = null;
-  private visibilityChangeHandler: (() => void) | null = null;
 
-  actionErrorMessage: string | null = null;
   difficultyDialogError: string | null = null;
+
   copiedDiagnostics = false;
+
   private copiedDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
-
-  get ratingDifficulty(): boolean {
-    return this.difficultyJobIsRunning;
-  }
-
-  get ratingQuestionId(): number | null {
-    if (this.difficultyJobIsRunning && this.difficultyJob?.scope === 'questions' && this.difficultyJob.items.length === 1) {
-      return this.difficultyJob.items[0].questionId;
-    }
-    return null;
-  }
-
-  get difficultyJobIsRunning(): boolean {
-    return this.difficultyJob != null && this.difficultyJob.status === 'Running';
-  }
-
-  get difficultyJobIsTerminal(): boolean {
-    return this.difficultyJob != null && this.difficultyJob.status !== 'Running';
-  }
 
   get suiteIsPartiallyAssessed(): boolean {
     const s = this.suiteForDifficultyAssessment;
@@ -1451,35 +584,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  get difficultyProgressValue(): number {
-    if (!this.difficultyJob) return 0;
-    return this.difficultyJob.ratedCount + this.difficultyJob.failedCount;
-  }
-
-  get difficultyProgressMax(): number {
-    return this.difficultyJob?.totalCount || 100;
-  }
-
-  get difficultyJobProgressLabel(): string {
-    return this.difficultyProgressLabel();
-  }
-
-  get failedDifficultyItems(): DifficultyAssessmentJobItemDto[] {
-    return this.difficultyJob?.items.filter(i => i.status === 'Failed') || [];
-  }
-
   get difficultyDiagnosticsText(): string {
-    if (!this.difficultyJob) return '';
+    if (!this.difficulty.difficultyJob) return '';
     const lines: string[] = [];
-    lines.push(`Job ID: ${this.difficultyJob.id}`);
-    lines.push(`Suite: ${this.difficultyJob.suiteName} (ID: ${this.difficultyJob.suiteId})`);
-    lines.push(`Assessor: ${this.difficultyJob.assessorDisplayName}`);
-    lines.push(`Status: ${this.difficultyJob.status}`);
-    lines.push(`Model Calls: ${this.difficultyJob.totalModelCalls}`);
-    lines.push(`Prompt Tokens: ${this.difficultyJob.promptTokens}, Output Tokens: ${this.difficultyJob.outputTokens}`);
+    lines.push(`Job ID: ${this.difficulty.difficultyJob.id}`);
+    lines.push(`Suite: ${this.difficulty.difficultyJob.suiteName} (ID: ${this.difficulty.difficultyJob.suiteId})`);
+    lines.push(`Assessor: ${this.difficulty.difficultyJob.assessorDisplayName}`);
+    lines.push(`Status: ${this.difficulty.difficultyJob.status}`);
+    lines.push(`Model Calls: ${this.difficulty.difficultyJob.totalModelCalls}`);
+    lines.push(`Prompt Tokens: ${this.difficulty.difficultyJob.promptTokens}, Output Tokens: ${this.difficulty.difficultyJob.outputTokens}`);
     lines.push('');
     lines.push('--- LOG ---');
-    for (const entry of this.difficultyJob.log) {
+    for (const entry of this.difficulty.difficultyJob.log) {
       lines.push(`[${entry.timestampUtc}] [${entry.severity.toUpperCase()}] ${entry.message}`);
       if (entry.rawExcerpt) {
         lines.push(`  Excerpt: ${entry.rawExcerpt}`);
@@ -1498,71 +614,29 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.copiedDiagnosticsTimer = setTimeout(() => {
         this.copiedDiagnostics = false;
         this.copiedDiagnosticsTimer = null;
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }, 2000);
     } catch {
       this.difficultyDialogError = 'Could not copy the diagnostics to the clipboard.';
     }
   }
 
-  // Question Form Dialog
-  editingQuestionId: number | null = null;
-  /** The suite the open question form saves into: the edited question's own, or Manage Questions' for a new one. */
-  questionFormSuiteId: number | null = null;
-  questionForm: CreateBenchmarkQuestionRequest = { questionText: '', difficulty: 1, expectedPoints: '' };
-
-  /** A sample rubric in the shape the assessor reads: the four graded sections and a source line. */
-  readonly expectedPointsPlaceholder = [
-    '**REQUIRED** (accuracy + completeness)',
-    '- Fact 1.',
-    '- Fact 2.',
-    '',
-    '**CRITICAL ERROR** (set criticalError) — when the answer:',
-    '- Asserts a major hallucination.',
-    '',
-    '**SCOPE** (conciseness)',
-    '- Out-of-scope details.',
-    '',
-    '**FORM** (not graded — presentation note only)',
-    '- Short table or bullet list.',
-    '',
-    '**SOURCE** — src/role.c line 1217; GnollHack wiki'
-  ].join('\n');
-
-  /** expectedPoints is optional on the request DTO; the editor's value is always a string. */
-  get expectedPointsValue(): string {
-    return this.questionForm.expectedPoints ?? '';
-  }
-
-  set expectedPointsValue(value: string) {
-    this.questionForm.expectedPoints = value;
-  }
-
-  /** description is optional on the request DTO; the editor's value is always a string. */
-  get suiteDescriptionValue(): string {
-    return this.suiteForm.description ?? '';
-  }
-
-  set suiteDescriptionValue(value: string) {
-    this.suiteForm.description = value;
-  }
-
   ngOnInit() {
     ensureOverlayPolyfills();
     // Read before the loaders run: each one applies the field it owns as it picks its own fallback.
-    this.restoreRunSettings();
-    this.loadSuites();
-    this.loadProfiles();
-    this.loadHistory();
-    this.setDefaultModelSelections();
-    this.checkActiveDifficultyAssessment();
-    this.checkActiveRun();
+    this.launcher.restoreRunSettings();
+    this.workspace.loadSuites();
+    this.workspace.loadProfiles();
+    this.workspace.loadHistory();
+    this.launcher.setDefaultModelSelections();
+    this.difficulty.checkActiveDifficultyAssessment();
+    this.monitor.checkActiveRun();
     // The Number of runs field cannot bound itself until the caps arrive, and a series already
     // running must reattach its banner exactly as a single run does.
-    this.loadRunLimits();
-    this.checkActiveRunSeries();
-    this.loadBatteries();
-    this.checkActiveBatteryRun();
+    this.workspace.loadRunLimits();
+    this.monitor.checkActiveRunSeries();
+    this.workspace.loadBatteries();
+    this.monitor.checkActiveBatteryRun();
     this.initialised = true;
     if (this.pendingNavigation) {
       this.applyNavigation(this.pendingNavigation);
@@ -1578,7 +652,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const named = this.subTabs.find(t => t === request.subTab);
     const target = named ?? (request.suiteId != null ? 'suites' : null);
     if (target === 'suites' && request.suiteId != null) {
-      this.pendingFocusSuiteId = request.suiteId;
+      this.workspace.pendingFocusSuiteId = request.suiteId;
     }
     if (target) {
       this.selectSubTab(target);
@@ -1587,289 +661,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     queueMicrotask(() => this.navigationHandled.emit());
   }
 
-  /** Outlines, scrolls to and focuses the suite a navigation request named, once its list has arrived. */
-  private focusLinkedSuite(): void {
-    const suiteId = this.pendingFocusSuiteId;
-    if (suiteId == null || this.activeSubTab !== 'suites') {
-      return;
-    }
-    // Cleared first, so a second suite list response does not repeat the focus.
-    this.pendingFocusSuiteId = null;
-    if (!this.suites.some(s => s.id === suiteId)) {
-      this.actionErrorMessage = `The linked suite (id ${suiteId}) no longer exists.`;
-      this.cdr.detectChanges();
-      return;
-    }
-    this.linkedSuiteId = suiteId;
-    this.cdr.detectChanges();
-    const card = document.getElementById('bm-suite-' + suiteId);
-    card?.scrollIntoView({ block: 'center' });
-    card?.focus({ preventScroll: true });
-  }
-
-  /**
-   * Light-dismiss for the import-default-suites dialog where `closedby` is unsupported (Safari,
-   * at the time of writing). A backdrop click reports the dialog itself as the target, so a hit
-   * outside the dialog's own border box closes it. A no-op in every browser that has `closedby`.
-   */
   ngAfterViewInit(): void {
     this.viewInitialised = true;
     // Deferred: opening emits to the host, which must not change its bindings inside this check.
     if (this.pendingOpenRunId != null) {
       queueMicrotask(() => this.openPendingRun());
     }
-
-    if ('closedBy' in HTMLDialogElement.prototype) {
-      return;
-    }
-    const dialog = this.importDefaultSuitesDialog?.nativeElement;
-    dialog?.addEventListener('click', (event: MouseEvent) => {
-      if (event.target !== dialog) {
-        return;
-      }
-      const rect = dialog.getBoundingClientRect();
-      const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
-        && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
-      if (!inside) {
-        dialog.close();
-      }
-    });
-  }
-
-  checkActiveDifficultyAssessment(): void {
-    this.benchmarkService.getActiveDifficultyAssessment().subscribe({
-      next: (job) => {
-        if (job) {
-          this.difficultyJob = job;
-          this.terminatingDifficultyJob = false;
-          if (job.status === 'Running') {
-            this.startDifficultyPolling(job.id);
-          }
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => console.error('Failed to check active difficulty assessment', err)
-    });
   }
 
   /**
-   * Switches the visible sub-tab and loads whatever that panel needs. The data
-   * loads live here rather than in the template so the tab row carries one
-   * statement per handler.
+   * Switches the visible sub-tab. Each sub-tab's component loads what it shows when it is created.
+   * Marked for check, since a request through the bridge comes from outside this view's own events.
    */
-  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison'): void {
+  selectSubTab(tab: BenchmarkSubTab): void {
     this.activeSubTab = tab;
-    if (tab !== 'suites') {
-      this.linkedSuiteId = null;
-    }
-    if (tab === 'history') {
-      this.loadHistory();
-      // The group column needs the groups, and the panel is where a group is built from a
-      // selection, so both loads belong to entering the tab rather than to the first click.
-      this.loadRunGroups();
-    }
-    if (tab === 'suites') {
-      this.loadSuites();
-    }
-    if (tab === 'profiles') {
-      this.loadProfiles();
-    }
-    if (tab === 'modelcomparison') {
-      this.restoreComparisonLauncherDisclosure();
-      // The three lists the picker offers. No comparison is fetched here: an unattended request on
-      // tab entry re-prices every entry for a selection the operator has not confirmed.
-      this.loadHistory();
-      this.loadRunGroups();
-      this.loadSuites();
-      this.restoreComparisonSelection();
-      // The lists arrive asynchronously, so this indexes whatever is already in memory and runs
-      // again from onComparisonSuiteChange as the scope narrows.
-      this.loadComparabilityIndex();
-    }
-    // 'multirun' and 'multisuite' load nothing here: each panel is its own component and owns its
-    // fetches. Loading them from the host would give that data two owners.
+    this.cdr.markForCheck();
   }
-
-  // ---------------------------------------------------------------------------------------------
-  // Model Comparison
-  // ---------------------------------------------------------------------------------------------
-
-  /** Completed-or-not runs inside the current suite scope. The picker decides which are selectable. */
-  get comparisonRunOptions(): BenchmarkRunSummaryDto[] {
-    return this.comparisonSuiteId == null
-      ? this.historyRuns
-      : this.historyRuns.filter(run => run.benchmarkSuiteId === this.comparisonSuiteId);
-  }
-
-  get comparisonGroupOptions(): BenchmarkRunGroupDto[] {
-    return this.comparisonSuiteId == null
-      ? this.runGroups
-      : this.runGroups.filter(group => group.benchmarkSuiteId === this.comparisonSuiteId);
-  }
-
-  /**
-   * Every selected source as the wizard's selection band names it, runs before groups, in
-   * selection order.
-   *
-   * Read off the current option lists rather than the raw ids: an id the suite scope no longer
-   * offers is skipped rather than rendered as a placeholder, because the picker has already
-   * dropped it from what it shows ticked.
-   */
-  get comparisonSelectedSources(): ComparisonSelectedSource[] {
-    const runOptions = this.comparisonRunOptions;
-    const groupOptions = this.comparisonGroupOptions;
-    const runs: ComparisonSelectedSource[] = this.comparisonRunIds
-      .map(id => runOptions.find(run => run.id === id))
-      .filter((run): run is BenchmarkRunSummaryDto => run != null)
-      .map(run => ({
-        kind: 'run',
-        id: run.id,
-        label: run.testedModelDisplayNameUsed,
-        provider: run.testedModelProviderUsed,
-        detail: `#${run.id}`
-      }));
-    const groups: ComparisonSelectedSource[] = this.comparisonGroupIds
-      .map(id => groupOptions.find(group => group.id === id))
-      .filter((group): group is BenchmarkRunGroupDto => group != null)
-      .map(group => ({
-        kind: 'group',
-        id: group.id,
-        label: group.name,
-        provider: null,
-        detail: group.runCount === 1 ? '1 run' : `${group.runCount} runs`
-      }));
-    return [...runs, ...groups];
-  }
-
-  onComparisonSelectionChange(selection: ModelComparisonSelection): void {
-    // A response still in flight was asked for the previous selection.
-    this.cancelComparison();
-    this.comparisonRunIds = [...selection.runIds];
-    this.comparisonGroupIds = [...selection.groupIds];
-    this.persistComparisonSelection();
-    // The payload on hand describes the previous set of sources, so it is dropped rather than left
-    // beside a changed selection. It is also what the wizard reads to know Compare has not run for
-    // this selection yet, which is what puts Compare back on its Next button.
-    this.comparison = null;
-    this.comparisonError = null;
-  }
-
-  /**
-   * Drops one source from the selection band's chips, through the same path every other
-   * selection change takes — persistence, the dropped comparison payload and the Compare reset
-   * all happen there and nowhere else.
-   */
-  onComparisonRemoveSource(source: ComparisonSelectedSource): void {
-    this.onComparisonSelectionChange({
-      runIds: source.kind === 'run'
-        ? this.comparisonRunIds.filter(id => id !== source.id)
-        : [...this.comparisonRunIds],
-      groupIds: source.kind === 'group'
-        ? this.comparisonGroupIds.filter(id => id !== source.id)
-        : [...this.comparisonGroupIds]
-    });
-  }
-
-  /**
-   * Narrows the offered sources, and drops whatever the new scope no longer offers.
-   *
-   * Leaving a hidden out-of-scope id selected is how a figure ends up carrying a model the picker
-   * does not show. Refetches only if something survives: a request with an empty selection is
-   * refused server-side anyway.
-   */
-  onComparisonSuiteChange(suiteId: number | null): void {
-    this.comparisonSuiteId = suiteId;
-    this.loadComparabilityIndex();
-
-    const runsInScope = new Set(this.comparisonRunOptions.map(run => run.id));
-    const groupsInScope = new Set(this.comparisonGroupOptions.map(group => group.id));
-    const runIds = this.comparisonRunIds.filter(id => runsInScope.has(id));
-    const groupIds = this.comparisonGroupIds.filter(id => groupsInScope.has(id));
-    const dropped = runIds.length !== this.comparisonRunIds.length
-      || groupIds.length !== this.comparisonGroupIds.length;
-
-    this.comparisonRunIds = runIds;
-    this.comparisonGroupIds = groupIds;
-    this.persistComparisonSelection();
-
-    if (runIds.length + groupIds.length > 0) {
-      this.runComparison();
-    } else if (dropped) {
-      // Nothing survives the new scope, so the figures on screen describe a set that is no longer
-      // selected. Clearing them is more honest than leaving them beside an empty picker.
-      this.comparison = null;
-      this.comparisonError = null;
-    }
-    this.cdr.detectChanges();
-  }
-
-  /** Changes the cost arithmetic over an unchanged set, so it refetches at once where one exists. */
-  onComparisonPricingBasisChange(basis: BenchmarkModelComparisonPricingBasis): void {
-    this.comparisonPricingBasis = basis;
-    this.persistComparisonSelection();
-    if (this.comparisonRunIds.length + this.comparisonGroupIds.length > 0) {
-      this.runComparison();
-    }
-  }
-
-  clearComparisonSelection(): void {
-    this.comparisonRunIds = [];
-    this.comparisonGroupIds = [];
-    this.comparison = null;
-    this.comparisonError = null;
-    this.persistComparisonSelection();
-    this.cdr.detectChanges();
-  }
-
-  runComparison(): void {
-    if (this.comparisonRunIds.length + this.comparisonGroupIds.length === 0) {
-      this.comparisonError = 'Select at least one run or analysis group to compare.';
-      this.cdr.detectChanges();
-      return;
-    }
-
-    const token = ++this.comparisonToken;
-    this.comparisonLoading = true;
-    this.comparisonError = null;
-    this.cdr.detectChanges();
-
-    this.comparisonSubscription?.unsubscribe();
-    this.comparisonSubscription = this.benchmarkService.compareModels({
-      runIds: [...this.comparisonRunIds],
-      groupIds: [...this.comparisonGroupIds],
-      pricingBasis: this.comparisonPricingBasis
-    }).subscribe({
-      next: (result) => {
-        if (token !== this.comparisonToken) { return; }
-        this.comparison = result;
-        this.comparisonLoading = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        if (token !== this.comparisonToken) { return; }
-        this.comparison = null;
-        this.comparisonError = err?.error || 'The comparison could not be computed.';
-        this.comparisonLoading = false;
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /**
-   * Abandons the comparison in flight: the request is aborted, and the selection and the payload
-   * on hand are left as they are.
-   */
-  cancelComparison(): void {
-    if (!this.comparisonLoading) {
-      return;
-    }
-    ++this.comparisonToken;
-    this.comparisonSubscription?.unsubscribe();
-    this.comparisonSubscription = null;
-    this.comparisonLoading = false;
-    this.cdr.detectChanges();
-  }
-
   // ---------------------------------------------------------------------------------------------
   // The comparison wizard dialog
   //
@@ -1885,7 +692,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   openComparisonWizard(): void {
     this.comparisonWizardMounted = true;
     // The dialog's @if content has to exist before showModal(), or an empty dialog opens.
-    this.cdr.detectChanges();
+    this.viewSync.notify();
     this.comparisonWizardDialog?.nativeElement.showModal();
     // showModal() would otherwise focus the close button, which announces "Close" as the first
     // thing a screen-reader user hears in a dialog full of tables.
@@ -1920,168 +727,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * Comparison reports card counts again, since the wizard's Reports step may have written documents.
    */
   onComparisonWizardClose(): void {
-    this.comparisonReportsReloadToken++;
-    this.cdr.detectChanges();
-  }
-
-  private static readonly COMPARISON_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.modelComparison.launcher';
-
-  /**
-   * Reads the "How the comparison works" disclosure state once per page. With no stored record it
-   * opens, and records it closed, so only the first visit shows it open unless the operator leaves
-   * it that way.
-   */
-  private restoreComparisonLauncherDisclosure(): void {
-    if (this.comparisonHowItWorksOpen !== null) { return; }
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(AdminBenchmarkComponent.COMPARISON_LAUNCHER_STORAGE_KEY);
-    } catch {
-      this.comparisonHowItWorksOpen = true;
-      return;
-    }
-
-    if (stored === null) {
-      this.comparisonHowItWorksOpen = true;
-      this.persistComparisonLauncherDisclosure(false);
-      return;
-    }
-
-    let open = false;
-    try {
-      const parsed = JSON.parse(stored) as { howItWorksOpen?: unknown } | null;
-      open = parsed?.howItWorksOpen === true;
-    } catch {
-      // An unreadable record leaves the disclosure closed, its default.
-    }
-    this.comparisonHowItWorksOpen = open;
-  }
-
-  /**
-   * The disclosure's native toggle. Setting [open] from the binding fires it too, so a state that
-   * matches the field is the binding's own echo and is not stored.
-   */
-  onComparisonHowItWorksToggle(event: Event): void {
-    const open = (event.target as HTMLDetailsElement).open;
-    if (open === this.comparisonHowItWorksOpen) { return; }
-    this.comparisonHowItWorksOpen = open;
-    this.persistComparisonLauncherDisclosure(open);
-  }
-
-  private persistComparisonLauncherDisclosure(open: boolean): void {
-    try {
-      localStorage.setItem(
-        AdminBenchmarkComponent.COMPARISON_LAUNCHER_STORAGE_KEY, JSON.stringify({ howItWorksOpen: open }));
-    } catch {
-      // Storage throws in private-browsing modes. Forgetting a disclosure state is not worth
-      // surfacing to the operator.
-    }
-  }
-
-  /**
-   * Loads the comparability index for the runs and groups currently on offer.
-   *
-   * A failure is non-fatal: the Condition column falls back to a dash and Compare still works. The
-   * index is a disclosure aid, and a picker made unusable because an aid failed is worse than one
-   * that discloses less.
-   */
-  private loadComparabilityIndex(): void {
-    const runIds = this.comparisonRunOptions.slice(0, 200).map(run => run.id);
-    const groupIds = this.comparisonGroupOptions.slice(0, 100).map(group => group.id);
-    if (runIds.length + groupIds.length === 0) {
-      this.comparabilityIndex = null;
-      this.comparabilityIndexLoading = false;
-      this.comparabilityIndexError = null;
-      return;
-    }
-
-    const token = ++this.comparabilityIndexToken;
-    this.comparabilityIndexLoading = true;
-    this.comparabilityIndexError = null;
-
-    this.benchmarkService.getComparabilityIndex({ runIds, groupIds }).subscribe({
-      next: (result) => {
-        // A slow response for a suite scope the operator has already left must not overwrite a
-        // newer one, exactly as with the comparison itself.
-        if (token !== this.comparabilityIndexToken) { return; }
-        this.comparabilityIndex = result;
-        this.comparabilityIndexLoading = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        if (token !== this.comparabilityIndexToken) { return; }
-        this.comparabilityIndex = null;
-        this.comparabilityIndexLoading = false;
-        this.comparabilityIndexError =
-          err?.error || 'The comparability index could not be loaded, so the Condition column is ' +
-          'unavailable. The comparison itself is unaffected.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  private static readonly COMPARISON_SELECTION_STORAGE_KEY =
-    'overseer_admin_benchmark_comparison_selection';
-
-  private persistComparisonSelection(): void {
-    try {
-      const selection: BenchmarkComparisonSelection = {
-        runIds: this.comparisonRunIds,
-        groupIds: this.comparisonGroupIds,
-        suiteId: this.comparisonSuiteId,
-        pricingBasis: this.comparisonPricingBasis
-      };
-      localStorage.setItem(
-        AdminBenchmarkComponent.COMPARISON_SELECTION_STORAGE_KEY, JSON.stringify(selection));
-    } catch {
-      // Storage throws in private-browsing modes. Failing to remember a selection is not worth
-      // surfacing to the operator.
-    }
-  }
-
-  /**
-   * Restores the remembered selection, dropping every id the loaded lists no longer carry.
-   *
-   * Validated rather than trusted: a run deleted since the last visit would otherwise be sent, and
-   * the server would answer `Run(s) not found` for a selection the operator never made. The lists
-   * arrive asynchronously, so this runs again on each entry to the tab as they land.
-   */
-  private restoreComparisonSelection(): void {
-    let parsed: unknown;
-    try {
-      const stored = localStorage.getItem(AdminBenchmarkComponent.COMPARISON_SELECTION_STORAGE_KEY);
-      if (!stored) { return; }
-      parsed = JSON.parse(stored);
-    } catch {
-      return;                                   // every default stands
-    }
-
-    const raw = parsed as Partial<BenchmarkComparisonSelection> | null;
-    if (!raw || typeof raw !== 'object') { return; }
-
-    const ids = (value: unknown): number[] => Array.isArray(value)
-      ? value.filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
-      : [];
-
-    this.comparisonSuiteId = typeof raw.suiteId === 'number' && Number.isFinite(raw.suiteId)
-      ? raw.suiteId
-      : null;
-    this.comparisonPricingBasis = raw.pricingBasis === 'AsRun' ? 'AsRun' : 'Current';
-    this.comparisonRunIds = ids(raw.runIds);
-    this.comparisonGroupIds = ids(raw.groupIds);
-    this.pruneComparisonSelection();
-  }
-
-  /** Drops selected ids the loaded lists do not carry. Called as each list arrives. */
-  private pruneComparisonSelection(): void {
-    if (this.historyRuns.length > 0) {
-      const known = new Set(this.comparisonRunOptions.map(run => run.id));
-      this.comparisonRunIds = this.comparisonRunIds.filter(id => known.has(id));
-    }
-    if (this.runGroups.length > 0) {
-      const known = new Set(this.comparisonGroupOptions.map(group => group.id));
-      this.comparisonGroupIds = this.comparisonGroupIds.filter(id => known.has(id));
-    }
+    this.comparison.comparisonReportsReloadToken++;
+    this.viewSync.notify();
   }
 
   /**
@@ -2112,312 +759,25 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   ngOnChanges(changes: SimpleChanges) {
+    // The input's setter has already handed the configurations to the workspace store.
     if (changes['systemConfigs']) {
-      this.setDefaultModelSelections();
+      this.launcher.setDefaultModelSelections();
     }
   }
 
   ngOnDestroy() {
-    this.stopPolling();
-    this.stopRunElapsedTicker();
+    // The state services stop their own pollers and timers as this component's injector is destroyed.
     this.stopDetailPolling();
-    this.stopDifficultyPolling();
-    this.terminatingDifficultyJob = false;
-    this.stopSeriesPolling();
-    this.stopBatteryPolling();
-    this.reusePreviewSubscription?.unsubscribe();
-    this.reusePreviewSubscription = null;
-    this.comparisonSubscription?.unsubscribe();
-    this.historyList.dispose();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
     if (this.runReportCopyTimer) { clearTimeout(this.runReportCopyTimer); }
-    clearTimeout(this.questionsCopyStatusTimer);
-    clearTimeout(this.suitesCopyStatusTimer);
-    if (this.titleRestoreVisibilityHandler && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
-      this.titleRestoreVisibilityHandler = null;
-    }
   }
-
-  get benchmarkCapableConfigs(): SystemAiConfigDto[] {
-    return this.systemConfigs.filter(c => (c.modelRole & 4) === 4 && c.hasApiKey && c.isEnabled);
-  }
-
-  readonly benchmarkPickerEmptyHint =
-    'No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.';
-
-  private stableCapableConfigs: SystemAiConfigDto[] = [];
-  private benchmarkPickerCache: ModelPickerOption<SystemAiConfigDto>[] = [];
-
-  /**
-   * `benchmarkCapableConfigs` with an identity that changes only when its members or order do, for
-   * child inputs and picker options. The admin page edits and reorders `systemConfigs` in place,
-   * so the source array's identity alone is not a safe key.
-   */
-  get stableBenchmarkCapableConfigs(): SystemAiConfigDto[] {
-    this.refreshCapableConfigs();
-    return this.stableCapableConfigs;
-  }
-
-  get benchmarkPickerOptions(): ModelPickerOption<SystemAiConfigDto>[] {
-    this.refreshCapableConfigs();
-    return this.benchmarkPickerCache;
-  }
-
-  private refreshCapableConfigs(): void {
-    const capable = this.benchmarkCapableConfigs;
-    const cached = this.stableCapableConfigs;
-    if (capable.length !== cached.length || capable.some((config, i) => config !== cached[i])) {
-      this.stableCapableConfigs = capable;
-      this.benchmarkPickerCache = toModelPickerOptions(capable);
-    }
-  }
-
-  get selectedTestedModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.testedConfigId);
-  }
-
-  get selectedAssessorModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.assessorConfigId);
-  }
-
-  get selectedSecondOpinionModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.secondOpinionConfigId);
-  }
-
-  get selectedClaimVerifierModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.claimVerifierConfigId);
-  }
-
-  get selectedCoAssessorModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.coAssessorConfigId);
-  }
-
-  get selectedReportWriterModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.reportWriterConfigId);
-  }
-
-  /** A co-assessor is selected, so the run being set up is a two-member panel. */
-  get isPanelLaunch(): boolean {
-    return this.coAssessorConfigId != null;
-  }
-
-  /** "Family" is the provider, compared the way the server's IsSameProvider compares it. */
-  private static sameProvider(a: string | null | undefined, b: string | null | undefined): boolean {
-    return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
-  }
-
-  /** Provider and model id, as the server's IsSameModel compares a candidate with a panel member. */
-  private static sameModel(a: SystemAiConfigDto | undefined, b: SystemAiConfigDto | undefined): boolean {
-    return !!a && !!b &&
-      AdminBenchmarkComponent.sameProvider(a.provider, b.provider) &&
-      !!a.modelId && !!b.modelId &&
-      a.modelId.trim().toLowerCase() === b.modelId.trim().toLowerCase();
-  }
-
-  /** Mirrors the server's refusal: the two panel members must come from different providers. */
-  get showCoAssessorSameProviderAdvisory(): boolean {
-    return this.isPanelLaunch &&
-      AdminBenchmarkComponent.sameProvider(this.selectedAssessorModel?.provider, this.selectedCoAssessorModel?.provider);
-  }
-
-  /** Mirrors the server's refusal: neither panel member may be the model under test. */
-  get showCoAssessorCandidateAdvisory(): boolean {
-    const candidate = this.selectedTestedModel;
-    return this.isPanelLaunch &&
-      (AdminBenchmarkComponent.sameModel(candidate, this.selectedAssessorModel) ||
-        AdminBenchmarkComponent.sameModel(candidate, this.selectedCoAssessorModel));
-  }
-
-  /** Why the server would refuse this panel run, or '' when it would not. */
-  get panelLaunchRefusal(): string {
-    if (this.showCoAssessorSameProviderAdvisory) {
-      return 'The assessor and the co-assessor must come from different providers.';
-    }
-    if (this.showCoAssessorCandidateAdvisory) {
-      return 'Neither panel member may be the model under test; choose another model for the panel.';
-    }
-    return '';
-  }
-
-  /**
-   * Mirrors the server's report-writer refusals: an invalid configuration, or the model under test
-   * itself. Holds Start back. Empty when there is no writer or nothing to refuse.
-   */
-  get reportWriterLaunchRefusal(): string {
-    return reportWriterRefusal(this.selectedReportWriterModel, this.selectedTestedModel);
-  }
-
-  /**
-   * A writer from the model under test's provider: advisory, Start stays available and the server
-   * asks for the acknowledgment. Empty when there is no writer, it is refused, or its provider differs.
-   */
-  get reportWriterLaunchWarning(): string {
-    return reportWriterWarning(this.selectedReportWriterModel, this.selectedTestedModel);
-  }
-
-  /**
-   * The roles a panel run's reference reader or claim verifier shares a provider with. Advisory:
-   * a non-scoring role is most useful from a family that is neither a candidate nor a panel member.
-   */
-  private sharedFamilyRoles(provider: string | null | undefined): string[] {
-    if (!this.isPanelLaunch || !provider) return [];
-    const roles: [string, string | null | undefined][] = [
-      ['the model under test', this.selectedTestedModel?.provider],
-      ['panel member A', this.selectedAssessorModel?.provider],
-      ['panel member B', this.selectedCoAssessorModel?.provider]
-    ];
-    return roles.filter(([, p]) => AdminBenchmarkComponent.sameProvider(provider, p)).map(([role]) => role);
-  }
-
-  get referenceReaderSharedFamilyRoles(): string[] {
-    return this.secondOpinionConfigId == null ? [] : this.sharedFamilyRoles(this.selectedSecondOpinionModel?.provider);
-  }
-
-  get claimVerifierSharedFamilyRoles(): string[] {
-    return this.claimVerifierConfigId == null ? [] : this.sharedFamilyRoles(this.selectedClaimVerifierModel?.provider);
-  }
-
-  /**
-   * The verifier is the candidate model itself. Tools supply the evidence rather than the model's
-   * memory, so this is not worthless — but it is the weakest available pairing.
-   */
-  get showClaimVerifierCandidateAdvisory(): boolean {
-    return this.claimVerifierConfigId != null &&
-      this.testedConfigId != null &&
-      this.claimVerifierConfigId === this.testedConfigId;
-  }
-
-  /**
-   * The mode that will apply to this run: the operator's override, else the selected profile's
-   * default. Inert without a second-opinion assessor — which is the hard gate that silently
-   * produced the 2026-09-03 run's zero second verdicts, so the control says so rather than
-   * looking configured.
-   */
-  get secondOpinionMode(): number {
-    // A panel run's reference reader grades every answer, blind; the server forces it.
-    if (this.isPanelLaunch) {
-      return BenchmarkSecondOpinionMode.All;
-    }
-    return this.secondOpinionModeOverride
-      ?? this.selectedScoringProfile?.secondOpinionMode
-      ?? BenchmarkSecondOpinionMode.Flagged;
-  }
-
-  set secondOpinionMode(value: number) {
-    this.secondOpinionModeOverride = Number(value);
-  }
-
-  /** The outlier sweep is the only thing the delta configures, so nothing else enables it. */
-  get outlierDeltaEnabled(): boolean {
-    return this.profileForm.secondOpinionMode === BenchmarkSecondOpinionMode.FlaggedAndOutliers;
-  }
-
-  get secondOpinionModeDisabled(): boolean {
-    return this.secondOpinionConfigId == null || this.isPanelLaunch;
-  }
-
-  get secondOpinionModeHint(): string {
-    if (this.isPanelLaunch) {
-      return 'In a panel run coverage is fixed: the reference reader reads every answer, blind.';
-    }
-    if (this.secondOpinionModeDisabled) {
-      return 'Choose a second reader to set its coverage.';
-    }
-    return this.secondOpinionModeOptions.find(o => o.value === this.secondOpinionMode)?.hint ?? '';
-  }
-
-  /** The second opinion is the assessor's own model, so it will mostly confirm its own verdict. */
-  get showSecondOpinionSameModelNote(): boolean {
-    return !!this.selectedSecondOpinionModel && this.selectedSecondOpinionModel.id === this.assessorConfigId;
-  }
-
-  /**
-   * Both graders from one provider. The second verdict is still worth having, but it is a weaker
-   * check than a cross-provider one: two models from one family share training data and failure
-   * modes, and can agree for reasons that have nothing to do with the answer.
-   */
-  get showAssessorPairingAdvisory(): boolean {
-    // A panel run names every shared family in referenceReaderSharedFamilyRoles instead.
-    if (this.isPanelLaunch) return false;
-    const assessor = this.selectedAssessorModel?.provider;
-    const second = this.selectedSecondOpinionModel?.provider;
-    return !!assessor && !!second && assessor.toLowerCase() === second.toLowerCase();
-  }
-
-  /**
-   * The assessor differs from the one that graded this suite's last completed run. A suite's runs
-   * are comparable to each other only while the grader is the same one, so this fires on exactly
-   * the deliberate promotion the staged assessor migration calls for — which is when it should.
-   */
-  get showAssessorChangeAdvisory(): boolean {
-    const previous = this.lastAssessor?.assessorModelConfigurationId;
-    return previous != null && this.assessorConfigId != null && previous !== this.assessorConfigId;
-  }
-
-  onSelectedSuiteChanged(): void {
-    this.loadLastAssessor();
-  }
-
-  loadLastAssessor(): void {
-    const suiteId = this.selectedSuiteId;
-    if (suiteId == null) {
-      this.lastAssessor = null;
-      return;
-    }
-
-    this.benchmarkService.getLastAssessor(suiteId).subscribe({
-      next: (dto) => {
-        this.lastAssessor = dto;
-        this.cdr.detectChanges();
-      },
-      // An advisory that cannot be computed is simply not shown: the run must not be blocked
-      // because a comparison lookup failed.
-      error: () => {
-        this.lastAssessor = null;
-      }
-    });
-  }
-
   get retryOriginalAssessorAvailable(): boolean {
     return this.selectedRunDetail?.assessorAvailable === true;
   }
 
   get retryAssessorDiffersFromRun(): boolean {
     return this.retryAssessorConfigId !== this.selectedRunDetail?.assessorModelConfigurationId;
-  }
-
-  selectTestedModel(config: SystemAiConfigDto | null) {
-    if (!config) return;
-    this.testedConfigId = config.id;
-    this.refreshReusePreview();
-  }
-
-  selectAssessorModel(config: SystemAiConfigDto | null) {
-    if (!config) return;
-    this.assessorConfigId = config.id;
-    this.refreshReusePreview();
-  }
-
-  selectSecondOpinionModel(config: SystemAiConfigDto | null) {
-    this.secondOpinionConfigId = config?.id ?? null;
-    this.refreshReusePreview();
-  }
-
-  selectCoAssessorModel(config: SystemAiConfigDto | null) {
-    this.coAssessorConfigId = config?.id ?? null;
-    this.refreshReusePreview();
-  }
-
-  selectClaimVerifierModel(config: SystemAiConfigDto | null) {
-    this.claimVerifierConfigId = config?.id ?? null;
-    this.refreshReusePreview();
-  }
-
-  selectReportWriterModel(config: SystemAiConfigDto | null) {
-    this.reportWriterConfigId = config?.id ?? null;
-    this.refreshReusePreview();
   }
 
   selectDifficultyAssessorModel(config: SystemAiConfigDto | null) {
@@ -2430,36 +790,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.retryAssessorConfigId = config.id;
   }
 
-  formatThinkingLevel(level: string | null | undefined): string {
-    return formatThinkingLevel(level);
-  }
-
-  showReasoningBadge(mode: string | null | undefined): boolean {
-    return showReasoningBadge(mode);
-  }
-
-  /**
-   * U3. A dollar amount at four decimals fixed, so a sub-cent cost like $0.0007 renders
-   * as $0.0007, not $0.00, and zero renders as $0.0000.
-   */
-  formatCostAmount(amount: number | null | undefined): string {
-    if (amount == null || !Number.isFinite(amount)) return '-';
-    const numPipe = new DecimalPipe('en-US');
-    const digits = '1.4-4';
-    return `$${numPipe.transform(amount, digits)}`;
-  }
-
-  formatRunEstimatedCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
-    return this.formatCostAmount(run.estimatedCost);
-  }
-
   /**
    * H5. What the model under test alone cost, beside the catalog total. The two are a pair: on run
    * 13 the candidate was 28 % of the spend, so the total on its own invites the reading that a
    * benchmark's cost is the model it grades.
    */
   formatRunCandidateCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
-    return this.formatCostAmount(run.estimatedCandidateCost);
+    return formatCostAmount(run.estimatedCandidateCost);
   }
 
   /**
@@ -2507,7 +844,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (candidate == null || !Number.isFinite(candidate) || asked === 0) {
       return null;
     }
-    return `${this.formatCostAmount(candidate / asked)} per question · ${asked} asked`;
+    return `${formatCostAmount(candidate / asked)} per question · ${asked} asked`;
   }
 
   /** The Total Cost card's note: what the total covers and which prices it uses, or why there is none. */
@@ -2661,176 +998,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /**
-   * H2. The first eight hex characters of a run's candidate system-prompt hash — enough to tell two
-   * instruments apart at a glance, and short enough to sit in a table cell. The full hash is on the title.
-   */
-  shortFingerprint(sha: string | null | undefined): string {
-    return sha ? sha.substring(0, 8) : '-';
-  }
-
-  /**
-   * H2. The five fingerprints of a run's instrument, in the fixed order the run list stacks them.
-   *
-   * The shape is always five rows: a hash that was never recorded shows as `-` under its own label
-   * rather than dropping out, so two runs' stacks line up row for row.
-   */
-  fingerprintEntries(run: BenchmarkRunSummaryDto): BenchmarkFingerprintEntry[] {
-    return [
-      {
-        label: 'PROMPT',
-        cssClass: 'fp-prompt',
-        short: this.shortFingerprint(run.candidateSystemPromptSha256),
-        title: run.candidateSystemPromptSha256
-          ? 'Candidate system prompt SHA-256: ' + run.candidateSystemPromptSha256
-          : 'Candidate system prompt SHA-256: not recorded'
-      },
-      {
-        label: 'GUIDES',
-        cssClass: 'fp-guides',
-        short: this.shortFingerprint(run.toolGuidesSha256),
-        title: run.toolGuidesSha256
-          ? 'Tool guides SHA-256: ' + run.toolGuidesSha256
-          : 'Tool guides SHA-256: not recorded'
-      },
-      {
-        label: 'KB',
-        cssClass: 'fp-kb',
-        short: this.shortFingerprint(run.knowledgeBaseHeadSha),
-        title: run.knowledgeBaseHeadSha
-          ? 'Knowledge base Git HEAD SHA: ' + run.knowledgeBaseHeadSha
-          : 'Knowledge base Git HEAD SHA: not recorded'
-      },
-      {
-        label: 'WIKI',
-        cssClass: 'fp-wiki',
-        short: this.shortFingerprint(run.wikiHeadSha),
-        title: run.wikiHeadSha
-          ? 'GnollHack wiki Git HEAD SHA: ' + run.wikiHeadSha
-          : 'GnollHack wiki Git HEAD SHA: not recorded'
-      },
-      {
-        label: 'SRC',
-        cssClass: 'fp-source',
-        short: this.shortFingerprint(run.sourceCodeHeadSha),
-        title: run.sourceCodeHeadSha
-          ? 'GnollHack source Git HEAD SHA: ' + run.sourceCodeHeadSha
-          : 'GnollHack source Git HEAD SHA: not recorded'
-      }
-    ];
-  }
-
-  /**
-   * H2. Whether this run's instrument differs from the next older completed run of the same suite, and
-   * which of the five hashes moved.
-   *
-   * All five are compared and every one that moved is named: the candidate prompt, the tool guides, the
-   * knowledge base, the GnollHack wiki and the GnollHack source. The first three are the comparability
-   * keys a reproduction turns on; the two corpus HEADs are provenance, and a badge that names one says
-   * the answers were drawn from a different corpus rather than that the instrument itself moved. The
-   * report has stated that rule for some time, but the run list could not support it, so the check was
-   * done by hand — and run 13's T8 verification is exactly the case where getting it wrong misattributes
-   * a change. Compared client-side over the already-loaded history; no new endpoint.
-   *
-   * Returns null when there is no older run of the same suite, or when either run is missing a hash: "not
-   * recorded" is not "unchanged", and badging it as a change would be a claim the data cannot support.
-   *
-   * The candidate hash covers the prompt as built, so a run option that changes the prompt text —
-   * verboseMode is the usual one — moves it without anything in the instrument having moved. Two runs
-   * with different prompt options are not a candidate reproduction on any axis, so the option
-   * difference is reported as itself rather than as instrument drift; only runs whose options match
-   * can say anything about whether the instrument held still. Where the options cannot be compared —
-   * either run missing them, or either one unparseable — the hashes are the only claim available.
-   */
-  instrumentChangeOf(run: BenchmarkRunSummaryDto):
-    { kind: 'instrument' | 'options'; description: string; comparedToRunId: number } | null {
-    const index = this.historyRuns.indexOf(run);
-    if (index < 0) return null;
-
-    const previous = this.historyRuns
-      .slice(index + 1)
-      .find(r => r.benchmarkSuiteId === run.benchmarkSuiteId && this.formatStatus(r.status) !== 'Running');
-    if (!previous) return null;
-
-    const changedOptions = this.changedPromptOptionKeys(run, previous);
-    if (changedOptions && changedOptions.length > 0) {
-      return {
-        kind: 'options',
-        comparedToRunId: previous.id,
-        description: `Run options differ from run #${previous.id}: ${changedOptions.join(', ')}. ` +
-          'The prompt is built from these, so the candidate hash moves with them. The two runs are not a reproduction.'
-      };
-    }
-
-    if (!run.candidateSystemPromptSha256 && !run.toolGuidesSha256 && !run.knowledgeBaseHeadSha &&
-        !run.wikiHeadSha && !run.sourceCodeHeadSha) {
-      return null;
-    }
-
-    const moved: string[] = [];
-    if (run.candidateSystemPromptSha256 && previous.candidateSystemPromptSha256 &&
-        run.candidateSystemPromptSha256 !== previous.candidateSystemPromptSha256) {
-      moved.push('candidate system prompt');
-    }
-    if (run.toolGuidesSha256 && previous.toolGuidesSha256 &&
-        run.toolGuidesSha256 !== previous.toolGuidesSha256) {
-      moved.push('tool guides');
-    }
-    if (run.knowledgeBaseHeadSha && previous.knowledgeBaseHeadSha &&
-        run.knowledgeBaseHeadSha !== previous.knowledgeBaseHeadSha) {
-      moved.push('knowledge base');
-    }
-    if (run.wikiHeadSha && previous.wikiHeadSha &&
-        run.wikiHeadSha !== previous.wikiHeadSha) {
-      moved.push('GnollHack wiki');
-    }
-    if (run.sourceCodeHeadSha && previous.sourceCodeHeadSha &&
-        run.sourceCodeHeadSha !== previous.sourceCodeHeadSha) {
-      moved.push('GnollHack source');
-    }
-
-    if (moved.length === 0) return null;
-
-    return {
-      kind: 'instrument',
-      comparedToRunId: previous.id,
-      description: `Changed since run #${previous.id}: ${moved.join(', ')}. The two runs are a controlled pair, not a reproduction.`
-    };
-  }
-
-  /**
-   * The prompt-option keys whose values differ between two runs, or null when the two records cannot
-   * be compared at all — either run missing its options, or either one unparseable. An empty array
-   * means the comparison was made and the options match.
-   */
-  private changedPromptOptionKeys(run: BenchmarkRunSummaryDto, previous: BenchmarkRunSummaryDto): string[] | null {
-    const current = this.parsePromptOptions(run.candidatePromptOptionsJson);
-    const older = this.parsePromptOptions(previous.candidatePromptOptionsJson);
-    if (!current || !older) return null;
-
-    const keys = Array.from(new Set([...Object.keys(current), ...Object.keys(older)])).sort();
-    return keys.filter(key => JSON.stringify(current[key] ?? null) !== JSON.stringify(older[key] ?? null));
-  }
-
-  private parsePromptOptions(json: string | null | undefined): Record<string, unknown> | null {
-    if (!json) return null;
-    try {
-      const parsed = JSON.parse(json);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-      return parsed as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  }
-
   formatSecondOpinionMode(mode: number | null | undefined): string {
-    const resolvedMode = mode ?? this.secondOpinionMode;
+    const resolvedMode = mode ?? this.launcher.secondOpinionMode;
     const option = this.secondOpinionModeOptions.find(o => o.value === resolvedMode);
     return option && option.value !== BenchmarkSecondOpinionMode.Off ? option.label : '';
   }
 
   secondOpinionModeHintOf(mode: number | null | undefined): string {
-    const resolvedMode = mode ?? this.secondOpinionMode;
+    const resolvedMode = mode ?? this.launcher.secondOpinionMode;
     const option = this.secondOpinionModeOptions.find(o => o.value === resolvedMode);
     return option?.hint ?? '';
   }
@@ -2848,246 +1023,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       : this.secondOpinionModeHintOf(run.secondOpinionModeUsed);
   }
 
-  /** Opens the grader guide, with the values of the profile being edited or the launcher's selected profile. */
-  openGraderGuide(section: GraderGuideSection, fromProfileForm = false): void {
-    // The form does not edit the minimum sample, so the stored profile's value is carried over.
-    this.graderGuideProfile = fromProfileForm
-      ? {
-        ...this.profileForm,
-        secondOpinionMinimumSample: this.scoringProfiles.find(p => p.id === this.editingProfileId)?.secondOpinionMinimumSample
-      }
-      : (this.selectedScoringProfile ?? null);
+  /** Opens the grader guide with the given profile's values; an undefined profile prints the launcher's selected profile. */
+  openGraderGuide(section: GraderGuideSection, profile?: GraderGuideProfile | null): void {
+    this.graderGuideProfile = profile !== undefined ? profile : (this.launcher.selectedScoringProfile ?? null);
     this.graderGuide?.open(section);
-  }
-
-  private setDefaultModelSelections() {
-    const benchmarkModels = this.benchmarkCapableConfigs;
-    if (benchmarkModels.length > 0) {
-      // A remembered configuration wins over the first one, but only while it still qualifies:
-      // benchmarkCapableConfigs filters on the Benchmark role bit, hasApiKey and isEnabled, so one that
-      // was disabled or lost its key falls back rather than leaving a selection the server would reject.
-      const remembered = this.pendingRunSettings;
-      const qualifies = (id: number | null | undefined): boolean =>
-        id != null && benchmarkModels.some(m => m.id === id);
-
-      if (qualifies(remembered?.testedConfigId)) {
-        this.testedConfigId = remembered!.testedConfigId;
-      } else if (!this.testedConfigId || !benchmarkModels.some(m => m.id === this.testedConfigId)) {
-        this.testedConfigId = benchmarkModels[0].id;
-      }
-
-      if (qualifies(remembered?.assessorConfigId)) {
-        this.assessorConfigId = remembered!.assessorConfigId;
-      } else if (!this.assessorConfigId || !benchmarkModels.some(m => m.id === this.assessorConfigId)) {
-        this.assessorConfigId = benchmarkModels[0].id;
-      }
-
-      // The optional roles restore to null when their configuration no longer qualifies, which is the
-      // same as "not selected" and is what the run request already means by a null id.
-      if (remembered) {
-        if (remembered.coAssessorConfigId != null) {
-          this.coAssessorConfigId = qualifies(remembered.coAssessorConfigId)
-            ? remembered.coAssessorConfigId
-            : null;
-        }
-        if (remembered.secondOpinionConfigId != null) {
-          this.secondOpinionConfigId = qualifies(remembered.secondOpinionConfigId)
-            ? remembered.secondOpinionConfigId
-            : null;
-        }
-        if (remembered.claimVerifierConfigId != null) {
-          this.claimVerifierConfigId = qualifies(remembered.claimVerifierConfigId)
-            ? remembered.claimVerifierConfigId
-            : null;
-        }
-        if (remembered.reportWriterConfigId != null) {
-          this.reportWriterConfigId = qualifies(remembered.reportWriterConfigId)
-            ? remembered.reportWriterConfigId
-            : null;
-        }
-      }
-    } else {
-      this.testedConfigId = null;
-      this.assessorConfigId = null;
-    }
-
-    // Only counts as applied when there was actually a list to validate against: called from ngOnInit
-    // before the systemConfigs input has arrived, this method has done nothing.
-    if (benchmarkModels.length > 0) {
-      this.markRunSettingsApplied('configs');
-    }
-  }
-
-  // --- Scoring Profiles Management ---
-
-  loadProfiles() {
-    this.loadingProfiles = true;
-    this.benchmarkService.getScoringProfiles().subscribe({
-      next: (data) => {
-        this.scoringProfiles = data;
-        this.loadingProfiles = false;
-        // A remembered profile wins over the default one, but only if it still exists.
-        const rememberedProfileId = this.pendingRunSettings?.scoringProfileId ?? null;
-        const defaultProf = this.scoringProfiles.find(p => p.isDefault);
-        if (rememberedProfileId != null && this.scoringProfiles.some(p => p.id === rememberedProfileId)) {
-          this.selectedScoringProfileId = rememberedProfileId;
-        } else if (defaultProf && !this.selectedScoringProfileId) {
-          this.selectedScoringProfileId = defaultProf.id;
-        } else if (this.scoringProfiles.length > 0 && !this.selectedScoringProfileId) {
-          this.selectedScoringProfileId = this.scoringProfiles[0].id;
-        }
-        this.markRunSettingsApplied('profile');
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingProfiles = false;
-        console.error('Failed to load scoring profiles', err);
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  formatProfileOption(profile: BenchmarkScoringProfileDto): string {
-    const cleanName = (profile.name || '').replace(/\s*\(Default\)$/i, '').trim();
-    return profile.isDefault ? `${cleanName} (Default)` : cleanName;
-  }
-
-  openManageProfiles() {
-    this.selectSubTab('profiles');
-  }
-
-  openCreateProfile() {
-    this.editingProfileId = null;
-    this.profileValidationErrors = [];
-    this.profileForm = {
-      name: '',
-      isDefault: false,
-      weightAccuracy: 0.55,
-      weightCompleteness: 0.25,
-      weightConciseness: 0.10,
-      weightReadability: 0.10,
-      levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
-      criticalErrorCeiling: 25,
-      notAttemptedScore: 50,
-      secondOpinionQualityThreshold: 50,
-      secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
-      secondOpinionOutlierDeltaPoints: 25,
-      secondOpinionBlind: true,
-      speedTargetMs: 15000,
-      speedDecayK: 20.0,
-      speedDifficultyScaling: 1.0,
-      maxParallelQuestions: 1
-    };
-    this.scoringProfileFormDialog?.nativeElement.showModal();
-  }
-
-  openEditProfile(profile: BenchmarkScoringProfileDto) {
-    this.editingProfileId = profile.id;
-    this.profileValidationErrors = [];
-    this.profileForm = {
-      name: profile.name,
-      isDefault: profile.isDefault,
-      weightAccuracy: profile.weightAccuracy,
-      weightCompleteness: profile.weightCompleteness,
-      weightConciseness: profile.weightConciseness,
-      weightReadability: profile.weightReadability,
-      levelScoresJson: profile.levelScoresJson,
-      criticalErrorCeiling: profile.criticalErrorCeiling,
-      notAttemptedScore: profile.notAttemptedScore ?? null,
-      secondOpinionQualityThreshold: profile.secondOpinionQualityThreshold ?? 50,
-      secondOpinionMode: profile.secondOpinionMode ?? BenchmarkSecondOpinionMode.Flagged,
-      secondOpinionOutlierDeltaPoints: profile.secondOpinionOutlierDeltaPoints ?? 25,
-      secondOpinionBlind: profile.secondOpinionBlind ?? true,
-      speedTargetMs: profile.speedTargetMs,
-      speedDecayK: profile.speedDecayK,
-      speedDifficultyScaling: profile.speedDifficultyScaling,
-      maxParallelQuestions: profile.maxParallelQuestions
-    };
-    this.scoringProfileFormDialog?.nativeElement.showModal();
-  }
-
-  saveProfile() {
-    this.profileValidationErrors = [];
-    if (!this.profileForm.name.trim()) {
-      this.profileValidationErrors.push('Profile name is required.');
-      return;
-    }
-
-    // Mirrors the server-side range in BenchmarkScoringProfileService.ValidateProfile, so a
-    // plainly out-of-range value is reported without a round trip. The server remains the
-    // authority; everything else on this form is validated there only.
-    const scaling = this.profileForm.speedDifficultyScaling;
-    if (scaling == null || !isFinite(scaling) || scaling < 0 || scaling > 5) {
-      this.profileValidationErrors.push('Speed difficulty scaling must be between 0.0 and 5.0.');
-      return;
-    }
-
-    // 0 is meaningful: it disables the score trigger and leaves second opinions to critical
-    // errors alone. Mirrors BenchmarkScoringProfileService.ValidateProfile.
-    const threshold = this.profileForm.secondOpinionQualityThreshold;
-    if (threshold == null || threshold < 0 || threshold > 100) {
-      this.profileValidationErrors.push('Second reader threshold must be between 0 and 100.');
-      return;
-    }
-
-    // Only meaningful under FlaggedAndOutliers, and a zero there would disable the sweep while
-    // the mode claims to run it. Mirrors BenchmarkScoringProfileService.ValidateProfile.
-    if (this.profileForm.secondOpinionMode === BenchmarkSecondOpinionMode.FlaggedAndOutliers) {
-      const delta = this.profileForm.secondOpinionOutlierDeltaPoints;
-      if (delta == null || delta <= 0 || delta > 100) {
-        this.profileValidationErrors.push('Outlier delta must be between 1 and 100 when the second reader coverage is "Flagged answers and statistical outliers".');
-        return;
-      }
-    }
-
-    // Blank is meaningful: no not-attempted floor. Always sent, because an update that omits it
-    // clears it. Mirrors BenchmarkScoringProfileService.ValidateProfile.
-    const notAttemptedScore = this.profileForm.notAttemptedScore ?? null;
-    if (notAttemptedScore != null && (!Number.isInteger(notAttemptedScore) || notAttemptedScore < 0 || notAttemptedScore > 100)) {
-      this.profileValidationErrors.push('Not-attempted score must be blank or a whole number between 0 and 100.');
-      return;
-    }
-    this.profileForm.notAttemptedScore = notAttemptedScore;
-
-    if (this.editingProfileId) {
-      this.benchmarkService.updateScoringProfile(this.editingProfileId, this.profileForm as UpdateBenchmarkScoringProfileRequest).subscribe({
-        next: () => {
-          this.scoringProfileFormDialog?.nativeElement.close();
-          this.loadProfiles();
-        },
-        error: (err) => {
-          if (err?.error?.errors) {
-            this.profileValidationErrors = err.error.errors;
-          } else {
-            this.profileValidationErrors = [err?.error || 'Failed to update profile.'];
-          }
-          this.cdr.detectChanges();
-        }
-      });
-    } else {
-      this.benchmarkService.createScoringProfile(this.profileForm).subscribe({
-        next: (created) => {
-          this.scoringProfileFormDialog?.nativeElement.close();
-          this.loadProfiles();
-          this.selectedScoringProfileId = created.id;
-        },
-        error: (err) => {
-          if (err?.error?.errors) {
-            this.profileValidationErrors = err.error.errors;
-          } else {
-            this.profileValidationErrors = [err?.error || 'Failed to create profile.'];
-          }
-          this.cdr.detectChanges();
-        }
-      });
-    }
-  }
-
-  setDefaultProfile(profileId: number) {
-    this.benchmarkService.setDefaultScoringProfile(profileId).subscribe({
-      next: () => this.loadProfiles(),
-      error: (err) => console.error('Failed to set default profile', err)
-    });
   }
 
   openConfirmDialog(options: {
@@ -3122,316 +1061,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  deleteProfile(profileId: number) {
-    const profile = this.scoringProfiles.find(p => p.id === profileId);
-    const name = profile ? `"${profile.name}"` : 'this scoring profile';
-    this.openConfirmDialog({
-      title: 'Delete Scoring Profile',
-      message: `Are you sure you want to delete ${name}?`,
-      dangerNotice: 'This action is permanent and cannot be undone.',
-      buttonText: 'Delete Profile',
-      buttonClass: 'btn-gh btn-gh-delete',
-      action: () => {
-        this.benchmarkService.deleteScoringProfile(profileId).subscribe({
-          next: () => this.loadProfiles(),
-          error: (err) => console.error('Failed to delete profile', err)
-        });
-      }
-    });
-  }
-
-  // --- Suites Management ---
-
-  loadSuites() {
-    this.loadingSuites = true;
-    this.benchmarkService.getSuites().subscribe({
-      next: (data) => {
-        this.suites = data;
-        this.loadingSuites = false;
-        // A remembered suite wins over the first one, but only if it still exists.
-        const rememberedSuiteId = this.pendingRunSettings?.suiteId ?? null;
-        if (rememberedSuiteId != null && this.suites.some(s => s.id === rememberedSuiteId)) {
-          this.selectedSuiteId = rememberedSuiteId;
-        } else if (this.suites.length > 0 && (!this.selectedSuiteId || !this.suites.some(s => s.id === this.selectedSuiteId))) {
-          this.selectedSuiteId = this.suites[0].id;
-        } else if (this.suites.length === 0) {
-          this.selectedSuiteId = null;
-        }
-        this.markRunSettingsApplied('suite');
-        this.loadLastAssessor();
-        this.loadAllFootprints();
-        this.refreshRunningGeneration();
-        this.cdr.detectChanges();
-        this.focusLinkedSuite();
-      },
-      error: (err) => {
-        this.loadingSuites = false;
-        console.error('Failed to load benchmark suites', err);
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  loadAllFootprints() {
-    for (const suite of this.suites) {
-      this.benchmarkService.getSuiteRunsFootprint(suite.id).subscribe({
-        next: (fp) => {
-          this.footprints[suite.id] = fp;
-          this.cdr.detectChanges();
-        },
-        error: (err) => console.error(`Failed to load footprint for suite ${suite.id}`, err)
-      });
-    }
-  }
-
-  openBulkDeleteDialog(suite: BenchmarkSuiteDto) {
-    this.suiteForBulkDelete = suite;
-    this.bulkDeleteDialog?.nativeElement.showModal();
-  }
-
-  closeBulkDeleteDialog() {
-    this.suiteForBulkDelete = null;
-    this.bulkDeleteDialog?.nativeElement.close();
-  }
-
-  confirmDeleteSuiteRuns() {
-    if (!this.suiteForBulkDelete) return;
-    const suiteId = this.suiteForBulkDelete.id;
-    this.deletingSuiteRuns = true;
-    this.actionErrorMessage = null;
-
-    this.benchmarkService.deleteSuiteRuns(suiteId).subscribe({
-      next: () => {
-        this.deletingSuiteRuns = false;
-        this.closeBulkDeleteDialog();
-        this.loadHistory();
-        this.loadAllFootprints();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.deletingSuiteRuns = false;
-        this.actionErrorMessage = err?.error || 'Failed to delete suite runs.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  openCreateSuite() {
-    this.editingSuiteId = null;
-    this.descriptionGenerationSuite = null;
-    this.suiteForm = { name: '', description: '' };
-    this.setSuiteFormBaseline();
-    this.suiteDescriptionEditor?.resetToWrite();
-    this.suiteDialog?.nativeElement.showModal();
-  }
-
-  openEditSuite(suite: BenchmarkSuiteDto) {
-    this.editingSuiteId = suite.id;
-    this.descriptionGenerationSuite = suite;
-    this.suiteForm = { name: suite.name, description: suite.description };
-    this.setSuiteFormBaseline();
-    this.suiteDescriptionEditor?.resetToWrite();
-    this.suiteDialog?.nativeElement.showModal();
-  }
-
-  private setSuiteFormBaseline() {
-    this.suiteFormBaseline = { name: this.suiteForm.name, description: this.suiteForm.description ?? '' };
-  }
-
-  get suiteFormDirty(): boolean {
-    return this.suiteForm.name !== this.suiteFormBaseline.name
-      || (this.suiteForm.description ?? '') !== this.suiteFormBaseline.description;
-  }
-
-  requestCloseSuiteDialog() {
-    if (!this.suiteFormDirty) {
-      this.suiteDialog?.nativeElement.close();
-      return;
-    }
-    this.openConfirmDialog({
-      title: 'Discard unsaved changes?',
-      message: `'${this.suiteForm.name || 'This suite'}' has unsaved changes to its name or description. Close without saving?`,
-      buttonText: 'Discard changes',
-      buttonClass: 'btn-gh btn-gh-delete',
-      icon: 'none',
-      action: () => this.suiteDialog?.nativeElement.close()
-    });
-  }
-
-  // Escape fires cancel on a native dialog; the dialog stays open until the guard decides.
-  onSuiteDialogCancel(event: Event) {
-    event.preventDefault();
-    this.requestCloseSuiteDialog();
-  }
-
-  openDescriptionGeneration() {
-    if (!this.editingSuiteId) return;
-    this.descriptionGenerationVisible = true;
-  }
-
-  onDescriptionGenerationClosed() {
-    this.descriptionGenerationVisible = false;
-  }
-
-  onDescriptionGenerated(text: string) {
-    this.suiteDescriptionValue = text;
-    this.suiteDescriptionEditor?.resetToWrite();
-    this.cdr.detectChanges();
-  }
-
-  saveSuite() {
-    if (!this.suiteForm.name.trim()) return;
-
-    if (this.editingSuiteId) {
-      this.benchmarkService.updateSuite(this.editingSuiteId, this.suiteForm).subscribe({
-        next: () => {
-          this.suiteDialog?.nativeElement.close();
-          this.loadSuites();
-        },
-        error: (err) => console.error('Failed to update suite', err)
-      });
-    } else {
-      this.benchmarkService.createSuite(this.suiteForm).subscribe({
-        next: (created) => {
-          this.suiteDialog?.nativeElement.close();
-          this.loadSuites();
-          this.selectedSuiteId = created.id;
-        },
-        error: (err) => console.error('Failed to create suite', err)
-      });
-    }
-  }
-
-  deleteSuite(id: number) {
-    const suite = this.suites.find(s => s.id === id);
-    const name = suite ? `"${suite.name}"` : 'this benchmark suite';
-    this.openConfirmDialog({
-      title: 'Delete Benchmark Suite',
-      message: `Are you sure you want to delete ${name}?`,
-      dangerNotice: 'This action is permanent and will delete the suite and all its questions.',
-      buttonText: 'Delete Suite',
-      buttonClass: 'btn-gh btn-gh-delete',
-      action: () => {
-        this.actionErrorMessage = null;
-        this.benchmarkService.deleteSuite(id).subscribe({
-          next: () => this.loadSuites(),
-          error: (err) => {
-            this.actionErrorMessage = typeof err?.error === 'string' && err.error
-              ? err.error
-              : err?.error?.message || 'Failed to delete suite.';
-            this.cdr.detectChanges();
-          }
-        });
-      }
-    });
-  }
-
-  duplicateSuite(id: number) {
-    this.benchmarkService.duplicateSuite(id).subscribe({
-      next: () => this.loadSuites(),
-      error: (err) => console.error('Failed to duplicate suite', err)
-    });
-  }
-
-  // --- Import Default Suites Dialog ---
-
-  openImportDefaultSuitesDialog(): void {
-    this.selectedDefaultSuiteKeys.clear();
-    this.defaultSuiteDialogError = null;
-    this.importingDefaultSuites = false;
-    this.loadDefaultSuiteCatalog();
-    this.importDefaultSuitesDialog?.nativeElement.showModal();
-  }
-
-  loadDefaultSuiteCatalog(): void {
-    this.loadingDefaultSuiteCatalog = true;
-    this.benchmarkService.getDefaultSuiteCatalog().subscribe({
-      next: (catalog) => {
-        this.defaultSuiteCatalog = catalog;
-        this.loadingDefaultSuiteCatalog = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingDefaultSuiteCatalog = false;
-        this.defaultSuiteDialogError = err?.error || 'Failed to load the default suite catalog.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  toggleDefaultSuite(key: string): void {
-    if (this.selectedDefaultSuiteKeys.has(key)) {
-      this.selectedDefaultSuiteKeys.delete(key);
-    } else {
-      this.selectedDefaultSuiteKeys.add(key);
-    }
-  }
-
-  isDefaultSuiteSelected(key: string): boolean {
-    return this.selectedDefaultSuiteKeys.has(key);
-  }
-
-  get canImportDefaultSuites(): boolean {
-    return this.selectedDefaultSuiteKeys.size > 0 && !this.importingDefaultSuites;
-  }
-
-  importSelectedDefaultSuites(): void {
-    if (!this.canImportDefaultSuites) return;
-
-    this.importingDefaultSuites = true;
-    this.defaultSuiteDialogError = null;
-    const keys = Array.from(this.selectedDefaultSuiteKeys);
-
-    this.benchmarkService.importDefaultSuites(keys).subscribe({
-      next: (result: ImportDefaultSuitesResultDto) => {
-        this.importingDefaultSuites = false;
-        this.importDefaultSuitesDialog?.nativeElement.close();
-        this.loadSuites();
-        this.suiteActionAnnouncement = this.formatImportAnnouncement(result);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.importingDefaultSuites = false;
-        this.defaultSuiteDialogError = err?.error || 'Failed to import the selected suites.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** What the polite live region announces once an import request completes. */
-  private formatImportAnnouncement(result: ImportDefaultSuitesResultDto): string {
-    const importedNames = result.imported.map(s => s.name).join(', ');
-    let text = result.imported.length > 0
-      ? `Imported ${result.imported.length} suite${result.imported.length === 1 ? '' : 's'}: ${importedNames}`
-      : 'No suites were imported.';
-    if (result.skipped.length > 0) {
-      text += ' Skipped: ' + result.skipped.map(s => `${s.key} — ${s.reason}`).join('; ');
-    }
-    return text;
-  }
-
-  /** The catalog entry's per-band question counts, in band order, one item per band present. */
-  difficultyBands(entry: DefaultSuiteCatalogEntryDto): { band: string; count: number }[] {
-    return AdminBenchmarkComponent.DIFFICULTY_BAND_ORDER
-      .filter(band => entry.difficultyCounts && entry.difficultyCounts[band] != null)
-      .map(band => ({ band, count: entry.difficultyCounts[band] }));
-  }
-
-  /** Catalog entries that can actually be imported (invalid files are listed but not selectable). */
-  get selectableDefaultSuiteCount(): number {
-    return this.defaultSuiteCatalog.filter(e => !e.error).length;
-  }
-
-  // --- Difficulty Assessor Dialog Actions ---
-
-  isDifficultyAssessorDialogOpen = false;
-
   openDifficultyAssessorDialog(suite?: BenchmarkSuiteDto | null, question: BenchmarkQuestionDto | null = null) {
-    this.actionErrorMessage = null;
+    this.workspace.actionErrorMessage = null;
     this.difficultyDialogError = null;
-    this.isDifficultyAssessorDialogOpen = true;
+    this.difficulty.isDifficultyAssessorDialogOpen = true;
 
-    if (this.difficultyJobIsRunning) {
+    if (this.difficulty.difficultyJobIsRunning) {
       this.difficultyDialogPhase = 'progress';
     } else {
       if (suite) {
@@ -3449,32 +1084,32 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   closeDifficultyAssessorDialog() {
-    this.isDifficultyAssessorDialogOpen = false;
+    this.difficulty.isDifficultyAssessorDialogOpen = false;
     this.difficultyAssessorDialog?.nativeElement.close();
-    if (this.difficultyJobIsTerminal) {
+    if (this.difficulty.difficultyJobIsTerminal) {
       this.difficultyDialogPhase = 'select';
     }
   }
 
   resolveDefaultDifficultyAssessor(question: BenchmarkQuestionDto | null): number | null {
-    if (question?.assessedDifficultyModelConfigurationId && this.benchmarkCapableConfigs.some(c => c.id === question.assessedDifficultyModelConfigurationId)) {
+    if (question?.assessedDifficultyModelConfigurationId && this.workspace.benchmarkCapableConfigs.some(c => c.id === question.assessedDifficultyModelConfigurationId)) {
       return question.assessedDifficultyModelConfigurationId;
     }
 
-    if (this.currentSuiteForQuestions?.id === this.suiteForDifficultyAssessment?.id && this.questions.length > 0) {
-      const assessed = this.questions
-        .filter(q => q.assessedDifficultyModelConfigurationId != null && q.assessedDifficultyAtUtc != null && this.benchmarkCapableConfigs.some(c => c.id === q.assessedDifficultyModelConfigurationId))
+    if (this.workspace.currentSuiteForQuestions?.id === this.suiteForDifficultyAssessment?.id && this.workspace.questions.length > 0) {
+      const assessed = this.workspace.questions
+        .filter(q => q.assessedDifficultyModelConfigurationId != null && q.assessedDifficultyAtUtc != null && this.workspace.benchmarkCapableConfigs.some(c => c.id === q.assessedDifficultyModelConfigurationId))
         .sort((a, b) => new Date(b.assessedDifficultyAtUtc!).getTime() - new Date(a.assessedDifficultyAtUtc!).getTime());
       if (assessed.length > 0 && assessed[0].assessedDifficultyModelConfigurationId != null) {
         return assessed[0].assessedDifficultyModelConfigurationId;
       }
     }
 
-    if (this.assessorConfigId && this.benchmarkCapableConfigs.some(c => c.id === this.assessorConfigId)) {
-      return this.assessorConfigId;
+    if (this.launcher.assessorConfigId && this.workspace.benchmarkCapableConfigs.some(c => c.id === this.launcher.assessorConfigId)) {
+      return this.launcher.assessorConfigId;
     }
 
-    return this.benchmarkCapableConfigs[0]?.id ?? null;
+    return this.workspace.benchmarkCapableConfigs[0]?.id ?? null;
   }
 
   confirmDifficultyAssessment() {
@@ -3482,7 +1117,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.difficultyJobStarting = true;
     this.difficultyDialogError = null;
 
-    const suiteId = this.suiteForDifficultyAssessment?.id || (this.difficultyJob?.suiteId ?? 0);
+    const suiteId = this.suiteForDifficultyAssessment?.id || (this.difficulty.difficultyJob?.suiteId ?? 0);
     const questionIds = this.difficultyAssessmentScope === 'question' && this.questionIdForDifficultyAssessment != null
       ? [this.questionIdForDifficultyAssessment]
       : null;
@@ -3496,100 +1131,30 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       next: (res) => {
         this.difficultyJobStarting = false;
         this.difficultyDialogPhase = 'progress';
-        this.startDifficultyPolling(res.jobId);
-        this.cdr.detectChanges();
+        this.difficulty.startDifficultyPolling(res.jobId);
+        this.viewSync.notify();
         this.difficultyProgressHeading?.nativeElement.focus();
       },
       error: (err) => {
         this.difficultyJobStarting = false;
         if (err.status === 409 && err.error) {
-          this.difficultyJob = err.error as DifficultyAssessmentJobDto;
+          this.difficulty.difficultyJob = err.error as DifficultyAssessmentJobDto;
           this.difficultyDialogPhase = 'progress';
-          this.startDifficultyPolling(this.difficultyJob.id);
-          this.cdr.detectChanges();
+          this.difficulty.startDifficultyPolling(this.difficulty.difficultyJob.id);
+          this.viewSync.notify();
           this.difficultyProgressHeading?.nativeElement.focus();
         } else {
           this.difficultyDialogError = err?.error || 'Failed to start difficulty assessment.';
-          this.cdr.detectChanges();
+          this.viewSync.notify();
         }
-      }
-    });
-  }
-
-  startDifficultyPolling(jobId: string) {
-    this.stopDifficultyPolling();
-
-    this.pollDifficultyJob(jobId);
-
-    this.difficultyPollInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-      this.pollDifficultyJob(jobId);
-    }, 1500);
-
-    if (typeof document !== 'undefined') {
-      this.visibilityChangeHandler = () => {
-        if (!document.hidden) {
-          this.pollDifficultyJob(jobId);
-        }
-      };
-      document.addEventListener('visibilitychange', this.visibilityChangeHandler);
-    }
-  }
-
-  private pollDifficultyJob(jobId: string) {
-    this.benchmarkService.getDifficultyAssessment(jobId).subscribe({
-      next: (job) => {
-        this.difficultyJob = job;
-        if (job.status !== 'Running') {
-          this.terminatingDifficultyJob = false;
-          this.stopDifficultyPolling();
-          this.loadSuites();
-          if (this.currentSuiteForQuestions) {
-            this.loadQuestions(this.currentSuiteForQuestions.id);
-          }
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to poll difficulty job', err);
-      }
-    });
-  }
-
-  stopDifficultyPolling() {
-    if (this.difficultyPollInterval) {
-      clearInterval(this.difficultyPollInterval);
-      this.difficultyPollInterval = null;
-    }
-    if (this.visibilityChangeHandler && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
-      this.visibilityChangeHandler = null;
-    }
-  }
-
-  terminateDifficultyAssessment() {
-    if (!this.difficultyJob) return;
-    // Stays set until a poll reports the job has left Running.
-    this.terminatingDifficultyJob = true;
-    this.benchmarkService.cancelDifficultyAssessment(this.difficultyJob.id).subscribe({
-      next: () => {
-        this.pollDifficultyJob(this.difficultyJob!.id);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.terminatingDifficultyJob = false;
-        this.actionErrorMessage = err?.error || 'Failed to cancel assessment.';
-        this.cdr.detectChanges();
       }
     });
   }
 
   assessAgain() {
     // The suite list is reloaded when a job ends, so take the current counts from it.
-    const suiteId = this.suiteForDifficultyAssessment?.id ?? this.difficultyJob?.suiteId;
-    const currentSuite = this.suites.find(s => s.id === suiteId);
+    const suiteId = this.suiteForDifficultyAssessment?.id ?? this.difficulty.difficultyJob?.suiteId;
+    const currentSuite = this.workspace.suites.find(s => s.id === suiteId);
     if (currentSuite) {
       this.suiteForDifficultyAssessment = currentSuite;
     }
@@ -3597,1347 +1162,41 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.difficultyAssessmentScope = this.suiteIsPartiallyAssessed ? 'unassessed' : 'suite';
     }
     this.difficultyDialogPhase = 'select';
-    this.cdr.detectChanges();
+    this.viewSync.notify();
   }
 
   retryFailedQuestions() {
-    if (!this.difficultyJob || this.failedDifficultyItems.length === 0) return;
+    if (!this.difficulty.difficultyJob || this.difficulty.failedDifficultyItems.length === 0) return;
     this.difficultyJobStarting = true;
     this.difficultyDialogError = null;
 
-    const failedIds = this.failedDifficultyItems.map(i => i.questionId);
+    const failedIds = this.difficulty.failedDifficultyItems.map(i => i.questionId);
     this.benchmarkService.startDifficultyAssessment({
-      suiteId: this.difficultyJob.suiteId,
+      suiteId: this.difficulty.difficultyJob.suiteId,
       questionIds: failedIds,
-      assessorModelConfigurationId: this.difficultyJob.assessorConfigId
+      assessorModelConfigurationId: this.difficulty.difficultyJob.assessorConfigId
     }).subscribe({
       next: (res) => {
         this.difficultyJobStarting = false;
         this.difficultyDialogPhase = 'progress';
-        this.startDifficultyPolling(res.jobId);
-        this.cdr.detectChanges();
+        this.difficulty.startDifficultyPolling(res.jobId);
+        this.viewSync.notify();
         this.difficultyProgressHeading?.nativeElement.focus();
       },
       error: (err) => {
         this.difficultyJobStarting = false;
         if (err.status === 409 && err.error) {
-          this.difficultyJob = err.error as DifficultyAssessmentJobDto;
+          this.difficulty.difficultyJob = err.error as DifficultyAssessmentJobDto;
           this.difficultyDialogPhase = 'progress';
-          this.startDifficultyPolling(this.difficultyJob.id);
-          this.cdr.detectChanges();
+          this.difficulty.startDifficultyPolling(this.difficulty.difficultyJob.id);
+          this.viewSync.notify();
           this.difficultyProgressHeading?.nativeElement.focus();
         } else {
           this.difficultyDialogError = err?.error || 'Failed to retry failed questions.';
-          this.cdr.detectChanges();
+          this.viewSync.notify();
         }
       }
     });
-  }
-
-  // --- Questions Management ---
-
-  openManageQuestions(suite: BenchmarkSuiteDto) {
-    this.currentSuiteForQuestions = suite;
-    this.questionsDialog?.nativeElement.showModal();
-    this.loadQuestions(suite.id);
-  }
-
-  loadQuestions(suiteId: number) {
-    this.loadingQuestions = true;
-    this.benchmarkService.getQuestions(suiteId).subscribe({
-      next: (data) => {
-        this.questions = data;
-        this.loadingQuestions = false;
-
-        if (this.pendingQuestionEditId != null) {
-          const question = this.questions.find(q => q.id === this.pendingQuestionEditId);
-          this.pendingQuestionEditId = null;
-          if (question) {
-            this.openEditQuestion(question);
-          }
-        }
-
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingQuestions = false;
-        this.pendingQuestionEditId = null;
-        console.error('Failed to load questions', err);
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** True once the list has finished loading and holds at least one question. */
-  get canAutoRateAll(): boolean {
-    return !this.loadingQuestions && this.questions.length > 0;
-  }
-
-  openAutoRateAll(): void {
-    if (!this.canAutoRateAll || !this.currentSuiteForQuestions) return;
-    this.openDifficultyAssessorDialog(this.currentSuiteForQuestions);
-  }
-
-  openCreateQuestion() {
-    this.editingQuestionId = null;
-    this.questionFormSuiteId = this.currentSuiteForQuestions?.id ?? null;
-    this.questionForm = { questionText: '', difficulty: 1, expectedPoints: '' };
-    this.showQuestionForm();
-  }
-
-  openEditQuestion(q: BenchmarkQuestionDto) {
-    this.editingQuestionId = q.id;
-    this.questionFormSuiteId = q.benchmarkSuiteId;
-    this.questionForm = {
-      questionText: q.questionText,
-      difficulty: typeof q.difficulty === 'number' ? q.difficulty : this.parseDifficulty(q.difficulty),
-      expectedPoints: q.expectedPoints || ''
-    };
-    this.showQuestionForm();
-  }
-
-  /**
-   * Opens the question form dialog on the editor's Write tab, whatever tab the previous session
-   * left it on. The anchor-positioning polyfill does not observe DOM mutations, so the editor's
-   * toolbar tooltips are re-scanned once the dialog is in the top layer.
-   */
-  private showQuestionForm(): void {
-    this.expectedPointsEditor?.resetToWrite();
-    this.questionFormDialog?.nativeElement.showModal();
-    refreshAnchorPositioning();
-  }
-
-  saveQuestion() {
-    const suiteId = this.questionFormSuiteId;
-    if (!this.questionForm.questionText.trim() || suiteId == null) return;
-
-    if (this.editingQuestionId) {
-      this.benchmarkService.updateQuestion(this.editingQuestionId, this.questionForm).subscribe({
-        next: () => this.onQuestionSaved(suiteId),
-        error: (err) => console.error('Failed to update question', err)
-      });
-    } else {
-      this.benchmarkService.createQuestion(suiteId, this.questionForm).subscribe({
-        next: () => this.onQuestionSaved(suiteId),
-        error: (err) => console.error('Failed to create question', err)
-      });
-    }
-  }
-
-  /** Reloads the lists that show the saved question's suite; Manage Questions may hold another suite. */
-  private onQuestionSaved(suiteId: number): void {
-    this.questionFormDialog?.nativeElement.close();
-    if (this.currentSuiteForQuestions?.id === suiteId) {
-      this.loadQuestions(suiteId);
-    }
-    this.loadSuites();
-    if (this.generationDialogVisible) {
-      this.generationDialog?.refreshQuestions();
-    }
-  }
-
-  deleteQuestion(id: number) {
-    this.openConfirmDialog({
-      title: 'Delete Benchmark Question',
-      message: 'Are you sure you want to delete this question?',
-      dangerNotice: 'This action is permanent and cannot be undone.',
-      buttonText: 'Delete Question',
-      buttonClass: 'btn-gh btn-gh-delete',
-      action: () => {
-        this.benchmarkService.deleteQuestion(id).subscribe({
-          next: () => {
-            if (this.currentSuiteForQuestions) {
-              this.loadQuestions(this.currentSuiteForQuestions.id);
-              this.loadSuites();
-            }
-          },
-          error: (err) => console.error('Failed to delete question', err)
-        });
-      }
-    });
-  }
-
-  // --- Question Drag & Drop Reordering ---
-
-  onQuestionDragStart(event: DragEvent, index: number) {
-    if (event.dataTransfer) {
-      event.dataTransfer.setData('text/plain', JSON.stringify({ index }));
-      event.dataTransfer.effectAllowed = 'move';
-      const target = (event.target as HTMLElement).closest('.question-list-item') as HTMLElement;
-      if (target) {
-        setTimeout(() => target.classList.add('dragging'), 0);
-      }
-    }
-  }
-
-  onQuestionDragEnd(event: DragEvent) {
-    const target = (event.target as HTMLElement).closest('.question-list-item') as HTMLElement;
-    if (target) {
-      target.classList.remove('dragging');
-    }
-    const items = document.querySelectorAll('.question-list-item');
-    items.forEach(item => item.classList.remove('drag-over', 'drag-over-top', 'drag-over-bottom'));
-  }
-
-  onQuestionDragOver(event: DragEvent) {
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'move';
-    }
-    const targetItem = (event.target as HTMLElement).closest('.question-list-item');
-    if (targetItem) {
-      const rect = targetItem.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
-      if (event.clientY < midY) {
-        targetItem.classList.add('drag-over-top');
-      } else {
-        targetItem.classList.add('drag-over-bottom');
-      }
-    }
-  }
-
-  onQuestionDragLeave(event: DragEvent) {
-    const targetItem = (event.target as HTMLElement).closest('.question-list-item');
-    if (targetItem) {
-      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
-    }
-  }
-
-  onQuestionDrop(event: DragEvent, dropIndex: number) {
-    event.preventDefault();
-    const targetItem = (event.target as HTMLElement).closest('.question-list-item');
-    if (targetItem) {
-      targetItem.classList.remove('drag-over-top', 'drag-over-bottom');
-    }
-
-    if (event.dataTransfer && this.currentSuiteForQuestions) {
-      const dataStr = event.dataTransfer.getData('text/plain');
-      if (dataStr) {
-        try {
-          const data = JSON.parse(dataStr);
-          const dragIndex = data.index;
-          if (dragIndex !== undefined && dragIndex !== dropIndex) {
-            const item = this.questions[dragIndex];
-            this.questions.splice(dragIndex, 1);
-
-            let insertIndex = dropIndex;
-            if (targetItem) {
-              const rect = targetItem.getBoundingClientRect();
-              const midY = rect.top + rect.height / 2;
-              if (event.clientY >= midY) {
-                insertIndex++;
-              }
-              if (dragIndex < dropIndex && event.clientY < midY) {
-                // Dragging down but dropped on top half
-              } else if (dragIndex < dropIndex) {
-                insertIndex--;
-              }
-            }
-
-            this.questions.splice(insertIndex, 0, item);
-
-            // Re-assign order numbers locally
-            this.questions.forEach((q, idx) => q.orderIndex = idx + 1);
-
-            const orderedIds = this.questions.map(q => q.id);
-            this.benchmarkService.reorderQuestions(this.currentSuiteForQuestions.id, orderedIds).subscribe({
-              next: () => this.loadQuestions(this.currentSuiteForQuestions!.id),
-              error: (err) => console.error('Failed to reorder questions', err)
-            });
-          }
-        } catch (e) {
-          console.error('Failed to parse drag data', e);
-        }
-      }
-    }
-  }
-
-  // --- Run setting recall ---
-  //
-  // Follows AdminComponent.persistConfigFilter / restoreConfigFilter: a private static key, try/catch
-  // around every localStorage access because it throws in private-browsing modes, and a whitelisting
-  // restore that drops anything unrecognised.
-  //
-  // Every restored id is validated against the list it must come from — benchmarkCapableConfigs filters on
-  // the Benchmark role bit, hasApiKey and isEnabled — so a configuration that was disabled, lost its key or
-  // lost its role falls back to the existing default rather than leaving a dangling selection that fails
-  // server-side at run time.
-
-  private static readonly RUN_SETTINGS_STORAGE_KEY = 'overseer_admin_benchmark_run_settings';
-
-  /**
-   * The stored settings, read once in ngOnInit and applied by whichever loader owns each field, because
-   * the restore cannot run before the data it validates against exists: suites arrive from loadSuites,
-   * profiles from loadProfiles, and configurations from the systemConfigs input via ngOnChanges.
-   *
-   * Cleared once applied, so a later ngOnChanges cannot resurrect a stale selection over one the operator
-   * has since made by hand.
-   */
-  private pendingRunSettings: BenchmarkRunSettings | null = null;
-
-  /**
-   * Saved in startBenchmark before the request is sent: the operator's choices are worth remembering
-   * whether or not the server accepts the run.
-   *
-   * The same-provider acknowledgments (acknowledgeSameProvider for the assessor and
-   * acknowledgeSameProviderReportWriter for the report writer) are deliberately not persisted. They are
-   * per-run safety acknowledgments, and silently remembering them would defeat the warning dialog they
-   * exist to gate. Neither are the
-   * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which are
-   * not part of setting up a run.
-   */
-  private persistRunSettings(): void {
-    try {
-      const settings: BenchmarkRunSettings = {
-        suiteId: this.selectedSuiteId,
-        testedConfigId: this.testedConfigId,
-        assessorConfigId: this.assessorConfigId,
-        coAssessorConfigId: this.coAssessorConfigId,
-        secondOpinionConfigId: this.secondOpinionConfigId,
-        claimVerifierConfigId: this.claimVerifierConfigId,
-        reportWriterConfigId: this.reportWriterConfigId,
-        // The override, not the getter: a run left on the profile default must keep following the
-        // profile, and persisting the resolved value would freeze it at whatever the profile said today.
-        secondOpinionMode: this.secondOpinionModeOverride,
-        scoringProfileId: this.selectedScoringProfileId,
-        verboseMode: this.candidateVerboseMode,
-        allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
-        runCount: this.effectiveRunCount,
-        targetKind: this.runTargetKind,
-        batteryId: this.selectedBatteryId,
-        completionSound: this.completionSound,
-        completionNotification: this.completionNotification
-      };
-      localStorage.setItem(
-        AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    } catch {
-      // Storage throws in private-browsing modes. Failing to remember a selection is not worth
-      // surfacing to the operator.
-    }
-  }
-
-  /** Reads the stored blob into pendingRunSettings, and restores the fields no loader owns. */
-  private restoreRunSettings(): void {
-    let parsed: unknown;
-    try {
-      const stored = localStorage.getItem(AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY);
-      if (!stored) { return; }
-      parsed = JSON.parse(stored);
-    } catch {
-      return;                                   // every default stands
-    }
-
-    const raw = parsed as Partial<BenchmarkRunSettings> | null;
-    if (!raw || typeof raw !== 'object') { return; }
-
-    const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
-
-    this.pendingRunSettings = {
-      suiteId: num(raw.suiteId),
-      testedConfigId: num(raw.testedConfigId),
-      assessorConfigId: num(raw.assessorConfigId),
-      coAssessorConfigId: num(raw.coAssessorConfigId),
-      secondOpinionConfigId: num(raw.secondOpinionConfigId),
-      claimVerifierConfigId: num(raw.claimVerifierConfigId),
-      reportWriterConfigId: num(raw.reportWriterConfigId),
-      secondOpinionMode: num(raw.secondOpinionMode),
-      scoringProfileId: num(raw.scoringProfileId),
-      verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
-      allowSourceCodeReferences: typeof raw.allowSourceCodeReferences === 'boolean' ? raw.allowSourceCodeReferences : null,
-      runCount: num(raw.runCount),
-      targetKind: raw.targetKind === 'battery' || raw.targetKind === 'suite' ? raw.targetKind : null,
-      batteryId: num(raw.batteryId),
-      completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null,
-      completionNotification: typeof raw.completionNotification === 'boolean' ? raw.completionNotification : null
-    };
-
-    // These need no list to validate against, so they restore immediately.
-    if (this.pendingRunSettings.verboseMode !== null) {
-      this.candidateVerboseMode = this.pendingRunSettings.verboseMode;
-    }
-    // Absent (a blob predating this field) leaves the Disallowed default standing.
-    if (this.pendingRunSettings.allowSourceCodeReferences !== null) {
-      this.candidateAllowSourceCodeReferences = this.pendingRunSettings.allowSourceCodeReferences;
-    }
-    // Absent (a blob predating this field, or storage that threw) leaves the true default standing.
-    if (this.pendingRunSettings.completionSound !== null) {
-      this.completionSound = this.pendingRunSettings.completionSound;
-    }
-    // Restoring the choice does not re-request permission; notify() itself is a no-op once the
-    // browser's own permission state is no longer granted, so restoring optimistically is safe.
-    if (this.pendingRunSettings.completionNotification !== null) {
-      this.completionNotification = this.pendingRunSettings.completionNotification;
-    }
-    const count = this.pendingRunSettings.runCount;
-    if (count !== null && count >= 1) {
-      const intCount = Math.floor(count);
-      const max = this.runCountTargetPending ? null : this.runCountMax;
-      this.runCount = (max != null && intCount > max) ? max : intCount;
-    }
-    const mode = this.pendingRunSettings.secondOpinionMode;
-    if (mode !== null && this.secondOpinionModeOptions.some(o => o.value === mode)) {
-      this.secondOpinionModeOverride = mode;
-    }
-  }
-
-  /**
-   * Which of the four list-backed fields have been applied. The loaders complete in whatever order their
-   * requests return, and setDefaultModelSelections runs from ngOnInit before either has answered, so the
-   * stored blob can only be dropped once all four have had their turn — dropping it as soon as any one of
-   * them finishes would leave the others falling back to their defaults. The battery part is the Run
-   * Target and its battery, applied by loadBatteries.
-   */
-  private runSettingsApplied = { suite: false, profile: false, configs: false, battery: false };
-
-  /** Marks one part applied, and drops the stored blob once all four are. */
-  private markRunSettingsApplied(part: 'suite' | 'profile' | 'configs' | 'battery'): void {
-    if (!this.pendingRunSettings) return;
-    this.runSettingsApplied[part] = true;
-    const done = this.runSettingsApplied;
-    if (done.suite && done.profile && done.configs && done.battery) {
-      // Cleared so a later ngOnChanges cannot resurrect a stale selection over one the operator has
-      // since made by hand.
-      this.pendingRunSettings = null;
-    }
-  }
-
-  // --- Run Execution ---
-
-  /**
-   * The same-provider acknowledgments given in the current start attempt, by role. A new attempt
-   * starts with none; the confirmation adds its role and the request is sent again with every one
-   * given so far, so an assessor warning and then a report-writer warning resolve both. Never stored.
-   */
-  private launchAcknowledgments = { assessor: false, reportWriter: false };
-
-  startBenchmark(acknowledgeSameProvider: boolean = false, boardQuotesAcknowledged: boolean = false) {
-    if (!this.canStartRun || this.launchSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
-
-    this.armCompletionSignalsFromGesture();
-
-    if (acknowledgeSameProvider) {
-      // Without a role recorded by the dialog, the acknowledgment is the assessor's.
-      if (!this.launchAcknowledgments.assessor && !this.launchAcknowledgments.reportWriter) {
-        this.launchAcknowledgments.assessor = true;
-      }
-    } else if (!boardQuotesAcknowledged) {
-      this.launchAcknowledgments = { assessor: false, reportWriter: false };
-    }
-
-    // A same-provider acknowledgement follows a request that already passed this gate. A battery
-    // run is not gated here: it spans several suites.
-    if (!this.isBatteryTarget && this.selectedSuiteId != null
-        && !acknowledgeSameProvider && !boardQuotesAcknowledged && this.selectedSuite?.gameSnapshotId != null) {
-      this.checkBoardQuotesBeforeStart(this.selectedSuiteId);
-      return;
-    }
-    this.sendStartRequest();
-  }
-
-  @ViewChild('boardQuoteWarningDialog') boardQuoteWarningDialog?: ElementRef<HTMLDialogElement>;
-
-  /** The suite's BOARD FACTS quote check, fetched when Start is pressed; set only while it reports missing quotes. */
-  launchBoardFactsCheck: BoardFactsCheckDto | null = null;
-
-  get launchMissingBoardQuotes(): BoardFactIssueDto[] {
-    return (this.launchBoardFactsCheck?.missingLiterals ?? [])
-      .slice(0, AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
-  }
-
-  get launchMissingBoardQuotesOverflow(): number {
-    const total = this.launchBoardFactsCheck?.missingLiterals.length ?? 0;
-    return Math.max(0, total - AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
-  }
-
-  /**
-   * Advisory: missing quotes open a warning the operator may acknowledge, and a failed check
-   * starts the run as if it were clean. Nothing here refuses a run.
-   */
-  private checkBoardQuotesBeforeStart(suiteId: number): void {
-    this.startingRun = true;
-    this.runErrorMessage = null;
-    this.benchmarkService.getBoardFactsCheck(suiteId).subscribe({
-      next: (check) => {
-        if (check && check.missingLiterals.length > 0) {
-          this.startingRun = false;
-          this.launchBoardFactsCheck = check;
-          this.cdr.detectChanges();
-          this.boardQuoteWarningDialog?.nativeElement.showModal();
-          return;
-        }
-        this.sendStartRequest();
-      },
-      error: (err) => {
-        console.warn('Board facts check before start failed; starting without it', err);
-        this.sendStartRequest();
-      }
-    });
-  }
-
-  closeBoardQuoteWarningDialog(): void {
-    this.boardQuoteWarningDialog?.nativeElement.close();
-    this.launchBoardFactsCheck = null;
-  }
-
-  confirmBoardQuoteWarningRun(): void {
-    this.closeBoardQuoteWarningDialog();
-    this.startBenchmark(false, true);
-  }
-
-  private sendStartRequest(): void {
-    const suiteId = this.launchSuiteId;
-    if (suiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
-
-    this.startingRun = true;
-    this.runErrorMessage = null;
-    this.seriesErrorMessage = null;
-    this.batteryErrorMessage = null;
-    // A new run replaces any re-run state a previous, now-superseded run left behind.
-    this.rerunLaunchPending = false;
-    this.rerunLaunchedAtMs = null;
-    this.rerunScopeOrderIndexes = [];
-
-    const req = this.buildRunRequest(suiteId, this.testedConfigId, this.assessorConfigId);
-
-    // Before the request, not after it: the operator's choices are worth remembering whether or not the
-    // server accepts the run.
-    this.persistRunSettings();
-
-    if (this.isBatteryTarget) {
-      this.startBenchmarkBatteryRun(req);
-      return;
-    }
-
-    // The one branch multi-run adds to the start path. At 1 the request is posted to the same
-    // endpoint with the same body it has always carried — runCount and allowCapWait are not even
-    // sent — so a single run creates no series and no group, exactly as before.
-    if (this.effectiveRunCount > 1) {
-      this.startBenchmarkSeries({
-        ...req,
-        runCount: this.effectiveRunCount,
-        allowCapWait: this.allowCapWait
-      });
-      return;
-    }
-
-    this.benchmarkService.startRun(req).subscribe({
-      next: (res) => {
-        this.startingRun = false;
-        this.sameProviderDialog?.nativeElement.close();
-        this.sameProviderWarning = null;
-        this.lastRunPollError = null;
-        this.runQuestionsLoadError = null;
-        this.runDiagnosticsCopyFailed = false;
-        this.activeRunId = res.runId;
-        this.startPolling(res.runId);
-        this.loadHistory();
-        this.loadAllFootprints();
-        this.cdr.detectChanges();
-        this.openRunProgressDialog();
-      },
-      error: (err) => {
-        this.startingRun = false;
-        if (this.isSameProviderPrompt(err, req)) {
-          this.showSameProviderDialog(err.error as SameProviderWarningDto);
-        } else {
-          this.runErrorMessage = err?.error || 'Failed to start benchmark run.';
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** The launcher's run request: what a run or a series starts, and every battery member's template. */
-  private buildRunRequest(suiteId: number, testedConfigId: number, assessorConfigId: number): StartBenchmarkRunRequest {
-    return {
-      suiteId,
-      testedModelConfigurationId: testedConfigId,
-      assessorModelConfigurationId: assessorConfigId,
-      secondOpinionAssessorModelConfigurationId: this.secondOpinionConfigId,
-      // Sent only when an assessor is selected: without one the mode is inert, and sending Off
-      // would be indistinguishable from "the operator chose Never".
-      secondOpinionMode: this.secondOpinionConfigId != null ? this.secondOpinionMode : null,
-      claimVerifierModelConfigurationId: this.claimVerifierConfigId,
-      reportWriterModelConfigurationId: this.reportWriterConfigId,
-      verboseMode: this.candidateVerboseMode,
-      allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
-      scoringProfileId: this.selectedScoringProfileId,
-      acknowledgeSameProvider: this.launchAcknowledgments.assessor,
-      // Only once acknowledged, so every other request carries the body it always has.
-      ...(this.launchAcknowledgments.reportWriter ? { acknowledgeSameProviderReportWriter: true } : {}),
-      // Only on a panel run, so a single-assessor request carries the body it always has.
-      ...(this.coAssessorConfigId != null ? { coAssessorModelConfigurationId: this.coAssessorConfigId } : {})
-    };
-  }
-
-  // --- Multi-run series execution ---
-
-  /**
-   * The run count actually in force. A non-numeric or out-of-range field value resolves to 1 rather
-   * than to an error, because the field is a courtesy and the server is the authority: the worst a
-   * bad value here may do is start one run, never N of them.
-   */
-  get effectiveRunCount(): number {
-    const n = Math.floor(Number(this.runCount));
-    if (!Number.isFinite(n) || n < 1) return 1;
-    const max = this.runCountMax;
-    return max != null && n > max ? max : n;
-  }
-
-  /** The run count field's `max` for the current Run Target: runs per series, or runs per suite. */
-  get runCountMax(): number | null {
-    return this.isBatteryTarget ? this.maxRunsPerSuite : this.maxRunCountPerSeries;
-  }
-
-  /**
-   * The Number of runs field's `max`, from GET runs/limits. Null until the caps arrive, which
-   * leaves the field unbounded on the client and bounded on the server — the safe direction, since
-   * an unknown cap must not silently become 1.
-   */
-  get maxRunCountPerSeries(): number | null {
-    return this.runLimits?.maxRunCountPerSeries ?? null;
-  }
-
-  /**
-   * True once the operator has asked for more than one run of a single suite, which is what reveals
-   * the series projection. A battery has a projection of its own.
-   */
-  get isMultiRunRequested(): boolean {
-    return !this.isBatteryTarget && this.effectiveRunCount > 1;
-  }
-
-  loadRunLimits(): void {
-    this.benchmarkService.getRunLimits().subscribe({
-      next: (limits) => {
-        this.runLimits = limits;
-        this.clampRunCountToTarget();
-        if (this.reuseEarlierRuns) {
-          this.refreshReusePreview();
-        }
-        this.cdr.detectChanges();
-      },
-      // A field that cannot bound itself is still usable, because the server re-checks. Blocking the
-      // run because a courtesy lookup failed would be the wrong trade.
-      error: (err) => console.error('Failed to load benchmark run limits', err)
-    });
-  }
-
-  /**
-   * The suite's recent mean run duration, in milliseconds, over its completed runs in the loaded
-   * history. Null when the history holds none: a projection with no basis is worse than no
-   * projection, because it looks like a measurement.
-   */
-  get recentMeanRunDurationMs(): number | null {
-    const runs = this.completedRunsOfSelectedSuite;
-    if (runs.length === 0) return null;
-    const total = runs.reduce((sum, r) => sum + (r.totalDurationMs || r.totalAnswerDurationMs || 0), 0);
-    return total > 0 ? Math.round(total / runs.length) : null;
-  }
-
-  /** The same basis for money: the mean estimated cost of the suite's recent completed runs. */
-  get recentMeanRunCost(): number | null {
-    const priced = this.completedRunsOfSelectedSuite.filter(r => r.estimatedCost != null);
-    if (priced.length === 0) return null;
-    return priced.reduce((sum, r) => sum + (r.estimatedCost ?? 0), 0) / priced.length;
-  }
-
-  /**
-   * Completed runs of the selected suite, newest first, capped at five. Five rather than all of
-   * them because a projection should describe the instrument as it is now, and a run from before a
-   * model change says nothing useful about how long the next one takes.
-   */
-  private get completedRunsOfSelectedSuite(): BenchmarkRunSummaryDto[] {
-    return this.completedRunsOfSuite(this.selectedSuiteId);
-  }
-
-  /** Completed runs of one suite, newest first, capped at five; the basis of every projection. */
-  private completedRunsOfSuite(suiteId: number | null | undefined): BenchmarkRunSummaryDto[] {
-    if (suiteId == null) return [];
-    return this.historyRuns
-      .filter(r => r.benchmarkSuiteId === suiteId)
-      .filter(r => {
-        const s = this.formatStatus(r.status);
-        return s === 'Completed' || s === 'CompletedWithErrors' || s === 'CompletedWithLimits';
-      })
-      .slice(0, 5);
-  }
-
-  /** RunCount × the suite's recent mean run duration, or null when there is nothing to project from. */
-  get projectedSeriesDurationLabel(): string | null {
-    const mean = this.recentMeanRunDurationMs;
-    if (mean == null) return null;
-    return this.formatElapsed(mean * this.effectiveRunCount);
-  }
-
-  /** RunCount × the suite's recent mean run cost. Formatted like every other cost on this screen. */
-  get projectedSeriesCostLabel(): string | null {
-    const mean = this.recentMeanRunCost;
-    if (mean == null) return null;
-    return this.formatCostAmount(mean * this.effectiveRunCount);
-  }
-
-  /**
-   * Whether the requested series exceeds what the rolling 24-hour window still allows. Advisory: the
-   * guard is re-checked per member, and with AllowCapWait a series that outruns the window pauses
-   * rather than failing.
-   */
-  get seriesExceedsDailyHeadroom(): boolean {
-    const headroom = this.runLimits?.remainingDailyHeadroom;
-    return headroom != null && this.effectiveRunCount > headroom;
-  }
-
-  // --- Run Target: battery ---
-
-  get isBatteryTarget(): boolean {
-    return this.runTargetKind === 'battery';
-  }
-
-  /** The batteries the launcher offers: not archived, no deleted suite and no validation error. */
-  get runnableBatteries(): BenchmarkBatteryDto[] {
-    return this.launcherBatteries.filter(b => AdminBenchmarkComponent.isRunnableBattery(b));
-  }
-
-  private static isRunnableBattery(battery: BenchmarkBatteryDto): boolean {
-    return !battery.isArchived
-      && (battery.brokenSuiteNames?.length ?? 0) === 0
-      && (battery.validationErrors?.length ?? 0) === 0;
-  }
-
-  get selectedBattery(): BenchmarkBatteryDto | undefined {
-    return this.selectedBatteryId == null
-      ? undefined
-      : this.runnableBatteries.find(b => b.id === this.selectedBatteryId);
-  }
-
-  /** The suite id the start request carries: the selected suite, or a battery's first suite, which the server replaces per member. */
-  private get launchSuiteId(): number | null {
-    if (!this.isBatteryTarget) return this.selectedSuiteId;
-    return this.selectedBattery?.suites.find(s => s.suiteId != null)?.suiteId ?? null;
-  }
-
-  /** The Run Target radios' change handler. */
-  setRunTarget(kind: 'suite' | 'battery'): void {
-    this.runTargetKind = kind;
-    if (kind === 'battery' && this.selectedBatteryId == null) {
-      this.selectedBatteryId = this.runnableBatteries[0]?.id ?? null;
-    }
-    this.clampRunCountToTarget();
-    this.refreshReusePreview();
-    this.cdr.detectChanges();
-  }
-
-  onSelectedBatteryChanged(): void {
-    this.clampRunCountToTarget();
-    this.refreshReusePreview();
-  }
-
-  // --- Run Target: reusing earlier runs ---
-
-  /** The Reuse earlier runs checkbox's change handler. */
-  onReuseEarlierRunsChange(checked: boolean): void {
-    this.reuseEarlierRuns = checked;
-    this.refreshReusePreview();
-  }
-
-  /** A launcher field that shapes the battery request changed: Runs per Suite, the profile, the response style. */
-  onReuseInputsChanged(): void {
-    this.refreshReusePreview();
-  }
-
-  /** The battery start the launcher would send now, without its attach list; null while a field it needs is unset. */
-  private buildBatteryStartRequest(): StartBenchmarkBatteryRunRequest | null {
-    const batteryId = this.selectedBattery?.id;
-    const suiteId = this.launchSuiteId;
-    if (batteryId == null || suiteId == null || this.testedConfigId == null || this.assessorConfigId == null) {
-      return null;
-    }
-    return {
-      batteryId,
-      runsPerSuite: this.effectiveRunCount,
-      allowCapWait: this.allowCapWait,
-      run: this.buildRunRequest(suiteId, this.testedConfigId, this.assessorConfigId)
-    };
-  }
-
-  /**
-   * Asks the server which earlier runs a start of the current battery request would reuse, or
-   * clears the preview when reuse is off or the request is incomplete. A newer request cancels the
-   * one in flight, so the projection never shows the preview of settings already changed.
-   */
-  private refreshReusePreview(): void {
-    this.reusePreviewSubscription?.unsubscribe();
-    this.reusePreviewSubscription = null;
-    this.reusePreview = null;
-    this.reusePreviewError = null;
-
-    const req = this.isBatteryTarget && this.reuseEarlierRuns ? this.buildBatteryStartRequest() : null;
-    if (!req) {
-      this.reusePreviewLoading = false;
-      return;
-    }
-
-    this.reusePreviewLoading = true;
-    this.reusePreviewSubscription = this.benchmarkService.previewBatteryReuse(req).subscribe({
-      next: (preview) => {
-        this.reusePreviewLoading = false;
-        this.reusePreview = preview;
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.reusePreviewLoading = false;
-        this.reusePreviewError = AdminBenchmarkComponent.refusalText(err, 'The server could not preview the reuse.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  /** The preview Start would act on: reuse is on and it was computed for the battery and round count shown. */
-  get activeReusePreview(): BenchmarkBatteryReusePreviewDto | null {
-    const preview = this.reusePreview;
-    if (!this.isBatteryTarget || !this.reuseEarlierRuns || !preview) return null;
-    return preview.batteryId === this.selectedBattery?.id && preview.runsPerSuite === this.effectiveRunCount
-      ? preview
-      : null;
-  }
-
-  /** The slots no earlier run fills, each with the reason. */
-  get reuseUnfilledSlots(): BenchmarkBatteryReusePreviewSlotDto[] {
-    return (this.activeReusePreview?.slots ?? []).filter(s => s.runId == null);
-  }
-
-  /** The battery projection's reuse line. */
-  get reuseProjectionText(): string {
-    if (this.reusePreviewLoading) {
-      return 'Checking which earlier runs can be reused…';
-    }
-    if (this.reusePreviewError) {
-      return `The reuse of earlier runs could not be previewed: ${this.reusePreviewError}`;
-    }
-    const preview = this.activeReusePreview;
-    if (!preview) {
-      return 'Choose the battery and the models to see which earlier runs can be reused.';
-    }
-    if (preview.reusedCount === 0) {
-      return `No earlier run qualifies; launching ${preview.launchCount}.`;
-    }
-    const ids = preview.attach.map(a => `#${a.runId}`).join(', ');
-    return `Reusing ${preview.reusedCount} earlier ${preview.reusedCount === 1 ? 'run' : 'runs'} (${ids}); `
-      + `launching ${preview.launchCount}.`;
-  }
-
-  /** The runs Start sends as `attach`: the active preview's choice, or none. */
-  private get reuseAttachList(): BenchmarkBatteryAttachDto[] {
-    return (this.activeReusePreview?.attach ?? []).map(a => ({ ...a }));
-  }
-
-  /** The launches the battery run plans: K × R, less the slots earlier runs fill. */
-  get batteryRunsToLaunch(): number {
-    const preview = this.activeReusePreview;
-    return preview ? preview.launchCount : this.batteryLaunchCount;
-  }
-
-  /**
-   * Loads the launcher's battery list, and applies the remembered Run Target once it has arrived.
-   * A remembered battery that is gone, archived or broken falls back to Single suite.
-   */
-  loadBatteries(): void {
-    this.loadingBatteries = true;
-    this.benchmarkService.getBatteries().subscribe({
-      next: (batteries) => {
-        this.launcherBatteries = batteries ?? [];
-        this.loadingBatteries = false;
-        const pending = this.pendingRunSettings;
-        const runnable = this.runnableBatteries;
-        if (pending && !this.runSettingsApplied.battery) {
-          const remembered = runnable.find(b => b.id === pending.batteryId);
-          if (pending.targetKind === 'battery' && remembered) {
-            this.runTargetKind = 'battery';
-            this.selectedBatteryId = remembered.id;
-          } else {
-            this.runTargetKind = 'suite';
-            this.selectedBatteryId = remembered?.id ?? runnable[0]?.id ?? null;
-          }
-        } else if (this.selectedBatteryId == null || !runnable.some(b => b.id === this.selectedBatteryId)) {
-          this.selectedBatteryId = runnable[0]?.id ?? null;
-        }
-        this.markRunSettingsApplied('battery');
-        this.clampRunCountToTarget();
-        this.refreshReusePreview();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingBatteries = false;
-        console.error('Failed to load benchmark batteries', err);
-        if (this.pendingRunSettings && !this.runSettingsApplied.battery) {
-          this.runTargetKind = 'suite';
-        }
-        this.markRunSettingsApplied('battery');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /**
-   * Runs per Suite's ceiling: one battery run may plan at most `maxMembersPerBattery` launches, so
-   * K suites allow floor(max / K) rounds. Null while the limit or the battery is unknown.
-   */
-  get maxRunsPerSuite(): number | null {
-    const max = this.runLimits?.maxMembersPerBattery;
-    const suiteCount = this.selectedBattery?.suites.length ?? 0;
-    if (max == null || suiteCount === 0) return null;
-    return Math.max(1, Math.floor(max / suiteCount));
-  }
-
-  /**
-   * True while a remembered Battery target waits for the battery list: the run count then belongs
-   * to Runs per Suite, so the single-suite ceiling must not lower it yet.
-   */
-  private get runCountTargetPending(): boolean {
-    return this.pendingRunSettings?.targetKind === 'battery' && !this.runSettingsApplied.battery;
-  }
-
-  /** Lowers the shared run count to the current target's ceiling. */
-  private clampRunCountToTarget(): void {
-    if (this.runCountTargetPending) return;
-    const max = this.runCountMax;
-    const n = Math.floor(Number(this.runCount));
-    if (max != null && Number.isFinite(n) && n > max) {
-      this.runCount = max;
-    }
-  }
-
-  /** K × R: the launches the battery run plans. */
-  get batteryLaunchCount(): number {
-    return (this.selectedBattery?.suites.length ?? 0) * this.effectiveRunCount;
-  }
-
-  /** The selected battery's suites with the declared scheme's normalized weights, for the select's info tip. */
-  get selectedBatteryWeightRows(): { name: string; percent: number | null }[] {
-    const battery = this.selectedBattery;
-    if (!battery) return [];
-    const declared = battery.weightPreviews?.find(p => p.declared);
-    return battery.suites.map((suite, i) => ({
-      name: suite.suiteName,
-      percent: declared && declared.weights.length === battery.suites.length ? declared.weights[i] * 100 : null
-    }));
-  }
-
-  get selectedBatterySchemeLabel(): string {
-    return this.selectedBattery?.weightingSchemeLabel ?? '';
-  }
-
-  /** The battery's suites whose questions are not all difficulty-assessed; the server refuses them. */
-  get selectedBatteryUnassessedSuites(): string[] {
-    return (this.selectedBattery?.suites ?? [])
-      .filter(s => !s.difficultyFullyAssessed)
-      .map(s => s.suiteName);
-  }
-
-  /**
-   * The projection's sum of each launched run's suite's recent mean run duration: each suite × R,
-   * or, with a reuse preview, the slots no earlier run fills. Null unless every such suite has a basis.
-   */
-  get projectedBatteryDurationLabel(): string | null {
-    const total = this.sumOverBatteryLaunches(id => this.meanRunDurationMsOf(id));
-    return total == null ? null : this.formatElapsed(total);
-  }
-
-  /** The same sum for money. */
-  get projectedBatteryCostLabel(): string | null {
-    const total = this.sumOverBatteryLaunches(id => this.meanRunCostOf(id));
-    return total == null ? null : this.formatCostAmount(total);
-  }
-
-  private sumOverBatteryLaunches(perSuite: (suiteId: number) => number | null): number | null {
-    const preview = this.activeReusePreview;
-    if (!preview) {
-      const total = this.sumOverBatterySuites(perSuite);
-      return total == null ? null : total * this.effectiveRunCount;
-    }
-    let total = 0;
-    for (const slot of preview.slots.filter(s => s.runId == null)) {
-      const value = perSuite(slot.suiteId);
-      if (value == null) return null;
-      total += value;
-    }
-    return total;
-  }
-
-  private sumOverBatterySuites(perSuite: (suiteId: number) => number | null): number | null {
-    const suites = this.selectedBattery?.suites ?? [];
-    if (suites.length === 0) return null;
-    let total = 0;
-    for (const suite of suites) {
-      const value = suite.suiteId == null ? null : perSuite(suite.suiteId);
-      if (value == null) return null;
-      total += value;
-    }
-    return total;
-  }
-
-  private meanRunDurationMsOf(suiteId: number): number | null {
-    const runs = this.completedRunsOfSuite(suiteId);
-    if (runs.length === 0) return null;
-    const total = runs.reduce((sum, r) => sum + (r.totalDurationMs || r.totalAnswerDurationMs || 0), 0);
-    return total > 0 ? Math.round(total / runs.length) : null;
-  }
-
-  private meanRunCostOf(suiteId: number): number | null {
-    const priced = this.completedRunsOfSuite(suiteId).filter(r => r.estimatedCost != null);
-    if (priced.length === 0) return null;
-    return priced.reduce((sum, r) => sum + (r.estimatedCost ?? 0), 0) / priced.length;
-  }
-
-  /** Whether the battery asks for more launches than the rolling 24-hour window still allows. */
-  get batteryExceedsDailyHeadroom(): boolean {
-    const headroom = this.runLimits?.remainingDailyHeadroom;
-    return headroom != null && this.batteryRunsToLaunch > headroom;
-  }
-
-  /** More launches than the daily cap itself: admitted only with Allow cap wait. */
-  get batteryExceedsDailyCap(): boolean {
-    const cap = this.runLimits?.maxRunsPerDay;
-    return cap != null && cap > 0 && this.batteryRunsToLaunch > cap;
-  }
-
-  /** The rolling 24-hour windows the launches need at the daily cap. */
-  get batteryDaySpan(): number | null {
-    const cap = this.runLimits?.maxRunsPerDay;
-    if (cap == null || cap <= 0 || this.batteryRunsToLaunch === 0) return null;
-    return Math.ceil(this.batteryRunsToLaunch / cap);
-  }
-
-  /** Why a battery run cannot start yet, or empty; also the Start hint in battery mode. */
-  get batteryLaunchRefusal(): string {
-    const battery = this.selectedBattery;
-    if (!battery) {
-      return this.runnableBatteries.length === 0
-        ? 'Create a battery on the Multi-Suite tab first.'
-        : 'Select a battery first.';
-    }
-    const unassessed = this.selectedBatteryUnassessedSuites;
-    if (unassessed.length > 0) {
-      return `Assess every question's difficulty in ${unassessed.join(', ')} first.`;
-    }
-    const maxMembers = this.runLimits?.maxMembersPerBattery;
-    if (maxMembers != null && battery.suites.length > maxMembers) {
-      return `This battery has ${battery.suites.length} suites; one battery run may plan at most ${maxMembers} runs.`;
-    }
-    if (this.batteryExceedsDailyCap && !this.allowCapWait) {
-      return `${this.batteryRunsToLaunch} runs exceed the daily cap of ${this.runLimits?.maxRunsPerDay}; select Wait when the run cap blocks the next run.`;
-    }
-    // Start sends the previewed runs, so with reuse on it waits for a preview of what it would send.
-    if (this.reuseEarlierRuns && !this.activeReusePreview && this.buildBatteryStartRequest() != null) {
-      return this.reusePreviewError
-        ? 'The reuse of earlier runs could not be previewed; clear Reuse earlier runs to start without it.'
-        : 'Checking which earlier runs can be reused…';
-    }
-    return '';
-  }
-
-  /** Starts the battery run with the launcher's run request as every member's template. */
-  private startBenchmarkBatteryRun(run: StartBenchmarkRunRequest): void {
-    const batteryId = this.selectedBatteryId;
-    if (batteryId == null) {
-      this.startingRun = false;
-      return;
-    }
-    const attach = this.reuseAttachList;
-    this.benchmarkService.startBatteryRun({
-      batteryId,
-      runsPerSuite: this.effectiveRunCount,
-      allowCapWait: this.allowCapWait,
-      run,
-      // Only when reusing, so every other start carries the body it always has.
-      ...(attach.length > 0 ? { attach } : {})
-    }).subscribe({
-      next: (res) => {
-        this.startingRun = false;
-        this.sameProviderDialog?.nativeElement.close();
-        this.sameProviderWarning = null;
-        this.lastRunPollError = null;
-        this.runQuestionsLoadError = null;
-        this.runDiagnosticsCopyFailed = false;
-        this.activeBatteryRunId = res.batteryRunId;
-        // Reuse is decided per start: the next start asks again.
-        this.reuseEarlierRuns = false;
-        this.refreshReusePreview();
-        this.startBatteryPolling(res.batteryRunId);
-        this.loadHistory();
-        this.loadAllFootprints();
-        this.loadRunLimits();
-        this.cdr.detectChanges();
-        this.openBatteryDialog();
-      },
-      error: (err) => {
-        this.startingRun = false;
-        if (this.isSameProviderPrompt(err, run)) {
-          this.showSameProviderDialog(err.error as SameProviderWarningDto);
-        } else {
-          this.runErrorMessage = AdminBenchmarkComponent.refusalText(err, 'Failed to start the battery run.');
-          // A refusal may name a reused run that stopped qualifying; the preview is judged again.
-          this.refreshReusePreview();
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** A refusal's text: a plain-string body, a body's `message`, else the fallback. */
-  private static refusalText(err: any, fallback: string): string {
-    if (typeof err?.error === 'string' && err.error) return err.error;
-    return err?.error?.message || fallback;
-  }
-
-  private startBenchmarkSeries(req: StartBenchmarkRunRequest): void {
-    this.benchmarkService.startRunSeries(req).subscribe({
-      next: (res) => {
-        this.startingRun = false;
-        this.sameProviderDialog?.nativeElement.close();
-        this.sameProviderWarning = null;
-        this.lastRunPollError = null;
-        this.runQuestionsLoadError = null;
-        this.runDiagnosticsCopyFailed = false;
-        this.activeSeriesId = res.seriesId;
-        this.startSeriesPolling(res.seriesId);
-        this.loadHistory();
-        this.loadAllFootprints();
-        this.loadRunLimits();
-        this.cdr.detectChanges();
-        this.openMultiRunDialog();
-      },
-      error: (err) => {
-        this.startingRun = false;
-        if (this.isSameProviderPrompt(err, req)) {
-          this.showSameProviderDialog(err.error as SameProviderWarningDto);
-        } else {
-          this.runErrorMessage = err?.error?.message || err?.error || 'Failed to start benchmark run series.';
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /**
-   * A 409 that asks for a same-provider acknowledgment. The assessor's never comes for a panel run,
-   * where the server blocks self-grading outright; the report writer's can come for any run.
-   */
-  private isSameProviderPrompt(err: any, req: StartBenchmarkRunRequest): boolean {
-    if (err?.status !== 409 || !err.error?.sameProvider) {
-      return false;
-    }
-    return err.error.role === 'reportWriter' || req.coAssessorModelConfigurationId == null;
-  }
-
-  /** Shows the same-provider dialog, or switches its content when a second role's prompt follows the first. */
-  private showSameProviderDialog(warning: SameProviderWarningDto): void {
-    this.sameProviderWarning = warning;
-    const dialog = this.sameProviderDialog?.nativeElement;
-    if (dialog && !dialog.open) {
-      dialog.showModal();
-    }
-  }
-
-  /**
-   * Reattaches the series banner to a series already executing when the page loads, mirroring
-   * checkActiveRun. The dialog stays closed for the same reason: opening a modal unbidden steals
-   * focus from whatever the operator was doing.
-   */
-  checkActiveRunSeries(): void {
-    this.benchmarkService.getActiveRunSeries().subscribe({
-      next: (series) => {
-        if (series) {
-          this.activeSeries = series;
-          this.activeSeriesId = series.id;
-          if (this.seriesIsLive) {
-            this.startSeriesPolling(series.id);
-          }
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => console.error('Failed to check active benchmark run series', err)
-    });
-  }
-
-  private startSeriesPolling(seriesId: number): void {
-    this.stopSeriesPolling();
-    this.seriesPollFailureCount = 0;
-    this.lockedSeriesId = seriesId;
-    this.backgroundActivity.acquireForSeries(seriesId);
-    this.lastSeriesPollAttemptAtMs = Date.now();
-    this.pollSeries(seriesId);
-    this.seriesPollTickerHandle = this.pollTicker.start(AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS, () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        const hiddenPollDue = (this.completionSound || this.completionNotification)
-          && (Date.now() - this.lastSeriesPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
-        if (!hiddenPollDue) {
-          return;
-        }
-      }
-      this.lastSeriesPollAttemptAtMs = Date.now();
-      this.pollSeries(seriesId);
-    });
-
-    if (typeof document !== 'undefined') {
-      this.seriesVisibilityChangeHandler = () => {
-        if (!document.hidden) {
-          this.pollSeries(seriesId);
-        }
-      };
-      document.addEventListener('visibilitychange', this.seriesVisibilityChangeHandler);
-    }
-  }
-
-  private stopSeriesPolling(): void {
-    if (this.seriesPollTickerHandle) {
-      this.seriesPollTickerHandle();
-      this.seriesPollTickerHandle = null;
-    }
-    if (this.seriesVisibilityChangeHandler && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.seriesVisibilityChangeHandler);
-      this.seriesVisibilityChangeHandler = null;
-    }
-    if (this.lockedSeriesId !== null) {
-      this.lockedSeriesId = null;
-      this.backgroundActivity.release();
-      // A run poller still live after its series stopped keeps the tab's lock for itself.
-      if (this.pollTickerHandle && this.activeRunId != null) {
-        this.backgroundActivity.acquireForRun(this.activeRunId);
-      }
-    }
-  }
-
-  private pollSeries(seriesId: number): void {
-    this.benchmarkService.getRunSeries(seriesId).subscribe({
-      next: (series) => {
-        this.seriesPollFailureCount = 0;
-        this.activeSeries = series;
-        // Chimes once per series actually watched live: seriesIsLive keeps re-adding the id while
-        // it runs, and the transition into Completed/Cancelled/Failed or Stopped (which needs the
-        // operator to continue it) fires the chime only for an id this poller has seen live —
-        // never for a series opened from history already finished, nor for one the operator
-        // cancelled.
-        if (this.seriesIsLive) {
-          this.seriesSeenLive.add(series.id);
-        } else if (this.seriesSeenLive.has(series.id) && (this.seriesIsFinished || this.seriesIsStopped)) {
-          this.seriesSeenLive.delete(series.id);
-          if (series.status !== 'Cancelled') {
-            this.signalCompletion(`series:${series.id}`);
-          }
-        }
-        // The member currently running is what the single-run banner and dialog describe, so the
-        // run poller follows the series rather than being started again per member.
-        const running = series.members.find(m => this.formatStatus(m.status) === 'Running');
-        if (running && running.runId !== this.activeRunId) {
-          this.activeRunId = running.runId;
-          this.startPolling(running.runId);
-        }
-        if (!this.seriesIsLive) {
-          this.stopSeriesPolling();
-          this.loadHistory();
-          this.loadRunGroups();
-          this.loadRunLimits();
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to poll benchmark run series', err);
-        this.seriesPollFailureCount++;
-        if (this.seriesPollFailureCount >= AdminBenchmarkComponent.MAX_CONSECUTIVE_POLL_FAILURES) {
-          this.stopSeriesPolling();
-        }
-      }
-    });
-  }
-
-  /** Running, launching or waiting for the cap — anything that is still going to produce members. */
-  get seriesIsLive(): boolean {
-    const status = this.activeSeries?.status;
-    return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
-  }
-
-  /**
-   * Terminal: the series will produce nothing more and there is no action left to offer for it.
-   * `Stopped` is deliberately not here — it is the one non-terminal end state, and the only one the
-   * Continue button exists for.
-   */
-  get seriesIsFinished(): boolean {
-    const status = this.activeSeries?.status;
-    return status === 'Completed' || status === 'Cancelled' || status === 'Failed';
-  }
-
-  /**
-   * Whether the Run Benchmark tab shows the series banner.
-   *
-   * <p>A banner describing a series that has finished is an alert with nothing to alert about, and
-   * it outlives the work by however long the page stays open. `activeSeries` itself is kept — the
-   * progress dialog and the run-to-series labelling read it after completion — so this gates the
-   * rendering rather than clearing the state.</p>
-   *
-   * <p>The completed series stays reachable from the Multi-Run Analysis tab, whose group rows carry
-   * a Series badge that opens the same dialog. That matters because the dialog is the only place
-   * either diagnostics capture can be copied from.</p>
-   */
-  get seriesBannerVisible(): boolean {
-    return this.activeSeries != null && !this.multiRunDialogVisible && !this.seriesIsFinished;
-  }
-
-  /** Stopped is the one non-terminal end state, and the only one the Continue button appears for. */
-  get seriesIsStopped(): boolean {
-    return this.activeSeries?.status === 'Stopped';
-  }
-
-  get seriesIsWaitingForCap(): boolean {
-    return this.activeSeries?.status === 'WaitingForCap';
-  }
-
-  /** *Run n of N* — the count the operator actually watches, rather than a bare percentage. */
-  get seriesProgressLabel(): string {
-    const series = this.activeSeries;
-    if (!series) return '';
-    const current = Math.min(series.completedRunCount + 1, series.requestedRunCount);
-    switch (series.status) {
-      case 'WaitingForCap':
-        return `Waiting for run cap — ${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
-      case 'Stopped':
-        return `Stopped — ${series.stopReasonText || series.stopReason || 'reason not recorded'}. `
-          + `${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
-      case 'Pending':
-        return `Launching run 1 of ${series.requestedRunCount}.`;
-      case 'Running':
-        return `Run ${current} of ${series.requestedRunCount}.`;
-      default:
-        return `${series.status} — ${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
-    }
-  }
-
-  /** The Continue button's label, which names the stop reason rather than hiding it behind a verb. */
-  get seriesContinueLabel(): string {
-    const reason = this.activeSeries?.stopReasonText || this.activeSeries?.stopReason;
-    return reason ? `Continue (${reason})` : 'Continue';
-  }
-
-  openMultiRunDialog(): void {
-    this.multiRunDialogVisible = true;
-    this.cdr.detectChanges();
-  }
-
-  /**
-   * Opens the progress dialog for a series this component is not driving — the Multi-Run Analysis
-   * tab's Series badge, which is how a completed series is reached now that its banner hides itself.
-   */
-  openSeriesDialog(seriesId: number): void {
-    this.seriesDialogId = seriesId;
-    this.multiRunDialogVisible = true;
-    this.cdr.detectChanges();
-  }
-
-  onMultiRunDialogClosed(): void {
-    this.returnToSeriesOnClose = false;
-    this.multiRunDialogVisible = false;
-    this.seriesDialogId = null;
-    this.cdr.detectChanges();
   }
 
   /**
@@ -4947,10 +1206,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * the banner and `activeSeries` current.
    */
   onSeriesResumedFromDialog(seriesId: number): void {
-    this.activeSeriesId = seriesId;
-    this.seriesSeenLive.add(seriesId);
-    this.startSeriesPolling(seriesId);
-    this.cdr.detectChanges();
+    this.monitor.activeSeriesId = seriesId;
+    this.monitor.seriesSeenLive.add(seriesId);
+    this.monitor.startSeriesPolling(seriesId);
+    this.viewSync.notify();
   }
 
   /**
@@ -4959,9 +1218,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * opens the single-run one — never both at once.
    */
   onOpenRunProgressFromSeries(runId: number): void {
-    this.multiRunDialogVisible = false;
-    this.activeRunId = runId;
-    this.startPolling(runId);
+    this.monitor.multiRunDialogVisible = false;
+    this.monitor.activeRunId = runId;
+    this.monitor.startPolling(runId);
     this.openRunProgressDialog(true);
   }
 
@@ -4971,798 +1230,61 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * top of this page.
    */
   onOpenGroupAnalysisFromSeries(groupId: number): void {
-    this.multiRunDialogVisible = false;
-    this.seriesDialogId = null;
+    this.monitor.multiRunDialogVisible = false;
+    this.monitor.seriesDialogId = null;
     this.selectSubTab('multirun');
     // The panel lives inside @if (activeSubTab === 'multirun'); the ViewChild does not resolve
     // until that block has rendered, so the tab switch is flushed before the panel is addressed.
-    this.cdr.detectChanges();
+    this.viewSync.notify();
     this.multiRunPanel?.openGroupById(groupId);
-  }
-
-  cancelActiveSeries(): void {
-    const seriesId = this.activeSeriesId;
-    if (seriesId == null) return;
-    this.benchmarkService.cancelRunSeries(seriesId).subscribe({
-      next: () => this.pollSeries(seriesId),
-      error: (err) => {
-        console.error('Failed to cancel benchmark run series', err);
-        this.pollSeries(seriesId);
-      }
-    });
-  }
-
-  /**
-   * Continues a stopped series. A 409 carrying `instrumentChanged` is not a failure to report as
-   * one: the instrument moved while the series was stopped, and continuing anyway is a decision the
-   * operator makes with the changed hash named, which is what `acknowledgeInstrumentChange` records.
-   */
-  resumeActiveSeries(acknowledgeInstrumentChange = false): void {
-    const seriesId = this.activeSeriesId;
-    if (seriesId == null) return;
-    this.armCompletionSignalsFromGesture();
-    this.resumingSeries = true;
-    this.seriesErrorMessage = null;
-    this.benchmarkService.resumeRunSeries(seriesId, { acknowledgeInstrumentChange }).subscribe({
-      next: () => {
-        this.resumingSeries = false;
-        this.startSeriesPolling(seriesId);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.resumingSeries = false;
-        if (err?.status === 409 && err.error?.instrumentChanged) {
-          const changed: string[] = err.error.changedHashes ?? [];
-          this.seriesErrorMessage = err.error.message
-            || `The instrument changed since this series began (${changed.join(', ')}). `
-              + 'Start a new series, or continue anyway — which marks the resulting group cross-condition.';
-        } else {
-          this.seriesErrorMessage = err?.error?.message || err?.error || 'Failed to continue the series.';
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** True once a refused resume has named a moved hash, which is what offers the override. */
-  get seriesInstrumentChanged(): boolean {
-    return (this.activeSeries?.changedInstrumentHashes?.length ?? 0) > 0;
-  }
-
-  // --- Battery run banner and polling ---
-
-  /**
-   * Reattaches the battery banner to a battery run already live or stopped when the page loads, as
-   * checkActiveRunSeries does for a series. The dialog stays closed.
-   */
-  checkActiveBatteryRun(): void {
-    this.benchmarkService.getActiveBatteryRun().subscribe({
-      next: (batteryRun) => {
-        if (batteryRun) {
-          this.activeBatteryRun = batteryRun;
-          this.activeBatteryRunId = batteryRun.id;
-          if (this.batteryIsLive) {
-            this.startBatteryPolling(batteryRun.id);
-          }
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => console.error('Failed to check active benchmark battery run', err)
-    });
-  }
-
-  private startBatteryPolling(batteryRunId: number): void {
-    this.stopBatteryPolling();
-    this.batteryPollFailureCount = 0;
-    this.lockedBatteryRunId = batteryRunId;
-    this.backgroundActivity.acquireForBattery(batteryRunId);
-    this.lastBatteryPollAttemptAtMs = Date.now();
-    this.pollBatteryRun(batteryRunId);
-    this.batteryPollTickerHandle = this.pollTicker.start(AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS, () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        const hiddenPollDue = (this.completionSound || this.completionNotification)
-          && (Date.now() - this.lastBatteryPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
-        if (!hiddenPollDue) {
-          return;
-        }
-      }
-      this.lastBatteryPollAttemptAtMs = Date.now();
-      this.pollBatteryRun(batteryRunId);
-    });
-
-    if (typeof document !== 'undefined') {
-      this.batteryVisibilityChangeHandler = () => {
-        if (!document.hidden) {
-          this.pollBatteryRun(batteryRunId);
-        }
-      };
-      document.addEventListener('visibilitychange', this.batteryVisibilityChangeHandler);
-    }
-  }
-
-  private stopBatteryPolling(): void {
-    if (this.batteryPollTickerHandle) {
-      this.batteryPollTickerHandle();
-      this.batteryPollTickerHandle = null;
-    }
-    if (this.batteryVisibilityChangeHandler && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.batteryVisibilityChangeHandler);
-      this.batteryVisibilityChangeHandler = null;
-    }
-    if (this.lockedBatteryRunId !== null) {
-      this.lockedBatteryRunId = null;
-      this.backgroundActivity.release();
-      // A run poller still live after its battery run stopped keeps the tab's lock for itself.
-      if (this.pollTickerHandle && this.activeRunId != null) {
-        this.backgroundActivity.acquireForRun(this.activeRunId);
-      }
-    }
-  }
-
-  private pollBatteryRun(batteryRunId: number): void {
-    this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
-      next: (batteryRun) => {
-        this.batteryPollFailureCount = 0;
-        this.activeBatteryRun = batteryRun;
-        // One signal per battery run watched live, at whatever end it reaches except a cancel. Its
-        // members' own completions are accounted for here, so none of them signals afterwards.
-        if (this.batteryIsLive) {
-          this.batteriesSeenLive.add(batteryRun.id);
-        } else if (this.batteriesSeenLive.has(batteryRun.id)) {
-          this.batteriesSeenLive.delete(batteryRun.id);
-          for (const member of batteryRun.members ?? []) {
-            this.runsSeenLive.delete(member.runId);
-          }
-          if (batteryRun.status !== 'Cancelled') {
-            this.signalCompletion(`battery:${batteryRun.id}`);
-          }
-        }
-        // The run banner and dialog follow the member in flight, as they do for a series.
-        const runningId = batteryRun.currentRunId;
-        if (runningId != null && runningId !== this.activeRunId) {
-          this.activeRunId = runningId;
-          this.startPolling(runningId);
-        }
-        if (!this.batteryIsLive) {
-          this.stopBatteryPolling();
-          this.loadHistory();
-          this.loadRunLimits();
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Failed to poll benchmark battery run', err);
-        this.batteryPollFailureCount++;
-        if (this.batteryPollFailureCount >= AdminBenchmarkComponent.MAX_CONSECUTIVE_POLL_FAILURES) {
-          this.stopBatteryPolling();
-        }
-      }
-    });
-  }
-
-  /** Pending, Running or WaitingForCap: still going to launch members. */
-  get batteryIsLive(): boolean {
-    const status = this.activeBatteryRun?.status;
-    return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
-  }
-
-  /** Terminal with nothing left to offer; Stopped and Completed with errors may still be continued. */
-  get batteryIsFinished(): boolean {
-    const status = this.activeBatteryRun?.status;
-    return status === 'Completed' || status === 'Cancelled' || status === 'Failed';
-  }
-
-  get batteryIsStopped(): boolean {
-    return this.activeBatteryRun?.status === 'Stopped';
-  }
-
-  get batteryIsWaitingForCap(): boolean {
-    return this.activeBatteryRun?.status === 'WaitingForCap';
-  }
-
-  /** Stopped because a member is not comparable with the others: only a re-run or a cancel is offered. */
-  get batteryStoppedOnInstrumentChange(): boolean {
-    return this.batteryIsStopped && this.activeBatteryRun?.stopReason === 'InstrumentChanged';
-  }
-
-  /** Continue is offered for a resumable battery run that did not stop on an instrument change. */
-  get batteryCanContinue(): boolean {
-    return !!this.activeBatteryRun?.resumable && !this.batteryIsLive && !this.batteryStoppedOnInstrumentChange;
-  }
-
-  /** The battery banner shows while the battery run is live, stopped or continuable, and its dialog is closed. */
-  get batteryBannerVisible(): boolean {
-    return this.activeBatteryRun != null && !this.batteryDialogVisible && !this.batteryIsFinished;
-  }
-
-  /** *Suite s of K · round r of R*, or the state that replaces it. */
-  get batteryProgressLabel(): string {
-    const batteryRun = this.activeBatteryRun;
-    if (!batteryRun) return '';
-    const suites = `${batteryRun.completedSuiteCount} of ${batteryRun.suiteCount} suites completed`;
-    switch (batteryRun.status) {
-      case 'WaitingForCap':
-        return `Waiting for run cap — ${suites}.`;
-      case 'Stopped':
-        return `Stopped — ${batteryRun.stopReasonText || batteryRun.stopReason || 'reason not recorded'}. ${suites}.`;
-      case 'Pending':
-      case 'Running':
-        return batteryRun.currentSuitePosition != null
-          ? `Suite ${batteryRun.currentSuitePosition} of ${batteryRun.suiteCount}`
-            + `${batteryRun.currentSuiteName ? ` (${batteryRun.currentSuiteName})` : ''}`
-            + ` · round ${batteryRun.currentRound ?? 1} of ${batteryRun.runsPerSuite}.`
-          : `Launching — ${suites}.`;
-      case 'CompletedWithErrors':
-        return `Completed with errors — ${suites}.`;
-      default:
-        return `${batteryRun.status} — ${suites}.`;
-    }
-  }
-
-  /** The Continue button's label, naming the stop reason. */
-  get batteryContinueLabel(): string {
-    const reason = this.activeBatteryRun?.stopReasonText || this.activeBatteryRun?.stopReason;
-    return reason ? `Continue (${reason})` : 'Continue';
-  }
-
-  /** Opens the Battery Progress dialog on the live battery run, or on one the Multi-Suite tab names. */
-  openBatteryDialog(batteryRunId?: number): void {
-    if (batteryRunId != null && batteryRunId !== this.activeBatteryRunId) {
-      this.batteryDialogRunId = batteryRunId;
-    }
-    this.batteryDialogVisible = true;
-    this.cdr.detectChanges();
-  }
-
-  onBatteryDialogClosed(): void {
-    this.returnToBatteryOnClose = false;
-    this.batteryDialogVisible = false;
-    this.batteryDialogRunId = null;
-    this.cdr.detectChanges();
   }
 
   /** The dialog continued or re-ran a battery run; this page's poller follows it again. */
   onBatteryResumedFromDialog(batteryRunId: number): void {
-    this.activeBatteryRunId = batteryRunId;
-    this.batteryDialogRunId = null;
-    this.batteriesSeenLive.add(batteryRunId);
-    this.startBatteryPolling(batteryRunId);
-    this.cdr.detectChanges();
+    this.monitor.activeBatteryRunId = batteryRunId;
+    this.monitor.batteryDialogRunId = null;
+    this.monitor.batteriesSeenLive.add(batteryRunId);
+    this.monitor.startBatteryPolling(batteryRunId);
+    this.viewSync.notify();
   }
 
   /** The dialog canceled a battery run; the banner learns it from the next poll. */
   onBatteryCanceledFromDialog(batteryRunId: number): void {
-    if (batteryRunId === this.activeBatteryRunId) {
-      this.pollBatteryRun(batteryRunId);
+    if (batteryRunId === this.monitor.activeBatteryRunId) {
+      this.monitor.pollBatteryRun(batteryRunId);
     }
   }
 
   /** The dialog attached a run, which may have finished the battery run; the banner reads it again. */
   onBatteryMemberAttachedFromDialog(batteryRunId: number): void {
-    if (batteryRunId === this.activeBatteryRunId) {
-      this.pollBatteryRun(batteryRunId);
+    if (batteryRunId === this.monitor.activeBatteryRunId) {
+      this.monitor.pollBatteryRun(batteryRunId);
     }
   }
 
   /** Hands a member over to the run progress dialog, closing the battery dialog: never two stacked. */
   onOpenRunProgressFromBattery(runId: number): void {
-    this.batteryDialogVisible = false;
-    this.activeRunId = runId;
-    this.startPolling(runId);
+    this.monitor.batteryDialogVisible = false;
+    this.monitor.activeRunId = runId;
+    this.monitor.startPolling(runId);
     this.openRunProgressDialog();
-    this.returnToBatteryOnClose = true;
-    this.cdr.detectChanges();
+    this.monitor.returnToBatteryOnClose = true;
+    this.viewSync.notify();
   }
 
   /** Shows a battery run's analysis on the Multi-Suite tab. */
   onOpenBatteryAnalysis(batteryRunId: number): void {
-    this.batteryDialogVisible = false;
-    this.batteryDialogRunId = null;
+    this.monitor.batteryDialogVisible = false;
+    this.monitor.batteryDialogRunId = null;
     this.selectSubTab('multisuite');
     // The panel lives inside @if (activeSubTab === 'multisuite'); flushed before it is addressed.
-    this.cdr.detectChanges();
+    this.viewSync.notify();
     this.batteriesPanel?.showAnalysis(batteryRunId);
   }
 
   /** The Multi-Suite tab changed a battery; the launcher's list follows. */
   onBatteriesChanged(): void {
-    this.loadBatteries();
-  }
-
-  cancelActiveBattery(): void {
-    const batteryRunId = this.activeBatteryRunId;
-    if (batteryRunId == null) return;
-    this.benchmarkService.cancelBatteryRun(batteryRunId).subscribe({
-      next: () => this.pollBatteryRun(batteryRunId),
-      error: (err) => {
-        console.error('Failed to cancel benchmark battery run', err);
-        this.batteryErrorMessage = AdminBenchmarkComponent.refusalText(err, 'Failed to cancel the battery run.');
-        this.pollBatteryRun(batteryRunId);
-      }
-    });
-  }
-
-  /**
-   * Continues a stopped battery run, or re-runs it under the current instrument after an instrument
-   * change, which supersedes its completed members.
-   */
-  resumeActiveBattery(mode: BenchmarkBatteryResumeMode = 'Continue'): void {
-    const batteryRunId = this.activeBatteryRunId;
-    if (batteryRunId == null) return;
-    this.armCompletionSignalsFromGesture();
-    this.resumingBattery = true;
-    this.batteryErrorMessage = null;
-    this.benchmarkService.resumeBatteryRun(batteryRunId, mode).subscribe({
-      next: () => {
-        this.resumingBattery = false;
-        this.startBatteryPolling(batteryRunId);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.resumingBattery = false;
-        this.batteryErrorMessage = AdminBenchmarkComponent.refusalText(err, 'Failed to continue the battery run.');
-        this.pollBatteryRun(batteryRunId);
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  closeSameProviderDialog() {
-    this.sameProviderDialog?.nativeElement.close();
-    this.sameProviderWarning = null;
-  }
-
-  /** Acknowledge & Start Run: adds the shown role's acknowledgment to those given in this attempt and sends again. */
-  confirmSameProviderRun() {
-    if (this.sameProviderWarningIsReportWriter) {
-      this.launchAcknowledgments.reportWriter = true;
-    } else {
-      this.launchAcknowledgments.assessor = true;
-    }
-    this.startBenchmark(true);
-  }
-
-  /** The same-provider dialog is about the report writer rather than the assessor. */
-  get sameProviderWarningIsReportWriter(): boolean {
-    return this.sameProviderWarning?.role === 'reportWriter';
-  }
-
-  cancelActiveRun() {
-    if (!this.activeRunId) return;
-    const runId = this.activeRunId;
-    this.noteOperatorCancel(runId);
-    this.benchmarkService.cancelRun(runId).subscribe({
-      next: () => {
-        this.pollRunDetail(this.activeRunId!);
-      },
-      error: (err) => {
-        this.operatorCancelledRunIds.delete(runId);
-        console.error('Failed to cancel run', err);
-      }
-    });
-  }
-
-  /**
-   * Recorded before the request, because the interval poll can see the terminal status before the
-   * cancel response arrives. Only a run watched live is recorded, so every entry is consumed.
-   */
-  private noteOperatorCancel(runId: number): void {
-    if (this.runsSeenLive.has(runId)) {
-      this.operatorCancelledRunIds.add(runId);
-    }
-  }
-
-  private startPolling(runId: number) {
-    this.stopPolling();
-    this.runPollFailureCount = 0;
-    if (this.activeRunReportJob?.runId !== runId) {
-      this.activeRunReportJob = null;
-    }
-    if (this.lockedSeriesId === null && this.lockedBatteryRunId === null) {
-      this.backgroundActivity.acquireForRun(runId);
-    }
-    this.lastRunPollAttemptAtMs = Date.now();
-    this.pollRunDetail(runId);
-    this.pollTickerHandle = this.pollTicker.start(AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS, () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        const hiddenPollDue = (this.completionSound || this.completionNotification)
-          && (Date.now() - this.lastRunPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
-        if (!hiddenPollDue) {
-          return;
-        }
-      }
-      this.lastRunPollAttemptAtMs = Date.now();
-      this.pollRunDetail(runId);
-    });
-
-    if (typeof document !== 'undefined') {
-      this.runVisibilityChangeHandler = () => {
-        if (!document.hidden) {
-          this.pollRunDetail(runId);
-        }
-      };
-      document.addEventListener('visibilitychange', this.runVisibilityChangeHandler);
-    }
-  }
-
-  private stopPolling() {
-    if (this.pollTickerHandle) {
-      this.pollTickerHandle();
-      this.pollTickerHandle = null;
-    }
-    this.runReportJobSub?.unsubscribe();
-    this.runReportJobSub = null;
-    if (this.runVisibilityChangeHandler && typeof document !== 'undefined') {
-      document.removeEventListener('visibilitychange', this.runVisibilityChangeHandler);
-      this.runVisibilityChangeHandler = null;
-    }
-    if (this.lockedSeriesId === null && this.lockedBatteryRunId === null) {
-      this.backgroundActivity.release();
-    }
-  }
-
-  private startRunElapsedTicker(): void {
-    this.stopRunElapsedTicker();
-    this.runElapsedInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-      this.cdr.detectChanges();
-    }, AdminBenchmarkComponent.RUN_ELAPSED_TICK_MS);
-  }
-
-  private stopRunElapsedTicker(): void {
-    if (this.runElapsedInterval) {
-      clearInterval(this.runElapsedInterval);
-      this.runElapsedInterval = null;
-    }
-  }
-
-  /**
-   * The run half of transition detection: chimes only for an id this poller watched Running, and
-   * only when it is not a member of a series still live — a series chimes once for the whole
-   * group instead, via `signalCompletion` in `pollSeries`. A run ended by cancellation does not
-   * signal at all.
-   */
-  private maybeSignalRunCompletion(run: BenchmarkRunDetailDto): void {
-    if (!this.runsSeenLive.has(run.id)) return;
-    this.runsSeenLive.delete(run.id);
-    const cancelledByOperator = this.operatorCancelledRunIds.delete(run.id);
-    if (this.activeSeries != null && this.seriesIsLive) return;
-    if (this.activeBatteryRun != null && this.batteryIsLive) return;
-    if (cancelledByOperator || this.runEndedByCancellation(run)) return;
-    this.signalCompletion(`run:${run.id}`);
-  }
-
-  /**
-   * `Canceled`, or a member of a series the operator cancelled: a member finishing just as its
-   * series is cancelled can end `Completed`, after the live-series guard no longer applies.
-   */
-  private runEndedByCancellation(run: BenchmarkRunDetailDto): boolean {
-    if (this.formatStatus(run.status) === 'Canceled') return true;
-    const series = this.activeSeries;
-    if (series?.status === 'Cancelled' && series.members.some(m => m.runId === run.id)) return true;
-    const batteryRun = this.activeBatteryRun;
-    return batteryRun?.status === 'Cancelled' && (batteryRun.members ?? []).some(m => m.runId === run.id);
-  }
-
-  /**
-   * Marks the tab title even when both signals are off, so a hidden tab shows the completion
-   * either way. The sound and the notification are then handled independently — either, both or
-   * neither may be on, and the notification does not require the sound to have run. The
-   * notification fires whenever the checkbox is ticked, whatever the tab's own focus: a completion
-   * is worth surfacing on the desktop even for an operator looking straight at the tab, and a tab
-   * that merely lacks focus (another window in front, not actually hidden) is not a case worth
-   * special-casing away.
-   */
-  private signalCompletion(key: string): void {
-    this.markTabTitleForCompletion();
-
-    if (this.completionSound) {
-      this.completionSoundService.play(key).then(outcome => {
-        this.lastCompletionSoundOutcome = outcome;
-        if (outcome === 'played') {
-          this.completionSoundStatus = null;
-        } else if (outcome === 'blocked') {
-          this.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
-        } else if (outcome === 'deferred') {
-          this.completionSoundStatus = 'The browser held the sound until this tab was shown.';
-        }
-        this.cdr.detectChanges();
-      });
-    }
-
-    if (this.completionNotification) {
-      const body = this.completionNotificationBody(key);
-      if (body) {
-        const hidden = typeof document !== 'undefined' ? document.hidden : false;
-        const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
-        const outcome = this.completionNotificationService.notify(key, 'AI Benchmark', body);
-        this.recordNotificationAttempt({ atUtc: new Date().toISOString(), key, hidden, focused, outcome });
-      }
-    }
-  }
-
-  /** Keeps the last {@link MAX_NOTIFICATION_ATTEMPTS} notification attempts for the diagnostics capture. */
-  private recordNotificationAttempt(attempt: {
-    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome;
-  }): void {
-    this.notificationAttempts.push(attempt);
-    if (this.notificationAttempts.length > AdminBenchmarkComponent.MAX_NOTIFICATION_ATTEMPTS) {
-      this.notificationAttempts.shift();
-    }
-  }
-
-  /**
-   * `Run #54 — <suite name> — <status>`, `Series #N — k of n runs — <status>` or
-   * `Battery #N — <battery name> — k of K suites — <status>`.
-   */
-  private completionNotificationBody(key: string): string | null {
-    if (key.startsWith('run:')) {
-      const run = this.activeRunDetail;
-      if (!run) return null;
-      return `Run #${run.id} — ${run.suiteName} — ${this.formatStatus(run.status)}`;
-    }
-    if (key.startsWith('series:')) {
-      const series = this.activeSeries;
-      if (!series) return null;
-      return `Series #${series.id} — ${series.completedRunCount} of ${series.requestedRunCount} runs — ${series.status}`;
-    }
-    if (key.startsWith('battery:')) {
-      const batteryRun = this.activeBatteryRun;
-      if (!batteryRun) return null;
-      return `Battery #${batteryRun.id} — ${batteryRun.batteryName} — `
-        + `${batteryRun.completedSuiteCount} of ${batteryRun.suiteCount} suites — ${batteryRun.status}`;
-    }
-    return null;
-  }
-
-  /**
-   * Arms the completion sound under the calling handler's own user gesture, so the browser does
-   * not defer this tab's playback to gesture-less code that later runs while the tab is hidden.
-   * Skipped entirely when neither completion signal is enabled, since there is nothing to arm
-   * for. Every call site is a synchronous `void` method bound directly to a template `(click)`,
-   * never behind an awaited dialog, so the call runs inside the gesture.
-   */
-  private armCompletionSignalsFromGesture(): void {
-    if (!this.completionSound && !this.completionNotification) return;
-    void this.completionSoundService.arm();
-    this.settleNotificationPermissionFromGesture();
-  }
-
-  /**
-   * A ticked notification box restored from saved settings may meet a browser that was never
-   * asked (another browser or profile, or cleared site data). The prompt is then shown here, under
-   * the Start gesture, so the run does not end in a notification that silently never fires. A
-   * browser that already decided is not asked again: `granted` changes nothing, and a refusal
-   * unticks the box with the reason.
-   */
-  private settleNotificationPermissionFromGesture(): void {
-    if (!this.completionNotification) return;
-    const permission = this.completionNotificationService.permission();
-    if (permission === 'granted') return;
-    if (permission !== 'default') {
-      this.applyNotificationPermissionOutcome(permission);
-      return;
-    }
-    this.completionNotificationService.requestPermission().then(outcome => {
-      this.applyNotificationPermissionOutcome(outcome);
-      this.cdr.detectChanges();
-    });
-  }
-
-  /**
-   * The desktop-notification checkbox's own change handler. Ticking it asks for permission at
-   * once, while the operator is at the screen; the Start gesture asks only when this browser has
-   * not decided yet. Never asked on page load. A result other than `granted` unticks the box and
-   * explains why in the status line beside the checkboxes.
-   */
-  onCompletionNotificationChange(checked: boolean): void {
-    if (!checked) {
-      this.completionNotification = false;
-      this.completionNotificationStatus = null;
-      this.cdr.detectChanges();
-      return;
-    }
-
-    this.completionNotificationService.requestPermission().then(outcome => {
-      this.applyNotificationPermissionOutcome(outcome);
-      this.cdr.detectChanges();
-    });
-  }
-
-  private applyNotificationPermissionOutcome(outcome: BenchmarkNotificationPermissionOutcome): void {
-    if (outcome === 'granted') {
-      this.completionNotification = true;
-      this.completionNotificationStatus = null;
-      return;
-    }
-    this.completionNotification = false;
-    this.completionNotificationStatus = outcome === 'denied'
-      ? "Notifications are blocked for this site in the browser's settings."
-      : outcome === 'default'
-        ? 'The permission prompt was dismissed.'
-        : 'This browser does not support desktop notifications here.';
-  }
-
-  /**
-   * Prefixes the document title with a checkmark while the tab is hidden, so the tab strip shows a
-   * run or series finished even when the operator never hears it. Restored, and the listener
-   * detached, on the next visibilitychange that finds the tab visible again.
-   */
-  private markTabTitleForCompletion(): void {
-    if (typeof document === 'undefined' || !document.hidden) return;
-    if (this.originalDocumentTitleBeforeCompletion === null) {
-      this.originalDocumentTitleBeforeCompletion = document.title;
-      document.title = '✓ ' + document.title;
-    }
-    if (!this.titleRestoreVisibilityHandler) {
-      this.titleRestoreVisibilityHandler = () => {
-        if (document.hidden) return;
-        if (this.originalDocumentTitleBeforeCompletion !== null) {
-          document.title = this.originalDocumentTitleBeforeCompletion;
-          this.originalDocumentTitleBeforeCompletion = null;
-        }
-        if (this.titleRestoreVisibilityHandler) {
-          document.removeEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
-          this.titleRestoreVisibilityHandler = null;
-        }
-      };
-      document.addEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
-    }
-  }
-
-  /**
-   * The *Test sound* button: plays under this click's user gesture, which also unlocks later
-   * programmatic playback on browsers that require one interaction before audio is allowed.
-   */
-  testCompletionSound(): void {
-    this.armCompletionSignalsFromGesture();
-    this.completionSoundStatus = null;
-    this.completionSoundService.prime().then(outcome => {
-      this.lastCompletionSoundOutcome = outcome;
-      if (outcome === 'blocked') {
-        this.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
-      }
-      this.cdr.detectChanges();
-    });
-  }
-
-  private pollRunDetail(runId: number) {
-    this.benchmarkService.getRun(runId).subscribe({
-      next: (run) => {
-        this.lastRunPollAtUtc = new Date().toISOString();
-        this.lastRunPollError = null;
-        this.runPollFailureCount = 0;
-        this.activeRunDetail = run;
-        this.runDiagnosticsPanelCapturedAt = new Date();
-        const statusStr = this.formatStatus(run.status);
-        if (statusStr === 'Running') {
-          this.runsSeenLive.add(run.id);
-          this.rerunLaunchPending = false;
-          this.rerunLaunchedAtMs = null;
-          if (this.runTerminalSeenAt?.runId === run.id) {
-            this.runTerminalSeenAt = null;
-          }
-          if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
-            this.startRunElapsedTicker();
-          }
-        } else if (this.rerunLaunchPending) {
-          // A re-run's first poll or two can still see the previous attempt's terminal status:
-          // the server only flips the row to Running from inside the background task it starts.
-          // Stay non-terminal and keep polling until either a rerunStartedAtUtc stamp at or after
-          // the launch proves this status is fresh, or the grace period runs out.
-          const rerunStartedMs = run.rerunStartedAtUtc ? parseServerUtcDate(run.rerunStartedAtUtc).getTime() : NaN;
-          const stampedAfterLaunch = !Number.isNaN(rerunStartedMs) && rerunStartedMs >= this.rerunLaunchedAtMs! - 5000;
-          const graceExpired = Date.now() - this.rerunLaunchedAtMs! > AdminBenchmarkComponent.RERUN_LAUNCH_GRACE_MS;
-          if (stampedAfterLaunch || graceExpired) {
-            this.rerunLaunchPending = false;
-            this.rerunLaunchedAtMs = null;
-            if (!stampedAfterLaunch && graceExpired) {
-              this.runErrorMessage = 'The failed-question re-run did not report starting within 60 seconds. '
-                + 'Check the run history; if the run is still listed as running, reopen it from the banner.';
-            }
-            // The re-run's own terminal status: its report stage's grace starts now.
-            this.runTerminalSeenAt = null;
-            this.onRunTerminalPoll(run);
-          } else {
-            this.cdr.detectChanges();
-            return;
-          }
-        } else {
-          this.onRunTerminalPoll(run);
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.lastRunPollAtUtc = new Date().toISOString();
-        const httpStatus = err?.status ? ` (HTTP ${err.status})` : '';
-        const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Polling failed');
-        this.lastRunPollError = `${msg}${httpStatus}`;
-        console.error('Failed to poll run detail', err);
-        this.runPollFailureCount++;
-        // One failed poll is noise; only a run of MAX_CONSECUTIVE_POLL_FAILURES actually stops the
-        // tab's only view of the run, and rerunLaunchPending is cleared at the same moment, not
-        // on every transient failure.
-        if (this.runPollFailureCount >= AdminBenchmarkComponent.MAX_CONSECUTIVE_POLL_FAILURES) {
-          this.rerunLaunchPending = false;
-          this.rerunLaunchedAtMs = null;
-          this.stopPolling();
-        }
-      }
-    });
-  }
-
-  /**
-   * A terminal poll. A Completed run that names a report writer keeps its poll going through stage 4,
-   * the writing of its AI-written reports, and its completion signal waits for that stage to end;
-   * every other run stops polling and signals at once.
-   */
-  private onRunTerminalPoll(run: BenchmarkRunDetailDto): void {
-    const firstSeen = this.runTerminalSeenAt?.runId !== run.id;
-    if (firstSeen) {
-      this.runTerminalSeenAt = { runId: run.id, atMs: Date.now() };
-    }
-    this.runReportGraceOpen = Date.now() - this.runTerminalSeenAt!.atMs < AdminBenchmarkComponent.RUN_REPORT_STAGE_GRACE_MS;
-
-    if (this.runAwaitsReports(run)) {
-      if (firstSeen) {
-        this.loadHistory();
-      }
-      this.pollActiveRunReportJob(run.id);
-      return;
-    }
-
-    this.stopPolling();
-    this.stopRunElapsedTicker();
-    this.loadHistory();
-    this.maybeSignalRunCompletion(run);
-  }
-
-  /**
-   * The run's stage 4 is still to come or under way: it ended Completed, names a report writer, and its
-   * reports are Pending or Writing, or still NotRequested within the start grace.
-   */
-  private runAwaitsReports(run: BenchmarkRunDetailDto): boolean {
-    if (run.reportWriterModelConfigurationId == null || this.formatStatus(run.status) !== 'Completed') {
-      return false;
-    }
-    const status = this.reportDocumentsStatusOf(run);
-    if (status === BenchmarkRunReportDocumentsStatus.Pending || status === BenchmarkRunReportDocumentsStatus.Writing) {
-      return true;
-    }
-    return status === BenchmarkRunReportDocumentsStatus.NotRequested
-      && this.runReportGraceOpen
-      && this.runTerminalSeenAt?.runId === run.id;
-  }
-
-  /** One request at a time: a slow answer is superseded by the next poll's. A failure leaves the last view. */
-  private pollActiveRunReportJob(runId: number): void {
-    this.runReportJobSub?.unsubscribe();
-    this.runReportJobSub = this.benchmarkService.getRunReportJob(runId).subscribe({
-      next: view => {
-        if (this.activeRunDetail?.id !== runId) return;
-        this.activeRunReportJob = view;
-        this.activeRunReportJobReceivedAtMs = Date.now();
-        this.cdr.detectChanges();
-      },
-      error: err => console.warn('Failed to poll the run report writing job', err)
-    });
-  }
-
-  /** The run's report status as its enum value, whether the server sent the number or the name. */
-  reportDocumentsStatusOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunReportDocumentsStatus {
-    const status: unknown = run?.reportDocumentsStatus;
-    if (typeof status === 'number') {
-      return status;
-    }
-    if (typeof status === 'string') {
-      const value = (BenchmarkRunReportDocumentsStatus as unknown as Record<string, unknown>)[status];
-      if (typeof value === 'number') {
-        return value;
-      }
-    }
-    return BenchmarkRunReportDocumentsStatus.NotRequested;
+    this.workspace.loadBatteries();
   }
 
   // --- Run Progress Dialog ---
@@ -5786,15 +1308,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * post-answering span.
    */
   get runStage(): BenchmarkRunStage {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run) return 'answering';
-    if (this.rerunLaunchPending) return 'answering';
+    if (this.monitor.rerunLaunchPending) return 'answering';
     return this.runStageOf(run);
   }
 
   /** The stage of any run from its own detail, with no re-run launch pending. */
   runStageOf(run: BenchmarkRunDetailDto): BenchmarkRunStage {
-    if (this.formatStatus(run.status) !== 'Running') return 'terminal';
+    if (formatStatus(run.status) !== 'Running') return 'terminal';
 
     switch (run.stage) {
       case 'Answering': return 'answering';
@@ -5826,7 +1348,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The active run names a report writer, so the rail and the stage labels have a fourth stage. */
   get runHasReportStage(): boolean {
-    return this.activeRunDetail?.reportWriterModelConfigurationId != null;
+    return this.monitor.activeRunDetail?.reportWriterModelConfigurationId != null;
   }
 
   /** The stage labels' denominator: 4 with a report writer, else 3. */
@@ -5841,11 +1363,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * run (another terminal status, or nothing queued within the start grace).
    */
   get runReportStage(): 'none' | 'pending' | 'current' | 'done' | 'ended' | 'notWritten' {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run || run.reportWriterModelConfigurationId == null) return 'none';
     if (!this.runIsTerminal) return 'pending';
-    if (this.runAwaitsReports(run)) return 'current';
-    switch (this.reportDocumentsStatusOf(run)) {
+    if (this.monitor.runAwaitsReports(run)) return 'current';
+    switch (reportDocumentsStatusOf(run)) {
       case BenchmarkRunReportDocumentsStatus.Completed:
       case BenchmarkRunReportDocumentsStatus.CompletedWithWarnings:
         return 'done';
@@ -5866,9 +1388,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** What stage 4 is doing, from the job view polled alongside the run. */
   private get runReportWritingDetail(): string {
-    const job = this.activeRunReportJob;
-    const status = this.reportDocumentsStatusOf(this.activeRunDetail);
-    if (!job || job.runId !== this.activeRunDetail?.id) {
+    const job = this.monitor.activeRunReportJob;
+    const status = reportDocumentsStatusOf(this.monitor.activeRunDetail);
+    if (!job || job.runId !== this.monitor.activeRunDetail?.id) {
       return status === BenchmarkRunReportDocumentsStatus.Writing ? 'writing the reports' : 'waiting for the report writer';
     }
     switch (job.phase) {
@@ -5897,25 +1419,25 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The documents stored, and how long they took: `2 documents, 1m 12s`. */
   private get runReportsWrittenSummary(): string {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     const count = run?.reportDocumentsWrittenCount ?? 0;
     const documents = `${count} ${count === 1 ? 'document' : 'documents'}`;
     const durationMs = run?.reportDocumentsDurationMs;
-    return durationMs != null ? `${documents}, ${this.formatDuration(durationMs)}` : documents;
+    return durationMs != null ? `${documents}, ${formatDuration(durationMs)}` : documents;
   }
 
   /** The status line's report sentence once stage 4 is over, or null while it is not. */
   private get runReportOutcomeSentence(): string | null {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     const message = run?.reportDocumentsMessage?.trim();
     const sentence = (text: string): string => /[.!?]$/.test(text) ? text : `${text}.`;
     switch (this.runReportStage) {
       case 'done':
-        return this.reportDocumentsStatusOf(run) === BenchmarkRunReportDocumentsStatus.CompletedWithWarnings
+        return reportDocumentsStatusOf(run) === BenchmarkRunReportDocumentsStatus.CompletedWithWarnings
           ? `Reports written with warnings: ${this.runReportsWrittenSummary}.`
           : `Reports written: ${this.runReportsWrittenSummary}.`;
       case 'ended':
-        switch (this.reportDocumentsStatusOf(run)) {
+        switch (reportDocumentsStatusOf(run)) {
           case BenchmarkRunReportDocumentsStatus.Failed:
             return sentence(`Report writing failed: ${message || 'no reason was recorded'}`);
           case BenchmarkRunReportDocumentsStatus.Skipped:
@@ -5930,11 +1452,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The server's clock now: the job view's reading plus the client time since it arrived. */
   private runReportServerNowMs(): number | null {
-    const job = this.activeRunReportJob;
+    const job = this.monitor.activeRunReportJob;
     if (!job?.serverTimeUtc) return null;
     const server = parseServerUtcDate(job.serverTimeUtc).getTime();
     if (Number.isNaN(server)) return null;
-    return server + Math.max(0, Date.now() - this.activeRunReportJobReceivedAtMs);
+    return server + Math.max(0, Date.now() - this.monitor.activeRunReportJobReceivedAtMs);
   }
 
   /**
@@ -5944,19 +1466,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runReportsStatLabel(): string {
     switch (this.runReportStage) {
       case 'current': {
-        const job = this.activeRunReportJob;
+        const job = this.monitor.activeRunReportJob;
         const now = this.runReportServerNowMs();
-        if (job?.runId === this.activeRunDetail?.id && job?.slotAcquiredAtUtc && now !== null) {
+        if (job?.runId === this.monitor.activeRunDetail?.id && job?.slotAcquiredAtUtc && now !== null) {
           const started = parseServerUtcDate(job.slotAcquiredAtUtc).getTime();
           if (!Number.isNaN(started)) {
-            return `${this.formatElapsed(Math.max(0, now - started))} · writing`;
+            return `${formatElapsed(Math.max(0, now - started))} · writing`;
           }
         }
         return 'Waiting';
       }
       case 'done':
       case 'ended':
-        return (this.activeRunDetail?.reportDocumentsWrittenCount ?? 0) > 0 ? this.runReportsWrittenSummary : 'None written';
+        return (this.monitor.activeRunDetail?.reportDocumentsWrittenCount ?? 0) > 0 ? this.runReportsWrittenSummary : 'None written';
       case 'notWritten':
         return 'Not written';
       default:
@@ -5968,12 +1490,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runReportWriterCost(): number | null {
     switch (this.runReportStage) {
       case 'current': {
-        const job = this.activeRunReportJob;
-        return job?.runId === this.activeRunDetail?.id ? (job?.job?.costUsd ?? null) : null;
+        const job = this.monitor.activeRunReportJob;
+        return job?.runId === this.monitor.activeRunDetail?.id ? (job?.job?.costUsd ?? null) : null;
       }
       case 'done':
       case 'ended':
-        return this.activeRunDetail?.reportDocumentsCostUsd ?? null;
+        return this.monitor.activeRunDetail?.reportDocumentsCostUsd ?? null;
       default:
         return null;
     }
@@ -5981,17 +1503,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Answers the claim verifier is reading right now. */
   get runVerifyingCount(): number {
-    return (this.activeRunDetail?.inFlightVerificationOrderIndexes ?? []).length;
+    return (this.monitor.activeRunDetail?.inFlightVerificationOrderIndexes ?? []).length;
   }
 
   /** Answers the second-opinion assessor is reading right now. */
   get runSecondOpinionInFlightCount(): number {
-    return (this.activeRunDetail?.inFlightSecondOpinionOrderIndexes ?? []).length;
+    return (this.monitor.activeRunDetail?.inFlightSecondOpinionOrderIndexes ?? []).length;
   }
 
   /** Answers the claim verifier has produced a verdict or an error for, scoped to a re-run. */
   get runVerifiedCount(): number {
-    const verified = (this.activeRunDetail?.answers ?? []).filter(
+    const verified = (this.monitor.activeRunDetail?.answers ?? []).filter(
       a => a.claimVerificationJson != null || a.claimVerificationError != null);
     if (!this.runHasRerunScope) return verified.length;
     const scope = new Set(this.effectiveRerunScope);
@@ -6000,7 +1522,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Answers carrying a second verdict, scoped to a re-run. */
   get runSecondOpinionCount(): number {
-    const graded = (this.activeRunDetail?.answers ?? []).filter(
+    const graded = (this.monitor.activeRunDetail?.answers ?? []).filter(
       a => a.secondOpinionQualityScore != null || a.secondOpinionError != null);
     if (!this.runHasRerunScope) return graded.length;
     const scope = new Set(this.effectiveRerunScope);
@@ -6013,21 +1535,21 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * rather than a zero that reads as a failure.
    */
   get runShowsClaimVerifierCounter(): boolean {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     return !!(run?.claimVerifierDisplayNameUsed || run?.claimVerifierModelIdUsed);
   }
 
   /** Whether the stat strip carries a "Second opinions" cell; the model strip's condition. */
   get runShowsSecondOpinionCounter(): boolean {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     return !!(run?.secondOpinionAssessorModelDisplayNameUsed || run?.secondOpinionAssessorModelIdUsed)
       && run?.secondOpinionModeUsed !== 0;
   }
 
   get runStageLabel(): string {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run) return '';
-    if (this.rerunLaunchPending) return 'Starting failed-question re-run…';
+    if (this.monitor.rerunLaunchPending) return 'Starting failed-question re-run…';
     const total = this.runTotalQuestionCount;
     const scoped = this.runHasRerunScope;
     const stageCount = this.runStageCount;
@@ -6053,7 +1575,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (this.runReportStage === 'current') {
           return `Stage 4 of 4 — Writing reports: ${this.runReportWritingDetail}`;
         }
-        const status = this.formatStatus(run.status);
+        const status = formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
           ? 'Completed with errors'
           : (status === 'CompletedWithLimits' ? 'Completed with limits' : status);
@@ -6076,12 +1598,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runAnsweredCount(): number {
-    return this.activeRunDetail?.answers.length ?? 0;
+    return this.monitor.activeRunDetail?.answers.length ?? 0;
   }
 
   /** Answers that reached a terminal assessment state — scored or failed to assess. */
   get runScoredCount(): number {
-    return (this.activeRunDetail?.answers ?? []).filter(a => {
+    return (this.monitor.activeRunDetail?.answers ?? []).filter(a => {
       const s = this.formatAssessmentStatus(a.assessmentStatus);
       return s === 'Scored' || s === 'Failed';
     }).length;
@@ -6092,7 +1614,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runFailedAnswers(): BenchmarkRunAnswerDto[] {
-    return (this.activeRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
+    return (this.monitor.activeRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
   }
 
   /** The selected run detail's answers that failed, for the run-detail dialog's alert and integrity notice. */
@@ -6150,7 +1672,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runTotalQuestionCount(): number {
-    return this.activeRunDetail?.totalQuestionCount ?? 0;
+    return this.monitor.activeRunDetail?.totalQuestionCount ?? 0;
   }
 
   /**
@@ -6165,13 +1687,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** Answered count for the progress meter: the whole run, or only the re-run's own answers. */
   get runMeterAnswered(): number {
     if (!this.runHasRerunScope) return this.runAnsweredCount;
-    return this.activeRunDetail?.rerunAnsweredOrderIndexes?.length ?? 0;
+    return this.monitor.activeRunDetail?.rerunAnsweredOrderIndexes?.length ?? 0;
   }
 
   /** Scored count for the progress meter: the whole run, or only the re-run's own answers. */
   get runMeterScored(): number {
     if (!this.runHasRerunScope) return this.runScoredCount;
-    return this.activeRunDetail?.rerunScoredOrderIndexes?.length ?? 0;
+    return this.monitor.activeRunDetail?.rerunScoredOrderIndexes?.length ?? 0;
   }
 
   /**
@@ -6183,16 +1705,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runMeterFailed(): number {
     if (!this.runHasRerunScope) return this.runFailedAnswerCount;
     const scope = new Set(this.effectiveRerunScope);
-    const reAnswered = new Set(this.activeRunDetail?.rerunAnsweredOrderIndexes ?? []);
+    const reAnswered = new Set(this.monitor.activeRunDetail?.rerunAnsweredOrderIndexes ?? []);
     return this.runFailedAnswers.filter(a => scope.has(a.orderIndex) && reAnswered.has(a.orderIndex)).length;
   }
 
   get runIsRunning(): boolean {
-    return this.activeRunDetail != null && this.formatStatus(this.activeRunDetail.status) === 'Running';
+    return this.monitor.activeRunDetail != null && formatStatus(this.monitor.activeRunDetail.status) === 'Running';
   }
 
   get runIsTerminal(): boolean {
-    return this.activeRunDetail != null && !this.rerunLaunchPending && this.formatStatus(this.activeRunDetail.status) !== 'Running';
+    return this.monitor.activeRunDetail != null && !this.monitor.rerunLaunchPending && formatStatus(this.monitor.activeRunDetail.status) !== 'Running';
   }
 
   /**
@@ -6203,8 +1725,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runIsFirstPass(): boolean {
     return this.runIsRunning
       && !this.runHasRerunScope
-      && !this.rerunLaunchPending
-      && this.activeRunDetail?.rerunStartedAtUtc == null;
+      && !this.monitor.rerunLaunchPending
+      && this.monitor.activeRunDetail?.rerunStartedAtUtc == null;
   }
 
   /**
@@ -6214,7 +1736,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * matched to the answers by question id.
    */
   get runProgressRows(): BenchmarkRunProgressRow[] {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run) return [];
 
     const source: { orderIndex: number; questionText: string; answer: BenchmarkRunAnswerDto | null }[] =
@@ -6230,7 +1752,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         }
       }
       // An index an answer already holds is never listed twice: the rows are tracked by it.
-      for (const q of this.runProgressQuestions) {
+      for (const q of this.monitor.runProgressQuestions) {
         if ((q.id != null && answeredQuestionIds.has(q.id)) || takenIndexes.has(q.orderIndex)) {
           continue;
         }
@@ -6289,7 +1811,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
         // A question inside a pending re-run's scope stops showing the failure it is about to
         // be re-run for.
-        if (this.rerunLaunchPending && this.effectiveRerunScope.includes(q.orderIndex)) {
+        if (this.monitor.rerunLaunchPending && this.effectiveRerunScope.includes(q.orderIndex)) {
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
@@ -6324,26 +1846,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       });
   }
 
-  /**
-   * Order indexes a failed-question re-run is repairing, captured when the re-run is launched.
-   * The row list itself is unchanged: every answer of the run stays listed, and a question
-   * outside the re-run keeps the status it already has. Empty when no re-run is in progress.
-   */
-  rerunScopeOrderIndexes: number[] = [];
-
-  /**
-   * True from the moment a failed-question re-run is requested until a poll reports the run
-   * Running, or reports a terminal status stamped by this launch, or the request is refused.
-   * While true the dialog is neither running nor terminal: it is starting.
-   */
-  rerunLaunchPending = false;
-  private rerunLaunchedAtMs: number | null = null;
-  private static readonly RERUN_LAUNCH_GRACE_MS = 60_000;
-
   /** Server-reported scope once the re-run is Running; the client-captured list during launch. */
   get effectiveRerunScope(): number[] {
-    const server = this.activeRunDetail?.rerunScopeOrderIndexes ?? [];
-    return server.length > 0 ? server : this.rerunScopeOrderIndexes;
+    const server = this.monitor.activeRunDetail?.rerunScopeOrderIndexes ?? [];
+    return server.length > 0 ? server : this.monitor.rerunScopeOrderIndexes;
   }
 
   get runHasRerunScope(): boolean {
@@ -6362,7 +1868,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (row.status === 'Pending') return 'Pending';
     if (row.status === 'Answering') return 'Answering';
     if (row.status === 'Verifying') return 'Verifying';
-    if (row.status === 'SecondOpinion') return this.activeRunDetail?.isPanelRun ? 'Reference reader' : 'Second reader';
+    if (row.status === 'SecondOpinion') return this.monitor.activeRunDetail?.isPanelRun ? 'Reference reader' : 'Second reader';
     if (row.status === 'ProviderError') return 'Provider Error';
     if (row.status === 'Canceled') return 'Canceled';
     if (row.status !== 'Ok') return row.status;
@@ -6382,7 +1888,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (!ans || row.status === 'Pending' || row.status === 'Answering' || row.assessmentStatus !== 'Scored') {
       return null;
     }
-    const score = this.activeRunDetail?.isPanelRun ? ans.panelQualityScore : ans.qualityScore;
+    const score = this.monitor.activeRunDetail?.isPanelRun ? ans.panelQualityScore : ans.qualityScore;
     return score ?? null;
   }
 
@@ -6406,27 +1912,27 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * measures the re-run's own span; the run's CompletedAtUtc stays fixed across a re-run.
    */
   get runElapsedLabel(): string {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run) return '—';
     if (this.runElapsedIsRerun) {
       // While running, any completion stamp is a previous re-run's, earlier than this start, and
       // would clamp the count to 0; measure against now instead.
       const rerunEnd = this.runIsRunning ? null : run.rerunCompletedAtUtc;
-      return this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, rerunEnd));
+      return formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, rerunEnd));
     }
     if (!run.startedAtUtc) return '—';
     const ms = elapsedMsBetween(run.startedAtUtc, run.completedAtUtc);
-    return this.formatElapsed(ms);
+    return formatElapsed(ms);
   }
 
   get runElapsedIsRerun(): boolean {
-    return this.runHasRerunScope && !!this.activeRunDetail?.rerunStartedAtUtc;
+    return this.runHasRerunScope && !!this.monitor.activeRunDetail?.rerunStartedAtUtc;
   }
 
   get runAverageAnswerDurationLabel(): string {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run || run.answers.length === 0) return '—';
-    return this.formatDuration(Math.round(run.totalAnswerDurationMs / run.answers.length));
+    return formatDuration(Math.round(run.totalAnswerDurationMs / run.answers.length));
   }
 
   /**
@@ -6436,7 +1942,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * "not reported", not "no cache ever warmed".
    */
   get runCacheCreationUnreported(): boolean {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run) return false;
     return (run.totalCacheCreationTokens ?? 0) === 0 &&
       (run.totalCacheReadTokens ?? 0) > 0 &&
@@ -6445,20 +1951,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The diagnostics capture of the active run, which the progress dialog copies and downloads. */
   get runDiagnosticsText(): string {
-    return this.runDiagnosticsTextFor(this.activeRunDetail, this.runStage);
+    return this.runDiagnosticsTextFor(this.monitor.activeRunDetail, this.runStage);
   }
 
   /** The text the Diagnostics panel shows: empty while it is closed, stamped when it last refreshed. */
   get runDiagnosticsPanelText(): string {
     return this.runDiagnosticsPanelOpen
-      ? this.runDiagnosticsTextFor(this.activeRunDetail, this.runStage, this.runDiagnosticsPanelCapturedAt)
+      ? this.runDiagnosticsTextFor(this.monitor.activeRunDetail, this.runStage, this.monitor.runDiagnosticsPanelCapturedAt)
       : '';
   }
 
   onRunDiagnosticsToggle(event: Event): void {
     this.runDiagnosticsPanelOpen = (event.target as HTMLDetailsElement).open;
     if (this.runDiagnosticsPanelOpen) {
-      this.runDiagnosticsPanelCapturedAt = new Date();
+      this.monitor.runDiagnosticsPanelCapturedAt = new Date();
     }
   }
 
@@ -6473,14 +1979,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * detail alone, so the run report and the Download Center capture the same text for it.
    */
   runDiagnosticsTextFor(run: BenchmarkRunDetailDto | null, stage: BenchmarkRunStage, capturedAt: Date = new Date()): string {
-    const live = run === this.activeRunDetail;
+    const live = run === this.monitor.activeRunDetail;
     const facts = live || !run ? this.activeRunDiagnosticsFacts() : this.detailDiagnosticsFacts(run);
     const lines: string[] = [];
 
     // Header
     lines.push('=== BENCHMARK RUN DIAGNOSTICS ===');
     lines.push(`Captured:         ${capturedAt.toISOString()}`);
-    lines.push(`Overseer build:   ${this.overseerBuildVersion || 'unknown'}`);
+    lines.push(`Overseer build:   ${this.workspace.overseerBuildVersion || 'unknown'}`);
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
     lines.push(`Client:           ${userAgent}`);
 
@@ -6520,7 +2026,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const stageStr = stage === 'terminal'
         ? 'terminal'
         : `${stageNumbers[stage]} (${run.stage ? 'server' : 'derived'})`;
-      lines.push(`Run ID: ${run.id}, Suite: ${run.suiteName} (${run.benchmarkSuiteId ?? 'n/a'}), Status: ${this.formatStatus(run.status)}, Stage: ${stageStr}, Started by: ${run.startedByUserName || 'unknown'}`);
+      lines.push(`Run ID: ${run.id}, Suite: ${run.suiteName} (${run.benchmarkSuiteId ?? 'n/a'}), Status: ${formatStatus(run.status)}, Stage: ${stageStr}, Started by: ${run.startedByUserName || 'unknown'}`);
       lines.push(`Started (raw):    ${run.startedAtUtc}`);
       const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
       lines.push(`Started (parsed): ${startedParsed}`);
@@ -6532,13 +2038,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // The run's own span and the re-run's are separate lines: CompletedAtUtc stays fixed across a
       // re-run, so either figure printed alone under one label misstates the other.
       const runSpan = run.startedAtUtc
-        ? this.formatElapsed(elapsedMsBetween(run.startedAtUtc, run.completedAtUtc))
+        ? formatElapsed(elapsedMsBetween(run.startedAtUtc, run.completedAtUtc))
         : '—';
       lines.push(`Elapsed (run):    ${runSpan}`);
       if (run.rerunStartedAtUtc) {
         const rerunSpan = live && this.runElapsedIsRerun
           ? this.runElapsedLabel
-          : this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc));
+          : formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc));
         lines.push(`Re-run elapsed:   ${rerunSpan}`);
       }
       lines.push('');
@@ -6634,9 +2140,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       // The launch state and the suite question list belong to the progress dialog's run.
       if (live) {
-        lines.push(`Re-run launch pending: ${this.rerunLaunchPending}`);
-        if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
-          lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
+        lines.push(`Re-run launch pending: ${this.monitor.rerunLaunchPending}`);
+        if (this.monitor.runProgressQuestions.length > 0 && this.monitor.runProgressQuestionsSuiteId != null) {
+          lines.push(`Suite questions loaded: ${this.monitor.runProgressQuestions.length} for suite ${this.monitor.runProgressQuestionsSuiteId}`);
         } else {
           lines.push('Suite questions loaded: not loaded — list degraded to answers only');
         }
@@ -6646,7 +2152,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // --- TOKENS ---
       lines.push('--- TOKENS ---');
       lines.push(`input: ${run.totalInputTokens}, output: ${run.totalOutputTokens}, cache read: ${run.totalCacheReadTokens}, cache creation: ${run.totalCacheCreationTokens}`);
-      lines.push(`total duration: ${this.formatDuration(run.totalDurationMs)}, total answer duration: ${this.formatDuration(run.totalAnswerDurationMs)}`);
+      lines.push(`total duration: ${formatDuration(run.totalDurationMs)}, total answer duration: ${formatDuration(run.totalAnswerDurationMs)}`);
       // H1: the run-level model-call figure, and input tokens per call — the figure that attributes
       // input-token growth to call count rather than context size. Omitted entirely for runs that never
       // recorded a model-call count.
@@ -6863,22 +2369,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
     // --- POLLING ---
     lines.push('--- POLLING ---');
-    const runPollStr = this.pollTickerHandle
-      ? `active every ${AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS} ms (${this.pollTickerHandle.mode})`
+    const runPollStr = this.monitor.pollTickerHandle
+      ? `active every ${BenchmarkActiveRunMonitor.RUN_POLL_INTERVAL_MS} ms (${this.monitor.pollTickerHandle.mode})`
       : 'stopped';
     lines.push(`Run poll: ${runPollStr}`);
-    const tickerStr = this.runElapsedInterval ? `active every ${AdminBenchmarkComponent.RUN_ELAPSED_TICK_MS} ms` : 'stopped';
+    const tickerStr = this.monitor.runElapsedInterval ? `active every ${BenchmarkActiveRunMonitor.RUN_ELAPSED_TICK_MS} ms` : 'stopped';
     lines.push(`Elapsed ticker: ${tickerStr}`);
-    if (this.lastRunPollAtUtc) {
-      const pollAgoSec = Math.max(0, Math.floor((Date.now() - new Date(this.lastRunPollAtUtc).getTime()) / 1000));
-      lines.push(`Last poll: ${this.lastRunPollAtUtc} (${pollAgoSec}s ago)`);
+    if (this.monitor.lastRunPollAtUtc) {
+      const pollAgoSec = Math.max(0, Math.floor((Date.now() - new Date(this.monitor.lastRunPollAtUtc).getTime()) / 1000));
+      lines.push(`Last poll: ${this.monitor.lastRunPollAtUtc} (${pollAgoSec}s ago)`);
     }
-    if (this.lastRunPollError) {
-      lines.push(`Last poll error: ${this.lastRunPollError} (consecutive failures: ${this.runPollFailureCount})`);
+    if (this.monitor.lastRunPollError) {
+      lines.push(`Last poll error: ${this.monitor.lastRunPollError} (consecutive failures: ${this.monitor.runPollFailureCount})`);
     }
     lines.push(`Document hidden: ${typeof document !== 'undefined' ? document.hidden : false}, focused: ${typeof document !== 'undefined' ? document.hasFocus() : false}`);
     const soundDiag = this.completionSoundService.diagnostics;
-    lines.push(`Completion sound: ${this.completionSound ? 'enabled' : 'disabled'}, last outcome ${this.lastCompletionSoundOutcome ?? 'n/a'}`);
+    lines.push(`Completion sound: ${this.launcher.completionSound ? 'enabled' : 'disabled'}, last outcome ${this.monitor.lastCompletionSoundOutcome ?? 'n/a'}`);
     lines.push(`  armed=${soundDiag.armed}, arming=${soundDiag.arming}, AudioContext state=${soundDiag.audioContextState ?? 'n/a'}, `
       + `path=${soundDiag.lastPlayPath ?? 'n/a'}, deferred settle=${soundDiag.lastDeferredSettleMs != null ? soundDiag.lastDeferredSettleMs + ' ms' : 'n/a'}`);
     lines.push('  attempts:');
@@ -6892,11 +2398,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       : 'none'}`);
     const notificationSupported = this.completionNotificationService.isSupported();
     const notificationPermission = notificationSupported && typeof Notification !== 'undefined' ? Notification.permission : 'n/a';
-    lines.push(`Completion notification: ${this.completionNotification ? 'enabled' : 'disabled'}, supported=${notificationSupported}, `
-      + `permission=${notificationPermission}, status=${this.completionNotificationStatus ?? 'n/a'}`
+    lines.push(`Completion notification: ${this.launcher.completionNotification ? 'enabled' : 'disabled'}, supported=${notificationSupported}, `
+      + `permission=${notificationPermission}, status=${this.monitor.completionNotificationStatus ?? 'n/a'}`
       + `${this.completionNotificationService.lastError ? `, last error: ${this.completionNotificationService.lastError}` : ''}`);
     lines.push('  attempts:');
-    for (const a of this.notificationAttempts) {
+    for (const a of this.monitor.notificationAttempts) {
       lines.push(`    ${a.atUtc} key=${a.key} hidden=${a.hidden} focused=${a.focused} outcome=${a.outcome}`);
     }
     lines.push(`Background lock: ${this.backgroundActivity.state}`
@@ -6911,8 +2417,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push(`Run error: ${run.errorMessage}`);
       hasError = true;
     }
-    if (live && this.runQuestionsLoadError) {
-      lines.push(`Questions fetch error: ${this.runQuestionsLoadError}`);
+    if (live && this.monitor.runQuestionsLoadError) {
+      lines.push(`Questions fetch error: ${this.monitor.runQuestionsLoadError}`);
       hasError = true;
     }
     const failureGroups = this.failedAnswerGroups(facts.failed);
@@ -7042,7 +2548,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }).length,
       failed: run.answers.filter(a => this.isAnswerFailed(a)),
       gradeable: run.answers.filter(a => this.countsTowardQualityIndex(a)).length,
-      terminal: this.formatStatus(run.status) !== 'Running',
+      terminal: formatStatus(run.status) !== 'Running',
       rerunScope: scope,
       verifiedInScope: scoped(run.answers.filter(a => a.claimVerificationJson != null || a.claimVerificationError != null)),
       secondOpinionInScope: scoped(run.answers.filter(a => a.secondOpinionQualityScore != null || a.secondOpinionError != null)),
@@ -7089,28 +2595,26 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   get runDiagnosticsCopyStatus(): string {
     if (this.copiedRunDiagnostics) return 'Diagnostics copied to clipboard';
-    return this.runDiagnosticsCopyFailed ? 'Could not copy the diagnostics to the clipboard.' : '';
+    return this.monitor.runDiagnosticsCopyFailed ? 'Could not copy the diagnostics to the clipboard.' : '';
   }
-
-  runDiagnosticsCopyFailed = false;
 
   async copyRunDiagnostics(): Promise<void> {
     const text = this.runDiagnosticsText;
     if (!text) { return; }
     try {
       await navigator.clipboard.writeText(text);
-      this.runDiagnosticsCopyFailed = false;
+      this.monitor.runDiagnosticsCopyFailed = false;
       this.copiedRunDiagnostics = true;
       if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
       this.copiedRunDiagnosticsTimer = setTimeout(() => {
         this.copiedRunDiagnostics = false;
         this.copiedRunDiagnosticsTimer = null;
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }, 2000);
     } catch {
       this.copiedRunDiagnostics = false;
-      this.runDiagnosticsCopyFailed = true;
-      this.runErrorMessage = 'Could not copy the benchmark run diagnostics to the clipboard.';
+      this.monitor.runDiagnosticsCopyFailed = true;
+      this.monitor.runErrorMessage = 'Could not copy the benchmark run diagnostics to the clipboard.';
     }
   }
 
@@ -7123,10 +2627,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const lines: string[] = ['--- REPORTS ---'];
     const writerName = run.reportWriterDisplayName ?? `configuration ${run.reportWriterModelConfigurationId} (deleted)`;
     lines.push(`Writer: ${writerName} (${run.reportWriterProvider ?? 'n/a'} / ${run.reportWriterModelId ?? 'n/a'}), thinking: ${run.reportWriterThinkingLevel ?? 'default'}`);
-    lines.push(`Status: ${BenchmarkRunReportDocumentsStatus[this.reportDocumentsStatusOf(run)] ?? 'unknown'}`);
+    lines.push(`Status: ${BenchmarkRunReportDocumentsStatus[reportDocumentsStatusOf(run)] ?? 'unknown'}`);
     lines.push(`Message: ${run.reportDocumentsMessage?.trim() || 'none'}`);
     lines.push(`Documents written: ${run.reportDocumentsWrittenCount ?? 0}`);
-    lines.push(`Duration: ${run.reportDocumentsDurationMs != null ? this.formatDuration(run.reportDocumentsDurationMs) : 'n/a'}`);
+    lines.push(`Duration: ${run.reportDocumentsDurationMs != null ? formatDuration(run.reportDocumentsDurationMs) : 'n/a'}`);
     const tokens = run.reportDocumentsInputTokens != null || run.reportDocumentsOutputTokens != null
       ? `input ${run.reportDocumentsInputTokens ?? 0}, output ${run.reportDocumentsOutputTokens ?? 0}`
       : 'n/a';
@@ -7134,7 +2638,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     lines.push(`Cost: ${run.reportDocumentsCostUsd != null ? `$${run.reportDocumentsCostUsd.toFixed(4)}` : 'n/a'} (outside the run's own cost)`);
     if (live) {
       lines.push(`Stage 4: ${this.runReportStage}`);
-      const job = this.activeRunReportJob;
+      const job = this.monitor.activeRunReportJob;
       if (job && job.runId === run.id) {
         lines.push(`Job: phase ${job.phase}, queued ${job.queuedAtUtc}, slot acquired ${job.slotAcquiredAtUtc ?? 'n/a'}, finished ${job.finishedAtUtc ?? 'n/a'}, jobs ahead ${job.jobsAhead ?? 'n/a'}, cost so far ${job.job?.costUsd != null ? `$${job.job.costUsd.toFixed(4)}` : 'n/a'}`);
       } else {
@@ -7147,7 +2651,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Suite, model and run, in the order of the server's report and tool-call-log file names. */
   get runDiagnosticsFileName(): string {
-    const run = this.activeRunDetail;
+    const run = this.monitor.activeRunDetail;
     if (!run) return 'overseer-benchmark-run-diagnostics.txt';
     return `${safeFileName(run.suiteName)}_${safeFileName(run.testedModelDisplayNameUsed)}_run${run.id}_diagnostics.txt`;
   }
@@ -7158,107 +2662,70 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   openRunProgressDialog(fromSeries = false): void {
-    this.returnToSeriesOnClose = fromSeries;
-    this.returnToBatteryOnClose = false;
-    this.isRunProgressDialogOpen = true;
-    this.runDiagnosticsCopyFailed = false;
+    this.monitor.returnToSeriesOnClose = fromSeries;
+    this.monitor.returnToBatteryOnClose = false;
+    this.monitor.isRunProgressDialogOpen = true;
+    this.monitor.runDiagnosticsCopyFailed = false;
 
-    if (this.overseerBuildVersion === null) {
+    if (this.workspace.overseerBuildVersion === null) {
       this.systemService.getVersion().subscribe({
         next: (version) => {
-          this.overseerBuildVersion = version;
+          this.workspace.overseerBuildVersion = version;
         },
         error: (err) => {
           console.warn('Failed to get Overseer build version', err);
-          this.overseerBuildVersion = 'unknown';
+          this.workspace.overseerBuildVersion = 'unknown';
         }
       });
     }
 
     if (this.runIsRunning || this.runReportStage === 'current') {
-      this.startRunElapsedTicker();
+      this.monitor.startRunElapsedTicker();
     }
 
     // Resolved here and not in the poll handler: the suite's questions only supply the first
     // pass's not-yet-answered rows, so one fetch per dialog open is enough.
-    const suiteId = this.activeRunDetail?.benchmarkSuiteId ?? this.selectedSuiteId;
-    if (suiteId != null && this.runProgressQuestionsSuiteId !== suiteId) {
-      this.loadRunProgressQuestions(suiteId);
+    const suiteId = this.monitor.activeRunDetail?.benchmarkSuiteId ?? this.launcher.selectedSuiteId;
+    if (suiteId != null && this.monitor.runProgressQuestionsSuiteId !== suiteId) {
+      this.monitor.loadRunProgressQuestions(suiteId);
     }
 
     this.runProgressDialog?.nativeElement.showModal();
-    this.cdr.detectChanges();
+    this.viewSync.notify();
     this.runProgressHeading?.nativeElement.focus();
   }
 
-  closeRunProgressDialog(returnToSeries: boolean = this.returnToSeriesOnClose): void {
+  closeRunProgressDialog(returnToSeries: boolean = this.monitor.returnToSeriesOnClose): void {
     const shouldReturn = returnToSeries;
-    const shouldReturnToBattery = this.returnToBatteryOnClose;
-    this.returnToSeriesOnClose = false;
-    this.returnToBatteryOnClose = false;
-    this.isRunProgressDialogOpen = false;
-    this.stopRunElapsedTicker();
+    const shouldReturnToBattery = this.monitor.returnToBatteryOnClose;
+    this.monitor.returnToSeriesOnClose = false;
+    this.monitor.returnToBatteryOnClose = false;
+    this.monitor.isRunProgressDialogOpen = false;
+    this.monitor.stopRunElapsedTicker();
     this.runProgressDialog?.nativeElement.close();
-    if (shouldReturn && this.activeSeriesId != null) {
-      this.openMultiRunDialog();
+    if (shouldReturn && this.monitor.activeSeriesId != null) {
+      this.monitor.openMultiRunDialog();
     } else if (shouldReturnToBattery && this.dialogBatteryRunId != null) {
-      this.openBatteryDialog();
+      this.monitor.openBatteryDialog();
     }
-    this.cdr.detectChanges();
-  }
-
-  private loadRunProgressQuestions(suiteId: number): void {
-    // Claimed before the request so a second open while it is in flight does not refire it.
-    this.runProgressQuestionsSuiteId = suiteId;
-    this.benchmarkService.getQuestions(suiteId).subscribe({
-      next: (data) => {
-        this.runQuestionsLoadError = null;
-        this.runProgressQuestions = data;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        // The dialog degrades to the answers alone rather than failing to open.
-        this.runProgressQuestionsSuiteId = null;
-        const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Failed to load suite questions');
-        this.runQuestionsLoadError = msg;
-        console.error('Failed to load suite questions for run progress', err);
-      }
-    });
-  }
-
-  /**
-   * Reattaches the banner to a run already executing when the admin page loads. The dialog
-   * stays closed — opening a modal unbidden would steal focus from whatever the admin was
-   * doing. The operator reopens it from the banner.
-   */
-  checkActiveRun(): void {
-    this.benchmarkService.getActiveRun().subscribe({
-      next: (res) => {
-        if (res && res.runId != null) {
-          this.activeRunId = res.runId;
-          this.startPolling(res.runId);
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => console.error('Failed to check active benchmark run', err)
-    });
+    this.viewSync.notify();
   }
 
   /** Terminal-state action: hand the operator over to the existing full run detail dialog. */
   viewActiveRunDetail(): void {
-    const runId = this.activeRunDetail?.id ?? this.activeRunId;
+    const runId = this.monitor.activeRunDetail?.id ?? this.monitor.activeRunId;
     if (runId == null) return;
-    this.returnToBatteryOnClose = false;
+    this.monitor.returnToBatteryOnClose = false;
     this.closeRunProgressDialog(false);
     this.viewRunDetail(runId);
   }
 
   /** Re-runs the failed questions without leaving the dialog, so the retry stays watchable. */
   rerunFailedFromProgress(): void {
-    const runId = this.activeRunDetail?.id ?? this.activeRunId;
+    const runId = this.monitor.activeRunDetail?.id ?? this.monitor.activeRunId;
     if (runId == null) return;
-    this.armCompletionSignalsFromGesture();
-    this.launchFailedQuestionRerun(runId, this.runFailedAnswers.map(a => a.orderIndex));
+    this.monitor.armCompletionSignalsFromGesture();
+    this.monitor.launchFailedQuestionRerun(runId, this.runFailedAnswers.map(a => a.orderIndex));
   }
 
   /**
@@ -7267,13 +2734,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * shows a run's progress rather than behind a strip whose only other action was Cancel.
    */
   rerunFailedFromRunDetail(runId: number): void {
-    this.armCompletionSignalsFromGesture();
+    this.monitor.armCompletionSignalsFromGesture();
     const failed = (this.selectedRunDetail?.answers ?? [])
       .filter(a => this.isAnswerFailed(a))
       .map(a => a.orderIndex);
     this.closeRunDetail();
     this.activeSubTab = 'run';
-    this.launchFailedQuestionRerun(runId, failed);
+    this.monitor.launchFailedQuestionRerun(runId, failed);
   }
 
   /**
@@ -7286,274 +2753,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (runId == null) return;
     this.closeRunDetail();
     this.activeSubTab = 'run';
-    this.activeRunId = runId;
-    this.startPolling(runId);
-    if (!this.isRunProgressDialogOpen) {
+    this.monitor.activeRunId = runId;
+    this.monitor.startPolling(runId);
+    if (!this.monitor.isRunProgressDialogOpen) {
       this.openRunProgressDialog();
     }
-    this.cdr.detectChanges();
-  }
-
-  /**
-   * The one re-run launch path. Both entry points clear the stale error and question-load state
-   * before the request, because a re-run of a run that ended in an error would otherwise open
-   * showing the previous attempt's error. The loaded run detail itself is kept rather than
-   * nulled — it is what keeps the header (run number, suite, profile, model strip) legible
-   * during the launch — and `rerunLaunchPending` is what suppresses the previous attempt's
-   * stage label, terminal footer, and failure alert until a poll confirms the re-run has
-   * actually started.
-   */
-  private launchFailedQuestionRerun(runId: number, failedOrderIndexes: number[]): void {
-    this.operatorCancelledRunIds.delete(runId);
-    this.rerunScopeOrderIndexes = failedOrderIndexes;
-    this.rerunLaunchPending = true;
-    this.rerunLaunchedAtMs = Date.now();
-    this.runErrorMessage = null;
-    this.runQuestionsLoadError = null;
-    this.activeRunId = runId;
-
-    if (!this.isRunProgressDialogOpen) {
-      this.openRunProgressDialog();
-    }
-
-    this.benchmarkService.rerunFailedQuestions(runId).subscribe({
-      next: () => {
-        this.activeRunId = runId;
-        this.startPolling(runId);
-        this.loadHistory();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        // Surfaced in the dialog rather than only in the run-detail view: the dialog is now
-        // where the operator is watching from, and a refusal there was previously invisible.
-        this.rerunLaunchPending = false;
-        this.rerunLaunchedAtMs = null;
-        this.rerunScopeOrderIndexes = [];
-        this.runErrorMessage = typeof err?.error === 'string'
-          ? err.error
-          : (err?.error?.message || err?.message || 'Failed to re-run failed questions.');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  // --- History & Details ---
-
-  /** Loads the newest runs of every suite; `afterLoad` runs once they are rendered. */
-  loadHistory(afterLoad?: () => void) {
-    this.loadingHistory = true;
-    // The endpoint clamps to 200 regardless, so asking for exactly that loads every run it will return.
-    this.benchmarkService.getRuns(undefined, RUN_HISTORY_LIMIT).subscribe({
-      next: (data) => {
-        this.historyRuns = data;
-        this.historyList.invalidate();
-        this.loadingHistory = false;
-        // A remembered comparison selection is validated against the list that has just arrived,
-        // because a run deleted since the last visit must not be sent to the compare endpoint.
-        this.pruneComparisonSelection();
-        this.cdr.detectChanges();
-        afterLoad?.();
-      },
-      error: (err) => {
-        this.loadingHistory = false;
-        console.error('Failed to load history runs', err);
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  // --- Run History: series badge, group column, group builder ---
-
-  loadRunGroups(): void {
-    this.loadingRunGroups = true;
-    this.benchmarkService.getRunGroups().subscribe({
-      next: (groups) => {
-        this.runGroups = groups;
-        this.loadingRunGroups = false;
-        this.pruneComparisonSelection();
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingRunGroups = false;
-        console.error('Failed to load benchmark run groups', err);
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /**
-   * The analysis groups a run belongs to. A run may sit in several — a replicate set and a
-   * cross-condition comparison, say — so this is a list rather than a single value.
-   */
-  groupsOfRun(runId: number): BenchmarkRunGroupDto[] {
-    return this.runGroups.filter(g => g.members.some(m => m.runId === runId));
-  }
-
-  /**
-   * The series a run belongs to, or null.
-   *
-   * Derived rather than read off the row: `BenchmarkRunSummaryDto` carries no `runSeriesId`, so the
-   * two available sources are the series-created group's `createdFromSeriesId` and the live series'
-   * own member list. Together those cover every series a member can be in — one that finished (its
-   * group exists) and the one currently executing (it is the active series) — but a series that
-   * stopped before producing a group is invisible here. Reading a series id off the run row would
-   * be the direct answer and needs a DTO field that does not exist yet.
-   */
-  seriesIdOfRun(runId: number): number | null {
-    const fromGroup = this.runGroups.find(
-      g => g.createdFromSeriesId != null && g.members.some(m => m.runId === runId));
-    if (fromGroup?.createdFromSeriesId != null) return fromGroup.createdFromSeriesId;
-    if (this.activeSeries?.members.some(m => m.runId === runId)) return this.activeSeries.id;
-    return null;
-  }
-
-  /** The member's 1-based position in its series, for the badge's *n of N*. */
-  seriesBadgeLabelOf(runId: number): string | null {
-    const seriesId = this.seriesIdOfRun(runId);
-    if (seriesId == null) return null;
-    const member = this.activeSeries?.id === seriesId
-      ? this.activeSeries.members.find(m => m.runId === runId)
-      : undefined;
-    return member
-      ? `Series #${seriesId} · run ${member.index} of ${this.activeSeries!.requestedRunCount}`
-      : `Series #${seriesId}`;
-  }
-
-  /** The Run History kicker's *Battery #id · suite s/K*, or null for a run outside any battery run. */
-  batteryBadgeLabelOf(run: BenchmarkRunSummaryDto): string | null {
-    if (run.batteryRunId == null) return null;
-    const position = run.batterySuitePosition != null && run.batterySuiteCount != null
-      ? ` · suite ${run.batterySuitePosition}/${run.batterySuiteCount}`
-      : '';
-    return `Battery #${run.batteryRunId}${position}`;
-  }
-
-  isRunSelected(runId: number): boolean {
-    return this.selectedRunIds.has(runId);
-  }
-
-  /**
-   * Ticking a row re-previews the tier. The preview is a server call because comparability spans
-   * keys the summary row does not carry — the profile snapshot, the assessor configuration, the
-   * per-question budgets — so deciding it client-side would decide it on a subset of the evidence.
-   */
-  toggleRunSelection(runId: number): void {
-    if (this.selectedRunIds.has(runId)) {
-      this.selectedRunIds.delete(runId);
-    } else {
-      this.selectedRunIds.add(runId);
-    }
-    this.groupBuilderError = null;
-    this.groupBuilderSuccess = null;
-    this.previewGroupTier();
-  }
-
-  clearRunSelection(): void {
-    this.selectedRunIds.clear();
-    this.groupTierPreview = null;
-    this.groupPreviewError = null;
-    this.groupBuilderError = null;
-    this.groupBuilderSuccess = null;
-  }
-
-  get selectedRunIdList(): number[] {
-    return Array.from(this.selectedRunIds).sort((a, b) => a - b);
-  }
-
-  /** Two runs is the smallest set a comparability verdict says anything about. */
-  get canBuildGroup(): boolean {
-    return this.selectedRunIds.size >= 2 && !this.creatingGroup;
-  }
-
-  previewGroupTier(): void {
-    const runIds = this.selectedRunIdList;
-    if (runIds.length < 2) {
-      this.groupTierPreview = null;
-      this.groupPreviewError = null;
-      return;
-    }
-
-    this.previewingGroupTier = true;
-    this.benchmarkService.previewRunGroupTier({
-      name: this.groupBuilderName.trim() || 'Preview',
-      runIds,
-      crossCondition: this.groupBuilderCrossCondition
-    }).subscribe({
-      next: (preview) => {
-        this.previewingGroupTier = false;
-        this.groupTierPreview = preview.comparability ?? null;
-        this.groupPreviewError = preview.accepted ? null : (preview.error ?? null);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.previewingGroupTier = false;
-        this.groupTierPreview = null;
-        this.groupPreviewError = err?.error?.message || err?.error || 'Could not compute the tier for this selection.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /**
-   * Creates a group from the selection, or adds the selection to an existing one. A refusal is
-   * rendered with the differing keys the server named, never as a bare "rejected": the operator's
-   * next action depends entirely on *which* key differs.
-   */
-  addSelectionToGroup(): void {
-    const runIds = this.selectedRunIdList;
-    if (runIds.length < 2) return;
-
-    this.creatingGroup = true;
-    this.groupBuilderError = null;
-    this.groupBuilderSuccess = null;
-
-    const targetId = this.groupBuilderTargetId;
-    const request$ = targetId != null
-      ? this.benchmarkService.updateRunGroup(targetId, {
-          runIds: Array.from(new Set([
-            ...runIds,
-            ...(this.runGroups.find(g => g.id === targetId)?.members.map(m => m.runId) ?? [])
-          ])).sort((a, b) => a - b),
-          crossCondition: this.groupBuilderCrossCondition
-        })
-      : this.benchmarkService.createRunGroup({
-          name: this.groupBuilderName.trim() || this.defaultGroupName,
-          runIds,
-          notes: this.groupBuilderNotes.trim() || null,
-          crossCondition: this.groupBuilderCrossCondition
-        });
-
-    request$.subscribe({
-      next: (result: BenchmarkRunGroupTierPreviewDto) => {
-        this.creatingGroup = false;
-        this.groupTierPreview = result.comparability ?? this.groupTierPreview;
-        if (!result.accepted) {
-          this.groupBuilderError = result.error ?? 'The selected runs are not comparable enough to form a group.';
-        } else {
-          this.groupBuilderSuccess = result.group
-            ? `${result.group.name} — ${result.group.tierLabel}, ${result.group.runCount} run(s).`
-            : 'Group saved.';
-          this.selectedRunIds.clear();
-          this.groupBuilderName = '';
-          this.groupBuilderNotes = '';
-          this.loadRunGroups();
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.creatingGroup = false;
-        this.groupBuilderError = err?.error?.message || err?.error || 'Failed to save the group.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /** `<Suite> · R=<n>` — the same shape the orchestrator names an auto-created series group. */
-  private get defaultGroupName(): string {
-    const suite = this.selectedSuite?.name
-      ?? this.historyRuns.find(r => this.selectedRunIds.has(r.id))?.suiteName
-      ?? 'Runs';
-    return `${suite} · R=${this.selectedRunIds.size}`;
+    this.viewSync.notify();
   }
 
   private openPendingRun(): void {
@@ -7585,7 +2790,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.expandedToolCallFields.clear();
     this.calibrations = [];
     this.calibrationErrorMessage = null;
-    this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
+    this.calibrationAssessorConfigId = this.workspace.benchmarkCapableConfigs[0]?.id ?? null;
     this.calibrationTarget = 'Assessor';
     // Re-scoring reloads the run into the dialog that is already open, on the tab it shows.
     const dialog = this.runDetailDialog?.nativeElement;
@@ -7602,7 +2807,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (token !== this.runDetailLoadToken) return;
         this.selectedRunDetail = data;
         this.loadingDetail = false;
-        this.cdr.detectChanges();
+        this.viewSync.notify();
         // The header's tooltips and the Re-run popover are new anchors to the polyfill.
         refreshAnchorPositioning();
       },
@@ -7611,7 +2816,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.loadingDetail = false;
         this.runDetailLoadError = this.runDetailLoadErrorOf(err, runId);
         console.error('Failed to load run details', err);
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }
     });
   }
@@ -7619,6 +2824,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // --- Run report: tabs ---
 
   readonly runReportTabs = RUN_REPORT_TABS;
+
   runReportTab: RunReportTabKey = 'summary';
 
   /** The remembered tab, or Summary when none is stored, it is unknown, or storage is unavailable. */
@@ -7717,7 +2923,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   rerunActions(run: BenchmarkRunDetailDto): RunReportRerunAction[] {
     const busy = this.isRunBusy() ? 'A retry is already running on this run.' : null;
-    const aborted = this.isAbortedRun(run) ? 'The run stopped before finishing its suite.' : null;
+    const aborted = isAbortedRun(run) ? 'The run stopped before finishing its suite.' : null;
     const actions: RunReportRerunAction[] = [{
       key: 'rescore',
       label: this.rescoringRun ? 'Re-scoring...' : 'Re-score run',
@@ -7748,7 +2954,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         run: () => this.openRetryDialog('claim-verification', run.id)
       });
     }
-    const status = this.formatStatus(run.status);
+    const status = formatStatus(run.status);
     if (this.failedAnswers().length > 0 && (status === 'Failed' || status === 'Canceled' || status === 'CompletedWithErrors')) {
       actions.push({
         key: 'failed-questions',
@@ -7883,12 +3089,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.runReportCopyTimer = setTimeout(() => {
         this.runReportCopyStatus = '';
         this.runReportCopyTimer = null;
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }, COPY_STATUS_MS);
     } else {
       this.runReportCopyStatus = 'Could not copy the diagnostics to the clipboard.';
     }
-    this.cdr.detectChanges();
+    this.viewSync.notify();
   }
 
   // --- Run report: key-figures images ---
@@ -7982,10 +3188,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       title: `Run #${detail.id} · ${detail.suiteName}`,
       facts: toImageFactRows(
         rows.filter(row => !this.imageDetailExclusions.includes(row.key)),
-        { text: this.formatStatusLabel(detail.status), tone: statusImageTone(this.statusBadgeClass(detail.status)) }
+        { text: formatStatusLabel(detail.status), tone: statusImageTone(statusBadgeClass(detail.status)) }
       ),
       runId: detail.id,
-      overseerVersion: this.overseerBuildVersion,
+      overseerVersion: this.workspace.overseerBuildVersion,
       suiteName: detail.suiteName,
       modelName: detail.testedModelDisplayNameUsed
     };
@@ -8082,8 +3288,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.keyFiguresExporting = true;
     this.cdr.markForCheck();
     try {
-      if (this.overseerBuildVersion === null) {
-        this.overseerBuildVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
+      if (this.workspace.overseerBuildVersion === null) {
+        this.workspace.overseerBuildVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
       }
       const excluded = new Set(this.keyFigureExclusions);
       const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(run), key => !excluded.has(key));
@@ -8271,7 +3477,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.benchmarkService.getRun(runId).subscribe({
       next: (data) => {
         this.selectedRunDetail = data;
-        const statusStr = this.formatStatus(data.status);
+        const statusStr = formatStatus(data.status);
         if (statusStr !== 'Running') {
           this.stopDetailPolling();
           this.reassessingAnswerId = null;
@@ -8279,9 +3485,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.runningSynthesis = false;
           this.retryingAssessments = false;
           this.retryingClaimVerification = false;
-          this.loadHistory();
+          this.workspace.loadHistory();
         }
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       },
       error: (err) => {
         console.error('Failed to refresh run details', err);
@@ -8291,19 +3497,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.runningSynthesis = false;
         this.retryingAssessments = false;
         this.retryingClaimVerification = false;
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }
     });
   }
 
   cancelRunById(runId: number) {
-    this.noteOperatorCancel(runId);
+    this.monitor.noteOperatorCancel(runId);
     this.benchmarkService.cancelRun(runId).subscribe({
       next: () => {
         this.refreshRunDetail(runId);
       },
       error: (err) => {
-        this.operatorCancelledRunIds.delete(runId);
+        this.monitor.operatorCancelledRunIds.delete(runId);
         console.error('Failed to cancel run', err);
         this.refreshRunDetail(runId);
       }
@@ -8319,7 +3525,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       : this.resolveRetryAssessor();
     this.retryPanelMember = 'Both';
     this.retryDialog?.nativeElement.showModal();
-    this.cdr.detectChanges();
+    this.viewSync.notify();
   }
 
   closeRetryDialog() {
@@ -8328,7 +3534,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.retryAnswer = null;
     this.retryAssessorConfigId = null;
     this.retryDialog?.nativeElement.close();
-    this.cdr.detectChanges();
+    this.viewSync.notify();
   }
 
   /**
@@ -8344,18 +3550,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private resolveRetryAssessor(): number | null {
     const runAssessorId = this.selectedRunDetail?.assessorModelConfigurationId;
-    if (runAssessorId != null && this.benchmarkCapableConfigs.some(c => c.id === runAssessorId)) {
+    if (runAssessorId != null && this.workspace.benchmarkCapableConfigs.some(c => c.id === runAssessorId)) {
       return runAssessorId;
     }
-    return this.benchmarkCapableConfigs[0]?.id ?? null;
+    return this.workspace.benchmarkCapableConfigs[0]?.id ?? null;
   }
 
   private resolveRetryClaimVerifier(): number | null {
     const runVerifierId = this.selectedRunDetail?.claimVerifierModelConfigurationId;
-    if (runVerifierId != null && this.benchmarkCapableConfigs.some(c => c.id === runVerifierId)) {
+    if (runVerifierId != null && this.workspace.benchmarkCapableConfigs.some(c => c.id === runVerifierId)) {
       return runVerifierId;
     }
-    return this.selectedRunDetail?.assessorModelConfigurationId ?? this.benchmarkCapableConfigs[0]?.id ?? null;
+    return this.selectedRunDetail?.assessorModelConfigurationId ?? this.workspace.benchmarkCapableConfigs[0]?.id ?? null;
   }
 
   confirmRetry() {
@@ -8374,7 +3580,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
     if (scope === 'assessment') {
       if (!answer) return;
-      this.actionErrorMessage = null;
+      this.workspace.actionErrorMessage = null;
       this.reassessingAnswerId = answer.id;
       const request = panelMembers
         ? this.benchmarkService.reassessPanelAnswer(runId, answer.id, member)
@@ -8385,13 +3591,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         },
         error: (err) => {
           this.reassessingAnswerId = null;
-          this.actionErrorMessage = err?.error || 'Failed to start reassessment.';
-          this.cdr.detectChanges();
+          this.workspace.actionErrorMessage = err?.error || 'Failed to start reassessment.';
+          this.viewSync.notify();
         }
       });
     } else if (scope === 'trial') {
       if (!answer) return;
-      this.actionErrorMessage = null;
+      this.workspace.actionErrorMessage = null;
       this.trialReassessingAnswerId = answer.id;
       // Overwriting an existing automatic second opinion is refused server-side unless asked
       // for: that verdict is run evidence, and an experiment must not erase it by accident. The
@@ -8408,13 +3614,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           },
           error: (err) => {
             this.trialReassessingAnswerId = null;
-            this.actionErrorMessage = err?.error || 'Failed to start the trial assessment.';
-            this.cdr.detectChanges();
+            this.workspace.actionErrorMessage = err?.error || 'Failed to start the trial assessment.';
+            this.viewSync.notify();
           }
         });
     } else if (scope === 'question') {
       if (!answer) return;
-      this.actionErrorMessage = null;
+      this.workspace.actionErrorMessage = null;
       this.rerunningAnswerId = answer.id;
       this.benchmarkService.rerunAnswer(runId, answer.id, assessorId).subscribe({
         next: () => {
@@ -8422,12 +3628,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         },
         error: (err) => {
           this.rerunningAnswerId = null;
-          this.actionErrorMessage = err?.error || 'Failed to start rerun.';
-          this.cdr.detectChanges();
+          this.workspace.actionErrorMessage = err?.error || 'Failed to start rerun.';
+          this.viewSync.notify();
         }
       });
     } else if (scope === 'synthesis') {
-      this.actionErrorMessage = null;
+      this.workspace.actionErrorMessage = null;
       this.runningSynthesis = true;
       this.benchmarkService.rerunFinalSynthesis(runId, assessorId).subscribe({
         next: () => {
@@ -8435,12 +3641,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         },
         error: (err) => {
           this.runningSynthesis = false;
-          this.actionErrorMessage = err?.error || 'Failed to start final synthesis.';
-          this.cdr.detectChanges();
+          this.workspace.actionErrorMessage = err?.error || 'Failed to start final synthesis.';
+          this.viewSync.notify();
         }
       });
     } else if (scope === 'assessments') {
-      this.actionErrorMessage = null;
+      this.workspace.actionErrorMessage = null;
       this.retryingAssessments = true;
       this.benchmarkService.retryFailedAssessments(runId, assessorId).subscribe({
         next: () => {
@@ -8448,12 +3654,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         },
         error: (err) => {
           this.retryingAssessments = false;
-          this.actionErrorMessage = err?.error || 'Failed to retry failed assessments.';
-          this.cdr.detectChanges();
+          this.workspace.actionErrorMessage = err?.error || 'Failed to retry failed assessments.';
+          this.viewSync.notify();
         }
       });
     } else if (scope === 'claim-verification') {
-      this.actionErrorMessage = null;
+      this.workspace.actionErrorMessage = null;
       this.retryingClaimVerification = true;
       this.benchmarkService.retryClaimVerification(runId, assessorId).subscribe({
         next: () => {
@@ -8461,75 +3667,43 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         },
         error: (err) => {
           this.retryingClaimVerification = false;
-          this.actionErrorMessage = err?.error || 'Failed to retry claim verification.';
-          this.cdr.detectChanges();
+          this.workspace.actionErrorMessage = err?.error || 'Failed to retry claim verification.';
+          this.viewSync.notify();
         }
       });
     }
   }
 
   rescoreRun(runId: number) {
-    this.actionErrorMessage = null;
+    this.workspace.actionErrorMessage = null;
     this.rescoringRun = true;
-    this.benchmarkService.rescoreRun(runId, this.selectedScoringProfileId).subscribe({
+    this.benchmarkService.rescoreRun(runId, this.launcher.selectedScoringProfileId).subscribe({
       next: () => {
         this.rescoringRun = false;
         this.viewRunDetail(runId);
-        this.loadHistory();
+        this.workspace.loadHistory();
       },
       error: (err) => {
         this.rescoringRun = false;
-        this.actionErrorMessage = err?.error || 'Failed to rescore run.';
-        this.cdr.detectChanges();
+        this.workspace.actionErrorMessage = err?.error || 'Failed to rescore run.';
+        this.viewSync.notify();
       }
     });
   }
 
   reassessAnswer(runId: number, answerId: number) {
-    this.actionErrorMessage = null;
+    this.workspace.actionErrorMessage = null;
     this.reassessingAnswerId = answerId;
-    this.benchmarkService.reassessAnswer(runId, answerId, this.assessorConfigId).subscribe({
+    this.benchmarkService.reassessAnswer(runId, answerId, this.launcher.assessorConfigId).subscribe({
       next: () => {
         this.reassessingAnswerId = null;
         this.viewRunDetail(runId);
-        this.loadHistory();
+        this.workspace.loadHistory();
       },
       error: (err) => {
         this.reassessingAnswerId = null;
-        this.actionErrorMessage = err?.error || 'Failed to reassess answer.';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  downloadReport(runId: number) {
-    window.open(this.benchmarkService.getRunReportUrl(runId), '_blank');
-  }
-
-  downloadToolCallLog(runId: number) {
-    window.open(this.benchmarkService.getToolCallLogUrl(runId), '_blank');
-  }
-
-  deleteRun(runId: number) {
-    this.openConfirmDialog({
-      title: 'Delete Benchmark Run',
-      message: `Are you sure you want to delete benchmark run #${runId}?`,
-      dangerNotice: 'This action is permanent and cannot be undone.',
-      buttonText: 'Delete Run',
-      buttonClass: 'btn-gh btn-gh-delete',
-      action: () => {
-        // Where the run's card was, so focus lands on the card that takes its place.
-        const index = this.historyView.findIndex(run => run.id === runId);
-        this.benchmarkService.deleteRun(runId).subscribe({
-          next: () => {
-            if (this.selectedRunDetail?.id === runId) {
-              this.closeRunDetail();
-            }
-            this.loadHistory(index >= 0 ? () => this.focusAfterHistoryDelete(index) : undefined);
-            this.loadAllFootprints();
-          },
-          error: (err) => console.error('Failed to delete run', err)
-        });
+        this.workspace.actionErrorMessage = err?.error || 'Failed to reassess answer.';
+        this.viewSync.notify();
       }
     });
   }
@@ -8585,12 +3759,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       next: (rows) => {
         this.toolCallsByAnswer.set(orderIndex, rows);
         this.loadingToolCalls.delete(orderIndex);
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       },
       error: (err) => {
         this.loadingToolCalls.delete(orderIndex);
         this.toolCallsErrorByAnswer.set(orderIndex, err?.error || 'Failed to load tool calls.');
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }
     });
   }
@@ -8675,7 +3849,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runGradeableAnswerCount(): number {
-    return (this.activeRunDetail?.answers ?? []).filter(a => this.countsTowardQualityIndex(a)).length;
+    return (this.monitor.activeRunDetail?.answers ?? []).filter(a => this.countsTowardQualityIndex(a)).length;
   }
 
   /**
@@ -8724,6 +3898,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // difficulty assessor is told to rate against; the report previously bucketed at 33/66 while
   // the assessor was told 35/70, so a question rated 35 as Simple was reported as Intermediate.
   private static readonly BAND_SIMPLE_MAX = 35;
+
   private static readonly BAND_INTERMEDIATE_MAX = 70;
 
   bandOfDifficulty(difficulty: number): string {
@@ -9103,7 +4278,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.selectRunReportTab('questions');
     }
     this.expandedQuestions.add(orderIndex);
-    this.cdr.detectChanges();
+    this.viewSync.notify();
     if (typeof document === 'undefined') return;
     const target = document.getElementById(this.answerAnchorId(orderIndex));
     target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -9116,31 +4291,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   get criticalErrorQuestionIndexes(): number[] {
     return this.keyFigureCriticalErrorAnswers.map(a => a.orderIndex);
-  }
-
-  get advisoryFlagQuestionIndexes(): number[] {
-    return (this.selectedRunDetail?.answers ?? []).filter(a => this.hasAdvisoryFlag(a)).map(a => a.orderIndex);
-  }
-
-  get toolBudgetQuestionIndexes(): number[] {
-    return (this.selectedRunDetail?.answers ?? []).filter(a => a.toolBudgetExhausted).map(a => a.orderIndex);
-  }
-
-  // --- U4: the run's wall-clock duration ---
-
-  /**
-   * Wall-clock time from start to completion, which the Answer Duration card renders as its note.
-   *
-   * The card's headline is the summed answer duration; on run 14 that read 25 m 29 s while the run
-   * itself took 29 m 33 s, and nothing on the screen said the two were different quantities. The
-   * gap is grading, verification and synthesis, and reading the first figure as the second
-   * understates every one of them.
-   */
-  get runWallClockDurationLabel(): string | null {
-    const run = this.selectedRunDetail;
-    if (!run?.startedAtUtc) return null;
-    const ms = elapsedMsBetween(run.startedAtUtc, run.completedAtUtc);
-    return ms > 0 ? this.formatElapsed(ms) : null;
   }
 
   isAssessmentFailed(ans: BenchmarkRunAnswerDto): boolean {
@@ -9171,7 +4321,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   isRunBusy(): boolean {
-    return this.formatStatus(this.selectedRunDetail?.status ?? '') === 'Running';
+    return formatStatus(this.selectedRunDetail?.status ?? '') === 'Running';
   }
 
   wasAssessedByOther(ans: BenchmarkRunAnswerDto): boolean {
@@ -9462,30 +4612,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  // --- Formatting Helpers ---
-
-  formatStatus(status: string | number): string {
-    if (status === 1 || status === 'Running') return 'Running';
-    if (status === 2 || status === 'Completed') return 'Completed';
-    if (status === 3 || status === 'CompletedWithErrors') return 'CompletedWithErrors';
-    if (status === 4 || status === 'Failed') return 'Failed';
-    if (status === 5 || status === 'Canceled') return 'Canceled';
-    if (status === 6 || status === 'CompletedWithLimits') return 'CompletedWithLimits';
-    return String(status);
-  }
-
-  formatStatusLabel(status: string | number): string {
-    const s = this.formatStatus(status);
-    if (s === 'CompletedWithLimits') return 'Completed with limits';
-    if (s === 'CompletedWithErrors') return 'Completed with errors';
-    return s;
-  }
-
-  /** `formatStatus` never emits spaces, but the strip is kept in case that changes. */
-  statusBadgeClass(status: string | number): string {
-    return 'badge-status-' + this.formatStatus(status).toLowerCase().replace(/\s+/g, '');
-  }
-
   formatAnswerStatus(status: string | number): string {
     if (status === 1 || status === 'Ok') return 'Ok';
     if (status === 2 || status === 'ProviderError') return 'ProviderError';
@@ -9504,24 +4630,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return status != null ? String(status) : 'Scored';
   }
 
-  formatDifficulty(diff: string | number): string {
-    return formatDifficulty(diff);
-  }
-
-  parseDifficulty(diff: string | number): number {
-    if (typeof diff === 'number') return diff;
-    if (diff === 'Intermediate') return 2;
-    if (diff === 'Advanced') return 3;
-    return 1;
-  }
-
-  getScoreBadgeClass(score: number | null | undefined): string {
-    if (score == null) return 'badge-score-na';
-    if (score >= 80) return 'badge-score-high';
-    if (score >= 50) return 'badge-score-mid';
-    return 'badge-score-low';
-  }
-
   getQuestionScoreBadgeClass(score: number | null | undefined): string {
     if (score == null) return 'badge-score-na';
     if (score >= 80) return 'badge-score-high';
@@ -9535,35 +4643,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * A run that stopped before finishing its suite. The server decides it
-   * (BenchmarkRunFinalizer.IsAbortedRun, which tests answer-row coverage as well as the status);
-   * the status fallback covers rows from a server that predates the flag.
-   */
-  isAbortedRun(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): boolean {
-    if (run.isAborted != null) return run.isAborted;
-    const status = this.formatStatus(run.status);
-    return status === 'Canceled' || status === 'Failed';
-  }
-
-  /**
-   * What the Duration column shows. A run that reached the end is measured by the time its answers
-   * took; one that stopped early by the wall clock up to the stop, because the questions that never
-   * ran are part of what was cancelled. Runs stopped before either figure was recorded fall back to
-   * the two timestamps, which are always present on a terminal run.
-   */
-  runDurationMs(run: BenchmarkRunSummaryDto): number {
-    if (this.isAbortedRun(run)) {
-      return run.totalDurationMs || this.elapsedBetweenTimestamps(run);
-    }
-    return run.totalAnswerDurationMs || run.totalDurationMs || this.elapsedBetweenTimestamps(run);
-  }
-
-  private elapsedBetweenTimestamps(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): number {
-    if (!run.completedAtUtc) return 0;
-    return Math.max(0, new Date(run.completedAtUtc).getTime() - new Date(run.startedAtUtc).getTime());
-  }
-
-  /**
    * What the run detail's Answer Duration card shows: the time the candidate spent producing
    * answers, or a dash.
    *
@@ -9573,7 +4652,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * that says answer time. A run with no answer time recorded says so.
    */
   runAnswerDurationLabel(run: BenchmarkRunDetailDto): string {
-    return run.totalAnswerDurationMs ? this.formatDuration(run.totalAnswerDurationMs) : '—';
+    return run.totalAnswerDurationMs ? formatDuration(run.totalAnswerDurationMs) : '—';
   }
 
   /**
@@ -9583,8 +4662,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * outage between the crash and the cleanup is not run time.
    */
   runWallClockLabel(run: BenchmarkRunDetailDto): string {
-    const elapsed = run.totalDurationMs || this.elapsedBetweenTimestamps(run);
-    return elapsed ? this.formatDuration(elapsed) : '—';
+    const elapsed = run.totalDurationMs || elapsedBetweenTimestamps(run);
+    return elapsed ? formatDuration(elapsed) : '—';
   }
 
   /**
@@ -9595,7 +4674,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const base = 'start to finish, grading included';
     if (!run.rerunStartedAtUtc) return base;
     const rerunMs = elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc);
-    return `${base} · plus re-run ${this.formatDuration(rerunMs)}`;
+    return `${base} · plus re-run ${formatDuration(rerunMs)}`;
   }
 
   /**
@@ -9608,152 +4687,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * How many questions a terminal run actually answered, when that is fewer than the suite holds.
-   * Null while a run is still going, and null for a run that answered everything.
-   *
-   * `answeredQuestionCount` counts answers whose status is Ok, matching the report's "Answered
-   * Questions" line: an answer that came back empty is not an answered question, even though scoring
-   * method 10 scores it 0. The status already says a run had errors; this says how many, which is
-   * what separates an index of 74 over 16 of 18 questions from 74 over 18.
-   */
-  answerShortfallOf(run: BenchmarkRunSummaryDto): { answered: number; total: number } | null {
-    if (this.formatStatus(run.status) === 'Running') return null;
-    const total = run.totalQuestionCount ?? 0;
-    const answered = run.answeredQuestionCount ?? 0;
-    if (total <= 0 || answered >= total) return null;
-    return { answered, total };
-  }
-
-  formatDuration(ms: number): string {
-    if (!ms) return '0s';
-    const totalSecs = Math.floor(ms / 1000);
-    const mins = Math.floor(totalSecs / 60);
-    const secs = totalSecs % 60;
-    if (mins > 0) {
-      return `${mins}m ${secs}s`;
-    }
-    return `${(ms / 1000).toFixed(1)}s`;
-  }
-
-  formatElapsed(ms: number): string {
-    if (!ms || ms < 0) return '0s';
-    const totalSecs = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSecs / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
-    const secs = totalSecs % 60;
-    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
-    if (hours > 0) {
-      return `${hours}h ${pad(mins)}m ${pad(secs)}s`;
-    }
-    if (mins > 0) {
-      return `${mins}m ${pad(secs)}s`;
-    }
-    return `${secs}s`;
-  }
-
-  formatServiceTier(tier: string | null | undefined): string {
-    return formatServiceTier(tier);
-  }
-
-  /**
    * H5. The diagnostics capture's own service tier wording: an unset tier reads as "default (none
    * requested)" rather than the badge wording's "None", because the capture is read by a person
    * troubleshooting a run rather than displayed as a compact badge.
    */
   private diagnosticsServiceTierLabel(tier: string | null | undefined): string {
     return tier ? formatServiceTier(tier) : 'default (none requested)';
-  }
-
-  difficultyProgressLabel(suite?: BenchmarkSuiteDto | null): string {
-    if (suite) {
-      return `Difficulty ${suite.assessedQuestionCount}/${suite.questionCount} Assessed`;
-    }
-    if (!this.difficultyJob) return '';
-    const total = this.difficultyJob.totalCount;
-    const rated = this.difficultyJob.ratedCount;
-    const failed = this.difficultyJob.failedCount;
-    if (this.difficultyJob.status === 'Cancelled') {
-      return `Assessment canceled. Rated ${rated} of ${total} questions.`;
-    }
-    if (this.difficultyJob.status === 'Failed') {
-      return `Assessment failed. Rated ${rated} of ${total} questions.`;
-    }
-    if (failed > 0) {
-      return `Rated ${rated} of ${total} questions (${failed} failed).`;
-    }
-    return `Rated ${rated} of ${total} questions.`;
-  }
-
-  difficultyProgressClass(suite: BenchmarkSuiteDto): string {
-    if (suite.difficultyFullyAssessed) return 'complete';
-    if (suite.assessedQuestionCount === 0) return 'none';
-    return 'partial';
-  }
-
-  get selectedSuite(): BenchmarkSuiteDto | undefined {
-    return this.suites.find(s => s.id === this.selectedSuiteId);
-  }
-
-  /** Opens the full-screen Suite Health dialog for one suite. */
-  openSuiteHealth(suite: BenchmarkSuiteDto): void {
-    this.suiteHealthSuiteId = suite.id;
-    // The dialog's @if content has to exist before showModal(), or an empty dialog opens.
-    this.cdr.detectChanges();
-    this.suiteHealthDialog?.nativeElement.showModal();
-    // showModal() would otherwise focus the close button, which announces "Close" as the
-    // first thing a screen-reader user hears in a dialog full of statistics.
-    this.suiteHealthHeading?.nativeElement.focus();
-  }
-
-  closeSuiteHealth(): void {
-    // close() fires the dialog's (close) event, so the state is cleared in one place.
-    this.suiteHealthDialog?.nativeElement.close();
-  }
-
-  /** Also reached by Escape and by platform back gestures, which bypass closeSuiteHealth(). */
-  onSuiteHealthDialogClose(): void {
-    this.suiteHealthSuiteId = null;
-    this.cdr.detectChanges();
-  }
-
-  get suiteHealthSuite(): BenchmarkSuiteDto | undefined {
-    return this.suites.find(s => s.id === this.suiteHealthSuiteId);
-  }
-
-  /**
-   * The panel's only outward action. It opens the question editor and writes nothing itself —
-   * every finding in that panel is advisory, and a human decides what to change.
-   */
-  onSuiteHealthEditQuestion(suite: BenchmarkSuiteDto, questionId: number): void {
-    // Close first: openManageQuestions() calls showModal() on another dialog, and two stacked
-    // modals leave the user pressing Escape twice to get back to the page.
-    this.suiteHealthDialog?.nativeElement.close();
-    // The list loads asynchronously, so the editor cannot be opened here: it is opened by
-    // loadQuestions once the question this id names actually exists in memory.
-    this.pendingQuestionEditId = questionId;
-    this.openManageQuestions(suite);
-  }
-
-  get selectedScoringProfile(): BenchmarkScoringProfileDto | undefined {
-    return this.scoringProfiles.find(p => p.id === this.selectedScoringProfileId);
-  }
-
-  // --- Profile fit ---
-  //
-  // A deliberating model measured against a profile tuned for interactive latency scores badly on
-  // Speed Index for a reason that says nothing about the model: the target it is compared against
-  // was chosen for a different kind of workload. The pairing is legitimate, so it is an advisory
-  // rather than a block — but it is shown before the run, not explained after it.
-  private static readonly DELIBERATING_THINKING_LEVELS: readonly string[] = ['high', 'max'];
-  private static readonly INTERACTIVE_SPEED_TARGET_MAX_MS = 30000;
-
-  get showProfileFitAdvisory(): boolean {
-    const thinkingLevel = this.selectedTestedModel?.thinkingLevel;
-    const speedTargetMs = this.selectedScoringProfile?.speedTargetMs;
-    if (!thinkingLevel || speedTargetMs == null) return false;
-
-    return AdminBenchmarkComponent.DELIBERATING_THINKING_LEVELS.includes(thinkingLevel.toLowerCase()) &&
-      speedTargetMs < AdminBenchmarkComponent.INTERACTIVE_SPEED_TARGET_MAX_MS;
   }
 
   // --- Results screen: profile fit, agreement, weighting ---
@@ -9769,19 +4708,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const speedTargetMs = this.selectedRunDetail?.scoringProfileSpeedTargetMs;
     if (!thinkingLevel || speedTargetMs == null) return false;
 
-    return AdminBenchmarkComponent.DELIBERATING_THINKING_LEVELS.includes(thinkingLevel.toLowerCase()) &&
-      speedTargetMs < AdminBenchmarkComponent.INTERACTIVE_SPEED_TARGET_MAX_MS;
+    return DELIBERATING_THINKING_LEVELS.includes(thinkingLevel.toLowerCase()) &&
+      speedTargetMs < INTERACTIVE_SPEED_TARGET_MAX_MS;
   }
 
   get runProfileFitAdvisoryTitle(): string {
     const level = this.selectedRunDetail?.testedModelThinkingLevelUsed ?? 'high';
     const target = this.selectedRunDetail?.scoringProfileSpeedTargetMs ?? 0;
     return `Profile targets interactive latency (${target.toLocaleString('en-US')} ms); this run used thinking level ${level} — read the Speed Index as advisory`;
-  }
-
-  /** True while any advisory makes the Speed Index non-comparable, for the shared `*` marker. */
-  get speedIndexIsAdvisory(): boolean {
-    return this.selectedRunDetail?.speedMeasurementDegraded === true || this.showRunProfileFitAdvisory;
   }
 
   /** Scored answers, mirroring the report's Speed Index denominator: Ok status with a quality score. */
@@ -9970,12 +4904,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return `${delta > 0 ? '+' : ''}${delta}`;
   }
 
-  // --- Integrity notice completeness ---
-
-  get toolBudgetAnswerCount(): number {
-    return (this.selectedRunDetail?.answers ?? []).filter(a => a.toolBudgetExhausted).length;
-  }
-
   get toolBudgetQuestionNumbers(): string {
     return (this.selectedRunDetail?.answers ?? [])
       .filter(a => a.toolBudgetExhausted)
@@ -10139,10 +5067,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       .join(', ');
   }
 
-  get unevidencedDeductionAnswerCount(): number {
-    return this.selectedRunDetail?.unevidencedDeductionAnswerCount ?? 0;
-  }
-
   get unevidencedDeductionQuestionNumbers(): string {
     return (this.selectedRunDetail?.answers ?? [])
       .filter(a => (a.answerFlagNames ?? []).includes('UnevidencedDeduction'))
@@ -10189,18 +5113,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.selectedRunDetail?.boardFactsCheck ?? null;
   }
 
-  static readonly MISSING_BOARD_QUOTE_LIST_CAP = 20;
-
   /** The run's missing board quotes as listed in its notice, capped. */
   get selectedRunMissingBoardQuotes(): BoardFactIssueDto[] {
     return (this.selectedRunBoardFactsCheck?.missingLiterals ?? [])
-      .slice(0, AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
+      .slice(0, MISSING_BOARD_QUOTE_LIST_CAP);
   }
 
   /** How many missing board quotes the capped list leaves out. */
   get selectedRunMissingBoardQuotesOverflow(): number {
     const total = this.selectedRunBoardFactsCheck?.missingLiterals.length ?? 0;
-    return Math.max(0, total - AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
+    return Math.max(0, total - MISSING_BOARD_QUOTE_LIST_CAP);
   }
 
   /** Null on a run before the harness version that added the dimension-outlier check. */
@@ -10237,10 +5159,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   candidatePromptSummaryOf(run?: BenchmarkRunDetailDto | BenchmarkRunSummaryDto | null): string | null {
     return formatCandidatePrompt(candidatePromptParts(run));
-  }
-
-  get candidatePromptSummary(): string | null {
-    return this.candidatePromptSummaryOf(this.selectedRunDetail);
   }
 
   get secondOpinionSelectedButUnused(): boolean {
@@ -10386,13 +5304,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       next: (rows) => {
         this.calibrations = rows;
         this.loadingCalibrations = false;
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       },
       error: (err) => {
         this.calibrations = [];
         this.loadingCalibrations = false;
         this.calibrationErrorMessage = err?.error || 'Failed to load calibrations.';
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }
     });
   }
@@ -10414,7 +5332,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       error: (err) => {
         this.calibrating = false;
         this.calibrationErrorMessage = err?.error || 'Calibration failed.';
-        this.cdr.detectChanges();
+        this.viewSync.notify();
       }
     });
   }
@@ -10466,7 +5384,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** `same-family` when the grader's provider is the candidate's, the server's definition of family. */
   familyRelationOf(provider: string | null | undefined, candidateProvider: string | null | undefined): BenchmarkFamilyRelation | null {
     if (!provider || !candidateProvider) return null;
-    return AdminBenchmarkComponent.sameProvider(provider, candidateProvider) ? 'same-family' : 'cross-family';
+    return BenchmarkLauncherState.sameProvider(provider, candidateProvider) ? 'same-family' : 'cross-family';
   }
 
   /** Member B's full verdict from `coAssessmentJson`; null when absent or malformed. */
@@ -10548,104 +5466,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return !this.selectedRunDetail?.isPanelRun || ans.secondOpinionQualityScore == null;
   }
 
-  get canStartRun(): boolean {
-    const target = this.isBatteryTarget
-      ? !this.batteryLaunchRefusal
-      : !!this.selectedSuiteId && !!this.selectedSuite?.difficultyFullyAssessed;
-    return !this.startingRun &&
-      target &&
-      !!this.testedConfigId &&
-      !!this.assessorConfigId &&
-      !(this.activeRunDetail && this.formatStatus(this.activeRunDetail.status) === 'Running') &&
-      !this.panelLaunchRefusal &&
-      !this.reportWriterLaunchRefusal;
-  }
-
-  /** Names the first condition Start Benchmark is waiting on, for the button's aria-disabled hint. Empty once canStartRun is true. */
-  get startBenchmarkHint(): string {
-    if (this.isBatteryTarget) {
-      if (this.batteryLaunchRefusal) {
-        return this.batteryLaunchRefusal;
-      }
-    } else if (!this.selectedSuiteId) {
-      return 'Select a question suite first.';
-    } else if (!this.selectedSuite?.difficultyFullyAssessed) {
-      return "Assess every question's difficulty first.";
-    }
-    if (!this.testedConfigId || !this.assessorConfigId) {
-      return 'Choose a model under test and an assessor.';
-    }
-    if (this.panelLaunchRefusal) {
-      return this.panelLaunchRefusal;
-    }
-    if (this.reportWriterLaunchRefusal) {
-      return this.reportWriterLaunchRefusal;
-    }
-    return '';
-  }
-
-  // --- Question Generation State ---
-  generationDialogVisible = false;
-  generationSuiteForJob: BenchmarkSuiteDto | null = null;
-
   // --- Game Snapshot & Question Generation & Review Handlers ---
 
   openSnapshotViewer(snapshotId: number): void {
-    this.refreshRunningGeneration();
+    this.workspace.refreshRunningGeneration();
     this.snapshotViewer?.open(snapshotId);
-  }
-
-  // --- Snapshot upload and delete ---
-
-  /** The suite a question generation job is running on, which holds its snapshot id while it runs. */
-  runningGenerationSuiteId: number | null = null;
-
-  refreshRunningGeneration(): void {
-    this.benchmarkService.getActiveQuestionGeneration().subscribe({
-      next: job => {
-        this.runningGenerationSuiteId = job && job.status === 'Running' ? job.suiteId : null;
-        this.cdr.detectChanges();
-      },
-      error: () => { /* Keeps the last known state; the server still refuses a conflicting job. */ }
-    });
-  }
-
-  isGenerationRunningFor(suite: BenchmarkSuiteDto | null | undefined): boolean {
-    return !!suite && this.runningGenerationSuiteId === suite.id;
   }
 
   /** Why the open viewer may not delete its snapshot, or null when it may. */
   get snapshotDeleteBlockedReason(): string | null {
-    const suiteId = this.suites.find(s => s.gameSnapshotId != null && s.gameSnapshotId === this.snapshotViewer?.snapshotId)?.id;
-    return suiteId != null && suiteId === this.runningGenerationSuiteId
+    const suiteId = this.workspace.suites.find(s => s.gameSnapshotId != null && s.gameSnapshotId === this.snapshotViewer?.snapshotId)?.id;
+    return suiteId != null && suiteId === this.workspace.runningGenerationSuiteId
       ? 'A question generation job is running on this suite. Delete the snapshot after it finishes.'
       : null;
-  }
-
-  openSnapshotUpload(suite: BenchmarkSuiteDto): void {
-    if (this.isGenerationRunningFor(suite)) return;
-    this.snapshotUploadDialog?.open(suite);
-  }
-
-  onSnapshotUploaded(res: CaptureBenchmarkSnapshotResponse): void {
-    const suite = this.suites.find(s => s.id === res.suite.id);
-    const replacedId = suite?.gameSnapshotId ?? null;
-    if (suite) {
-      suite.gameSnapshotId = res.suite.gameSnapshotId ?? res.board.id;
-      suite.gameSnapshotName = res.suite.gameSnapshotName ?? res.board.name;
-      suite.gameSnapshotCharCount = res.suite.gameSnapshotCharCount ?? res.board.charCount;
-    }
-    if (this.currentSuiteForQuestions?.id === res.suite.id) {
-      this.currentSuiteForQuestions.gameSnapshotId = res.suite.gameSnapshotId ?? res.board.id;
-      this.currentSuiteForQuestions.gameSnapshotName = res.suite.gameSnapshotName ?? res.board.name;
-      this.currentSuiteForQuestions.gameSnapshotCharCount = res.suite.gameSnapshotCharCount ?? res.board.charCount;
-    }
-    if (replacedId != null && this.snapshotViewer?.snapshotId === replacedId && this.snapshotViewer.viewerDialog?.nativeElement?.open) {
-      this.snapshotViewer.close();
-    }
-    this.suiteActionAnnouncement = `Uploaded snapshot ${res.board.name} to suite ${res.suite.name}.`;
-    this.loadSuites();
-    this.cdr.detectChanges();
   }
 
   onSnapshotDeleted(snapshotId: number): void {
@@ -10654,217 +5487,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       s.gameSnapshotName = null;
       s.gameSnapshotCharCount = null;
     };
-    const suite = this.suites.find(s => s.gameSnapshotId === snapshotId);
+    const suite = this.workspace.suites.find(s => s.gameSnapshotId === snapshotId);
     if (suite) {
       clear(suite);
     }
-    if (this.currentSuiteForQuestions?.gameSnapshotId === snapshotId) {
-      clear(this.currentSuiteForQuestions);
+    if (this.workspace.currentSuiteForQuestions?.gameSnapshotId === snapshotId) {
+      clear(this.workspace.currentSuiteForQuestions);
     }
-    this.loadSuites();
-    this.cdr.detectChanges();
-  }
-
-  // --- YAML import and export ---
-
-  questionsCopyStatus = '';
-  suitesCopyStatus = '';
-  private questionsCopyStatusTimer: ReturnType<typeof setTimeout> | undefined;
-  private suitesCopyStatusTimer: ReturnType<typeof setTimeout> | undefined;
-
-  get canExportQuestions(): boolean {
-    return !this.loadingQuestions && this.questions.length > 0 && !!this.currentSuiteForQuestions;
-  }
-
-  /** One question when given, otherwise every question of the open suite, with the snapshot text of a snapshot suite. */
-  async downloadQuestionYaml(q?: BenchmarkQuestionDto): Promise<void> {
-    const suite = this.currentSuiteForQuestions;
-    if (!suite || (!q && !this.canExportQuestions)) return;
-    if (q) {
-      downloadTextFile(questionYamlFileName(suite.name, q), serializeQuestionsYaml([q], suite));
-      return;
-    }
-    const questions = this.questions;
-    const exported = await firstValueFrom(this.snapshotForExport(suite));
-    downloadTextFile(questionYamlFileName(suite.name), serializeQuestionsYaml(questions, suite, exported.snapshot));
-    if (exported.failed) {
-      this.setQuestionsCopyStatus(SNAPSHOT_TEXT_EXPORT_FAILED);
-    }
-  }
-
-  /* For all questions the clipboard write is issued inside the click, before the snapshot text arrives. */
-  async copyQuestionYaml(q?: BenchmarkQuestionDto): Promise<void> {
-    const suite = this.currentSuiteForQuestions;
-    if (!suite || (!q && !this.canExportQuestions)) return;
-    if (q) {
-      const copied = await copyToClipboard(serializeQuestionsYaml([q], suite));
-      this.setQuestionsCopyStatus(copied ? `Copied question ${q.orderIndex} as YAML.` : `Could not copy; use Download as YAML instead.`);
-      return;
-    }
-    const questions = this.questions;
-    let snapshotFailed = false;
-    const text = firstValueFrom(this.snapshotForExport(suite).pipe(map(exported => {
-      snapshotFailed = exported.failed;
-      return serializeQuestionsYaml(questions, suite, exported.snapshot);
-    })));
-    const ok = await copyTextFromPromise(text);
-    if (!ok) {
-      this.setQuestionsCopyStatus(`Could not copy; use Download as YAML instead.`);
-    } else {
-      this.setQuestionsCopyStatus(snapshotFailed ? `Copied all questions as YAML. ${SNAPSHOT_TEXT_EXPORT_FAILED}` : `Copied all questions as YAML.`);
-    }
-  }
-
-  /** A suite can be exported once it has questions or a snapshot; a questionless file is for an agent. */
-  canExportSuite(suite: BenchmarkSuiteDto): boolean {
-    return suite.questionCount > 0 || !!suite.gameSnapshotId;
-  }
-
-  /** The questions of a suite for an export; a suite without any needs no request. */
-  private questionsForExport(suite: BenchmarkSuiteDto): Observable<BenchmarkQuestionDto[]> {
-    return suite.questionCount > 0 ? this.benchmarkService.getQuestions(suite.id) : of([]);
-  }
-
-  downloadSuiteYaml(suite: BenchmarkSuiteDto): void {
-    if (!this.canExportSuite(suite)) return;
-    forkJoin([this.questionsForExport(suite), this.snapshotForExport(suite)]).subscribe({
-      next: ([questions, exported]) => {
-        downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions, exported.snapshot));
-        if (exported.failed) {
-          this.setSuitesCopyStatus(SNAPSHOT_TEXT_EXPORT_FAILED);
-        }
-      },
-      error: () => this.setSuitesCopyStatus(`Could not load the questions of ${suite.name}.`)
-    });
-  }
-
-  /* The clipboard write is issued inside the click, before the questions arrive. */
-  async copySuiteYaml(suite: BenchmarkSuiteDto): Promise<void> {
-    if (!this.canExportSuite(suite)) return;
-    let snapshotFailed = false;
-    const text = firstValueFrom(
-      forkJoin([this.questionsForExport(suite), this.snapshotForExport(suite)]).pipe(map(([qs, exported]) => {
-        snapshotFailed = exported.failed;
-        return serializeSuiteYaml(suite, qs, exported.snapshot);
-      })));
-    const ok = await copyTextFromPromise(text);
-    if (!ok) {
-      this.setSuitesCopyStatus('Could not copy; use Download Suite as YAML instead.');
-    } else {
-      this.setSuitesCopyStatus(snapshotFailed ? `Copied suite ${suite.name} as YAML. ${SNAPSHOT_TEXT_EXPORT_FAILED}` : `Copied suite ${suite.name} as YAML`);
-    }
-  }
-
-  /** The attached snapshot for an export, in one call: its text, hash and metadata. `snapshot` is null for a suite without one, and when the fetch failed. */
-  private snapshotForExport(suite: BenchmarkSuiteDto): Observable<{ snapshot: SnapshotExport | null; failed: boolean }> {
-    if (!suite.gameSnapshotId) {
-      return of({ snapshot: null, failed: false });
-    }
-    return this.benchmarkService.getSnapshot(suite.gameSnapshotId, true).pipe(
-      map(board => ({
-        snapshot: {
-          name: board.name,
-          gnollhackVersion: board.sourceGnollHackVersion ?? null,
-          capturedAtUtc: board.capturedAtUtc ?? null,
-          notes: board.notes ?? null,
-          sha256: board.sha256 ?? null,
-          text: board.sanitizedText ?? '',
-          snapshotFormat: board.snapshotFormatVersion ?? null
-        } as SnapshotExport,
-        failed: false
-      })),
-      catchError(() => of({ snapshot: null, failed: true }))
-    );
-  }
-
-  openQuestionYamlImport(mode: ImportMode, q?: BenchmarkQuestionDto): void {
-    if (mode !== 'suite' && (this.loadingQuestions || !this.currentSuiteForQuestions)) return;
-    this.questionYamlImportDialog?.open(mode, q);
-  }
-
-  openQuestionYamlHelp(): void {
-    this.questionYamlHelpDialog?.open();
-  }
-
-  openSuiteYamlHelp(): void {
-    this.suiteYamlHelpDialog?.open();
-  }
-
-  openSnapshotSuiteWizard(): void {
-    this.snapshotSuiteWizard?.open();
-  }
-
-  /** The suite help closes before the wizard opens, so the two never stack. */
-  onSuiteWizardRequestedFromHelp(): void {
-    this.suiteYamlHelpDialog?.close();
-    this.openSnapshotSuiteWizard();
-  }
-
-  /** The current copy of a suite the wizard names, which the list reload may have replaced. */
-  private freshSuite(suite: BenchmarkSuiteDto): BenchmarkSuiteDto {
-    return this.suites.find(s => s.id === suite.id) ?? suite;
-  }
-
-  onWizardAssessRequested(suite: BenchmarkSuiteDto): void {
-    this.openDifficultyAssessorDialog(this.freshSuite(suite));
-  }
-
-  /** The wizard applied a description; the suite cards show the new one. */
-  onWizardSuiteUpdated(): void {
-    this.loadSuites();
-  }
-
-  /** The help that matches the open import: the suite help for a suite import, the question help otherwise. */
-  onYamlHelpRequested(): void {
-    if (this.questionYamlImportDialog?.mode === 'suite') {
-      this.openSuiteYamlHelp();
-      return;
-    }
-    this.openQuestionYamlHelp();
-  }
-
-  onQuestionsImported(_result: ImportBenchmarkQuestionsResultDto): void {
-    if (this.currentSuiteForQuestions) {
-      this.loadQuestions(this.currentSuiteForQuestions.id);
-    }
-    this.loadSuites();
-    if (this.generationDialogVisible) {
-      this.generationDialog?.refreshQuestions();
-    }
-  }
-
-  onSuiteImported(suite: BenchmarkSuiteDto): void {
-    this.suiteActionAnnouncement = `Imported suite ${suite.name}.`;
-    this.loadSuites();
-  }
-
-  private setQuestionsCopyStatus(message: string): void {
-    this.questionsCopyStatus = message;
-    this.cdr.detectChanges();
-    clearTimeout(this.questionsCopyStatusTimer);
-    this.questionsCopyStatusTimer = setTimeout(() => {
-      this.questionsCopyStatus = '';
-      this.cdr.detectChanges();
-    }, COPY_STATUS_MS);
-  }
-
-  private setSuitesCopyStatus(message: string): void {
-    this.suitesCopyStatus = message;
-    this.cdr.detectChanges();
-    clearTimeout(this.suitesCopyStatusTimer);
-    this.suitesCopyStatusTimer = setTimeout(() => {
-      this.suitesCopyStatus = '';
-      this.cdr.detectChanges();
-    }, COPY_STATUS_MS);
+    this.workspace.loadSuites();
+    this.viewSync.notify();
   }
 
   onSnapshotUpdated(updated: BenchmarkGameSnapshotDto): void {
-    const suite = this.suites.find(s => s.gameSnapshotId === updated.id);
+    const suite = this.workspace.suites.find(s => s.gameSnapshotId === updated.id);
     if (suite) {
       suite.gameSnapshotName = updated.name;
       suite.gameSnapshotCharCount = updated.charCount;
     }
-    this.cdr.detectChanges();
+    this.viewSync.notify();
   }
 
   /** The run was made with a board: it has a stored board record, or recorded the board's hash. */
@@ -10877,83 +5517,4 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   openRunBoard(runId: number): void {
     this.snapshotViewer?.openReadOnly(this.benchmarkService.getRunBoard(runId), 'The board this run was made with.');
   }
-
-  openSuiteHealthForRubrics(suite: BenchmarkSuiteDto): void {
-    this.suiteHealthInitialTab = 'board-facts';
-    this.openSuiteHealth(suite);
-  }
-
-  checkSingleQuestionRubric(suite: BenchmarkSuiteDto, question: BenchmarkQuestionDto): void {
-    this.suiteHealthInitialTab = 'board-facts';
-    this.openSuiteHealth(suite);
-  }
-
-  toggleQuestionReview(question: BenchmarkQuestionDto): void {
-    const newReviewedState = !question.isReviewed;
-    this.benchmarkService.reviewQuestion(question.id, newReviewedState).subscribe({
-      next: (updated) => {
-        question.isReviewed = updated.isReviewed;
-        question.reviewedAtRevision = updated.reviewedAtRevision;
-        question.reviewedAtUtc = updated.reviewedAtUtc;
-        question.reviewedByUserId = updated.reviewedByUserId;
-        if (this.currentSuiteForQuestions) {
-          const genQuestions = this.questions.filter(q => q.isGenerated);
-          this.currentSuiteForQuestions.reviewedQuestionCount = genQuestions.filter(q => q.isReviewed).length;
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  confirmVerifyAll(suite: BenchmarkSuiteDto): void {
-    const unreviewedCount = (suite.questionCount || 0) - (suite.reviewedQuestionCount || 0);
-    this.confirmDialogTitle = 'Verify All Questions';
-    this.confirmDialogMessage = `Attest that you have read and verified all ${unreviewedCount} unreviewed questions in '${suite.name}' against the game snapshot.`;
-    this.confirmDialogDangerNotice = 'This records a human review attestation in the benchmark audit manifest.';
-    this.confirmDialogButtonText = 'Verify All';
-    this.confirmDialogButtonClass = 'btn-gh btn-gh-primary';
-    this.confirmDialogIcon = 'none';
-    this.pendingConfirmAction = () => {
-      this.benchmarkService.reviewAllQuestions(suite.id).subscribe({
-        next: (res) => {
-          suite.reviewedQuestionCount = res.suite.reviewedQuestionCount;
-          suite.hasGeneratedQuestions = res.suite.hasGeneratedQuestions;
-          if (this.currentSuiteForQuestions?.id === suite.id) {
-            this.loadQuestions(suite.id);
-          }
-          this.cdr.detectChanges();
-        }
-      });
-    };
-    this.confirmActionDialog?.nativeElement.showModal();
-  }
-
-  openGenerationDialog(suite: BenchmarkSuiteDto): void {
-    this.generationSuiteForJob = suite;
-    this.generationDialogVisible = true;
-  }
-
-  /** The child reports whether any question changed while it was open, so Manage Questions and the suite cards only reload when there is something new to show. */
-  onGenerationDialogClosed(e: { questionsChanged: boolean }): void {
-    this.generationDialogVisible = false;
-    if (e.questionsChanged && this.generationSuiteForJob) {
-      this.loadSuites();
-      if (this.currentSuiteForQuestions?.id === this.generationSuiteForJob.id) {
-        this.loadQuestions(this.generationSuiteForJob.id);
-      }
-    }
-  }
-
-  /** Fired on every job item completion while the workspace stays open, so a long-running generation keeps the suite card and an open Manage Questions list current. */
-  onGenerationQuestionsChanged(suiteId: number): void {
-    this.loadSuites();
-    if (this.currentSuiteForQuestions?.id === suiteId) {
-      this.loadQuestions(suiteId);
-    }
-  }
-
-  onGenerationEditQuestion(q: BenchmarkQuestionDto): void {
-    this.openEditQuestion(q);
-  }
-
 }

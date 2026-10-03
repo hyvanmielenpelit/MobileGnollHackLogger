@@ -1,0 +1,282 @@
+<div class="suites-toolbar mb-20">
+  <button type="button" class="btn-gh" (click)="openCreateProfile()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    New Profile
+  </button>
+</div>
+
+<div class="profiles-list">
+  @for (profile of workspace.scoringProfiles; track profile.id) {
+    <div class="profile-item-card mb-15">
+      <div class="profile-card-header">
+        <div class="profile-identity">
+          <h4>{{ profile.name }}</h4>
+          @if (profile.isDefault) {
+            <span class="default-badge">Default</span>
+          }
+        </div>
+        <div class="profile-card-actions">
+          @if (!profile.isDefault) {
+            <button type="button" class="btn-gh" (click)="setDefaultProfile(profile.id)"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Set Default</button>
+          }
+          <button type="button" class="action-btn" (click)="openEditProfile(profile)"
+                  [attr.aria-label]="'Edit scoring profile ' + profile.name"
+                  [attr.interestfor]="'tip-edit-profile-' + profile.id"
+                  [attr.style]="'anchor-name: --tip-edit-profile-' + profile.id">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-edit-profile-' + profile.id"
+               [attr.style]="'position-anchor: --tip-edit-profile-' + profile.id">Edit scoring profile</div>
+          @if (!profile.isDefault) {
+            <button type="button" class="action-btn action-btn-danger" (click)="deleteProfile(profile.id)"
+                    [attr.aria-label]="'Delete scoring profile ' + profile.name"
+                    [attr.interestfor]="'tip-del-profile-' + profile.id"
+                    [attr.style]="'anchor-name: --tip-del-profile-' + profile.id">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-del-profile-' + profile.id"
+                 [attr.style]="'position-anchor: --tip-del-profile-' + profile.id">Delete scoring profile</div>
+          }
+        </div>
+      </div>
+
+      <div class="profile-weights">
+        <span class="weight-chip"><span class="weight-dim">Acc</span> <span class="weight-val">{{ (profile.weightAccuracy * 100) | number:'1.0-1' }}%</span></span>
+        <span class="weight-chip"><span class="weight-dim">Comp</span> <span class="weight-val">{{ (profile.weightCompleteness * 100) | number:'1.0-1' }}%</span></span>
+        <span class="weight-chip"><span class="weight-dim">Conc</span> <span class="weight-val">{{ (profile.weightConciseness * 100) | number:'1.0-1' }}%</span></span>
+        <span class="weight-chip"><span class="weight-dim">Read</span> <span class="weight-val">{{ (profile.weightReadability * 100) | number:'1.0-1' }}%</span></span>
+      </div>
+
+      <dl class="profile-spec-grid">
+        <div class="profile-spec">
+          <dt>Speed Target</dt>
+          <dd>{{ profile.speedTargetMs }} ms</dd>
+        </div>
+        <div class="profile-spec">
+          <dt>Speed Decay</dt>
+          <dd>k = {{ profile.speedDecayK }}</dd>
+        </div>
+        <div class="profile-spec">
+          <dt>Difficulty Scaling</dt>
+          <dd>{{ profile.speedDifficultyScaling }}</dd>
+        </div>
+        <div class="profile-spec">
+          <dt>Critical Ceiling</dt>
+          <dd>{{ profile.criticalErrorCeiling }}</dd>
+        </div>
+        <div class="profile-spec">
+          <dt>Not Attempted</dt>
+          <dd>{{ profile.notAttemptedScore != null ? profile.notAttemptedScore : 'Off' }}</dd>
+        </div>
+        <div class="profile-spec">
+          <dt>2nd Opinion Below</dt>
+          <dd>{{ profile.secondOpinionQualityThreshold ? profile.secondOpinionQualityThreshold : 'Off' }}</dd>
+        </div>
+        <div class="profile-spec">
+          <dt>Max Parallel</dt>
+          <dd>{{ profile.maxParallelQuestions }}</dd>
+        </div>
+      </dl>
+
+      <div class="profile-spec-levels">
+        <span class="levels-caption">Levels:</span>
+        <div class="levels-code-wrapper">
+          <code>{{ profile.levelScoresJson }}</code>
+        </div>
+      </div>
+    </div>
+  }
+</div>
+
+<!-- SCORING PROFILE FORM DIALOG -->
+<dialog #scoringProfileFormDialog class="gh-dialog benchmark-form-dialog">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3>{{ editingProfileId ? 'Edit Scoring Profile' : 'Create Scoring Profile' }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close scoring profile form" (click)="scoringProfileFormDialog.close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      @if (profileValidationErrors.length > 0) {
+        <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="alert-content">
+            <h4 class="visually-hidden">Profile could not be saved</h4>
+            @for (err of profileValidationErrors; track err) {
+              <div class="alert-body">{{ err }}</div>
+            }
+          </div>
+        </div>
+      }
+
+      <fieldset class="form-section">
+        <legend>Identity</legend>
+        <div class="form-group">
+          <label for="profileNameInput">Profile Name</label>
+          <input id="profileNameInput" type="text" class="gh-input" [(ngModel)]="profileForm.name" placeholder="e.g. Speed-Weighted Profile" aria-describedby="profileNameHint">
+          <span id="profileNameHint" class="form-hint">Shown in the scoring profile selector on the benchmark setup form. Names must be unique.</span>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Dimension weights</legend>
+        <div class="form-help-block">
+          The assessor rates each answer 0&ndash;6 on four dimensions. Each level is converted to points through the level score table below, then combined into one quality score as a weighted <strong>geometric</strong> mean:
+          <code>Quality = Acc<sup>wAcc</sup> &times; Comp<sup>wComp</sup> &times; Conc<sup>wConc</sup> &times; Read<sup>wRead</sup></code>, clamped to 1&ndash;100.
+          Because the mean is geometric, a near-zero score on any one dimension drags the whole result down &mdash; a weight cannot fully compensate for a collapsed dimension.
+          <strong>The four weights must sum to exactly 1.0</strong>; the profile is rejected on save otherwise.
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="weightAcc">Accuracy Weight</label>
+            <input id="weightAcc" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightAccuracy" aria-describedby="weightAccHint">
+            <span id="weightAccHint" class="form-hint">Factual correctness against GnollHack game and source-code facts. Default <code>0.55</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="weightComp">Completeness Weight</label>
+            <input id="weightComp" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightCompleteness" aria-describedby="weightCompHint">
+            <span id="weightCompHint" class="form-hint">Coverage of the question &mdash; conditions, exceptions, and edge cases, not just the headline answer. Default <code>0.25</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="weightConc">Conciseness Weight</label>
+            <input id="weightConc" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightConciseness" aria-describedby="weightConcHint">
+            <span id="weightConcHint" class="form-hint">Information density: how little padding, repetition, and filler surrounds the answer. Default <code>0.10</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="weightRead">Readability Weight</label>
+            <input id="weightRead" type="number" step="0.05" min="0" max="1" class="gh-input" [(ngModel)]="profileForm.weightReadability" aria-describedby="weightReadHint">
+            <span id="weightReadHint" class="form-hint">Structure, formatting, and how easily the answer can be scanned. Default <code>0.10</code>.</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Rating scale</legend>
+        <div class="form-group">
+          <label for="levelScoresInput">BARS Level Scores Array (JSON)</label>
+          <input id="levelScoresInput" type="text" class="gh-input" [(ngModel)]="profileForm.levelScoresJson" placeholder="[1, 15, 35, 55, 72, 87, 100]" aria-describedby="levelScoresHint">
+          <span id="levelScoresHint" class="form-hint">Maps each Behaviorally Anchored Rating Scale level (0&ndash;6) onto a point value used by the quality formula. Exactly <strong>7 integers</strong>, <strong>strictly ascending</strong>, each between <strong>1 and 100</strong>. The default <code>[1, 15, 35, 55, 72, 87, 100]</code> is spaced unevenly on purpose: the gaps are widest through the middle of the scale (20 points per level) and narrowest at the top (13 points), so competent answers separate more sharply than near-perfect ones. Widen the upper gaps to make top-end differences more decisive.</span>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Speed</legend>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="speedTarget">Speed Target (ms)</label>
+            <input id="speedTarget" type="number" min="1" class="gh-input" [(ngModel)]="profileForm.speedTargetMs" aria-describedby="speedTargetHint">
+            <span id="speedTargetHint" class="form-hint">The base response time that scores a full 100 speed points. Speed is <code>100 - k &times; log2(modelTime / effectiveTarget)</code>, clamped to 1&ndash;100, where <code>modelTime</code> is the turn duration with tool I/O removed. Must be greater than 0. Default <code>2000</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="speedDecay">Speed Decay (k)</label>
+            <input id="speedDecay" type="number" step="1" min="1" class="gh-input" [(ngModel)]="profileForm.speedDecayK" aria-describedby="speedDecayHint">
+            <span id="speedDecayHint" class="form-hint">Speed points lost per doubling of model time past the effective target. At the default <code>12</code>, a response taking 4&times; the target scores 76 and one taking 8&times; scores 64. Higher values punish slow answers harder; lower values flatten the curve. Must be greater than 0.</span>
+          </div>
+          <div class="form-group">
+            <label for="speedDifficultyScaling">Speed Difficulty Scaling</label>
+            <input id="speedDifficultyScaling" type="number" step="0.1" min="0" max="5" class="gh-input" [(ngModel)]="profileForm.speedDifficultyScaling" aria-describedby="speedDifficultyScalingHint">
+            <span id="speedDifficultyScalingHint" class="form-hint">How much an answer's assessed difficulty raises its expected time: <code>effectiveTarget = target &times; (1 + scaling &times; difficulty / 100)</code>. At the default <code>1.0</code> a difficulty-100 question is allowed twice the base target, while <code>0</code> holds every question to the same target. Difficulty enters the Speed Index here and nowhere else &mdash; the index itself is an equal-weight mean, so a hard question is given more time rather than more weight. Must be between 0.0 and 5.0.</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Execution</legend>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="parallelLimit">Max Parallel Questions</label>
+            <input id="parallelLimit" type="number" min="1" max="10" class="gh-input" [(ngModel)]="profileForm.maxParallelQuestions" aria-describedby="parallelLimitHint">
+            <span id="parallelLimitHint" class="form-hint">How many of the suite's questions are sent to the target model simultaneously. <code>1</code> gives strict sequential timing. Above <code>1</code> the run finishes sooner in wall-clock time, but each recorded duration includes queueing against the concurrent requests &mdash; the run is flagged as concurrency-degraded and its <strong>Speed Index becomes advisory only</strong>. Minimum <code>1</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="critCeiling">Critical Error Ceiling</label>
+            <input id="critCeiling" type="number" min="1" max="100" class="gh-input" [(ngModel)]="profileForm.criticalErrorCeiling" aria-describedby="critCeilingHint">
+            <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the assessor flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="notAttemptedScore">Not-Attempted Score</label>
+            <input id="notAttemptedScore" type="number" min="0" max="100" step="1" class="gh-input" [(ngModel)]="profileForm.notAttemptedScore" aria-describedby="notAttemptedScoreHint">
+            <span id="notAttemptedScoreHint" class="form-hint">Lowest score for an answer that says it could not find or verify the answer and makes no false claim (scoring method 13 on). At 50, giving an answer pays off when the model is at least about as likely to be right as wrong. Blank turns it off. 0&ndash;100, default <code>50</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="secondOpinionThreshold">Second Reader Threshold</label>
+            <input id="secondOpinionThreshold" type="number" min="0" max="100" class="gh-input" [(ngModel)]="profileForm.secondOpinionQualityThreshold" aria-describedby="secondOpinionThresholdHint">
+            <span id="secondOpinionThresholdHint" class="form-hint">Flagged coverage also selects an answer whose quality score is below this. The second reader reads it; the assessor's score still counts. <code>0</code> turns the score trigger off and leaves flagging to the other triggers. 0&ndash;100, default <code>50</code>.</span>
+          </div>
+
+          <div class="form-group">
+            <label for="secondOpinionModeProfile">Second Reader Coverage</label>
+            <select id="secondOpinionModeProfile" class="gh-input" [(ngModel)]="profileForm.secondOpinionMode" aria-describedby="secondOpinionModeProfileHint">
+              @for (option of secondOpinionModeOptions; track option.value) {
+                <option [ngValue]="option.value">{{ option.label }}</option>
+              }
+            </select>
+            <span id="secondOpinionModeProfileHint" class="form-hint">
+              Default coverage for single-assessor runs with this profile; the start dialog can
+              override it per run. <strong>Every answer (double grading)</strong> is recommended when
+              runs are used to compare models. A panel run ignores this: its reference reader reads
+              every answer.
+            </span>
+            <button type="button" class="btn-ghost grader-guide-btn" (click)="openGraderGuide('coverage', true)">How the graders work</button>
+          </div>
+
+          <div class="form-group">
+            <label for="secondOpinionOutlierDelta">Outlier Delta (points)</label>
+            <input id="secondOpinionOutlierDelta" type="number" min="1" max="100" class="gh-input"
+                   [(ngModel)]="profileForm.secondOpinionOutlierDeltaPoints"
+                   [disabled]="!outlierDeltaEnabled"
+                   aria-describedby="secondOpinionOutlierDeltaHint">
+            <span id="secondOpinionOutlierDeltaHint" class="form-hint">
+              Quality points below the run's own median at which an answer is read by the second reader, under
+              <strong>Flagged answers and statistical outliers</strong> only. An absolute threshold
+              cannot see an outlier in an otherwise strong run; this can. Must be between 1 and 100.
+              Default <code>25</code>.
+            </span>
+          </div>
+
+          <div class="form-group">
+            <label class="gh-switch-wrapper d-flex align-items-center">
+              <div class="gh-switch">
+                <input type="checkbox" id="profileSecondOpinionBlind" [(ngModel)]="profileForm.secondOpinionBlind" aria-describedby="profileSecondOpinionBlindHint">
+                <span class="gh-slider"></span>
+              </div>
+              <span class="ml-10">Blind Second Reader</span>
+            </label>
+            <span id="profileSecondOpinionBlindHint" class="form-hint mt-10">
+              When enabled, the second reader grades the answer without seeing the assessor's rubric matches, deductions, or scores, eliminating anchoring bias. Always on in a panel run. Default <code>true</code>.
+            </span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section">
+        <legend>Availability</legend>
+        <div class="form-group">
+          <label class="gh-switch-wrapper d-flex align-items-center">
+            <div class="gh-switch">
+              <input type="checkbox" id="profileIsDefault" [(ngModel)]="profileForm.isDefault" aria-describedby="profileIsDefaultHint">
+              <span class="gh-slider"></span>
+            </div>
+            <span class="ml-10">Set as Default Scoring Profile</span>
+          </label>
+          <span id="profileIsDefaultHint" class="form-hint mt-10">The default profile is preselected on the benchmark setup form. Exactly one profile is the default at any time &mdash; turning this on clears the flag from the profile that currently holds it. The last remaining default cannot be un-set.</span>
+        </div>
+      </fieldset>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="scoringProfileFormDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh" (click)="saveProfile()">Save Profile</button>
+    </div>
+  </div>
+</dialog>
+

@@ -1,13 +1,13 @@
 import type { MockedObject } from "vitest";
-import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
-import { clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import { AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -17,7 +17,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   describe('run progress dialog', () => {
@@ -83,32 +84,32 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should open the dialog when a benchmark run starts successfully', () => {
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
-      fixture.detectChanges();
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.refresh();
 
       const showModal = vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 42 }));
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun()));
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       expect(showModal).toHaveBeenCalled();
-      expect(component.isRunProgressDialogOpen).toBe(true);
+      expect(ctx.monitor.isRunProgressDialogOpen).toBe(true);
       component.closeRunProgressDialog();
     });
 
     describe('board quote check before start', () => {
       function selectSuiteWithBoard(): void {
         fixture.detectChanges();
-        component.suites = [{
+        ctx.workspace.suites = [{
           id: 1, name: 'Snapshot Suite', description: null, createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null,
           questionCount: 3, assessedQuestionCount: 3, difficultyFullyAssessed: true, gameSnapshotId: 7
         }];
-        component.selectedSuiteId = 1;
-        component.testedConfigId = 1;
-        component.assessorConfigId = 1;
+        ctx.launcher.selectedSuiteId = 1;
+        ctx.launcher.testedConfigId = 1;
+        ctx.launcher.assessorConfigId = 1;
         vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
         benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 42 }));
         benchmarkServiceMock.getRun.mockReturnValue(of(buildRun()));
@@ -121,20 +122,20 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should warn and wait for acknowledgement when the suite rubrics quote text the board lacks', () => {
         selectSuiteWithBoard();
-        const showWarning = vi.spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
+        const showWarning = vi.spyOn(ctx.runTab().boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
         benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of(missingCheck));
 
-        component.startBenchmark();
+        ctx.runTab().startBenchmark();
 
         expect(benchmarkServiceMock.getBoardFactsCheck).toHaveBeenCalledWith(1);
         expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
         expect(showWarning).toHaveBeenCalled();
-        expect(component.startingRun).toBe(false);
-        const text = (component.boardQuoteWarningDialog!.nativeElement.textContent || '').replace(/\s+/g, ' ');
+        expect(ctx.monitor.startingRun).toBe(false);
+        const text = (ctx.runTab().boardQuoteWarningDialog!.nativeElement.textContent || '').replace(/\s+/g, ' ');
         expect(text).toContain('These rubrics quote text the board does not contain; grades on them will rest on stale facts.');
         expect(text).toContain('Q3: "a blessed +1 long sword"');
 
-        const buttons = Array.from(component.boardQuoteWarningDialog!.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+        const buttons = Array.from(ctx.runTab().boardQuoteWarningDialog!.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
         for (const btn of buttons) {
           expect(btn.getAttribute('type')).toBe('button');
           expect((btn.textContent || '').trim() || btn.getAttribute('aria-label')).toBeTruthy();
@@ -144,28 +145,28 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(benchmarkServiceMock.getBoardFactsCheck).toHaveBeenCalledTimes(1);
         expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
-        expect(component.launchBoardFactsCheck).toBeNull();
+        expect(ctx.runTab().launchBoardFactsCheck).toBeNull();
         component.closeRunProgressDialog();
       });
 
       it('should start nothing when the warning is cancelled', () => {
         selectSuiteWithBoard();
-        vi.spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
+        vi.spyOn(ctx.runTab().boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
         benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of(missingCheck));
 
-        component.startBenchmark();
-        component.closeBoardQuoteWarningDialog();
+        ctx.runTab().startBenchmark();
+        ctx.runTab().closeBoardQuoteWarningDialog();
 
         expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
-        expect(component.launchBoardFactsCheck).toBeNull();
+        expect(ctx.runTab().launchBoardFactsCheck).toBeNull();
       });
 
       it('should start straight away when every quote is on the board', () => {
         selectSuiteWithBoard();
-        const showWarning = vi.spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
+        const showWarning = vi.spyOn(ctx.runTab().boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
         benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of({ ...missingCheck, missingLiterals: [] }));
 
-        component.startBenchmark();
+        ctx.runTab().startBenchmark();
 
         expect(showWarning).not.toHaveBeenCalled();
         expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
@@ -177,7 +178,7 @@ describe('AdminBenchmarkComponent', () => {
         vi.spyOn(console, 'warn').mockReturnValue(undefined);
         benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(throwError(() => ({ status: 500 })));
 
-        component.startBenchmark();
+        ctx.runTab().startBenchmark();
 
         expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
         component.closeRunProgressDialog();
@@ -185,9 +186,9 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should not check a suite that has no board', () => {
         selectSuiteWithBoard();
-        component.suites = [{ ...component.suites[0], gameSnapshotId: null }];
+        ctx.workspace.suites = [{ ...ctx.workspace.suites[0], gameSnapshotId: null }];
 
-        component.startBenchmark();
+        ctx.runTab().startBenchmark();
 
         expect(benchmarkServiceMock.getBoardFactsCheck).not.toHaveBeenCalled();
         expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
@@ -196,12 +197,12 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should derive the run stage from the run detail', () => {
-      component.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
+      ctx.monitor.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
       expect(component.runStage).toBe('answering');
 
       // Answering and assessing are one stage: the executor assesses each answer immediately
       // after producing it, inside the same loop, so they never separate in wall-clock terms.
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         answers: [
           buildAnswer(1),
           buildAnswer(2, { assessmentStatus: 'Pending' }),
@@ -210,12 +211,12 @@ describe('AdminBenchmarkComponent', () => {
       });
       expect(component.runStage).toBe('answering');
 
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         answers: [buildAnswer(1), buildAnswer(2), buildAnswer(3)]
       });
       expect(component.runStage).toBe('finalizing');
 
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Completed',
         completedAtUtc: '2026-09-02T00:05:00Z',
         answers: [buildAnswer(1), buildAnswer(2), buildAnswer(3)]
@@ -225,8 +226,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should merge suite questions with answers and mark unanswered questions Pending', () => {
-      component.activeRunDetail = buildRun({ answers: [buildAnswer(2, { benchmarkQuestionId: 2 })] });
-      component.runProgressQuestions = [
+      ctx.monitor.activeRunDetail = buildRun({ answers: [buildAnswer(2, { benchmarkQuestionId: 2 })] });
+      ctx.monitor.runProgressQuestions = [
         { id: 1, benchmarkSuiteId: 1, orderIndex: 1, questionText: 'First question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' },
         { id: 2, benchmarkSuiteId: 1, orderIndex: 2, questionText: 'Second question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' },
         { id: 3, benchmarkSuiteId: 1, orderIndex: 3, questionText: 'Third question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' }
@@ -247,7 +248,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should label an answered but unassessed question Answered rather than guessing Assessing', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         answers: [buildAnswer(1, { assessmentStatus: 'Pending' })]
       });
       const row = component.runProgressRows[0];
@@ -256,9 +257,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should expose exactly one polling live region in the dialog', () => {
-      component.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
       expect(dialog).toBeTruthy();
@@ -278,8 +279,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should hide the active run banner while the dialog is open', () => {
       component.activeSubTab = 'run';
-      component.activeRunDetail = buildRun({ answers: [] });
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.refresh();
       const bannerShown = () => !!fixture.nativeElement.querySelector('.active-run-banner');
       expect(bannerShown()).toBe(true);
 
@@ -287,7 +288,7 @@ describe('AdminBenchmarkComponent', () => {
       // and each refreshes the view itself.
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       component.openRunProgressDialog();
-      expect(component.isRunProgressDialogOpen).toBe(true);
+      expect(ctx.monitor.isRunProgressDialogOpen).toBe(true);
       expect(bannerShown()).toBe(false);
 
       component.closeRunProgressDialog();
@@ -295,13 +296,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should give every button in the open dialog an accessible name, type, and no title', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'CompletedWithErrors',
         completedAtUtc: '2026-09-02T00:05:00Z',
         answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
       });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog');
       const buttons = Array.from(dialog.querySelectorAll('button')) as HTMLButtonElement[];
@@ -347,7 +348,7 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should download the run diagnostics as a text file named for suite, model and run', async () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'CompletedWithErrors',
         suiteName: 'Snapshot: Tommi2 2026-09-17',
         testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
@@ -355,8 +356,8 @@ describe('AdminBenchmarkComponent', () => {
         completedAtUtc: '2026-09-02T00:05:00Z',
         answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
       });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-url');
       vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
@@ -378,19 +379,19 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should fall back to a generic diagnostics file name when no run is loaded', () => {
-      component.activeRunDetail = null;
+      ctx.monitor.activeRunDetail = null;
 
       expect(component.runDiagnosticsFileName).toBe('overseer-benchmark-run-diagnostics.txt');
     });
 
     it('should copy the run diagnostics, announce it, and reset after the timeout', fakeAsync(() => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'CompletedWithErrors',
         completedAtUtc: '2026-09-02T00:05:00Z',
         answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
       });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
       const expectedText = component.runDiagnosticsText;
@@ -417,13 +418,13 @@ describe('AdminBenchmarkComponent', () => {
     }));
 
     it('should surface a run diagnostics clipboard failure inline rather than throwing', fakeAsync(() => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Failed',
         completedAtUtc: '2026-09-02T00:05:00Z',
         answers: [buildAnswer(1, { status: 'Failed', errorMessage: 'boom' })]
       });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
 
@@ -436,11 +437,11 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(component.copiedRunDiagnostics).toBe(false);
       expect(component.runDiagnosticsCopyStatus).toBe('Could not copy the diagnostics to the clipboard.');
-      expect(component.runErrorMessage).toBe('Could not copy the benchmark run diagnostics to the clipboard.');
+      expect(ctx.monitor.runErrorMessage).toBe('Could not copy the benchmark run diagnostics to the clipboard.');
     }));
 
     it('should not leak answer, thought, or assessor comment text into the diagnostics', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
       });
 
@@ -460,9 +461,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('prints the ticker mode on the Run poll line, and an attempts section for the sound and the notification', () => {
-      component.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running', answers: [] })));
-      (component as any).startPolling(42);
+      ctx.monitor.startPolling(42);
 
       // Pushed directly rather than exercised through a real play() call, so this spec does not
       // depend on the actual browser audio stack; the sound service's own spec exercises play().
@@ -478,7 +479,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('  attempts:');
       expect(text).toContain('key=run:999');
 
-      (component as any).stopPolling();
+      ctx.monitor.stopPolling();
     });
 
     it('should reattach to a run already in progress without opening the dialog', () => {
@@ -486,11 +487,11 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 77 })));
       const showModal = vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
-      component.checkActiveRun();
+      ctx.monitor.checkActiveRun();
 
-      expect(component.activeRunId).toBe(77);
+      expect(ctx.monitor.activeRunId).toBe(77);
       expect(benchmarkServiceMock.getRun).toHaveBeenCalledWith(77);
-      expect(component.isRunProgressDialogOpen).toBe(false);
+      expect(ctx.monitor.isRunProgressDialogOpen).toBe(false);
       expect(showModal).not.toHaveBeenCalled();
     });
 
@@ -498,14 +499,14 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getActiveRun.mockReturnValue(of(null));
       benchmarkServiceMock.getRun.mockClear();
 
-      component.checkActiveRun();
+      ctx.monitor.checkActiveRun();
 
-      expect(component.activeRunId).toBeNull();
+      expect(ctx.monitor.activeRunId).toBeNull();
       expect(benchmarkServiceMock.getRun).not.toHaveBeenCalled();
     });
 
     it('should fetch the suite questions once per dialog open, not per poll tick', () => {
-      component.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
       benchmarkServiceMock.getQuestions.mockClear();
       benchmarkServiceMock.getQuestions.mockReturnValue(of([]));
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
@@ -520,12 +521,12 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should render question text as plain text and never as innerHTML', () => {
-      component.activeRunDetail = buildRun({ answers: [] });
-      component.runProgressQuestions = [
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.runProgressQuestions = [
         { id: 1, benchmarkSuiteId: 1, orderIndex: 1, questionText: '<img src=x onerror="alert(1)">', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' }
       ];
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const excerpt = fixture.nativeElement.querySelector('.run-question-list .job-item-excerpt') as HTMLElement;
       expect(excerpt).toBeTruthy();
@@ -536,7 +537,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should compute elapsed time correctly for UTC timestamps without a Z designator', () => {
       // 5 minutes ago without Z suffix
       const fiveMinutesAgo = new Date(Date.now() - 300000).toISOString().replace('Z', '');
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         startedAtUtc: fiveMinutesAgo,
         completedAtUtc: null
       });
@@ -549,7 +550,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should advance elapsed time at 1 Hz while dialog is open and stop on close', fakeAsync(() => {
       const now = Date.now();
       const startTime = new Date(now - 10000).toISOString().replace('Z', '');
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Running',
         startedAtUtc: startTime,
         completedAtUtc: null
@@ -565,7 +566,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runElapsedLabel).toBe('11s');
 
       component.closeRunProgressDialog();
-      expect((component as any).runElapsedInterval).toBeNull();
+      expect(ctx.monitor.runElapsedInterval).toBeNull();
 
       tick(5000);
       discardPeriodicTasks();
@@ -573,22 +574,22 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should not start ticker for terminal run and stop ticker when poll reports terminal', fakeAsync(() => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Completed',
         startedAtUtc: '2026-09-02T17:00:00Z',
         completedAtUtc: '2026-09-02T17:05:00Z'
       });
       component.openRunProgressDialog();
-      expect((component as any).runElapsedInterval).toBeNull();
+      expect(ctx.monitor.runElapsedInterval).toBeNull();
 
       // Now set to running and open
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Running',
         startedAtUtc: '2026-09-02T17:00:00Z',
         completedAtUtc: null
       });
       component.openRunProgressDialog();
-      expect((component as any).runElapsedInterval).not.toBeNull();
+      expect(ctx.monitor.runElapsedInterval).not.toBeNull();
 
       // Poll returns terminal run
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({
@@ -596,19 +597,19 @@ describe('AdminBenchmarkComponent', () => {
         startedAtUtc: '2026-09-02T17:00:00Z',
         completedAtUtc: '2026-09-02T17:05:00Z'
       })));
-      (component as any).pollRunDetail(42);
-      expect((component as any).runElapsedInterval).toBeNull();
+      (ctx.monitor as any).pollRunDetail(42);
+      expect(ctx.monitor.runElapsedInterval).toBeNull();
 
       discardPeriodicTasks();
     }));
 
     it('should render diagnostics details unconditionally closed by default and without failure count on healthy run', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Running',
         answers: [buildAnswer(1)]
       });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
       expect(details).toBeTruthy();
@@ -623,12 +624,12 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show failure count in diagnostics summary when answers fail', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Running',
         answers: [buildAnswer(1, { status: 'Failed' }), buildAnswer(2, { status: 'Failed' })]
       });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
       expect(details).toBeTruthy();
@@ -644,16 +645,16 @@ describe('AdminBenchmarkComponent', () => {
         message: 'Internal Server Error'
       })));
 
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
-      expect(component.lastRunPollError).toContain('500');
+      expect(ctx.monitor.lastRunPollError).toContain('500');
       expect(component.runDiagnosticsText).toContain('Last poll error:');
       expect(component.runDiagnosticsText).toContain('500');
       expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
     });
 
     it('should produce non-empty diagnostics text when activeRunDetail is null', () => {
-      component.activeRunDetail = null;
+      ctx.monitor.activeRunDetail = null;
       const text = component.runDiagnosticsText;
       expect(text).toBeTruthy();
       expect(text).toContain('=== BENCHMARK RUN DIAGNOSTICS ===');
@@ -663,9 +664,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should render diagnostics pre containing code child with tabindex 0', () => {
-      component.activeRunDetail = buildRun({ answers: [] });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const pre = fixture.nativeElement.querySelector('.job-diagnostics pre') as HTMLPreElement;
       expect(pre).toBeTruthy();
@@ -675,18 +676,18 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('leaves the diagnostics text unrendered while the panel is closed', () => {
-      component.activeRunDetail = buildRun({ answers: [] });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const code = fixture.nativeElement.querySelector('.job-diagnostics pre code') as HTMLElement;
       expect(code.textContent).toBe('');
     });
 
     it('renders the diagnostics text once the panel is opened', () => {
-      component.activeRunDetail = buildRun({ answers: [] });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
       details.open = true;
@@ -699,9 +700,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('keeps the open panel stable across change-detection passes', fakeAsync(() => {
-      component.activeRunDetail = buildRun({ answers: [] });
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
       details.open = true;
@@ -713,10 +714,7 @@ describe('AdminBenchmarkComponent', () => {
 
       // The component is OnPush, so the view re-renders only once it is marked for check.
       tick(5);
-      (component as unknown as {
-        cdr: ChangeDetectorRef;
-      }).cdr.markForCheck();
-      fixture.detectChanges();
+      ctx.refresh();
 
       expect(code.textContent).toBe(rendered);
       expect(() => fixture.checkNoChanges()).not.toThrow();
@@ -725,44 +723,44 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should set returnToSeriesOnClose to true when opened from a series', () => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
-      expect(component.returnToSeriesOnClose).toBe(false);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(false);
 
       component.onOpenRunProgressFromSeries(42);
 
-      expect(component.returnToSeriesOnClose).toBe(true);
-      expect(component.isRunProgressDialogOpen).toBe(true);
-      expect(component.multiRunDialogVisible).toBe(false);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(true);
+      expect(ctx.monitor.isRunProgressDialogOpen).toBe(true);
+      expect(ctx.monitor.multiRunDialogVisible).toBe(false);
     });
 
     it('should reopen multi-run dialog when closing single-run progress with returnToSeriesOnClose true', () => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
-      component.activeSeriesId = 10;
+      ctx.monitor.activeSeriesId = 10;
       component.onOpenRunProgressFromSeries(42);
 
-      expect(component.multiRunDialogVisible).toBe(false);
-      expect(component.returnToSeriesOnClose).toBe(true);
+      expect(ctx.monitor.multiRunDialogVisible).toBe(false);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(true);
 
       component.closeRunProgressDialog();
 
-      expect(component.multiRunDialogVisible).toBe(true);
-      expect(component.returnToSeriesOnClose).toBe(false);
-      expect(component.isRunProgressDialogOpen).toBe(false);
+      expect(ctx.monitor.multiRunDialogVisible).toBe(true);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(false);
+      expect(ctx.monitor.isRunProgressDialogOpen).toBe(false);
     });
 
     it('should not reopen multi-run dialog when closing single-run progress with returnToSeriesOnClose false', () => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
-      component.activeSeriesId = 10;
+      ctx.monitor.activeSeriesId = 10;
       component.openRunProgressDialog();
 
-      expect(component.returnToSeriesOnClose).toBe(false);
-      expect(component.multiRunDialogVisible).toBe(false);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(false);
+      expect(ctx.monitor.multiRunDialogVisible).toBe(false);
 
       component.closeRunProgressDialog();
 
-      expect(component.multiRunDialogVisible).toBe(false);
-      expect(component.returnToSeriesOnClose).toBe(false);
+      expect(ctx.monitor.multiRunDialogVisible).toBe(false);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(false);
     });
 
     it('should not reopen multi-run dialog when viewing full report detail from progress dialog', () => {
@@ -770,23 +768,23 @@ describe('AdminBenchmarkComponent', () => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
       vi.spyOn(component, 'viewRunDetail').mockReturnValue(undefined);
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42 })));
-      component.activeSeriesId = 10;
+      ctx.monitor.activeSeriesId = 10;
       component.onOpenRunProgressFromSeries(42);
 
-      expect(component.returnToSeriesOnClose).toBe(true);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(true);
 
       component.viewActiveRunDetail();
 
-      expect(component.multiRunDialogVisible).toBe(false);
-      expect(component.returnToSeriesOnClose).toBe(false);
+      expect(ctx.monitor.multiRunDialogVisible).toBe(false);
+      expect(ctx.monitor.returnToSeriesOnClose).toBe(false);
       expect(component.viewRunDetail).toHaveBeenCalledWith(42);
     });
 
     it('should render Back to Series and updated aria-label when returnToSeriesOnClose is true', () => {
-      component.activeRunDetail = buildRun({ status: 'Running', answers: [] });
-      component.returnToSeriesOnClose = true;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ status: 'Running', answers: [] });
+      ctx.monitor.returnToSeriesOnClose = true;
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const dialogEl = component.runProgressDialog.nativeElement;
       const closeBtn = dialogEl.querySelector('.dialog-header .btn-icon-action') as HTMLButtonElement;
@@ -796,8 +794,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(cancelBtn.textContent?.trim()).toBe('Back to Series');
 
       // Check when terminal
-      component.activeRunDetail = buildRun({ status: 'Completed', answers: [] });
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ status: 'Completed', answers: [] });
+      ctx.refresh();
 
       const terminalCancelBtn = dialogEl.querySelector('.dialog-footer .btn-gh-cancel') as HTMLButtonElement;
       expect(terminalCancelBtn.textContent?.trim()).toBe('Back to Series');
@@ -823,10 +821,10 @@ describe('AdminBenchmarkComponent', () => {
 
       component.rerunFailedFromRunDetail(37);
 
-      expect(component.rerunLaunchPending).toBe(true);
+      expect(ctx.monitor.rerunLaunchPending).toBe(true);
       expect(component.runIsTerminal).toBe(false);
       expect(component.runStageLabel).toContain('Starting');
-      expect((component as any).pollTickerHandle).not.toBeNull();
+      expect(ctx.monitor.pollTickerHandle).not.toBeNull();
 
       fixture.detectChanges();
       const footer = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-footer') as HTMLElement;
@@ -841,14 +839,14 @@ describe('AdminBenchmarkComponent', () => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
-      component.activeRunId = 37;
-      component.rerunLaunchPending = true;
-      (component as any).rerunLaunchedAtMs = Date.now();
+      ctx.monitor.activeRunId = 37;
+      ctx.monitor.rerunLaunchPending = true;
+      (ctx.monitor as any).rerunLaunchedAtMs = Date.now();
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 37, status: 'Running' })));
 
-      (component as any).pollRunDetail(37);
+      (ctx.monitor as any).pollRunDetail(37);
 
-      expect(component.rerunLaunchPending).toBe(false);
+      expect(ctx.monitor.rerunLaunchPending).toBe(false);
       expect(component.runIsRunning).toBe(true);
 
       component.closeRunProgressDialog();
@@ -858,13 +856,13 @@ describe('AdminBenchmarkComponent', () => {
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         id: 37,
         status: 'CompletedWithErrors',
         suiteName: 'Suite X',
         answers: [buildAnswer(1, { status: 'Failed' })]
       });
-      component.isRunProgressDialogOpen = true;
+      ctx.monitor.isRunProgressDialogOpen = true;
       benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(throwError(() => ({
         status: 409,
         error: 'A benchmark run is already in progress.'
@@ -872,11 +870,11 @@ describe('AdminBenchmarkComponent', () => {
 
       component.rerunFailedFromProgress();
 
-      expect(component.runErrorMessage).toBe('A benchmark run is already in progress.');
-      expect(component.rerunLaunchPending).toBe(false);
-      expect(component.activeRunDetail).not.toBeNull();
+      expect(ctx.monitor.runErrorMessage).toBe('A benchmark run is already in progress.');
+      expect(ctx.monitor.rerunLaunchPending).toBe(false);
+      expect(ctx.monitor.activeRunDetail).not.toBeNull();
 
-      fixture.detectChanges();
+      ctx.refresh();
       const alert = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body .alert-danger') as HTMLElement;
       expect(alert).toBeTruthy();
       expect(alert.textContent).toContain('A benchmark run is already in progress.');
@@ -894,14 +892,14 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should put the question list in its own section and everything else before it', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         status: 'Completed',
         completedAtUtc: '2026-09-02T00:05:00Z',
         answers: [buildAnswer(1), buildAnswer(2)]
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
-      const body = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body') as HTMLElement;
+      const body =fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body') as HTMLElement;
       const sections = Array.from(body.children) as HTMLElement[];
       expect(sections.map(s => s.tagName)).toEqual(['SECTION', 'SECTION']);
       const [overview, questions] = sections;
@@ -930,7 +928,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should focus the dialog title when the run progress dialog opens', () => {
-      component.activeRunDetail = buildRun({ status: 'Completed', answers: [buildAnswer(1)] });
+      ctx.monitor.activeRunDetail = buildRun({ status: 'Completed', answers: [buildAnswer(1)] });
       const dialog = component.runProgressDialog.nativeElement as HTMLDialogElement;
 
       component.openRunProgressDialog();
@@ -947,14 +945,14 @@ describe('AdminBenchmarkComponent', () => {
       .textContent!.replace(/\s+/g, ' ').trim();
 
     it('should say the run is starting in the subtitle until the run detail loads', () => {
-      component.activeRunDetail = null;
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = null;
+      ctx.refresh();
       expect(progressSubtitle()).toBe('Starting benchmark run…');
     });
 
     it('should name the suite and profile in the subtitle once the run detail loads', () => {
-      component.activeRunDetail = buildRun({ suiteName: 'Suite X', scoringProfileName: 'Strict' });
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ suiteName: 'Suite X', scoringProfileName: 'Strict' });
+      ctx.refresh();
       expect(progressSubtitle()).toBe('Suite X | Profile: Strict');
     });
 
@@ -962,8 +960,8 @@ describe('AdminBenchmarkComponent', () => {
       let dialog: HTMLDialogElement;
 
       function openAtWidth(width: string): HTMLElement {
-        component.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
-        fixture.detectChanges();
+        ctx.monitor.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
+        ctx.refresh();
         dialog = component.runProgressDialog.nativeElement as HTMLDialogElement;
         dialog.style.width = width;
         dialog.style.maxWidth = width;
@@ -1000,13 +998,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show the published score on a scored question row', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         answers: [
           buildAnswer(1, { qualityScore: 83 }),
           buildAnswer(2, { assessmentStatus: 'Pending', qualityScore: null })
         ]
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
       const rows = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-row')) as HTMLElement[];
       const score = rows[0].querySelector('.job-item-score') as HTMLElement;
@@ -1018,13 +1016,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should give a scored question row a score tier badge', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         answers: [
           buildAnswer(1, { qualityScore: 83 }),
           buildAnswer(2, { qualityScore: 45 })
         ]
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
       const scores = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-score')) as HTMLElement[];
       expect(scores.length).toBe(2);
@@ -1036,14 +1034,14 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show the panel score on a panel run\'s question row, and none until both members have scored', () => {
-      component.activeRunDetail = buildRun({
+      ctx.monitor.activeRunDetail = buildRun({
         isPanelRun: true,
         answers: [
           buildAnswer(1, { qualityScore: 90, panelQualityScore: 82.5 }),
           buildAnswer(2, { qualityScore: 70, panelQualityScore: null })
         ]
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
       const panelRows = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-row')) as HTMLElement[];
       expect(panelRows[0].querySelector('.job-item-score')?.textContent?.trim()).toBe('Score 82.5');
@@ -1051,9 +1049,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should point the re-run badge at the Questions column', () => {
-      component.rerunScopeOrderIndexes = [2];
-      component.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
-      fixture.detectChanges();
+      ctx.monitor.rerunScopeOrderIndexes = [2];
+      ctx.monitor.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
+      ctx.refresh();
 
       const badge = fixture.nativeElement.querySelector('.rerun-scope-badge') as HTMLElement;
       expect(badge.textContent?.replace(/\s+/g, ' ')).toContain('Every question of the suite is listed under Questions; the re-run ones are marked.');
@@ -1062,8 +1060,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should name the assessor in the active run banner', () => {
       component.activeSubTab = 'run';
-      component.activeRunDetail = buildRun({ answers: [] });
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [] });
+      ctx.refresh();
       const bannerText = ((fixture.nativeElement.querySelector('.active-run-banner') as HTMLElement).textContent || '')
         .replace(/\s+/g, ' ');
 
@@ -1073,8 +1071,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should name both assessors of a panel in the active run banner', () => {
       component.activeSubTab = 'run';
-      component.activeRunDetail = buildRun({ answers: [], isPanelRun: true, coAssessorModelDisplayNameUsed: 'Co Assessor' });
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildRun({ answers: [], isPanelRun: true, coAssessorModelDisplayNameUsed: 'Co Assessor' });
+      ctx.refresh();
       const bannerText = ((fixture.nativeElement.querySelector('.active-run-banner') as HTMLElement).textContent || '')
         .replace(/\s+/g, ' ');
 
@@ -1175,7 +1173,9 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getToolCallLogUrl.mockReturnValue('/api/admin/benchmark/runs/42/tool-call-log');
       const openSpy = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
 
-      component.downloadToolCallLog(42);
+      component.selectSubTab('history');
+      fixture.detectChanges();
+      ctx.historyTab().downloadToolCallLog(42);
 
       expect(benchmarkServiceMock.getToolCallLogUrl).toHaveBeenCalledWith(42);
       expect(openSpy).toHaveBeenCalledWith('/api/admin/benchmark/runs/42/tool-call-log', '_blank');

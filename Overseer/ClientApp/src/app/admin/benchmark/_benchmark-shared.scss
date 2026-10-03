@@ -1,0 +1,583 @@
+// Rules several Benchmark components share. Component styles never reach another component's
+// elements, so each component includes the groups its own template uses.
+
+@mixin shared-1 {
+.active-run-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(212, 160, 23, 0.1);
+  border: 1px solid rgba(212, 160, 23, 0.4);
+  border-radius: 8px;
+  padding: 16px 20px;
+
+  .banner-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+
+    h4 {
+      margin: 0 0 4px 0;
+      color: var(--primary-color);
+    }
+
+    p {
+      margin: 0;
+      font-size: 13px;
+    }
+  }
+
+  .pulse-indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    box-shadow: 0 0 0 0 rgba(212, 160, 23, 0.7);
+    animation: pulse 1.5s infinite cubic-bezier(0.66, 0, 0, 1);
+  }
+
+  .banner-progress {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-weight: 500;
+  }
+}
+}
+
+@mixin shared-2 {
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 0 12px rgba(212, 160, 23, 0);
+  }
+}
+}
+
+@mixin shared-3 {
+@media (prefers-reduced-motion: reduce) {
+  .active-run-banner .pulse-indicator {
+    animation: none;
+  }
+}
+}
+
+@mixin shared-4 {
+.benchmark-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+
+  h3, h4 {
+    margin: 0 0 10px 0;
+    color: #fff;
+  }
+}
+}
+
+@mixin shared-5 {
+.grader-guide-btn {
+  align-self: flex-start;
+}
+}
+
+@mixin shared-6 {
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ccc;
+  }
+}
+}
+
+@mixin shared-7 {
+.gh-input {
+  background: #141414;
+  border: 1px solid #3d3d3d;
+  color: #fff;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+
+  &:focus {
+    border-color: var(--primary-color);
+    outline: none;
+  }
+}
+}
+
+@mixin shared-8 {
+/* Question count on a suite. At the component root rather than inside .suite-card, because the
+   Import Default Suites dialog shows the same badge outside any card. */
+.question-count-badge {
+  background: rgba(212, 160, 23, 0.15);
+  color: var(--primary-color);
+  border: 1px solid rgba(212, 160, 23, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+}
+
+@mixin shared-9 {
+.suites-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+}
+
+@mixin shared-10 {
+.questions-copy-status,
+.suites-copy-status {
+  margin: 0;
+  min-height: 1lh;
+}
+}
+
+@mixin shared-11 {
+/* .gh-table now lives in styles.scss: declared here, emulated encapsulation kept it from
+   ever reaching the Suite Health child component's tables. */
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &.badge-status-running {
+    background: rgba(212, 160, 23, 0.2);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+  }
+
+  &.badge-status-completed {
+    background: rgba(76, 175, 80, 0.2);
+    color: #81c784;
+    border: 1px solid #4caf50;
+  }
+
+  &.badge-status-completedwitherrors {
+    background: rgba(255, 152, 0, 0.2);
+    color: #ffb74d;
+    border: 1px solid #ff9800;
+  }
+
+  &.badge-status-failed {
+    background: rgba(244, 67, 54, 0.2);
+    color: #e57373;
+    border: 1px solid #f44336;
+  }
+
+  &.badge-status-canceled {
+    background: rgba(158, 158, 158, 0.2);
+    color: #bdbdbd;
+    border: 1px solid #757575;
+  }
+
+  &.badge-status-ok {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+  }
+
+  &.badge-status-providererror {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffb74d;
+  }
+
+  &.badge-status-pending {
+    background: rgba(158, 158, 158, 0.15);
+    color: #bdbdbd;
+  }
+
+  &.badge-status-assessing {
+    background: rgba(33, 150, 243, 0.15);
+    color: #64b5f6;
+  }
+
+  // CompletedWithLimits means the run reached an operator-configured cap and nothing else.
+  // Informational blue rather than the amber of badge-status-completedwitherrors, because the
+  // run is valid and the colour is what a reader takes in before the label.
+  &.badge-status-completedwithlimits {
+    background: rgba(33, 150, 243, 0.2);
+    color: #64b5f6;
+    border: 1px solid #2196f3;
+  }
+
+  &.badge-status-scored {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+  }
+
+  &.badge-status-skipped {
+    background: rgba(158, 158, 158, 0.2);
+    color: #bdbdbd;
+  }
+
+  &.badge-status-emptyanswer {
+    background: rgba(239, 83, 80, 0.15);
+    color: #ef5350;
+    border: 1px solid rgba(239, 83, 80, 0.4);
+  }
+}
+}
+
+@mixin shared-12 {
+// How many of the suite's questions a terminal run actually answered. Neutral rather than warning
+// coloured: the status badge beside it already carries the severity, and this only says how many.
+.badge-progress-count {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--nav-color);
+  border: 1px solid var(--border-glass);
+}
+}
+
+@mixin shared-13 {
+.gh-dialog.benchmark-form-dialog {
+  width: min(640px, 94vw);
+  max-width: min(640px, 94vw);
+  max-height: 85dvh;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  background: rgba(20, 20, 20, 0.98);
+
+  fieldset.form-section {
+    border: 0;
+    margin: 0 0 24px 0;
+    padding: 0;
+    min-inline-size: 0;
+
+    &:last-of-type {
+      margin-bottom: 0;
+    }
+
+    legend {
+      font-family: "Cinzel", serif;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--primary-color);
+      padding: 0 0 6px 0;
+      margin-bottom: 14px;
+      width: 100%;
+      border-bottom: 1px solid rgba(212, 160, 23, 0.2);
+      float: none;
+    }
+  }
+
+  .form-help-block {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-inline-start: 3px solid var(--primary-color);
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #bbb;
+
+    code {
+      color: var(--primary-color);
+      font-size: 12px;
+      font-family: monospace;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    strong {
+      color: #fff;
+    }
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 18px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      font-size: 13px;
+      color: #ccc;
+      font-weight: 600;
+    }
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+
+    .form-group {
+      margin-bottom: 0;
+    }
+  }
+
+  .form-hint {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #999;
+    margin-top: 4px;
+
+    code {
+      color: var(--primary-color);
+      font-size: 12px;
+      font-family: monospace;
+    }
+
+    strong {
+      color: #ccc;
+    }
+
+    em {
+      color: #ddd;
+    }
+  }
+}
+}
+
+@mixin shared-14 {
+/* Wider and full height than their .benchmark-form-dialog siblings: these are the only two of
+   them holding a Markdown editor, and 920px is what lets the source and the preview sit side by
+   side at a readable measure. dvh so a collapsing mobile URL bar cannot clip the footer.
+
+   Must stay after .benchmark-form-dialog: both selectors have the same specificity, so source
+   order is what decides the width. */
+.gh-dialog.benchmark-question-form-dialog,
+.gh-dialog.benchmark-suite-form-dialog {
+  width: min(920px, 94vw);
+  max-width: min(920px, 94vw);
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
+
+  .dialog-body {
+    display: flex;
+    flex-direction: column;
+
+    /* The criteria editor is the last form-group; it takes what the first two leave. */
+    > .form-group:last-child {
+      flex: 1;
+      min-height: 0;
+      margin-bottom: 0;
+    }
+  }
+}
+}
+
+@mixin shared-15 {
+/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
+@media (max-width: 600px) {
+  .gh-dialog.benchmark-question-form-dialog,
+  .gh-dialog.benchmark-suite-form-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
+}
+}
+
+@mixin shared-16 {
+/* @keyframes pulse-assessing, .job-diagnostics and the chip states' reduced-motion rule live in
+styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits next to
+.active-run-banner. */
+
+.gh-dialog.benchmark-questions-dialog[open],
+.gh-dialog.benchmark-form-dialog[open],
+.gh-dialog.benchmark-questions-dialog:modal,
+.gh-dialog.benchmark-form-dialog:modal {
+  display: flex;
+  flex-direction: column;
+}
+}
+
+@mixin shared-17 {
+.dialog-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  /* styles.scss gives .dialog-content 20px for the settings dialogs; the header, body and
+     footer here carry their own. */
+  padding: 0;
+}
+}
+
+@mixin shared-18 {
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  background: rgba(16, 16, 16, 0.98);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
+}
+}
+
+@mixin shared-19 {
+// Not nested under .dialog-header: the run report's header holds the same title group.
+.dialog-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+
+  .dialog-title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;          // badges drop below the title only when the header is too narrow
+    column-gap: 12px;
+    row-gap: 6px;
+    min-width: 0;
+
+    h3 {
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+  }
+
+  h3 {
+    margin: 0;
+    color: var(--title-color, var(--primary-color));
+    font-family: "Cinzel", serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dialog-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: #888;
+  }
+
+  .dialog-title-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+
+    .badge-progress-count {
+      margin-left: 0;   // the gap spaces them
+    }
+
+    .status-badge,
+    .badge-progress-count {
+      text-box: trim-both cap alphabetic;  // optical centring beside the Cinzel title; inert where unsupported
+    }
+  }
+}
+}
+
+@mixin shared-20 {
+.dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  min-height: 0;
+}
+}
+
+@mixin shared-21 {
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  background: rgba(16, 16, 16, 0.98);
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex-shrink: 0;
+
+  .btn-gh {
+    white-space: nowrap;
+  }
+
+  /* Matches the global .dialog-actions behaviour. column-reverse keeps the
+     affirmative action first in the DOM, where screen readers and the Enter
+     key expect it, while rendering it at the bottom. */
+  @media (max-width: 500px) {
+    flex-direction: column-reverse;
+    align-items: stretch;
+
+    .btn-gh {
+      width: 100%;
+      min-width: 0;
+    }
+  }
+}
+}
+
+@mixin shared-22 {
+.text-muted { color: #888; }
+}
+
+@mixin shared-23 {
+.text-danger { color: #e74c3c; }
+}
+
+@mixin shared-24 {
+.mb-10 { margin-bottom: 10px; }
+}
+
+@mixin shared-25 {
+.mb-15 { margin-bottom: 15px; }
+}
+
+@mixin shared-26 {
+.mb-20 { margin-bottom: 20px; }
+}
+
+@mixin shared-27 {
+.mt-10 { margin-top: 10px; }
+}
+
+@mixin shared-28 {
+.flex-col { display: flex; flex-direction: column; }
+}
+
+@mixin shared-29 {
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+}

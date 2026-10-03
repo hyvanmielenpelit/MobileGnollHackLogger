@@ -1,0 +1,463 @@
+@if (workspace.actionErrorMessage) {
+  <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
+    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <div class="alert-content">
+      <div class="alert-title">Action Error</div>
+      <div class="alert-message">{{ workspace.actionErrorMessage }}</div>
+    </div>
+  </div>
+}
+
+@if (difficulty.difficultyJobIsRunning && !difficulty.isDifficultyAssessorDialogOpen) {
+  <div class="active-run-banner difficulty-active-banner mb-20">
+    <div class="banner-header">
+      <div class="pulse-indicator" aria-hidden="true"></div>
+      <div>
+        <h4>Difficulty Assessment in Progress</h4>
+        <p class="text-muted">Suite: {{ difficulty.difficultyJob?.suiteName }} | Assessor: {{ difficulty.difficultyJob?.assessorDisplayName }}</p>
+      </div>
+    </div>
+    <div class="banner-progress" role="status">
+      <span>{{ difficulty.difficultyProgressLabel() }}</span>
+      <button type="button" class="btn-gh" (click)="bridge.openDifficultyAssessorDialog()">
+        Show Progress
+      </button>
+      <button type="button" class="btn-gh btn-gh-delete" [disabled]="difficulty.terminatingDifficultyJob" [attr.aria-busy]="difficulty.terminatingDifficultyJob ? 'true' : null" (click)="difficulty.terminateDifficultyAssessment()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        {{ difficulty.terminatingDifficultyJob ? 'Terminating…' : 'Terminate Assessment' }}
+      </button>
+    </div>
+  </div>
+}
+
+<div class="visually-hidden" aria-live="polite">{{ suiteActionAnnouncement }}</div>
+
+<!-- One primary .btn-gh, secondary .btn-ghost actions beside it, the help icon after the
+     import, and the copy status on the same row so the toolbar does not reserve an extra
+     line above the grid. -->
+<div class="suites-toolbar suites-toolbar-grouped mb-10">
+  <button type="button" class="btn-gh" (click)="openCreateSuite()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    Create Suite
+  </button>
+  <button type="button" class="btn-ghost" (click)="openImportDefaultSuitesDialog()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+    Create Default Suites
+  </button>
+  <button type="button" class="btn-ghost" (click)="openQuestionYamlImport('suite')">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+    Import Suite from YAML
+  </button>
+  <button type="button" class="btn-ghost" (click)="openSnapshotSuiteWizard()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+    Snapshot Suite Wizard
+  </button>
+  <button type="button" class="action-btn" (click)="openSuiteYamlHelp()"
+          aria-label="Open suite YAML import and export help"
+          [attr.interestfor]="'tip-suite-yaml-help'"
+          [attr.style]="'anchor-name: --tip-suite-yaml-help'">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+  </button>
+  <div popover="hint" class="gh-tooltip" id="tip-suite-yaml-help"
+       [attr.style]="'position-anchor: --tip-suite-yaml-help'">Suite Import/Export Help</div>
+  <p class="form-hint suites-copy-status" role="status" aria-live="polite">{{ suitesCopyStatus }}</p>
+</div>
+
+<div class="suites-grid">
+  @for (suite of workspace.suites; track suite.id) {
+    <div class="benchmark-card suite-card" [id]="'bm-suite-' + suite.id" tabindex="-1"
+         [class.suite-card-linked]="suite.id === linkedSuiteId">
+      <div class="suite-card-header">
+        <div class="suite-title-group">
+          <h4>{{ suite.name }}</h4>
+          <span class="question-count-badge">{{ suite.questionCount }} Questions</span>
+          @if (suite.defaultSuiteKey) {
+            <span class="default-suite-badge">Default suite</span>
+          }
+          @if (suite.gameSnapshotName) {
+            <button type="button" class="badge-board" (click)="bridge.openSnapshotViewer(suite.gameSnapshotId!)"
+                    [attr.aria-label]="'View game snapshot ' + suite.gameSnapshotName"
+                    [attr.interestfor]="'tip-snapshot-badge-' + suite.id"
+                    [attr.style]="'anchor-name: --tip-snapshot-badge-' + suite.id">
+              <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+                <line x1="8" y1="2" x2="8" y2="18"></line>
+                <line x1="16" y1="6" x2="16" y2="22"></line>
+              </svg>
+              {{ suite.gameSnapshotName }} ({{ suite.gameSnapshotCharCount | number }} chars)
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-snapshot-badge-' + suite.id"
+                 [attr.style]="'position-anchor: --tip-snapshot-badge-' + suite.id">View game snapshot</div>
+          }
+          @if (suite.hasGeneratedQuestions) {
+            @if (suite.reviewedQuestionCount === suite.questionCount) {
+              <span class="badge badge-success" title="All generated questions have been verified by a human reviewer">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Reviewed
+              </span>
+            } @else {
+              <span class="badge badge-warning" title="Generated questions must be verified by a human reviewer">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                Needs review ({{ suite.reviewedQuestionCount || 0 }} of {{ suite.questionCount }})
+              </span>
+            }
+          }
+          <span class="suite-assessment-badge" [class]="'assess-' + difficulty.difficultyProgressClass(suite)"
+                [title]="'Only suites with every question assessed can be run.'">
+            @if (suite.difficultyFullyAssessed) {
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            } @else {
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            }
+            {{ difficulty.difficultyProgressLabel(suite) }}
+          </span>
+        </div>
+        <div class="suite-card-export">
+          <button type="button" class="action-btn" (click)="downloadSuiteYaml(suite)"
+                  [attr.aria-disabled]="canExportSuite(suite) ? null : 'true'"
+                  [attr.aria-label]="'Download suite ' + suite.name + ' as YAML'"
+                  [attr.interestfor]="'tip-suite-yaml-dl-' + suite.id"
+                  [attr.style]="'anchor-name: --tip-suite-yaml-dl-' + suite.id">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-suite-yaml-dl-' + suite.id"
+               [attr.style]="'position-anchor: --tip-suite-yaml-dl-' + suite.id">Download Suite as YAML</div>
+          <button type="button" class="action-btn" (click)="copySuiteYaml(suite)"
+                  [attr.aria-disabled]="canExportSuite(suite) ? null : 'true'"
+                  [attr.aria-label]="'Copy suite ' + suite.name + ' as YAML to the clipboard'"
+                  [attr.interestfor]="'tip-suite-yaml-cp-' + suite.id"
+                  [attr.style]="'anchor-name: --tip-suite-yaml-cp-' + suite.id">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-suite-yaml-cp-' + suite.id"
+               [attr.style]="'position-anchor: --tip-suite-yaml-cp-' + suite.id">Copy Suite as YAML to Clipboard</div>
+        </div>
+        <div class="suite-top-actions">
+          <button type="button" class="action-btn" (click)="openEditSuite(suite)"
+                  [attr.aria-label]="'Edit suite ' + suite.name"
+                  [attr.interestfor]="'tip-edit-suite-' + suite.id"
+                  [attr.style]="'anchor-name: --tip-edit-suite-' + suite.id">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-edit-suite-' + suite.id"
+               [attr.style]="'position-anchor: --tip-edit-suite-' + suite.id">Edit suite</div>
+          <button type="button" class="action-btn" (click)="duplicateSuite(suite.id)"
+                  [attr.aria-label]="'Duplicate suite ' + suite.name"
+                  [attr.interestfor]="'tip-dup-suite-' + suite.id"
+                  [attr.style]="'anchor-name: --tip-dup-suite-' + suite.id">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-dup-suite-' + suite.id"
+               [attr.style]="'position-anchor: --tip-dup-suite-' + suite.id">Duplicate suite</div>
+          <button type="button" class="action-btn action-btn-danger" (click)="deleteSuite(suite.id)"
+                  [attr.aria-label]="'Delete suite ' + suite.name"
+                  [attr.interestfor]="'tip-del-suite-' + suite.id"
+                  [attr.style]="'anchor-name: --tip-del-suite-' + suite.id">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-del-suite-' + suite.id"
+               [attr.style]="'position-anchor: --tip-del-suite-' + suite.id">Delete suite</div>
+        </div>
+      </div>
+
+      @if (suite.description) {
+        <div class="suite-desc-container mb-15">
+          <app-collapsible-markdown [text]="suite.description" label="suite description" />
+        </div>
+      }
+
+      <div class="suite-footprint-info text-muted mb-15">
+        <strong>Stored Footprint:</strong>
+        @if (workspace.footprints[suite.id]) {
+          {{ workspace.footprints[suite.id].runCount }} {{ workspace.footprints[suite.id].runCount === 1 ? 'run' : 'runs' }} ({{ workspace.footprints[suite.id].totalAnswerCharacters | number }} answer chars)
+        } @else {
+          0 runs
+        }
+      </div>
+
+      <div class="suite-card-actions">
+        <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">
+          Manage Questions
+        </button>
+        <div class="suite-card-secondary">
+          <button type="button" class="btn-ghost upload-snapshot-card-btn" (click)="openSnapshotUpload(suite)"
+                  aria-haspopup="dialog"
+                  [attr.aria-disabled]="isGenerationRunningFor(suite) ? 'true' : null">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            Upload Snapshot
+          </button>
+          @if (suite.gameSnapshotId) {
+            <button type="button" class="btn-ghost" (click)="openGenerationDialog(suite)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              Generate Questions
+            </button>
+          }
+          <button type="button" class="btn-ghost" (click)="bridge.openDifficultyAssessorDialog(suite)">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg>
+            Assess Difficulty
+          </button>
+          <button type="button" class="btn-ghost" (click)="openSuiteHealth(suite)"
+                  aria-haspopup="dialog">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            Suite Health
+          </button>
+          @if (suite.hasGeneratedQuestions) {
+            <button type="button" class="btn-ghost" (click)="openSuiteHealthForRubrics(suite)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+              Check Rubrics
+            </button>
+            @if ((suite.reviewedQuestionCount || 0) < suite.questionCount) {
+              <button type="button" class="btn-ghost" (click)="confirmVerifyAll(suite)" aria-label="Attest that all questions have been reviewed">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Verify All
+              </button>
+            }
+          }
+          @if (workspace.footprints[suite.id] && workspace.footprints[suite.id].runCount > 0) {
+            <button type="button" class="btn-ghost btn-ghost-danger" (click)="openBulkDeleteDialog(suite)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              Delete Runs
+            </button>
+          }
+        </div>
+      </div>
+
+    </div>
+  } @empty {
+    @if (workspace.loadingSuites) {
+      <div class="loading-spinner">Loading suites...</div>
+    } @else {
+      <div class="empty-state alert alert-info" role="status">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+        <div class="alert-content">
+          <div class="alert-heading"><strong>No question suites yet</strong></div>
+          <div class="alert-body">
+            Import one of the default suites to start benchmarking, or create an empty suite and add questions.
+          </div>
+          <div class="alert-actions">
+            <button type="button" class="alert-action-btn" (click)="openImportDefaultSuitesDialog()">Import default suites…</button>
+            <button type="button" class="alert-action-btn" (click)="openCreateSuite()">Create suite</button>
+          </div>
+        </div>
+      </div>
+    }
+  }
+</div>
+
+
+<!--
+  SUITE HEALTH DIALOG
+
+  What the stored runs say about the suite rather than about the models. Read-only — its
+  only action is to open a question for editing.
+
+  One dialog for every suite card, not one per card, and full-screen: eleven columns of item
+  analysis never fitted the 560px suite card it used to render inside.
+
+  No closedby="any", unlike the other dialogs in this application: the dialog leaves the backdrop
+  showing only as an 8px ring, too thin to be an honest click target, so light dismiss would add
+  nothing but a way to lose the analysis by mis-clicking. Escape, both Close controls and platform
+  back gestures all work on a showModal() dialog without it.
+
+  The @if is load-bearing beyond null safety: it re-creates SuiteHealthComponent on every
+  opening, so ngOnChanges fires with a first-change suiteId and the analysis reloads. Without
+  it, re-opening the same suite would show a stale table.
+-->
+<dialog #suiteHealthDialog class="gh-dialog gh-dialog-fullscreen benchmark-suite-health-dialog"
+        aria-labelledby="suite-health-dialog-title"
+        (close)="onSuiteHealthDialogClose()">
+  @if (suiteHealthSuite) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3 #suiteHealthHeading id="suite-health-dialog-title" tabindex="-1">
+            Suite Health: {{ suiteHealthSuite.name }}
+          </h3>
+          <p class="dialog-subtitle">
+            {{ suiteHealthSuite.questionCount }} questions &middot; read-only analysis of the stored runs
+          </p>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close suite health"
+                (click)="closeSuiteHealth()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="dialog-body suite-health-dialog-body">
+        <app-benchmark-suite-health
+          [suiteId]="suiteHealthSuite.id"
+          [suiteName]="suiteHealthSuite.name"
+          [benchmarkCapableConfigs]="workspace.stableBenchmarkCapableConfigs"
+          [gameSnapshotId]="suiteHealthSuite.gameSnapshotId"
+          [gameSnapshotName]="suiteHealthSuite.gameSnapshotName"
+          [hasGeneratedQuestions]="suiteHealthSuite.hasGeneratedQuestions"
+          [initialTab]="suiteHealthInitialTab"
+          (editQuestionRequested)="onSuiteHealthEditQuestion(suiteHealthSuite, $event)">
+        </app-benchmark-suite-health>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeSuiteHealth()">Close</button>
+      </div>
+    </div>
+  }
+</dialog>
+
+
+<!-- SUITE CREATE / EDIT DIALOG -->
+<dialog #suiteDialog class="gh-dialog benchmark-form-dialog benchmark-suite-form-dialog" (cancel)="onSuiteDialogCancel($event)">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3>{{ editingSuiteId ? 'Edit Benchmark Suite' : 'Create Benchmark Suite' }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close suite form" (click)="requestCloseSuiteDialog()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <div class="form-group mb-15">
+        <label for="suiteNameInput">Suite Name</label>
+        <input id="suiteNameInput" type="text" class="gh-input" [(ngModel)]="suiteForm.name" placeholder="e.g. Core Roguelike Mechanics">
+      </div>
+      <div class="form-group">
+        <app-markdown-editor #suiteDescriptionEditor
+          inputId="suiteDescInput"
+          label="Description (Optional)"
+          hint="Markdown supported: headings, lists, tables, code."
+          placeholder="Description of the test suite"
+          [minRows]="10" [fill]="true"
+          [(value)]="suiteDescriptionValue">
+          <div mdEditorActions class="suite-desc-tools">
+            <button type="button" class="btn-ghost" (click)="openDescriptionGeneration()"
+                    aria-haspopup="dialog"
+                    [disabled]="!editingSuiteId"
+                    [attr.aria-describedby]="editingSuiteId ? null : 'suiteDescGenerateHint'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              Generate with AI
+            </button>
+            @if (!editingSuiteId) {
+              <span id="suiteDescGenerateHint" class="form-hint">Save the suite first, then generate a description from its questions.</span>
+            }
+          </div>
+        </app-markdown-editor>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="requestCloseSuiteDialog()">Cancel</button>
+      <button type="button" class="btn-gh" [disabled]="!suiteForm.name.trim()" (click)="saveSuite()">Save Suite</button>
+    </div>
+  </div>
+</dialog>
+
+
+<!-- BULK DELETE SUITE RUNS DIALOG -->
+<dialog #bulkDeleteDialog class="gh-dialog benchmark-form-dialog">
+  @if (suiteForBulkDelete) {
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="dialog-title-group">
+          <h3>Delete All Runs: {{ suiteForBulkDelete.name }}</h3>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close delete all runs" (click)="closeBulkDeleteDialog()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <p class="mb-15">
+          Are you sure you want to delete all stored benchmark runs for suite <strong>{{ suiteForBulkDelete.name }}</strong>?
+        </p>
+        <div class="footprint-stat-card mb-15">
+          <div><strong>Runs to delete:</strong> {{ workspace.footprints[suiteForBulkDelete.id]?.runCount ?? 0 }}</div>
+          <div><strong>Stored Answer Text:</strong> {{ (workspace.footprints[suiteForBulkDelete.id]?.totalAnswerCharacters ?? 0) | number }} characters</div>
+        </div>
+        <p class="text-danger">
+          This action is permanent and cannot be undone.
+        </p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeBulkDeleteDialog()" [disabled]="deletingSuiteRuns">Cancel</button>
+        <button type="button" class="btn-gh btn-gh-delete" (click)="confirmDeleteSuiteRuns()" [disabled]="deletingSuiteRuns">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          {{ deletingSuiteRuns ? 'Deleting...' : 'Delete All Suite Runs' }}
+        </button>
+      </div>
+    </div>
+  }
+</dialog>
+
+
+<app-snapshot-upload-dialog #snapshotUploadDialog (uploaded)="onSnapshotUploaded($event)" />
+
+<!-- YAML import, help and the Snapshot Suite Wizard. Opened from Manage Questions and Manage
+     Suites, they stack above the page in the top layer. The two help instances are one component in
+     its two variants, which keep their element ids apart; the import dialog's help link routes to
+     the one that matches the import it was opened for. The wizard stacks only the difficulty
+     assessor and the suite help above itself. -->
+<app-question-yaml-import-dialog #questionYamlImportDialog
+                                 [suite]="workspace.currentSuiteForQuestions"
+                                 [existing]="workspace.questions"
+                                 [suites]="workspace.suites"
+                                 (imported)="onQuestionsImported($event)"
+                                 (suiteImported)="onSuiteImported($event)"
+                                 (helpRequested)="onYamlHelpRequested()" />
+<app-question-yaml-help-dialog #questionYamlHelpDialog />
+<app-question-yaml-help-dialog #suiteYamlHelpDialog variant="suite"
+                               (wizardRequested)="onSuiteWizardRequestedFromHelp()" />
+<app-snapshot-suite-wizard #snapshotSuiteWizard
+                           [suites]="workspace.suites"
+                           (downloadSuite)="downloadSuiteYaml($event)"
+                           (imported)="onQuestionsImported($event)"
+                           (suiteImported)="onSuiteImported($event)"
+                           (helpRequested)="openSuiteYamlHelp()"
+                           (assessRequested)="onWizardAssessRequested($event)"
+                           (suiteUpdated)="onWizardSuiteUpdated()" />
+
+<!-- QUESTION GENERATION DIALOG -->
+<app-question-generation-dialog
+  [suite]="generationSuiteForJob"
+  [visible]="generationDialogVisible"
+  [benchmarkCapableConfigs]="workspace.stableBenchmarkCapableConfigs"
+  [defaultModelConfigId]="launcher.assessorConfigId"
+  [overseerBuildVersion]="workspace.overseerBuildVersion"
+  (closed)="onGenerationDialogClosed($event)"
+  (questionsChanged)="onGenerationQuestionsChanged($event)"
+  (editQuestionRequested)="onGenerationEditQuestion($event)"></app-question-generation-dialog>
+
+<!-- SUITE DESCRIPTION GENERATION DIALOG -->
+<app-suite-description-generation-dialog
+  [suiteId]="editingSuiteId"
+  [suiteName]="suiteForm.name"
+  [questionCount]="descriptionGenerationSuite?.questionCount ?? 0"
+  [gameSnapshotName]="descriptionGenerationSuite?.gameSnapshotName ?? null"
+  [visible]="descriptionGenerationVisible"
+  [benchmarkCapableConfigs]="workspace.stableBenchmarkCapableConfigs"
+  [defaultModelConfigId]="launcher.assessorConfigId"
+  [overseerBuildVersion]="workspace.overseerBuildVersion"
+  (closed)="onDescriptionGenerationClosed()"
+  (descriptionGenerated)="onDescriptionGenerated($event)"></app-suite-description-generation-dialog>
+
+<!-- MANAGE QUESTIONS AND THE QUESTION FORM -->
+<app-suite-questions-dialog (questionSaved)="onQuestionSaved($event)"
+                            (rubricCheckRequested)="openSuiteHealthForRubrics($event)"
+                            (yamlImportRequested)="openQuestionYamlImport($event.mode, $event.question)"
+                            (yamlHelpRequested)="openQuestionYamlHelp()"></app-suite-questions-dialog>
+
+<!-- IMPORT DEFAULT SUITES DIALOG -->
+<app-import-default-suites-dialog (imported)="onDefaultSuitesImported($event)"></app-import-default-suites-dialog>

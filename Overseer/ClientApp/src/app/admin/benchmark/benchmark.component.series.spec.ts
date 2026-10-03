@@ -6,9 +6,12 @@ import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
-import { clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY } from './benchmark.component.testing';
+import {
+  AdminBenchmarkSpecContext, benchmarkSpecHandles, clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY
+} from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -18,7 +21,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   describe('run setting recall', () => {
@@ -31,15 +35,15 @@ describe('AdminBenchmarkComponent', () => {
     it('should write the run settings to localStorage when a run is started', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 2;
-      component.secondOpinionConfigId = 2;
-      component.claimVerifierConfigId = 1;
-      component.selectedScoringProfileId = 1;
-      component.candidateVerboseMode = true;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 2;
+      ctx.launcher.secondOpinionConfigId = 2;
+      ctx.launcher.claimVerifierConfigId = 1;
+      ctx.launcher.selectedScoringProfileId = 1;
+      ctx.launcher.candidateVerboseMode = true;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
       expect(stored.suiteId).toBe(1);
@@ -51,7 +55,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(stored.verboseMode).toBe(true);
       expect(stored.allowSourceCodeReferences).toBe(false);
       expect(stored.runCount).toBe(1);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('should remember Source Code References, and start a stored setup without it at Disallowed', () => {
@@ -59,15 +63,15 @@ describe('AdminBenchmarkComponent', () => {
       const allowed = TestBed.createComponent(AdminBenchmarkComponent);
       allowed.componentInstance.systemConfigs = [component.systemConfigs[0]];
       allowed.detectChanges();
-      expect(allowed.componentInstance.candidateAllowSourceCodeReferences).toBe(true);
-      allowed.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(allowed).launcher.candidateAllowSourceCodeReferences).toBe(true);
+      allowed.destroy();
 
       localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, verboseMode: true }));
       const older = TestBed.createComponent(AdminBenchmarkComponent);
       older.componentInstance.systemConfigs = [component.systemConfigs[0]];
       older.detectChanges();
-      expect(older.componentInstance.candidateAllowSourceCodeReferences).toBe(false);
-      older.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(older).launcher.candidateAllowSourceCodeReferences).toBe(false);
+      older.destroy();
     });
 
     it('should restore every remembered selection on the next construction', () => {
@@ -87,7 +91,7 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
       restored.detectChanges();
 
-      const c = restored.componentInstance;
+      const c = benchmarkSpecHandles(restored).launcher;
       expect(c.selectedSuiteId).toBe(1);
       expect(c.testedConfigId).toBe(2);
       expect(c.assessorConfigId).toBe(1);
@@ -97,7 +101,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(c.selectedScoringProfileId).toBe(1);
       expect(c.candidateVerboseMode).toBe(true);
       expect(c.runCount).toBe(5);
-      c.ngOnDestroy();
+      restored.destroy();
     });
 
     it('should fall back to default runCount of 1 when stored runCount is invalid or non-positive', () => {
@@ -112,8 +116,8 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.runCount).toBe(1);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.runCount).toBe(1);
+      restored.destroy();
     });
 
     it('should clamp remembered runCount when loadRunLimits receives a lower maxRunCountPerSeries', () => {
@@ -137,8 +141,8 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.runCount).toBe(10);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.runCount).toBe(10);
+      restored.destroy();
     });
 
     it('should fall back to the default when a remembered configuration is no longer benchmark-capable', () => {
@@ -159,13 +163,13 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      const c = restored.componentInstance;
+      const c = benchmarkSpecHandles(restored).launcher;
       expect(c.testedConfigId).toBe(1);
       expect(c.assessorConfigId).toBe(1);
       // The optional roles restore to "not selected" rather than to a dangling id.
       expect(c.secondOpinionConfigId).toBeNull();
       expect(c.claimVerifierConfigId).toBeNull();
-      c.ngOnDestroy();
+      restored.destroy();
     });
 
     it('should fall back to the first suite when the remembered suite no longer exists', () => {
@@ -179,9 +183,9 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.selectedSuiteId).toBe(1);
-      expect(restored.componentInstance.selectedScoringProfileId).toBe(1);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.selectedSuiteId).toBe(1);
+      expect(benchmarkSpecHandles(restored).launcher.selectedScoringProfileId).toBe(1);
+      restored.destroy();
     });
 
     it('should leave every default untouched when localStorage throws', () => {
@@ -193,71 +197,71 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
 
       expect(() => restored.detectChanges()).not.toThrow();
-      expect(restored.componentInstance.selectedSuiteId).toBe(1);
-      expect(restored.componentInstance.testedConfigId).toBe(1);
-      expect(restored.componentInstance.candidateVerboseMode).toBe(false);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.selectedSuiteId).toBe(1);
+      expect(benchmarkSpecHandles(restored).launcher.testedConfigId).toBe(1);
+      expect(benchmarkSpecHandles(restored).launcher.candidateVerboseMode).toBe(false);
+      restored.destroy();
     });
 
     it('should not remember the same-provider acknowledgement', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
 
-      component.startBenchmark(true);
+      ctx.runTab().startBenchmark(true);
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
       // A per-run safety acknowledgement: remembering it would silently defeat the warning dialog.
       expect(stored.acknowledgeSameProvider).toBeUndefined();
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('should send and remember the report writer, and restore it while it still qualifies', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       const writer = { ...secondConfig(2), provider: 'OpenAI', modelId: 'gpt-writer' };
       component.systemConfigs = [component.systemConfigs[0], writer];
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
-      component.reportWriterConfigId = 2;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.reportWriterConfigId = 2;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].reportWriterModelConfigurationId).toBe(2);
       expect(JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!).reportWriterConfigId).toBe(2);
-      component.ngOnDestroy();
+      fixture.destroy();
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
       restored.componentInstance.systemConfigs = [component.systemConfigs[0], writer];
       restored.detectChanges();
-      expect(restored.componentInstance.reportWriterConfigId).toBe(2);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.reportWriterConfigId).toBe(2);
+      restored.destroy();
 
       // A writer that no longer qualifies restores to "None".
       const dropped = TestBed.createComponent(AdminBenchmarkComponent);
       dropped.componentInstance.systemConfigs = [component.systemConfigs[0]];
       dropped.detectChanges();
-      expect(dropped.componentInstance.reportWriterConfigId).toBeNull();
-      dropped.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(dropped).launcher.reportWriterConfigId).toBeNull();
+      dropped.destroy();
     });
 
     it('should default completionSound to true before anything is remembered', () => {
-      expect(component.completionSound).toBe(true);
+      expect(ctx.launcher.completionSound).toBe(true);
     });
 
     it('should persist completionSound when a run is started', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
-      component.completionSound = false;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.completionSound = false;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
       expect(stored.completionSound).toBe(false);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('should restore a remembered completionSound value on the next construction', () => {
@@ -272,8 +276,8 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.completionSound).toBe(false);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.completionSound).toBe(false);
+      restored.destroy();
     });
 
     it('should default completionSound to true when the stored blob predates the field', () => {
@@ -287,8 +291,8 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.completionSound).toBe(true);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.completionSound).toBe(true);
+      restored.destroy();
     });
   });
 
@@ -323,35 +327,35 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should chime once for a run seen Running and then reaching a terminal status', () => {
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Running' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       expect(playSpy).not.toHaveBeenCalled();
 
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       expect(playSpy).toHaveBeenCalledWith('run:42');
       expect(playSpy).toHaveBeenCalledTimes(1);
 
       // A later poll of the same, already-terminal run must not chime a second time.
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       expect(playSpy).toHaveBeenCalledTimes(1);
     });
 
     it('should not chime for a run first observed already terminal', () => {
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       expect(playSpy).not.toHaveBeenCalled();
     });
 
     it('should not chime individually for a run that is a member of a still-live series', () => {
-      component.activeSeries = { id: 7, status: 'Running', members: [] } as any;
-      component.activeSeriesId = 7;
+      ctx.monitor.activeSeries = { id: 7, status: 'Running', members: [] } as any;
+      ctx.monitor.activeSeriesId = 7;
 
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Running' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       expect(playSpy).not.toHaveBeenCalledWith('run:42');
     });
@@ -360,18 +364,18 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 8, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: []
       } as any));
-      (component as any).pollSeries(8);
+      (ctx.monitor as any).pollSeries(8);
       expect(playSpy).not.toHaveBeenCalled();
 
       benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
       } as any));
-      (component as any).pollSeries(8);
+      (ctx.monitor as any).pollSeries(8);
       expect(playSpy).toHaveBeenCalledWith('series:8');
       expect(playSpy).toHaveBeenCalledTimes(1);
 
       // A later poll of the same, already-finished series must not chime a second time.
-      (component as any).pollSeries(8);
+      (ctx.monitor as any).pollSeries(8);
       expect(playSpy).toHaveBeenCalledTimes(1);
     });
 
@@ -379,7 +383,7 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
       } as any));
-      (component as any).pollSeries(8);
+      (ctx.monitor as any).pollSeries(8);
 
       expect(playSpy).not.toHaveBeenCalled();
     });
@@ -393,20 +397,20 @@ describe('AdminBenchmarkComponent', () => {
 
       function seeRunLive(id = 42): void {
         benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id, status: 'Running' })));
-        (component as any).pollRunDetail(id);
+        (ctx.monitor as any).pollRunDetail(id);
       }
 
       function pollRun(id: number, status: string | number): void {
         benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id, status })));
-        (component as any).pollRunDetail(id);
+        (ctx.monitor as any).pollRunDetail(id);
       }
 
       beforeEach(() => {
         const notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
         notifySpy = vi.spyOn(notificationService, 'notify').mockReturnValue(undefined as any);
         vi.spyOn(notificationService, 'permission').mockReturnValue('granted');
-        component.completionSound = true;
-        component.completionNotification = true;
+        ctx.launcher.completionSound = true;
+        ctx.launcher.completionNotification = true;
         vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
         vi.spyOn(document, 'hasFocus').mockReturnValue(false);
       });
@@ -428,11 +432,11 @@ describe('AdminBenchmarkComponent', () => {
 
       it('does not chime for a run cancelled here that the server returns to Completed', () => {
         seeRunLive();
-        component.activeRunId = 42;
+        ctx.monitor.activeRunId = 42;
         benchmarkServiceMock.cancelRun.mockReturnValue(of({ success: true }));
         benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
 
-        component.cancelActiveRun();
+        ctx.monitor.cancelActiveRun();
 
         expect(benchmarkServiceMock.cancelRun).toHaveBeenCalledWith(42);
         expect(playSpy).not.toHaveBeenCalled();
@@ -442,10 +446,10 @@ describe('AdminBenchmarkComponent', () => {
       it('still chimes when the cancel request fails and the run then completes', () => {
         vi.spyOn(console, 'error').mockReturnValue(undefined);
         seeRunLive();
-        component.activeRunId = 42;
+        ctx.monitor.activeRunId = 42;
         benchmarkServiceMock.cancelRun.mockReturnValue(throwError(() => ({ status: 500 })));
 
-        component.cancelActiveRun();
+        ctx.monitor.cancelActiveRun();
         pollRun(42, 'Completed');
 
         expect(playSpy).toHaveBeenCalledTimes(1);
@@ -474,7 +478,7 @@ describe('AdminBenchmarkComponent', () => {
 
         benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 42 }));
         benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Running' })));
-        (component as any).launchFailedQuestionRerun(42, [0]);
+        (ctx.monitor as any).launchFailedQuestionRerun(42, [0]);
         pollRun(42, 'Completed');
 
         expect(playSpy).toHaveBeenCalledTimes(1);
@@ -485,10 +489,10 @@ describe('AdminBenchmarkComponent', () => {
 
       it('does not chime or notify for a series that ends Cancelled, then or later', () => {
         benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Running')));
-        (component as any).pollSeries(8);
+        (ctx.monitor as any).pollSeries(8);
         benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Cancelled')));
-        (component as any).pollSeries(8);
-        (component as any).pollSeries(8);
+        (ctx.monitor as any).pollSeries(8);
+        (ctx.monitor as any).pollSeries(8);
 
         expect(playSpy).not.toHaveBeenCalled();
         expect(notifySpy).not.toHaveBeenCalled();
@@ -496,8 +500,8 @@ describe('AdminBenchmarkComponent', () => {
 
       it('does not chime for a member that completes as its series is cancelled', () => {
         seeRunLive();
-        component.activeSeries = series('Cancelled', [{ runId: 42 }]);
-        component.activeSeriesId = 8;
+        ctx.monitor.activeSeries = series('Cancelled', [{ runId: 42 }]);
+        ctx.monitor.activeSeriesId = 8;
 
         pollRun(42, 'Completed');
 
@@ -517,9 +521,9 @@ describe('AdminBenchmarkComponent', () => {
       for (const status of ['Stopped', 'Failed']) {
         it(`still chimes for a series that ends ${status}`, () => {
           benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Running')));
-          (component as any).pollSeries(8);
+          (ctx.monitor as any).pollSeries(8);
           benchmarkServiceMock.getRunSeries.mockReturnValue(of(series(status)));
-          (component as any).pollSeries(8);
+          (ctx.monitor as any).pollSeries(8);
 
           expect(playSpy).toHaveBeenCalledTimes(1);
 
@@ -549,31 +553,31 @@ describe('AdminBenchmarkComponent', () => {
 
     it('arms from startBenchmark', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       expect(armSpy).toHaveBeenCalledTimes(1);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('arms from resumeActiveSeries', () => {
-      component.activeSeriesId = 5;
+      ctx.monitor.activeSeriesId = 5;
       benchmarkServiceMock.resumeRunSeries.mockReturnValue(of({} as any));
       benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 5, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: []
       } as any));
 
-      component.resumeActiveSeries();
+      ctx.monitor.resumeActiveSeries();
 
       expect(armSpy).toHaveBeenCalledTimes(1);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('arms from rerunFailedFromProgress', () => {
-      component.activeRunDetail = buildRun({ id: 37, answers: [] });
+      ctx.monitor.activeRunDetail = buildRun({ id: 37, answers: [] });
       benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 37 }));
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 37 })));
 
@@ -598,24 +602,24 @@ describe('AdminBenchmarkComponent', () => {
       const soundService = TestBed.inject(BenchmarkCompletionSoundService);
       const primeSpy = vi.spyOn(soundService, 'prime').mockResolvedValue('played');
 
-      component.testCompletionSound();
+      ctx.runTab().testCompletionSound();
 
       expect(armSpy).toHaveBeenCalledTimes(1);
       expect(primeSpy).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing when neither signal is enabled', () => {
-      component.completionSound = false;
-      component.completionNotification = false;
+      ctx.launcher.completionSound = false;
+      ctx.launcher.completionNotification = false;
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       expect(armSpy).not.toHaveBeenCalled();
-      component.ngOnDestroy();
+      fixture.destroy();
     });
   });
 
@@ -646,57 +650,57 @@ describe('AdminBenchmarkComponent', () => {
       it('prompts under the gesture when this browser has not decided, and keeps the box on a grant', fakeAsync(() => {
         permissionSpy.mockReturnValue('default');
         const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('granted');
-        component.completionNotification = true;
+        ctx.launcher.completionNotification = true;
 
-        (component as any).armCompletionSignalsFromGesture();
+        (ctx.monitor as any).armCompletionSignalsFromGesture();
         expect(requestSpy).toHaveBeenCalledTimes(1);
         tick();
 
-        expect(component.completionNotification).toBe(true);
-        expect(component.completionNotificationStatus).toBeNull();
+        expect(ctx.launcher.completionNotification).toBe(true);
+        expect(ctx.monitor.completionNotificationStatus).toBeNull();
       }));
 
       it('unticks the box with the reason when the Start prompt is dismissed', fakeAsync(() => {
         permissionSpy.mockReturnValue('default');
         vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('default');
-        component.completionNotification = true;
+        ctx.launcher.completionNotification = true;
 
-        (component as any).armCompletionSignalsFromGesture();
+        (ctx.monitor as any).armCompletionSignalsFromGesture();
         tick();
 
-        expect(component.completionNotification).toBe(false);
-        expect(component.completionNotificationStatus).toBe('The permission prompt was dismissed.');
+        expect(ctx.launcher.completionNotification).toBe(false);
+        expect(ctx.monitor.completionNotificationStatus).toBe('The permission prompt was dismissed.');
       }));
 
       it('does not prompt again once permission was granted', () => {
         const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
-        component.completionNotification = true;
+        ctx.launcher.completionNotification = true;
 
-        (component as any).armCompletionSignalsFromGesture();
+        (ctx.monitor as any).armCompletionSignalsFromGesture();
 
         expect(requestSpy).not.toHaveBeenCalled();
-        expect(component.completionNotification).toBe(true);
+        expect(ctx.launcher.completionNotification).toBe(true);
       });
 
       it('does not prompt when blocked, and unticks the box with the reason at once', () => {
         permissionSpy.mockReturnValue('denied');
         const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
-        component.completionNotification = true;
+        ctx.launcher.completionNotification = true;
 
-        (component as any).armCompletionSignalsFromGesture();
+        (ctx.monitor as any).armCompletionSignalsFromGesture();
 
         expect(requestSpy).not.toHaveBeenCalled();
-        expect(component.completionNotification).toBe(false);
-        expect(component.completionNotificationStatus).toBe("Notifications are blocked for this site in the browser's settings.");
+        expect(ctx.launcher.completionNotification).toBe(false);
+        expect(ctx.monitor.completionNotificationStatus).toBe("Notifications are blocked for this site in the browser's settings.");
       });
 
       it('never prompts when the box is unticked', () => {
         permissionSpy.mockReturnValue('default');
         const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
-        component.completionSound = true;
-        component.completionNotification = false;
+        ctx.launcher.completionSound = true;
+        ctx.launcher.completionNotification = false;
 
-        (component as any).armCompletionSignalsFromGesture();
+        (ctx.monitor as any).armCompletionSignalsFromGesture();
 
         expect(requestSpy).not.toHaveBeenCalled();
       });
@@ -718,7 +722,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(gap).toBeLessThanOrEqual(12);
 
       vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('default');
-      component.onCompletionNotificationChange(true);
+      ctx.monitor.onCompletionNotificationChange(true);
       tick();
 
       expect(status.classList).not.toContain('is-empty');
@@ -728,102 +732,102 @@ describe('AdminBenchmarkComponent', () => {
 
     it('persists and restores completionNotification alongside completionSound', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
-      component.completionNotification = true;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.completionNotification = true;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
       expect(stored.completionNotification).toBe(true);
-      component.ngOnDestroy();
+      fixture.destroy();
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
-      expect(restored.componentInstance.completionNotification).toBe(true);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.completionNotification).toBe(true);
+      restored.destroy();
     });
 
     it('turns on and clears the status once permission is granted', fakeAsync(() => {
       vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('granted');
 
-      component.onCompletionNotificationChange(true);
+      ctx.monitor.onCompletionNotificationChange(true);
       tick();
 
-      expect(component.completionNotification).toBe(true);
-      expect(component.completionNotificationStatus).toBeNull();
+      expect(ctx.launcher.completionNotification).toBe(true);
+      expect(ctx.monitor.completionNotificationStatus).toBeNull();
     }));
 
     (['denied', 'default', 'unsupported'] as const).forEach(outcome => {
       it(`unticks the box and explains a "${outcome}" permission result`, fakeAsync(() => {
         vi.spyOn(notificationService, 'requestPermission').mockResolvedValue(outcome);
 
-        component.onCompletionNotificationChange(true);
+        ctx.monitor.onCompletionNotificationChange(true);
         tick();
         fixture.detectChanges();
 
-        expect(component.completionNotification).toBe(false);
-        expect(component.completionNotificationStatus).toBeTruthy();
+        expect(ctx.launcher.completionNotification).toBe(false);
+        expect(ctx.monitor.completionNotificationStatus).toBeTruthy();
         const status = fixture.nativeElement.querySelector('.completion-signals-status') as HTMLElement;
-        expect(status.textContent).toContain(component.completionNotificationStatus);
+        expect(status.textContent).toContain(ctx.monitor.completionNotificationStatus);
       }));
     });
 
     it('unticking directly clears the status without requesting permission', () => {
       const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
-      component.completionNotification = true;
-      component.completionNotificationStatus = 'stale';
+      ctx.launcher.completionNotification = true;
+      ctx.monitor.completionNotificationStatus = 'stale';
 
-      component.onCompletionNotificationChange(false);
+      ctx.monitor.onCompletionNotificationChange(false);
 
-      expect(component.completionNotification).toBe(false);
-      expect(component.completionNotificationStatus).toBeNull();
+      expect(ctx.launcher.completionNotification).toBe(false);
+      expect(ctx.monitor.completionNotificationStatus).toBeNull();
       expect(requestSpy).not.toHaveBeenCalled();
     });
 
     it('notifies once for a hidden completion with the sound off and the notification on', () => {
-      component.completionSound = false;
-      component.completionNotification = true;
+      ctx.launcher.completionSound = false;
+      ctx.launcher.completionNotification = true;
       vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
       vi.spyOn(document, 'hasFocus').mockReturnValue(false);
 
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Completed' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       expect(notifySpy).toHaveBeenCalledTimes(1);
       expect(vi.mocked(notifySpy).mock.lastCall![0]).toBe('run:42');
     });
 
     it('notifies a visible, focused completion too — the ticked box no longer checks focus', () => {
-      component.completionNotification = true;
+      ctx.launcher.completionNotification = true;
       vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Completed' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       expect(notifySpy).toHaveBeenCalledTimes(1);
       expect(vi.mocked(notifySpy).mock.lastCall![0]).toBe('run:42');
     });
 
     it('records a notification attempt with the tab focused, surfaced in diagnostics', () => {
-      component.completionNotification = true;
+      ctx.launcher.completionNotification = true;
       vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
       vi.spyOn(document, 'hasFocus').mockReturnValue(true);
       notifySpy.mockReturnValue('shown');
 
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Completed' })));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
-      const attempts = (component as any).notificationAttempts;
+      const attempts = (ctx.monitor as any).notificationAttempts;
       expect(attempts.length).toBe(1);
       expect(attempts[0].key).toBe('run:42');
       expect(attempts[0].hidden).toBe(false);
@@ -843,9 +847,9 @@ describe('AdminBenchmarkComponent', () => {
 
       component.onSeriesResumedFromDialog(11);
 
-      expect(component.activeSeriesId).toBe(11);
+      expect(ctx.monitor.activeSeriesId).toBe(11);
       expect(benchmarkServiceMock.getRunSeries).toHaveBeenCalledWith(11);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('does not release the background lock on a single run poll error, and stays polling', () => {
@@ -857,17 +861,17 @@ describe('AdminBenchmarkComponent', () => {
       // startPolling's own poll is the first failure; its stopPolling() of any previous poller
       // may release, so the spy is reset once polling has started.
       benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
-      (component as any).startPolling(42);
+      (ctx.monitor as any).startPolling(42);
       expect(acquireSpy).toHaveBeenCalledWith(42);
       releaseSpy.mockClear();
 
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       expect(releaseSpy).not.toHaveBeenCalled();
-      expect((component as any).pollTickerHandle).not.toBeNull();
+      expect((ctx.monitor as any).pollTickerHandle).not.toBeNull();
       expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
-      (component as any).stopPolling();
-      component.ngOnDestroy();
+      (ctx.monitor as any).stopPolling();
+      fixture.destroy();
     });
 
     it('releases the background lock only on the 5th consecutive run poll error', () => {
@@ -876,21 +880,21 @@ describe('AdminBenchmarkComponent', () => {
       const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
       benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
-      (component as any).startPolling(42);
+      (ctx.monitor as any).startPolling(42);
       releaseSpy.mockClear();
 
       // startPolling's own poll was the first failure; three more make four.
       for (let i = 0; i < 3; i++) {
-        (component as any).pollRunDetail(42);
+        (ctx.monitor as any).pollRunDetail(42);
       }
       expect(releaseSpy).not.toHaveBeenCalled();
-      expect((component as any).pollTickerHandle).not.toBeNull();
+      expect((ctx.monitor as any).pollTickerHandle).not.toBeNull();
 
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
       expect(releaseSpy).toHaveBeenCalled();
-      expect((component as any).pollTickerHandle).toBeNull();
+      expect((ctx.monitor as any).pollTickerHandle).toBeNull();
       expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('resets the consecutive run poll failure count on a successful poll', () => {
@@ -899,24 +903,24 @@ describe('AdminBenchmarkComponent', () => {
       const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
       benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
-      (component as any).startPolling(42);
+      (ctx.monitor as any).startPolling(42);
       releaseSpy.mockClear();
       for (let i = 0; i < 3; i++) {
-        (component as any).pollRunDetail(42);
+        (ctx.monitor as any).pollRunDetail(42);
       }
 
       benchmarkServiceMock.getRun.mockReturnValue(of({ id: 42, status: 'Running', answers: [] } as any));
-      (component as any).pollRunDetail(42);
+      (ctx.monitor as any).pollRunDetail(42);
 
       benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
       for (let i = 0; i < 4; i++) {
-        (component as any).pollRunDetail(42);
+        (ctx.monitor as any).pollRunDetail(42);
       }
 
       expect(releaseSpy).not.toHaveBeenCalled();
       expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
-      (component as any).stopPolling();
-      component.ngOnDestroy();
+      (ctx.monitor as any).stopPolling();
+      fixture.destroy();
     });
 
     it('does not release the background lock on a single series poll error, and stays polling', () => {
@@ -925,18 +929,18 @@ describe('AdminBenchmarkComponent', () => {
       const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
       const acquireSpy = vi.spyOn(lockService, 'acquireForSeries').mockReturnValue(undefined);
 
-      (component as any).startSeriesPolling(11);
+      (ctx.monitor as any).startSeriesPolling(11);
       expect(acquireSpy).toHaveBeenCalledWith(11);
       releaseSpy.mockClear();
 
       benchmarkServiceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));
-      (component as any).pollSeries(11);
+      (ctx.monitor as any).pollSeries(11);
 
       expect(releaseSpy).not.toHaveBeenCalled();
-      expect((component as any).seriesPollTickerHandle).not.toBeNull();
+      expect((ctx.monitor as any).seriesPollTickerHandle).not.toBeNull();
       expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', expect.any(Object));
-      (component as any).stopSeriesPolling();
-      component.ngOnDestroy();
+      (ctx.monitor as any).stopSeriesPolling();
+      fixture.destroy();
     });
 
     it('releases the background lock only on the 5th consecutive series poll error', () => {
@@ -944,20 +948,20 @@ describe('AdminBenchmarkComponent', () => {
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
-      (component as any).startSeriesPolling(11);
+      (ctx.monitor as any).startSeriesPolling(11);
       releaseSpy.mockClear();
       benchmarkServiceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));
 
       for (let i = 0; i < 4; i++) {
-        (component as any).pollSeries(11);
+        (ctx.monitor as any).pollSeries(11);
       }
       expect(releaseSpy).not.toHaveBeenCalled();
 
-      (component as any).pollSeries(11);
+      (ctx.monitor as any).pollSeries(11);
       expect(releaseSpy).toHaveBeenCalled();
-      expect((component as any).seriesPollTickerHandle).toBeNull();
+      expect((ctx.monitor as any).seriesPollTickerHandle).toBeNull();
       expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', expect.any(Object));
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('keeps the series lock while a member run is polled and when that run poller stops', () => {
@@ -969,25 +973,25 @@ describe('AdminBenchmarkComponent', () => {
       const acquireRunSpy = vi.spyOn(lockService, 'acquireForRun').mockReturnValue(undefined);
       const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
-      (component as any).startSeriesPolling(11);
+      (ctx.monitor as any).startSeriesPolling(11);
       expect(acquireSeriesSpy).toHaveBeenCalledTimes(1);
       expect(acquireSeriesSpy).toHaveBeenCalledWith(11);
 
-      (component as any).startPolling(42);
-      (component as any).stopPolling();
+      (ctx.monitor as any).startPolling(42);
+      (ctx.monitor as any).stopPolling();
 
       expect(acquireRunSpy).not.toHaveBeenCalled();
       expect(releaseSpy).not.toHaveBeenCalled();
 
-      (component as any).stopSeriesPolling();
+      (ctx.monitor as any).stopSeriesPolling();
       expect(releaseSpy).toHaveBeenCalledTimes(1);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
   });
 
   describe('series banner lifecycle', () => {
     function attachSeries(status: string): void {
-      component.activeSeries = {
+      ctx.monitor.activeSeries = {
         id: 2,
         suiteName: 'GnollHack Player Assistance Benchmark Suite',
         status,
@@ -997,9 +1001,9 @@ describe('AdminBenchmarkComponent', () => {
         members: [],
         resumable: false,
         allowCapWait: true
-      } as unknown as typeof component.activeSeries;
-      component.activeSeriesId = 2;
-      component.multiRunDialogVisible = false;
+      } as unknown as typeof ctx.monitor.activeSeries;
+      ctx.monitor.activeSeriesId = 2;
+      ctx.monitor.multiRunDialogVisible = false;
     }
 
     // A banner describing work that is still going to produce something.
@@ -1007,8 +1011,8 @@ describe('AdminBenchmarkComponent', () => {
       it(`should show the series banner while the series is ${status}`, () => {
         attachSeries(status);
 
-        expect(component.seriesIsFinished).toBe(false);
-        expect(component.seriesBannerVisible).toBe(true);
+        expect(ctx.monitor.seriesIsFinished).toBe(false);
+        expect(ctx.runTab().seriesBannerVisible).toBe(true);
       });
     });
 
@@ -1016,23 +1020,23 @@ describe('AdminBenchmarkComponent', () => {
     it('should keep the series banner for a Stopped series, which is resumable', () => {
       attachSeries('Stopped');
 
-      expect(component.seriesIsFinished).toBe(false);
-      expect(component.seriesBannerVisible).toBe(true);
+      expect(ctx.monitor.seriesIsFinished).toBe(false);
+      expect(ctx.runTab().seriesBannerVisible).toBe(true);
     });
 
     ['Completed', 'Cancelled', 'Failed'].forEach(status => {
       it(`should hide the series banner once the series is ${status}`, () => {
         attachSeries(status);
 
-        expect(component.seriesIsFinished).toBe(true);
-        expect(component.seriesBannerVisible).toBe(false);
+        expect(ctx.monitor.seriesIsFinished).toBe(true);
+        expect(ctx.runTab().seriesBannerVisible).toBe(false);
       });
     });
 
     it('should not render the banner element for a completed series', () => {
       attachSeries('Completed');
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
 
       expect(fixture.nativeElement.querySelector('.series-banner')).toBeNull();
     });
@@ -1042,15 +1046,15 @@ describe('AdminBenchmarkComponent', () => {
 
       // Gated rendering, not cleared state: seriesIdForRun and the progress dialog read this after
       // the series ends.
-      expect(component.activeSeries).not.toBeNull();
-      expect(component.activeSeriesId).toBe(2);
+      expect(ctx.monitor.activeSeries).not.toBeNull();
+      expect(ctx.monitor.activeSeriesId).toBe(2);
     });
 
     it('should hide the banner while the progress dialog is open', () => {
       attachSeries('Running');
-      component.multiRunDialogVisible = true;
+      ctx.monitor.multiRunDialogVisible = true;
 
-      expect(component.seriesBannerVisible).toBe(false);
+      expect(ctx.runTab().seriesBannerVisible).toBe(false);
     });
   });
 });

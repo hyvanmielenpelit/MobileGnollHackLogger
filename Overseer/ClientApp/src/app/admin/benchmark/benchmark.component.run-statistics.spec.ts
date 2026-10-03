@@ -3,9 +3,10 @@ import { ComponentFixture, fakeAsync, discardPeriodicTasks } from '@angular/core
 import { of } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
-import { clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import { AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -15,7 +16,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   describe('run diagnostics capture', () => {
@@ -107,21 +109,21 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should name all three model roles', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('Second:   Claude Opus 5 (Anthropic / claude-opus-5)');
     });
 
     it('should say so when no second opinion assessor was selected', () => {
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         secondOpinionAssessorModelConfigurationId: null
       });
       expect(component.runDiagnosticsText).toContain('Second:   none selected');
     });
 
     it('should include a Verifier line built like the neighbouring model lines', () => {
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         claimVerifierModelConfigurationId: 5,
         claimVerifierDisplayNameUsed: 'GnollHack Verifier',
         claimVerifierProviderUsed: 'Anthropic',
@@ -134,17 +136,17 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should say so when no claim verifier was selected', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       expect(component.runDiagnosticsText).toContain('Verifier: none selected');
     });
 
     it('should print an unset service tier as default (none requested) in the MODELS block', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       expect(component.runDiagnosticsText).toContain('service tier: default (none requested)');
     });
 
     it('should record the scoring constants the run was actually scored with', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('harness version: 7');
@@ -157,30 +159,30 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should print the outlier delta only under the trigger that reads it', () => {
-      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 2 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 2 });
       expect(component.runDiagnosticsText)
         .toContain('Second reader: mode FlaggedAndOutliers, threshold 50, outlier delta 25');
     });
 
     it('should name the mode added after this capture was written', () => {
-      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 4 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 4 });
       expect(component.runDiagnosticsText).toContain('Second reader: mode FlaggedPlusSample');
       expect(component.runDiagnosticsText).not.toContain('mode unknown');
     });
 
     it('should omit the superseded computed score rather than printing "computed: n/a"', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       const text = component.runDiagnosticsText;
 
       expect(text).not.toContain('computed:');
       expect(text).toContain('unweighted mean: 92');
 
-      component.activeRunDetail = buildDiagnosticsRun({ computedScore: 88 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ computedScore: 88 });
       expect(component.runDiagnosticsText).toContain('computed (superseded): 88');
     });
 
     it('should carry an integrity block with the four-class accounting and the agreement figures', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('--- INTEGRITY ---');
@@ -194,24 +196,24 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should print the contested accuracy deduction count when recorded, zero included', () => {
-      component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 2 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 2 });
       expect(component.runDiagnosticsText).toContain('contested critical errors: 0, contested accuracy deductions: 2, dimension outliers: not recorded, re-assessed: 1');
 
       // Zero is a measurement on a harness-20 run; only null reads as not recorded.
-      component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 0 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 0 });
       expect(component.runDiagnosticsText).toContain('contested accuracy deductions: 0,');
 
-      component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: null });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: null });
       expect(component.runDiagnosticsText).toContain('contested accuracy deductions: not recorded');
     });
 
     it('should caveat the agreement rate when coverage was selected by trigger', () => {
-      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 1 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 1 });
       expect(component.runDiagnosticsText).toContain('coverage selected by trigger');
     });
 
     it('should extend each question line with the fields that explain its score', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('band=Simple');
@@ -229,23 +231,23 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should record whether the candidate prompt carried a game snapshot', () => {
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"hasGameSnapshot":true}'
       });
       expect(component.runDiagnosticsText).toContain('snapshot=true');
 
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
       });
       expect(component.runDiagnosticsText).toContain('snapshot=false');
     });
 
     it('should record the candidate delivery probe and the board delivery per grading role', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       expect(component.runDiagnosticsText).toContain('Candidate delivery probe: not recorded');
       expect(component.runDiagnosticsText).not.toContain('Board delivered');
 
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         candidateDeliveryVerifiedAtUtc: '2026-09-18T07:11:00Z',
         boardDelivery: [
           { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
@@ -261,7 +263,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should name the reference reader throughout the diagnostics of a panel run', () => {
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         isPanelRun: true,
         secondOpinionModeUsed: 3,
         boardDelivery: [
@@ -286,7 +288,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).not.toMatch(/second opinion/i);
       expect(text).not.toContain('second reader');
 
-      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 3 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 3 });
       const single = component.runDiagnosticsText;
       expect(single).toContain('Second reader: mode All');
       expect(single).toContain('second reader now:');
@@ -334,7 +336,7 @@ describe('AdminBenchmarkComponent', () => {
         coAssessmentQualityScore: 97,
         coAssessmentJson: JSON.stringify({ flags: { contestedVerdict: true } })
       };
-      component.activeRunDetail = run;
+      ctx.monitor.activeRunDetail = run;
       const text = component.runDiagnosticsText;
       const lines = text.split('\n');
 
@@ -358,11 +360,11 @@ describe('AdminBenchmarkComponent', () => {
 
       // Without a verified answer there is no union: each member's recorded count instead.
       run.answers[0] = { ...run.answers[0], claimVerificationJson: null };
-      component.activeRunDetail = { ...run };
+      ctx.monitor.activeRunDetail = { ...run };
       expect(component.runDiagnosticsText).toContain('unverified claims: not verified (member A 2, member B 1 recorded)');
 
       // A single-assessor capture carries none of it.
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       const single = component.runDiagnosticsText;
       expect(single).toContain('holistic: 91, quality index: 94');
       expect(single).not.toContain('panel:');
@@ -375,7 +377,7 @@ describe('AdminBenchmarkComponent', () => {
       const run = buildDiagnosticsRun({ isPanelRun: true });
       run.answers[0] = { ...run.answers[0], criticalError: true, coAssessmentCriticalError: true };
       run.answers[1] = { ...run.answers[1], criticalError: false, coAssessmentCriticalError: true };
-      component.activeRunDetail = run;
+      ctx.monitor.activeRunDetail = run;
 
       expect(component.runDiagnosticsText).toContain('critical errors: 2 (Q1, Q2; member A 1, member B 2), unverified claims:');
 
@@ -383,12 +385,12 @@ describe('AdminBenchmarkComponent', () => {
       const single = buildDiagnosticsRun();
       single.answers[0] = { ...single.answers[0], criticalError: true };
       single.answers[1] = { ...single.answers[1], coAssessmentCriticalError: true };
-      component.activeRunDetail = single;
+      ctx.monitor.activeRunDetail = single;
       expect(component.runDiagnosticsText).toContain('critical errors: 1 (Q1), unverified claims:');
     });
 
     it('should append the re-verified stamp when the candidate delivery probe was re-checked before the re-run', () => {
-      component.activeRunDetail = buildDiagnosticsRun({
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({
         candidateDeliveryVerifiedAtUtc: '2026-09-18T07:11:00Z',
         rerunCandidateDeliveryVerifiedAtUtc: '2026-09-19T09:00:00Z'
       });
@@ -400,18 +402,18 @@ describe('AdminBenchmarkComponent', () => {
     it('should record the board format when the run had a board', () => {
       const boardFactsCheck = { bulletCount: 1, checkedLiteralCount: 1, unquotedBulletCount: 0, unquotedBullets: [], missingLiterals: [] };
 
-      component.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, gameSnapshotFormatVersionUsed: 3 });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, gameSnapshotFormatVersionUsed: 3 });
       expect(component.runDiagnosticsText).toContain('Board format: 3');
 
-      component.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, harnessVersion: '33', gameSnapshotFormatVersionUsed: null });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, harnessVersion: '33', gameSnapshotFormatVersionUsed: null });
       expect(component.runDiagnosticsText).toContain('Board format: not stated');
 
-      component.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, harnessVersion: '32', gameSnapshotFormatVersionUsed: null });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, harnessVersion: '32', gameSnapshotFormatVersionUsed: null });
       expect(component.runDiagnosticsText).toContain('Board format: not recorded (before harness 33)');
     });
 
     it('should omit the board format line for a board-less run', () => {
-      component.activeRunDetail = buildDiagnosticsRun();
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun();
       expect(component.runDiagnosticsText).not.toContain('Board format:');
     });
 
@@ -423,7 +425,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunOfStatus: 'ProviderError',
         rerunOfErrorMessage: 'HTTP 529: overloaded'
       };
-      component.activeRunDetail = run;
+      ctx.monitor.activeRunDetail = run;
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('     re-executed at 2026-09-19T10:00:00Z: was ProviderError — HTTP 529: overloaded');
@@ -440,7 +442,7 @@ describe('AdminBenchmarkComponent', () => {
         evidenceInformedCriticalError: false,
         evidenceInformedJson: '{"withdrawn":["Accuracy deduction: peacefuls are never displaced"]}'
       };
-      component.activeRunDetail = run;
+      ctx.monitor.activeRunDetail = run;
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('boardChars=12037/12037/-');
@@ -467,7 +469,7 @@ describe('AdminBenchmarkComponent', () => {
       const run = buildDiagnosticsRun({ scoringMethodVersion: 13, outcomeSummary: diagnosticsOutcomeSummary() });
       run.answers[0] = { ...run.answers[0], coAssessmentCriticalError: true, criticalErrorResolution: 'OverturnedByVerifier' };
       run.answers[1] = { ...run.answers[1], criticalErrorResolution: 'None', notAttempted: true, outcomeClass: 'NotAttempted' };
-      component.activeRunDetail = run;
+      ctx.monitor.activeRunDetail = run;
       const lines = component.runDiagnosticsText.split('\n');
 
       const critical = lines.findIndex(l => l.startsWith('critical errors:'));
@@ -478,7 +480,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should leave the resolution and outcome lines out before scoring method 13', () => {
-      component.activeRunDetail = buildDiagnosticsRun({ outcomeSummary: diagnosticsOutcomeSummary() });
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ outcomeSummary: diagnosticsOutcomeSummary() });
       const text = component.runDiagnosticsText;
 
       expect(text).not.toContain('critical error resolution:');
@@ -592,7 +594,7 @@ describe('AdminBenchmarkComponent', () => {
 
   describe('live run statistics, token formatting, and integrity notice', () => {
     it('should format token cards in run-stat strip with commas', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 1,
         suiteName: 'Suite',
         status: 'Running',
@@ -603,7 +605,7 @@ describe('AdminBenchmarkComponent', () => {
         answers: []
       } as any;
 
-      fixture.detectChanges();
+      ctx.refresh();
 
       const el: HTMLElement = fixture.nativeElement;
       const text = el.textContent || '';
@@ -614,7 +616,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it("should report Cache Creation as n/a for OpenAI when the provider reports cache reads but no cache creation", () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 1,
         suiteName: 'Suite',
         status: 'Running',
@@ -628,13 +630,13 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(component.runCacheCreationUnreported).toBe(true);
 
-      fixture.detectChanges();
+      ctx.refresh();
       const el: HTMLElement = fixture.nativeElement;
       expect(el.textContent || '').toContain('n/a');
     });
 
     it('should report Cache Creation as a number for a provider that does report it', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 1,
         suiteName: 'Suite',
         status: 'Running',
@@ -648,13 +650,13 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(component.runCacheCreationUnreported).toBe(false);
 
-      fixture.detectChanges();
+      ctx.refresh();
       const el: HTMLElement = fixture.nativeElement;
       expect(el.textContent || '').toContain('12,000');
     });
 
     it('should display candidate totals when run is running', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 1,
         suiteName: 'Suite',
         status: 'Running',
@@ -668,7 +670,7 @@ describe('AdminBenchmarkComponent', () => {
         ]
       } as any;
 
-      fixture.detectChanges();
+      ctx.refresh();
 
       const el: HTMLElement = fixture.nativeElement;
       const text = el.textContent || '';
@@ -1150,21 +1152,21 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should default candidateVerboseMode to false and reflect appropriate hint', () => {
-      expect(component.candidateVerboseMode).toBe(false);
-      expect(component.candidateResponseStyleHint).toContain('production chat');
+      expect(ctx.launcher.candidateVerboseMode).toBe(false);
+      expect(ctx.runTab().candidateResponseStyleHint).toContain('production chat');
 
-      component.candidateVerboseMode = true;
-      expect(component.candidateResponseStyleHint).toContain('Only Accuracy stays comparable');
+      ctx.launcher.candidateVerboseMode = true;
+      expect(ctx.runTab().candidateResponseStyleHint).toContain('Only Accuracy stays comparable');
     });
 
     it('should include verboseMode in startRun payload', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 101 } as any));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 10;
-      component.assessorConfigId = 20;
-      component.candidateVerboseMode = true;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 10;
+      ctx.launcher.assessorConfigId = 20;
+      ctx.launcher.candidateVerboseMode = true;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       expect(benchmarkServiceMock.startRun).toHaveBeenCalledWith(expect.objectContaining({
         verboseMode: true
@@ -1173,15 +1175,15 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should send allowSourceCodeReferences, false by default', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 101 } as any));
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 10;
-      component.assessorConfigId = 20;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 10;
+      ctx.launcher.assessorConfigId = 20;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].allowSourceCodeReferences).toBe(false);
 
-      component.candidateAllowSourceCodeReferences = true;
-      component.startBenchmark();
+      ctx.launcher.candidateAllowSourceCodeReferences = true;
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].allowSourceCodeReferences).toBe(true);
     });
 
@@ -1580,7 +1582,9 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should say pricing incomplete in words under the run history cost, with no asterisk and no title', () => {
       component.activeSubTab = 'history';
-      component.historyRuns = [
+      // The History tab loads the history when it renders, so the run is set after that load.
+      fixture.detectChanges();
+      ctx.workspace.historyRuns = [
         {
           id: 10,
           suiteName: 'Test Suite',
@@ -1589,7 +1593,7 @@ describe('AdminBenchmarkComponent', () => {
           pricingIncomplete: true
         } as any
       ];
-      fixture.detectChanges();
+      ctx.refresh();
 
       const metric = fixture.nativeElement.querySelector('.rh-card .rh-metric[data-metric="cost"]') as HTMLElement;
       expect(metric).toBeTruthy();

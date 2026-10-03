@@ -6,9 +6,10 @@ import {
 } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY, keyFiguresImageIo } from './run-report-frame/key-figures-image';
-import { clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import { AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -18,7 +19,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   describe('run report dialog', () => {
@@ -1068,8 +1070,8 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should keep the run-wide strips above the panels, outside every tab panel', () => {
         component.selectedRunDetail = reportRun();
-        component.actionErrorMessage = 'Re-scoring failed.';
-        fixture.detectChanges();
+        ctx.workspace.actionErrorMessage = 'Re-scoring failed.';
+        ctx.refresh();
 
         const body = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .rrf-single') as HTMLElement;
         const alert = Array.from(body.querySelectorAll('[role="alert"]'))

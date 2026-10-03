@@ -5,9 +5,10 @@ import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService, BenchmarkRunReportDocumentsStatus } from '../../services/admin-benchmark.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
-import { clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import { AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -17,7 +18,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   describe('run integrity accounting', () => {
@@ -667,50 +669,56 @@ describe('AdminBenchmarkComponent', () => {
       expect(selector).toBeTruthy();
       // A System AI Config is a database row chosen here, never a value in appsettings.json.
       expect(selector.textContent).toContain('None — no second reader');
-      expect(component.secondOpinionConfigId).toBeNull();
+      expect(ctx.launcher.secondOpinionConfigId).toBeNull();
     });
 
     it('should send the second opinion assessor only when one is selected', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 9 }));
       // Suppress the success path's side effects: polling would leave a live interval behind
       // and the dialog would need a real <dialog> to open.
-      vi.spyOn(component as any, 'startPolling').mockReturnValue(undefined);
+      vi.spyOn(ctx.monitor as any, 'startPolling').mockReturnValue(undefined);
       vi.spyOn(component as any, 'openRunProgressDialog').mockReturnValue(undefined);
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 10;
-      component.assessorConfigId = 11;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 10;
+      ctx.launcher.assessorConfigId = 11;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionAssessorModelConfigurationId)
         .toBeNull();
 
-      component.secondOpinionConfigId = 12;
-      component.startBenchmark();
+      ctx.launcher.secondOpinionConfigId = 12;
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionAssessorModelConfigurationId)
         .toBe(12);
     });
 
     it('should reject a second opinion threshold outside 0 to 100 before calling the server', () => {
-      component.editingProfileId = null;
-      component.profileForm = { ...component.profileForm, name: 'Threshold Profile', secondOpinionQualityThreshold: 140 };
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profiles = ctx.profilesTab();
+      profiles.editingProfileId = null;
+      profiles.profileForm = { ...profiles.profileForm, name: 'Threshold Profile', secondOpinionQualityThreshold: 140 };
 
-      component.saveProfile();
+      profiles.saveProfile();
 
-      expect(component.profileValidationErrors)
+      expect(profiles.profileValidationErrors)
         .toContain('Second reader threshold must be between 0 and 100.');
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
     });
 
     it('should default a new profile to a not-attempted score of 50 and send it', () => {
-      component.openCreateProfile();
-      component.scoringProfileFormDialog?.nativeElement.close();
-      expect(component.profileForm.notAttemptedScore).toBe(50);
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profiles = ctx.profilesTab();
+      profiles.openCreateProfile();
+      profiles.scoringProfileFormDialog?.nativeElement.close();
+      expect(profiles.profileForm.notAttemptedScore).toBe(50);
 
       benchmarkServiceMock.createScoringProfile.mockReturnValue(of({ id: 9 } as any));
-      component.profileForm.name = 'Abstention Profile';
-      component.saveProfile();
+      profiles.profileForm.name = 'Abstention Profile';
+      profiles.saveProfile();
 
-      expect(component.profileValidationErrors).toEqual([]);
+      expect(profiles.profileValidationErrors).toEqual([]);
       expect(vi.mocked(benchmarkServiceMock.createScoringProfile).mock.lastCall![0].notAttemptedScore).toBe(50);
     });
 
@@ -723,14 +731,17 @@ describe('AdminBenchmarkComponent', () => {
         speedTargetMs: 15000, speedDecayK: 20, speedDifficultyScaling: 1, maxParallelQuestions: 1,
         createdAtUtc: '2026-10-01T00:00:00Z', modifiedAtUtc: '2026-10-01T00:00:00Z'
       };
-      component.openEditProfile(profile);
-      component.scoringProfileFormDialog?.nativeElement.close();
-      expect(component.profileForm.notAttemptedScore).toBe(40);
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profiles = ctx.profilesTab();
+      profiles.openEditProfile(profile);
+      profiles.scoringProfileFormDialog?.nativeElement.close();
+      expect(profiles.profileForm.notAttemptedScore).toBe(40);
 
       // An update that omits the field clears it on the server, so a blank field is sent as null.
       benchmarkServiceMock.updateScoringProfile.mockReturnValue(of(profile));
-      component.profileForm.notAttemptedScore = undefined as any;
-      component.saveProfile();
+      profiles.profileForm.notAttemptedScore = undefined as any;
+      profiles.saveProfile();
 
       const sent = vi.mocked(benchmarkServiceMock.updateScoringProfile).mock.lastCall![1];
       expect(Object.prototype.hasOwnProperty.call(sent, 'notAttemptedScore')).toBe(true);
@@ -739,23 +750,27 @@ describe('AdminBenchmarkComponent', () => {
       // A profile served without the field edits as blank.
       const legacy: any = { ...profile };
       delete legacy.notAttemptedScore;
-      component.openEditProfile(legacy);
-      component.scoringProfileFormDialog?.nativeElement.close();
-      expect(component.profileForm.notAttemptedScore).toBeNull();
+      profiles.openEditProfile(legacy);
+      profiles.scoringProfileFormDialog?.nativeElement.close();
+      expect(profiles.profileForm.notAttemptedScore).toBeNull();
     });
 
     it('should reject a not-attempted score outside 0 to 100 before calling the server', () => {
-      component.editingProfileId = null;
-      component.profileForm = { ...component.profileForm, name: 'Abstention Profile', notAttemptedScore: 140 };
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profiles = ctx.profilesTab();
+      profiles.editingProfileId = null;
+      profiles.profileForm = { ...profiles.profileForm, name: 'Abstention Profile', notAttemptedScore: 140 };
 
-      component.saveProfile();
+      profiles.saveProfile();
 
-      expect(component.profileValidationErrors)
+      expect(profiles.profileValidationErrors)
         .toContain('Not-attempted score must be blank or a whole number between 0 and 100.');
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
     });
 
     it('should label the not-attempted score field and explain it', () => {
+      component.selectSubTab('profiles');
       fixture.detectChanges();
       const label = fixture.nativeElement.querySelector('label[for="notAttemptedScore"]') as HTMLElement;
       expect(label.textContent?.trim()).toBe('Not-Attempted Score');
@@ -768,6 +783,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should label the profile form second-reader fields and open the guide at coverage from it', () => {
+      component.selectSubTab('profiles');
       fixture.detectChanges();
       const label = (forId: string) =>
         (fixture.nativeElement.querySelector(`label[for="${forId}"]`) as HTMLElement | null)?.textContent?.trim();
@@ -785,13 +801,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should badge both models below the header rather than in it', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         testedModelThinkingLevelUsed: 'max',
         testedModelServiceTierUsed: 'flex',
         assessorModelThinkingLevelUsed: 'high'
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip') as HTMLElement;
       expect(strip).toBeTruthy();
@@ -810,8 +826,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should render Cancel Run as a text-only button', () => {
-      component.activeRunDetail = buildCompletedRun({ status: 'Running' });
-      fixture.detectChanges();
+      ctx.monitor.activeRunDetail = buildCompletedRun({ status: 'Running' });
+      ctx.refresh();
 
       const buttons: HTMLButtonElement[] = Array.from(
         fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .dialog-footer button'));
@@ -824,7 +840,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should present the run as three stages', () => {
       // BenchmarkService assesses, verifies and second-guesses each answer immediately after
       // producing it, inside the same loop, so stage 1 is all of that, not "collecting".
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
@@ -833,7 +849,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runStage).toBe('finalizing');
       expect(component.runStageLabel).toContain('Stage 3 of 3 — Synthesis and scoring');
 
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         answers: [buildScoredAnswer(1, { assessmentStatus: 'Pending' }), buildScoredAnswer(2)]
@@ -845,13 +861,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should mark a dispatched question Answering and an undispatched one Pending', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 3,
         inFlightOrderIndexes: [2],
         answers: [buildScoredAnswer(1)]
       });
-      component.runProgressQuestions = [
+      ctx.monitor.runProgressQuestions = [
         { orderIndex: 1, questionText: 'Question 1' },
         { orderIndex: 2, questionText: 'Question 2' },
         { orderIndex: 3, questionText: 'Question 3' }
@@ -871,13 +887,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should record in-flight questions and the stage number in the diagnostics text', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         inFlightOrderIndexes: [2],
         answers: [buildScoredAnswer(1)]
       });
-      component.runProgressQuestions = [
+      ctx.monitor.runProgressQuestions = [
         { orderIndex: 1, questionText: 'Question 1' },
         { orderIndex: 2, questionText: 'Question 2' }
       ] as any;
@@ -894,34 +910,34 @@ describe('AdminBenchmarkComponent', () => {
       // the derivation cannot see either stage. Only the server can.
       const answers = [buildScoredAnswer(1), buildScoredAnswer(2)];
 
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, stage: 'Verifying', answers
       });
       expect(component.runStage).toBe('verifying');
       expect(component.runStageLabel)
         .toContain('Stage 2 of 3 — Follow-up grading passes: verifying remaining claims');
 
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, stage: 'SecondOpinion', answers
       });
       expect(component.runStage).toBe('secondopinion');
       expect(component.runStageLabel)
         .toContain('Stage 2 of 3 — Follow-up grading passes: second-reader sweep');
 
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, stage: 'Answering', answers
       });
       expect(component.runStage).toBe('answering');
 
       // A run detail from a server predating the field: the derivation still renders a stage.
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, answers
       });
       expect(component.runStage).toBe('finalizing');
       expect(component.runDiagnosticsText).toContain('Stage: 3 of 3 (derived)');
 
       // A terminal run is terminal regardless of a stale stage.
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Completed', totalQuestionCount: 2, stage: 'Verifying', answers
       });
       expect(component.runStage).toBe('terminal');
@@ -933,13 +949,13 @@ describe('AdminBenchmarkComponent', () => {
      * rely on the component refreshing its own view for the same reason.
      */
     function railItems(stage: string): HTMLElement[] {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         stage,
         answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
       });
-      fixture.detectChanges();
+      ctx.refresh();
       return Array.from(
         fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
     }
@@ -986,7 +1002,7 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should show plain counters instead of bars for claims verified and second opinions', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         stage: 'Answering',
@@ -999,7 +1015,7 @@ describe('AdminBenchmarkComponent', () => {
           buildScoredAnswer(2, { secondOpinionQualityScore: 70 })
         ]
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
       // Only answers with unverified claims or a fired trigger are candidates, so a bar against
       // the answered count has no honest maximum. The counts replace both bars outright.
@@ -1015,13 +1031,13 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should show neither counter for a run graded by neither role', () => {
       // Not two zeroes: a run that configured no verifier did not fail to verify anything.
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         stage: 'Answering',
         answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
       });
-      fixture.detectChanges();
+      ctx.refresh();
 
       expect(runStatText('Claims verified')).toBeNull();
       expect(runStatText('Second readings')).toBeNull();
@@ -1088,21 +1104,21 @@ describe('AdminBenchmarkComponent', () => {
         vi.spyOn(lockService, 'release').mockReturnValue(undefined);
         vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
         const playSpy = vi.spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').mockResolvedValue('played');
-        component.completionSound = true;
+        ctx.launcher.completionSound = true;
         benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({ status: 'Running', stage: 'Synthesizing', completedAtUtc: null })));
-        (component as any).startPolling(55);
+        ctx.monitor.startPolling(55);
         return playSpy;
       }
 
       function pollTicker(): unknown {
-        return (component as any).pollTickerHandle;
+        return ctx.monitor.pollTickerHandle;
       }
 
       it('should show the report writer in the model strip after the claim verifier', () => {
-        component.activeRunDetail = writerRun({
+        ctx.monitor.activeRunDetail = writerRun({
           status: 'Running', stage: 'Answering', claimVerifierDisplayNameUsed: 'Test Verifier'
         });
-        fixture.detectChanges();
+        ctx.refresh();
 
         const rows: HTMLElement[] = Array.from(
           fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-model-strip .run-model-row'));
@@ -1116,11 +1132,11 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('should show no report writer row, no fourth rail item and no Reports cell for a run without a writer', () => {
-        component.activeRunDetail = buildCompletedRun({
+        ctx.monitor.activeRunDetail = buildCompletedRun({
           status: 'Running', stage: 'Verifying', totalQuestionCount: 2,
           answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
         });
-        fixture.detectChanges();
+        ctx.refresh();
 
         const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
         expect(dialog.textContent).not.toContain('Report writer');
@@ -1130,8 +1146,8 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('should render a fourth rail item and count the stages of 4 when the run names a writer', () => {
-        component.activeRunDetail = writerRun({ status: 'Running', stage: 'Verifying' });
-        fixture.detectChanges();
+        ctx.monitor.activeRunDetail = writerRun({ status: 'Running', stage: 'Verifying' });
+        ctx.refresh();
 
         const items: HTMLElement[] = Array.from(
           fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
@@ -1150,7 +1166,7 @@ describe('AdminBenchmarkComponent', () => {
         })));
         benchmarkServiceMock.getRunReportJob.mockReturnValue(of(reportJob()));
 
-        (component as any).pollRunDetail(55);
+        (ctx.monitor as any).pollRunDetail(55);
         fixture.detectChanges();
 
         expect(benchmarkServiceMock.getRunReportJob).toHaveBeenCalledWith(55);
@@ -1170,7 +1186,7 @@ describe('AdminBenchmarkComponent', () => {
         const writerCost = fixture.nativeElement.querySelector(
           '.benchmark-run-progress-dialog .gh-cost-role--report-writer .gh-cost-role__amount') as HTMLElement;
         expect(writerCost.textContent?.trim()).toBe('$0.0500');
-        (component as any).stopPolling();
+        ctx.monitor.stopPolling();
       });
 
       it('should name the queue position while the job waits for the report writer', () => {
@@ -1181,11 +1197,11 @@ describe('AdminBenchmarkComponent', () => {
           phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null, jobsAhead: 1
         })));
 
-        (component as any).pollRunDetail(55);
+        (ctx.monitor as any).pollRunDetail(55);
 
         expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)');
         expect(component.runReportsStatLabel).toBe('Waiting');
-        (component as any).stopPolling();
+        ctx.monitor.stopPolling();
       });
 
       it('should keep polling through Pending and Writing, then stop and chime once the reports are written', fakeAsync(() => {
@@ -1282,7 +1298,7 @@ describe('AdminBenchmarkComponent', () => {
       }));
 
       it('should put a failed report stage in the status line with its message', () => {
-        component.activeRunDetail = writerRun({
+        ctx.monitor.activeRunDetail = writerRun({
           status: 'Completed',
           reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Failed,
           reportDocumentsMessage: 'The writer refused.',
@@ -1298,7 +1314,7 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('should add a REPORTS block to the diagnostics of a run that names a writer', () => {
-        component.activeRunDetail = writerRun({
+        ctx.monitor.activeRunDetail = writerRun({
           status: 'Completed',
           reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
           reportDocumentsMessage: null,
@@ -1320,13 +1336,13 @@ describe('AdminBenchmarkComponent', () => {
         expect(text).toContain("Cost: $0.1200 (outside the run's own cost)");
         expect(text.indexOf('--- REPORTS ---')).toBeLessThan(text.indexOf('--- FLAGS ---'));
 
-        component.activeRunDetail = buildCompletedRun();
+        ctx.monitor.activeRunDetail = buildCompletedRun();
         expect(component.runDiagnosticsText).not.toContain('--- REPORTS ---');
       });
     });
 
     it('should chip a re-graded row as Verifying or Second opinion rather than Scored', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 3,
         stage: 'Verifying',
@@ -1351,7 +1367,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should list every question during a re-run and mark only the re-run set', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 3,
         answers: [
@@ -1360,7 +1376,7 @@ describe('AdminBenchmarkComponent', () => {
           buildScoredAnswer(3)
         ]
       });
-      component.rerunScopeOrderIndexes = [2];
+      ctx.monitor.rerunScopeOrderIndexes = [2];
 
       const rows = component.runProgressRows;
 
@@ -1393,7 +1409,7 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should chip a re-run question Answering while its request is in flight even though it already has an answer row', () => {
-      component.activeRunDetail = buildRerunRun({ inFlightOrderIndexes: [2] });
+      ctx.monitor.activeRunDetail = buildRerunRun({ inFlightOrderIndexes: [2] });
 
       const rows = component.runProgressRows;
 
@@ -1405,7 +1421,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should chip a queued re-run question Pending rather than its previous failure while the re-run is running', () => {
-      component.activeRunDetail = buildRerunRun();
+      ctx.monitor.activeRunDetail = buildRerunRun();
 
       let rows = component.runProgressRows;
 
@@ -1413,29 +1429,29 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runRowChipLabel(rows[1])).toBe('Pending');
 
       // Bounded to a running re-run: a terminal run shows the row's real status.
-      component.activeRunDetail = buildRerunRun({ status: 'Completed' });
+      ctx.monitor.activeRunDetail = buildRerunRun({ status: 'Completed' });
       rows = component.runProgressRows;
 
       expect(component.runRowChipLabel(rows[1])).toBe('Provider Error');
     });
 
     it('should follow a re-answered re-run question through Answered, Assessing and Scored', () => {
-      component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Pending' });
+      ctx.monitor.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Pending' });
       expect(component.runRowChipLabel(component.runProgressRows[1])).toBe('Answered');
 
-      component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Assessing' });
+      ctx.monitor.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Assessing' });
       let row = component.runProgressRows[1];
       expect(component.runRowChipLabel(row)).toBe('Assessing');
       expect(component.runRowChipClass(row)).toBe('status-assessing');
 
-      component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Scored' });
+      ctx.monitor.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Scored' });
       row = component.runProgressRows[1];
       expect(component.runRowChipLabel(row)).toBe('Scored');
     });
 
     it("should list a finished run's own answers only, whatever its suite lost or gained since", () => {
       // The suite lost question 12 (answered as Q2) and gained question 40, which now sits at Q2.
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Completed',
         totalQuestionCount: 3,
         answers: [
@@ -1444,7 +1460,7 @@ describe('AdminBenchmarkComponent', () => {
           buildScoredAnswer(3, { benchmarkQuestionId: 13, questionText: 'Stored question 3' })
         ]
       });
-      component.runProgressQuestions = [
+      ctx.monitor.runProgressQuestions = [
         { id: 11, orderIndex: 1, questionText: 'Question 1 as the suite words it now' },
         { id: 40, orderIndex: 2, questionText: 'A question added after the run' },
         { id: 13, orderIndex: 3, questionText: 'Question 3 as the suite words it now' }
@@ -1460,13 +1476,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should add a question the first pass has not answered yet, matched by question id rather than order index', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 3,
         inFlightOrderIndexes: [3],
         answers: [buildScoredAnswer(1, { benchmarkQuestionId: 11 })]
       });
-      component.runProgressQuestions = [
+      ctx.monitor.runProgressQuestions = [
         { id: 11, orderIndex: 1, questionText: 'Question 1' },
         { id: 12, orderIndex: 2, questionText: 'Question 2' },
         { id: 13, orderIndex: 3, questionText: 'Question 3' }
@@ -1483,7 +1499,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should add no live question while a re-run is running, even one the suite gained since', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         rerunScopeOrderIndexes: [2],
@@ -1493,7 +1509,7 @@ describe('AdminBenchmarkComponent', () => {
           buildScoredAnswer(2, { benchmarkQuestionId: 12, status: 'ProviderError', assessmentStatus: 'Failed' })
         ]
       });
-      component.runProgressQuestions = [
+      ctx.monitor.runProgressQuestions = [
         { id: 11, orderIndex: 1, questionText: 'Question 1' },
         { id: 12, orderIndex: 2, questionText: 'Question 2' },
         { id: 40, orderIndex: 3, questionText: 'A question added after the run' }
@@ -1503,7 +1519,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runProgressRows.map(r => r.orderIndex)).toEqual([1, 2]);
 
       // A single-answer re-run whose scope the server has not reported yet is still not a first pass.
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
         rerunStartedAtUtc: '2026-09-24T10:00:00Z',
@@ -1514,7 +1530,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it("should write each question's diagnostics line from its own answer", () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Completed',
         totalQuestionCount: 2,
         answers: [
@@ -1522,7 +1538,7 @@ describe('AdminBenchmarkComponent', () => {
           buildScoredAnswer(2, { benchmarkQuestionId: null, durationMs: 2222 })
         ]
       });
-      component.runProgressQuestions = [
+      ctx.monitor.runProgressQuestions = [
         { id: 40, orderIndex: 2, questionText: 'A question added after the run' }
       ] as any;
 
@@ -1583,7 +1599,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it("should measure Elapsed from the re-run's own start while a re-run scope is active", () => {
       const ninetySecondsAgo = new Date(Date.now() - 90000).toISOString();
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         startedAtUtc: '2026-09-11T00:00:00Z',
         completedAtUtc: '2026-09-11T01:00:00Z',
@@ -1608,7 +1624,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should print the run span, the re-run span, the covered scope and the run-wide counts for a terminal re-run', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Completed',
         totalQuestionCount: 3,
         startedAtUtc: '2026-09-18T21:01:24Z',
@@ -1627,7 +1643,7 @@ describe('AdminBenchmarkComponent', () => {
           buildScoredAnswer(3, { claimVerificationJson: '[]', secondOpinionQualityScore: 60 })
         ]
       });
-      component.rerunScopeOrderIndexes = [];
+      ctx.monitor.rerunScopeOrderIndexes = [];
 
       const diagnostics = component.runDiagnosticsText;
       expect(diagnostics).toContain('Elapsed (run):    18m 20s');
@@ -1638,7 +1654,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should print the re-run span from its stamps once the process no longer reports a scope', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Completed',
         startedAtUtc: '2026-09-18T21:01:24Z',
         completedAtUtc: '2026-09-18T21:19:44Z',
@@ -1648,7 +1664,7 @@ describe('AdminBenchmarkComponent', () => {
         claimVerifiedAnswerCount: 18,
         secondOpinionGradedAnswerCount: 13
       });
-      component.rerunScopeOrderIndexes = [];
+      ctx.monitor.rerunScopeOrderIndexes = [];
 
       const diagnostics = component.runDiagnosticsText;
       expect(diagnostics).toContain('Elapsed (run):    18m 20s');
@@ -1660,7 +1676,7 @@ describe('AdminBenchmarkComponent', () => {
     it("should keep counting Re-run elapsed when a previous re-run's completion stamp is still on the row", () => {
       const ninetySecondsAgo = new Date(Date.now() - 90000).toISOString();
       const anHourBeforeThatStart = new Date(Date.now() - 90000 - 3600000).toISOString();
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         startedAtUtc: '2026-09-11T00:00:00Z',
         completedAtUtc: '2026-09-11T01:00:00Z',
@@ -1679,7 +1695,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should count only gradeable answers as the index population', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Completed',
         totalQuestionCount: 4,
         answers: [
@@ -1705,13 +1721,13 @@ describe('AdminBenchmarkComponent', () => {
         answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
       });
 
-      component.activeRunDetail = run(false);
+      ctx.monitor.activeRunDetail = run(false);
       let text = component.runDiagnosticsText;
       expect(text).toContain('answers with 0 knowledge base calls: 2 of 2 gradeable');
       expect(text).toContain('  (prompt-compliant on game-mechanics topics');
       expect(text).not.toContain('the suite has knowledge-base topics');
 
-      component.activeRunDetail = run(true);
+      ctx.monitor.activeRunDetail = run(true);
       text = component.runDiagnosticsText;
       expect(text).toContain('answers with 0 knowledge base calls: 2 of 2 gradeable');
       expect(text).toContain("  (the suite has knowledge-base topics; see the report's Tool Routing section)");
@@ -1719,7 +1735,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should read the rerun meters against the client-captured scope before any re-run answer lands', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         stage: 'Answering',
         totalQuestionCount: 18,
@@ -1727,7 +1743,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunAnsweredOrderIndexes: [],
         rerunScoredOrderIndexes: []
       });
-      component.rerunScopeOrderIndexes = [4, 9];
+      ctx.monitor.rerunScopeOrderIndexes = [4, 9];
 
       expect(component.effectiveRerunScope).toEqual([4, 9]);
       expect(component.runMeterTotal).toBe(2);
@@ -1737,7 +1753,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should read the rerun meters as re-run answers land inside the scope', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         status: 'Running',
         stage: 'Answering',
         totalQuestionCount: 18,
@@ -1745,7 +1761,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunAnsweredOrderIndexes: [4],
         rerunScoredOrderIndexes: [4]
       });
-      component.rerunScopeOrderIndexes = [4, 9];
+      ctx.monitor.rerunScopeOrderIndexes = [4, 9];
 
       expect(component.runMeterTotal).toBe(2);
       expect(component.runMeterAnswered).toBe(1);
@@ -1754,10 +1770,10 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should prefer the server-reported rerun scope over an empty client-captured one', () => {
-      component.activeRunDetail = buildCompletedRun({
+      ctx.monitor.activeRunDetail = buildCompletedRun({
         rerunScopeOrderIndexes: [3, 7, 11]
       });
-      component.rerunScopeOrderIndexes = [];
+      ctx.monitor.rerunScopeOrderIndexes = [];
 
       expect(component.effectiveRerunScope).toEqual([3, 7, 11]);
     });
@@ -1774,12 +1790,15 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should reject a speed difficulty scaling outside 0.0 to 5.0 before calling the server', () => {
-      component.editingProfileId = null;
-      component.profileForm = { ...component.profileForm, name: 'Scaled Profile', speedDifficultyScaling: 5.5 };
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profiles = ctx.profilesTab();
+      profiles.editingProfileId = null;
+      profiles.profileForm = { ...profiles.profileForm, name: 'Scaled Profile', speedDifficultyScaling: 5.5 };
 
-      component.saveProfile();
+      profiles.saveProfile();
 
-      expect(component.profileValidationErrors)
+      expect(profiles.profileValidationErrors)
         .toContain('Speed difficulty scaling must be between 0.0 and 5.0.');
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
     });

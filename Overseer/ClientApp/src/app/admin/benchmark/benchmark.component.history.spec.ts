@@ -3,9 +3,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
-import { clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import { runDurationMs } from './benchmark-run-format';
+import {
+  AdminBenchmarkSpecContext, benchmarkSpecHandles, clearStoredState, createAdminBenchmarkFixture
+} from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -15,7 +19,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   describe('Run History card list (data-table)', () => {
@@ -45,59 +50,68 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should default to sorting by ID, descending', () => {
-      expect(component.historyTable.sortColumn).toBe('id');
-      expect(component.historyTable.sortDirection).toBe('desc');
+      expect(ctx.workspace.historyTable.sortColumn).toBe('id');
+      expect(ctx.workspace.historyTable.sortDirection).toBe('desc');
     });
 
+    /** Renders the Run History tab; its ngOnInit loads the history, which a test replaces afterwards. */
+    function showHistoryTab(): void {
+      component.selectSubTab('history');
+      fixture.detectChanges();
+    }
+
     it('should keep instrumentChangeOf verdicts unchanged when the view is sorted', () => {
-      component.historyRuns = [
+      showHistoryTab();
+      ctx.workspace.historyRuns = [
         buildHistoryRun({ id: 3, startedAtUtc: '2026-09-03T00:00:00Z', candidateSystemPromptSha256: 'sha-b' }),
         buildHistoryRun({ id: 2, startedAtUtc: '2026-09-02T00:00:00Z', status: 'Running' }),
         buildHistoryRun({ id: 1, startedAtUtc: '2026-09-01T00:00:00Z' })
       ];
 
-      const before = component.instrumentChangeOf(component.historyRuns[0]);
+      const before = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
       expect(before).toBeTruthy();
       expect(before?.comparedToRunId).toBe(1);
 
       // historyView is a new sorted array; historyRuns itself — which instrumentChangeOf and
       // completedRunsOfSelectedSuite both read by position — must not move under it.
-      expect(component.historyView.map(r => r.id)).toEqual([3, 2, 1]);
-      component.historyTable.toggleSort('startedAtUtc');
-      component.historyTable.toggleSort('startedAtUtc');
-      expect(component.historyView.map(r => r.id)).toEqual([1, 2, 3]);
+      expect(ctx.historyTab().historyView.map(r => r.id)).toEqual([3, 2, 1]);
+      ctx.workspace.historyTable.toggleSort('startedAtUtc');
+      ctx.workspace.historyTable.toggleSort('startedAtUtc');
+      expect(ctx.historyTab().historyView.map(r => r.id)).toEqual([1, 2, 3]);
 
-      const after = component.instrumentChangeOf(component.historyRuns[0]);
+      const after = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
       expect(after).toEqual(before);
     });
 
     it('should derive the Status filter options from the statuses present in the history', () => {
-      component.historyRuns = [
+      showHistoryTab();
+      ctx.workspace.historyRuns = [
         buildHistoryRun({ id: 1, status: 'Completed' }),
         buildHistoryRun({ id: 2, status: 'CompletedWithLimits' }),
         buildHistoryRun({ id: 3, status: 'Completed' })
       ];
 
-      expect(component.historyStatusOptions).toEqual(['Completed', 'Completed with limits']);
+      expect(ctx.historyTab().historyStatusOptions).toEqual(['Completed', 'Completed with limits']);
     });
 
     it('should batch and filter the view without touching historyRuns', () => {
       const runs = Array.from({ length: 25 }, (_, i) => buildHistoryRun({ id: 25 - i, suiteName: `Suite ${(i % 2) + 1}` }));
-      component.historyRuns = runs;
+      showHistoryTab();
+      ctx.workspace.historyRuns = runs;
 
-      expect(component.historyView.length).toBe(10);
-      component.showMoreHistory();
-      expect(component.historyView.length).toBe(20);
+      expect(ctx.historyTab().historyView.length).toBe(10);
+      ctx.historyTab().showMoreHistory();
+      expect(ctx.historyTab().historyView.length).toBe(20);
 
       // A facet change returns the list to one batch.
-      component.onHistoryFacetChange('suite', ['Suite 2']);
-      expect(component.historyView.length).toBe(10);
-      expect(component.historyView.every(r => r.suiteName === 'Suite 2')).toBe(true);
-      expect(component.historyList.matching(component.historyRuns).length).toBe(12);
+      ctx.historyTab().onHistoryFacetChange('suite', ['Suite 2']);
+      expect(ctx.historyTab().historyView.length).toBe(10);
+      expect(ctx.historyTab().historyView.every(r => r.suiteName === 'Suite 2')).toBe(true);
+      expect(ctx.workspace.historyList.matching(ctx.workspace.historyRuns).length).toBe(12);
 
-      expect(component.historyRuns).toBe(runs);
-      expect(component.historyRuns.length).toBe(25);
-      expect(component.historyRuns.map(r => r.id)).toEqual(Array.from({ length: 25 }, (_, i) => 25 - i));
+      expect(ctx.workspace.historyRuns).toBe(runs);
+      expect(ctx.workspace.historyRuns.length).toBe(25);
+      expect(ctx.workspace.historyRuns.map(r => r.id)).toEqual(Array.from({ length: 25 }, (_, i) => 25 - i));
     });
 
     /** An element's visible text: its text without the visually hidden parts. */
@@ -108,9 +122,11 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     it('should list a labeled pair per fingerprint, dashing a hash that was not recorded, and the full hashes in its info tip', () => {
-      component.historyRuns = [buildHistoryRun({ id: 1, wikiHeadSha: null })];
       component.activeSubTab = 'history';
-      fixture.detectChanges();
+      // Renders the tab, whose ngOnInit loads the history; the run below replaces it.
+      ctx.refresh();
+      ctx.workspace.historyRuns = [buildHistoryRun({ id: 1, wikiHeadSha: null })];
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.rh-card .rh-instrument-strip') as HTMLElement;
       const pairs = Array.from(strip.querySelectorAll('dl.rh-instrument > div')) as HTMLElement[];
@@ -182,7 +198,7 @@ describe('AdminBenchmarkComponent', () => {
 
     /** Resolves once a debounced search has applied, on the clock `useSearchClock` fakes. */
     function afterSearchDebounce(): Promise<void> {
-      vi.advanceTimersByTime(component.historyList.debounceMs);
+      vi.advanceTimersByTime(ctx.workspace.historyList.debounceMs);
       return Promise.resolve();
     }
 
@@ -311,14 +327,14 @@ describe('AdminBenchmarkComponent', () => {
       ]);
       benchmarkServiceMock.getRuns.mockClear();
 
-      const facet = component.historyFacets.find(f => f.column === 'suite')!;
+      const facet = ctx.historyTab().historyFacets.find(f => f.column === 'suite')!;
       expect(facet.facetId).toBe('rh-facet-suite');
       expect(facet.options.map(o => [o.value, o.count])).toEqual([['Alpha', 2], ['Beta', 1]]);
       expect(fixture.nativeElement.querySelector('.rh-facet-row #rh-facet-suite-trigger')).toBeTruthy();
       // The server-side suite select is gone.
       expect(fixture.nativeElement.querySelector('#historySuiteFilter')).toBeNull();
 
-      component.onHistoryFacetChange('suite', ['Alpha']);
+      ctx.historyTab().onHistoryFacetChange('suite', ['Alpha']);
 
       expect(shownIds()).toEqual([3, 1]);
       expect(chipButtons().map(chip => chip.getAttribute('aria-label'))).toEqual(['Remove filter Suite: Alpha']);
@@ -380,10 +396,10 @@ describe('AdminBenchmarkComponent', () => {
       expect(escape.defaultPrevented).toBe(true);
       expect(reached).toEqual([]);
       expect(search.value).toBe('');
-      expect(component.historyList.searchText).toBe('');
+      expect(ctx.workspace.historyList.searchText).toBe('');
       // The pending search was dropped with the text.
       await afterSearchDebounce();
-      expect(component.historyTable.hasActiveFilters).toBe(false);
+      expect(ctx.workspace.historyTable.hasActiveFilters).toBe(false);
       expect(shownIds()).toEqual([2, 1]);
 
       const again = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
@@ -418,9 +434,10 @@ describe('AdminBenchmarkComponent', () => {
       expect(JSON.parse(localStorage.getItem(RUN_HISTORY_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, sort: 'intelligence-desc' });
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
-      expect(restored.componentInstance.historyList.sortId).toBe('intelligence-desc');
-      expect(restored.componentInstance.historyTable.sortColumn).toBe('qualityIndex');
-      expect(restored.componentInstance.historyTable.sortDirection).toBe('desc');
+      const restoredWorkspace = benchmarkSpecHandles(restored).workspace;
+      expect(restoredWorkspace.historyList.sortId).toBe('intelligence-desc');
+      expect(restoredWorkspace.historyTable.sortColumn).toBe('qualityIndex');
+      expect(restoredWorkspace.historyTable.sortDirection).toBe('desc');
       restored.destroy();
     });
 
@@ -430,7 +447,7 @@ describe('AdminBenchmarkComponent', () => {
         buildHistoryRun({ id: 2, suiteName: 'Beta' }),
         buildHistoryRun({ id: 1, suiteName: 'Gamma' })
       ]);
-      component.onHistoryFacetChange('suite', ['Alpha', 'Beta']);
+      ctx.historyTab().onHistoryFacetChange('suite', ['Alpha', 'Beta']);
       expect(chipButtons().map(chip => chip.getAttribute('aria-label')))
         .toEqual(['Remove filter Suite: Alpha', 'Remove filter Suite: Beta']);
 
@@ -582,7 +599,7 @@ describe('AdminBenchmarkComponent', () => {
 
       benchmarkServiceMock.getRuns.mockReturnValue(of([buildHistoryRun({ id: 2 }), buildHistoryRun({ id: 1 })]));
       (panel().querySelector('.rh-refresh') as HTMLButtonElement).click();
-      component.onHistoryFacetChange('status', ['Failed']);
+      ctx.historyTab().onHistoryFacetChange('status', ['Failed']);
 
       const noMatches = panel().querySelector('.rh-no-matches') as HTMLElement;
       expect(noMatches.textContent).toContain('No runs match these filters.');
@@ -606,13 +623,13 @@ describe('AdminBenchmarkComponent', () => {
       ]);
 
       const counts = new Map<string, number>();
-      for (const run of component.historyRuns) {
-        const change = component.instrumentChangeOf(run);
+      for (const run of ctx.workspace.historyRuns) {
+        const change = ctx.workspace.instrumentChangeOf(run);
         const value = change ? (change.kind === 'options' ? 'Options changed' : 'Instrument changed') : 'No change';
         counts.set(value, (counts.get(value) ?? 0) + 1);
       }
 
-      const facet = component.historyFacets.find(f => f.column === 'changes')!;
+      const facet = ctx.historyTab().historyFacets.find(f => f.column === 'changes')!;
       expect(facet.options.map(o => [o.value, o.count])).toEqual([
         ['Instrument changed', counts.get('Instrument changed') ?? 0],
         ['Options changed', counts.get('Options changed') ?? 0],
@@ -620,7 +637,7 @@ describe('AdminBenchmarkComponent', () => {
       ]);
       expect(facet.options.map(o => o.count)).toEqual([1, 1, 2]);
 
-      component.onHistoryFacetChange('changes', ['Instrument changed']);
+      ctx.historyTab().onHistoryFacetChange('changes', ['Instrument changed']);
       expect(shownIds()).toEqual([4]);
     });
   });
@@ -665,7 +682,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should measure an aborted run by the wall clock, not by the time its answers took', () => {
       const run = buildRun({ status: 'Canceled', totalAnswerDurationMs: 2000000, totalDurationMs: 1419000 });
 
-      expect(component.runDurationMs(run)).toBe(1419000);
+      expect(runDurationMs(run)).toBe(1419000);
       expect(component.isAbortedRun(run)).toBe(true);
     });
 
@@ -675,7 +692,7 @@ describe('AdminBenchmarkComponent', () => {
       const run = buildRun({ status: 'Canceled', isAborted: false });
 
       expect(component.isAbortedRun(run)).toBe(false);
-      expect(component.runDurationMs(run)).toBe(765466);
+      expect(runDurationMs(run)).toBe(765466);
     });
 
     it('should trust the server flag over the status', () => {
@@ -687,7 +704,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should measure a completed run by the time its answers took', () => {
       const run = buildRun();
 
-      expect(component.runDurationMs(run)).toBe(765466);
+      expect(runDurationMs(run)).toBe(765466);
       expect(component.isAbortedRun(run)).toBe(false);
     });
 
@@ -695,7 +712,7 @@ describe('AdminBenchmarkComponent', () => {
       const run = buildRun({ status: 'Canceled', totalAnswerDurationMs: 0, totalDurationMs: 0 });
 
       // 13:35:00 to 13:58:39 is run 24's own wall clock: 23m 39s.
-      expect(component.runDurationMs(run)).toBe(1419000);
+      expect(runDurationMs(run)).toBe(1419000);
     });
 
     // The run detail's two duration cards. The Answer Duration card has no wall-clock fallback:
@@ -767,7 +784,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should badge a changed run option as an option change, not as instrument drift', () => {
       // Runs 24 and 25: verboseMode flipped, so the candidate prompt hash moved with it.
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({
           id: 25,
           candidateSystemPromptSha256: 'bb19dc24',
@@ -780,7 +797,7 @@ describe('AdminBenchmarkComponent', () => {
         })
       ];
 
-      const change = component.instrumentChangeOf(component.historyRuns[0]);
+      const change = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
 
       expect(change?.kind).toBe('options');
       expect(change?.comparedToRunId).toBe(24);
@@ -788,12 +805,12 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should badge a moved hash as instrument drift when the options match', () => {
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({ id: 25, knowledgeBaseHeadSha: 'kb-b' }),
         buildRun({ id: 24 })
       ];
 
-      const change = component.instrumentChangeOf(component.historyRuns[0]);
+      const change = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
 
       expect(change?.kind).toBe('instrument');
       expect(change?.comparedToRunId).toBe(24);
@@ -801,33 +818,33 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should fall back to the hash comparison when the options cannot be parsed', () => {
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({ id: 25, knowledgeBaseHeadSha: 'kb-b', candidatePromptOptionsJson: 'not json' }),
         buildRun({ id: 24 })
       ];
 
-      expect(component.instrumentChangeOf(component.historyRuns[0])?.kind).toBe('instrument');
+      expect(ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0])?.kind).toBe('instrument');
     });
 
     it('should badge a moved GnollHack wiki HEAD as instrument drift', () => {
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({ id: 25, wikiHeadSha: 'wiki-b' }),
         buildRun({ id: 24 })
       ];
 
-      const change = component.instrumentChangeOf(component.historyRuns[0]);
+      const change = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
 
       expect(change?.kind).toBe('instrument');
       expect(change?.description).toContain('GnollHack wiki');
     });
 
     it('should badge a moved GnollHack source HEAD as instrument drift', () => {
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({ id: 25, sourceCodeHeadSha: 'src-b' }),
         buildRun({ id: 24 })
       ];
 
-      const change = component.instrumentChangeOf(component.historyRuns[0]);
+      const change = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
 
       expect(change?.kind).toBe('instrument');
       expect(change?.description).toContain('GnollHack source');
@@ -835,38 +852,41 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should report no drift when a corpus HEAD is recorded on only one of the two runs', () => {
       // "Not recorded" on either side is not "unchanged", so neither direction may be badged.
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({ id: 25, wikiHeadSha: null, sourceCodeHeadSha: 'src-a' }),
         buildRun({ id: 24, wikiHeadSha: 'wiki-a', sourceCodeHeadSha: null })
       ];
 
-      expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();
+      expect(ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0])).toBeNull();
 
-      component.historyRuns = [
+      ctx.workspace.historyRuns = [
         buildRun({ id: 27, wikiHeadSha: 'wiki-b', sourceCodeHeadSha: 'src-b' }),
         buildRun({ id: 26, wikiHeadSha: null, sourceCodeHeadSha: null })
       ];
 
-      expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();
+      expect(ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0])).toBeNull();
     });
 
     it('should badge nothing when both the options and all five hashes match', () => {
-      component.historyRuns = [buildRun({ id: 25 }), buildRun({ id: 24 })];
+      ctx.workspace.historyRuns = [buildRun({ id: 25 }), buildRun({ id: 24 })];
 
-      expect(component.instrumentChangeOf(component.historyRuns[0])).toBeNull();
+      expect(ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0])).toBeNull();
     });
 
     it('should sort the Duration column by the figure each cell shows', () => {
-      component.historyRuns = [
+      // The Run History tab is rendered first; its ngOnInit loads the history this test replaces.
+      component.selectSubTab('history');
+      fixture.detectChanges();
+      ctx.workspace.historyRuns = [
         // The cancelled run's answers took the longest, but only 100s of wall clock elapsed.
         buildRun({ id: 3, status: 'Canceled', totalAnswerDurationMs: 900000, totalDurationMs: 100000 }),
         buildRun({ id: 2, totalAnswerDurationMs: 500000, totalDurationMs: 700000 }),
         buildRun({ id: 1, totalAnswerDurationMs: 300000, totalDurationMs: 300000 })
       ];
 
-      component.historyTable.toggleSort('durationMs');
+      ctx.workspace.historyTable.toggleSort('durationMs');
 
-      expect(component.historyView.map(r => r.id)).toEqual([2, 1, 3]);
+      expect(ctx.historyTab().historyView.map(r => r.id)).toEqual([2, 1, 3]);
     });
   });
 });

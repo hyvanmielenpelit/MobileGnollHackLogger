@@ -1,0 +1,162 @@
+@use '../benchmark-shared' as shared;
+
+:host {
+  // The panel's column, as .benchmark-tab-content gives it to its direct children.
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* .badge-ai and .badge-revision live in styles.scss, in the question-card family.
+   .btn-review-toggle lives there too. */
+
+/* ==========================================================================
+   MODEL COMPARISON LAUNCHER
+
+   The sub-tab's whole content. The task itself lives in a full-screen dialog, so the hero card
+   names what the view does, opens the wizard, and shows what the last comparison found; the
+   Comparison reports library sits below it. Duplicating any of the wizard's controls here would
+   give the selection two owners.
+   ========================================================================== */
+.mc-launcher {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.mc-launcher-hero {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+
+  h3 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    color: var(--title-color, var(--primary-color));
+  }
+
+  h4 {
+    margin: 0 0 10px;
+    font-family: "Cinzel", serif;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--primary-color);
+  }
+
+  .mc-launcher-lead {
+    margin: 0;
+    max-width: 70ch;
+    color: #d4d4d8;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .alert {
+    margin-bottom: 0;
+    max-width: 90ch;
+  }
+}
+
+/* The last comparison as one compact row: the heading inline before its read-out. */
+.mc-launcher-last {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 20px;
+
+  h4 {
+    margin: 0;
+  }
+}
+
+.mc-launcher-howto {
+  max-width: 90ch;
+
+  .gh-disclosure-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+}
+
+.mc-launcher-library {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* One row per wizard step: a round number badge, then the title and its one-line summary. */
+.mc-launcher-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #b4b4b8;
+  }
+
+  strong {
+    color: #e4e4e7;
+  }
+}
+
+.mc-launcher-step-number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--primary-color);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--primary-color);
+}
+
+.mc-launcher-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 0;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  dt {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #8b8b90;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 14px;
+    color: #e4e4e7;
+  }
+}
+
+.mc-launcher-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}

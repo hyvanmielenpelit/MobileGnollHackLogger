@@ -6335,7 +6335,7 @@ Writer** info tip names no family: it asks for a strong model from another provi
 test, such as the one used as an assessor. The table in **The roster today, and why Anthropic is primary**
 names the exact versions. The project skills name no model or family at all and point here. When a
 provider renames or re-prices a line, this subsection, the roster table, the popups in
-`benchmark.component.html` (the Report Writer tip included), the guide component, the shared writer
+`benchmark.component.html` and `run-tab/benchmark-run-tab.component.html` (the Report Writer tip included), the guide component, the shared writer
 advice behind the Reports step's and the AI Reports tab's info tips
 (`run-ai-reports/report-writer-advice.ts`) and the AI Reports tab's info tip
 (`run-ai-reports.component.html`) are the places to update.
@@ -6391,7 +6391,7 @@ and *Second Reader* otherwise; where no run is known, it says *second reader or 
 | Renamed | Where |
 |---|---|
 | Admin UI | Every label, hint, popup, notice, badge title, status chip, stage text and cost-panel role in `Overseer/ClientApp/src/app` |
-| Copied diagnostics text | The diagnostics builders in `benchmark.component.ts`, and the *Board delivered — …* line on both ends (`BenchmarkReportBuilder.cs`) |
+| Copied diagnostics text | The diagnostics builders in `benchmark.component.ts` (`runDiagnosticsTextFor` and its helpers, reading the run state of `state/benchmark-active-run.monitor.ts`), and the *Board delivered — …* line on both ends (`BenchmarkReportBuilder.cs`) |
 | Markdown run report | Every heading and sentence in `BenchmarkReportBuilder.cs`: `### Second Opinion Assessor` is now `### Second Reader` or `### Reference Reader`, `**Second Opinion (model):**` is now `**Second Reader (model):**`, and `**Second Opinion Tokens:**` is now `**Second Reader Tokens:**` or `**Reference Reader Tokens:**` |
 | Multi-run cost role | `BenchmarkGroupAnalysisService.SecondOpinionRole`'s value, *Second reader*, and `ReferenceReaderRole`, *Reference reader*, for panel runs |
 | Server messages reaching the UI | `BenchmarkRunLauncher`, `BenchmarkService`, `AdminBenchmarkController`, `SystemConfigUsageGuard` |

@@ -210,19 +210,23 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
 ### Popups (`<dialog>` elements)
 To find specific popups, look in the corresponding component's `.html` template:
 
-- **Admin Component (`admin.component.html`)**
-  - `#manageGroupsDialog`: Manage Groups
-  - `#createGroupDialog`: Create Group
-  - `#configDialog`: Config — near full screen (`settings-dialog model-form-dialog`); only the
-    body of its `app-ai-model-form` scrolls.
+- **Admin Component (`admin/`)** — `admin.component.html` is the page shell: the tab row, the toast and
+  one tab panel per tab. Each tab is a component of its own (`users-tab/`, `groups-tab/`, `configs-tab/`,
+  `database-tab/`, `telemetry-tab/`, `devtools-tab/`), and `AdminPageStore` (`admin-page.store.ts`) holds
+  what the tabs share or keep across a tab switch. Dialogs, by the component that holds them:
+  - `#manageGroupsDialog`: Manage Groups (`users-tab/`)
+  - `#createGroupDialog`: Create Group (`groups-tab/`)
+  - `#configDialog`: Config (`configs-tab/`) — near full screen (`settings-dialog model-form-dialog`);
+    only the body of its `app-ai-model-form` scrolls.
   - `#config-filter-panel`: Config Filter (`popover="auto"`, anchored to `#config-filter-trigger`)
-  - `#confirmDialog`: Confirm
-  - `#manageUserConfigsDialog`: Manage User Configs
-  - `#manageGroupConfigsDialog`: Manage Group Configs
-  - `#editConfigOverrideDialog`: Edit Config Override
-  - `#rateLimitsDialog`: Rate Limits
-  - `#analyticsDialog`: Analytics
-  - Not a dialog: the **Database** tab's report chart files. A stat box *Report Chart Files* after
+  - `#confirmDialog`: Confirm (`admin-dialogs/admin-confirm-dialog.component.html`; Groups, Database and
+    the rate limits dialog each embed their own)
+  - `#manageUserConfigsDialog`: Manage User Configs (`users-tab/`)
+  - `#manageGroupConfigsDialog`: Manage Group Configs (`groups-tab/`)
+  - `#editConfigOverrideDialog`: Edit Config Override (`admin-dialogs/admin-config-override-dialog.component.html`)
+  - `#rateLimitsDialog`: Rate Limits (`admin-dialogs/admin-rate-limits-dialog.component.html`)
+  - `#analyticsDialog`: Analytics (`configs-tab/`)
+  - Not a dialog: the **Database** tab's report chart files (`database-tab/`). A stat box *Report Chart Files* after
     *Disk Attachments* reads *N documents · M files · X MB*, or *Not configured
     (Benchmark:ReportPack:ChartsDataLocation)*, and is absent when an older server sends no
     `reportChartsConfigured`. The maintenance card *Clear Report Chart Files*, after *Sweep Orphaned
@@ -283,9 +287,19 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#confirmDialog`: Confirm
   - `#changelogDialog`: Changelog
 
-- **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — the tab opens directly
-  with the benchmark tabs, with no brand row above them.
-  - **The Model Comparison tab** (`bm-panel-modelcomparison`) is a one-column grid. The hero card
+- **Benchmark Component (`admin/benchmark/`, Admin → AI Benchmark)** — the tab opens directly
+  with the benchmark tabs, with no brand row above them. `benchmark.component.html` is the shell: the
+  sub-tab row, one tab panel per sub-tab, and the dialogs more than one sub-tab opens (the run report,
+  the run progress, difficulty assessor and confirm dialogs, the snapshot viewer, the grader guide, the
+  comparison wizard, the multi-run and battery progress dialogs). The Run, History, Manage Suites,
+  Scoring Profiles and Model Comparison sub-tabs are components of their own (`run-tab/`,
+  `history-tab/`, `suites-tab/`, `profiles-tab/`, `comparison-tab/`) holding their own dialogs; Manage
+  Questions and Import Default Suites are `suites-tab/suite-questions-dialog.component.*` and
+  `suites-tab/import-default-suites-dialog.component.*`. Their shared state is in `state/` (the
+  workspace store, the launcher, the active-run monitor, the difficulty job, the comparison), the
+  sub-tabs reach the shell's dialogs through `BenchmarkShellBridge`, and the pure run formatters are
+  in `benchmark-run-format.ts`.
+  - **The Model Comparison tab** (`bm-panel-modelcomparison`, `comparison-tab/`) is a one-column grid. The hero card
     `.mc-launcher-hero` holds the h3, the lead, then **Open Comparison Wizard** — the page's only
     `.btn-gh`, full size, *compass* glyph — then the *Last comparison* read-out, then a non-exclusive
     `details.gh-disclosure.mc-launcher-howto` *How the comparison works* (the steps and the
@@ -303,7 +317,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     returns to the button). The panel is inside `@if (activeSubTab === 'modelcomparison')`, so the
     summary loads when the tab is shown and again on every showing; the wizard's close bumps
     `comparisonReportsReloadToken`. The panel duplicates none of the wizard's controls.
-  - **The Run History tab** (`#bm-panel-history`) is a card list (`frontend_ui_controls` §8h), one
+  - **The Run History tab** (`#bm-panel-history`, `history-tab/`) is a card list (`frontend_ui_controls` §8h), one
     full-width `article.rh-card` per run in a `ul.rh-card-list[role=list]` labelled by the `h4.gh-section-title`
     *Runs* (`#rh-list-title`). The head is one centered row (`align-items: center`, the heading's text
     box trimmed to its caps). It holds a dialog-mode info tip (`rh-list-tip`, *About the run history*:
@@ -317,9 +331,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     the two index orders, the two cost orders, *Duration, shortest first*, *Tested model (A–Z)*, *Suite
     (A–Z)*; stored under `overseer.benchmark.runHistory.view`), the facets *Suite*, *Tested model*,
     *Assessor*, *Status*, *Flags*, *Changes* and *Started* (single mode), each with `noun="runs"`, and
-    the chips with **Clear all**; there is no selection and no sticky bar. The state is `historyList`, a
-    `CardListState` over `historyTable` (`idPrefix: 'rh'`, `onChange` running `detectChanges()`, since
-    the component is Default change detection); `historyView` is `historyList.view(historyRuns)`, and
+    the chips with **Clear all**; there is no selection and no sticky bar. The state is the workspace
+    store's `historyList`, a `CardListState` over `historyTable` (`idPrefix: 'rh'`, `onChange` calling
+    `BenchmarkViewSync.notify()`, since the Benchmark components are OnPush); `historyView` is `historyList.view(historyRuns)`, and
     `historyRuns` stays in server order for `instrumentChangeOf`, `completedRunsOfSelectedSuite` and
     the other helpers that depend on it.
     `loadHistory()` fetches the newest 200 runs (`getRuns(undefined, 200)`); the server-side suite
@@ -357,7 +371,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     launcher's battery mode, the battery banner (`.battery-banner`) and the documentation of the whole
     feature are in `docs/overseer/ai-benchmark-multi-suite.md`.
 
-  Not an exhaustive list of this component's dialogs, only the ones recorded here so far:
+  Not an exhaustive list of the Benchmark dialogs, only the ones recorded here so far. Each names the
+  component that holds it when that is not the shell:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
     component sizing of its own). Its content wrapper is an inline-size container (`run-progress`)
     and its body holds two sections: `section.run-progress-overview` (everything but the questions,
@@ -519,7 +534,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     that does not. Both rules come from `run-ai-reports/report-writer-policy.ts`, which the AI Reports
     tab shares; the server stays authoritative. Audience 2 is shown everywhere as **Report for AI
     Researchers and Developers** (its stored type is still `TechnicalReport`).
-  - `#sameProviderDialog`: the same-provider confirmation on Start, **role-aware** by the 409's
+  - `#sameProviderDialog` (`run-tab/`): the same-provider confirmation on Start, **role-aware** by the 409's
     `role`. For `assessor` it is the *Same-Provider Assessment Warning* (*Model Under Test / Assessor
     Model / Provider Family*); for `reportWriter` the title is *Same-Provider Report Writer*, the lines
     *Model Under Test / Report Writer / Provider Family*, and the note says the reports may describe the
@@ -635,17 +650,17 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Peers are named* warning and failures stay visible. Its *Documents* heading and the two package
     legends use the shared `gh-section-title`; the legends keep a `dc-section-title` override only for
     what the global `.gh-choice > legend` rule would otherwise change.
-  - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
+  - `#importDefaultSuitesDialog` (`suites-tab/import-default-suites-dialog.component.*`): Import Default Suites (Manage Suites tab) — a multi-select
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).
-  - `#questionYamlImportDialog` (`app-question-yaml-import-dialog`, `question-yaml/`): YAML import
+  - `#questionYamlImportDialog` (`app-question-yaml-import-dialog`, `question-yaml/`, hosted by `suites-tab/`): YAML import
     in three modes — replace one question (a question's Import from YAML), import into the open
     suite (Manage Questions toolbar), create a suite (Manage Suites toolbar's Import Suite from
     YAML) — with Provide YAML, Review and Done steps. In **suite** mode it attaches the game
     snapshot the document carries, behind a checkbox on the review step whose sentence comes from
     a server preflight (`POST snapshots/match`) that says whether an identical board is already
     stored and who owns it. Its help link routes to whichever help dialog matches the open mode.
-  - `#questionYamlHelpDialog` and `#suiteYamlHelpDialog` (`app-question-yaml-help-dialog`): **two
+  - `#questionYamlHelpDialog` and `#suiteYamlHelpDialog` (`app-question-yaml-help-dialog`, hosted by `suites-tab/`): **two
     instances of one component**, selected by its `variant` input (`questions`, the default, and
     `suite`). Both live in one document, so every element id carries the variant's `idPrefix`
     (`yaml-help`, `suite-yaml-help`) — a duplicated id silently breaks `aria-labelledby`,
@@ -655,13 +670,13 @@ To find specific popups, look in the corresponding component's `.html` template:
     and its *AI Prompt* tab explains the Snapshot Suite Wizard and emits `(wizardRequested)`, on
     which the page closes the help and opens the wizard. Every code sample in both variants is an
     `app-code-block` (`shared/code-block/`).
-  - `#snapshotSuiteWizard` (`app-snapshot-suite-wizard`, `question-yaml/`): the Snapshot Suite Wizard
+  - `#snapshotSuiteWizard` (`app-snapshot-suite-wizard`, `question-yaml/`, hosted by `suites-tab/`): the Snapshot Suite Wizard
     from the Manage Suites toolbar — from a game snapshot to an imported suite, by adding questions
     to a snapshot suite (seven steps, the last, *Describe*, applying the description the agent
     suggested) or creating a new one (six steps). It holds `app-suite-prompt-builder` and an
     `app-question-yaml-import-panel` (the import body the standalone import dialog also wraps), and
     keeps its progress in `localStorage['overseer.snapshotSuiteWizard']`.
-  - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from
+  - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`, hosted by `suites-tab/`): Upload Snapshot from
     a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
     Delete Snapshot lives in the snapshot viewer's Delete tab (`#deleteConfirmDialog` in
     `snapshot-viewer.component.html`).
@@ -1112,10 +1127,10 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
 - **Persisted on Execution**: Settings are saved via `persistRunSettings()` when the operator initiates a run or multi-run series (`startBenchmark()`), capturing the exact configuration that was dispatched.
 - **Immediate vs. List-Backed Restorations**:
   - `restoreRunSettings()` reads from `localStorage` during `ngOnInit()`.
-  - Fields not backed by asynchronous lists (`verboseMode`, `runCount`) restore immediately.
-  - Number of runs (`runCount`) must be validated to be a positive integer (`≥ 1`, floored). It is clamped against `maxRunCountPerSeries` both upon restoration (if limits are already available) and in `loadRunLimits()` when the server limits response arrives. In battery mode the bound is `floor(maxMembersPerBattery / K)` instead (`maxRunsPerSuite`), applied by `clampRunCountToTarget()` whenever the Run Target, the battery, the battery list or the limits change.
+  - Fields not backed by asynchronous lists (`verboseMode`, `runCount`) restore immediately. The launcher's state and these rules are in `BenchmarkLauncherState` (`state/benchmark-launcher.state.ts`); `restoreRunSettings()` runs from `AdminBenchmarkComponent.ngOnInit()`.
+  - Number of runs (`runCount`) must be validated to be a positive integer (`≥ 1`, floored). It is clamped against `maxRunCountPerSeries` both upon restoration (if limits are already available) and when the server limits response arrives (the workspace store's `loadRunLimits()` announces it on `runLimitsLoaded$`). In battery mode the bound is `floor(maxMembersPerBattery / K)` instead (`maxRunsPerSuite`), applied by `clampRunCountToTarget()` whenever the Run Target, the battery, the battery list or the limits change.
   - List-backed fields (`suiteId`, `scoringProfileId`, `testedConfigId`, `assessorConfigId`, etc.) are validated against their asynchronously loaded datasets before being applied. If a saved ID no longer exists or a configuration is disabled or lost its `Benchmark` role, it must fall back gracefully to the default rather than leaving a dangling ID.
-  - **Four list-backed parts.** `runSettingsApplied` tracks `suite`, `profile`, `configs` and `battery`, and `markRunSettingsApplied()` drops the pending blob only once **all four** have had their turn. The `battery` part is `targetKind` plus `batteryId`, applied by `loadBatteries()` when the battery list arrives (or fails, which restores Single suite). Dropping the blob after three parts would discard it before the batteries arrive, and the Run Target would never restore. A fifth list-backed field needs a fifth part.
+  - **Four list-backed parts.** `runSettingsApplied` tracks `suite`, `profile`, `configs` and `battery`, and `markRunSettingsApplied()` drops the pending blob only once **all four** have had their turn. The `battery` part is `targetKind` plus `batteryId`, applied by the launcher when the workspace store's `loadBatteries()` announces the battery list on `batteriesLoaded$` (or its failure, which restores Single suite). Dropping the blob after three parts would discard it before the batteries arrive, and the Run Target would never restore. A fifth list-backed field needs a fifth part.
 - **Safety Acknowledgments Excluded**: Transient safety gates (such as `acknowledgeSameProvider` and `acknowledgeSameProviderReportWriter`) must NEVER be persisted across sessions, ensuring the warning dialog cannot be silently bypassed. The launcher keeps the acknowledgments given in one start attempt only, by role, and a new attempt starts with none; the AI Reports tab's *Write Anyway* is likewise asked on every write.
 - **Reuse Excluded**: The battery launcher's **Reuse earlier runs** checkbox is deliberately **not** persisted and starts unchecked on every load. Reuse is a decision about one start: the runs it would attach depend on the instrument hashes at that moment, and a remembered check would quietly attach old runs to a later battery run.
 

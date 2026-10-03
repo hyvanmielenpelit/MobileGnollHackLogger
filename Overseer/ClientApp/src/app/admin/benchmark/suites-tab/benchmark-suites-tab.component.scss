@@ -1,0 +1,330 @@
+@use '../benchmark-shared' as shared;
+
+:host {
+  // The panel's column, as .benchmark-tab-content gives it to its direct children.
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+// The dialogs after the panel content take no place in the column.
+:host > :is(app-snapshot-upload-dialog, app-question-yaml-import-dialog, app-question-yaml-help-dialog,
+  app-snapshot-suite-wizard, app-question-generation-dialog, app-suite-description-generation-dialog,
+  app-suite-questions-dialog, app-import-default-suites-dialog) {
+  display: contents;
+}
+
+@include shared.shared-1;
+
+@include shared.shared-2;
+
+@include shared.shared-3;
+
+@include shared.shared-4;
+
+@include shared.shared-6;
+
+@include shared.shared-7;
+
+/* .custom-model-selector, .selector-trigger, .selector-dropdown, .model-option and .model-name
+   (the form variant) live in styles.scss, alongside the .compact and .drops-up modifiers
+   used by the chat composer and the models page. Do not redeclare them here. */
+
+/* .price-badge lives in styles.scss, in the model selector family. */
+
+/* .reasoning-badge and .parallel-badge live in styles.scss, in the model selector family. */
+
+/* Buttons here use the global design system unchanged:
+   .btn-gh (the decorative GnollHack image button) with .btn-gh-cancel,
+   .btn-gh-delete and .btn-gh-small; .action-btn / .action-btn-danger for
+   icon-only row actions; .btn-icon-action for dialog close buttons. All of
+   them live in styles.scss.
+
+   NEVER redefine .btn-gh in this file. Angular's emulated view encapsulation
+   scopes such an override to this component only, so it silently forks the
+   design system: the button keeps working and stops looking like the rest of
+   the application. That is exactly what happened here before, and it is why
+   this comment exists. Extend the global vocabulary in styles.scss instead. */
+
+.suites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr));
+  gap: 18px;
+}
+
+.suite-card {
+  display: flex;
+  flex-direction: column;
+  background: #191919;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 18px 20px;
+  min-height: 160px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+
+  &:hover {
+    border-color: #444;
+    background: #1c1c1c;
+  }
+
+  &:focus { outline: none; }
+
+  &.suite-card-linked {
+    border-color: var(--primary-color);
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  .suite-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .suite-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex: 1;
+    min-width: 0;
+
+    h4 {
+      margin: 0;
+      font-size: 16px;
+      color: #fff;
+      font-family: "Cinzel", serif;
+      font-weight: 700;
+    }
+  }
+
+  .suite-top-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .suite-card-export {
+    display: flex;
+    gap: 4px;
+    margin-inline-start: auto;
+    flex-shrink: 0;
+  }
+
+  .suite-desc-container {
+    margin: 10px 0 16px 0;
+    flex-grow: 1;
+  }
+
+  .suite-desc {
+    margin: 10px 0 16px 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #aaa;
+    flex-grow: 1;
+  }
+
+  .suite-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    border-top: 1px solid #2e2e2e;
+    padding-top: 14px;
+    margin-top: auto;
+  }
+
+  .suite-card-secondary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+@include shared.shared-8;
+
+/* Suite card review badges. Global .badge-* rules live under .status-badge in styles.scss
+   and do not reach the suite card, so the family is defined here with the
+   .question-count-badge pill shape. */
+.suite-title-group .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+
+  svg { flex-shrink: 0; }
+
+  &.badge-warning {
+    background: rgba(255, 193, 7, 0.15);
+    color: var(--color-warning);
+    border: 1px solid rgba(255, 193, 7, 0.4);
+  }
+
+  &.badge-success {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+    border: 1px solid rgba(76, 175, 80, 0.35);
+  }
+}
+
+@include shared.shared-9;
+
+/* Suites tab toolbar: the actions sit together at the start and the copy status takes the
+   remaining space, so no empty status line separates the toolbar from the grid. */
+.suites-toolbar-grouped {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+
+  .suites-copy-status {
+    flex: 1 1 200px;
+    text-align: end;
+  }
+}
+
+@include shared.shared-10;
+
+/* .difficulty-badge and .assessed-diff-badge live in styles.scss, in the question-card
+   family. The default-suite-bands override below is local (a different layout for the badge
+   inside the import dialog). */
+
+.suite-assessment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+
+  svg {
+    flex-shrink: 0;
+  }
+
+  &.assess-complete {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+    border: 1px solid rgba(76, 175, 80, 0.35);
+  }
+
+  &.assess-partial {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffb74d;
+    border: 1px solid rgba(255, 152, 0, 0.35);
+  }
+
+  &.assess-none {
+    background: rgba(136, 136, 136, 0.08);
+    color: #9a9a9a;
+    border: 1px solid rgba(136, 136, 136, 0.35);
+  }
+}
+
+@include shared.shared-13;
+
+@include shared.shared-14;
+
+/* Projected into the description editor's label row; sits at the end of that row. */
+.suite-desc-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-inline-start: auto;
+
+  .form-hint { margin-top: 0; }
+}
+
+@include shared.shared-15;
+
+/* Both of these dialogs are full-screen, unlike every one of their siblings: four tabs of suite
+   analysis and an eleven-column item table, and a wizard carrying two paged tables and six
+   figures, have no honest smaller size. The viewport sizing, the top-layer entry and exit
+   transition, the backdrop and the reduced-motion block all come from .gh-dialog-fullscreen in
+   styles.scss, which a second consumer is exactly the reason for. Only Suite Health has a local
+   body frame; the Model Comparison wizard's whole column lives in
+   model-comparison.component.scss, because its markup belongs to that component and an
+   encapsulated rule here would not reach it. */
+.gh-dialog.benchmark-suite-health-dialog {
+  /* The body is the panel's frame, not a scroller: each tab scrolls itself. */
+  .suite-health-dialog-body {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    min-height: 0;
+  }
+}
+
+@include shared.shared-16;
+
+@include shared.shared-17;
+
+@include shared.shared-18;
+
+@include shared.shared-19;
+
+@include shared.shared-20;
+
+@include shared.shared-21;
+
+@include shared.shared-22;
+
+@include shared.shared-23;
+
+@include shared.shared-24;
+
+@include shared.shared-25;
+
+@include shared.shared-26;
+
+@include shared.shared-28;
+
+.suite-footprint-info {
+  font-size: 12px;
+  color: #888;
+}
+
+.footprint-stat-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+@include shared.shared-29;
+
+.badge-board {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  &:hover {
+    background: rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}

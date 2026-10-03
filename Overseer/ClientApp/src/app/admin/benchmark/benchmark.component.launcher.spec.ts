@@ -3,9 +3,12 @@ import { ComponentFixture, fakeAsync, tick, discardPeriodicTasks } from '@angula
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
-import { clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY } from './benchmark.component.testing';
+import {
+  AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY
+} from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -15,7 +18,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   // ---------------------------------------------------------------------------
@@ -117,7 +121,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should render both dt/dd pairs and keep .run-model-row present in the run-model-strip', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -131,8 +135,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       expect(strip).toBeTruthy();
@@ -156,7 +160,7 @@ describe('AdminBenchmarkComponent', () => {
     // H6. The Endpoint row under Model under test follows the same rule as the grader rows
     // below it: the official endpoint is the assumed default and prints nothing extra.
     it('should render no Endpoint row for the official endpoint', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -171,8 +175,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
@@ -180,7 +184,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should render the Endpoint row for a custom endpoint', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -195,8 +199,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
@@ -207,7 +211,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should give every roster badge a spoken prefix and no title attribute', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -234,8 +238,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip') as HTMLElement;
       const text = (el: Element | null | undefined) => el?.textContent?.trim();
@@ -255,7 +259,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should render second opinion assessor row under Assessor with selected mode when configured', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -274,8 +278,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       expect(strip).toBeTruthy();
@@ -303,7 +307,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should not render second opinion row if mode is Off (0)', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -320,8 +324,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       expect(strip).toBeTruthy();
@@ -330,7 +334,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should add a Co-assessor row after Assessor and call the second opinion the reference reader in a panel run', () => {
-      component.activeRunDetail = {
+      ctx.monitor.activeRunDetail = {
         id: 42,
         status: 'Running',
         suiteName: 'Default Suite',
@@ -353,8 +357,8 @@ describe('AdminBenchmarkComponent', () => {
         totalQuestionCount: 10,
         answers: []
       } as any;
-      component.isRunProgressDialogOpen = true;
-      fixture.detectChanges();
+      ctx.monitor.isRunProgressDialogOpen = true;
+      ctx.refresh();
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
@@ -402,7 +406,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should say what a second run buys rather than referring to previous behaviour', () => {
       component.activeSubTab = 'run';
-      component.runLimits = {
+      ctx.workspace.runLimits = {
         maxRunsPerHour: 4,
         maxRunsPerDay: 20,
         runsInLastHour: 0,
@@ -410,7 +414,7 @@ describe('AdminBenchmarkComponent', () => {
         remainingDailyHeadroom: 20,
         maxRunCountPerSeries: 20
       };
-      fixture.detectChanges();
+      ctx.refresh();
 
       const hint = fixture.nativeElement.querySelector('#runCountHint') as HTMLElement | null;
       expect(hint).toBeTruthy();
@@ -473,8 +477,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('themes every launcher checkbox with the global checkbox-label', () => {
-      component.runCount = 2;
-      fixture.detectChanges();
+      ctx.launcher.runCount = 2;
+      ctx.refresh();
 
       expect(card().querySelectorAll('.gh-checkbox').length).toBe(0);
       for (const id of ['allowCapWaitInput', 'completionSoundInput', 'completionNotificationInput']) {
@@ -526,11 +530,11 @@ describe('AdminBenchmarkComponent', () => {
       expect(card().querySelector('.gh-fieldset-hint')).toBeNull();
     });
 
-    // Each state is set before the run tab's first render: a second fixture.detectChanges()
-    // does not refresh the launcher's conditional branches in this spec.
+    // Each state is set on the launcher and announced with ctx.refresh(): the run tab is OnPush,
+    // so fixture.detectChanges() alone does not refresh the launcher's conditional branches.
     it('should hide the Response Style note while Concise is selected', () => {
-      component.candidateVerboseMode = false;
-      fixture.detectChanges();
+      ctx.launcher.candidateVerboseMode = false;
+      ctx.refresh();
 
       expect(card().querySelector('#candidateResponseStyleNote')).toBeNull();
       expect(card().querySelector('#candidateResponseStyle')!.getAttribute('aria-describedby'))
@@ -538,8 +542,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show the Response Style note while Detailed is selected', () => {
-      component.candidateVerboseMode = true;
-      fixture.detectChanges();
+      ctx.launcher.candidateVerboseMode = true;
+      ctx.refresh();
 
       expect(card().querySelector('#candidateResponseStyleNote')?.textContent).toContain('Only Accuracy stays comparable');
       expect(card().querySelector('#candidateResponseStyle')!.getAttribute('aria-describedby'))
@@ -558,7 +562,7 @@ describe('AdminBenchmarkComponent', () => {
         'Disallowed — production default',
         'Allowed — answers cite source files and lines'
       ]);
-      expect(component.candidateAllowSourceCodeReferences).toBe(false);
+      expect(ctx.launcher.candidateAllowSourceCodeReferences).toBe(false);
       expect(select.getAttribute('aria-describedby')).toBe('candidateSourceCodeReferencesHint');
 
       const hint = card().querySelector('#candidateSourceCodeReferencesHint') as HTMLElement;
@@ -568,8 +572,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show the Second Opinion Mode reason while the mode is disabled', () => {
-      component.secondOpinionConfigId = null;
-      fixture.detectChanges();
+      ctx.launcher.secondOpinionConfigId = null;
+      ctx.refresh();
 
       expect(card().querySelector('#secondOpinionModeHint')?.textContent).toContain('Choose a second reader to set its coverage');
       expect(card().querySelector('#secondOpinionModeSelect')!.getAttribute('aria-describedby'))
@@ -577,8 +581,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should hide the Second Opinion Mode reason while the mode is enabled', () => {
-      component.secondOpinionConfigId = 1;
-      fixture.detectChanges();
+      ctx.launcher.secondOpinionConfigId = 1;
+      ctx.refresh();
 
       expect(card().querySelector('#secondOpinionModeHint')).toBeNull();
       expect(card().querySelector('#secondOpinionModeSelect')!.getAttribute('aria-describedby'))
@@ -586,9 +590,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show no same-model note without a second opinion', () => {
-      component.assessorConfigId = 1;
-      component.secondOpinionConfigId = null;
-      fixture.detectChanges();
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.secondOpinionConfigId = null;
+      ctx.refresh();
 
       expect(card().querySelector('#bmSecondOpinionSameModelNote')).toBeNull();
       expect(card().querySelector('.second-opinion-model-selector .selector-trigger')!.getAttribute('aria-describedby'))
@@ -596,9 +600,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should show the same-model note when the second opinion is the assessor', () => {
-      component.assessorConfigId = 1;
-      component.secondOpinionConfigId = 1;
-      fixture.detectChanges();
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.secondOpinionConfigId = 1;
+      ctx.refresh();
 
       expect(card().querySelector('#bmSecondOpinionSameModelNote')?.textContent)
         .toContain('Same model as the assessor');
@@ -648,7 +652,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(button.textContent?.trim()).toBe('How the graders work');
       button.click();
       expect(open).toHaveBeenCalledWith('roles');
-      expect(component.graderGuideProfile).toBe(component.selectedScoringProfile ?? null);
+      expect(component.graderGuideProfile).toBe(ctx.launcher.selectedScoringProfile ?? null);
     });
 
     it('should offer an optional Report Writer after the Claim Verifier, with its hint in a click-mode popup', () => {
@@ -664,7 +668,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(trigger.getAttribute('aria-labelledby')).toContain('bmReportWriterModelLabel');
       expect(trigger.getAttribute('aria-describedby')).toBe('bmReportWriterModelHint');
       expect(trigger.textContent).toContain('None — no AI-written reports');
-      expect(component.reportWriterConfigId).toBeNull();
+      expect(ctx.launcher.reportWriterConfigId).toBeNull();
 
       const hint = card().querySelector('#bmReportWriterModelHint') as HTMLElement;
       expect(hint.closest('.gh-info-popup')?.getAttribute('popover')).toBe('auto');
@@ -681,33 +685,33 @@ describe('AdminBenchmarkComponent', () => {
         component.systemConfigs[0],
         { ...component.systemConfigs[0], id: 2, displayName: 'Other Claude', modelId: 'claude-other' }
       ];
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
-      component.reportWriterConfigId = 2;
-      fixture.detectChanges();
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.reportWriterConfigId = 2;
+      ctx.refresh();
 
       const warning = 'Other Claude is from Anthropic, the provider of the model under test. ' +
         'Its reports may describe that model more favorably.';
-      expect(component.reportWriterLaunchRefusal).toBe('');
-      expect(component.reportWriterLaunchWarning).toBe(warning);
+      expect(ctx.runTab().reportWriterLaunchRefusal).toBe('');
+      expect(ctx.runTab().reportWriterLaunchWarning).toBe(warning);
       const advisory = card().querySelector('.setup-group-grading .report-writer-advisory') as HTMLElement;
       expect(advisory.classList).toContain('alert-warning');
       expect(advisory.querySelector('svg.alert-icon')?.getAttribute('aria-hidden')).toBe('true');
       expect(advisory.textContent?.replace(/\s+/g, ' ').trim()).toBe(warning);
       expect(card().querySelector('.setup-group-grading .report-writer-refusal')).toBeNull();
-      expect(component.canStartRun).toBe(true);
-      expect(component.startBenchmarkHint).toBe('');
+      expect(ctx.runTab().canStartRun).toBe(true);
+      expect(ctx.runTab().startBenchmarkHint).toBe('');
     });
 
     it('should refuse the model under test as its own report writer in red and hold Start back', () => {
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
-      component.reportWriterConfigId = 1;
-      fixture.detectChanges();
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.reportWriterConfigId = 1;
+      ctx.refresh();
 
       const refusal = 'The model under test cannot write its own reports.';
-      expect(component.reportWriterLaunchRefusal).toBe(refusal);
-      expect(component.reportWriterLaunchWarning).toBe('');
+      expect(ctx.runTab().reportWriterLaunchRefusal).toBe(refusal);
+      expect(ctx.runTab().reportWriterLaunchWarning).toBe('');
       const line = card().querySelector('.setup-group-grading .report-writer-refusal') as HTMLElement;
       expect(line.classList).toContain('gh-field-error');
       expect(line.id).toBe('bmReportWriterRefusal');
@@ -716,11 +720,11 @@ describe('AdminBenchmarkComponent', () => {
       expect(card().querySelector('.setup-group-grading .report-writer-advisory')).toBeNull();
       const trigger = card().querySelector('.report-writer-model-selector .selector-trigger') as HTMLElement;
       expect(trigger.getAttribute('aria-describedby')).toBe('bmReportWriterModelHint bmReportWriterRefusal');
-      expect(component.canStartRun).toBe(false);
-      expect(component.startBenchmarkHint).toBe(refusal);
+      expect(ctx.runTab().canStartRun).toBe(false);
+      expect(ctx.runTab().startBenchmarkHint).toBe(refusal);
 
-      component.reportWriterConfigId = null;
-      expect(component.reportWriterLaunchRefusal).toBe('');
+      ctx.launcher.reportWriterConfigId = null;
+      expect(ctx.runTab().reportWriterLaunchRefusal).toBe('');
     });
   });
 
@@ -737,44 +741,44 @@ describe('AdminBenchmarkComponent', () => {
     function prepare(): Mock {
       component.activeSubTab = 'run';
       fixture.detectChanges();
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 1;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       benchmarkServiceMock.getRun.mockReturnValue(of({ id: 42, answers: [] } as any));
-      return vi.spyOn(component.sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      return vi.spyOn(ctx.runTab().sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
     }
 
     function dialogHeading(): string {
-      return component.sameProviderDialog.nativeElement.querySelector('h3')?.textContent?.trim() ?? '';
+      return ctx.runTab().sameProviderDialog.nativeElement.querySelector('h3')?.textContent?.trim() ?? '';
     }
 
     function dialogText(): string {
-      return (component.sameProviderDialog.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
+      return (ctx.runTab().sameProviderDialog.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
     }
 
     function sentBodies(): any[] {
       return vi.mocked(benchmarkServiceMock.startRun).mock.calls.map(args => args[0]);
     }
 
-    afterEach(() => component.ngOnDestroy());
+    afterEach(() => fixture.destroy());
 
     it('should open the dialog in report-writer wording on the writer\'s 409 and re-send with the writer\'s flag', () => {
       const showModal = prepare();
       benchmarkServiceMock.startRun.mockReturnValueOnce(throwError(() => ({ status: 409, error: writerWarning }))).mockReturnValueOnce(of({ runId: 42 }));
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       fixture.detectChanges();
 
       expect(showModal).toHaveBeenCalledTimes(1);
-      expect(component.sameProviderWarningIsReportWriter).toBe(true);
+      expect(ctx.runTab().sameProviderWarningIsReportWriter).toBe(true);
       expect(dialogHeading()).toBe('Same-Provider Report Writer');
       expect(dialogText()).toContain('Report Writer: Other Claude');
       expect(dialogText()).not.toContain('Assessor Model:');
       expect(dialogText()).toContain('The run\'s AI-written reports would be written by a model from the same provider ' +
         'as the model under test, which may describe it more favorably.');
 
-      const confirm = (Array.from(component.sameProviderDialog.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
+      const confirm = (Array.from(ctx.runTab().sameProviderDialog.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
         .find(button => (button.textContent ?? '').includes('Acknowledge & Start Run'))!;
       confirm.click();
 
@@ -792,18 +796,18 @@ describe('AdminBenchmarkComponent', () => {
       const showModal = prepare();
       benchmarkServiceMock.startRun.mockReturnValueOnce(throwError(() => ({ status: 409, error: assessorWarning }))).mockReturnValueOnce(throwError(() => ({ status: 409, error: writerWarning }))).mockReturnValueOnce(of({ runId: 42 }));
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       fixture.detectChanges();
-      expect(component.sameProviderWarningIsReportWriter).toBe(false);
+      expect(ctx.runTab().sameProviderWarningIsReportWriter).toBe(false);
       expect(dialogHeading()).toBe('Same-Provider Assessment Warning');
       expect(dialogText()).toContain('Assessor Model: Test Model');
 
-      component.confirmSameProviderRun();
+      ctx.runTab().confirmSameProviderRun();
       fixture.detectChanges();
-      expect(component.sameProviderWarningIsReportWriter).toBe(true);
+      expect(ctx.runTab().sameProviderWarningIsReportWriter).toBe(true);
       expect(dialogHeading()).toBe('Same-Provider Report Writer');
 
-      component.confirmSameProviderRun();
+      ctx.runTab().confirmSameProviderRun();
 
       const bodies = sentBodies();
       expect(bodies.length).toBe(3);
@@ -819,10 +823,10 @@ describe('AdminBenchmarkComponent', () => {
       prepare();
       benchmarkServiceMock.startRun.mockReturnValueOnce(throwError(() => ({ status: 409, error: writerWarning }))).mockReturnValueOnce(throwError(() => ({ status: 500, error: 'Boom' }))).mockReturnValueOnce(throwError(() => ({ status: 500, error: 'Boom' })));
 
-      component.startBenchmark();
-      component.confirmSameProviderRun();
-      component.closeSameProviderDialog();
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
+      ctx.runTab().confirmSameProviderRun();
+      ctx.runTab().closeSameProviderDialog();
+      ctx.runTab().startBenchmark();
 
       const bodies = sentBodies();
       expect(bodies.length).toBe(3);
@@ -836,7 +840,7 @@ describe('AdminBenchmarkComponent', () => {
     /** Re-points the Model Under Test at a config carrying the given thinking level. */
     function selectTestedModelWithThinkingLevel(level: string | null): void {
       component.systemConfigs = [{ ...component.systemConfigs[0], thinkingLevel: level }];
-      component.testedConfigId = component.systemConfigs[0].id;
+      ctx.launcher.testedConfigId = component.systemConfigs[0].id;
     }
 
     /**
@@ -856,44 +860,44 @@ describe('AdminBenchmarkComponent', () => {
       // The default profile targets 2000 ms, which is well inside the interactive band.
       for (const level of ['high', 'max', 'Max', 'HIGH']) {
         selectTestedModelWithThinkingLevel(level);
-        expect(component.showProfileFitAdvisory, level).toBe(true);
+        expect(ctx.runTab().showProfileFitAdvisory, level).toBe(true);
       }
 
-      fixture.detectChanges();
+      ctx.refresh();
       expect(profileFitHintText()).toContain('This profile targets interactive latency.');
       expect(profileFitHintText()).toContain('consider a Reasoning Agent profile');
     });
 
     it('should stay silent for a shallow thinking level or a profile with a slow speed target', () => {
       selectTestedModelWithThinkingLevel('low');
-      expect(component.showProfileFitAdvisory).toBe(false);
+      expect(ctx.runTab().showProfileFitAdvisory).toBe(false);
 
       selectTestedModelWithThinkingLevel('max');
-      component.scoringProfiles = [{ ...component.scoringProfiles[0], speedTargetMs: 30000 }];
-      expect(component.showProfileFitAdvisory).toBe(false);
+      ctx.workspace.scoringProfiles = [{ ...ctx.workspace.scoringProfiles[0], speedTargetMs: 30000 }];
+      expect(ctx.runTab().showProfileFitAdvisory).toBe(false);
 
-      fixture.detectChanges();
+      ctx.refresh();
       expect(profileFitHintText()).toBe('');
     });
 
     it('should stay silent while either half of the pairing is unselected', () => {
-      component.testedConfigId = null;
-      component.selectedScoringProfileId = null;
-      expect(component.showProfileFitAdvisory).toBe(false);
+      ctx.launcher.testedConfigId = null;
+      ctx.launcher.selectedScoringProfileId = null;
+      expect(ctx.runTab().showProfileFitAdvisory).toBe(false);
 
       // A model chosen, but no profile yet.
       selectTestedModelWithThinkingLevel('max');
-      component.selectedScoringProfileId = null;
-      expect(component.showProfileFitAdvisory).toBe(false);
+      ctx.launcher.selectedScoringProfileId = null;
+      expect(ctx.runTab().showProfileFitAdvisory).toBe(false);
 
       // A profile chosen, but no model yet.
-      component.selectedScoringProfileId = 1;
-      component.testedConfigId = null;
-      expect(component.showProfileFitAdvisory).toBe(false);
+      ctx.launcher.selectedScoringProfileId = 1;
+      ctx.launcher.testedConfigId = null;
+      expect(ctx.runTab().showProfileFitAdvisory).toBe(false);
 
       // A model with no thinking level at all is not a deliberating one.
       selectTestedModelWithThinkingLevel(null);
-      expect(component.showProfileFitAdvisory).toBe(false);
+      expect(ctx.runTab().showProfileFitAdvisory).toBe(false);
     });
   });
   describe('second opinion mode', () => {
@@ -905,7 +909,7 @@ describe('AdminBenchmarkComponent', () => {
      */
     function modeSelect(): HTMLSelectElement | null {
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
       tick();
       fixture.detectChanges();
       return fixture.nativeElement.querySelector('#secondOpinionModeSelect') as HTMLSelectElement | null;
@@ -929,82 +933,90 @@ describe('AdminBenchmarkComponent', () => {
     }));
 
     it('should be disabled, with a reason, until a second opinion assessor is chosen', fakeAsync(() => {
-      component.secondOpinionConfigId = null;
+      ctx.launcher.secondOpinionConfigId = null;
       const select = modeSelect();
 
       // The hard gate that silently produced the 2026-09-03 run's zero second verdicts: the
       // mode is inert without an assessor, so the control says so rather than looking set.
       expect(select!.disabled).toBe(true);
-      expect(component.secondOpinionModeHint).toContain('Choose a second reader to set its coverage');
+      expect(ctx.runTab().secondOpinionModeHint).toContain('Choose a second reader to set its coverage');
       discardPeriodicTasks();
     }));
 
     it('should enable and describe the selected mode once an assessor is chosen', fakeAsync(() => {
-      component.secondOpinionConfigId = 1;
-      component.secondOpinionMode = 3;
+      ctx.launcher.secondOpinionConfigId = 1;
+      ctx.launcher.secondOpinionMode = 3;
       const select = modeSelect();
 
       expect(select!.disabled).toBe(false);
-      expect(component.secondOpinionModeHint).toContain('unbiased measure of grading reliability');
+      expect(ctx.runTab().secondOpinionModeHint).toContain('unbiased measure of grading reliability');
       discardPeriodicTasks();
     }));
 
     it('should default from the selected profile and be overridable for one run', () => {
-      component.scoringProfiles = [{ ...component.scoringProfiles[0], secondOpinionMode: 2 }];
-      component.selectedScoringProfileId = 1;
-      expect(component.secondOpinionMode).toBe(2);
+      ctx.workspace.scoringProfiles = [{ ...ctx.workspace.scoringProfiles[0], secondOpinionMode: 2 }];
+      ctx.launcher.selectedScoringProfileId = 1;
+      expect(ctx.launcher.secondOpinionMode).toBe(2);
 
-      component.secondOpinionMode = 3;
-      expect(component.secondOpinionMode).toBe(3);
+      ctx.launcher.secondOpinionMode = 3;
+      expect(ctx.launcher.secondOpinionMode).toBe(3);
     });
 
     it('should send the mode only when an assessor is selected', fakeAsync(() => {
       const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 2;
-      component.secondOpinionConfigId = null;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 2;
+      ctx.launcher.secondOpinionConfigId = null;
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 7 }));
       benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 0 })));
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionMode).toBeNull();
 
-      component.secondOpinionConfigId = 3;
-      component.secondOpinionMode = 3;
-      component.startBenchmark();
+      ctx.launcher.secondOpinionConfigId = 3;
+      ctx.launcher.secondOpinionMode = 3;
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionMode).toBe(3);
       expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
 
-      (component as any).stopPolling();
+      ctx.monitor.stopPolling();
       discardPeriodicTasks();
     }));
 
     it('should enable the profile editor outlier delta for FlaggedAndOutliers only', () => {
-      component.profileForm.secondOpinionMode = 1;
-      expect(component.outlierDeltaEnabled).toBe(false);
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profilesTab = ctx.profilesTab();
 
-      component.profileForm.secondOpinionMode = 3;
-      expect(component.outlierDeltaEnabled).toBe(false);
+      profilesTab.profileForm.secondOpinionMode = 1;
+      expect(profilesTab.outlierDeltaEnabled).toBe(false);
 
-      component.profileForm.secondOpinionMode = 2;
-      expect(component.outlierDeltaEnabled).toBe(true);
+      profilesTab.profileForm.secondOpinionMode = 3;
+      expect(profilesTab.outlierDeltaEnabled).toBe(false);
+
+      profilesTab.profileForm.secondOpinionMode = 2;
+      expect(profilesTab.outlierDeltaEnabled).toBe(true);
     });
 
     it('should reject a non-positive outlier delta under FlaggedAndOutliers', () => {
-      component.editingProfileId = null;
-      component.profileForm = {
-        ...component.profileForm,
+      component.selectSubTab('profiles');
+      fixture.detectChanges();
+      const profilesTab = ctx.profilesTab();
+
+      profilesTab.editingProfileId = null;
+      profilesTab.profileForm = {
+        ...profilesTab.profileForm,
         name: 'Outlier Profile',
         secondOpinionMode: 2,
         secondOpinionOutlierDeltaPoints: 0
       };
 
-      component.saveProfile();
+      profilesTab.saveProfile();
 
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
-      expect(component.profileValidationErrors.join(' ')).toContain('Outlier delta must be between 1 and 100');
+      expect(profilesTab.profileValidationErrors.join(' ')).toContain('Outlier delta must be between 1 and 100');
     });
   });
 
@@ -1015,32 +1027,32 @@ describe('AdminBenchmarkComponent', () => {
         { id: 2, displayName: 'Gemini Pro', modelId: 'gemini-3.7-pro', provider: 'Google', modelRole: 4, hasApiKey: true, isEnabled: true } as any,
         { id: 3, displayName: 'Claude Opus 5', modelId: 'claude-opus-5', provider: 'Anthropic', modelRole: 4, hasApiKey: true, isEnabled: true } as any
       ];
-      component.assessorConfigId = 1;
-      component.secondOpinionConfigId = 2;
-      expect(component.showAssessorPairingAdvisory).toBe(true);
+      ctx.launcher.assessorConfigId = 1;
+      ctx.launcher.secondOpinionConfigId = 2;
+      expect(ctx.runTab().showAssessorPairingAdvisory).toBe(true);
 
-      component.secondOpinionConfigId = 3;
-      expect(component.showAssessorPairingAdvisory).toBe(false);
+      ctx.launcher.secondOpinionConfigId = 3;
+      expect(ctx.runTab().showAssessorPairingAdvisory).toBe(false);
     });
 
     it('should warn when the assessor differs from the suite\'s last completed run', () => {
-      component.assessorConfigId = 5;
-      component.lastAssessor = {
+      ctx.launcher.assessorConfigId = 5;
+      ctx.launcher.lastAssessor = {
         runId: 7,
         assessorModelConfigurationId: 2,
         assessorModelDisplayNameUsed: 'Gemini 3.7 Flash',
         assessorModelProviderUsed: 'Google'
       };
-      expect(component.showAssessorChangeAdvisory).toBe(true);
+      expect(ctx.runTab().showAssessorChangeAdvisory).toBe(true);
 
-      component.assessorConfigId = 2;
-      expect(component.showAssessorChangeAdvisory).toBe(false);
+      ctx.launcher.assessorConfigId = 2;
+      expect(ctx.runTab().showAssessorChangeAdvisory).toBe(false);
     });
 
     it('should stay silent for a suite with no completed run to compare against', () => {
-      component.assessorConfigId = 5;
-      component.lastAssessor = {};
-      expect(component.showAssessorChangeAdvisory).toBe(false);
+      ctx.launcher.assessorConfigId = 5;
+      ctx.launcher.lastAssessor = {};
+      expect(ctx.runTab().showAssessorChangeAdvisory).toBe(false);
     });
   });
 });

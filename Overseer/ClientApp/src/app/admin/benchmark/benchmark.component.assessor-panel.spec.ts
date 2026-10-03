@@ -5,9 +5,12 @@ import { ModelPickerComponent } from '../../shared/model-picker/model-picker.com
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
-import { clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY } from './benchmark.component.testing';
+import {
+  AdminBenchmarkSpecContext, benchmarkSpecHandles, clearStoredState, createAdminBenchmarkFixture, RUN_SETTINGS_KEY
+} from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
+  let ctx: AdminBenchmarkSpecContext;
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
@@ -17,7 +20,8 @@ describe('AdminBenchmarkComponent', () => {
   afterEach(clearStoredState);
 
   beforeEach(async () => {
-    ({ component, fixture, benchmarkServiceMock } = await createAdminBenchmarkFixture());
+    ctx = await createAdminBenchmarkFixture();
+    ({ component, fixture, benchmarkServiceMock } = ctx);
   });
 
   // ---------------------------------------------------------------------------
@@ -45,10 +49,10 @@ describe('AdminBenchmarkComponent', () => {
     /** A valid panel: Anthropic candidate, OpenAI member A, an older Anthropic member B. */
     function selectValidPanel(): void {
       usePanelConfigs();
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 2;
-      component.coAssessorConfigId = 4;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 2;
+      ctx.launcher.coAssessorConfigId = 4;
     }
 
     function startButton(): HTMLButtonElement {
@@ -59,8 +63,8 @@ describe('AdminBenchmarkComponent', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
-      expect(component.coAssessorConfigId).toBeNull();
-      expect(component.isPanelLaunch).toBe(false);
+      expect(ctx.launcher.coAssessorConfigId).toBeNull();
+      expect(ctx.launcher.isPanelLaunch).toBe(false);
       const trigger = fixture.nativeElement.querySelector('.co-assessor-model-selector .selector-trigger') as HTMLButtonElement;
       expect(trigger).toBeTruthy();
       expect(trigger.textContent).toContain('None — single assessor');
@@ -69,7 +73,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should select a co-assessor through its dropdown, and clear it with the None option', () => {
       usePanelConfigs();
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
 
       const trigger = fixture.nativeElement.querySelector('.co-assessor-model-selector .selector-trigger') as HTMLButtonElement;
       trigger.click();
@@ -79,43 +83,43 @@ describe('AdminBenchmarkComponent', () => {
       expect(options[0].textContent).toContain('None — single assessor');
       options.find(o => o.textContent?.includes('Claude Opus 4'))!.click();
       fixture.detectChanges();
-      expect(component.coAssessorConfigId).toBe(4);
+      expect(ctx.launcher.coAssessorConfigId).toBe(4);
       expect(trigger.textContent).toContain('Claude Opus 4');
 
       trigger.click();
       fixture.detectChanges();
       (fixture.nativeElement.querySelector('.co-assessor-model-selector .model-option') as HTMLElement).click();
       fixture.detectChanges();
-      expect(component.coAssessorConfigId).toBeNull();
+      expect(ctx.launcher.coAssessorConfigId).toBeNull();
     });
 
     it('should send the co-assessor only when one is selected', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       usePanelConfigs();
-      component.selectedSuiteId = 1;
-      component.testedConfigId = 1;
-      component.assessorConfigId = 2;
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 2;
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       const single = vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0];
       expect('coAssessorModelConfigurationId' in single).toBe(false);
 
-      component.coAssessorConfigId = 4;
-      component.startBenchmark();
+      ctx.launcher.coAssessorConfigId = 4;
+      ctx.runTab().startBenchmark();
       expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].coAssessorModelConfigurationId).toBe(4);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('should persist the co-assessor when a run is started', () => {
       benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       selectValidPanel();
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
       expect(stored.coAssessorConfigId).toBe(4);
-      component.ngOnDestroy();
+      fixture.destroy();
     });
 
     it('should restore a remembered co-assessor, and drop one that no longer qualifies', () => {
@@ -128,8 +132,8 @@ describe('AdminBenchmarkComponent', () => {
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
       restored.componentInstance.systemConfigs = configs;
       restored.detectChanges();
-      expect(restored.componentInstance.coAssessorConfigId).toBe(4);
-      restored.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(restored).launcher.coAssessorConfigId).toBe(4);
+      restored.destroy();
 
       localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
         suiteId: 1, testedConfigId: 1, assessorConfigId: 2, coAssessorConfigId: 77
@@ -137,17 +141,17 @@ describe('AdminBenchmarkComponent', () => {
       const dropped = TestBed.createComponent(AdminBenchmarkComponent);
       dropped.componentInstance.systemConfigs = configs;
       dropped.detectChanges();
-      expect(dropped.componentInstance.coAssessorConfigId).toBeNull();
-      dropped.componentInstance.ngOnDestroy();
+      expect(benchmarkSpecHandles(dropped).launcher.coAssessorConfigId).toBeNull();
+      dropped.destroy();
     });
 
     it('should fix the reference reader coverage at every answer and name the reference reader', fakeAsync(() => {
       usePanelConfigs();
-      component.secondOpinionConfigId = 3;
-      component.secondOpinionMode = 1;
-      component.coAssessorConfigId = 4;
+      ctx.launcher.secondOpinionConfigId = 3;
+      ctx.launcher.secondOpinionMode = 1;
+      ctx.launcher.coAssessorConfigId = 4;
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
       tick();
       fixture.detectChanges();
 
@@ -156,7 +160,7 @@ describe('AdminBenchmarkComponent', () => {
       const fixed = fixture.nativeElement.querySelector('.second-opinion-mode-fixed') as HTMLElement;
       expect(fixed.querySelector('#secondOpinionModeFixedLabel')?.textContent?.trim()).toBe('Coverage');
       expect(fixed.textContent).toContain('Every answer, blind');
-      expect(component.secondOpinionMode).toBe(3);
+      expect(ctx.launcher.secondOpinionMode).toBe(3);
 
       const label = fixture.nativeElement.querySelector('#bmSecondOpinionModelLabel') as HTMLElement;
       expect(label.textContent?.replace(/\s+/g, ' ').trim()).toBe('Reference Reader Optional');
@@ -168,98 +172,98 @@ describe('AdminBenchmarkComponent', () => {
       expect(picker.noneLabel).toBe('None — no reference reader');
 
       // The operator's own override is kept, and returns with a single-assessor run.
-      component.coAssessorConfigId = null;
-      expect(component.secondOpinionMode).toBe(1);
+      ctx.launcher.coAssessorConfigId = null;
+      expect(ctx.launcher.secondOpinionMode).toBe(1);
       discardPeriodicTasks();
     }));
 
     it('should warn and disable Start with a reason when the panel members share a provider', () => {
       selectValidPanel();
-      component.coAssessorConfigId = 5;
+      ctx.launcher.coAssessorConfigId = 5;
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
 
-      expect(component.showCoAssessorSameProviderAdvisory).toBe(true);
+      expect(ctx.runTab().showCoAssessorSameProviderAdvisory).toBe(true);
       const advisory = fixture.nativeElement.querySelector('.setup-group-grading .co-assessor-advisory') as HTMLElement;
       expect(advisory).toBeTruthy();
       expect(advisory.classList).toContain('alert-warning');
       expect(advisory.getAttribute('role')).toBe('note');
       expect(advisory.textContent).toContain('Panel members share a provider');
 
-      expect(component.canStartRun).toBe(false);
+      expect(ctx.runTab().canStartRun).toBe(false);
       expect(startButton().getAttribute('aria-disabled')).toBe('true');
       expect((fixture.nativeElement.querySelector('#startBenchmarkHint') as HTMLElement).textContent)
         .toContain('must come from different providers');
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
       expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
     });
 
     it('should warn and disable Start when either panel member is the model under test', () => {
       selectValidPanel();
       // Another configuration of the candidate's own provider and model id.
-      component.coAssessorConfigId = 6;
+      ctx.launcher.coAssessorConfigId = 6;
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
 
-      expect(component.showCoAssessorCandidateAdvisory).toBe(true);
+      expect(ctx.runTab().showCoAssessorCandidateAdvisory).toBe(true);
       expect(fixture.nativeElement.querySelector('.setup-group-grading .co-assessor-advisory')?.textContent)
         .toContain('A panel member is the model under test');
-      expect(component.startBenchmarkHint).toContain('Neither panel member may be the model under test');
-      expect(component.canStartRun).toBe(false);
+      expect(ctx.runTab().startBenchmarkHint).toContain('Neither panel member may be the model under test');
+      expect(ctx.runTab().canStartRun).toBe(false);
 
       // Member A as the candidate is refused the same way.
-      component.coAssessorConfigId = 2;
-      component.assessorConfigId = 6;
-      expect(component.showCoAssessorCandidateAdvisory).toBe(true);
+      ctx.launcher.coAssessorConfigId = 2;
+      ctx.launcher.assessorConfigId = 6;
+      expect(ctx.runTab().showCoAssessorCandidateAdvisory).toBe(true);
     });
 
     it('should accept a member from the candidate\'s own provider when the model differs', () => {
       selectValidPanel();
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
 
-      expect(component.panelLaunchRefusal).toBe('');
-      expect(component.canStartRun).toBe(true);
+      expect(ctx.runTab().panelLaunchRefusal).toBe('');
+      expect(ctx.runTab().canStartRun).toBe(true);
       expect(fixture.nativeElement.querySelector('.co-assessor-advisory')).toBeNull();
     });
 
     it('should name the roles a reference reader or claim verifier shares a provider with', () => {
       selectValidPanel();
-      component.secondOpinionConfigId = 3;
-      component.claimVerifierConfigId = 3;
-      expect(component.referenceReaderSharedFamilyRoles).toEqual([]);
-      expect(component.claimVerifierSharedFamilyRoles).toEqual([]);
+      ctx.launcher.secondOpinionConfigId = 3;
+      ctx.launcher.claimVerifierConfigId = 3;
+      expect(ctx.runTab().referenceReaderSharedFamilyRoles).toEqual([]);
+      expect(ctx.runTab().claimVerifierSharedFamilyRoles).toEqual([]);
 
-      component.secondOpinionConfigId = 5;
-      component.claimVerifierConfigId = 1;
-      expect(component.referenceReaderSharedFamilyRoles).toEqual(['panel member A']);
-      expect(component.claimVerifierSharedFamilyRoles).toEqual(['the model under test', 'panel member B']);
+      ctx.launcher.secondOpinionConfigId = 5;
+      ctx.launcher.claimVerifierConfigId = 1;
+      expect(ctx.runTab().referenceReaderSharedFamilyRoles).toEqual(['panel member A']);
+      expect(ctx.runTab().claimVerifierSharedFamilyRoles).toEqual(['the model under test', 'panel member B']);
       // The single-run pairing advisory gives way to the panel's fuller one.
-      expect(component.showAssessorPairingAdvisory).toBe(false);
+      expect(ctx.runTab().showAssessorPairingAdvisory).toBe(false);
 
       component.activeSubTab = 'run';
-      fixture.detectChanges();
+      ctx.refresh();
       expect(fixture.nativeElement.querySelector('.reference-reader-family-advisory')).toBeTruthy();
       expect(fixture.nativeElement.querySelector('.claim-verifier-family-advisory')).toBeTruthy();
 
       // A single-assessor run keeps the silence of before.
-      component.coAssessorConfigId = null;
-      expect(component.referenceReaderSharedFamilyRoles).toEqual([]);
-      expect(component.claimVerifierSharedFamilyRoles).toEqual([]);
+      ctx.launcher.coAssessorConfigId = null;
+      expect(ctx.runTab().referenceReaderSharedFamilyRoles).toEqual([]);
+      expect(ctx.runTab().claimVerifierSharedFamilyRoles).toEqual([]);
     });
 
     it('should never open the same-provider dialog for a panel run', () => {
       benchmarkServiceMock.startRun.mockReturnValue(throwError(() => ({
         status: 409, error: { sameProvider: true, provider: 'Anthropic' }
       })));
-      const showModal = vi.spyOn(component.sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      const showModal = vi.spyOn(ctx.runTab().sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       selectValidPanel();
 
-      component.startBenchmark();
+      ctx.runTab().startBenchmark();
 
       expect(showModal).not.toHaveBeenCalled();
-      expect(component.sameProviderWarning).toBeNull();
+      expect(ctx.runTab().sameProviderWarning).toBeNull();
     });
   });
 
