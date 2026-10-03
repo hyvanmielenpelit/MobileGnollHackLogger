@@ -529,6 +529,14 @@
     background: #1c1c1c;
   }
 
+  &:focus { outline: none; }
+
+  &.suite-card-linked {
+    border-color: var(--primary-color);
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
   .suite-card-header {
     display: flex;
     justify-content: space-between;

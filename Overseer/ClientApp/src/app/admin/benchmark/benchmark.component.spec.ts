@@ -51,6 +51,89 @@ describe('AdminBenchmarkComponent', () => {
     early.destroy();
   });
 
+  describe('navigation requests', () => {
+    const suite = (id: number) => ({
+      id, name: `Suite ${id}`, description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null,
+      questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true
+    });
+
+    let handled: Mock;
+
+    beforeEach(() => {
+      benchmarkServiceMock.getSuites.mockReturnValue(of([suite(3), suite(7)]));
+      handled = vi.spyOn(component.navigationHandled, 'emit').mockReturnValue(undefined) as unknown as Mock;
+    });
+
+    it('selects Manage Suites, outlines and focuses the requested suite, and reports it handled once', async () => {
+      component.navigation = { subTab: 'suites', suiteId: 7 };
+      await Promise.resolve();
+
+      expect(component.activeSubTab).toBe('suites');
+      expect(component.linkedSuiteId).toBe(7);
+      const card: HTMLElement = fixture.nativeElement.querySelector('#bm-suite-7');
+      expect(document.activeElement).toBe(card);
+      expect(card.classList).toContain('suite-card-linked');
+      expect(fixture.nativeElement.querySelector('#bm-suite-3').classList).not.toContain('suite-card-linked');
+      expect(handled).toHaveBeenCalledTimes(1);
+    });
+
+    it('lands on Manage Suites for a suite id without a sub-tab', () => {
+      component.navigation = { subTab: null, suiteId: 7 };
+
+      expect(component.activeSubTab).toBe('suites');
+      expect(component.linkedSuiteId).toBe(7);
+    });
+
+    it('selects the named sub-tab', () => {
+      component.navigation = { subTab: 'history', suiteId: null };
+
+      expect(component.activeSubTab).toBe('history');
+    });
+
+    it('stays on Run for an unknown sub-tab and still reports the request handled', async () => {
+      component.navigation = { subTab: 'bogus', suiteId: null };
+      await Promise.resolve();
+
+      expect(component.activeSubTab).toBe('run');
+      expect(handled).toHaveBeenCalledTimes(1);
+    });
+
+    it('says the linked suite no longer exists and links nothing when it is absent', () => {
+      component.navigation = { subTab: 'suites', suiteId: 99 };
+
+      expect(component.actionErrorMessage).toBe('The linked suite (id 99) no longer exists.');
+      expect(component.linkedSuiteId).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('.suite-card-linked').length).toBe(0);
+    });
+
+    it('clears the linked suite when another sub-tab is selected', () => {
+      component.navigation = { subTab: 'suites', suiteId: 7 };
+      expect(component.linkedSuiteId).toBe(7);
+
+      component.selectSubTab('history');
+
+      expect(component.linkedSuiteId).toBeNull();
+    });
+
+    it('applies a request set before ngOnInit once, after it', async () => {
+      const early = TestBed.createComponent(AdminBenchmarkComponent);
+      const earlyHandled = vi.spyOn(early.componentInstance.navigationHandled, 'emit').mockReturnValue(undefined);
+      const select = vi.spyOn(early.componentInstance, 'selectSubTab');
+      early.componentInstance.navigation = { subTab: 'suites', suiteId: 7 };
+
+      expect(select).not.toHaveBeenCalled();
+
+      early.detectChanges();
+      await Promise.resolve();
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(early.componentInstance.activeSubTab).toBe('suites');
+      expect(early.componentInstance.linkedSuiteId).toBe(7);
+      expect(earlyHandled).toHaveBeenCalledTimes(1);
+      early.destroy();
+    });
+  });
+
   it('should create and load suites', () => {
     expect(component).toBeTruthy();
     expect(component.suites.length).toBe(1);

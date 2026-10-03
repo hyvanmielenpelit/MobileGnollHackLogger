@@ -1,0 +1,49 @@
+@use '../admin-shared' as shared;
+
+:host {
+  display: contents;
+}
+
+@include shared.admin-tabs;
+@include shared.modern-table;
+@include shared.dialog-extra-wide;
+
+.limit-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.limit-edit-input {
+  width: 100px;
+  padding: 4px 8px;
+  min-height: 32px;
+}
+
+.dialog-stretch {
+  max-height: 90dvh;
+
+  &[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .scrollable-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding-bottom: 20px;
+    padding-right: 10px;
+  }
+
+  .dialog-actions {
+    margin-top: 0;
+  }
+}

@@ -1,0 +1,114 @@
+<div class="tab-header-row">
+  <h3 class="m-0">Manage Groups</h3>
+  <button class="btn-gh btn-gh-wide" (click)="openCreateGroup()">Create</button>
+</div>
+@if (store.groups.length === 0) {
+  <div class="text-muted italic mt-20 empty-state-msg">
+    No groups
+  </div>
+}
+@if (store.groups.length > 0) {
+  <div class="table-responsive">
+    <table class="admin-table modern-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th style="text-align: right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of store.groups; track group) {
+          <tr>
+            <td data-label="ID">{{ group.id }}</td>
+            <td data-label="Name">{{ group.displayName }}</td>
+            <td class="actions-cell">
+              <button class="action-btn" title="Manage Configs" (click)="openManageGroupConfigs(group)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              </button>
+              <button class="action-btn action-btn-danger" title="Delete Group" (click)="deleteGroup(group)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+}
+
+<dialog #createGroupDialog class="gh-dialog">
+  <div class="dialog-content flex-col">
+    <h3>Create Group</h3>
+    <div class="form-group mt-20">
+      <label for="newGroupName">Group Name</label>
+      <input type="text" id="newGroupName" [(ngModel)]="newGroupName" (keyup.enter)="saveCreateGroup()" class="gh-input w-100">
+      @if (createGroupError) {
+        <div class="error-text mt-10">
+          {{ createGroupError }}
+        </div>
+      }
+    </div>
+    <div class="dialog-actions mt-auto pt-20">
+      <button class="btn-gh btn-gh-cancel" (click)="closeCreateGroup()">Cancel</button>
+      <button class="btn-gh" (click)="saveCreateGroup()" [disabled]="!newGroupName">Create</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog #manageGroupConfigsDialog class="gh-dialog dialog-wide">
+  <div class="dialog-content flex-col">
+    <h3>Manage Group Configs: {{ selectedGroupForConfigs?.displayName }}</h3>
+    <div class="form-group mt-20 scrollable-list">
+      @for (config of store.configs; track config) {
+        <div class="mb-15 config-list-item">
+          <label class="gh-switch-wrapper d-flex align-items-center m-0">
+            <div class="gh-switch">
+              <input type="checkbox" [checked]="isConfigAssignedToGroup(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleGroupConfig(config, $event)" />
+              <span class="gh-slider"></span>
+            </div>
+            <div style="margin-left: 20px;">
+              <div class="d-flex align-items-center" style="font-weight: 500; font-size: 1.1em; flex-wrap: wrap; gap: 8px;">
+                <span>{{ config.displayName }}</span>
+                @if (config.isSystemWide) {
+                  <span class="badge-system-wide">System Wide</span>
+                }
+              </div>
+              @if (config.note) {
+                <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
+                  {{ config.note }}
+                </div>
+              }
+              <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
+                Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
+              </div>
+            </div>
+          </label>
+          <div style="display: flex; gap: 5px;">
+            @if (isConfigAssignedToGroup(config.id)) {
+              <button class="action-btn" (click)="rateLimitsDialog.open('group', getGroupAssignment(config.id))" title="Rate Limits">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+              </button>
+            }
+            @if (isConfigAssignedToGroup(config.id)) {
+              <button class="action-btn" (click)="openEditGroupOverride(getGroupAssignment(config.id))" title="Overrides">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2-2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              </button>
+            }
+          </div>
+        </div>
+      } @empty {
+        <div class="text-muted italic text-center p-20">
+          No system configurations available.
+        </div>
+      }
+    </div>
+    <div class="dialog-actions mt-auto pt-20">
+      <button class="btn-gh" (click)="closeManageGroupConfigs()">Done</button>
+    </div>
+  </div>
+</dialog>
+
+<app-admin-confirm-dialog></app-admin-confirm-dialog>
+<app-admin-rate-limits-dialog></app-admin-rate-limits-dialog>
+<app-admin-config-override-dialog (saved)="onGroupOverrideSaved($event)"></app-admin-config-override-dialog>

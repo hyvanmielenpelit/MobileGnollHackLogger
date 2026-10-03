@@ -1,0 +1,305 @@
+/* Rules several Admin tab and dialog components share. Each component includes the groups its
+ * own template uses, since component styles never reach another component's elements.
+ */
+
+@mixin admin-tabs {
+  /* Layout, scroll behaviour and tab appearance come from the shared
+     .gh-tabs / .gh-tab classes in styles.scss, which the template applies
+     alongside these. Only the admin-specific scroll-edge indicators below are
+     local. */
+  .admin-tabs {
+    margin-bottom: 20px;
+  }
+}
+
+@mixin table-responsive {
+  /* Modern Table Styles */
+  .table-responsive {
+    overflow-x: auto;
+    margin-top: 15px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border-glass);
+  }
+
+  @media (max-width: 768px) {
+    .table-responsive {
+      border: none !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      padding: 0;
+    }
+  }
+}
+
+@mixin modern-table {
+  .modern-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    background: rgba(20, 20, 20, 0.6);
+  }
+  .modern-table th, .modern-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-glass);
+  }
+  .modern-table th {
+    background-color: rgba(30, 30, 30, 0.9);
+    color: var(--title-color);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    border-bottom: 2px solid var(--primary-color);
+    white-space: nowrap;
+  }
+  .modern-table tbody tr {
+    transition: background-color 0.2s ease;
+  }
+  .modern-table tbody tr:hover {
+    background-color: rgba(212, 160, 23, 0.05);
+  }
+  .modern-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .modern-table tfoot td {
+    padding: 12px 16px;
+    font-weight: 600;
+    color: #fff;
+    border-top: 2px solid var(--primary-color, #e0ba6d);
+    background-color: rgba(30, 30, 30, 0.95);
+  }
+
+  @media (max-width: 768px) {
+    .modern-table {
+      display: block;
+      background: transparent;
+      
+      thead {
+        display: none;
+      }
+      
+      tbody, tr, td {
+        display: block;
+        width: 100%;
+      }
+      
+      tr {
+        box-sizing: border-box;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        padding: 15px;
+        margin-bottom: 15px;
+        border: 1px solid var(--border-glass) !important;
+        border-radius: 4px;
+        background-color: rgba(17, 17, 17, 0.65);
+        box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.1);
+        transition: all 0.2s;
+      }
+      
+      td {
+        padding: 2px 0 !important;
+        border: none !important;
+      }
+      
+      td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #aaa;
+        margin-bottom: 2px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      
+      td:nth-child(1) {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--title-color);
+        flex: 1 1 100%;
+        margin-bottom: 4px;
+      }
+      
+      td:nth-child(2) {
+        flex: 1 1 100%;
+        font-size: 0.9rem;
+        margin-bottom: 8px;
+      }
+      
+      td:nth-child(3) {
+        flex: 1 1 100%;
+      }
+      
+      td.actions-cell {
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 15px;
+      }
+    }
+  }
+}
+
+@mixin text-align {
+  .modern-table .text-right,
+  .text-right {
+    text-align: right;
+  }
+  .modern-table .text-center,
+  .text-center {
+    text-align: center;
+  }
+  .modern-table .num-col,
+  .num-col {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@mixin text-muted {
+  /* Utilities */
+  .text-muted {
+    color: #aaa;
+  }
+  .italic {
+    font-style: italic;
+  }
+}
+
+@mixin badge-system-wide {
+  .badge-system-wide {
+    display: inline-block;
+    background-color: rgba(40, 167, 69, 0.2);
+    border: 1px solid var(--color-success);
+    color: var(--color-success);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+}
+
+@mixin d-flex {
+  /* Dialog additions */
+  .d-flex {
+    display: flex;
+  }
+  .align-items-center {
+    align-items: center;
+  }
+}
+
+@mixin tab-header-row {
+  .tab-header-row {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    padding: 15px 0;
+    margin-bottom: 15px;
+    background-color: rgba(17, 17, 17, 0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-glass, rgba(212, 160, 23, 0.3));
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    
+    h3 {
+      margin: 0;
+      margin-inline-end: auto;
+      line-height: 1.2;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    }
+
+    @media (max-width: 600px) {
+      h3 {
+        width: 100%;
+      }
+    }
+  }
+}
+
+@mixin btn-gh-wide {
+  .btn-gh-wide {
+    padding: 10px 40px !important;
+  }
+}
+
+@mixin empty-state-msg {
+  .empty-state-msg {
+    text-align: center;
+    padding: 30px;
+  }
+}
+
+@mixin actions-cell {
+  .actions-cell {
+    text-align: right;
+    white-space: nowrap;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+  }
+}
+
+@mixin scrollable-list {
+  .scrollable-list {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+}
+
+@mixin config-list-item {
+  .config-list-item {
+    padding: 15px 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+@mixin dialog-wide {
+  .dialog-wide {
+    max-width: min(600px, 95vw);
+  }
+}
+
+@mixin dialog-extra-wide {
+  .dialog-extra-wide {
+    max-width: min(800px, 95vw);
+  }
+}
+
+@mixin permissions-fieldset {
+  .permissions-fieldset {
+    min-width: 0;
+    box-sizing: border-box;
+    max-width: 100%;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+    border-radius: 8px;
+    padding: 15px 20px 20px 20px;
+    margin-top: 25px;
+    margin-bottom: 10px;
+    background: rgba(17, 17, 17, 0.2);
+
+    @media (max-width: 600px) {
+      padding: 12px 14px;
+    }
+  }
+
+  .permissions-fieldset legend {
+    font-weight: bold;
+    font-size: 1.1em;
+    color: var(--primary-color, #d4af37);
+    padding: 0 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+}

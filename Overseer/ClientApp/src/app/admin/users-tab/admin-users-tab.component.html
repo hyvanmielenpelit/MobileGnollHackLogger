@@ -1,0 +1,176 @@
+<div class="tab-header-row">
+  <h3 class="m-0">Manage Users</h3>
+</div>
+
+<div class="chart-toolbar mt-10 mb-15">
+  <div class="pagination-controls">
+    <div class="page-size-wrapper">
+      <select class="gh-input page-size-select" [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()">
+        @for (size of pageSizes; track size) {
+          <option [value]="size">{{ size }}</option>
+        }
+      </select>
+      <span class="page-size-label">per page</span>
+    </div>
+    
+    <div class="pagination-buttons">
+      <button class="page-btn" [disabled]="page === 1" (click)="onPageChange(page - 1)" title="Previous Page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+      @for (p of pageNumbers; track $index) {
+        @if (p === '…') {
+          <span class="page-ellipsis">…</span>
+        } @else {
+          <button class="page-btn" 
+                  [class.active]="p === page"
+                  (click)="onPageNumberClick(p)">{{ p }}</button>
+        }
+      }
+      <button class="page-btn" [disabled]="page === totalPages" (click)="onPageChange(page + 1)" title="Next Page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+    </div>
+  </div>
+  
+  <div class="search-controls">
+    <input type="text" class="gh-input" placeholder="Search username"
+           [(ngModel)]="usernameFilter" (ngModelChange)="onUsernameFilterChange($event)">
+  </div>
+</div>
+
+<div class="table-responsive" [class.table-loading]="usersLoading">
+  <table class="admin-table modern-table">
+    <thead>
+      <tr>
+        <th style="width: 25%; cursor: pointer;" (click)="sortBy('UserName')">
+          Username
+          @if (sortColumn === 'UserName') {
+            <span>{{ sortOrder === 'asc' ? ' ▲' : ' ▼' }}</span>
+          }
+        </th>
+        <th style="width: 35%; cursor: pointer;" (click)="sortBy('Email')">
+          Email
+          @if (sortColumn === 'Email') {
+            <span>{{ sortOrder === 'asc' ? ' ▲' : ' ▼' }}</span>
+          }
+        </th>
+        <th style="width: 25%;">Groups</th>
+        <th style="width: 15%; text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (user of users; track user) {
+        <tr>
+          <td data-label="Username">{{ user.userName }}</td>
+          <td class="text-muted" data-label="Email">{{ user.email }}</td>
+          <td data-label="Groups">
+            @for (g of user.groups; track g) {
+              <span class="group-badge">{{ g.displayName }}</span>
+            }
+            @if (!user.groups || user.groups.length === 0) {
+              <span class="text-muted italic">None</span>
+            }
+          </td>
+          <td class="actions-cell">
+            <button class="action-btn" title="Manage Groups" (click)="openManageUserGroups(user)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            </button>
+            <button class="action-btn" title="Manage Configs" (click)="openManageUserConfigs(user)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+<div class="page-info text-muted mt-10" style="font-size: 0.9em; margin-bottom: 20px;">
+  Showing {{ users.length }} of {{ totalCount }} users (Page {{ page }} of {{ totalPages }})
+</div>
+
+<dialog #manageGroupsDialog class="gh-dialog">
+  @if (selectedUser) {
+    <div class="dialog-content flex-col">
+      <h3>Manage Groups for {{ selectedUser.userName }}</h3>
+      <div class="mt-20">
+        @if (groups.length === 0) {
+          <div class="text-muted italic" style="padding: 10px 0;">
+            No groups available.
+          </div>
+        }
+        @for (group of groups; track group) {
+          <div class="mb-10">
+            <label class="gh-switch-wrapper d-flex align-items-center">
+              <div class="gh-switch">
+                <input type="checkbox" [id]="'group_' + group.id"
+                  [checked]="isUserInGroup(selectedUser, group.id)"
+                  (change)="toggleUserGroup(selectedUser, group, $event)">
+                <span class="gh-slider"></span>
+              </div>
+              <span class="ml-10" style="font-size: 1.1em;">{{ group.displayName }}</span>
+            </label>
+          </div>
+        }
+      </div>
+      <div class="dialog-actions mt-auto pt-20">
+        <button class="btn-gh" (click)="closeManageGroups()">Done</button>
+      </div>
+    </div>
+  }
+</dialog>
+
+<dialog #manageUserConfigsDialog class="gh-dialog dialog-wide">
+  <div class="dialog-content flex-col">
+    <h3>Manage User Configs: {{ selectedUserForConfigs?.userName }}</h3>
+    <div class="form-group mt-20 scrollable-list">
+      @for (config of configs; track config) {
+        <div class="mb-15 config-list-item">
+          <label class="gh-switch-wrapper d-flex align-items-center m-0">
+            <div class="gh-switch">
+              <input type="checkbox" [checked]="isConfigAssignedToUser(config.id)" [disabled]="processingConfigs.includes(config.id)" (change)="toggleUserConfig(config, $event)" />
+              <span class="gh-slider"></span>
+            </div>
+            <div style="margin-left: 20px;">
+              <div class="d-flex align-items-center" style="font-weight: 500; font-size: 1.1em; flex-wrap: wrap; gap: 8px;">
+                <span>{{ config.displayName }}</span>
+                @if (config.isSystemWide) {
+                  <span class="badge-system-wide">System Wide</span>
+                }
+              </div>
+              @if (config.note) {
+                <div class="text-muted mt-5" style="font-size: 0.9em; font-style: italic;">
+                  {{ config.note }}
+                </div>
+              }
+              <div class="text-muted mt-5" style="font-size: 0.85em; font-family: monospace;">
+                Provider: {{ config.provider }} <span class="ml-10">Role: {{ formatModelRole(config.modelRole) }}</span>
+              </div>
+            </div>
+          </label>
+          <div style="display: flex; gap: 5px;">
+            @if (isConfigAssignedToUser(config.id)) {
+              <button class="action-btn" (click)="openUserRateLimits(getUserAssignment(config.id))" title="Rate Limits">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+              </button>
+            }
+            @if (isConfigAssignedToUser(config.id)) {
+              <button class="action-btn" (click)="openEditUserOverride(getUserAssignment(config.id))" title="Overrides">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              </button>
+            }
+          </div>
+        </div>
+      } @empty {
+        <div class="text-muted italic text-center p-20">
+          No system configurations available.
+        </div>
+      }
+    </div>
+    <div class="dialog-actions mt-auto pt-20">
+      <button class="btn-gh" (click)="closeManageUserConfigs()">Done</button>
+    </div>
+  </div>
+</dialog>
+
+<app-admin-rate-limits-dialog />
+<app-admin-config-override-dialog (saved)="onOverrideSaved($event)" />

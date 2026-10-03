@@ -1,12 +1,15 @@
 import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { By } from '@angular/platform-browser';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, Subject, throwError } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, AiGovernorKeyStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto, DefaultApiKeyStatus } from '../services/admin.service';
-import { createEmptyFilter } from './config-filter/config-filter.model';
+import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DefaultApiKeyStatus } from '../services/admin.service';
+import { buildSystemConfig, spyAdminService } from './admin.component.testing';
+import { AdminUsersTabComponent } from './users-tab/admin-users-tab.component';
+import { AdminConfigsTabComponent } from './configs-tab/admin-configs-tab.component';
 
 describe('AdminComponent', () => {
   let component: AdminComponent;
@@ -24,10 +27,7 @@ describe('AdminComponent', () => {
     }).compileComponents();
 
     adminService = TestBed.inject(AdminService);
-    vi.spyOn(adminService, 'getUsers').mockReturnValue(of({ rows: [], totalCount: 0 }));
-    vi.spyOn(adminService, 'getGroups').mockReturnValue(of([]));
-    vi.spyOn(adminService, 'getSystemConfigs').mockReturnValue(of([]));
-    vi.spyOn(adminService, 'getDefaultApiKeys').mockReturnValue(of([]));
+    spyAdminService(adminService);
 
     fixture = TestBed.createComponent(AdminComponent);
     component = fixture.componentInstance;
@@ -37,34 +37,6 @@ describe('AdminComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  describe('loadUsers', () => {
-    it('should populate users and totalCount on normal success', () => {
-      const mockResponse: UsersResponse = {
-        rows: [
-          { id: '1', userName: 'admin', email: 'admin@test.com', groups: [] }
-        ],
-        totalCount: 1
-      };
-      (adminService.getUsers as Mock).mockReturnValue(of(mockResponse));
-
-      component.loadUsers();
-
-      expect(component.users.length).toBe(1);
-      expect(component.totalCount).toBe(1);
-      expect(component.usersLoading).toBe(false);
-    });
-
-    it('should catch TypeError: Failed to fetch on getUsers and reset usersLoading to false', () => {
-      (adminService.getUsers as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
-
-      expect(() => {
-        component.loadUsers();
-      }).not.toThrow();
-
-      expect(component.usersLoading).toBe(false);
-    });
-  });
-
   describe('loadData', () => {
     it('should populate users, groups, and configs on normal success', () => {
       const mockUsers: UsersResponse = {
@@ -72,58 +44,25 @@ describe('AdminComponent', () => {
         totalCount: 1
       };
       const mockGroups: GroupDto[] = [{ id: 1, displayName: 'Admins' }];
-      const mockConfigs: SystemAiConfigDto[] = [{
+      const mockConfigs: SystemAiConfigDto[] = [buildSystemConfig({
         id: 1,
         displayName: 'System GPT-4o',
         provider: 'openai',
         modelId: 'gpt-4o',
-        thinkingLevel: null,
-        reasoningMode: null,
-        reasoningSummary: null,
-        serviceTier: null,
-        maxInputTokens: null,
-        maxOutputTokens: null,
-        orderIndex: 0,
-        isEnabled: true,
-        hasApiKey: true,
-        isSystemWide: true,
-        maxDailyChatRequests: null,
-        maxMonthlyChatRequests: null,
-        maxTotalChatRequests: null,
-        dailyChatRequestsCount: 0,
-        monthlyChatRequestsCount: 0,
-        totalChatRequestsCount: 0,
-        maxDailyTitleRequests: null,
-        maxMonthlyTitleRequests: null,
-        maxTotalTitleRequests: null,
-        dailyTitleRequestsCount: 0,
-        monthlyTitleRequestsCount: 0,
-        totalTitleRequestsCount: 0,
-        maxDailyChatTokens: null,
-        maxMonthlyChatTokens: null,
-        maxTotalChatTokens: null,
-        dailyChatTokensCount: 0,
-        monthlyChatTokensCount: 0,
-        totalChatTokensCount: 0,
-        maxDailyTitleTokens: null,
-        maxMonthlyTitleTokens: null,
-        maxTotalTitleTokens: null,
-        dailyTitleTokensCount: 0,
-        monthlyTitleTokensCount: 0,
-        totalTitleTokensCount: 0,
-        modelRole: 1,
-        parallelExecutionMode: 2
-      }];
+        isSystemWide: true
+      })];
 
       (adminService.getUsers as Mock).mockReturnValue(of(mockUsers));
       (adminService.getGroups as Mock).mockReturnValue(of(mockGroups));
       (adminService.getSystemConfigs as Mock).mockReturnValue(of(mockConfigs));
 
-      component.loadData();
+      // ngOnInit runs loadData, and the Users tab it then shows loads the users.
+      fixture.detectChanges();
 
-      expect(component.users.length).toBe(1);
-      expect(component.groups.length).toBe(1);
-      expect(component.configs.length).toBe(1);
+      const usersTab: AdminUsersTabComponent = fixture.debugElement.query(By.directive(AdminUsersTabComponent)).componentInstance;
+      expect(usersTab.users.length).toBe(1);
+      expect(component.store.groups.length).toBe(1);
+      expect(component.store.configs.length).toBe(1);
       expect(component.loading).toBe(false);
     });
 
@@ -131,7 +70,7 @@ describe('AdminComponent', () => {
       (adminService.getUsers as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
-        component.loadData();
+        fixture.detectChanges();
       }).not.toThrow();
 
       expect(component.loading).toBe(false);
@@ -163,7 +102,7 @@ describe('AdminComponent', () => {
 
   // ---------------------------------------------------------------------------
   // Tab semantics and keyboard navigation for the admin dashboard's main tab
-  // row, and for the nested tab row inside the rate limits dialog.
+  // row.
   // ---------------------------------------------------------------------------
   describe('main tab row', () => {
     const mainTabList = () =>
@@ -244,903 +183,17 @@ describe('AdminComponent', () => {
     });
   });
 
-  describe('rate limits dialog tab row', () => {
-    it('should wrap around and move selection with the arrow keys', () => {
-      component.activeRateLimitTab = 'chat';
-
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
-      expect(component.activeRateLimitTab).toBe('title');
-
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 1);
-      expect(component.activeRateLimitTab).toBe('chat');
-    });
-
-    it('should select the ends with Home and End', () => {
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
-      expect(component.activeRateLimitTab).toBe('title');
-
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 1);
-      expect(component.activeRateLimitTab).toBe('chat');
-    });
-
-    it('should ignore unrelated keys', () => {
-      component.activeRateLimitTab = 'title';
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), 1);
-      expect(component.activeRateLimitTab).toBe('title');
-    });
-  });
-
-  describe('System AI Configurations Filtering and Reordering', () => {
-    const createMockConfig = (id: number, displayName: string, provider: string, modelRole: number): SystemAiConfigDto => ({
-      id,
-      displayName,
-      provider,
-      modelId: displayName.toLowerCase().replace(/\s+/g, '-'),
-      thinkingLevel: null,
-      reasoningMode: null,
-      reasoningSummary: null,
-      serviceTier: null,
-      maxInputTokens: null,
-      maxOutputTokens: null,
-      orderIndex: id,
-      isEnabled: true,
-      hasApiKey: true,
-      isSystemWide: false,
-      maxDailyChatRequests: null,
-      maxMonthlyChatRequests: null,
-      maxTotalChatRequests: null,
-      dailyChatRequestsCount: 0,
-      monthlyChatRequestsCount: 0,
-      totalChatRequestsCount: 0,
-      maxDailyTitleRequests: null,
-      maxMonthlyTitleRequests: null,
-      maxTotalTitleRequests: null,
-      dailyTitleRequestsCount: 0,
-      monthlyTitleRequestsCount: 0,
-      totalTitleRequestsCount: 0,
-      maxDailyChatTokens: null,
-      maxMonthlyChatTokens: null,
-      maxTotalChatTokens: null,
-      dailyChatTokensCount: 0,
-      monthlyChatTokensCount: 0,
-      totalChatTokensCount: 0,
-      maxDailyTitleTokens: null,
-      maxMonthlyTitleTokens: null,
-      maxTotalTitleTokens: null,
-      dailyTitleTokensCount: 0,
-      monthlyTitleTokensCount: 0,
-      totalTitleTokensCount: 0,
-      modelRole,
-      parallelExecutionMode: 0,
-      note: null
-    });
-
-    it('visibleConfigs equals configs with an empty filter', () => {
-      const configs = [
-        createMockConfig(1, 'Config 1', 'OpenAI', 1),
-        createMockConfig(2, 'Config 2', 'Google', 2)
-      ];
-      component.configs = configs;
-      component.configFilter = createEmptyFilter();
-      component.applyConfigFilters();
-      expect(component.visibleConfigs).toEqual(configs);
-    });
-
-    it('visibleConfigs narrows correctly when configFilter is set and applyConfigFilters runs', () => {
-      const configs = [
-        createMockConfig(1, 'Config 1', 'OpenAI', 1),
-        createMockConfig(2, 'Config 2', 'Google', 2),
-        createMockConfig(3, 'Config 3', 'Anthropic', 1)
-      ];
-      component.configs = configs;
-      component.configFilter = { roles: [1], roleMatchMode: 'any', providers: ['OpenAI'] };
-      component.applyConfigFilters();
-      expect(component.visibleConfigs.length).toBe(1);
-      expect(component.visibleConfigs[0].id).toBe(1);
-    });
-
-    it('dragging inside a filtered view reorders the right configs in the full array', () => {
-      vi.spyOn(adminService, 'reorderSystemConfigs').mockReturnValue(of(true as any));
-      // 5 configs: A (Chat), B (Title), C (Chat), D (Title), E (Chat)
-      const c1 = createMockConfig(1, 'A', 'OpenAI', 1);
-      const c2 = createMockConfig(2, 'B', 'Google', 2);
-      const c3 = createMockConfig(3, 'C', 'OpenAI', 1);
-      const c4 = createMockConfig(4, 'D', 'Anthropic', 2);
-      const c5 = createMockConfig(5, 'E', 'OpenAI', 1);
-
-      component.configs = [c1, c2, c3, c4, c5];
-      // Filter to Chat (role 1) -> visibleConfigs are [c1, c3, c5]
-      component.configFilter = { roles: [1], roleMatchMode: 'any', providers: [] };
-      component.applyConfigFilters();
-      expect(component.visibleConfigs.map(c => c.id)).toEqual([1, 3, 5]);
-
-      // Drop visible index 2 (c5) onto visible index 0 (c1) (before midpoint, after = false)
-      const dropEvent = {
-        preventDefault: () => {},
-        clientY: 10,
-        target: {
-          closest: () => ({
-            classList: { remove: () => {} },
-            getBoundingClientRect: () => ({ top: 0, height: 40 })
-          })
-        },
-        dataTransfer: {
-          getData: () => '2'
-        }
-      } as any;
-
-      component.onConfigDrop(dropEvent, 0);
-
-      // c5 should now be before c1 in the global configs array: [c5, c1, c2, c3, c4]
-      expect(component.configs.map(c => c.id)).toEqual([5, 1, 2, 3, 4]);
-      expect(adminService.reorderSystemConfigs).toHaveBeenCalledWith([5, 1, 2, 3, 4]);
-    });
-
-    it('renders result count with role="status" and aria-live="polite", absent when configs is empty', () => {
+  describe('Configs tab hand-off', () => {
+    it('selects the Benchmark tab and hands it the run the Configs tab asks to open', () => {
       fixture.detectChanges();
-      component.activeTab = 'configs';
-      component.configs = [];
-      component.visibleConfigs = [];
-      fixture.detectChanges();
-
-      let resultCount = fixture.nativeElement.querySelector('.results-count');
-      expect(resultCount).toBeNull();
-
-      component.configs = [createMockConfig(1, 'Config 1', 'OpenAI', 1)];
-      component.visibleConfigs = [...component.configs];
-      fixture.detectChanges();
-
-      resultCount = fixture.nativeElement.querySelector('.results-count');
-      expect(resultCount).toBeTruthy();
-      expect(resultCount.getAttribute('role')).toBe('status');
-      expect(resultCount.getAttribute('aria-live')).toBe('polite');
-      expect(resultCount.textContent).toContain('1 configurations');
-    });
-
-    it('renders filtered empty state only when configs.length > 0 && visibleConfigs.length === 0', () => {
-      fixture.detectChanges();
-      component.activeTab = 'configs';
-      component.configs = [createMockConfig(1, 'Config 1', 'OpenAI', 1)];
-      component.visibleConfigs = [];
-      fixture.detectChanges();
-
-      const emptyMsg = fixture.nativeElement.querySelector('.empty-state-msg');
-      expect(emptyMsg).toBeTruthy();
-      expect(emptyMsg.textContent).toContain('No configurations match the current filters.');
-      expect(emptyMsg.querySelector('button')).toBeTruthy();
-    });
-
-    it('restoreConfigFilter rejects malformed localStorage data and falls back to clean empty filter', () => {
-      const storageKey = 'overseer_admin_config_filters';
-      localStorage.setItem(storageKey, JSON.stringify({
-        roles: ['banana'],
-        providers: [{}],
-        roleMatchMode: 'xyzzy'
-      }));
-
-      component.restoreConfigFilter();
-      expect(component.configFilter.roles).toEqual([]);
-      expect(component.configFilter.providers).toEqual([]);
-      expect(component.configFilter.roleMatchMode).toBe('any');
-
-      localStorage.removeItem(storageKey);
-    });
-  });
-
-  describe('database maintenance', () => {
-    const metrics = (): DatabaseStorageMetrics => ({
-      allocatedDataSizeMb: 100, usedDataSizeMb: 80, freeSpaceWithinLimitMb: 10140, maxLimitMb: 10240,
-      usedPercentage: 1, tableMetrics: [], hasEngineSizeLimit: true, limitSource: 'Detected',
-      serverProductLabel: 'SQL Server 2022 Express', activeSessionCount: 0, softDeletedSessionCount: 0,
-      inactiveSessionCount: 0, pinnedSessionCount: 0, diskAttachmentsSizeBytes: 0, diskAttachmentsSizeMb: 0,
-      diskAttachmentsFolderCount: 0, diskAttachmentsFileCount: 0, estimatedReclaimableMb: 0, statusLevel: 'Normal',
-      logAllocatedMb: 8, logUsedMb: 1, otherTablesTotalSpaceMb: 0, otherTablesCount: 0, allTablesTotalSpaceMb: 0,
-      confidentialSessionCount: 0, ownTtlSessionCount: 0, immediatePurgeSessionCount: 0, ephemeralSessionCount: 0,
-      contentKeyVersions: [], sessionsWithUnknownKeyVersionCount: 0, auditLogRowCount: 0, auditLogPrunableCount: 0,
-      aiErrorLogUndismissedCount: 0, aiErrorLogDismissedCount: 0, aiErrorLogPrunableCount: 0,
-      expiredTrashSessionCount: 0, prunableToolCallCount: 0, prunableBenchmarkToolCallCount: 0,
-      serviceStartedUtc: '2026-09-15T00:00:00Z', appliedMigrationCount: 0, pendingMigrations: [],
-      schemaStatusAvailable: true,
-      policy: {
-        maxActiveSessionsPerUser: 50, maxPinnedSessionsPerUser: 5, inactivityTtlDays: 90,
-        softDeleteGracePeriodDays: 30, pruneToolCallResultsDays: 30, pruneBenchmarkToolCallResultsDays: 90,
-        auditLogRetentionDays: 365, pruneDismissedAiErrorLogDays: 90, maintenanceHistoryRetentionDays: 180,
-        maintenanceRunHourUtc: 3,
-        enableStorageWarningEmails: true, emailSenderConfigured: false
-      }
-    });
-
-    const result = (isDryRun: boolean): MaintenanceResult => ({
-      success: true, isDryRun, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
-      purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
-      deletedDiskFolderCount: 0, deletedDiskFileCount: 0, reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0,
-      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, elapsedMilliseconds: 1, trigger: 'Manual', logs: []
-    });
-
-    beforeEach(() => {
-      vi.spyOn(adminService, 'getStorageMetrics').mockReturnValue(of(metrics()));
-      vi.spyOn(adminService, 'getMaintenanceHistory').mockReturnValue(of({ totalCount: 0, rows: [] }));
-    });
-
-    const historyRun = (id: number, hasLog: boolean): MaintenanceRunLog => ({
-      id, startedUtc: '2026-09-15T03:00:00Z', trigger: 'Scheduled', isDryRun: false, success: true,
-      elapsedMilliseconds: 10, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
-      purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
-      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
-      sweptOrphanFolderCount: 0, reclaimedDiskBytes: 0, errorMessage: null, hasLog
-    });
-
-    const runDialog = (): HTMLDialogElement =>
-      fixture.nativeElement.querySelector('dialog.maintenance-run-dialog');
-
-    it('opens the run dialog while running and switches it to the result in place', () => {
-      const response = new Subject<MaintenanceResult>();
-      vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(response.asObservable());
-      fixture.detectChanges();
-
-      component.maintenanceDryRun = true;
-      component.runFullMaintenance();
-
-      expect(component.maintenanceRunPhase).toBe('running');
-      expect(runDialog().open).toBe(true);
-
-      response.next(result(true));
-      response.complete();
-
-      expect(component.maintenanceRunPhase).toBe('completed');
-      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
-      expect(runDialog().open).toBe(true);
-      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#maintenanceRunTitle'));
-
-      component.closeMaintenanceRunDialog();
-      expect(runDialog().open).toBe(false);
-    });
-
-    it('shows the result summary in the run dialog and no separate last-run line in the tab', async () => {
-      const response = new Subject<MaintenanceResult>();
-      vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(response.asObservable());
-      component.selectTab('database');
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      component.maintenanceDryRun = true;
-      component.runFullMaintenance();
-      response.next(result(true));
-      response.complete();
-      fixture.detectChanges();
-
-      const summary: HTMLElement | null = runDialog().querySelector('.run-summary');
-      expect(summary).not.toBeNull();
-      expect(summary!.textContent).toContain('Success');
-      expect(summary!.textContent).toContain('Dry run');
-      expect(summary!.textContent).toContain('Manual');
-      expect(fixture.nativeElement.querySelector('#maintenance-inactivity-days')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('.last-run-line')).toBeNull();
-
-      component.closeMaintenanceRunDialog();
-    });
-
-    it('switches the run dialog to the failed phase when the request errors', () => {
-      vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(throwError(() => ({ message: 'boom' })));
-
-      component.maintenanceDryRun = true;
-      component.runFullMaintenance();
-
-      expect(component.maintenanceRunPhase).toBe('failed');
-      expect(component.lastMaintenanceResult?.success).toBe(false);
-      expect(component.lastMaintenanceResult?.errorMessage).toBe('boom');
-      component.closeMaintenanceRunDialog();
-    });
-
-    it('re-fetches the history page the pager chose and persists the page size', () => {
-      const storageKey = 'overseer.admin.maintenanceHistory.pageSize';
-      const historySpy = adminService.getMaintenanceHistory as Mock;
-      historySpy.mockClear();
-      const state = component.maintenanceHistoryTable;
-      state.setRemoteTotal(300);
-      state.setPageSize(50);
-      state.setPage(3, component.maintenanceHistory);
-
-      component.onMaintenanceHistoryPageChanged();
-
-      expect(vi.mocked(historySpy).mock.calls[0]).toEqual([3, 50]);
-      expect(localStorage.getItem(storageKey)).toBe('50');
-      localStorage.removeItem(storageKey);
-    });
-
-    it('restores only a page size from the allowed list', () => {
-      const storageKey = 'overseer.admin.maintenanceHistory.pageSize';
-
-      localStorage.setItem(storageKey, '7');
-      component.restoreMaintenanceHistoryPageSize();
-      expect(component.maintenanceHistoryTable.pageSize).toBe(10);
-
-      localStorage.setItem(storageKey, '500');
-      component.restoreMaintenanceHistoryPageSize();
-      expect(component.maintenanceHistoryTable.pageSize).toBe(500);
-
-      localStorage.removeItem(storageKey);
-    });
-
-    it('fetches a run log once and caches it on the row', () => {
-      const logSpy = vi.spyOn(adminService, 'getMaintenanceRunLog').mockReturnValue(of({ logText: 'line 1', errorMessage: null }));
-      const run = historyRun(7, true);
-
-      component.toggleHistoryLog(run);
-      expect(component.expandedHistoryRunId).toBe(7);
-      expect(run.logText).toBe('line 1');
-
-      component.toggleHistoryLog(run);
-      expect(component.expandedHistoryRunId).toBeNull();
-      component.toggleHistoryLog(run);
-
-      expect(logSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('never fetches a log for a run that has none', () => {
-      const logSpy = vi.spyOn(adminService, 'getMaintenanceRunLog').mockReturnValue(undefined as any);
-
-      component.toggleHistoryLog(historyRun(8, false));
-
-      expect(logSpy).not.toHaveBeenCalled();
-    });
-
-    it('sends a day count chosen in the template select as a number, not a string', async () => {
-      const runSpy = vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(of(result(true)));
-      component.selectTab('database');
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const select: HTMLSelectElement = fixture.nativeElement.querySelector('#maintenance-inactivity-days');
-      const index = Array.from(select.options).findIndex(o => (o.textContent ?? '').includes('60d'));
-      expect(index).toBeGreaterThanOrEqual(0);
-      select.selectedIndex = index;
-      select.dispatchEvent(new Event('change'));
-      fixture.detectChanges();
-
-      component.maintenanceDryRun = true;
-      component.runFullMaintenance();
-
-      const request = vi.mocked(runSpy).mock.lastCall![0]!;
-      expect(request.inactivityDays).toBe(60);
-      expect(typeof request.inactivityDays).toBe('number');
-    });
-
-    it('passes the dry-run switch to a granular action and skips the confirmation', () => {
-      const purgeSpy = vi.spyOn(adminService, 'purgeInactive').mockReturnValue(of(result(true)));
-      const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
-
-      component.maintenanceDryRun = true;
-      component.purgeInactiveNow();
-
-      expect(confirmSpy).not.toHaveBeenCalled();
-      expect(purgeSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
-      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
-    });
-
-    describe('report chart files', () => {
-      const chartMetrics = (overrides: Partial<DatabaseStorageMetrics> = {}): DatabaseStorageMetrics => ({
-        ...metrics(),
-        reportChartsConfigured: true, reportChartFolderCount: 3, reportChartFileCount: 12,
-        reportChartSizeBytes: 4718592, reportChartSizeMb: 4.5,
-        ...overrides
-      });
-
-      const openDatabaseTab = async (m: DatabaseStorageMetrics) => {
-        (adminService.getStorageMetrics as Mock).mockReturnValue(of(m));
-        component.selectTab('database');
-        fixture.detectChanges();
-        await fixture.whenStable();
-        fixture.detectChanges();
-      };
-
-      const chartStat = (): HTMLElement | null => fixture.nativeElement.querySelector('.report-charts-stat');
-
-      const clearButton = (): HTMLButtonElement =>
-        (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
-          .find(b => (b.textContent ?? '').trim() === 'Clear Chart Files')!;
-
-      const tooltipText = (button: HTMLButtonElement): string | null => {
-        const id = button.getAttribute('interestfor');
-        const tip: HTMLElement | null = id ? fixture.nativeElement.querySelector('#' + id) : null;
-        return tip ? (tip.textContent ?? '').trim() : null;
-      };
-
-      it('shows the document, file and size counts when the folder is configured', async () => {
-        await openDatabaseTab(chartMetrics());
-
-        const text = (chartStat()!.textContent ?? '').replace(/\s+/g, ' ');
-        expect(text).toContain('Report Chart Files');
-        expect(text).toContain('3 documents · 12 files · 4.5 MB');
-      });
-
-      it('says the folder is not configured and names the setting', async () => {
-        await openDatabaseTab(chartMetrics({ reportChartsConfigured: false, reportChartFolderCount: 0, reportChartFileCount: 0, reportChartSizeMb: 0 }));
-
-        const text = (chartStat()!.textContent ?? '').replace(/\s+/g, ' ');
-        expect(text).toContain('Not configured (Benchmark:ReportPack:ChartsDataLocation)');
-      });
-
-      it('omits the line for a server that does not report chart storage', async () => {
-        await openDatabaseTab(metrics());
-
-        expect(chartStat()).toBeNull();
-      });
-
-      it('enables Clear Chart Files only when the folder is configured, has files and nothing is running', async () => {
-        await openDatabaseTab(chartMetrics());
-
-        let button = clearButton();
-        expect(button.matches('button.btn-gh.btn-danger[type="button"]')).toBe(true);
-        expect(button.hasAttribute('title')).toBe(false);
-        expect(button.hasAttribute('aria-disabled')).toBe(false);
-        expect(button.hasAttribute('interestfor')).toBe(false);
-
-        component.maintenanceLoading = true;
-        fixture.detectChanges();
-        button = clearButton();
-        expect(button.getAttribute('aria-disabled')).toBe('true');
-        expect(tooltipText(button)).toBe('A maintenance task is running.');
-        component.maintenanceLoading = false;
-
-        component.storageMetrics = chartMetrics({ reportChartFileCount: 0, reportChartFolderCount: 0, reportChartSizeMb: 0 });
-        fixture.detectChanges();
-        button = clearButton();
-        expect(button.getAttribute('aria-disabled')).toBe('true');
-        expect(tooltipText(button)).toBe('There are no chart files to clear.');
-
-        component.storageMetrics = chartMetrics({ reportChartsConfigured: false });
-        fixture.detectChanges();
-        button = clearButton();
-        expect(button.getAttribute('aria-disabled')).toBe('true');
-        expect(tooltipText(button)).toContain('Benchmark:ReportPack:ChartsDataLocation');
-      });
-
-      it('does nothing when the aria-disabled button is clicked', async () => {
-        const clearSpy = vi.spyOn(adminService, 'clearReportCharts').mockReturnValue(undefined as any);
-        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
-        await openDatabaseTab(chartMetrics({ reportChartFileCount: 0 }));
-
-        clearButton().click();
-
-        expect(clearSpy).not.toHaveBeenCalled();
-        expect(confirmSpy).not.toHaveBeenCalled();
-      });
-
-      it('runs a dry run without confirmation and reloads the metrics', () => {
-        const clearSpy = vi.spyOn(adminService, 'clearReportCharts').mockReturnValue(of(result(true)));
-        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
-        const metricsSpy = adminService.getStorageMetrics as Mock;
-        component.storageMetrics = chartMetrics();
-        metricsSpy.mockClear();
-
-        component.maintenanceDryRun = true;
-        component.clearReportChartsNow();
-
-        expect(confirmSpy).not.toHaveBeenCalled();
-        expect(clearSpy).toHaveBeenCalledTimes(1);
-        expect(clearSpy).toHaveBeenCalledWith({ dryRun: true });
-        expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
-        expect(metricsSpy).toHaveBeenCalledTimes(1);
-        component.closeMaintenanceRunDialog();
-      });
-
-      it('confirms a live run with the counts and sends dryRun false', () => {
-        const clearSpy = vi.spyOn(adminService, 'clearReportCharts').mockReturnValue(of(result(false)));
-        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockImplementation((_title: string, _message: string, action: () => void) => action());
-        const metricsSpy = adminService.getStorageMetrics as Mock;
-        component.storageMetrics = chartMetrics();
-        metricsSpy.mockClear();
-
-        component.maintenanceDryRun = false;
-        component.clearReportChartsNow();
-
-        const [title, message, , button, buttonClass] = vi.mocked(confirmSpy).mock.lastCall!;
-        expect(title).toBe('Clear Report Chart Files');
-        expect(message).toBe('Delete 12 chart files (4.5 MB) for 3 documents? This cannot be undone. ' +
-          'The documents stay; their charts can be added again from the Comparison Wizard.');
-        expect(button).toBe('Clear Chart Files');
-        expect(buttonClass).toBe('btn-gh btn-gh-delete');
-        expect(clearSpy).toHaveBeenCalledTimes(1);
-        expect(clearSpy).toHaveBeenCalledWith({ dryRun: false });
-        expect(metricsSpy).toHaveBeenCalledTimes(1);
-        component.closeMaintenanceRunDialog();
-      });
-    });
-  });
-
-  describe('AI telemetry tab', () => {
-    const summary = (overrides: Partial<AiTelemetrySummaryDto> = {}): AiTelemetrySummaryDto => ({
-      totalRequests: 10, totalChatRequests: 6, totalTitleRequests: 2, totalBenchmarkRequests: 2,
-      totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheCreationTokens: 0,
-      cacheHitRatio: 0, avgDurationMs: 0, models: [], ...overrides
-    });
-
-    const governor = (keys: AiGovernorKeyStatusDto[] = []): AiGovernorStatusDto => ({
-      maxConcurrentCalls: 4, maxRetryAfterSeconds: 90, activeKeys: keys
-    });
-
-    const key = (credentialKey: string, remainingSeconds: number): AiGovernorKeyStatusDto => ({
-      credentialKey, isRateLimited: remainingSeconds > 0, remainingCooldownSeconds: remainingSeconds, inFlightCalls: 0
-    });
-
-    let governorSpy: Mock;
-    let toastSpy: Mock;
-
-    beforeEach(() => {
-      vi.spyOn(adminService, 'getAiTelemetrySummary').mockReturnValue(of(summary()));
-      governorSpy = vi.spyOn(adminService, 'getGovernorStatus').mockReturnValue(of(governor()));
-      toastSpy = vi.spyOn(component, 'showAdminToast').mockReturnValue(undefined);
-    });
-
-    const openTab = () => {
-      fixture.detectChanges();
-      component.selectTab('telemetry');
-      fixture.detectChanges();
-    };
-
-    const clearAllButton = (): HTMLButtonElement =>
-      (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
-        .find(b => (b.textContent ?? '').includes('Clear All Cooldowns'))!;
-
-    it('renders Clear All Cooldowns as a small image button, aria-disabled only when nothing is rate-limited', () => {
-      openTab();
-
-      let button = clearAllButton();
-      expect(button.matches('button.btn-gh.btn-gh-small[type="button"]')).toBe(true);
-      expect(button.hasAttribute('title')).toBe(false);
-      expect(button.getAttribute('aria-disabled')).toBe('true');
-
-      component.governorStatus = governor([key('openai:user:u1', 30)]);
-      fixture.detectChanges();
-
-      button = clearAllButton();
-      expect(button.hasAttribute('aria-disabled')).toBe(false);
-    });
-
-    it('makes no request from Clear All Cooldowns when nothing is rate-limited', () => {
-      const resetSpy = vi.spyOn(adminService, 'resetGovernorCooldown').mockReturnValue(of(undefined));
-      component.governorStatus = governor([key('openai:user:u1', 0)]);
-
-      component.resetGovernorCooldown();
-
-      expect(resetSpy).not.toHaveBeenCalled();
-      expect(toastSpy).not.toHaveBeenCalled();
-    });
-
-    it('clears all cooldowns and says so when a partition is rate-limited', () => {
-      const resetSpy = vi.spyOn(adminService, 'resetGovernorCooldown').mockReturnValue(of(undefined));
-      component.governorStatus = governor([key('openai:user:u1', 30)]);
-
-      component.resetGovernorCooldown();
-
-      expect(resetSpy).toHaveBeenCalledTimes(1);
-
-      expect(resetSpy).toHaveBeenCalledWith(undefined);
-      expect(vi.mocked(toastSpy).mock.lastCall![0]).toBe('All rate-limit cooldowns cleared.');
-    });
-
-    it('raises exactly one toast for a successful refresh', () => {
-      component.refreshTelemetryTab(true);
-
-      expect(toastSpy).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(toastSpy).mock.lastCall![1]).toBe('info');
-      expect(component.telemetryLoading).toBe(false);
-      expect(component.governorLoading).toBe(false);
-    });
-
-    it('raises one error toast when the governor call fails, and still shows the summary', () => {
-      vi.spyOn(console, 'error').mockReturnValue(undefined);
-      governorSpy.mockReturnValue(throwError(() => ({ message: 'boom' })));
-
-      component.refreshTelemetryTab(true);
-
-      expect(toastSpy).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(toastSpy).mock.lastCall![0]).toContain('governor status: boom');
-      expect(vi.mocked(toastSpy).mock.lastCall![1]).toBe('error');
-      expect(component.telemetrySummary).not.toBeNull();
-      expect(component.governorLoading).toBe(false);
-    });
-
-    it('counts a cooldown down locally and re-fetches once when it ends', () => {
-      vi.useFakeTimers();
-      try {
-        governorSpy.mockReturnValueOnce(of(governor([key('openai:user:u1', 2)]))).mockReturnValueOnce(of(governor()));
-        component.refreshTelemetryTab();
-        expect(governorSpy).toHaveBeenCalledTimes(1);
-
-        vi.advanceTimersByTime(1000);
-        expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(1);
-        expect(governorSpy).toHaveBeenCalledTimes(1);
-
-        vi.advanceTimersByTime(1000);
-        expect(governorSpy).toHaveBeenCalledTimes(2);
-        expect(component.rateLimitedKeyCount).toBe(0);
-
-        vi.advanceTimersByTime(5000);
-        expect(governorSpy).toHaveBeenCalledTimes(2);
-      }
-      finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('stops the countdown when another tab is selected', () => {
-      vi.useFakeTimers();
-      try {
-        governorSpy.mockReturnValue(of(governor([key('openai:user:u1', 5)])));
-        component.selectTab('telemetry');
-        component.selectTab('groups');
-
-        vi.advanceTimersByTime(3000);
-
-        expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(5);
-      }
-      finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('renders the Other request line only when the named counts fall short of the total', () => {
-      openTab();
-      expect(fixture.nativeElement.querySelector('.telemetry-other-requests')).toBeNull();
-
-      component.telemetrySummary = summary({ totalRequests: 13 });
-      fixture.detectChanges();
-
-      const other: HTMLElement | null = fixture.nativeElement.querySelector('.telemetry-other-requests');
-      expect(other).not.toBeNull();
-      expect(other!.textContent).toContain('3');
-    });
-
-    it('keeps the partitions section with an empty-state line when no partition exists', () => {
-      openTab();
-
-      const section: HTMLElement | null = fixture.nativeElement.querySelector('.telemetry-partitions');
-      expect(section).not.toBeNull();
-      expect(section!.textContent).toContain('No partitions have been used since the last restart.');
-      expect(section!.querySelector('table')).toBeNull();
-    });
-
-    it('names each row reset button after its partition and pairs it with a hint tooltip', () => {
-      governorSpy.mockReturnValue(of(governor([key('openai:system:7', 30)])));
-      openTab();
-
-      const button: HTMLButtonElement = fixture.nativeElement.querySelector('.telemetry-partitions button.action-btn');
-      expect(button.getAttribute('type')).toBe('button');
-      expect(button.getAttribute('aria-label')).toBe('Clear cooldown for openai:system:7');
-      expect(button.hasAttribute('title')).toBe(false);
-      const tip: HTMLElement | null = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
-      expect(tip?.getAttribute('popover')).toBe('hint');
-    });
-  });
-
-  describe('delete config dialog', () => {
-    const baseConfig: SystemAiConfigDto = {
-      id: 42, displayName: "Prod GPT-5", provider: 'openai', modelId: 'gpt-5',
-      thinkingLevel: null, reasoningMode: null, reasoningSummary: null, serviceTier: null,
-      maxInputTokens: null, maxOutputTokens: null, orderIndex: 0, isEnabled: true, hasApiKey: true,
-      isSystemWide: true,
-      maxDailyChatRequests: null, maxMonthlyChatRequests: null, maxTotalChatRequests: null,
-      dailyChatRequestsCount: 0, monthlyChatRequestsCount: 0, totalChatRequestsCount: 0,
-      maxDailyTitleRequests: null, maxMonthlyTitleRequests: null, maxTotalTitleRequests: null,
-      dailyTitleRequestsCount: 0, monthlyTitleRequestsCount: 0, totalTitleRequestsCount: 0,
-      maxDailyChatTokens: null, maxMonthlyChatTokens: null, maxTotalChatTokens: null,
-      dailyChatTokensCount: 0, monthlyChatTokensCount: 0, totalChatTokensCount: 0,
-      maxDailyTitleTokens: null, maxMonthlyTitleTokens: null, maxTotalTitleTokens: null,
-      dailyTitleTokensCount: 0, monthlyTitleTokensCount: 0, totalTitleTokensCount: 0,
-      modelRole: 1, parallelExecutionMode: 2
-    };
-
-    const blocker = (overrides: Partial<SystemConfigBlockerDto> = {}): SystemConfigBlockerDto => ({
-      kind: 'run', id: '900', runId: 900,
-      label: "Benchmark run #900 on suite 'Core'",
-      roles: ['assessor', 'claim verifier'],
-      startedAtUtc: '2026-09-20T10:00:00Z',
-      ...overrides
-    });
-
-    const blockedCheck = (blockers: SystemConfigBlockerDto[] = [blocker()]): SystemConfigDeletionCheckDto => ({
-      configId: 42, displayName: "Prod GPT-5", canDelete: false, blockers,
-      benchmarkRunReferenceCount: 3, stoppedSeriesCount: 0, stoppedBatteryRunCount: 0,
-      userAssignmentCount: 2, groupAssignmentCount: 1, confidentialTrustCount: 0
-    });
-
-    const deletableCheck = (overrides: Partial<SystemConfigDeletionCheckDto> = {}): SystemConfigDeletionCheckDto => ({
-      configId: 42, displayName: "Prod GPT-5", canDelete: true, blockers: [],
-      benchmarkRunReferenceCount: 5, stoppedSeriesCount: 2, stoppedBatteryRunCount: 0,
-      userAssignmentCount: 3, groupAssignmentCount: 1, confidentialTrustCount: 4,
-      ...overrides
-    });
-
-    const dialogEl = (): HTMLDialogElement => fixture.nativeElement.querySelector('dialog.delete-config-dialog');
-    const rowDeleteButton = (): HTMLButtonElement =>
-      fixture.nativeElement.querySelector(`button[aria-label="Delete config ${baseConfig.displayName}"]`);
-    const footerButton = (text: string): HTMLButtonElement =>
-      (Array.from(dialogEl().querySelectorAll('.dialog-actions button')) as HTMLButtonElement[])
-        .find(b => (b.textContent ?? '').includes(text))!;
-
-    let toastSpy: Mock;
-
-    beforeEach(() => {
-      // Served by the load ngOnInit runs on the first detectChanges, which would replace a list set directly.
-      (adminService.getSystemConfigs as Mock).mockReturnValue(of([{ ...baseConfig }]));
       component.selectTab('configs');
       fixture.detectChanges();
-      toastSpy = vi.spyOn(component, 'showAdminToast').mockReturnValue(undefined);
-      vi.spyOn(component.deleteConfigDialog.nativeElement, 'showModal').mockReturnValue(undefined);
-      vi.spyOn(component.deleteConfigDialog.nativeElement, 'close').mockReturnValue(undefined);
-    });
 
-    it('renders the row delete button with a distinct aria-label, an interestfor tooltip, and no title', () => {
-      const button = rowDeleteButton();
-      expect(button.getAttribute('type')).toBe('button');
-      expect(button.hasAttribute('title')).toBe(false);
-      const tip = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
-      expect(tip?.getAttribute('popover')).toBe('hint');
-    });
+      const configsTab: AdminConfigsTabComponent = fixture.debugElement.query(By.directive(AdminConfigsTabComponent)).componentInstance;
+      configsTab.openBenchmarkRun.emit(900);
 
-    it('checks first, then opens directly in the blocked state naming each blocker, its roles and its start time', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(blockedCheck()));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      expect(component.deleteConfigDialog.nativeElement.showModal).toHaveBeenCalled();
-      expect(dialogEl().querySelector('#delete-config-title')!.textContent)
-        .toContain("'Prod GPT-5' can't be deleted right now");
-
-      const reason = dialogEl().querySelector('#delete-config-desc')!;
-      expect(reason.getAttribute('role')).toBeNull(); // Not a race switch: no live announcement needed.
-
-      const item = dialogEl().querySelector('.delete-config-blocker-list li')!;
-      expect(item.textContent).toContain("Benchmark run #900 on suite 'Core'");
-      expect(item.textContent).toContain('as the assessor and the claim verifier');
-      expect(item.textContent).toContain('2026-09-20');
-
-      expect(item.querySelector('button')!.textContent).toContain('Open run #900');
-
-      const deleteBtn = footerButton('Delete');
-      expect(deleteBtn.getAttribute('aria-disabled')).toBe('true');
-      expect(deleteBtn.getAttribute('aria-describedby')).toBe('delete-config-desc');
-    });
-
-    it('opens directly in the deletable state with the impact list', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("Delete 'Prod GPT-5'?");
-      const list = dialogEl().querySelector('#delete-config-desc')!;
-      expect(list.textContent).toContain('5 runs are unaffected');
-      expect(list.textContent).toContain('3 user and 1 group assignments will be removed');
-      expect(list.textContent).toContain("4 users' confidentiality decisions");
-      expect(list.textContent).toContain('2 stopped benchmark series');
-      expect(list.textContent).toContain('Usage and error logs are kept');
-    });
-
-    it('omits the confidentiality and stopped-series lines when their counts are zero', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck({ confidentialTrustCount: 0, stoppedSeriesCount: 0 })));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      const list = dialogEl().querySelector('#delete-config-desc')!;
-      expect(list.textContent).not.toContain('confidentiality');
-      expect(list.textContent).not.toContain('stopped benchmark series');
-      expect(list.textContent).not.toContain('stopped battery run');
-    });
-
-    for (const [count, line] of [
-      [3, '3 stopped battery runs name this configuration and can no longer be resumed.'],
-      [1, '1 stopped battery run names this configuration and can no longer be resumed.']
-    ] as const) {
-      it(`names ${count} stopped battery run(s) that can no longer be resumed`, () => {
-        vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck({ stoppedBatteryRunCount: count })));
-
-        rowDeleteButton().click();
-        fixture.detectChanges();
-
-        expect(dialogEl().querySelector('#delete-config-desc')!.textContent).toContain(line);
-      });
-    }
-
-    it('opens in the error state when the pre-check itself fails', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(throwError(() => ({ status: 500, error: 'Deletion check is down' })));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      expect(component.deleteConfigDialog.nativeElement.showModal).toHaveBeenCalled();
-      const error = dialogEl().querySelector('.error-message[role="alert"]');
-      expect(error?.textContent).toContain('Deletion check is down');
-    });
-
-    it('Check Again re-runs the check and switches state in place', () => {
-      const checkSpy = vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValueOnce(of(blockedCheck())).mockReturnValueOnce(of(deletableCheck()));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("can't be deleted right now");
-
-      footerButton('Check Again').click();
-      fixture.detectChanges();
-
-      expect(checkSpy).toHaveBeenCalledTimes(2);
-      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("Delete 'Prod GPT-5'?");
-      expect(component.deleteConfigDialog.nativeElement.showModal).toHaveBeenCalledTimes(1); // Still open; not re-shown.
-    });
-
-    it('closes the dialog, switches to the Benchmark tab and hands off the run id on "Open run #N"', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(blockedCheck()));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      dialogEl().querySelector<HTMLButtonElement>('.delete-config-blocker-list button')!.click();
-      fixture.detectChanges();
-
-      expect(component.deleteConfigDialog.nativeElement.close).toHaveBeenCalled();
       expect(component.activeTab).toBe('benchmark');
       expect(component.pendingRunId).toBe(900);
-    });
-
-    it('switches a deletable dialog to blocked with a live-announced reason on a 409 race', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
-      vi.spyOn(adminService, 'deleteSystemConfig').mockReturnValue(throwError(() => ({
-        status: 409,
-        error: { error: "'Prod GPT-5' is in use by a benchmark right now.", blockers: [blocker()] }
-      })));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      footerButton('Delete').click();
-      fixture.detectChanges();
-
-      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("can't be deleted right now");
-      const reason = dialogEl().querySelector('#delete-config-desc')!;
-      expect(reason.getAttribute('role')).toBe('alert');
-      expect(component.deleteConfigDialog.nativeElement.close).not.toHaveBeenCalled();
-    });
-
-    it('shows an inline error and keeps the dialog open for any other delete failure', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
-      vi.spyOn(adminService, 'deleteSystemConfig').mockReturnValue(throwError(() => ({
-        status: 500, error: 'Something else went wrong.'
-      })));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      footerButton('Delete').click();
-      fixture.detectChanges();
-
-      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("Delete 'Prod GPT-5'?");
-      const error = dialogEl().querySelector('.error-message[role="alert"]');
-      expect(error?.textContent).toContain('Something else went wrong.');
-      expect(component.deleteConfigDialog.nativeElement.close).not.toHaveBeenCalled();
-      expect(footerButton('Delete').getAttribute('aria-disabled')).toBeNull();
-    });
-
-    it('deletes on success: removes the row, closes the dialog and shows the kept-history toast', () => {
-      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
-      vi.spyOn(adminService, 'deleteSystemConfig').mockReturnValue(of(undefined));
-
-      rowDeleteButton().click();
-      fixture.detectChanges();
-
-      footerButton('Delete').click();
-      fixture.detectChanges();
-
-      expect(component.configs.find(c => c.id === 42)).toBeUndefined();
-      expect(component.deleteConfigDialog.nativeElement.close).toHaveBeenCalled();
-      expect(toastSpy).toHaveBeenCalledWith(
-        "Deleted 'Prod GPT-5'. Benchmark history and usage logs are kept.", 'success'
-      );
     });
   });
 
@@ -1152,22 +205,8 @@ describe('AdminComponent', () => {
       ...overrides
     });
 
-    const config = (id: number, displayName: string, overrides: Partial<SystemAiConfigDto> = {}): SystemAiConfigDto => ({
-      id, displayName, provider: 'Anthropic', modelId: 'claude-x',
-      thinkingLevel: null, reasoningMode: null, reasoningSummary: null, serviceTier: null,
-      maxInputTokens: null, maxOutputTokens: null, orderIndex: id, isEnabled: true, hasApiKey: true,
-      isSystemWide: false,
-      maxDailyChatRequests: null, maxMonthlyChatRequests: null, maxTotalChatRequests: null,
-      dailyChatRequestsCount: 0, monthlyChatRequestsCount: 0, totalChatRequestsCount: 0,
-      maxDailyTitleRequests: null, maxMonthlyTitleRequests: null, maxTotalTitleRequests: null,
-      dailyTitleRequestsCount: 0, monthlyTitleRequestsCount: 0, totalTitleRequestsCount: 0,
-      maxDailyChatTokens: null, maxMonthlyChatTokens: null, maxTotalChatTokens: null,
-      dailyChatTokensCount: 0, monthlyChatTokensCount: 0, totalChatTokensCount: 0,
-      maxDailyTitleTokens: null, maxMonthlyTitleTokens: null, maxTotalTitleTokens: null,
-      dailyTitleTokensCount: 0, monthlyTitleTokensCount: 0, totalTitleTokensCount: 0,
-      modelRole: 1, parallelExecutionMode: 2,
-      ...overrides
-    });
+    const config = (id: number, displayName: string, overrides: Partial<SystemAiConfigDto> = {}): SystemAiConfigDto =>
+      buildSystemConfig({ id, displayName, orderIndex: id, ...overrides });
 
     it('places API Keys after Groups and before System Configs', () => {
       const ids = component.tabs.map(t => t.id);
@@ -1195,67 +234,97 @@ describe('AdminComponent', () => {
         .toBe('Default key saved');
     });
 
-    it('passes the configuration form each provider\'s default key, unverified only when Not verified', () => {
-      (adminService.getDefaultApiKeys as Mock).mockReturnValue(of([
-        keyStatus('Anthropic', { hasKey: true, keyHint: 'ab12', verification: { status: 'NotVerified', checkedAtUtc: null, message: 'No response' } }),
-        keyStatus('Google'),
-        keyStatus('OpenAI', { hasKey: true, keyHint: 'zz99' })
-      ]));
-
-      component.loadDefaultApiKeys();
-
-      expect(component.defaultKeysForForm).toEqual({
-        Anthropic: { hasKey: true, keyHint: 'ab12', verified: false },
-        Google: { hasKey: false, keyHint: null, verified: true },
-        OpenAI: { hasKey: true, keyHint: 'zz99', verified: true }
-      });
-    });
-
-    it('labels each configuration\'s key: Default Key, Default Key Missing, Key Saved or No Key', () => {
-      (adminService.getSystemConfigs as Mock).mockReturnValue(of([
-        config(1, 'Uses Default', { useDefaultApiKey: true, hasApiKey: true }),
-        config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false }),
-        config(3, 'Own Key', { useDefaultApiKey: false, hasApiKey: true }),
-        config(4, 'Nothing', { hasApiKey: false })
-      ]));
-      component.selectTab('configs');
-      fixture.detectChanges();
-
-      const badges = Array.from(fixture.nativeElement.querySelectorAll('.config-key-badge')) as HTMLElement[];
-      expect(badges.map(b => b.textContent!.trim())).toEqual(['Default Key', 'Default Key Missing', 'Key Saved', 'No Key']);
-      expect(badges[1].classList).toContain('badge-warning');
-      expect(badges[0].classList).toContain('badge-success');
-    });
-
     it('reloads the keys and the configurations after the tab changes a key', () => {
       fixture.detectChanges();
       (adminService.getDefaultApiKeys as Mock).mockClear();
       (adminService.getSystemConfigs as Mock).mockClear();
       (adminService.getSystemConfigs as Mock).mockReturnValue(of([config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false })]));
 
-      component.onDefaultApiKeysChanged();
+      component.store.onDefaultApiKeysChanged();
 
       expect(adminService.getDefaultApiKeys).toHaveBeenCalledTimes(1);
       expect(adminService.getSystemConfigs).toHaveBeenCalledTimes(1);
-      expect(component.configs.length).toBe(1);
-      expect(component.visibleConfigs.length).toBe(1);
+      expect(component.store.configs.length).toBe(1);
+    });
+  });
+
+  describe('query-parameter navigation', () => {
+    let navigateSpy: Mock;
+
+    const removal = {
+      queryParams: { tab: null, subtab: null, suiteId: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true
+    };
+
+    beforeEach(() => {
+      navigateSpy = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     });
 
-    it('sends useDefaultApiKey with a saved configuration', () => {
-      const create = vi.spyOn(adminService, 'createSystemConfig').mockReturnValue(of(config(5, 'New')));
-      fixture.detectChanges();
-      component.isNewConfig = true;
-      component.editingConfig = { provider: 'Anthropic', isEnabled: true };
-      vi.spyOn(component.configDialog.nativeElement, 'close').mockReturnValue(undefined);
+    it('selects the Benchmark tab, hands it the sub-tab and suite, and removes the parameters', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'benchmark', subtab: 'suites', suiteId: '7' }));
 
-      component.onConfigSave({
-        displayName: 'New', displayNameMode: 'model_id', provider: 'Anthropic', modelId: 'claude-x',
-        thinkingLevel: null, reasoningMode: null, reasoningSummary: null, serviceTier: null,
-        maxInputTokens: null, maxOutputTokens: null, useDefaultApiKey: true
+      expect(component.activeTab).toBe('benchmark');
+      expect(component.pendingBenchmarkNavigation).toEqual({ subTab: 'suites', suiteId: 7 });
+      expect(navigateSpy).toHaveBeenCalledTimes(1);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    it('passes a non-numeric suite id on as null', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'benchmark', subtab: 'suites', suiteId: 'abc' }));
+
+      expect(component.pendingBenchmarkNavigation).toEqual({ subTab: 'suites', suiteId: null });
+    });
+
+    it('keeps the active tab for an unknown tab and still removes the parameters', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'bogus' }));
+
+      expect(component.activeTab).toBe('users');
+      expect(component.pendingBenchmarkNavigation).toBeNull();
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    it('does nothing without navigation parameters', () => {
+      component.applyNavigationParams(convertToParamMap({}));
+
+      expect(component.activeTab).toBe('users');
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
+
+    it('selects another tab without a Benchmark request', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'database' }));
+
+      expect(component.activeTab).toBe('database');
+      expect(component.pendingBenchmarkNavigation).toBeNull();
+    });
+
+    it('reads the parameters from the route on init', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [AdminComponent],
+        providers: [
+          provideRouter([]),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ tab: 'telemetry' })) } }
+        ]
       });
+      const service = TestBed.inject(AdminService);
+      spyAdminService(service);
+      // The Telemetry tab loads its summary and governor status when it is created.
+      vi.spyOn(service, 'getAiTelemetrySummary').mockReturnValue(of({
+        totalRequests: 0, totalChatRequests: 0, totalTitleRequests: 0, totalBenchmarkRequests: 0,
+        totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheCreationTokens: 0,
+        cacheHitRatio: 0, avgDurationMs: 0, models: []
+      }));
+      vi.spyOn(service, 'getGovernorStatus').mockReturnValue(of({ maxConcurrentCalls: 4, maxRetryAfterSeconds: 90, activeKeys: [] }));
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-      expect(vi.mocked(create).mock.lastCall![0].useDefaultApiKey).toBe(true);
-      expect(vi.mocked(create).mock.lastCall![0].apiKey).toBeUndefined();
+      const routed = TestBed.createComponent(AdminComponent);
+      routed.detectChanges();
+
+      expect(routed.componentInstance.activeTab).toBe('telemetry');
+      routed.destroy();
     });
   });
 });

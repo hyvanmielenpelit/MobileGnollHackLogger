@@ -1,0 +1,24 @@
+@use '../admin-shared' as shared;
+
+:host {
+  display: block;
+}
+
+@include shared.tab-header-row;
+@include shared.btn-gh-wide;
+@include shared.text-muted;
+@include shared.empty-state-msg;
+@include shared.table-responsive;
+@include shared.modern-table;
+@include shared.text-align;
+@include shared.actions-cell;
+@include shared.scrollable-list;
+@include shared.config-list-item;
+@include shared.dialog-wide;
+@include shared.badge-system-wide;
+@include shared.d-flex;
+
+.error-text {
+  color: #ff4d4d;
+  font-size: 0.9em;
+}

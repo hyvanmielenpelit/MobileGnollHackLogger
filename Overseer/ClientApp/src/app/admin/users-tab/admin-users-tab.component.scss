@@ -1,0 +1,185 @@
+@use '../admin-shared' as shared;
+
+:host { display: block; }
+
+@include shared.tab-header-row;
+@include shared.table-responsive;
+@include shared.modern-table;
+@include shared.text-align;
+@include shared.text-muted;
+@include shared.actions-cell;
+@include shared.badge-system-wide;
+@include shared.d-flex;
+@include shared.scrollable-list;
+@include shared.config-list-item;
+@include shared.dialog-wide;
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.page-info {
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+/* Badges */
+.group-badge {
+  display: inline-block;
+  background-color: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-glass);
+  color: #ddd;
+  padding: 4px 8px;
+  border-radius: 12px;
+  margin-right: 6px;
+  margin-bottom: 4px;
+  font-size: 0.8em;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Chart Toolbar from Analytics */
+.chart-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin: 1.5rem 0 0.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    
+    .page-size-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+
+      .page-size-select {
+        width: 70px;
+        min-width: unset;
+        height: 32px;
+        padding: 0 0.5rem;
+        flex-shrink: 0;
+      }
+
+      .page-size-label {
+        font-size: 14px;
+        color: #a0a0a0;
+      }
+    }
+
+    .pagination-buttons {
+      display: flex;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 0.25rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+
+      button.page-btn {
+        background: transparent;
+        border: none;
+        color: #a0a0a0;
+        border-radius: 4px;
+        min-width: 32px;
+        height: 32px;
+        padding: 0;
+        font-size: 14px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+
+        &:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.1);
+          color: #ffffff;
+        }
+
+        &:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+
+        &.active {
+          background: rgba(224, 186, 109, 0.85); /* gold */
+          color: #121212; /* dark text for max contrast */
+          font-weight: bold;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        svg {
+          width: 16px;
+          height: 16px;
+        }
+      }
+
+      .page-ellipsis {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        height: 32px;
+        color: #a0a0a0;
+        user-select: none;
+        font-weight: bold;
+        font-size: 14px;
+      }
+    }
+  }
+
+  .search-controls {
+    flex-shrink: 1;
+    min-width: 150px;
+    max-width: 250px;
+    
+    input {
+      width: 100%;
+    }
+  }
+}
+
+.table-loading {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .chart-toolbar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    
+    .pagination-controls {
+      flex-wrap: wrap;
+      flex-shrink: 1;
+      width: 100%;
+      justify-content: center;
+      gap: 1rem;
+    }
+    
+    .search-controls {
+      width: 100%;
+      padding: 0.25rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+  }
+
+  .search-controls {
+    flex-shrink: 1;
+    min-width: 150px;
+    max-width: 250px;
+    
+    input {
+      width: 100%;
+    }
+  }
+}

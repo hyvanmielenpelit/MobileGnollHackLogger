@@ -1,0 +1,95 @@
+@use '../admin-shared' as shared;
+
+:host {
+  display: block;
+}
+
+@include shared.tab-header-row;
+@include shared.btn-gh-wide;
+@include shared.empty-state-msg;
+@include shared.text-muted;
+@include shared.d-flex;
+@include shared.badge-system-wide;
+@include shared.dialog-extra-wide;
+
+.badge-disabled {
+  display: inline-block;
+  background-color: rgba(220, 53, 69, 0.2);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.results-count {
+  font-size: 0.85rem;
+  color: #8b949e;
+  margin: 0 0 15px 0;
+}
+
+.delete-config-dialog {
+  max-width: 560px;
+
+  .delete-config-blocker-list,
+  .delete-config-impact-list {
+    margin: 12px 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .delete-config-blocker-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+  }
+}
+
+.model-price-line {
+  font-size: 0.85em;
+  margin-top: 4px;
+  color: var(--gh-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+// The long-prompt rate card, shown only for the models that publish one.
+.model-price-long-context {
+  font-size: 0.8em;
+  margin-top: 2px;
+  color: var(--gh-text-secondary);
+}
+
+// An announced future price change reads as a quiet note; one whose date has already passed is an
+// advisory, because the catalog entry now needs folding down even though the price it produces is right.
+.model-price-schedule {
+  font-size: 0.8em;
+  margin-top: 2px;
+  color: var(--gh-text-secondary);
+  font-style: italic;
+
+  &.elapsed {
+    color: #f1c40f;
+    font-style: normal;
+  }
+}
+
+.status-badge {
+  &.badge-custom {
+    background-color: rgba(241, 196, 15, 0.15);
+    border: 1px solid rgba(241, 196, 15, 0.4);
+    color: #f1c40f;
+  }
+
+  &.badge-catalog {
+    background-color: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+  }
+}

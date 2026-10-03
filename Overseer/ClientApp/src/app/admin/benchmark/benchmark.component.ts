@@ -378,6 +378,12 @@ export interface BenchmarkFingerprintEntry {
   title: string;
 }
 
+/** A one-time request from the host page to show a sub-tab and, on Manage Suites, one suite. */
+export interface BenchmarkNavigationRequest {
+  subTab: string | null;
+  suiteId: number | null;
+}
+
 /**
  * The run setup an operator last started, remembered across reloads. Exactly the fields that make up a
  * run: not the same-provider acknowledgement, which is a per-run safety gate, and not the
@@ -451,6 +457,28 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private pendingOpenRunId: number | null = null;
   private viewInitialised = false;
+
+  /**
+   * A sub-tab, and on Manage Suites a suite, the host page asks to show. Applied once `ngOnInit`
+   * has run, after which `navigationHandled` tells the host to clear its request.
+   */
+  @Input() set navigation(request: BenchmarkNavigationRequest | null | undefined) {
+    this.pendingNavigation = request ?? null;
+    if (this.initialised && this.pendingNavigation) {
+      this.applyNavigation(this.pendingNavigation);
+    }
+  }
+
+  @Output() navigationHandled = new EventEmitter<void>();
+
+  private pendingNavigation: BenchmarkNavigationRequest | null = null;
+  private initialised = false;
+
+  /** The suite a navigation request asked to bring into view, until the next suite list arrives. */
+  private pendingFocusSuiteId: number | null = null;
+
+  /** The suite card a navigation request brought into view; outlined until another sub-tab is selected. */
+  linkedSuiteId: number | null = null;
 
   @ViewChild('suiteDialog') suiteDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('questionsDialog') questionsDialog!: ElementRef<HTMLDialogElement>;
@@ -1535,6 +1563,48 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.checkActiveRunSeries();
     this.loadBatteries();
     this.checkActiveBatteryRun();
+    this.initialised = true;
+    if (this.pendingNavigation) {
+      this.applyNavigation(this.pendingNavigation);
+    }
+  }
+
+  /**
+   * Shows the requested sub-tab, through `selectSubTab` so its entry loads run. A suite id leads to
+   * Manage Suites when no valid sub-tab is named, and is ignored on any other sub-tab.
+   */
+  private applyNavigation(request: BenchmarkNavigationRequest): void {
+    this.pendingNavigation = null;
+    const named = this.subTabs.find(t => t === request.subTab);
+    const target = named ?? (request.suiteId != null ? 'suites' : null);
+    if (target === 'suites' && request.suiteId != null) {
+      this.pendingFocusSuiteId = request.suiteId;
+    }
+    if (target) {
+      this.selectSubTab(target);
+    }
+    // Deferred: the host must not clear its binding inside the check that set it.
+    queueMicrotask(() => this.navigationHandled.emit());
+  }
+
+  /** Outlines, scrolls to and focuses the suite a navigation request named, once its list has arrived. */
+  private focusLinkedSuite(): void {
+    const suiteId = this.pendingFocusSuiteId;
+    if (suiteId == null || this.activeSubTab !== 'suites') {
+      return;
+    }
+    // Cleared first, so a second suite list response does not repeat the focus.
+    this.pendingFocusSuiteId = null;
+    if (!this.suites.some(s => s.id === suiteId)) {
+      this.actionErrorMessage = `The linked suite (id ${suiteId}) no longer exists.`;
+      this.cdr.detectChanges();
+      return;
+    }
+    this.linkedSuiteId = suiteId;
+    this.cdr.detectChanges();
+    const card = document.getElementById('bm-suite-' + suiteId);
+    card?.scrollIntoView({ block: 'center' });
+    card?.focus({ preventScroll: true });
   }
 
   /**
@@ -1589,6 +1659,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   selectSubTab(tab: 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison'): void {
     this.activeSubTab = tab;
+    if (tab !== 'suites') {
+      this.linkedSuiteId = null;
+    }
     if (tab === 'history') {
       this.loadHistory();
       // The group column needs the groups, and the panel is where a group is built from a
@@ -3089,6 +3162,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.loadAllFootprints();
         this.refreshRunningGeneration();
         this.cdr.detectChanges();
+        this.focusLinkedSuite();
       },
       error: (err) => {
         this.loadingSuites = false;

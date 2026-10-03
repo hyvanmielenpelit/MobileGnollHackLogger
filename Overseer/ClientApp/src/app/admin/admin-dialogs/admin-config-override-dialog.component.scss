@@ -1,0 +1,8 @@
+@use '../admin-shared' as shared;
+
+:host {
+  display: contents;
+}
+
+@include shared.d-flex;
+@include shared.text-muted;

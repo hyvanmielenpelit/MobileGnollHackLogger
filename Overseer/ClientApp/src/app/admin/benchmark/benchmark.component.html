@@ -1487,7 +1487,8 @@
 
       <div class="suites-grid">
         @for (suite of suites; track suite.id) {
-          <div class="benchmark-card suite-card">
+          <div class="benchmark-card suite-card" [id]="'bm-suite-' + suite.id" tabindex="-1"
+               [class.suite-card-linked]="suite.id === linkedSuiteId">
             <div class="suite-card-header">
               <div class="suite-title-group">
                 <h4>{{ suite.name }}</h4>

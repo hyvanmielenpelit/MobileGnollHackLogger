@@ -1,0 +1,40 @@
+<dialog #editConfigOverrideDialog class="gh-dialog">
+  @if (editingOverride) {
+    <div class="dialog-content flex-col">
+      <h3>Edit Overrides ({{ overrideContext === 'user' ? 'User' : 'Group' }})</h3>
+      <p class="text-muted" style="font-size: 0.85em; margin-top: 5px; margin-bottom: 20px;">
+        Leave empty to use base system config values.
+      </p>
+      <div class="form-group">
+        <label class="gh-switch-wrapper d-flex align-items-center m-0">
+          <div class="gh-switch">
+            <input type="checkbox" [(ngModel)]="editingOverride.isEnabled" name="overrideIsEnabled" />
+            <span class="gh-slider"></span>
+          </div>
+          <span style="margin-left: 20px;">Is Enabled</span>
+        </label>
+      </div>
+      <div class="form-group mt-15">
+        <label>Model Role Filter</label>
+        <div class="checkbox-row" style="flex-direction: row; gap: 20px; flex-wrap: wrap;">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="overrideRoleChat"> Chat
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="overrideRoleTitle"> Title Generation
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="overrideRoleBenchmark"> Benchmark
+          </label>
+        </div>
+        @if (overrideModelRole === 0) {
+          <span class="field-validation-error" style="color: var(--danger-color, #ff6b6b); font-size: 0.85rem; margin-top: 4px;">Select at least one role.</span>
+        }
+      </div>
+      <div class="dialog-actions mt-auto pt-20">
+        <button class="btn-gh btn-gh-cancel" (click)="closeEditOverride()">Cancel</button>
+        <button class="btn-gh" (click)="saveOverride()" [disabled]="overrideModelRole === 0">Save</button>
+      </div>
+    </div>
+  }
+</dialog>

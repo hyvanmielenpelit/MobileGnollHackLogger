@@ -1,0 +1,23 @@
+@use '../admin-shared' as shared;
+
+:host {
+  display: block;
+}
+
+@include shared.tab-header-row;
+@include shared.permissions-fieldset;
+@include shared.text-muted;
+
+.devtools-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+
+  .btn-gh {
+    white-space: nowrap;
+    width: 230px;
+    max-width: 100%;
+    justify-content: center;
+  }
+}

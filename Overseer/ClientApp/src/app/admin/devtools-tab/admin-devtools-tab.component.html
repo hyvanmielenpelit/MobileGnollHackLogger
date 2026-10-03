@@ -1,0 +1,20 @@
+<div class="tab-header-row">
+  <h3 class="m-0">Developer Tools</h3>
+</div>
+
+<fieldset class="permissions-fieldset mt-20">
+  <legend>Sentry Crash Reporting</legend>
+  <div class="margin-y-20 mt-5">
+    <div class="devtools-button-group">
+      <button class="btn-gh" (click)="triggerFrontendSentryError()">
+        Test Frontend Error
+      </button>
+      <button class="btn-gh" (click)="triggerBackendSentryError()">
+        Test Backend Error
+      </button>
+    </div>
+    <p class="text-muted mt-10" style="font-size: 0.9em;">
+      Warning: Clicking these buttons will deliberately throw unhandled exceptions and send real error reports to your configured Sentry project.
+    </p>
+  </div>
+</fieldset>
