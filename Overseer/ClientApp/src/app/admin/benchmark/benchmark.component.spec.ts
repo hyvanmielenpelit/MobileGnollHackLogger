@@ -1764,4 +1764,70 @@ describe('AdminBenchmarkComponent', () => {
       expect(progress.getAttribute('role')).toBe('status');
     });
   });
+
+  describe('editing a question from the question generation dialog', () => {
+    const suiteA = { id: 1, name: 'Suite A', description: '', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1 } as any;
+    const suiteB = { id: 2, name: 'Suite B', description: '', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, gameSnapshotId: 7 } as any;
+    const questionA = { id: 10, benchmarkSuiteId: 1, orderIndex: 0, questionText: 'A?', difficulty: 1, expectedPoints: '' } as any;
+    const questionB = { id: 20, benchmarkSuiteId: 2, orderIndex: 0, questionText: 'B?', difficulty: 2, expectedPoints: '- point' } as any;
+    let refreshQuestions: Mock;
+
+    beforeEach(() => {
+      (benchmarkServiceMock as any).updateQuestion = vi.fn().mockReturnValue(of(questionB));
+      (benchmarkServiceMock as any).createQuestion = vi.fn().mockReturnValue(of(questionA));
+      component.openGenerationDialog(suiteB);
+      fixture.detectChanges();
+      // The child's own reload also calls getQuestions, which would blur what the host reloaded.
+      refreshQuestions = vi.spyOn(component.generationDialog!, 'refreshQuestions').mockImplementation(() => {}) as unknown as Mock;
+      benchmarkServiceMock.getQuestions.mockClear();
+      benchmarkServiceMock.getSuites.mockClear();
+    });
+
+    it('saves the edit when Manage Questions was never opened', () => {
+      expect(component.currentSuiteForQuestions).toBeNull();
+
+      component.onGenerationEditQuestion(questionB);
+      component.questionForm.questionText = 'B, edited?';
+      component.saveQuestion();
+
+      expect((benchmarkServiceMock as any).updateQuestion).toHaveBeenCalledWith(20, expect.objectContaining({ questionText: 'B, edited?' }));
+      expect(refreshQuestions).toHaveBeenCalled();
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
+      expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalled();
+    });
+
+    it('leaves another suite\'s Manage Questions list alone', () => {
+      component.currentSuiteForQuestions = suiteA;
+      component.questions = [questionA];
+
+      component.onGenerationEditQuestion(questionB);
+      component.saveQuestion();
+
+      expect((benchmarkServiceMock as any).updateQuestion).toHaveBeenCalledWith(20, expect.anything());
+      expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalledWith(1);
+      expect(component.questions).toEqual([questionA]);
+      expect(refreshQuestions).toHaveBeenCalled();
+    });
+
+    it('reloads the Manage Questions list when it shows the same suite', () => {
+      component.currentSuiteForQuestions = suiteB;
+
+      component.onGenerationEditQuestion(questionB);
+      component.saveQuestion();
+
+      expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(2);
+      expect(refreshQuestions).toHaveBeenCalled();
+    });
+
+    it('still creates a new question in the Manage Questions suite', () => {
+      component.currentSuiteForQuestions = suiteA;
+
+      component.openCreateQuestion();
+      component.questionForm.questionText = 'New?';
+      component.saveQuestion();
+
+      expect((benchmarkServiceMock as any).createQuestion).toHaveBeenCalledWith(1, expect.objectContaining({ questionText: 'New?' }));
+      expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
+    });
+  });
 });

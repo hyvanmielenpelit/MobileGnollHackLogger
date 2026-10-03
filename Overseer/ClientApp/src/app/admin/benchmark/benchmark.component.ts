@@ -1479,6 +1479,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // Question Form Dialog
   editingQuestionId: number | null = null;
+  /** The suite the open question form saves into: the edited question's own, or Manage Questions' for a new one. */
+  questionFormSuiteId: number | null = null;
   questionForm: CreateBenchmarkQuestionRequest = { questionText: '', difficulty: 1, expectedPoints: '' };
 
   /** A sample rubric in the shape the assessor reads: the four graded sections and a source line. */
@@ -3604,12 +3606,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openCreateQuestion() {
     this.editingQuestionId = null;
+    this.questionFormSuiteId = this.currentSuiteForQuestions?.id ?? null;
     this.questionForm = { questionText: '', difficulty: 1, expectedPoints: '' };
     this.showQuestionForm();
   }
 
   openEditQuestion(q: BenchmarkQuestionDto) {
     this.editingQuestionId = q.id;
+    this.questionFormSuiteId = q.benchmarkSuiteId;
     this.questionForm = {
       questionText: q.questionText,
       difficulty: typeof q.difficulty === 'number' ? q.difficulty : this.parseDifficulty(q.difficulty),
@@ -3630,32 +3634,31 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   saveQuestion() {
-    if (!this.questionForm.questionText.trim() || !this.currentSuiteForQuestions) return;
+    const suiteId = this.questionFormSuiteId;
+    if (!this.questionForm.questionText.trim() || suiteId == null) return;
 
     if (this.editingQuestionId) {
       this.benchmarkService.updateQuestion(this.editingQuestionId, this.questionForm).subscribe({
-        next: () => {
-          this.questionFormDialog?.nativeElement.close();
-          this.loadQuestions(this.currentSuiteForQuestions!.id);
-          this.loadSuites();
-          if (this.generationDialogVisible) {
-            this.generationDialog?.refreshQuestions();
-          }
-        },
+        next: () => this.onQuestionSaved(suiteId),
         error: (err) => console.error('Failed to update question', err)
       });
     } else {
-      this.benchmarkService.createQuestion(this.currentSuiteForQuestions.id, this.questionForm).subscribe({
-        next: () => {
-          this.questionFormDialog?.nativeElement.close();
-          this.loadQuestions(this.currentSuiteForQuestions!.id);
-          this.loadSuites();
-          if (this.generationDialogVisible) {
-            this.generationDialog?.refreshQuestions();
-          }
-        },
+      this.benchmarkService.createQuestion(suiteId, this.questionForm).subscribe({
+        next: () => this.onQuestionSaved(suiteId),
         error: (err) => console.error('Failed to create question', err)
       });
+    }
+  }
+
+  /** Reloads the lists that show the saved question's suite; Manage Questions may hold another suite. */
+  private onQuestionSaved(suiteId: number): void {
+    this.questionFormDialog?.nativeElement.close();
+    if (this.currentSuiteForQuestions?.id === suiteId) {
+      this.loadQuestions(suiteId);
+    }
+    this.loadSuites();
+    if (this.generationDialogVisible) {
+      this.generationDialog?.refreshQuestions();
     }
   }
 
