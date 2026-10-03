@@ -233,6 +233,7 @@ When testing ASP.NET Core controllers and endpoints:
 *   **Remove Hosted Services**: Remove background services like `SourceCodeService` that perform heavy local file I/O unless explicitly testing them.
 *   **Mock Authentication**: Swap the real cookie authentication with a `TestAuthHandler` that can automatically log in a user based on an HTTP header (e.g., `X-Test-User`).
 *   **Swap Database**: Replace the SQL Server DbContext with `UseInMemoryDatabase`.
+*   **Blank corpus paths**: the factory sets `WikiPath`, `NetHackWikiPath`, `KbPath`, `SourceCodePath` and `NetHackSourceCodePath` to empty, because Overseer's `ApplicationStarted` hook would otherwise index the developer's real corpora once per factory.
 
 ## 4. Angular Frontend Testing (Overseer ClientApp)
 
@@ -297,6 +298,7 @@ Run commands from the `Overseer/ClientApp/` directory:
 *   **Router Dependencies**: Standalone components using `RouterModule`, `<a routerLink>`, or `ActivatedRoute` must include `provideRouter([])` in `TestBed.configureTestingModule({ providers: [provideRouter([])] })`.
 *   **HTTP Dependencies**: Services or components utilizing `HttpClient` must include `provideHttpClient()` and `provideHttpClientTesting()` from `@angular/common/http/testing`.
 *   **Static and Pure Logic**: For static methods (like `ChatComponent.stripThoughts`) or pure helper functions, test them directly without `TestBed` boilerplate to keep tests fast and isolated.
+*   **The `test` target has its own `angular.json` project, `ClientAppSpecs`**, because the CLI keys the persistent build cache and its `.tsbuildinfo` on the project name: with one project, `ng test` and `ng build` / `ng serve` overwrote each other's `.tsbuildinfo` and re-checked the whole program on every switch (5–27 s). Keep its `sourceRoot`, `prefix` and `schematics` equal to `ClientApp`'s, since `ng generate` from inside `src/` resolves to it, and do not substitute `"incremental": false` in `tsconfig.spec.json`, which makes every test build pay the full re-check. **Merging the test target back into `ClientApp` is the regression to watch for.**
 
 ## 5. Background Indexed Services Synchronization
 

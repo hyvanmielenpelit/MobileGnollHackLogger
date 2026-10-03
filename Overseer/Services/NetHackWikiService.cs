@@ -22,6 +22,7 @@ public class NetHackWikiService : IDisposable
 {
     private readonly string _wikiPath;
     private readonly int _maxFileSizeKB;
+    private readonly int _indexingParallelism;
     private readonly ILogger<NetHackWikiService>? _logger;
     private readonly object _swapLock = new();
     private RAMDirectory? _directory;
@@ -33,10 +34,16 @@ public class NetHackWikiService : IDisposable
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
     
     public NetHackWikiService(IConfiguration configuration, ILogger<NetHackWikiService>? logger = null)
+        : this(configuration, logger, null)
+    {
+    }
+
+    internal NetHackWikiService(IConfiguration configuration, ILogger<NetHackWikiService>? logger, int? indexingParallelism)
     {
         _logger = logger;
         _wikiPath = configuration["NetHackWikiPath"] ?? string.Empty;
         _maxFileSizeKB = int.TryParse(configuration["MaxNetHackWikiFileSizeKB"], out var maxFileSize) ? maxFileSize : 500;
+        _indexingParallelism = Math.Max(indexingParallelism ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 8), 1);
 
         // NetHackWiki consists of thousands of static files that change very seldomly.
         // To avoid heavy periodic disk I/O and Lucene re-indexing, indexing is performed ONLY at startup.
@@ -69,74 +76,68 @@ public class NetHackWikiService : IDisposable
         {
             Similarity = new BM25Similarity()  // BM25 scoring
         };
-        
+
+        // Contiguous chunks merged in order keep document ids in file order, which ties and the candidate list rely on.
+        int chunkCount = Math.Min(_indexingParallelism, Math.Max(files.Count, 1));
+        int chunkSize = (files.Count + chunkCount - 1) / chunkCount;
+
         int indexedCount = 0;
-        using (var writer = new IndexWriter(newDirectory, config))
+        if (chunkCount == 1)
         {
+            using var writer = new IndexWriter(newDirectory, config);
             foreach (var file in files)
             {
-                var fileInfo = new FileInfo(file);
-                if (fileInfo.Length <= _maxFileSizeKB * 1024)
-                {
-                    try
-                    {
-                        var rawContent = File.ReadAllText(file);
-                        string title = Path.GetFileNameWithoutExtension(file);
-                        string ns = "article";
-                        string summary = "";
-                        string bodyContent = rawContent;
-
-                        var match = Regex.Match(rawContent, @"^---\s*\n(.*?)\n---\s*\n(.*)$", RegexOptions.Singleline);
-                        if (match.Success)
-                        {
-                            var frontmatter = match.Groups[1].Value;
-                            bodyContent = match.Groups[2].Value.TrimStart();
-
-                            var lines = frontmatter.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                            foreach (var line in lines)
-                            {
-                                var colonIndex = line.IndexOf(':');
-                                if (colonIndex > 0)
-                                {
-                                    var key = line.Substring(0, colonIndex).Trim().ToLowerInvariant();
-                                    var value = line.Substring(colonIndex + 1).Trim();
-                                    value = value.Trim('"', ' ').Replace("\\\"", "\"").Replace("\\\\", "\\");
-
-                                    if (key == "title" && !string.IsNullOrWhiteSpace(value))
-                                    {
-                                        title = value;
-                                    }
-                                    else if (key == "namespace" && !string.IsNullOrWhiteSpace(value))
-                                    {
-                                        ns = value.ToLowerInvariant();
-                                    }
-                                    else if (key == "summary" && !string.IsNullOrWhiteSpace(value))
-                                    {
-                                        summary = value;
-                                    }
-                                }
-                            }
-                        }
-
-                        var doc = new Document();
-                        doc.Add(new TextField("title", title, Field.Store.YES));
-                        doc.Add(new TextField("content", bodyContent, Field.Store.YES));
-                        doc.Add(new StringField("path", file, Field.Store.YES));
-                        doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
-                        doc.Add(new StringField("namespace", ns, Field.Store.YES));
-                        doc.Add(new TextField("summary", summary, Field.Store.YES));
-                        writer.AddDocument(doc);
-                        indexedCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.LogError(ex, "Error indexing NetHack wiki file: {File}", file);
-                    }
-                }
+                if (IndexWikiFile(writer, file)) indexedCount++;
             }
             writer.Commit();
         }
-        
+        else
+        {
+            var chunkDirectories = new RAMDirectory[chunkCount];
+            var chunkCounts = new int[chunkCount];
+            try
+            {
+                Parallel.For(0, chunkCount, new ParallelOptions { MaxDegreeOfParallelism = chunkCount }, chunk =>
+                {
+                    var chunkDirectory = new RAMDirectory();
+                    chunkDirectories[chunk] = chunkDirectory;
+                    using var chunkAnalyzer = new EnglishAnalyzer(LuceneVersion.LUCENE_48);
+                    var chunkConfig = new IndexWriterConfig(LuceneVersion.LUCENE_48, chunkAnalyzer)
+                    {
+                        Similarity = new BM25Similarity()
+                    };
+                    using var chunkWriter = new IndexWriter(chunkDirectory, chunkConfig);
+                    int end = Math.Min((chunk + 1) * chunkSize, files.Count);
+                    for (int i = chunk * chunkSize; i < end; i++)
+                    {
+                        if (IndexWikiFile(chunkWriter, files[i])) chunkCounts[chunk]++;
+                    }
+                    chunkWriter.Commit();
+                });
+
+                var chunkReaders = new List<IndexReader>(chunkCount);
+                try
+                {
+                    foreach (var chunkDirectory in chunkDirectories)
+                    {
+                        chunkReaders.Add(DirectoryReader.Open(chunkDirectory));
+                    }
+                    using var writer = new IndexWriter(newDirectory, config);
+                    writer.AddIndexes(chunkReaders.ToArray());
+                    writer.Commit();
+                }
+                finally
+                {
+                    foreach (var chunkReader in chunkReaders) chunkReader.Dispose();
+                }
+            }
+            finally
+            {
+                foreach (var chunkDirectory in chunkDirectories) chunkDirectory?.Dispose();
+            }
+            indexedCount = chunkCounts.Sum();
+        }
+
         var newReader = DirectoryReader.Open(newDirectory);
         var newSearcher = new IndexSearcher(newReader)
         {
@@ -161,7 +162,72 @@ public class NetHackWikiService : IDisposable
 
         _logger?.LogInformation("Indexed {Count} NetHack wiki articles.", indexedCount);
     }
-    
+
+    private bool IndexWikiFile(IndexWriter writer, string file)
+    {
+        var fileInfo = new FileInfo(file);
+        if (fileInfo.Length > _maxFileSizeKB * 1024)
+        {
+            return false;
+        }
+
+        try
+        {
+            var rawContent = File.ReadAllText(file);
+            string title = Path.GetFileNameWithoutExtension(file);
+            string ns = "article";
+            string summary = "";
+            string bodyContent = rawContent;
+
+            var match = Regex.Match(rawContent, @"^---\s*\n(.*?)\n---\s*\n(.*)$", RegexOptions.Singleline);
+            if (match.Success)
+            {
+                var frontmatter = match.Groups[1].Value;
+                bodyContent = match.Groups[2].Value.TrimStart();
+
+                var lines = frontmatter.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
+                {
+                    var colonIndex = line.IndexOf(':');
+                    if (colonIndex > 0)
+                    {
+                        var key = line.Substring(0, colonIndex).Trim().ToLowerInvariant();
+                        var value = line.Substring(colonIndex + 1).Trim();
+                        value = value.Trim('"', ' ').Replace("\\\"", "\"").Replace("\\\\", "\\");
+
+                        if (key == "title" && !string.IsNullOrWhiteSpace(value))
+                        {
+                            title = value;
+                        }
+                        else if (key == "namespace" && !string.IsNullOrWhiteSpace(value))
+                        {
+                            ns = value.ToLowerInvariant();
+                        }
+                        else if (key == "summary" && !string.IsNullOrWhiteSpace(value))
+                        {
+                            summary = value;
+                        }
+                    }
+                }
+            }
+
+            var doc = new Document();
+            doc.Add(new TextField("title", title, Field.Store.YES));
+            doc.Add(new TextField("content", bodyContent, Field.Store.YES));
+            doc.Add(new StringField("path", file, Field.Store.YES));
+            doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
+            doc.Add(new StringField("namespace", ns, Field.Store.YES));
+            doc.Add(new TextField("summary", summary, Field.Store.YES));
+            writer.AddDocument(doc);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error indexing NetHack wiki file: {File}", file);
+            return false;
+        }
+    }
+
     public IEnumerable<string> GetRelevantContext(string query, string? namespaceFilter = null, int? maxResults = null)
     {
         IndexSearcher? searcher;

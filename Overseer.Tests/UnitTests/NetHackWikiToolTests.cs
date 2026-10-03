@@ -447,6 +447,51 @@ Foo has no mention of the search term in its title or body.
         }
     }
 
+    /// <summary>
+    /// Indexing in parallel chunks keeps document ids in file order: with equal scores, search hits
+    /// come back in the order Directory.GetFiles lists the files.
+    /// </summary>
+    [Fact]
+    public async Task NetHackWikiService_ChunkedIndexing_KeepsFileOrder()
+    {
+        var orderDir = Path.Combine(Path.GetTempPath(), "NetHackWikiOrderTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(orderDir);
+        try
+        {
+            for (int i = 1; i <= 24; i++)
+            {
+                File.WriteAllText(Path.Combine(orderDir, $"Page{i:D2}.md"), $"---\ntitle: Page {i:D2}\n---\n\nzorkmid zorkmid\n");
+            }
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new[]
+                {
+                    new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", orderDir)
+                })
+                .Build();
+
+            using var service = new NetHackWikiService(config, null, indexingParallelism: 4);
+            await service.InitializationTask;
+
+            var expected = Directory.GetFiles(orderDir, "*.md", SearchOption.AllDirectories)
+                .Select(f => $"--- Page {Path.GetFileNameWithoutExtension(f).Substring(4)} ---")
+                .ToList();
+            var actual = service.GetRelevantContext("zorkmid", null, 24)
+                .Select(r => r.Split('\n')[0])
+                .ToList();
+
+            Assert.Equal(24, actual.Count);
+            Assert.Equal(expected, actual);
+        }
+        finally
+        {
+            if (Directory.Exists(orderDir))
+            {
+                Directory.Delete(orderDir, true);
+            }
+        }
+    }
+
     [Fact]
     public async Task NetHackWikiSearchTool_WhenIndexingInProgress_ReturnsDirectiveError()
     {

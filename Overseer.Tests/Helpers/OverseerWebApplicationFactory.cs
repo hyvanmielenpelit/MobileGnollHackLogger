@@ -31,7 +31,13 @@ namespace Overseer.Tests.Helpers
                     { "ConversationsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryConversations") },
                     { "Benchmark:ReportPack:ChartsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryCharts_" + System.Guid.NewGuid()) },
                     // The test host never reports to Sentry; an empty DSN disables the SDK.
-                    { "SentryDSN", "" }
+                    { "SentryDSN", "" },
+                    // The test host indexes no corpus; no integration test reads one.
+                    { "WikiPath", "" },
+                    { "NetHackWikiPath", "" },
+                    { "KbPath", "" },
+                    { "SourceCodePath", "" },
+                    { "NetHackSourceCodePath", "" }
                 });
             });
 

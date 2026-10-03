@@ -105,10 +105,24 @@
         },
         "extract-i18n": {
           "builder": "@angular/build:extract-i18n"
-        },
+        }
+      }
+    },
+    "ClientAppSpecs": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "src",
+      "sourceRoot": "src",
+      "prefix": "app",
+      "architect": {
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
+            "buildTarget": "ClientApp:build:development",
             "tsConfig": "tsconfig.spec.json",
             "setupFiles": [
               "src/test-setup.ts"

@@ -58,7 +58,8 @@
   </ItemGroup>
 
 
-  <Target Name="SyncAngularVersion" BeforeTargets="Build" Condition="'$(Version)' != ''">
+  <Target Name="SyncAngularVersion" BeforeTargets="Build"
+          Condition="'$(Version)' != '' And !$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\ClientApp\package.json').Contains('&quot;version&quot;: &quot;$(Version)&quot;'))">
     <Exec WorkingDirectory="ClientApp" Command="npm version $(Version) --no-git-tag-version --allow-same-version" IgnoreExitCode="true" />
   </Target>
 

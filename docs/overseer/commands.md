@@ -72,6 +72,15 @@ headless mode, launch options and 800×600 viewport included. `angular.json` nam
 because the builder's `browsers` option would replace the provider and drop its launch options;
 for the same reason `CHROME_BIN`, which only that option honors, has no effect.
 
+The `test` target lives in its own `angular.json` project, `ClientAppSpecs`, because the Angular
+CLI keys the persistent build cache, and the `.tsbuildinfo` inside it, on the project name. With a
+single project, `ng test` and `ng build` / `ng serve` overwrote each other's `.tsbuildinfo` and
+re-checked the whole program on every switch between them (5–27 s, measured on 2026-10-03).
+Keep that project's `sourceRoot`, `prefix` and `schematics` equal to `ClientApp`'s: `ng generate`
+run from inside `src/` resolves to `ClientAppSpecs`. `"incremental": false` in
+`tsconfig.spec.json` was rejected as the alternative, because it makes every test build pay the
+full re-check.
+
 The browser is Playwright's full Chromium build in its new headless mode
 (`launchOptions: { channel: 'chromium' }`), not the default headless shell. Under the headless
 shell, parallel runs intermittently delayed `canvas.toBlob` callbacks by about 7 s, enough for a
