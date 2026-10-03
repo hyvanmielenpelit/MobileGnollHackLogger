@@ -762,7 +762,10 @@
             </div>
 
             @if (isMultiRunRequested || launcher.isBatteryTarget) {
-              <div class="form-group">
+              <fieldset class="exec-options">
+                <legend class="field-caption" id="execOptionsCaption">
+                  {{ launcher.isBatteryTarget ? 'Battery Options' : 'Series Options' }}
+                </legend>
                 <div class="checkbox-with-tip">
                   <label class="checkbox-label" for="allowCapWaitInput">
                     <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="launcher.allowCapWait"
@@ -776,25 +779,22 @@
                     }
                   </app-info-tip>
                 </div>
-              </div>
-            }
-
-            @if (launcher.isBatteryTarget) {
-              <div class="form-group">
-                <div class="checkbox-with-tip">
-                  <label class="checkbox-label" for="reuseEarlierRunsInput">
-                    <input id="reuseEarlierRunsInput" type="checkbox" [checked]="launcher.reuseEarlierRuns"
-                           aria-describedby="reuseEarlierRunsHint"
-                           (change)="onReuseEarlierRunsChange($any($event.target).checked)">
-                    <span>Reuse earlier runs</span>
-                  </label>
-                  <app-info-tip trigger="click" tipId="reuseEarlierRunsHint" subject="Reuse earlier runs">
-                    Fills a slot with the newest earlier run of the same suite and model under test that still matches the
-                    current instrument and the other runs, so only the remaining slots are launched. The Battery Projection
-                    lists the runs reused. Chosen for each start; never remembered.
-                  </app-info-tip>
-                </div>
-              </div>
+                @if (launcher.isBatteryTarget) {
+                  <div class="checkbox-with-tip">
+                    <label class="checkbox-label" for="reuseEarlierRunsInput">
+                      <input id="reuseEarlierRunsInput" type="checkbox" [checked]="launcher.reuseEarlierRuns"
+                             aria-describedby="reuseEarlierRunsHint"
+                             (change)="onReuseEarlierRunsChange($any($event.target).checked)">
+                      <span>Reuse earlier runs</span>
+                    </label>
+                    <app-info-tip trigger="click" tipId="reuseEarlierRunsHint" subject="Reuse earlier runs">
+                      Fills a slot with the newest earlier run of the same suite and model under test that still matches the
+                      current instrument and the other runs, so only the remaining slots are launched. The Battery Projection
+                      lists the runs reused. Chosen for each start; never remembered.
+                    </app-info-tip>
+                  </div>
+                }
+              </fieldset>
             }
           </div>
 
@@ -821,6 +821,7 @@
             </div>
             <label class="checkbox-label" for="completionSoundInput">
               <input id="completionSoundInput" type="checkbox" [(ngModel)]="launcher.completionSound"
+                     (ngModelChange)="onCompletionSoundChanged()"
                      aria-describedby="completionSignalsHint">
               <span>Play a sound</span>
             </label>

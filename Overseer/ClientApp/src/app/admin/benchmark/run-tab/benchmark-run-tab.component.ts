@@ -247,40 +247,52 @@ export class BenchmarkRunTabComponent {
     return previous != null && this.launcher.assessorConfigId != null && previous !== this.launcher.assessorConfigId;
   }
 
+  /** Stores the launcher's settings as they now stand. */
+  private rememberSettings(): void {
+    this.launcher.persistRunSettings();
+  }
+
   onSelectedSuiteChanged(): void {
     this.launcher.loadLastAssessor();
+    this.rememberSettings();
   }
 
   selectTestedModel(config: SystemAiConfigDto | null) {
     if (!config) return;
     this.launcher.testedConfigId = config.id;
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   selectAssessorModel(config: SystemAiConfigDto | null) {
     if (!config) return;
     this.launcher.assessorConfigId = config.id;
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   selectSecondOpinionModel(config: SystemAiConfigDto | null) {
     this.launcher.secondOpinionConfigId = config?.id ?? null;
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   selectCoAssessorModel(config: SystemAiConfigDto | null) {
     this.launcher.coAssessorConfigId = config?.id ?? null;
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   selectClaimVerifierModel(config: SystemAiConfigDto | null) {
     this.launcher.claimVerifierConfigId = config?.id ?? null;
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   selectReportWriterModel(config: SystemAiConfigDto | null) {
     this.launcher.reportWriterConfigId = config?.id ?? null;
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   formatProfileOption(profile: BenchmarkScoringProfileDto): string {
@@ -442,12 +454,14 @@ export class BenchmarkRunTabComponent {
     }
     this.launcher.clampRunCountToTarget();
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
     this.cdr.detectChanges();
   }
 
   onSelectedBatteryChanged(): void {
     this.launcher.clampRunCountToTarget();
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   // --- Run Target: reusing earlier runs ---
@@ -461,6 +475,7 @@ export class BenchmarkRunTabComponent {
   /** A launcher field that shapes the battery request changed: Runs per Suite, the profile, the response style. */
   onReuseInputsChanged(): void {
     this.launcher.refreshReusePreview();
+    this.rememberSettings();
   }
 
   /** The slots no earlier run fills, each with the reason. */
@@ -751,6 +766,11 @@ export class BenchmarkRunTabComponent {
   /** The same-provider dialog is about the report writer rather than the assessor. */
   get sameProviderWarningIsReportWriter(): boolean {
     return this.sameProviderWarning?.role === 'reportWriter';
+  }
+
+  /** The *Play a sound* checkbox's change handler. */
+  onCompletionSoundChanged(): void {
+    this.rememberSettings();
   }
 
   /**

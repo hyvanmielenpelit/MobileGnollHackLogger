@@ -349,8 +349,12 @@ Admin → AI Benchmark → **Run Benchmark**, *Test Setup* fieldset:
   *Manage batteries →* opens the Multi-Suite tab.
 - **Runs per Suite** — in *Battery* mode the *Number of Runs* field (*Execution* fieldset) is relabeled
   and bounded by `floor(maxMembersPerBattery / K)` instead of the series limit.
+- **Battery Options** — a caption in the *Execution* fieldset over the two per-start checkboxes below,
+  *Wait when the run cap blocks the next run* and *Reuse earlier runs*. A single-suite series shows the
+  same group captioned *Series Options*, holding the first only.
 - **Wait when the run cap blocks the next run** — shown for every battery; required when the planned
-  launches exceed the daily cap.
+  launches exceed the daily cap. Chosen for each start and never remembered; the Battery Projection
+  shows whether the launches fit under the cap.
 - **Battery Projection** (*K suites × R = n runs*) — projected wall time and cost as *R* × the sum of
   each suite's recent mean run duration and cost, the remaining daily headroom, and a warning when the
   launches exceed the daily cap (*… so this battery spans at least d days*) or the current headroom.
@@ -361,7 +365,7 @@ Admin → AI Benchmark → **Run Benchmark**, *Test Setup* fieldset:
   nothing qualifies and why.
 
 *Start* sends the battery start with the same grader fields a run request carries. The launcher
-remembers *Run Target* and the battery across reloads; a remembered battery that is gone, archived or
+remembers *Run Target* and the battery across reloads as soon as they change; a remembered battery that is gone, archived or
 broken falls back to *Single suite*.
 
 ### 4.2 The battery banner

@@ -43,8 +43,8 @@ The launcher's *Test Setup* fieldset opens with **Run Target**, a radio group:
   eligible earlier runs instead of launching them.
 
 *Start* then starts a battery run (`POST /api/admin/benchmark/batteries/runs`) instead of a run or a
-series, and a battery banner follows it. Run Target and the battery are remembered across reloads; the
-reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's two documents once it
+series, and a battery banner follows it. Every launcher setting is remembered across reloads as soon as
+it is changed, Run Target and the battery included; the reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's two documents once it
 has finished and been analyzed, and the member runs write none. Batteries are defined on the
 **Multi-Suite** tab, and battery runs are listed in **Run History**. Everything about batteries is in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
@@ -4165,8 +4165,8 @@ so the comparison view already refuses to pool across the boundary.
     `Canceled`, a member of a cancelled series, and a run this page asked to cancel — even when the
     server returns a cancelled retry of a complete run to `Completed`. `Failed`, `Stopped` and every
     `Completed…` end still signal. Client-only; no harness bump.
-  - Both choices are remembered in the run-settings blob, which is written when a run is started, so a
-    changed checkbox is remembered from the next Start, exactly as the sound's has always been.
+  - Both choices are remembered in the run-settings blob, which is written whenever a launcher setting
+    changes and again at Start; a declined notification permission is stored as off.
   - The run diagnostics' *Completion sound* line adds arming and armed state, the `AudioContext` state,
     the path taken and its outcome, visibility and focus at capture time, the milliseconds a deferred
     play took to settle, notification support, permission and outcome, and the lock state. Beneath it an

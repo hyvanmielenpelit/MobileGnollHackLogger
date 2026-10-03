@@ -1112,12 +1112,15 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     if (!checked) {
       this.launcher.completionNotification = false;
       this.completionNotificationStatus = null;
+      this.launcher.persistRunSettings();
       this.viewSync.notify();
       return;
     }
 
+    // Saved once the outcome is applied, so a refused prompt is stored as off.
     this.completionNotificationService.requestPermission().then(outcome => {
       this.applyNotificationPermissionOutcome(outcome);
+      this.launcher.persistRunSettings();
       this.viewSync.notify();
     });
   }

@@ -501,6 +501,26 @@ describe('AdminBenchmarkComponent', () => {
       expect(button.getBoundingClientRect().left - caption.getBoundingClientRect().right).toBeLessThanOrEqual(12);
     });
 
+    it('groups the series option under a Series Options legend', () => {
+      ctx.launcher.runCount = 2;
+      ctx.refresh();
+
+      const caption = card().querySelector('#execOptionsCaption') as HTMLElement;
+      expect(caption.tagName).toBe('LEGEND');
+      expect((caption.textContent ?? '').trim()).toBe('Series Options');
+      const group = caption.parentElement as HTMLElement;
+      expect(group.matches('fieldset.exec-options')).toBe(true);
+      expect(Array.from(group.querySelectorAll('input[type="checkbox"]')).map(i => i.id)).toEqual(['allowCapWaitInput']);
+      expect(getComputedStyle(group).rowGap).toBe('8px');
+      expect(getComputedStyle(caption).fontWeight).toBe(
+        getComputedStyle(card().querySelector('#completionSignalsCaption')!).fontWeight);
+
+      const row = group.querySelector('.checkbox-with-tip') as HTMLElement;
+      const gap = row.getBoundingClientRect().top - caption.getBoundingClientRect().bottom;
+      expect(gap).toBeGreaterThanOrEqual(6);
+      expect(gap).toBeLessThanOrEqual(10);
+    });
+
     it('explains completion alerts in plain terms', () => {
       fixture.detectChanges();
 

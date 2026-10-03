@@ -170,7 +170,8 @@ export class BenchmarkLauncherState implements OnDestroy {
 
   /**
    * On a cap denial: pause the series in WaitingForCap and retry, rather than stopping it. Either
-   * way every completed member is kept and the series stays resumable.
+   * way every completed member is kept and the series stays resumable. A per-start decision, so never
+   * stored with the run settings.
    */
   allowCapWait = false;
 
@@ -339,44 +340,78 @@ export class BenchmarkLauncherState implements OnDestroy {
   pendingRunSettings: BenchmarkRunSettings | null = null;
 
   /**
-   * Saved in startBenchmark before the request is sent: the operator's choices are worth remembering
-   * whether or not the server accepts the run.
+   * Saved on every operator change of a launcher field, and again at Start before the request is sent:
+   * the operator's choices are worth remembering whether or not the server accepts the run. A loader's
+   * own fallback does not save.
    *
    * The same-provider acknowledgments (acknowledgeSameProvider for the assessor and
    * acknowledgeSameProviderReportWriter for the report writer) are deliberately not persisted. They are
    * per-run safety acknowledgments, and silently remembering them would defeat the warning dialog they
    * exist to gate. Neither are the
    * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which are
-   * not part of setting up a run.
+   * not part of setting up a run. Nor are *Wait when the run cap blocks the next run* (allowCapWait) and
+   * *Reuse earlier runs* (reuseEarlierRuns), which are decided at each start.
    */
   persistRunSettings(): void {
     try {
-      const settings: BenchmarkRunSettings = {
-        suiteId: this.selectedSuiteId,
-        testedConfigId: this.testedConfigId,
-        assessorConfigId: this.assessorConfigId,
-        coAssessorConfigId: this.coAssessorConfigId,
-        secondOpinionConfigId: this.secondOpinionConfigId,
-        claimVerifierConfigId: this.claimVerifierConfigId,
-        reportWriterConfigId: this.reportWriterConfigId,
-        // The override, not the getter: a run left on the profile default must keep following the
-        // profile, and persisting the resolved value would freeze it at whatever the profile said today.
-        secondOpinionMode: this.secondOpinionModeOverride,
-        scoringProfileId: this.selectedScoringProfileId,
-        verboseMode: this.candidateVerboseMode,
-        allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
-        runCount: this.effectiveRunCount,
-        targetKind: this.runTargetKind,
-        batteryId: this.selectedBatteryId,
-        completionSound: this.completionSound,
-        completionNotification: this.completionNotification
-      };
       localStorage.setItem(
-        BenchmarkLauncherState.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+        BenchmarkLauncherState.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(this.runSettingsSnapshot()));
     } catch {
       // Storage throws in private-browsing modes. Failing to remember a selection is not worth
       // surfacing to the operator.
     }
+  }
+
+  /**
+   * The launcher's settings as they would be restored. A list-backed part not yet applied is taken from
+   * pendingRunSettings, so a save made before its list arrives keeps the remembered value rather than the
+   * placeholder the form holds until then.
+   */
+  private runSettingsSnapshot(): BenchmarkRunSettings {
+    const settings: BenchmarkRunSettings = {
+      suiteId: this.selectedSuiteId,
+      testedConfigId: this.testedConfigId,
+      assessorConfigId: this.assessorConfigId,
+      coAssessorConfigId: this.coAssessorConfigId,
+      secondOpinionConfigId: this.secondOpinionConfigId,
+      claimVerifierConfigId: this.claimVerifierConfigId,
+      reportWriterConfigId: this.reportWriterConfigId,
+      // The override, not the getter: a run left on the profile default must keep following the
+      // profile, and persisting the resolved value would freeze it at whatever the profile said today.
+      secondOpinionMode: this.secondOpinionModeOverride,
+      scoringProfileId: this.selectedScoringProfileId,
+      verboseMode: this.candidateVerboseMode,
+      allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
+      runCount: this.effectiveRunCount,
+      targetKind: this.runTargetKind,
+      batteryId: this.selectedBatteryId,
+      completionSound: this.completionSound,
+      completionNotification: this.completionNotification
+    };
+
+    const pending = this.pendingRunSettings;
+    if (pending) {
+      const applied = this.runSettingsApplied;
+      if (!applied.suite) {
+        settings.suiteId = pending.suiteId;
+      }
+      if (!applied.profile) {
+        settings.scoringProfileId = pending.scoringProfileId;
+      }
+      if (!applied.configs) {
+        settings.testedConfigId = pending.testedConfigId;
+        settings.assessorConfigId = pending.assessorConfigId;
+        settings.coAssessorConfigId = pending.coAssessorConfigId;
+        settings.secondOpinionConfigId = pending.secondOpinionConfigId;
+        settings.claimVerifierConfigId = pending.claimVerifierConfigId;
+        settings.reportWriterConfigId = pending.reportWriterConfigId;
+      }
+      if (!applied.battery) {
+        settings.targetKind = pending.targetKind;
+        settings.batteryId = pending.batteryId;
+      }
+    }
+    return settings;
   }
 
   /** Reads the stored blob into pendingRunSettings, and restores the fields no loader owns. */

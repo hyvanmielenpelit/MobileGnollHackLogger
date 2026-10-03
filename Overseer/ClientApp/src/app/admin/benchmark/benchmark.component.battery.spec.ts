@@ -184,6 +184,27 @@ describe('AdminBenchmarkComponent', () => {
         expect(ctx.runTab().canStartRun).toBe(true);
         expect(query('.battery-cap-warning')!.textContent).toContain('pause at the cap');
       });
+
+      it('groups the battery options under a Battery Options legend', () => {
+        renderLauncher();
+        chooseBattery();
+
+        const caption = query('#execOptionsCaption')!;
+        expect(caption.tagName).toBe('LEGEND');
+        expect((caption.textContent ?? '').trim()).toBe('Battery Options');
+        const group = caption.parentElement as HTMLElement;
+        expect(group.matches('fieldset.exec-options')).toBe(true);
+        for (const id of ['allowCapWaitInput', 'reuseEarlierRunsInput']) {
+          const box = query(`#${id}`)!;
+          expect(box.closest('fieldset'), id).toBe(group);
+          const formGroup = box.closest('.form-group');
+          expect(formGroup === null || !group.contains(formGroup), id).toBe(true);
+        }
+
+        const rows = Array.from(group.querySelectorAll('.checkbox-with-tip')) as HTMLElement[];
+        expect(rows.length).toBe(2);
+        expect(rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().bottom).toBeCloseTo(8, 0);
+      });
     });
 
     describe('starting and remembering', () => {
@@ -245,6 +266,58 @@ describe('AdminBenchmarkComponent', () => {
         expect(restored.nativeElement.querySelector('#batterySelect')).toBeTruthy();
         expect((restored.nativeElement.querySelector('#runTargetBattery') as HTMLInputElement).checked).toBe(true);
         expect(c.pendingRunSettings).toBeNull();
+        restored.destroy();
+      });
+
+      it('should remember the Run Target as soon as it changes', () => {
+        renderLauncher();
+
+        chooseBattery();
+
+        expect(benchmarkServiceMock.startBatteryRun).not.toHaveBeenCalled();
+        const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+        expect(stored.targetKind).toBe('battery');
+        expect(stored.batteryId).toBe(5);
+
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+        restored.detectChanges();
+        const c = benchmarkSpecHandles(restored).launcher;
+        expect(c.runTargetKind).toBe('battery');
+        expect(c.selectedBatteryId).toBe(5);
+        expect(restored.nativeElement.querySelector('#batterySelect')).toBeTruthy();
+        restored.destroy();
+      });
+
+      it('should keep a remembered battery target when another field changes before the battery list arrives', () => {
+        localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+          suiteId: 1, testedConfigId: 1, assessorConfigId: 1, scoringProfileId: 1,
+          targetKind: 'battery', batteryId: 5, runCount: 2
+        }));
+        const batteries = new Subject<BenchmarkBatteryDto[]>();
+        benchmarkServiceMock.getBatteries.mockReturnValue(batteries);
+
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+        restored.detectChanges();
+        const c = benchmarkSpecHandles(restored).launcher;
+        expect(c.runTargetKind).toBe('suite');
+
+        const style = restored.nativeElement.querySelector('#candidateResponseStyle') as HTMLSelectElement;
+        style.selectedIndex = 1;
+        style.dispatchEvent(new Event('change'));
+
+        const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+        expect(stored.verboseMode).toBe(true);
+        expect(stored.targetKind).toBe('battery');
+        expect(stored.batteryId).toBe(5);
+
+        batteries.next([buildBattery()]);
+        batteries.complete();
+        restored.detectChanges();
+
+        expect(c.runTargetKind).toBe('battery');
+        expect((restored.nativeElement.querySelector('#runTargetBattery') as HTMLInputElement).checked).toBe(true);
         restored.destroy();
       });
 
@@ -562,6 +635,28 @@ describe('AdminBenchmarkComponent', () => {
         expect(restoredLauncher.reuseEarlierRuns).toBe(false);
         expect((restored.nativeElement.querySelector('#reuseEarlierRunsInput') as HTMLInputElement).checked).toBe(false);
         restored.destroy();
+      });
+
+      it('should not store Reuse earlier runs or Wait at the run cap when they are checked', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(of(buildPreview()));
+        checkReuse();
+        query<HTMLInputElement>('#allowCapWaitInput')!.click();
+        fixture.detectChanges();
+        expect(ctx.launcher.reuseEarlierRuns).toBe(true);
+        expect(ctx.launcher.allowCapWait).toBe(true);
+
+        query<HTMLInputElement>('#runTargetSuite')!.click();
+        fixture.detectChanges();
+        query<HTMLInputElement>('#runTargetBattery')!.click();
+        fixture.detectChanges();
+
+        expect(benchmarkServiceMock.startBatteryRun).not.toHaveBeenCalled();
+        const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+        expect(stored.targetKind).toBe('battery');
+        expect(Object.keys(stored)).not.toContain('reuseEarlierRuns');
+        expect(Object.keys(stored)).not.toContain('allowCapWait');
       });
 
       it('should preview again after a start refused because a reused run stopped qualifying', () => {

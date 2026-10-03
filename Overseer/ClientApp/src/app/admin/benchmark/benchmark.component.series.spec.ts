@@ -294,6 +294,58 @@ describe('AdminBenchmarkComponent', () => {
       expect(benchmarkSpecHandles(restored).launcher.completionSound).toBe(true);
       restored.destroy();
     });
+
+    /** Picks Detailed in the rendered Response Style select, the way the operator does. */
+    function chooseDetailedResponseStyle(target: ComponentFixture<AdminBenchmarkComponent>): void {
+      const select = target.nativeElement.querySelector('#candidateResponseStyle') as HTMLSelectElement;
+      select.selectedIndex = 1;
+      select.dispatchEvent(new Event('change'));
+      target.detectChanges();
+    }
+
+    it('should remember a changed setting without a Start', () => {
+      component.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
+      ctx.refresh();
+
+      chooseDetailedResponseStyle(fixture);
+      ctx.runTab().selectAssessorModel(secondConfig(2));
+
+      expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
+      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+      expect(stored.verboseMode).toBe(true);
+      expect(stored.assessorConfigId).toBe(2);
+      fixture.destroy();
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
+      restored.detectChanges();
+      const c = benchmarkSpecHandles(restored).launcher;
+      expect(c.candidateVerboseMode).toBe(true);
+      expect(c.assessorConfigId).toBe(2);
+      restored.destroy();
+    });
+
+    it('should not store Wait at the run cap', () => {
+      ctx.launcher.runCount = 2;
+      ctx.refresh();
+      (fixture.nativeElement.querySelector('#allowCapWaitInput') as HTMLInputElement).click();
+      fixture.detectChanges();
+      expect(ctx.launcher.allowCapWait).toBe(true);
+
+      chooseDetailedResponseStyle(fixture);
+
+      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+      expect(stored.runCount).toBe(2);
+      expect(Object.keys(stored)).not.toContain('allowCapWait');
+      fixture.destroy();
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+      expect(benchmarkSpecHandles(restored).launcher.allowCapWait).toBe(false);
+      expect((restored.nativeElement.querySelector('#allowCapWaitInput') as HTMLInputElement).checked).toBe(false);
+      restored.destroy();
+    });
   });
 
   describe('completion sound transition detection', () => {
@@ -786,6 +838,17 @@ describe('AdminBenchmarkComponent', () => {
       expect(ctx.monitor.completionNotificationStatus).toBeNull();
       expect(requestSpy).not.toHaveBeenCalled();
     });
+
+    it('should store a declined notification permission as off', fakeAsync(() => {
+      vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('denied');
+
+      ctx.monitor.onCompletionNotificationChange(true);
+      // Nothing is stored until the prompt has an answer.
+      expect(localStorage.getItem(RUN_SETTINGS_KEY)).toBeNull();
+      tick();
+
+      expect(JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!).completionNotification).toBe(false);
+    }));
 
     it('notifies once for a hidden completion with the sound off and the notification on', () => {
       ctx.launcher.completionSound = false;
