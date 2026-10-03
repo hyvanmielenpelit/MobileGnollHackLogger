@@ -161,9 +161,12 @@ call reads `NetHackSourceCodeService`, a corpus `BenchmarkRun` does not fingerpr
 **The definition pointer, from harness 34 (the run-56 round, 2026-09-19).** A result of
 `source_code_search` or `source_code_view` may carry one extra line that opens with `[Definition: `
 and names up to two function definitions it shows, with `get_function_definition` arguments to read
-one whole, e.g. *"[Definition: learn() at src/spell.c:398. get_function_definition {"name": "learn"}
-returns the whole body in one call; paging it with source_code_view costs one model round per
-page.]"* — a `nethack` result adds `"repository": "nethack"`. It is written by
+one, e.g. *"[Definition: learn() at src/spell.c:398. get_function_definition {"name": "learn"}
+returns the body from its first line, in long chunks; paging it with source_code_view costs one model
+round per page.]"* — a `nethack` result adds `"repository": "nethack"`. From harness 47 (the battery
+run 2 round, 2026-10-03) it says *"the body from its first line, in long chunks"*; before that it
+promised *"the whole body in one call"*, which a body longer than one 150-line chunk does not get
+(run 78 Q13, `break_armor`, three calls). It is written by
 `Overseer/Services/Tools/SourceDefinitionHint.cs`, never longer than **300 characters**, and only for a
 `.c` file:
 
@@ -227,6 +230,16 @@ window-procedure table or a platform `main` is a caller. It rebuilds when the re
 moves, memoizes each name, and returns null — no note — while the index is not ready or on any
 failure. A function reached only through a macro that builds its name gets a wrong note. On the
 2026-09-27 HEAD it flags 121 of about 6,100 column-0 definitions in `src/`.
+
+**From harness 47 an exported function counts as live.** A function declared or defined with
+`DLLEXPORT` or `__declspec(dllexport)` on a stripped line of any file the index reads, the
+reference-only port sources included — matched by
+`(?:\bDLLEXPORT\b|\b__declspec\s*\(\s*dllexport\s*\))[^;(]*?\b([A-Za-z_]\w*)\s*\(`, preprocessor
+lines skipped (so the `#define DLLEXPORT …` lines name nothing), a marker line without `(` read with up
+to three following lines — is called from outside the C corpus (the .NET client calls the
+`win/win32/xpl/libshare` API), so it never gets the note. A harness-46 or earlier
+`[Not reachable: …]` on such a function was a false note (run 78 Q15, `RunGnollHack()`,
+`gnhapi.h:41`).
 
 A region is opened only by a literal `#if 0` (whitespace-tolerant, `# if 0` included) and ends at its
 matching `#endif`, `#else` or `#elif`; nesting is tracked across every `#if`, `#ifdef` and `#ifndef`,
@@ -419,7 +432,10 @@ message therefore dates the run to before 2026-09-11.
 > case-insensitive, exceptions and `Error:`-prefixed content swallowed into "no hit") or a
 > statement that it does not occur in the indexed repository, followed by this tool's own
 > guidance: on a hit, that the symbol occurs but no definition line matched this kind, so try
-> `kind: "any"` or `source_code_search` with `context_lines` on the named file; on no hit, to
+> `kind: "any"` or `source_code_search` with `context_lines` on the named file — or, from harness
+> 47, when `kind` was `any` or omitted, *"The symbol occurs but no definition line matched: try
+> `source_code_search` with `context_lines` on the named file."*, since the call already searched
+> every kind (before 47 it was told to retry with `kind: "any"`, run 78 Q15); on no hit, to
 > check the spelling or use `list_indexed_files` / `source_code_search` with
 > `filenames_only: true`. Capped at **600 characters**, builder inside a `catch`. A stored result
 > that is the bare sentence alone is a run recorded **before** the run-40 round, or a call in

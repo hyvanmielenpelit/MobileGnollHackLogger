@@ -146,6 +146,7 @@ import {
   INTERACTIVE_SPEED_TARGET_MAX_MS,
   MISSING_BOARD_QUOTE_LIST_CAP
 } from './benchmark-run-format';
+import { RUN_STAGE_NAMES, runRailIndexOf, runStageFromServer } from './run-stage-labels';
 import { BenchmarkWorkspaceStore } from './state/benchmark-workspace.store';
 import { BenchmarkLauncherState } from './state/benchmark-launcher.state';
 import { BenchmarkDifficultyJobService } from './state/benchmark-difficulty-job.service';
@@ -974,7 +975,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       + `dimension outliers: ${count('dimensionOutlier')}, completeness out of scope: ${count('completenessOutOfScope')}, `
       + `readability form only: ${count('readabilityFormOnly')}, contested critical errors: ${count('contestedCriticalError')}, `
       + `contested accuracy deductions: ${count('contestedAccuracyDeduction')}, `
-      + `rubric contradicted by source: ${count('rubricContradictedBySource')}`;
+      + `rubric-charged deduction contradicted: ${count('rubricContradictedBySource')}`;
   }
 
   /**
@@ -1357,13 +1358,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   runStageOf(run: BenchmarkRunDetailDto): BenchmarkRunStage {
     if (formatStatus(run.status) !== 'Running') return 'terminal';
 
-    switch (run.stage) {
-      case 'Answering': return 'answering';
-      case 'Verifying': return 'verifying';
-      case 'SecondOpinion': return 'secondopinion';
-      case 'Synthesizing': return 'finalizing';
-      case 'Terminal': return 'terminal';
-    }
+    const serverStage = runStageFromServer(run.stage);
+    if (serverStage != null) return serverStage;
 
     if (run.answers.length < run.totalQuestionCount) return 'answering';
     if (run.answers.some(a => this.isAssessmentIncomplete(a))) return 'answering';
@@ -1376,13 +1372,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * move backwards when the server revisits `Verifying`.
    */
   get runRailStage(): 0 | 1 | 2 | 3 | 4 {
-    switch (this.runStage) {
-      case 'answering': return 1;
-      case 'verifying':
-      case 'secondopinion': return 2;
-      case 'finalizing': return 3;
-      default: return this.runReportStage === 'current' ? 4 : 0;
-    }
+    const index = runRailIndexOf(this.runStage);
+    if (index !== 0) return index;
+    return this.runReportStage === 'current' ? 4 : 0;
   }
 
   /** The dialog's run names a report writer, so the rail and the stage labels have a fourth stage. */
@@ -1433,9 +1425,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runRailItems(): RunRailItem[] {
     const run = this.monitor.dialogRunDetail;
     const items: RunRailItem[] = [
-      { index: 1, name: 'Answering and grading', state: 'pending', note: null },
-      { index: 2, name: 'Follow-up grading passes', state: 'pending', note: null },
-      { index: 3, name: 'Synthesis and scoring', state: 'pending', note: null }
+      { index: 1, name: RUN_STAGE_NAMES[1], state: 'pending', note: null },
+      { index: 2, name: RUN_STAGE_NAMES[2], state: 'pending', note: null },
+      { index: 3, name: RUN_STAGE_NAMES[3], state: 'pending', note: null }
     ];
     if (run && this.runIsTerminal) {
       this.applyTerminalRailStates(run, items);
@@ -1503,7 +1495,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Stage 4, the AI-written reports, from `runReportStage`. */
   private reportRailItem(): RunRailItem {
-    const item: RunRailItem = { index: 4, name: 'Writing reports', state: 'pending', note: null };
+    const item: RunRailItem = { index: 4, name: RUN_STAGE_NAMES[4], state: 'pending', note: null };
     switch (this.runReportStage) {
       case 'current':
         item.state = 'current';
@@ -2365,7 +2357,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           - (run.toolStarvedAnswerCount ?? 0);
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
         // A null contested-accuracy-deduction count is a run before harness 20: not recorded, never 0.
-        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, rubric contradicted by source: ${run.rubricContradictedAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, rubric-charged deduction contradicted: ${run.rubricContradictedAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
         // The run-level counts above are member A's; member B's come from its own record.
         if (run.isPanelRun) {
           lines.push(this.memberBFlagsLine(run));
@@ -2646,6 +2638,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (ans.narrationBlockCount != null) parts.push(`narration=${ans.narrationBlockCount}`);
         if (ans.unverifiedClaimCount != null) parts.push(`unverified=${ans.unverifiedClaimCount}`);
         if ((ans.answerFlagNames ?? []).length > 0) parts.push(`flags=${(ans.answerFlagNames ?? []).join('|')}`);
+        if ((ans.coAssessmentFlagNames ?? []).length > 0) parts.push(`bFlags=${(ans.coAssessmentFlagNames ?? []).join('|')}`);
         if (ans.secondOpinionQualityScore != null) {
           parts.push(`secondOpinion=${ans.secondOpinionQualityScore}/${ans.secondOpinionTrigger ?? 'unknown'}${ans.secondOpinionDisagreed ? ' disagreed' : ''}`);
         }
@@ -4084,7 +4077,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   flagBadgeLabel(flag: string): string {
     switch (flag) {
       case 'ContestedAccuracyDeduction': return 'contested deduction';
-      case 'RubricContradictedBySource': return 'rubric contradicted';
+      case 'RubricContradictedBySource': return 'rubric-charged deduction contradicted';
       case 'DimensionOutlier': return 'dimension outlier';
       default: return flag;
     }

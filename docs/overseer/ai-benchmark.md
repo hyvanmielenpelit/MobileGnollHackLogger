@@ -101,6 +101,8 @@ The last two appear **inside stage 1** as well as during the follow-up passes, b
 
 **Claims verified** and **Second readings** (**Reference readings** in a panel run) are plain counts in the statistics strip, not progress bars, and each appears only when the run configured that role. Neither has an honest maximum: only an answer whose assessor listed unverified claims is a verification candidate, and only an answer whose trigger fired is a second-reader candidate, so a bar drawn against the answered count either sits full or never fills. A `· N in progress` suffix shows the in-flight count while the role is reading a row.
 
+**Elapsed.** The *Elapsed* stat (*Re-run elapsed* under a re-run scope) is `formatElapsed` (`benchmark-run-format.ts`): whole seconds, floored — *45s*, *3m 05s*, *1h 02m 05s* — never milliseconds or a decimal. It is refreshed by `startElapsedTicker` (`utils/elapsed-ticker.ts`), which the multi-run and battery progress dialogs share along with the format: a self-aligning `setTimeout` chain that schedules each tick for the moment the elapsed time from the run's start (the re-run's under a re-run scope) next crosses a whole second, plus 20 ms — a plain 1,000 ms while no start is known — so the figure changes once a second at a steady phase and a late timer can neither skip nor repeat a second. Nothing is scheduled while the document is hidden; on becoming visible again it ticks once and re-aligns. `BenchmarkActiveRunMonitor` keeps the ticker's stop function in `runElapsedInterval`. This ticker only redraws the page; it is not the pollers' worker ticker.
+
 The dialog has exactly **one** polling live region — the status line under the Assessments bar, which announces the stage. A second one would announce continuously for the length of the run.
 
 `BenchmarkService` creates a `BenchmarkRunAnswer` only after the model replies, so in-flight state is not derivable from the answers alone: it comes from `BenchmarkRunManager`, which records the order indexes currently in flight (`MarkQuestionInFlight` before the provider request, cleared in a `finally`) and exposes them as `BenchmarkRunDetailDto.InFlightOrderIndexes`. The list is empty for any run that is not the current, still-running one, so a completed run or a restarted server reports nothing rather than stale state.
@@ -2089,7 +2091,8 @@ on counts and per-question thresholds, not as a reproduction pair.
   600 characters as before, and inside a `catch` that returns the service's bare sentence, which is
   therefore the resolver-defect payload. `get_function_definition`'s own payload is byte-identical to
   what it produced before the lift. `search_definitions.md` gains one sentence saying a miss is to be
-  followed rather than retried.
+  followed rather than retried. (From harness 47 a call whose `kind` was `any` or omitted is no longer
+  told to try `kind: "any"`; see *Harness Version 47 Updates*.)
 - **`wiki_search.md` gains a stop rule (T1).** *"When a returned article answers the question as
   asked, answer from it — including its examples and lists — and go to the source only for a part the
   article does not cover or when the question asks for the implementation."* Run 40's Q2 spent 17
@@ -3761,7 +3764,9 @@ everything new is stored inside existing JSON columns.
   keeps up to five items, rubric-charged first, and records the rubric text the assessor relied on. A span
   that occurs on more than one line of the answer is placed by the charge's own words or dropped, never put
   at its first occurrence. A rubric-charged item the verifier supports with a citation raises the advisory
-  `RubricContradictedBySource`. The rules are in *Harness Version 46 Updates*.
+  `RubricContradictedBySource`. The rules are in *Harness Version 46 Updates*. From harness 47 an
+  occurrence on a Markdown table header row never anchors a span, and the flag is displayed as
+  *Rubric-charged deduction contradicted by source* (*Harness Version 47 Updates*).
 
 - **Roles are server-owned (H1).** Every item submitted to the verifier comes from one ordered
   manifest (`BuildClaimManifest`), and each item has a set of roles: `unverifiedClaim`,
@@ -4391,6 +4396,8 @@ adds the nullable column `BenchmarkRunAnswers.ReasoningTokens`.
   view that does not end in a column-0 `}`:
   *"[Definition: learn() at src/spell.c:398. get_function_definition {"name": "learn"} returns the
   whole body in one call; paging it with source_code_view costs one model round per page.]"*
+  (From harness 47 it reads *"returns the body from its first line, in long chunks"*; see *Harness
+  Version 47 Updates*.)
   - **Shape.** At most two names and 300 characters; a `nethack` result names the `repository`
     argument. A prototype (`;`), a data-table row (`,`) and a macro are no definition.
   - **Budget.** `source_code_view` holds 308 characters back from its whole-line budget and puts the
@@ -5140,7 +5147,8 @@ time from stored columns and JSON.
   caller. The index is rebuilt when the repository's root or HEAD moves, and each name is memoized. On
   the 2026-09-27 GnollHack HEAD it flags 121 of about 6,100 column-0 definitions in `src/`; a warm lookup
   takes well under 1 ms, and a view or search result checks at most five definitions. A function reached
-  only through a macro that builds its name would be flagged wrongly.
+  only through a macro that builds its name would be flagged wrongly. (From harness 47 a `DLLEXPORT`
+  function counts as live; see *Harness Version 47 Updates*.)
 
 **Comparability.** `HarnessVersion` and `ToolGuidesSha256` both move, so a run after this round is two
 Instrument keys from runs 68–72 and is NotComparable with them.
@@ -6351,6 +6359,147 @@ has a score. These are report-only, with `ReportFormatVersion` 10
 **Comparability.** Only the Instrument key `HarnessVersion` moves (45 → 46), so a run on run 76's
 configuration is **Tier C** against it. A battery run started under harness 45 refuses to resume under 46
 (`HarnessVersionRefusal`).
+
+### Harness Version 47 Updates
+
+The battery run 2 round (runs 78 and 79, 2026-10-03). The harness-46 flag is relabeled for what it
+can tell, the extractor stops anchoring a quote on a table header, the verifier gains two instructions,
+the reports and the battery statistics read both panel members, and three tool texts stop misleading.
+`HarnessVersion` moves to **"47"**. `ScoringMethodVersion` stays **13**: no anchor, weight, level
+mapping or cap changes. `ToolGuidesSha256` (`9f7742b5…`) and `CandidateSystemPromptSha256` do not
+move. No EF Core migration: the persisted flag, its enum value and every wire value are unchanged, and
+the new fields are DTO fields computed from existing columns.
+
+#### What was wrong
+
+- **H1.** `RubricContradictedBySource` fired on 7 answers and named a wrong rubric on 1: five were a
+  grader misreading a correct rubric, two a wrong verifier support. The harness-46 rollback trigger
+  (*more than two off-question false positives*) fired. The flag shows that the source supports a
+  sentence a grader docked against the rubric, not which of the two is wrong.
+- **H2.** Its report lines printed the verifier's citation twice when the basis repeated it, and
+  *"rubric: not found"* when the grader simply quoted none.
+- **H3.** Member B's flags never reached the per-answer views: an answer flagged on member B alone
+  (run 79 Q9, run 78 Q18) was missing from the answer's *Integrity Flags*, from § 5 *Issues* and from
+  the *Advisory Flags* count.
+- **H4.** A rubric-charged 11-character quote (run 78 Q2, *'base damage'*) was dropped because its span
+  also sat in a Markdown table header, which tied the anchor ranking.
+- **H5.** Three wrong verifier verdicts (registry instances 59–61): a branch under a `case` whose labels
+  exclude the item, a branch read without the condition that guards it, and a wiki *"usually"* read as
+  an exception the code does not have.
+- **H6.** Member B's synthesis on run 79 stated *"no direct interactive tool calls evidenced"* on a run
+  with 73.
+- **H7.** Wording: *Band Drift* said *"the authored band midpoint"* (the reference difficulties are
+  25 / 55 / 85), the *Suspected False* line said *"under scoring method 12"* on a method-13 run, and a
+  contested deduction caused by member B's quote said *"the assessor quoted"*.
+- **H8.** The battery report named no graders, no candidate thinking level and no report writer, and
+  a member run's report never said it belonged to a battery.
+- **H9.** The battery composite's four quality dimensions were member A's means while its Overall
+  Index was the panel's.
+- **T1–T3** are in *Tool output* below.
+
+#### Grading
+
+- **Table header rows never anchor a quote (H4).** `AnchoredOccurrence` drops every occurrence of a
+  quoted span that lies on a Markdown table **header row** — a line starting with `|`, not itself a
+  separator row, whose next non-blank line is a separator row — before grouping the occurrences by
+  line. A header cell names a column and asserts nothing. On run 78 Q2 *'base damage'* then has one
+  line left and is accepted under rule 3 of harness 46. Separator rows and body rows are unchanged.
+- **Verifier instructions 3n and 3o (H5).** *"3n. A line inside a `switch` is reached only for that
+  `case`'s labels, and a line inside an `if` only when its condition holds. Before citing a line as
+  what an item does, read the `case` labels and the `if`/`else` conditions above it; …"* and *"3o. A
+  wiki page's hedge — usually, often, typically, in most cases — is not evidence that exceptions
+  exist. When the implementing code or data shows the rule without an exception, judge the claim by
+  the code and say in the basis that the wiki hedges."* Prose has held poorly before, so these remain
+  cautions as well.
+- **The co-assessor's synthesis (H6): no code change.** Both syntheses receive the same run facts,
+  the candidate's tool-call totals included; run 79's sentence was a model error the input did not
+  cause.
+- **Rubric-charged deductions stay verified.** `Benchmark:ClaimVerification:RubricChargedQuotesEnabled`
+  stays `true`; H1 changes what the flag claims, not what reaches the verifier.
+
+#### Report (all runs)
+
+- **The flag's label (H1).** The report prints `RubricContradictedBySource` as **Rubric-charged
+  deduction contradicted by source**: the bullet title, the *Issues* entry, and in *Advisory Flags*
+  *rubric-charged deduction contradicted: A n, B n* in a panel run. The bullet adds *"Either the rubric point is wrong
+  or the grader misread a correct one; the flag does not say which."* and ends *"Check both the rubric
+  point and the grader's reading of it against the cited source before the next run."*
+- **The contradiction line (H2)** prints `rubric: "<quote>"` when the grader quoted the rubric, else
+  `rubric text: not quoted by the grader`; then `source: <citation>`, followed by ` — <basis>` only
+  when the trimmed basis differs from the trimmed citation (ordinal).
+- **Member B's flags (H3).** In a panel run an answer's entry adds **Integrity Flags (member B):** from
+  the co-assessment record's flags when any is set, § 5 *Issues* lists an answer flagged on member B
+  only, each of its flags prefixed *Member B:*, and the *Advisory Flags* headline keeps member A's
+  stored count and adds *"; N answer(s) on either member"*, computed at render time.
+  `BenchmarkRunAnswerDto.CoAssessmentFlagNames` (`coAssessmentFlagNames`) carries member B's flags
+  named as `AnswerFlagNames` names member A's, empty for a single-assessor run. The completeness
+  out-of-scope and readability form-only markers have no flag bit and are not included.
+- **Wording (H7).** *Band Drift* reads *"against the authored band's reference difficulty (25 / 55 /
+  85)"*; the *Suspected False* lines print the run's own `ScoringMethodVersion`; a contested accuracy
+  deduction caused by member B's quote reads *"a sentence member B quoted as false was supported"*.
+- **Battery context (H8).** A battery member run's manifest adds, after the *Suite origin* line,
+  *Battery: Battery run #<id> (<battery name>, revision <r>), suite <s> of <K>, round <r> of <R>*,
+  from the run's latest non-superseded battery member row (*revision not recorded* when the battery
+  run's stored definition cannot be read); nothing for a run outside a battery. The battery report's
+  *Battery Manifest* gains a *Graders* block and an *Earlier Runs of This Battery* table
+  ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 7.1).
+
+Because all of these are computed at render time, a report of an earlier run re-rendered from
+harness-47 code shows them.
+
+#### Battery statistics (H9)
+
+`BenchmarkGroupStatistics` reads a panel answer's four dimensions as the **panel mean**: member A's
+stored score and member B's level scored on the run's own profile snapshot, averaged, and null unless
+both members scored that dimension — the run report's *Panel* row per answer. A single-assessor answer
+is unchanged. `BenchmarkBatteryStatistics`, the Multi-Run Analysis and the paired tests read the same
+statistics, so the battery composite's dimensions now describe the same grading as its Overall Index.
+The index does not move. A **dimension composite stored before 47 is member A's**; nothing is
+recomputed automatically, and **Recompute** refreshes a stored analysis. On battery run 2 the panel
+dimensions give 95.2 / 64.75 / 87.45 / 87.85 where the stored analysis reads 95.6 / 65.4 / 92.9 / 88.3.
+
+#### Tool output (T1–T3)
+
+All three change text written by C# code, not a file under `Overseer/ToolGuides`, so
+`ToolGuidesSha256` does not move; they reach chat and benchmark alike.
+
+- **Exported functions are live (T1).** `SourceLivenessIndex` counts a function declared or defined
+  with `DLLEXPORT` or `__declspec(dllexport)` as live, because it is called from outside the C corpus
+  (the .NET client calls the `win/win32/xpl/libshare` API). Preprocessor lines are skipped, so the
+  `#define DLLEXPORT …` lines name nothing, and a marker line without `(` is read with up to three
+  following lines. Such a function gets no `[Not reachable: …]` note and no citation liveness note; a
+  harness-46 or earlier `[Not reachable: …]` on a `DLLEXPORT` function (run 78 Q15, `RunGnollHack()`,
+  `gnhapi.h:41`) was a false note.
+- **`search_definitions` hit guidance (T2).** When `kind` was `any` or omitted the miss reads
+  *"The symbol occurs but no definition line matched: try `source_code_search` with `context_lines` on
+  the named file."*; a call under a narrower kind is still told to try `kind: "any"`.
+- **The definition pointer (T3)** reads *"[Definition: {locations}. get_function_definition
+  {"name": "{name}"} returns the body from its first line, in long chunks; paging it with
+  source_code_view costs one model round per page.]"* (with `"repository": "nethack"` for a NetHack
+  result), within its 300-character cap. Before 47 it promised *"the whole body in one call"*, which
+  a body longer than one chunk does not get.
+
+#### Client (no version effect)
+
+- **The flag's label (H1).** An answer's flag badge in the run detail and the diagnostics capture's
+  advisory-flag counts read *rubric-charged deduction contradicted*; Suite Health's heading reads
+  *Rubric-charged deduction contradicted by source*.
+- **Member B's flags in the diagnostics capture (H3).** An answer's line prints `bFlags=<names>`
+  (`|`-joined, like `flags=`) when `coAssessmentFlagNames` is non-empty.
+- **Battery report header (H8).** The *Assessor* / *Assessors* row badges each grader's provider,
+  thinking level and reasoning mode, from the battery run's `assessorProvider`,
+  `assessorThinkingLevel`, `assessorReasoningMode` and their `coAssessor…` counterparts; the
+  key-figures images draw the same row.
+- **Key-figures images.** A figure and its unit (`ms`, `s`, `min`, `h`, `%`) are joined with a
+  non-breaking space, and a caption wraps only at ordinary whitespace, so *14.3 s* never splits.
+- **Progress dialogs.** The run, multi-run and battery progress dialogs share one elapsed format and
+  one tick schedule aligned to whole seconds (§ *Run Progress Dialog*, *Elapsed*). The battery
+  dialog's writer badges, members table and *Overall Index* tile, and the shared `app-index-badge`,
+  are in [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 4.3.
+
+**Comparability.** Only the Instrument key `HarnessVersion` moves (46 → 47), so a run on battery run
+2's configuration is **Tier C** against it. A battery run started under harness 46 refuses to resume
+under 47 (`HarnessVersionRefusal`).
 
 ---
 

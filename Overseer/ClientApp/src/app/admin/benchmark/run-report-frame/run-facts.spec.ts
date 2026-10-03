@@ -199,6 +199,27 @@ describe('run facts', () => {
       expect(runFactPlainText(rows[1])).toBe('Claude 5 Opus + Gemini 3.8 Pro');
       expect(runFactsReadout(rows)).toContain('3 of 4 complete · 1 run per suite');
     });
+
+    it('carries each panel assessor\'s provider, thinking level and reasoning mode for its badges', () => {
+      const rows = buildBatteryRunFacts(battery({
+        assessorProvider: 'Anthropic', assessorThinkingLevel: 'medium', assessorReasoningMode: 'standard',
+        coAssessorLabel: 'GPT-5.6 Sol', coAssessorProvider: 'OpenAI', coAssessorThinkingLevel: 'high', coAssessorReasoningMode: 'pro'
+      }));
+      const item = rows[1].item;
+      expect(item.kind).toBe('models');
+      const models = item.kind === 'models' ? item.models : [];
+      expect(models.map(m => [m.role, m.provider, m.thinkingLevel, m.reasoningMode])).toEqual([
+        ['A', 'Anthropic', 'medium', 'standard'],
+        ['B', 'OpenAI', 'high', 'pro']
+      ]);
+      expect(runFactBadges(models[0]).map(b => [b.kind, b.text])).toContainEqual(['thinking', 'Medium']);
+    });
+
+    it('leaves the badges empty when the battery run recorded no assessor settings', () => {
+      const item = buildBatteryRunFacts(battery())[1].item;
+      const models = item.kind === 'models' ? item.models : [];
+      expect(models.map(m => [m.provider, m.thinkingLevel, m.reasoningMode])).toEqual([[null, null, null]]);
+    });
   });
   describe('runFactBadges', () => {
     it('shows no thinking badge without a configured level', () => {

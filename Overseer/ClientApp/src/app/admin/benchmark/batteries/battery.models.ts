@@ -416,6 +416,7 @@ export interface BatteryModelFields {
   readonly testedProvider?: string | null;
   readonly testedThinkingLevel?: string | null;
   readonly testedReasoningMode?: string | null;
+  readonly testedServiceTier?: string | null;
 }
 
 /** A battery run's model under test: its label, else its id. */
@@ -434,7 +435,7 @@ export function batteryModelBadges(battery: BatteryModelFields): RunFactBadge[] 
       provider: battery.testedProvider || null,
       thinkingLevel: battery.testedThinkingLevel ?? null,
       reasoningMode: battery.testedReasoningMode ?? null,
-      serviceTier: null,
+      serviceTier: battery.testedServiceTier ?? null,
       customEndpoint: false
     });
     batteryBadgeCache.set(battery, badges);

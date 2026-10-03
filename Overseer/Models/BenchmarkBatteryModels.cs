@@ -307,9 +307,24 @@ public class BenchmarkBatteryMemberDto
     public DateTime? RunStartedAtUtc { get; set; }
     public DateTime? RunCompletedAtUtc { get; set; }
 
-    /// <summary>Answer rows written / questions in the run, for the progress line of a running member.</summary>
+    /// <summary>
+    /// Answered questions / questions in the run: for a running member the answer rows written so
+    /// far, for any other the run's own answered count.
+    /// </summary>
     public int AnsweredQuestionCount { get; set; }
     public int TotalQuestionCount { get; set; }
+
+    /// <summary>The <c>BenchmarkRunStage</c> of a running member as this process drives it; null otherwise.</summary>
+    public string? Stage { get; set; }
+
+    /// <summary>1.96 × the run's index standard error; null when the index or its standard error is.</summary>
+    public double? QualityIndexHalfWidth { get; set; }
+
+    /// <summary>Completed minus started; null while the run has not completed.</summary>
+    public long? DurationMs { get; set; }
+
+    public int ClaimsRefutedCount { get; set; }
+    public int AdvisoryFlagAnswerCount { get; set; }
 }
 
 /// <summary>One (suite, round) cell of the K × R grid, with the member occupying it, if any.</summary>
@@ -394,9 +409,15 @@ public class BenchmarkBatteryRunDto
     public string? TestedReasoningMode { get; set; }
     public string? TestedServiceTier { get; set; }
     public string? AssessorLabel { get; set; }
+    public string? AssessorProvider { get; set; }
+    public string? AssessorThinkingLevel { get; set; }
+    public string? AssessorReasoningMode { get; set; }
 
     /// <summary>Panel member B; null on a single-assessor battery run.</summary>
     public string? CoAssessorLabel { get; set; }
+    public string? CoAssessorProvider { get; set; }
+    public string? CoAssessorThinkingLevel { get; set; }
+    public string? CoAssessorReasoningMode { get; set; }
 
     public string? ScoringProfileName { get; set; }
 
@@ -406,11 +427,23 @@ public class BenchmarkBatteryRunDto
     /// <summary>The configuration that writes the battery run's AI-written documents; null when none was chosen.</summary>
     public long? ReportWriterModelConfigurationId { get; set; }
 
+    // The report writer's settings, from that configuration. All null without a writer or when the
+    // configuration has been deleted.
+    public string? ReportWriterDisplayName { get; set; }
+    public string? ReportWriterProvider { get; set; }
+    public string? ReportWriterModelId { get; set; }
+    public string? ReportWriterThinkingLevel { get; set; }
+    public string? ReportWriterReasoningMode { get; set; }
+    public string? ReportWriterServiceTier { get; set; }
+
     /// <summary>Where the battery run's two battery-completion documents stand.</summary>
     public BenchmarkRunReportDocumentsStatus ReportDocumentsStatus { get; set; }
 
     /// <summary>Why the documents failed or were skipped; null otherwise.</summary>
     public string? ReportDocumentsMessage { get; set; }
+
+    /// <summary>The battery-completion documents of this battery run that exist, as the AI Reports tab lists them.</summary>
+    public int ReportDocumentsWrittenCount { get; set; }
 
     // The banner position: the running member, else the next slot to launch while the battery run is
     // live. Null when neither applies.

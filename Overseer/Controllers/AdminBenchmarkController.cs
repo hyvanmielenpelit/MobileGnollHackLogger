@@ -3504,6 +3504,9 @@ public class AdminBenchmarkController : ControllerBase
                             .Select(f => f.ToString())
                             .ToList()
                         : new List<string>(),
+                    CoAssessmentFlagNames = isPanelRun
+                        ? BenchmarkReportBuilder.AnswerFlagNamesOf(BenchmarkReportBuilder.CoAssessmentAnswerFlags(a)).ToArray()
+                        : Array.Empty<string>(),
                     AssessedByModelConfigurationId = a.AssessedByModelConfigurationId,
                     AssessedByModelDisplayNameUsed = a.AssessedByModelSnapshot.Label(),
                     AssessedByModelProviderUsed = a.AssessedByModelSnapshot?.Provider,
@@ -4933,7 +4936,20 @@ public class AdminBenchmarkController : ControllerBase
         BenchmarkRunPricing? runPricing = _modelPricingService != null
             ? await _modelPricingService.ResolveForRunAsync(run)
             : null;
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing);
+        // The battery run slot the run fills, when it is a battery member: its latest non-superseded
+        // member row, since a run may serve more than one battery run.
+        var batteryMember = await _dbContext.BenchmarkBatteryRunMembers
+            .AsNoTracking()
+            .Include(m => m.BenchmarkBatteryRun)
+            .Where(m => m.BenchmarkRunId == id && !m.Superseded)
+            .OrderByDescending(m => m.AddedAtUtc)
+            .ThenByDescending(m => m.Id)
+            .FirstOrDefaultAsync();
+        BenchmarkRunBatteryContext? battery = batteryMember?.BenchmarkBatteryRun != null
+            ? BenchmarkRunBatteryContext.From(batteryMember, batteryMember.BenchmarkBatteryRun)
+            : null;
+
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing, battery);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return (run, markdown, filename);

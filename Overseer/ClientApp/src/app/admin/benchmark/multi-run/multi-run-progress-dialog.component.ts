@@ -30,6 +30,8 @@ import {
 import { SystemService } from '../../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
+import { ELAPSED_TICK_MS, startElapsedTicker } from '../../../utils/elapsed-ticker';
+import { formatElapsed } from '../benchmark-run-format';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
@@ -161,7 +163,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
 
   /** Matches the single-run dialog's cadence: the two dialogs poll the same server. */
   static readonly SERIES_POLL_INTERVAL_MS = 2000;
-  static readonly ELAPSED_TICK_MS = 1000;
+  static readonly ELAPSED_TICK_MS = ELAPSED_TICK_MS;
   private static readonly COPIED_RESET_MS = 2000;
 
   @Input() seriesId: number | null = null;
@@ -232,7 +234,8 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   lastPollError: string | null = null;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+  /** Stops the elapsed ticker; null while none runs. */
+  private elapsedTimer: (() => void) | null = null;
   private visibilityChangeHandler: (() => void) | null = null;
   private isOpen = false;
 
@@ -388,17 +391,12 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
 
   private startElapsedTicker(): void {
     this.stopElapsedTicker();
-    this.elapsedTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-      this.cdr.detectChanges();
-    }, MultiRunProgressDialogComponent.ELAPSED_TICK_MS);
+    this.elapsedTimer = startElapsedTicker(() => this.series?.startedAtUtc, () => this.cdr.detectChanges());
   }
 
   private stopElapsedTicker(): void {
     if (this.elapsedTimer) {
-      clearInterval(this.elapsedTimer);
+      this.elapsedTimer();
       this.elapsedTimer = null;
     }
   }
@@ -824,22 +822,10 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     return `${(ms / 1000).toFixed(1)}s`;
   }
 
-  formatElapsed(ms: number): string {
-    if (!ms || ms < 0) return '0s';
-    const totalSecs = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSecs / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
-    const secs = totalSecs % 60;
-    const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
-    if (hours > 0) return `${hours}h ${pad(mins)}m ${pad(secs)}s`;
-    if (mins > 0) return `${mins}m ${pad(secs)}s`;
-    return `${secs}s`;
-  }
-
   get elapsedLabel(): string {
     const series = this.series;
     if (!series?.startedAtUtc) return '—';
-    return this.formatElapsed(elapsedMsBetween(series.startedAtUtc, series.completedAtUtc));
+    return formatElapsed(elapsedMsBetween(series.startedAtUtc, series.completedAtUtc));
   }
 
   get totalEstimatedCost(): number | null {

@@ -8,7 +8,7 @@ namespace Overseer.Services.Tools
     /// <summary>
     /// Finds C function definition lines in a rendered <c>source_code_search</c> or
     /// <c>source_code_view</c> result and writes a one-line pointer to <c>get_function_definition</c>,
-    /// which returns a whole body in one call. Line-pattern heuristics, not a C parser: a missed
+    /// which returns a body from its first line in long chunks. Line-pattern heuristics, not a C parser: a missed
     /// definition yields no pointer, and a false one leads to that tool's own miss payload.
     /// </summary>
     internal static class SourceDefinitionHint
@@ -137,7 +137,7 @@ namespace Overseer.Services.Tools
                 string repositoryArgument = string.Equals(repository, "nethack", StringComparison.OrdinalIgnoreCase)
                     ? ", \"repository\": \"nethack\""
                     : string.Empty;
-                string hint = $"[Definition: {locations}. get_function_definition {{\"name\": \"{names[0].Name}\"{repositoryArgument}}} returns the whole body in one call; paging it with source_code_view costs one model round per page.]";
+                string hint = $"[Definition: {locations}. get_function_definition {{\"name\": \"{names[0].Name}\"{repositoryArgument}}} returns the body from its first line, in long chunks; paging it with source_code_view costs one model round per page.]";
                 if (hint.Length <= MaxLength) return hint;
             }
 

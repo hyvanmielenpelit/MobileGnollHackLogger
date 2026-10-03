@@ -456,7 +456,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     of the chip's height and shape — `getQuestionScoreBadgeClass` gives `badge-score-high` (≥ 80),
     `badge-score-mid` (≥ 50) or `badge-score-low`, colored from the `--score-*` tokens on `:root` —
     named by a visually hidden *Score* word, not `aria-label`; the color repeats the number, never
-    replaces it. The roster and banner say **Assessor** (never *Evaluator*); a panel run's banner says
+    replaces it. **An Intelligence Index** (a member's, a battery's *Overall Index*) uses the shared
+    `app-index-badge` (`shared/index-badge/`, standalone, OnPush; styles global in `styles.scss` beside
+    `.score-badge`): inputs `value`, `halfWidth`, `size` (`'sm'` default, `'md'` for a stat tile) and
+    `label` (default *Intelligence Index*); the tier class from `getScoreBadgeClass` (80 / 50) on the
+    rounded value; the whole number in tabular figures and *± n* when a half-width is known; a ring
+    (`conic-gradient` arc to `--index-fill`, hollowed by a `radial-gradient` mask) that is decorative and
+    `aria-hidden`; and a visually hidden label (*Intelligence Index 85 ± 4, out of 100*). No `title`,
+    tooltip or live region — the host announces, if anything. `@property --index-fill` lets the arc
+    ease, with a `0s` transition unless `prefers-reduced-motion: no-preference` (then `0.4s`). The
+    color repeats the number and never replaces it. The roster and banner say **Assessor** (never *Evaluator*); a panel run's banner says
     *Assessors*. The roster's badges carry the model picker's visually hidden prefixes and no `title`,
     and the coverage badge is followed by a hover `app-info-tip` (`runProgressCoverageTip`) holding
     the coverage hint. **When the run names a report writer**, the model strip gains a *Report writer* row,
@@ -777,12 +786,21 @@ To find specific popups, look in the corresponding component's `.html` template:
     head below 40 rem and to one column below 26 rem. Below 56 rem of body everything is one column
     and the body scrolls.
   - `app-battery-progress-dialog` (`batteries/battery-progress-dialog.component.*`, `bp` ids):
-    **full-screen** battery progress — under the heading a model line (`app-provider-badge` and the
-    thinking badge, through `batteryModelName` / `batteryModelBadges` in `battery.models.ts`) and a
-    *Report writer* fact; then the shared `.run-stage-rail` (*Suite runs*, *Battery analysis*, and
-    *AI-written reports* when a writer is set; stacked below 40 rem of an inline-size container), the
-    labelled progress bar, the state block, the stat strip and a suite × round grid of status chips
-    (`BATTERY_SLOT_STATE_LABELS`). Polling continues after the last member while
+    **full-screen** battery progress — under the heading *Model under test* (`batteryModelName` /
+    `batteryModelBadges` in `battery.models.ts`, service tier included) and *Report writer*, both
+    rendered by one `ng-template` (`#modelIdentity`: `.model-name` plus the `runFactBadges` thinking,
+    reasoning, provider and service-tier badges); the writer from the battery run's `reportWriter…`
+    fields, else the report job, else the System AI Configs list. Then the shared `.run-stage-rail`
+    (*Suite runs*, *Battery analysis*, and *AI-written reports* when a writer is set, whose *done* note
+    counts `reportDocumentsWrittenCount`; stacked below 40 rem of an inline-size container), the
+    labelled progress bar, the state block, the stat strip (a sixth tile, *Overall Index*, holds an
+    `app-index-badge size="md"` once the analysis is done) and a suite × round grid of status chips
+    (`BATTERY_SLOT_STATE_LABELS`). Under its chip a running member shows *Run #N · Stage n of 3 —
+    name* (`runStageCaption`, `run-stage-labels.ts`, whose names the run dialog's rail shares), a
+    native `<progress>` labelled by *n of m questions answered*, and *Elapsed …*; a completed member
+    an `app-index-badge`, a facts line (*Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers*,
+    flagged omitted at 0) and *Run #N*; an empty pending slot of a live run *Waiting for suite …*.
+    Elapsed times and durations are `formatElapsed`. Polling continues after the last member while
     `batteryAwaitsPostRun` holds (analysis or reports under way, `BATTERY_POST_RUN_GRACE_MS` = 120 s),
     and the report job is polled while the reports stage is current. One polite live region (the stage
     line, post-run texts included), per-member *Open run progress* (emits `{ runId, batteryRunId }`,
@@ -793,6 +811,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery Run
     Report's *Show progress* action. **Open Analysis** emits `openAnalysis` with the battery run id, and
     the shell's `onOpenBatteryAnalysis` opens the Battery Run Report.
+  - **The progress dialogs' elapsed clock.** The run (`BenchmarkActiveRunMonitor`, stop function in
+    `runElapsedInterval`), multi-run and battery progress dialogs share one format, `formatElapsed`
+    (`benchmark-run-format.ts`: *45s*, *3m 05s*, *1h 02m 05s*, whole seconds floored), and one tick,
+    `startElapsedTicker(startedAtUtc, onTick)` (`utils/elapsed-ticker.ts`), which returns its stop
+    function. It is a self-aligning `setTimeout` chain, not `setInterval`: each tick is scheduled
+    `1000 − elapsed % 1000 + 20` ms ahead (a plain 1000 ms without a known start; the start is read on
+    every tick), so the figure changes once a second and a late timer neither skips nor repeats one.
+    Nothing is scheduled while `document.hidden`; on `visibilitychange` back to visible it ticks once
+    and re-aligns. A new progress clock uses it rather than its own interval. The report-writing and
+    Report Pack views count on the server's clock and are not on it.
   - `app-battery-leaderboard-dialog` (`batteries/battery-leaderboard-dialog.component.*`, `bl-` ids,
     hosted by `app-benchmark-batteries`, opened with `open({ definitionSha256, name, … })`):
     `<dialog class="gh-dialog gh-dialog-fullscreen battery-leaderboard-dialog" aria-labelledby="blTitle">`,

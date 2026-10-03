@@ -370,6 +370,120 @@ public class BenchmarkBatteryStatisticsTests
         Assert.Equal(1.0 / 9.0, result.CriticalErrorRate!.Value, 9);
     }
 
+    /// <summary>
+    /// <see cref="Run"/> as a panel run over four dimensions: <paramref name="memberA"/> holds member
+    /// A's stored scores and <paramref name="memberBLevels"/> member B's levels, each indexed
+    /// [dimension][question] in Accuracy, Completeness, Conciseness, Readability order.
+    /// </summary>
+    private static BenchmarkRun PanelRun(long runId, long suiteId, BenchmarkQuestion[] questions, int[][] memberA, int[][] memberBLevels)
+    {
+        var run = Run(runId, suiteId, questions, S(questions.Select(_ => 80).ToArray()));
+        run.CoAssessorModelConfigurationId = 7;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-judge");
+
+        for (int i = 0; i < questions.Length; i++)
+        {
+            var answer = run.Answers[i];
+            answer.AccuracyScore = memberA[0][i];
+            answer.CompletenessScore = memberA[1][i];
+            answer.ConcisenessScore = memberA[2][i];
+            answer.ReadabilityScore = memberA[3][i];
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+            answer.CoAssessmentQualityScore = 80;
+            answer.PanelQualityScore = 80;
+            answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = memberBLevels[0][i],
+                CompletenessLevel = memberBLevels[1][i],
+                ConcisenessLevel = memberBLevels[2][i],
+                ReadabilityLevel = memberBLevels[3][i]
+            }.Serialize();
+        }
+
+        return run;
+    }
+
+    /// <summary>
+    /// Battery run 2's arithmetic: two panel suites of equal size, so count weights of 1/2 each. The
+    /// composite dimensions are the mean of the suites' panel means, never of member A's alone.
+    /// </summary>
+    [Fact]
+    public void Dimensions_OfPanelSuites_AreTheCountWeightedPanelMeans_NotMemberAs()
+    {
+        // Default level table 1 / 15 / 35 / 55 / 72 / 87 / 100; ten answers per suite.
+        // Suite 11, member A sums 949 / 704 / 886 / 921 (means 94.9 / 70.4 / 88.6 / 92.1), member B
+        //   sums 959 / 696 / 788 / 877; panel means (A + B) / 20 = 95.4 / 70.0 / 83.7 / 89.9.
+        // Suite 12, member A sums 965 / 604 / 971 / 845 (means 96.5 / 60.4 / 97.1 / 84.5), member B
+        //   sums 935 / 586 / 853 / 871; panel means 95.0 / 59.5 / 91.2 / 85.8.
+        // Composite: 95.2 / 64.75 / 87.45 / 87.85. Member A alone would give 95.7 / 65.4 / 92.85 / 88.3.
+        // (Battery run 2's member-A Accuracy means, 94.8 and 96.4, cannot sit beside these panel means
+        // on ten answers of the default level table; 94.9 and 96.5 keep the panel means exact.)
+        var qa = Questions(SuiteA, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
+        var qb = Questions(SuiteB, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
+
+        var runA = PanelRun(1101, SuiteA, qa,
+            new[]
+            {
+                new[] { 95, 95, 95, 95, 95, 95, 95, 95, 95, 94 },
+                new[] { 70, 70, 70, 70, 70, 70, 71, 71, 71, 71 },
+                new[] { 89, 89, 89, 89, 89, 89, 88, 88, 88, 88 },
+                new[] { 92, 92, 92, 92, 92, 92, 92, 92, 92, 93 }
+            },
+            new[]
+            {
+                new[] { 4, 5, 6, 6, 6, 6, 6, 6, 6, 6 },
+                new[] { 0, 0, 2, 4, 5, 6, 6, 6, 6, 6 },
+                new[] { 0, 1, 4, 6, 6, 6, 6, 6, 6, 6 },
+                new[] { 2, 3, 5, 6, 6, 6, 6, 6, 6, 6 }
+            });
+        var runB = PanelRun(1201, SuiteB, qb,
+            new[]
+            {
+                new[] { 96, 96, 96, 96, 96, 97, 97, 97, 97, 97 },
+                new[] { 60, 60, 60, 60, 60, 60, 61, 61, 61, 61 },
+                new[] { 97, 97, 97, 97, 97, 97, 97, 97, 97, 98 },
+                new[] { 84, 84, 84, 84, 84, 85, 85, 85, 85, 85 }
+            },
+            new[]
+            {
+                new[] { 2, 6, 6, 6, 6, 6, 6, 6, 6, 6 },
+                new[] { 0, 0, 0, 2, 5, 5, 5, 5, 6, 6 },
+                new[] { 2, 4, 4, 5, 5, 6, 6, 6, 6, 6 },
+                new[] { 3, 3, 5, 5, 5, 6, 6, 6, 6, 6 }
+            });
+
+        double SuiteMean(long suiteId, BenchmarkQuestion[] questions, BenchmarkRun run, string dimension)
+            => BenchmarkGroupStatistics.Compute(new BenchmarkSuite { Id = suiteId, Name = SuiteName(suiteId) }, questions, new[] { run })
+                .Dimensions.Single(d => d.Dimension == dimension).Mean!.Value;
+
+        string[] names = { "Accuracy", "Completeness", "Conciseness", "Readability" };
+        double[] panelA = { 95.4, 70.0, 83.7, 89.9 };
+        double[] panelB = { 95.0, 59.5, 91.2, 85.8 };
+        for (int d = 0; d < names.Length; d++)
+        {
+            Assert.Equal(panelA[d], SuiteMean(SuiteA, qa, runA, names[d]), 9);
+            Assert.Equal(panelB[d], SuiteMean(SuiteB, qb, runB, names[d]), 9);
+        }
+
+        var result = BenchmarkBatteryStatistics.Compute(
+            Definition(BenchmarkBatteryWeightingScheme.DifficultyMass, SuiteA, SuiteB),
+            new[]
+            {
+                Input(0, SuiteA, qa, new[] { runA }),
+                Input(1, SuiteB, qb, new[] { runB })
+            });
+
+        double[] composite = { 95.2, 64.75, 87.45, 87.85 };
+        double[] memberAComposite = { 95.7, 65.4, 92.85, 88.3 };
+        for (int d = 0; d < names.Length; d++)
+        {
+            var dimension = result.Dimensions.Single(x => x.Dimension == names[d]);
+            Assert.Empty(dimension.WithheldBySuiteIndex);
+            Assert.Equal(composite[d], dimension.Mean!.Value, 9);
+            Assert.NotEqual(memberAComposite[d], Math.Round(dimension.Mean!.Value, 9));
+        }
+    }
+
     // --- M6: cost ---------------------------------------------------------------------------------
 
     private static BenchmarkGroupRunCost Cost(long runId, double candidate, double assessor)

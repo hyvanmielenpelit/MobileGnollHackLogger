@@ -1048,6 +1048,11 @@ export interface BenchmarkRunAnswerDto {
   coAssessmentInputTokens?: number | null;
   coAssessmentOutputTokens?: number | null;
   coAssessmentDurationMs?: number | null;
+  /**
+   * Panel member B's integrity flags as enum names (`ContestedVerdict`, `RubricContradictedBySource`
+   * and so on). Empty on a single-assessor run.
+   */
+  coAssessmentFlagNames?: string[];
 
   /** Second-opinion verdict, present only where one was triggered. Advisory: the first scored. */
   secondOpinionQualityScore?: number | null;
@@ -2208,8 +2213,22 @@ export interface BenchmarkBatteryMemberDto {
   addedAtUtc: string;
   runStartedAtUtc?: string | null;
   runCompletedAtUtc?: string | null;
+  /** The live count for a running member, the run's own column for a finished one. */
   answeredQuestionCount: number;
   totalQuestionCount: number;
+  /**
+   * The running member's stage: `Answering`, `Verifying`, `SecondOpinion` or `Synthesizing`.
+   * Null for a member that is not running, and before the run reports a stage.
+   */
+  stage?: string | null;
+  /** Half-width of the member's Intelligence Index interval; null when not computed. */
+  qualityIndexHalfWidth?: number | null;
+  /** The finished member's wall-clock duration; null while it runs or when not recorded. */
+  durationMs?: number | null;
+  /** Claims the claim verifier refuted in the member's answers. */
+  claimsRefutedCount?: number;
+  /** Answers carrying at least one advisory integrity flag. */
+  advisoryFlagAnswerCount?: number;
 }
 
 /** One (suite, round) cell of the K × R grid. */
@@ -2290,15 +2309,33 @@ export interface BenchmarkBatteryRunDto {
   testedReasoningMode?: string | null;
   testedServiceTier?: string | null;
   assessorLabel?: string | null;
+  assessorProvider?: string | null;
+  assessorThinkingLevel?: string | null;
+  assessorReasoningMode?: string | null;
   /** Panel runs only. */
   coAssessorLabel?: string | null;
+  coAssessorProvider?: string | null;
+  coAssessorThinkingLevel?: string | null;
+  coAssessorReasoningMode?: string | null;
   scoringProfileName?: string | null;
   verboseMode?: boolean;
   /** The battery-completion documents' writer; null when none was chosen. */
   reportWriterModelConfigurationId?: number | null;
+  /**
+   * The writer's configuration as the server holds it; null without a writer or when its
+   * configuration is gone.
+   */
+  reportWriterDisplayName?: string | null;
+  reportWriterProvider?: string | null;
+  reportWriterModelId?: string | null;
+  reportWriterThinkingLevel?: string | null;
+  reportWriterReasoningMode?: string | null;
+  reportWriterServiceTier?: string | null;
   reportDocumentsStatus?: BenchmarkRunReportDocumentsStatus;
   /** Why the documents failed or were skipped; null otherwise. */
   reportDocumentsMessage?: string | null;
+  /** The battery documents written so far. */
+  reportDocumentsWrittenCount?: number;
 }
 
 /** Computes a battery analysis, optionally paired against a baseline battery run. */

@@ -187,7 +187,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(text).toContain('--- INTEGRITY ---');
       expect(text).toContain('clean: 1, transport defects: 0, recovered: 0, harness limits: 1 (sums to 2)');
-      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, contested accuracy deductions: not recorded, rubric contradicted by source: not recorded, dimension outliers: not recorded, re-assessed: 1');
+      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, contested accuracy deductions: not recorded, rubric-charged deduction contradicted: not recorded, dimension outliers: not recorded, re-assessed: 1');
       expect(text).toContain('unverified claims: 2');
       expect(text).toContain('4.3 mean abs delta');
       expect(text).toContain('over 2 of 2 answered, disagreements: 1');
@@ -197,7 +197,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should print the contested accuracy deduction count when recorded, zero included', () => {
       ctx.monitor.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 2 });
-      expect(component.runDiagnosticsText).toContain('contested critical errors: 0, contested accuracy deductions: 2, rubric contradicted by source: not recorded, dimension outliers: not recorded, re-assessed: 1');
+      expect(component.runDiagnosticsText).toContain('contested critical errors: 0, contested accuracy deductions: 2, rubric-charged deduction contradicted: not recorded, dimension outliers: not recorded, re-assessed: 1');
 
       // Zero is a measurement on a harness-20 run; only null reads as not recorded.
       ctx.monitor.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 0 });
@@ -207,9 +207,9 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('contested accuracy deductions: not recorded');
     });
 
-    it('should print the rubric-contradicted count when recorded', () => {
+    it('should print the rubric-charged deduction contradicted count when recorded', () => {
       ctx.monitor.activeRunDetail = buildDiagnosticsRun({ rubricContradictedAnswerCount: 3 });
-      expect(component.runDiagnosticsText).toContain('rubric contradicted by source: 3, dimension outliers:');
+      expect(component.runDiagnosticsText).toContain('rubric-charged deduction contradicted: 3, dimension outliers:');
     });
 
     it('should caveat the agreement rate when coverage was selected by trigger', () => {
@@ -233,6 +233,21 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('reassessed=42→60/Claude Opus 5');
       // Blocked calls come from the tool summary, because toolCallCount counts attempts.
       expect(text).toContain('tools=25/25 (3 blocked) exhausted');
+      expect(text).not.toContain('bFlags=');
+    });
+
+    it('should print member B flags as bFlags= on the question line when there are any', () => {
+      const run = buildDiagnosticsRun();
+      run.answers[0] = {
+        ...run.answers[0],
+        coAssessmentFlagNames: ['ContestedVerdict', 'RubricContradictedBySource']
+      };
+      run.answers[1] = { ...run.answers[1], coAssessmentFlagNames: [] };
+      ctx.monitor.activeRunDetail = run;
+      const lines = component.runDiagnosticsText.split('\n');
+
+      expect(lines.find(l => l.startsWith('[Q1] '))).toContain('bFlags=ContestedVerdict|RubricContradictedBySource');
+      expect(lines.filter(l => l.includes('bFlags=')).length).toBe(1);
     });
 
     it('should record whether the candidate prompt carried a game snapshot', () => {
@@ -350,7 +365,7 @@ describe('AdminBenchmarkComponent', () => {
       const advisory = lines.findIndex(l => l.startsWith('advisory flags:'));
       expect(lines[advisory + 1]).toBe('member B flags: contested verdicts: 2, unevidenced deductions: 0, omission as accuracy: 0, '
         + 'out-of-rubric accuracy: 0, dimension outliers: 0, completeness out of scope: 0, readability form only: 1, '
-        + 'contested critical errors: 0, contested accuracy deductions: 0, rubric contradicted by source: 0');
+        + 'contested critical errors: 0, contested accuracy deductions: 0, rubric-charged deduction contradicted: 0');
       // The union of both members' ordinary claims; the accused sentence is not one.
       expect(text).toContain('unverified claims: 3 (member A 1, member B 1, both 1)');
 

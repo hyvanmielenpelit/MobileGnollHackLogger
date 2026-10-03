@@ -22,7 +22,13 @@ public sealed class BenchmarkBatteryRunIdentity
     public string? TestedReasoningMode { get; init; }
     public string? TestedServiceTier { get; init; }
     public string? AssessorLabel { get; init; }
+    public string? AssessorProvider { get; init; }
+    public string? AssessorThinkingLevel { get; init; }
+    public string? AssessorReasoningMode { get; init; }
     public string? CoAssessorLabel { get; init; }
+    public string? CoAssessorProvider { get; init; }
+    public string? CoAssessorThinkingLevel { get; init; }
+    public string? CoAssessorReasoningMode { get; init; }
     public string? ScoringProfileName { get; init; }
     public bool VerboseMode { get; init; }
 }
@@ -184,6 +190,8 @@ public class BenchmarkBatteryLeaderboardService
             if (identityRunIds.TryGetValue(batteryRun.Id, out long runId) && runs.TryGetValue(runId, out var run))
             {
                 var tested = Snapshot(run.TestedModelSnapshotId);
+                var assessorSnapshot = Snapshot(run.AssessorModelSnapshotId);
+                var coAssessorSnapshot = Snapshot(run.CoAssessorModelSnapshotId);
                 identities[batteryRun.Id] = new BenchmarkBatteryRunIdentity
                 {
                     TestedProvider = tested?.Provider,
@@ -191,8 +199,14 @@ public class BenchmarkBatteryLeaderboardService
                     TestedThinkingLevel = tested?.ThinkingLevel,
                     TestedReasoningMode = tested?.ReasoningMode,
                     TestedServiceTier = tested?.ServiceTier,
-                    AssessorLabel = Snapshot(run.AssessorModelSnapshotId).Label(),
-                    CoAssessorLabel = Snapshot(run.CoAssessorModelSnapshotId).Label(),
+                    AssessorLabel = assessorSnapshot.Label(),
+                    AssessorProvider = assessorSnapshot?.Provider,
+                    AssessorThinkingLevel = assessorSnapshot?.ThinkingLevel,
+                    AssessorReasoningMode = assessorSnapshot?.ReasoningMode,
+                    CoAssessorLabel = coAssessorSnapshot.Label(),
+                    CoAssessorProvider = coAssessorSnapshot?.Provider,
+                    CoAssessorThinkingLevel = coAssessorSnapshot?.ThinkingLevel,
+                    CoAssessorReasoningMode = coAssessorSnapshot?.ReasoningMode,
                     ScoringProfileName = run.ScoringProfileName,
                     VerboseMode = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson).VerboseMode
                 };
@@ -256,7 +270,13 @@ public class BenchmarkBatteryLeaderboardService
                 TestedReasoningMode = tested?.ReasoningMode,
                 TestedServiceTier = tested?.ServiceTier,
                 AssessorLabel = assessor == null ? null : assessor.DisplayName ?? assessor.ModelId,
+                AssessorProvider = assessor?.Provider,
+                AssessorThinkingLevel = assessor?.ThinkingLevel,
+                AssessorReasoningMode = assessor?.ReasoningMode,
                 CoAssessorLabel = coAssessor == null ? null : coAssessor.DisplayName ?? coAssessor.ModelId,
+                CoAssessorProvider = coAssessor?.Provider,
+                CoAssessorThinkingLevel = coAssessor?.ThinkingLevel,
+                CoAssessorReasoningMode = coAssessor?.ReasoningMode,
                 ScoringProfileName = request?.ScoringProfileId is long profileId && profileNames.TryGetValue(profileId, out var name)
                     ? name
                     : null,

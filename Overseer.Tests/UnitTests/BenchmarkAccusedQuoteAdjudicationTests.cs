@@ -608,6 +608,59 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Empty(BenchmarkService.ExtractAccusedQuotes(AntsAnswer, Evidence("Soldier ants deal 2d4 damage"), null, rubricChargedQuotes));
     }
 
+    // --- A table header row (run 78, Q2) ------------------------------------------------------
+    //
+    // The answer and member A's Accuracy evidence are copied verbatim from run 78's report; the
+    // rubric is the excerpt of the suite's rubric run 78 used.
+
+    private const string Run78Q2Answer =
+        "These quality modifiers multiply a weapon’s **base damage**:\n\n"
+        + "| Quality | Base damage | Restriction |\n"
+        + "|---|---:|---|\n"
+        + "| **Exceptional** | ×2 | No alignment restriction |\n"
+        + "| **Elite** | ×3 | No alignment restriction |\n"
+        + "| **Celestial** | ×4 | Lawful users only |\n"
+        + "| **Primordial** | ×4 | Neutral users only |\n"
+        + "| **Infernal** | ×4 | Chaotic users only |\n\n"
+        + "The multiplier applies to **base weapon damage**, not simply to the final damage total including every bonus. "
+        + "These qualities can occur on magical weapons too, as well as ranged weapons and ammunition.";
+
+    private const string Run78Q2EvidenceA =
+        "Multipliers (2x/3x/4x) and the alignment restrictions are all correct; the single imprecision is phrasing the effect "
+        + "as multiplying 'base damage' rather than explicitly multiplying the damage dice (rubric: 'The multiplier applies to the dice').";
+
+    private const string Run78Q2Rubric =
+        "- Quality modifiers MULTIPLY the weapon's base damage dice.\n"
+        + "- The multiplier applies to the dice (e.g., a long sword dealing 1d8 / 1d12 deals 2d8 / 2d12 when exceptional).";
+
+    [Fact]
+    public void Extract_Run78Q2_ASpanAlsoInATableHeaderRow_IsPlacedOnItsOneSentence()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run78Q2Answer, Run78Q2EvidenceA, Run78Q2Rubric));
+
+        // 'base damage' is also in the header row, which names a column; no anchor word of the
+        // clause is on either line, so only the sentence left once the header is set aside places it.
+        Assert.Equal("These quality modifiers multiply a weapon’s **base damage**:", quote.Text);
+        Assert.Equal(new[] { "base damage" }, quote.QuotedFragments);
+        Assert.True(quote.RubricCited);
+        Assert.Equal("The multiplier applies to the dice", quote.RubricQuote);
+        Assert.Equal(Run78Q2EvidenceA, quote.Charge);
+    }
+
+    [Fact]
+    public void Extract_ASpanOnlyInATableHeaderRow_IsDropped()
+    {
+        const string answer =
+            "Quality changes the damage dice.\n\n"
+            + "| Quality | Effect on base damage |\n"
+            + "|---|---|\n"
+            + "| Exceptional | ×2 |\n"
+            + "| Elite | ×3 |";
+
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(
+            answer, "The rubric says the dice are multiplied, not the 'Effect on base damage' the answer describes.", Run78Q2Rubric));
+    }
+
     [Fact]
     public void Extract_TheSwitchOff_StillAnchorsTheRun76Q9RepeatedSpan_ButReadsNoRubricCharge()
     {

@@ -730,8 +730,17 @@ public static class BenchmarkAssessmentPrompt
     ///     reported in the run report and suite health (H1). Battery report accuracy fixes H2 to H4
     ///     change reports only. ScoringMethodVersion stays 13; CandidateSystemPromptSha256 and
     ///     ToolGuidesSha256 do not move.
+    /// v47: a quoted span's occurrence on a Markdown table header row never anchors it, since a
+    ///     header cell names a column and asserts nothing (H4). The claim verifier gains 3n (a line
+    ///     inside a switch or an if applies only under its case labels or condition) and 3o (a wiki
+    ///     page's hedge is no evidence of exceptions the code does not show) (H5). Reports and
+    ///     statistics only: the RubricContradictedBySource flag is displayed as "Rubric-charged
+    ///     deduction contradicted by source" (H1), with its contradiction lines (H2); per-answer views
+    ///     show member B's flags (H3); report wording (H7); battery context in reports (H8); and a
+    ///     battery's dimension composite is the panel mean (H9). ScoringMethodVersion stays 13;
+    ///     CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "46";
+    public const string HarnessVersion = "47";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

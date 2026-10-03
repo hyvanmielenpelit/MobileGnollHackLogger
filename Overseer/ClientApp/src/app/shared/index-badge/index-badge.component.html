@@ -1,0 +1,4 @@
+<span [class]="badgeClass" [style.--index-fill]="fill">
+  <span class="index-badge-ring" aria-hidden="true"></span>
+  <span class="index-badge-text"><span class="visually-hidden">{{ label }}&ngsp;</span>{{ shownValue }}@if (shownHalfWidth != null) {<span class="index-badge-half-width">&#160;±&#160;{{ shownHalfWidth }}</span>}<span class="visually-hidden">, out of 100</span></span>
+</span>

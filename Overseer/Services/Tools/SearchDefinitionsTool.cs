@@ -56,7 +56,11 @@ namespace Overseer.Services.Tools
             return _sourceCodeService;
         }
 
-        private const string HitGuidance = " The symbol occurs but no definition line matched this kind: try `kind: \"any\"`, or `source_code_search` with `context_lines` on the named file.";
+        /// <summary>The guidance for a symbol that occurs; a search under every kind is not told to retry with <c>any</c>.</summary>
+        private static string HitGuidance(string kind)
+            => string.IsNullOrWhiteSpace(kind) || kind.Equals("any", StringComparison.OrdinalIgnoreCase)
+                ? " The symbol occurs but no definition line matched: try `source_code_search` with `context_lines` on the named file."
+                : " The symbol occurs but no definition line matched this kind: try `kind: \"any\"`, or `source_code_search` with `context_lines` on the named file.";
 
         private const string NoHitGuidance = " Check the spelling, or use `list_indexed_files` / `source_code_search` with `filenames_only: true`.";
 
@@ -89,7 +93,7 @@ namespace Overseer.Services.Tools
 
             if (result.StartsWith(SourceMissContentBuilder.MissPrefix, StringComparison.Ordinal))
             {
-                result = SourceMissContentBuilder.Build(service, result, symbol, repository, HitGuidance, NoHitGuidance);
+                result = SourceMissContentBuilder.Build(service, result, symbol, repository, HitGuidance(kind), NoHitGuidance);
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = result });

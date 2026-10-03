@@ -13,6 +13,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 
 import { Subscription } from 'rxjs';
 
@@ -25,10 +26,14 @@ import {
   BenchmarkBatterySlotDto,
   BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
+import { IndexBadgeComponent } from '../../../shared/index-badge/index-badge.component';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
+import { ELAPSED_TICK_MS, startElapsedTicker } from '../../../utils/elapsed-ticker';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { RunFactBadge } from '../run-report-frame/run-facts';
+import { formatElapsed } from '../benchmark-run-format';
+import { RunFactBadge, RunFactModel, runFactBadges } from '../run-report-frame/run-facts';
+import { runStageCaption } from '../run-stage-labels';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
   INDEX_WITHHELD_HINT,
@@ -40,7 +45,6 @@ import {
   batteryPostRunGraceOpen,
   batteryReportDocumentsStatusName,
   batteryRunStatusLabel,
-  formatMs,
   formatNumber,
   httpErrorText,
   isFinishedBatteryRunStatus,
@@ -151,7 +155,7 @@ interface AttachSlot {
 @Component({
   selector: 'app-battery-progress-dialog',
   standalone: true,
-  imports: [ProviderBadgeComponent],
+  imports: [NgTemplateOutlet, ProviderBadgeComponent, IndexBadgeComponent],
   templateUrl: './battery-progress-dialog.component.html',
   styleUrls: ['./battery-progress-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -165,7 +169,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   static readonly POLL_INTERVAL_MS = 2000;
   /** Poll delays after consecutive failures; the last repeats. */
   static readonly POLL_BACKOFF_MS = [4000, 8000, 16000, 30000] as const;
-  static readonly ELAPSED_TICK_MS = 1000;
+  static readonly ELAPSED_TICK_MS = ELAPSED_TICK_MS;
 
   @Input() batteryRunId: number | null = null;
   @Input() visible = false;
@@ -218,7 +222,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   private isOpen = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
-  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+  /** Stops the elapsed ticker; null while none runs. */
+  private elapsedTimer: (() => void) | null = null;
   private visibilityHandler: (() => void) | null = null;
   private pollInFlight = false;
   private failureCount = 0;
@@ -254,6 +259,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   // --- Dialog lifecycle ------------------------------------------------------------------------
 
   private reset(): void {
+    this.stopElapsedTicker();
     this.batteryRun = null;
     this.reportJob = null;
     this.grid = [];
@@ -270,7 +276,6 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     }
     this.isOpen = true;
     this.startPolling();
-    this.startElapsedTicker();
     const dialog = this.dialog?.nativeElement;
     if (dialog && !dialog.open) {
       dialog.showModal();
@@ -387,8 +392,11 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         if (this.isOpen && (live || batteryAwaitsPostRun(run))) {
           this.schedulePoll(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
         }
+        // The ticker runs while the battery run is live, aligned to its start once that is known.
         if (!live) {
           this.stopElapsedTicker();
+        } else if (this.isOpen && this.elapsedTimer === null) {
+          this.startElapsedTicker();
         }
         if (this.isOpen && this.reportsStageCurrent) {
           this.pollReportJob(id);
@@ -427,19 +435,15 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     });
   }
 
+  /** Refreshes the elapsed times once per whole second of the battery run's own elapsed time. */
   private startElapsedTicker(): void {
     this.stopElapsedTicker();
-    this.elapsedTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-      this.cdr.markForCheck();
-    }, BatteryProgressDialogComponent.ELAPSED_TICK_MS);
+    this.elapsedTimer = startElapsedTicker(() => this.batteryRun?.startedAtUtc, () => this.cdr.markForCheck());
   }
 
   private stopElapsedTicker(): void {
     if (this.elapsedTimer !== null) {
-      clearInterval(this.elapsedTimer);
+      this.elapsedTimer();
       this.elapsedTimer = null;
     }
   }
@@ -511,7 +515,6 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         this.resumeRefusedForInstrument = false;
         this.batteryResumed.emit(run.id);
         this.startPolling();
-        this.startElapsedTicker();
         this.cdr.markForCheck();
       },
       error: (err) => {
@@ -671,15 +674,73 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     return this.batteryRun?.reportWriterModelConfigurationId != null;
   }
 
-  /** The report writer's name: the job's, else the configuration's, else its id. */
-  get reportWriterName(): string {
-    const writerId = this.batteryRun?.reportWriterModelConfigurationId;
-    if (writerId == null) return '';
-    if (this.reportJob?.writerConfigId === writerId && this.reportJob.writerDisplayName) {
-      return this.reportJob.writerDisplayName;
+  /**
+   * The report writer as a name and the badges `runFactBadges` gives it: from the battery run's own
+   * writer fields, else the report job's, else the System AI Configs list, else its configuration id.
+   */
+  get reportWriter(): { readonly name: string; readonly badges: RunFactBadge[] } | null {
+    const run = this.batteryRun;
+    const writerId = run?.reportWriterModelConfigurationId;
+    if (!run || writerId == null) return null;
+    const job = this.reportJob?.writerConfigId === writerId ? this.reportJob : null;
+    const config = this.workspace?.systemConfigs.find(c => c.id === writerId) ?? null;
+    const cached = this.reportWriterCache;
+    if (cached && cached.run === run && cached.job === job && cached.config === config) {
+      return cached.value;
     }
-    const config = this.workspace?.systemConfigs.find(c => c.id === writerId);
-    return config?.displayName || `Configuration #${writerId}`;
+    let model: RunFactModel;
+    if (run.reportWriterDisplayName || run.reportWriterModelId) {
+      model = {
+        name: run.reportWriterDisplayName || run.reportWriterModelId || '',
+        provider: run.reportWriterProvider || null,
+        thinkingLevel: run.reportWriterThinkingLevel ?? null,
+        reasoningMode: run.reportWriterReasoningMode ?? null,
+        serviceTier: run.reportWriterServiceTier ?? null,
+        customEndpoint: false
+      };
+    } else if (job?.writerDisplayName) {
+      model = {
+        name: job.writerDisplayName,
+        provider: job.writerProvider || null,
+        thinkingLevel: job.writerThinkingLevel ?? null,
+        reasoningMode: null,
+        serviceTier: null,
+        customEndpoint: false
+      };
+    } else if (config) {
+      model = {
+        name: config.displayName || config.modelId || `Configuration #${writerId}`,
+        provider: config.provider || null,
+        thinkingLevel: config.thinkingLevel ?? null,
+        reasoningMode: config.reasoningMode ?? null,
+        serviceTier: config.serviceTier ?? null,
+        customEndpoint: false
+      };
+    } else {
+      model = {
+        name: `Configuration #${writerId}`,
+        provider: null,
+        thinkingLevel: null,
+        reasoningMode: null,
+        serviceTier: null,
+        customEndpoint: false
+      };
+    }
+    const value = { name: model.name, badges: runFactBadges(model) };
+    this.reportWriterCache = { run, job, config, value };
+    return value;
+  }
+
+  private reportWriterCache: {
+    readonly run: BenchmarkBatteryRunDto;
+    readonly job: BenchmarkRunReportJobDto | null;
+    readonly config: unknown;
+    readonly value: { readonly name: string; readonly badges: RunFactBadge[] };
+  } | null = null;
+
+  /** The report writer's name; empty without a writer. */
+  get reportWriterName(): string {
+    return this.reportWriter?.name ?? '';
   }
 
   /** The battery analysis of the finished run is still being computed, within the grace. */
@@ -750,7 +811,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
       case 'Writing':
         return { key: 'reports', name, state: 'current', note: 'Writing the Executive Summary and the Researcher report' };
       case 'Completed': {
-        const written = (this.reportJob?.job?.documents ?? []).filter(doc => doc.documentId != null).length;
+        const written = run.reportDocumentsWrittenCount ?? 0;
         return {
           key: 'reports', name, state: 'done',
           note: written > 0 ? `${written} ${written === 1 ? 'document' : 'documents'} written` : 'Written'
@@ -833,7 +894,67 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   get elapsedLabel(): string {
     const run = this.batteryRun;
     if (!run?.startedAtUtc) return '—';
-    return formatMs(elapsedMsBetween(run.startedAtUtc, run.completedAtUtc));
+    return formatElapsed(elapsedMsBetween(run.startedAtUtc, run.completedAtUtc));
+  }
+
+  /** The Overall Index tile is shown once the analysis of the finished battery run has computed one. */
+  get overallIndexShown(): boolean {
+    const run = this.batteryRun;
+    return !!run && this.isFinished && run.overallIndex != null && !batteryAnalysisPending(run);
+  }
+
+  // --- Member cells ----------------------------------------------------------------------------
+
+  /** A running member's caption: *Run #79 · Stage 1 of 3 — Answering and grading*, or *Starting*. */
+  memberStageCaption(member: BenchmarkBatteryMemberDto): string {
+    const stage = runStageCaption(member.stage, member.answeredQuestionCount);
+    return stage ? `Run #${member.runId} · ${stage}` : `Run #${member.runId}`;
+  }
+
+  /** A running member's elapsed time from its own start; null without one. */
+  memberElapsedLabel(member: BenchmarkBatteryMemberDto): string | null {
+    return member.runStartedAtUtc ? formatElapsed(elapsedMsBetween(member.runStartedAtUtc, null)) : null;
+  }
+
+  /**
+   * A finished member's facts: *Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers*, each part
+   * left out when it is not recorded, the flagged answers also when there are none.
+   */
+  memberFactsLine(member: BenchmarkBatteryMemberDto): string {
+    const parts: string[] = [];
+    if (member.speedIndex != null && Number.isFinite(member.speedIndex)) {
+      parts.push(`Speed ${Math.round(member.speedIndex)}`);
+    }
+    const durationMs = member.durationMs
+      ?? (member.runStartedAtUtc && member.runCompletedAtUtc
+        ? elapsedMsBetween(member.runStartedAtUtc, member.runCompletedAtUtc)
+        : null);
+    if (durationMs != null) {
+      parts.push(formatElapsed(durationMs));
+    }
+    const refuted = member.claimsRefutedCount ?? 0;
+    parts.push(`${refuted} refuted ${refuted === 1 ? 'claim' : 'claims'}`);
+    const flagged = member.advisoryFlagAnswerCount ?? 0;
+    if (flagged > 0) {
+      parts.push(`${flagged} flagged ${flagged === 1 ? 'answer' : 'answers'}`);
+    }
+    return parts.join(' · ');
+  }
+
+  /**
+   * What an empty slot of a live battery run waits for: the suite before it in launch order (round 1
+   * for every suite, then round 2). Null when the battery run is not live.
+   */
+  pendingLabel(row: GridRow, cell: GridCell): string | null {
+    if (!this.isLive) return null;
+    const position = this.grid.indexOf(row);
+    if (position > 0) {
+      return `Waiting for suite ${this.grid[position - 1].suiteIndex + 1}`;
+    }
+    if (cell.slot.round > 1 && this.grid.length > 0) {
+      return `Waiting for suite ${this.grid[this.grid.length - 1].suiteIndex + 1}, round ${cell.slot.round - 1}`;
+    }
+    return 'Waiting to start';
   }
 
   chipClass(state: BatterySlotState): string {

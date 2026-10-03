@@ -344,23 +344,33 @@ export function buildBatteryRunFacts(battery: BenchmarkBatteryRunDto): RunFactRo
     }
   });
 
-  const grader = (name: string | null | undefined, role?: 'A' | 'B'): RunFactModel => ({
+  const grader = (
+    name: string | null | undefined,
+    provider: string | null | undefined,
+    thinkingLevel: string | null | undefined,
+    reasoningMode: string | null | undefined,
+    role?: 'A' | 'B'
+  ): RunFactModel => ({
     ...(role ? { role } : {}),
     name: name || 'not recorded',
-    provider: null,
-    thinkingLevel: null,
-    reasoningMode: null,
+    provider: provider || null,
+    thinkingLevel: thinkingLevel ?? null,
+    reasoningMode: reasoningMode ?? null,
     serviceTier: null,
     customEndpoint: false
   });
+  const assessor = (role?: 'A') =>
+    grader(battery.assessorLabel, battery.assessorProvider, battery.assessorThinkingLevel, battery.assessorReasoningMode, role);
   if (battery.coAssessorLabel) {
+    const coAssessor = grader(battery.coAssessorLabel, battery.coAssessorProvider, battery.coAssessorThinkingLevel,
+      battery.coAssessorReasoningMode, 'B');
     rows.push({
       key: 'assessor',
       label: 'Assessors',
-      item: { kind: 'models', models: [grader(battery.assessorLabel, 'A'), grader(battery.coAssessorLabel, 'B')] }
+      item: { kind: 'models', models: [assessor('A'), coAssessor] }
     });
   } else {
-    rows.push({ key: 'assessor', label: 'Assessor', item: { kind: 'models', models: [grader(battery.assessorLabel)] } });
+    rows.push({ key: 'assessor', label: 'Assessor', item: { kind: 'models', models: [assessor()] } });
   }
 
   if (battery.verboseMode !== undefined) {

@@ -398,8 +398,14 @@ with the reason it is not. The footer holds **Run in Background** (or **Close**)
 Battery Run Report (§ 4.7). The dialog is opened from the banner's **Show Battery Progress**, a Run
 History battery card's **Show progress** and the Battery Run Report's *Show progress* action.
 
-**Header and stage rail.** Under the heading a model line names the tested model with its provider and
-thinking badges, and a *Report writer* fact appears when the battery names one. The body runs, in order:
+**Header and stage rail.** Under the heading a *Model under test* line names the tested model, and a
+*Report writer* line appears when the battery names one. Both are drawn by one template: the name, then
+the `runFactBadges` badges in their order — thinking level, reasoning mode, provider and requested
+service tier (`testedServiceTier` for the model under test). The writer's name and badges come from the
+battery run's own `reportWriterDisplayName`, `reportWriterModelId`, `reportWriterProvider`,
+`reportWriterThinkingLevel`, `reportWriterReasoningMode` and `reportWriterServiceTier`, else from the
+report job's writer (name, provider, thinking level), else from the System AI Configs list, else
+*Configuration #id*. The body runs, in order:
 a stage rail, the labelled progress bar, the state block, a stat strip and the grid. The rail is the
 single-run dialog's (`.run-stage-rail`), with two stages, or three with a writer:
 
@@ -410,10 +416,12 @@ single-run dialog's (`.run-stage-rail`), with two stages, or three with a writer
    ends with *Not computed: use Recompute in the Battery Run Report*.
 3. **AI-written reports**, only with a writer, from the battery run's `reportDocumentsStatus`: current
    while *Pending* (*Waiting for the report writer*, with the queue position) or *Writing* (*Writing the
-   Executive Summary and the Researcher report*); done at *Completed* (*2 documents written*) or
-   *CompletedWithWarnings* (*Written with warnings*); ended with the message at *Failed*, *Skipped* or
-   *Canceled*, and with *Not started* when it is still *NotRequested* after the grace. While the stage is
-   current the dialog also polls the battery report job.
+   Executive Summary and the Researcher report*); done at *Completed* (*2 documents written*, *1
+   document written*, or *Written* when the count is 0) or *CompletedWithWarnings* (*Written with
+   warnings*); ended with the message at *Failed*, *Skipped* or *Canceled*, and with *Not started* when
+   it is still *NotRequested* after the grace. While the stage is current the dialog also polls the
+   battery report job. The *done* count is the battery run's `reportDocumentsWrittenCount`, never the
+   report job's documents: the job stops being polled once the stage settles.
 
 Each stage's state is also given in visually hidden text. The rail stacks below `40rem` of dialog width
 (an inline-size container). **Post-run polling.** A Completed or CompletedWithErrors battery keeps being
@@ -422,6 +430,44 @@ says so: *Computing the battery analysis…*, *Writing the AI reports…*, then 
 reports written* (or *· reports failed*). The completion chime fires once, after that post-run work,
 followed by a Run History reload; a member run does not chime while its battery still awaits post-run
 work.
+
+**Stat strip and elapsed time.** The strip holds *Status*, *Elapsed*, *Suites complete*, *Usable
+slots* and *Failed*, and a sixth tile, *Overall Index*, once the finished battery run's analysis has
+computed one (absent before, and while the analysis is pending): an `app-index-badge` of size `md`
+holding `overallIndex` and `overallIndexHalfWidth` (*84 ± 3*). The rail's *Overall Index 84.9* note
+stays text. *Elapsed*, each running member's elapsed time and each finished member's duration use
+`formatElapsed` (`benchmark-run-format.ts`) — *45s*, *3m 05s*, *1h 02m 05s*, whole seconds floored —
+the format of the run and multi-run progress dialogs. The display refreshes through the same
+`startElapsedTicker` as those dialogs ([`ai-benchmark.md`](ai-benchmark.md) § *Run Progress Dialog*,
+*Elapsed*), aligned to whole seconds of the battery run's own start; it starts on the first poll that
+shows the battery run live and stops when it is no longer live. The Battery Run Report keeps its own
+duration format (`formatMs`).
+
+**The members table.** Under its status chip, each grid cell says where its member stands:
+
+- **Running:** *Run #79 · Stage 1 of 3 — Answering and grading* from the member's server `stage`
+  (`runStageCaption` in `run-stage-labels.ts`, whose stage names the run progress dialog's rail shares;
+  a member has no writer, so three stages; without a stage, *Starting* until its first answer, then
+  *Answering and grading*), with *· attached* for an attached member; a native `<progress>` labelled by
+  the visible *13 of 18 questions answered*; and *Elapsed 6m 12s* from the member's `runStartedAtUtc`.
+- **Completed with index:** an `app-index-badge` (*85 ± 4*, from `qualityIndex` and
+  `qualityIndexHalfWidth`), then one facts line — *Speed 71 · 13m 40s · 0 refuted claims · 3 flagged
+  answers* — from `speedIndex`, `durationMs` (else the member's start and end), `claimsRefutedCount`
+  and `advisoryFlagAnswerCount`, a part left out when it is not recorded and the flagged answers also
+  when there are none; then *Run #78*.
+- **Pending (no member yet, battery run live):** *Waiting for suite s* (the suite before it in launch
+  order), in the first suite's cell of a later round *Waiting for suite K, round r* (the last suite of
+  the round before), or *Waiting to start*, in muted text.
+- **Index withheld, instrument changed and failed** cells keep *Run #N* (with *· Index n* when one is
+  recorded) and their hints.
+
+The member fields `stage`, `qualityIndexHalfWidth`, `durationMs`, `claimsRefutedCount` and
+`advisoryFlagAnswerCount` are on `BenchmarkBatteryMemberDto`. The cells add no live region: the stage
+line stays the dialog's only `role="status"`. **`app-index-badge`** (`shared/index-badge/`) is the
+shared Intelligence Index badge: the whole number in the Run History tier colors (green from 80, amber
+from 50, red below, on the rounded value), the half-width as *± n*, a decorative ring filled to the
+index, and a visually hidden label (*Intelligence Index 85 ± 4, out of 100*); the color repeats the
+number and never replaces it.
 
 **A member's own progress.** A member link opens the run progress dialog on **that** run, which stays
 on it when the battery moves on to its next member; the banner keeps showing the live member, and
@@ -779,7 +825,11 @@ index* (`ai-benchmark.md` § 1, *Runs That Stop Early*).
   showing how much any one suite drives the result.
 - **Dimensions:** `Σ_s v_s · dim_s` for Accuracy, Completeness, Conciseness and Readability, from the
   group layer's per-dimension means. A dimension that is null in any suite is null in the composite,
-  naming the suite.
+  naming the suite. In a panel run an answer's dimension is the **panel mean** — member A's stored
+  score and member B's level scored on the run's own profile, averaged; null unless both scored it —
+  as the run report's *Panel* row and the index read it, so the dimensions describe the same grading
+  as the headline. An analysis stored before harness 47 holds member A's dimensions; **Recompute**
+  refreshes it, and the index does not move.
 - **Critical-error rate:** `Σ_s v_s · rate_s`, with `rate_s` the mean of the suite's item
   critical-error rates.
 
@@ -979,6 +1029,26 @@ hash, conditions, and the chat prompt under test from the first member), *Overal
 (with both components, ν and the *R* < 3 sentence), *Suite Profile*, *Weighting Sensitivity*,
 *Leave-One-Suite-Out*, *Quality Dimensions*, *Speed*, *Cost*, *Token and Tool Usage*, *Paired Battery
 Comparison* when the analysis carries one, and *Method and Limits*.
+
+*Battery Manifest* (§ 1) also names who measured and wrote the battery run, and what came before it.
+Both are read when the report is rendered, not from the persisted analysis:
+
+- **Graders.** A table of roles — model under test (with its reasoning mode and service tier),
+  assessor (panel member A), co-assessor (panel member B, or *none* for a single assessor), reference
+  reader (the second reader of a single-assessor run) with its coverage, claim verifier and report
+  writer — each with its model, provider and thinking level. Every role but the writer is read from
+  the snapshots of the **newest usable member run**, which the block names; the writer is the battery
+  run's own configuration, *since deleted* when that configuration is gone, and grades nothing.
+- **§ 1.2 Earlier Runs of This Battery.** Up to five finished battery runs of the same battery that
+  started before this one, newest first: battery run, finished time, harness version, Overall Index ±
+  half-width from each one's latest analysis (*Incomplete*, or *not analysed*), and *Same class* —
+  whether its comparability class equals this analysis's (M9). Under the table: *"Only a run of the
+  same class may be compared with this one; use the Paired Test tab for a test."* Omitted when there
+  is none.
+
+A member run's own report names its battery in its manifest, after the *Suite origin* line:
+*Battery: Battery run #<id> (<battery name>, revision <r>), suite <s> of <K>, round <r> of <R>*
+([`ai-benchmark.md`](ai-benchmark.md) § *Harness Version 47 Updates*).
 
 *Token and Tool Usage* (§ 9) also reads the members' per-call tool records, the one part of the report
 not taken from the persisted analysis: *Tool call outcomes: N failed, M refused by the tool budget*, or

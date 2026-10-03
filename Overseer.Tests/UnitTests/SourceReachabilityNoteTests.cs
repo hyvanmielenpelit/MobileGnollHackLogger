@@ -119,6 +119,88 @@ public class SourceReachabilityNoteTests
         Assert.Null(index.GetView().DefinitionAt("win/Qt/qt_win.cpp", 1));
     }
 
+    private static readonly string[] CallbackH =
+    {
+        "#ifdef _WIN32",
+        "#define DLLEXPORT __declspec(dllexport)",
+        "#elif defined(__GNUC__)",
+        "#  define DLLEXPORT __attribute__((visibility(\"default\")))",
+        "#else",
+        "#define DLLEXPORT",
+        "#endif"
+    };
+
+    private static readonly string[] GnhapiH =
+    {
+        "DLLEXPORT int RunGnollHack(",
+        "    char* gnhdir,",
+        "    int runflags",
+        ");"
+    };
+
+    private static readonly string[] GnhapiC =
+    {
+        "int",                                          // 1
+        "RunGnollHack(char* gnhdir, int runflags)",     // 2
+        "{",                                            // 3
+        "    return 0;",                                // 4
+        "}",                                            // 5
+        "",                                             // 6
+        "DLLEXPORT const char*",                        // 7
+        "LibGetVersionString(void)",                    // 8
+        "{",                                            // 9
+        "    return 0;",                                // 10
+        "}",                                            // 11
+        "",                                             // 12
+        "int",                                          // 13
+        "unexported_helper(void)",                      // 14
+        "{",                                            // 15
+        "    return 0;",                                // 16
+        "}"                                             // 17
+    };
+
+    private static SourceLivenessIndex ExportIndex()
+    {
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["win/win32/xpl/libshare/callback.h"] = CallbackH,
+            ["win/win32/xpl/libshare/gnhapi.h"] = GnhapiH,
+            ["win/win32/xpl/libshare/gnhapi.c"] = GnhapiC
+        };
+        return new SourceLivenessIndex(() => corpus);
+    }
+
+    [Fact]
+    public void IsLive_AnExportedFunctionWithNoCaller_IsLive()
+    {
+        var index = ExportIndex();
+
+        Assert.True(index.IsLive("RunGnollHack"));
+        Assert.True(index.IsLive("LibGetVersionString"));
+        Assert.Null(SourceReachabilityNote.ForFunctionDefinitionResult(
+            "--- win/win32/xpl/libshare/gnhapi.c:L1-L5 (RunGnollHack, 5 lines) ---\nint\nRunGnollHack(char* gnhdir, int runflags)\n{\n    return 0;\n}",
+            index));
+    }
+
+    [Fact]
+    public void IsLive_AnUnexportedFunctionWithNoCaller_StillGetsTheNote()
+    {
+        var index = ExportIndex();
+
+        Assert.False(index.IsLive("unexported_helper"));
+        Assert.Equal(Note("unexported_helper"), SourceReachabilityNote.ForFunctionDefinitionResult(
+            "--- win/win32/xpl/libshare/gnhapi.c:L13-L17 (unexported_helper, 5 lines) ---\nint\nunexported_helper(void)\n{\n    return 0;\n}",
+            index));
+    }
+
+    [Fact]
+    public void Exported_TheDllExportDefines_NameNoFunction()
+    {
+        var view = ExportIndex().GetView();
+
+        Assert.Equal(new[] { "LibGetVersionString", "RunGnollHack" }, view.Exported.OrderBy(n => n, StringComparer.Ordinal));
+    }
+
     [Fact]
     public void IsLive_AnUnavailableCorpus_IsNull()
     {
@@ -311,5 +393,17 @@ public class SourceReachabilityNoteTests
 
         Assert.True(index.IsLive("dopray"));
         Assert.Null(SourceReachabilityNote.ForViewResult(DefinitionView(index, "src/pray.c", "dopray"), index));
+    }
+
+    [Fact]
+    public void RealCorpus_ExportedFunctions_AreLive()
+    {
+        var index = RealIndexOrSkip();
+        var exported = index.GetView().Exported;
+
+        Assert.Contains("RunGnollHack", exported);
+        Assert.Contains("LibGetMaxManuals", exported);
+        Assert.DoesNotContain("__declspec", exported);
+        Assert.True(index.IsLive("RunGnollHack"));
     }
 }

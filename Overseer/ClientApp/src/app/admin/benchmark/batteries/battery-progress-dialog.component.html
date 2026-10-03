@@ -2,6 +2,27 @@
 <dialog #batteryProgressDialog class="gh-dialog gh-dialog-fullscreen battery-progress-dialog"
         aria-labelledby="bpDialogTitle"
         (cancel)="onCancel($event)">
+  <!-- A model's name and its runFactBadges, for the model under test and the report writer alike. -->
+  <ng-template #modelIdentity let-name let-badges="badges">
+    <span class="model-name">{{ name }}</span>
+    @for (badge of badges; track badge.kind) {
+      @switch (badge.kind) {
+        @case ('provider') {
+          <app-provider-badge [provider]="badge.provider" />
+        }
+        @case ('thinking') {
+          <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+        }
+        @case ('reasoning') {
+          <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+        }
+        @default {
+          <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+        }
+      }
+    }
+  </ng-template>
+
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
@@ -16,29 +37,17 @@
             <div class="bp-header-fact">
               <dt>Model under test</dt>
               <dd class="bp-model-line">
-                <span class="model-name">{{ modelName }}</span>
-                @for (badge of modelBadges; track badge.kind) {
-                  @switch (badge.kind) {
-                    @case ('provider') {
-                      <app-provider-badge [provider]="badge.provider" />
-                    }
-                    @case ('thinking') {
-                      <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
-                    }
-                    @case ('reasoning') {
-                      <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
-                    }
-                    @default {
-                      <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
-                    }
-                  }
-                }
+                <ng-container [ngTemplateOutlet]="modelIdentity"
+                              [ngTemplateOutletContext]="{ $implicit: modelName, badges: modelBadges }" />
               </dd>
             </div>
-            @if (hasReportWriter) {
+            @if (reportWriter; as writer) {
               <div class="bp-header-fact bp-report-writer">
                 <dt>Report writer</dt>
-                <dd><span class="model-name">{{ reportWriterName }}</span></dd>
+                <dd class="bp-writer-line">
+                  <ng-container [ngTemplateOutlet]="modelIdentity"
+                                [ngTemplateOutletContext]="{ $implicit: writer.name, badges: writer.badges }" />
+                </dd>
               </div>
             }
           </dl>
@@ -142,6 +151,12 @@
             <dt>Failed</dt>
             <dd>{{ run.failedMemberCount }}</dd>
           </div>
+          @if (overallIndexShown) {
+            <div class="run-stat bp-stat-index">
+              <dt>Overall Index</dt>
+              <dd><app-index-badge size="md" [value]="run.overallIndex ?? 0" [halfWidth]="run.overallIndexHalfWidth" /></dd>
+            </div>
+          }
         </dl>
 
         <div class="bp-grid-wrap">
@@ -186,13 +201,39 @@
                         }
                       </div>
                       @if (cell.slot.member; as member) {
-                        <p class="bp-cell-meta">
-                          Run #{{ member.runId }}
-                          @if (member.origin === 'Attached') { · attached }
-                          @if (member.qualityIndex != null) { · Index {{ member.qualityIndex }} }
-                        </p>
-                        @if (cell.state === 'running') {
-                          <p class="bp-cell-meta">{{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered</p>
+                        @switch (cell.state) {
+                          @case ('running') {
+                            <p class="bp-cell-meta bp-member-stage">
+                              {{ memberStageCaption(member) }}
+                              @if (member.origin === 'Attached') { · attached }
+                            </p>
+                            @if (member.totalQuestionCount > 0) {
+                              <progress class="job-progress bp-member-progress"
+                                        [max]="member.totalQuestionCount" [value]="member.answeredQuestionCount"
+                                        [attr.aria-labelledby]="'bp-member-progress-' + member.memberId"></progress>
+                            }
+                            <p class="bp-cell-meta" [id]="'bp-member-progress-' + member.memberId">{{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered</p>
+                            @if (memberElapsedLabel(member); as elapsed) {
+                              <p class="bp-cell-meta bp-member-elapsed">Elapsed {{ elapsed }}</p>
+                            }
+                          }
+                          @case ('completed') {
+                            <div class="bp-member-index">
+                              <app-index-badge [value]="member.qualityIndex ?? 0" [halfWidth]="member.qualityIndexHalfWidth" />
+                            </div>
+                            <p class="bp-cell-meta bp-member-facts">{{ memberFactsLine(member) }}</p>
+                            <p class="bp-cell-meta">
+                              Run #{{ member.runId }}
+                              @if (member.origin === 'Attached') { · attached }
+                            </p>
+                          }
+                          @default {
+                            <p class="bp-cell-meta">
+                              Run #{{ member.runId }}
+                              @if (member.origin === 'Attached') { · attached }
+                              @if (member.qualityIndex != null) { · Index {{ member.qualityIndex }} }
+                            </p>
+                          }
                         }
                         @if (cell.state === 'indexWithheld') {
                           <p class="bp-cell-hint">{{ indexWithheldHint }}</p>
@@ -202,6 +243,10 @@
                         }
                         @if (cell.state === 'failed' && member.unusableReason) {
                           <p class="bp-cell-hint">{{ member.unusableReason }}</p>
+                        }
+                      } @else if (cell.state === 'pending') {
+                        @if (pendingLabel(row, cell); as waiting) {
+                          <p class="bp-cell-meta bp-cell-waiting">{{ waiting }}</p>
                         }
                       }
                       @if (cell.superseded.length > 0) {

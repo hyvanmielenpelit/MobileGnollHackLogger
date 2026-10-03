@@ -20,7 +20,8 @@ using Overseer.Services.Tools;
 /// or a value reference to <c>name</c> (a function pointer passed or stored), outside comments,
 /// string literals and <c>#if 0</c> regions, and outside its own definition, a prototype and a
 /// <c>#define</c> of it. A function reached only through a macro that builds its name has no
-/// reference either.
+/// reference either. A function exported with <c>DLLEXPORT</c> or <c>__declspec(dllexport)</c>
+/// counts as live.
 ///
 /// Built over the C sources and headers of the corpus it is given, rebuilt when that corpus changes
 /// (for the GnollHack repository, when the root or its HEAD SHA changes), and each name's answer is
@@ -149,6 +150,7 @@ public sealed class SourceLivenessIndex
             Source = source;
             Stripped = stripped;
             References = references ?? new Dictionary<string, string[]>();
+            Exported = ExportedFunctions(Stripped.Values.Concat(References.Values));
         }
 
         public object Source { get; }
@@ -163,8 +165,14 @@ public sealed class SourceLivenessIndex
         /// </summary>
         public IReadOnlyDictionary<string, string[]> References { get; }
 
+        /// <summary>
+        /// Functions declared or defined with <c>DLLEXPORT</c> or <c>__declspec(dllexport)</c>. An
+        /// exported function is called from outside the C corpus, so it counts as live.
+        /// </summary>
+        public IReadOnlySet<string> Exported { get; }
+
         /// <summary>Whether <paramref name="name"/> has a live reference, memoized for this build.</summary>
-        public bool IsLive(string name) => _live.GetOrAdd(name, n => HasLiveCallSite(this, n));
+        public bool IsLive(string name) => _live.GetOrAdd(name, n => Exported.Contains(n) || HasLiveCallSite(this, n));
 
         /// <summary>The function whose column-0 definition is on <paramref name="line"/> (1-based) of <paramref name="path"/>, or null.</summary>
         public string? DefinitionAt(string path, int line)
@@ -341,6 +349,47 @@ public sealed class SourceLivenessIndex
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// An export marker followed, before any <c>;</c> or <c>(</c>, by the function's <c>name(</c>:
+    /// <c>DLLEXPORT const char* name(</c>, <c>int __declspec(dllexport) __stdcall name(</c>.
+    /// </summary>
+    private static readonly Regex ExportedFunctionRegex = new(
+        @"(?:\bDLLEXPORT\b|\b__declspec\s*\(\s*dllexport\s*\))[^;(]*?\b([A-Za-z_]\w*)\s*\(",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private const int MaxExportContinuationLines = 3;
+    private static readonly char[] ExportDeclarationEnds = { '(', ';', '{' };
+
+    /// <summary>
+    /// The names <see cref="ExportedFunctionRegex"/> finds in <paramref name="files"/> (stripped
+    /// lines), outside preprocessor lines. A marker line without <c>(</c> is read together with up
+    /// to three following lines, for <c>DLLEXPORT int</c> above a column-0 <c>name(</c>.
+    /// </summary>
+    private static HashSet<string> ExportedFunctions(IEnumerable<string[]> files)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var lines in files)
+        {
+            for (int row = 0; row < lines.Length; row++)
+            {
+                string line = lines[row];
+                if (!line.Contains("DLLEXPORT", StringComparison.Ordinal) && !line.Contains("dllexport", StringComparison.Ordinal)) continue;
+                if (line.TrimStart().StartsWith('#')) continue;
+
+                string text = line;
+                for (int next = row + 1; next < lines.Length && next <= row + MaxExportContinuationLines && text.IndexOfAny(ExportDeclarationEnds) < 0; next++)
+                {
+                    text += " " + lines[next];
+                }
+
+                var match = ExportedFunctionRegex.Match(text);
+                if (match.Success) names.Add(match.Groups[1].Value);
+            }
+        }
+
+        return names;
     }
 
     /// <summary>

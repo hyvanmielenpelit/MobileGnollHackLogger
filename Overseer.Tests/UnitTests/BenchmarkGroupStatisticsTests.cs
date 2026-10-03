@@ -1489,6 +1489,80 @@ public class BenchmarkGroupStatisticsTests
         Assert.Null(accuracyStats.ConfidenceHalfWidth);
     }
 
+    /// <summary>Member B's verdict record carrying the four levels, as a panel answer stores it.</summary>
+    private static string MemberBRecord(int? accuracy, int? completeness, int? conciseness = null, int? readability = null)
+        => new BenchmarkCoAssessmentRecord
+        {
+            AccuracyLevel = accuracy,
+            CompletenessLevel = completeness,
+            ConcisenessLevel = conciseness,
+            ReadabilityLevel = readability
+        }.Serialize();
+
+    /// <summary>
+    /// A panel run's dimensions are the panel's, as its index is: per answer the mean of member A's
+    /// score and member B's level on the run's level table, the run report's Panel row per answer.
+    /// </summary>
+    [Fact]
+    public void Dimensions_OverAPanelRun_AreThePanelMeanPerAnswer_AndSkipAnAnswerOneMemberDidNotScore()
+    {
+        // Default level table 1 / 15 / 35 / 55 / 72 / 87 / 100.
+        //   Accuracy Q1: member A 96, member B level 6 (100) → 98
+        //   Accuracy Q2: member A 80, member B level 5 (87)  → 83.5
+        //   run mean 90.75; member A alone would give 88
+        // Q2's member-B record carries no Completeness level, so only Q1 has a panel Completeness:
+        //   member A 84, member B level 4 (72) → 78; member A alone would give 82
+        var questions = Questions(50, 50);
+        var run = PanelRun(1, questions, new[] { 90, 80 }, new[] { 90, 80 });
+        Score(run, accuracy: new[] { 96, 80 }, completeness: new[] { 84, 80 });
+        run.Answers[0].CoAssessmentJson = MemberBRecord(6, 4);
+        run.Answers[1].CoAssessmentJson = MemberBRecord(5, null);
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { run });
+
+        var accuracyStats = result.Dimensions.Single(d => d.Dimension == "Accuracy");
+        Assert.Equal(new[] { 90.75 }, accuracyStats.PerRunMeans);
+        Assert.Equal(90.75, accuracyStats.Mean!.Value, 9);
+        Assert.Equal(98.0, accuracyStats.ItemMeans[questions[0].Id], 9);
+        Assert.Equal(83.5, accuracyStats.ItemMeans[questions[1].Id], 9);
+
+        var completenessStats = result.Dimensions.Single(d => d.Dimension == "Completeness");
+        Assert.Equal(new[] { 78.0 }, completenessStats.PerRunMeans);
+        Assert.False(completenessStats.ItemMeans.ContainsKey(questions[1].Id));
+
+        // Neither member scored Conciseness, so the panel has none.
+        var concisenessStats = result.Dimensions.Single(d => d.Dimension == "Conciseness");
+        Assert.Empty(concisenessStats.PerRunMeans);
+        Assert.Null(concisenessStats.Mean);
+    }
+
+    [Fact]
+    public void Dimensions_LeaveOutAPanelAnswerMemberBDidNotScore_AndReadASingleAssessorRunAsBefore()
+    {
+        // Panel run 1: Q1 member A 90 + member B level 6 (100) → 95. Q2's member B failed, so Q2
+        // has no panel Accuracy even though its record carries a level: the run mean is 95.
+        // Single-assessor run 2: member A's own 70 and 80, mean 75, whatever its stray record says.
+        //   pooled mean (95 + 75) / 2 = 85
+        var questions = Questions(50, 50);
+        var panel = PanelRun(1, questions, new[] { 90, 60 }, new[] { 90, 60 });
+        Score(panel, accuracy: new[] { 90, 60 });
+        panel.Answers[0].CoAssessmentJson = MemberBRecord(6, null);
+        panel.Answers[1].CoAssessmentJson = MemberBRecord(1, null);
+        panel.Answers[1].CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+
+        var single = Run(2, questions, new[] { 70, 80 });
+        Score(single, accuracy: new[] { 70, 80 });
+        single.Answers[0].CoAssessmentJson = MemberBRecord(0, null);
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { panel, single });
+
+        var accuracyStats = result.Dimensions.Single(d => d.Dimension == "Accuracy");
+        Assert.Equal(new[] { 95.0, 75.0 }, accuracyStats.PerRunMeans);
+        Assert.Equal(85.0, accuracyStats.Mean!.Value, 9);
+        Assert.Equal((95.0 + 70.0) / 2.0, accuracyStats.ItemMeans[questions[0].Id], 9);
+        Assert.Equal(80.0, accuracyStats.ItemMeans[questions[1].Id], 9);
+    }
+
     // --- Token, tool and claim-verification usage ------------------------------------------------
 
     [Fact]

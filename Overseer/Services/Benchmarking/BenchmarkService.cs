@@ -9055,7 +9055,8 @@ public class BenchmarkService
     /// <summary>
     /// The index in <paramref name="normalizedAnswer"/> where a quoted span is placed. Every
     /// occurrence, ignoring case and, with <paramref name="wholeWords"/>, only where it does not
-    /// start or end inside a word, is put on its line: the table row it is in, else its enclosing
+    /// start or end inside a word, and not on a Markdown table header row
+    /// (<see cref="IsTableHeaderRow"/>), is put on its line: the table row it is in, else its enclosing
     /// sentence or list item (<see cref="EnclosingSentence"/>). When all lie on one line, the first
     /// occurrence. Otherwise the line the charge clause names: a table row whose label the clause
     /// names (<see cref="NamesLabel"/>) ranks above every other line, and lines that tie on that rank
@@ -9078,7 +9079,9 @@ public class BenchmarkService
         {
             int at = normalizedAnswer.IndexOf(normalizedQuote, from, StringComparison.OrdinalIgnoreCase);
             if (at < 0) break;
-            if (!wholeWords || IsWholeWords(normalizedAnswer, at, normalizedQuote.Length))
+            // A header cell names a column and asserts nothing.
+            if ((!wholeWords || IsWholeWords(normalizedAnswer, at, normalizedQuote.Length))
+                && !IsTableHeaderRow(answerText, map[at]))
             {
                 occurrences.Add(at);
             }
@@ -9153,6 +9156,34 @@ public class BenchmarkService
     /// <summary>Whether the line holding <paramref name="index"/> is a Markdown heading.</summary>
     private static bool IsHeadingLine(string text, int index)
         => text[PhysicalLine(text, index).Start] == '#';
+
+    /// <summary>
+    /// Whether the line holding <paramref name="index"/> is a Markdown table header row: a line
+    /// starting with <c>|</c>, not itself a separator row, whose next non-blank line is a separator
+    /// row (<see cref="IsTableSeparatorRow"/>).
+    /// </summary>
+    private static bool IsTableHeaderRow(string text, int index)
+    {
+        var (start, end) = PhysicalLine(text, index);
+        if (text[start] != '|' || IsTableSeparatorRow(text.Substring(start, end - start + 1)))
+        {
+            return false;
+        }
+
+        int newline = text.IndexOf('\n', end + 1);
+        while (newline >= 0)
+        {
+            int next = text.IndexOf('\n', newline + 1);
+            string line = text.Substring(newline + 1, (next < 0 ? text.Length : next) - newline - 1).Trim();
+            if (line.Length > 0)
+            {
+                return IsTableSeparatorRow(line);
+            }
+            newline = next;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// The words of <paramref name="text"/>, lower-cased: runs of letters joined by apostrophes, a

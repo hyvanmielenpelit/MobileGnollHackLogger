@@ -20,6 +20,7 @@ import {
 import { BenchmarkBackgroundActivityService } from '../../../services/benchmark-background-activity.service';
 import { BenchmarkPollTickerService, BenchmarkPollTickerHandle } from '../../../services/benchmark-poll-ticker.service';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { ELAPSED_TICK_MS, startElapsedTicker } from '../../../utils/elapsed-ticker';
 import { Subject, Subscription } from 'rxjs';
 import { refusalText, reportDocumentsStatusOf, formatStatus } from '../benchmark-run-format';
 import { batteryAwaitsPostRun } from '../batteries/battery.models';
@@ -70,7 +71,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   // Active Run Tracking
   static readonly RUN_POLL_INTERVAL_MS = 2000;
 
-  static readonly RUN_ELAPSED_TICK_MS = 1000;
+  static readonly RUN_ELAPSED_TICK_MS = ELAPSED_TICK_MS;
 
   /**
    * A single failed poll is noise — a dropped request, a momentary 502 — and stopping the tab's
@@ -100,7 +101,8 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
    */
   lostContact: BenchmarkLostContactNotice | null = null;
 
-  runElapsedInterval: any = null;
+  /** Stops the dialog's elapsed ticker; null while none runs. */
+  runElapsedInterval: (() => void) | null = null;
 
   lastRunPollAtUtc: string | null = null;
 
@@ -1050,21 +1052,29 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     }
   }
 
+  /** Refreshes the dialog's elapsed time once per whole elapsed second (`startElapsedTicker`). */
   startRunElapsedTicker(): void {
     this.stopRunElapsedTicker();
-    this.runElapsedInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        return;
-      }
-      this.viewSync.notify();
-    }, BenchmarkActiveRunMonitor.RUN_ELAPSED_TICK_MS);
+    this.runElapsedInterval = startElapsedTicker(() => this.runElapsedStartUtc, () => this.viewSync.notify());
   }
 
   stopRunElapsedTicker(): void {
     if (this.runElapsedInterval) {
-      clearInterval(this.runElapsedInterval);
+      this.runElapsedInterval();
       this.runElapsedInterval = null;
     }
+  }
+
+  /**
+   * The start the dialog's elapsed time counts from: the re-run's under a re-run scope, else the run's.
+   */
+  private get runElapsedStartUtc(): string | null {
+    const run = this.dialogRunDetail;
+    if (!run) return null;
+    const scoped = (run.rerunScopeOrderIndexes?.length ?? 0) > 0
+      || (this.dialogFollowsLiveRun && this.rerunScopeOrderIndexes.length > 0);
+    if (scoped && run.rerunStartedAtUtc) return run.rerunStartedAtUtc;
+    return run.startedAtUtc ?? null;
   }
 
   /**

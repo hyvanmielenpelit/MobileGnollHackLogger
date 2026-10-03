@@ -11,6 +11,8 @@ import {
   StripText,
   TextMeasurer,
   TextWrapper,
+  bindFigureUnits,
+  canvasTextWrapper,
   chooseCardImageLayout,
   chooseStripLayout,
   composeCardImage,
@@ -507,6 +509,25 @@ describe('key figures image', () => {
       const noted = chooseStripLayout(cellsOf(7), { ...STRIP_TEXT, footnotes: ['* One', '* Two'] }, noWrap);
       expect(noted.footnoteLines).toEqual([['* One'], ['* Two']]);
       expect(noted.naturalHeight).toBe(plain.naturalHeight + 12 + 17 + 2 + 17);
+    });
+  });
+
+  describe('figures and their units', () => {
+    it('joins each figure to its unit with a non-breaking space', () => {
+      expect(bindFigureUnits('median 14.3 s')).toBe('median 14.3\u00A0s');
+      expect(bindFigureUnits('850 ms, 4 min 05 s')).toBe('850\u00A0ms, 4\u00A0min 05\u00A0s');
+      expect(bindFigureUnits('31 % of estimated total')).toBe('31\u00A0% of estimated total');
+      expect(bindFigureUnits('3 disagreement(s) over 10 answers')).toBe('3 disagreement(s) over 10 answers');
+      expect(bindFigureUnits('2 suites · 18 asked')).toBe('2 suites · 18 asked');
+    });
+
+    it('never wraps a caption between a figure and its unit', () => {
+      const context = document.createElement('canvas').getContext('2d')!;
+      const wrap = canvasTextWrapper(context);
+
+      // A column too narrow for any two words: every break the wrapper may take, it takes.
+      expect(wrap('median 14.3 s · mean 850 ms', 1, 14, '400'))
+        .toEqual(['median', '14.3\u00A0s', '·', 'mean', '850\u00A0ms']);
     });
   });
 

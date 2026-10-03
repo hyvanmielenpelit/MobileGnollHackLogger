@@ -678,6 +678,12 @@ public class BenchmarkRunAnswerDto
     public int AnswerFlags { get; set; }
     public List<string> AnswerFlagNames { get; set; } = new();
 
+    /// <summary>
+    /// Panel member B's advisory flags, read from its co-assessment record and named as
+    /// <see cref="AnswerFlagNames"/> names member A's. Empty for a single-assessor run.
+    /// </summary>
+    public string[] CoAssessmentFlagNames { get; set; } = Array.Empty<string>();
+
     /// <summary>What the grading call consumed. Never folded into the candidate's tokens.</summary>
     public int? AssessmentInputTokens { get; set; }
     public int? AssessmentOutputTokens { get; set; }

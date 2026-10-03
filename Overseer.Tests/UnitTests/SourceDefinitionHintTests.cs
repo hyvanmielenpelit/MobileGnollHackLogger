@@ -72,7 +72,7 @@ public class SourceDefinitionHintTests
         string? hint = SourceDefinitionHint.ForSearchResult(StudyBookSearch);
 
         Assert.Equal(
-            "[Definition: study_book() at src/spell.c:726. get_function_definition {\"name\": \"study_book\"} returns the whole body in one call; paging it with source_code_view costs one model round per page.]",
+            "[Definition: study_book() at src/spell.c:726. get_function_definition {\"name\": \"study_book\"} returns the body from its first line, in long chunks; paging it with source_code_view costs one model round per page.]",
             hint);
     }
 

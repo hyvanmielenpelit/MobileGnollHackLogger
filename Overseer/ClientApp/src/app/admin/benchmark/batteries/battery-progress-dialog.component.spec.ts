@@ -347,10 +347,64 @@ describe('BatteryProgressDialogComponent', () => {
       const items = railItems();
       expect(items.length).toBe(3);
       expect(items[2].querySelector('.run-stage-name')?.textContent?.trim()).toBe('AI-written reports');
-      expect(text('.bp-report-writer dd')).toBe('Configuration #3');
+      expect(text('.bp-report-writer .model-name')).toBe('Configuration #3');
       expect(text('.bp-model-line .model-name')).toBe('Model X');
       expect(el().querySelector('.bp-model-line app-provider-badge')).not.toBeNull();
       expect(el().querySelector('.bp-model-line .thinking-badge')).not.toBeNull();
+    });
+
+    it('badges the report writer exactly as the model under test, from the battery run\'s writer fields', () => {
+      open(withWriter(3, {
+        reportWriterDisplayName: 'Writer GPT', reportWriterProvider: 'OpenAI', reportWriterModelId: 'gpt-writer',
+        reportWriterThinkingLevel: 'high', reportWriterReasoningMode: null, reportWriterServiceTier: null
+      }));
+
+      const writer = el().querySelector('.bp-report-writer') as HTMLElement;
+      expect(text('.bp-report-writer .model-name')).toBe('Writer GPT');
+      expect(writer.querySelector('app-provider-badge')).not.toBeNull();
+      const thinking = writer.querySelector('.thinking-badge') as HTMLElement;
+      expect(thinking).not.toBeNull();
+      expect(thinking.querySelector('.visually-hidden')?.textContent).toBe('thinking level ');
+      // The writer's badges follow runFactBadges order, as the model under test's do.
+      const kinds = Array.from(writer.querySelectorAll('dd > *')).map(node => node.tagName === 'APP-PROVIDER-BADGE' ? 'provider' : node.className);
+      expect(kinds).toEqual(['model-name', 'thinking-badge', 'provider']);
+    });
+
+    it('badges the model under test with its requested service tier', () => {
+      open(finishedRun({ testedServiceTier: 'flex' }));
+      const tier = el().querySelector('.bp-model-line .config-badge') as HTMLElement;
+      expect(tier).not.toBeNull();
+      expect(tier.querySelector('.visually-hidden')?.textContent).toBe('service tier ');
+    });
+
+    it('counts the written documents from the battery run, not the report job', () => {
+      (service.getBatteryReportJob as any).mockReturnValue(of({ runId: 7, writerConfigId: 3, job: { documents: [] } }));
+      open(withWriter(3, { reportDocumentsWrittenCount: 2 }));
+      expect(stageNote(railItems()[2])).toBe('2 documents written');
+
+      close();
+      open(withWriter(3, { id: 8, reportDocumentsWrittenCount: 1 }));
+      expect(stageNote(railItems()[2])).toBe('1 document written');
+
+      close();
+      open(withWriter(3, { id: 9, reportDocumentsWrittenCount: 0 }));
+      expect(stageNote(railItems()[2])).toBe('Written');
+    });
+
+    it('shows the Overall Index tile once the analysis is done, and not before', () => {
+      open(finishedRun({ overallIndexHalfWidth: 3.6 }));
+      const tile = el().querySelector('.run-stat-strip .bp-stat-index') as HTMLElement;
+      expect(tile).not.toBeNull();
+      expect((tile.querySelector('dt')?.textContent ?? '').trim()).toBe('Overall Index');
+      const badge = tile.querySelector('.index-badge') as HTMLElement;
+      expect(badge.classList).toContain('index-badge-md');
+      expect((badge.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe('Intelligence Index 85 ± 4, out of 100');
+      // The rail's note stays text.
+      expect(stageNote(railItems()[1])).toBe('Overall Index 84.9');
+
+      close();
+      open(finishedRun({ id: 8, latestAnalysisId: null, overallIndex: null }));
+      expect(el().querySelector('.bp-stat-index')).toBeNull();
     });
 
     it('marks the analysis done with the Overall Index', () => {
@@ -406,7 +460,7 @@ describe('BatteryProgressDialogComponent', () => {
       open(withWriter(1));
 
       expect(stageNote(railItems()[2])).toBe('Waiting for the report writer (2 jobs ahead)');
-      expect(text('.bp-report-writer dd')).toBe('Writer Model');
+      expect(text('.bp-report-writer .model-name')).toBe('Writer Model');
     });
 
     it('stops polling once the reports are written, and says so in the stage line', fakeAsync(() => {
@@ -485,6 +539,133 @@ describe('BatteryProgressDialogComponent', () => {
     close();
     discardPeriodicTasks();
   }));
+
+  describe('member cells', () => {
+    it('shows a running member\'s run, stage, progress and elapsed time', () => {
+      const running = member({
+        memberId: 3, suiteIndex: 0, round: 2, runId: 103, runStatus: 'Running', qualityIndex: null,
+        usable: false, stage: 'Verifying', answeredQuestionCount: 13, totalQuestionCount: 18,
+        runStartedAtUtc: new Date(Date.now() - 372_000).toISOString(), runCompletedAtUtc: null
+      });
+      const base = batteryRun();
+      open(batteryRun({ slots: [base.slots[0], base.slots[1], slot(0, 2, running), base.slots[3]] }));
+
+      const runningCell = cell(0, 2);
+      expect(text('.bp-grid tbody tr:first-child td:nth-of-type(2) .bp-member-stage'))
+        .toBe('Run #103 · Stage 2 of 3 — Follow-up grading passes');
+      const progress = runningCell.querySelector('progress.bp-member-progress') as HTMLProgressElement;
+      expect(progress.max).toBe(18);
+      expect(progress.value).toBe(13);
+      const label = el().querySelector('#' + progress.getAttribute('aria-labelledby')) as HTMLElement;
+      expect(label.textContent?.trim()).toBe('13 of 18 questions answered');
+      expect((runningCell.querySelector('.bp-member-elapsed')?.textContent ?? '').trim()).toBe('Elapsed 6m 12s');
+    });
+
+    it('says a running member is starting until its first answer, then answering', () => {
+      const starting = member({
+        memberId: 3, suiteIndex: 0, round: 2, runId: 103, runStatus: 'Running', qualityIndex: null,
+        usable: false, stage: null, answeredQuestionCount: 0
+      });
+      const base = batteryRun();
+      open(batteryRun({ slots: [base.slots[0], base.slots[1], slot(0, 2, starting), base.slots[3]] }));
+      expect((cell(0, 2).querySelector('.bp-member-stage')?.textContent ?? '').replace(/\s+/g, ' ').trim())
+        .toBe('Run #103 · Starting');
+
+      // The default fixture's running member has answered 4 questions without a stage.
+      close();
+      open(batteryRun({ id: 8 }));
+      expect((cell(0, 2).querySelector('.bp-member-stage')?.textContent ?? '').replace(/\s+/g, ' ').trim())
+        .toBe('Run #103 · Stage 1 of 3 — Answering and grading');
+    });
+
+    it('shows a finished member\'s index badge, its facts line and its run', () => {
+      const finished = member({
+        memberId: 1, suiteIndex: 0, round: 1, runId: 101, qualityIndex: 85, qualityIndexHalfWidth: 4.2,
+        speedIndex: 71, durationMs: 820_000, claimsRefutedCount: 0, advisoryFlagAnswerCount: 3
+      });
+      const base = batteryRun();
+      open(batteryRun({ slots: [slot(0, 1, finished), base.slots[1], base.slots[2], base.slots[3]] }));
+
+      const finishedCell = cell(0, 1);
+      const badge = finishedCell.querySelector('app-index-badge .index-badge') as HTMLElement;
+      expect((badge.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe('Intelligence Index 85 ± 4, out of 100');
+      expect(badge.classList).toContain('badge-score-high');
+      expect((finishedCell.querySelector('.bp-member-facts')?.textContent ?? '').trim())
+        .toBe('Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers');
+      expect(finishedCell.textContent).toContain('Run #101');
+    });
+
+    it('leaves the flagged answers out of the facts line when there are none', () => {
+      const finished = member({ speedIndex: 55, durationMs: 9_400, claimsRefutedCount: 1, advisoryFlagAnswerCount: 0 });
+      const base = batteryRun();
+      open(batteryRun({ slots: [slot(0, 1, finished), base.slots[1], base.slots[2], base.slots[3]] }));
+      expect((cell(0, 1).querySelector('.bp-member-facts')?.textContent ?? '').trim())
+        .toBe('Speed 55 · 9s · 1 refuted claim');
+    });
+
+    it('says what a pending slot of a live battery run waits for', () => {
+      open(batteryRun());
+      expect((cell(1, 2).querySelector('.bp-cell-waiting')?.textContent ?? '').trim()).toBe('Waiting for suite 1');
+    });
+
+    it('keeps a single live region with running and finished members shown', () => {
+      open(batteryRun());
+      expect(el().querySelectorAll('[aria-live], [role="status"]').length).toBe(1);
+    });
+  });
+
+  describe('elapsed time', () => {
+    const elapsedText = (): string => {
+      const stat = Array.from(el().querySelectorAll('.run-stat'))
+        .find(node => (node.querySelector('dt')?.textContent ?? '').trim() === 'Elapsed');
+      return (stat?.querySelector('dd')?.textContent ?? '').trim();
+    };
+
+    it('reads in the other progress dialogs\' format, never in milliseconds or with a decimal', () => {
+      const finished = (id: number, completedAtUtc: string) => batteryRun({
+        id, status: 'Completed', startedAtUtc: '2026-10-01T10:00:00Z', completedAtUtc,
+        currentSuiteIndex: null, currentSuitePosition: null, currentRound: null, currentRunId: null
+      });
+
+      open(finished(7, '2026-10-01T10:00:09.400Z'));
+      expect(elapsedText()).toBe('9s');
+
+      close();
+      open(finished(8, '2026-10-01T10:17:15.000Z'));
+      expect(elapsedText()).toBe('17m 15s');
+
+      close();
+      open(finished(9, '2026-10-01T11:02:05.000Z'));
+      expect(elapsedText()).toBe('1h 02m 05s');
+
+      close();
+      open(finished(10, '2026-10-01T10:00:00.850Z'));
+      expect(elapsedText()).toBe('0s');
+      expect(elapsedText()).not.toMatch(/ms|\.|min/);
+    });
+
+    it('advances by one second per tick while the battery runs', fakeAsync(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      try {
+        open(batteryRun({ startedAtUtc: new Date(Date.now() - 400).toISOString() }));
+        expect(elapsedText()).toBe('0s');
+
+        // The first tick lands just past the first whole second, before the first poll at 2 s.
+        tick(620);
+        fixture.detectChanges();
+        expect(elapsedText()).toBe('1s');
+
+        for (let second = 2; second <= 10; second++) {
+          tick(1000);
+          fixture.detectChanges();
+          expect(elapsedText()).toBe(`${second}s`);
+        }
+        close();
+      } finally {
+        delete (document as unknown as { hidden?: boolean }).hidden;
+      }
+    }));
+  });
 
   it('derives an empty slot with no history as Pending', () => {
     expect(batterySlotState(slot(0, 1, null), [])).toBe('pending');

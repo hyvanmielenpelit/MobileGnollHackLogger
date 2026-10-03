@@ -1623,7 +1623,7 @@ public class BenchmarkReportBuilderTests
             "**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, " +
             "unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0, " +
             "contested critical errors: 0, out-of-rubric accuracy deductions: 0, " +
-            "contested accuracy deductions: not recorded, rubric contradicted by source: not recorded, " +
+            "contested accuracy deductions: not recorded, rubric-charged deduction contradicted: not recorded, " +
             "dimension outliers: 0, answer-framing openers: 0)",
             report);
     }
@@ -3667,20 +3667,93 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("rubric contradicted by source: 1", report);
-        Assert.Contains("- **Rubric Contradicted by Source:** 1 (question(s) Q9) — a sentence the assessor docked because it disagrees with the rubric's text", report);
+        Assert.Contains("rubric-charged deduction contradicted: 1", report);
+        Assert.Contains("- **Rubric-charged deduction contradicted by source:** 1 (question(s) Q9) — a sentence the assessor docked because it disagrees with the rubric's text", report);
+        Assert.Contains("Either the rubric point is wrong or the grader misread a correct one; the flag does not say which.", report);
         Assert.Contains(
             "  - Q9: \"| Clerical | Wisdom | No |\" (charged part: \"Wisdom\") — rubric: \"Wis/Cha\" — source: src/spell.c:1210 — Clerical spells use Wisdom alone.",
             report);
         Assert.Contains("  - *" + BenchmarkReportBuilder.RubricRepairLeadLine + "*", report);
-        Assert.Contains("Suite repair lead: check the rubric point against the cited source before the next run.", report);
         // An ordinary claim the verifier supported is no rubric contradiction.
         Assert.DoesNotContain("Arcane spells are somatic.\" — rubric:", report);
 
         // The bullet follows Contested Accuracy Deductions.
         Assert.True(
             report.IndexOf("**Contested Accuracy Deductions:**", StringComparison.Ordinal)
-            < report.IndexOf("**Rubric Contradicted by Source:**", StringComparison.Ordinal));
+            < report.IndexOf("**Rubric-charged deduction contradicted by source:**", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RunIntegrity_RubricContradictionLeadLine_AsksForBothTheRubricPointAndTheGradersReading()
+    {
+        var q9 = RubricContradictedAnswer(9);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q9);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q9 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Equal(
+            "Check both the rubric point and the grader's reading of it against the cited source before the next run.",
+            BenchmarkReportBuilder.RubricRepairLeadLine);
+        Assert.Contains("  - *Check both the rubric point and the grader's reading of it against the cited source before the next run.*", report);
+        Assert.DoesNotContain("Suite repair lead:", report);
+        Assert.DoesNotContain("Rubric Contradicted by Source", report);
+        // The per-answer Issues text carries the same label.
+        Assert.Contains("Rubric-charged deduction contradicted by source: a sentence docked against the rubric was supported with a citation (advisory, changed no score)", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_RubricContradiction_SaysTheGraderQuotedNoRubricText_WhenNoQuoteIsStored()
+    {
+        var q9 = RubricContradictedAnswer(9);
+        q9.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, ClericalRow, BenchmarkClaimVerdict.Supported, "src/spell.c:1210", "Clerical spells use Wisdom alone.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                QuotedFragments = new[] { "Wisdom" },
+                RubricCited = true,
+                ChargedPart = true
+            }
+        });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q9);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q9 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains(
+            "  - Q9: \"| Clerical | Wisdom | No |\" (charged part: \"Wisdom\") — rubric text: not quoted by the grader — source: src/spell.c:1210 — Clerical spells use Wisdom alone.",
+            report);
+        Assert.DoesNotContain("rubric: not found", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_RubricContradiction_OmitsTheBasis_WhenItRepeatsTheCitation()
+    {
+        var q9 = RubricContradictedAnswer(9);
+        q9.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, ClericalRow, BenchmarkClaimVerdict.Supported, "src/spell.c:1210", " src/spell.c:1210 ")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                QuotedFragments = new[] { "Wisdom" },
+                RubricCited = true,
+                RubricQuote = "Wis/Cha",
+                ChargedPart = true
+            }
+        });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q9);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q9 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains(
+            "  - Q9: \"| Clerical | Wisdom | No |\" (charged part: \"Wisdom\") — rubric: \"Wis/Cha\" — source: src/spell.c:1210" + Environment.NewLine,
+            report);
+        Assert.DoesNotContain("source: src/spell.c:1210 — ", report);
     }
 
     [Fact]
@@ -3693,9 +3766,9 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.DoesNotContain("**Rubric Contradicted by Source:**", report);
+        Assert.DoesNotContain("**Rubric-charged deduction contradicted by source:**", report);
         Assert.DoesNotContain(BenchmarkReportBuilder.RubricRepairLeadLine, report);
-        Assert.Contains("rubric contradicted by source: 0", report);
+        Assert.Contains("rubric-charged deduction contradicted: 0", report);
     }
 
     [Fact]
@@ -5003,8 +5076,166 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
 
         // Member A's flag is not explained by member B's supported accusation.
-        Assert.Contains("- **Contested Accuracy Deductions:** A 1, B 1 — member A — cause not recorded: Q3; member B — a sentence the assessor quoted as false was supported: Q3.", report);
+        Assert.Contains("- **Contested Accuracy Deductions:** A 1, B 1 — member A — cause not recorded: Q3; member B — a sentence member B quoted as false was supported: Q3.", report);
         Assert.Contains("contested accuracy deductions: A 1, B 1", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsMemberBsIntegrityFlags_ListsAMemberBOnlyAnswerUnderIssues_AndCountsEitherMember()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        // Member A's stored count stays the headline: only Q3 carries a flag of member A's. Q2 is
+        // flagged on member B alone.
+        Assert.Contains("- **Advisory Flags:** 1; 2 answer(s) on either member (reasoning bleed: 0,", report);
+
+        // The per-answer section prints member B's flags under their own label.
+        Assert.Contains("- **Integrity Flags (member B):** ContestedVerdict", report);
+        Assert.Contains("- **Integrity Flags (member B):** ContestedAccuracyDeduction", report);
+        Assert.Contains("- **Integrity Flags:** ContestedAccuracyDeduction", report);
+
+        // § 5 Issues lists Q2, flagged on member B only, and names member B on Q3.
+        Assert.Contains("- **Question 2:** Status Ok — Member B: contested verdict (advisory, changed no score).", report);
+        Assert.Contains("Member B: contested accuracy deduction (advisory, changed no score) (a sentence member B quoted as false was supported)", report);
+    }
+
+    [Fact]
+    public void SingleAssessorRun_PrintsNoMemberBFlags_AndNoEitherMemberCount()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Advisory Flags:** 1 (reasoning bleed: 0,", report);
+        Assert.DoesNotContain("on either member", report);
+        Assert.DoesNotContain("Integrity Flags (member B)", report);
+        Assert.DoesNotContain("Member B:", report);
+    }
+
+    [Fact]
+    public void CoAssessmentAnswerFlags_MapsMemberBsFlagsToTheAnswerFlagBits_AndNamesThemAsMemberAs()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        Assert.Equal(BenchmarkAnswerFlags.None, BenchmarkReportBuilder.CoAssessmentAnswerFlags(answer));
+        Assert.Empty(BenchmarkReportBuilder.AnswerFlagNamesOf(BenchmarkAnswerFlags.None));
+
+        answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+        {
+            Flags = new BenchmarkCoAssessmentFlags
+            {
+                OutOfRubricAccuracy = true,
+                RubricContradictedBySource = true,
+                CompletenessOutOfScope = true,
+                ReadabilityFormOnly = true
+            }
+        }.Serialize();
+
+        var flags = BenchmarkReportBuilder.CoAssessmentAnswerFlags(answer);
+
+        Assert.Equal(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction | BenchmarkAnswerFlags.RubricContradictedBySource, flags);
+        Assert.Equal(
+            new[] { "OutOfRubricAccuracyDeduction", "RubricContradictedBySource" },
+            BenchmarkReportBuilder.AnswerFlagNamesOf(flags));
+    }
+
+    [Fact]
+    public void SuspectedFalse_NamesTheRunsOwnScoringMethod()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("under scoring method 12 they lower no level", report);
+
+        var run = PanelReportRunWithVerification();
+        run.ScoringMethodVersion = 13;
+        report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("under scoring method 13 they lower no level", report);
+        Assert.DoesNotContain("under scoring method 12", report);
+    }
+
+    [Fact]
+    public void BandDrift_IsSignedAgainstTheAuthoredBandsReferenceDifficulty()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 60, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Band Drift:** 1 assessed harder than authored, 0 easier", report);
+        Assert.Contains("points against the authored band's reference difficulty (25 / 55 / 85).", report);
+        Assert.DoesNotContain("band midpoint", report);
+    }
+
+    [Fact]
+    public void Manifest_NamesTheBatteryRunSlot_WhenTheRunIsABatteryMember()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var batteryRun = new BenchmarkBatteryRun
+        {
+            Id = 4,
+            BatteryName = "Core Battery",
+            RunsPerSuite = 3,
+            RequestedMemberCount = 9,
+            DefinitionJson = new BenchmarkBatteryDefinition(
+                7,
+                "Core Battery",
+                2,
+                BenchmarkBatteryWeightingScheme.Equal,
+                new[]
+                {
+                    new BenchmarkBatteryDefinitionSuite(0, 101, "Suite A", null),
+                    new BenchmarkBatteryDefinitionSuite(1, 102, "Suite B", null),
+                    new BenchmarkBatteryDefinitionSuite(2, 103, "Suite C", null)
+                }).ToJson()
+        };
+        var member = new BenchmarkBatteryRunMember { BenchmarkBatteryRunId = 4, BenchmarkRunId = run.Id, SuiteIndex = 1, Round = 2 };
+        var battery = BenchmarkRunBatteryContext.From(member, batteryRun);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, battery: battery);
+
+        string batteryLine = "- **Battery:** Battery run #4 (Core Battery, revision 2), suite 2 of 3, round 2 of 3";
+        Assert.Contains(batteryLine + Environment.NewLine, report);
+        // Placed after the suite lines.
+        Assert.True(
+            report.IndexOf("- **Suite origin:**", StringComparison.Ordinal)
+            < report.IndexOf(batteryLine, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Manifest_PrintsNoBatteryLine_WithoutABatteryContext()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Battery:**", report);
+    }
+
+    [Fact]
+    public void BatteryContext_FallsBackToTheRequestedMemberCount_WhenTheDefinitionCannotBeRead()
+    {
+        var batteryRun = new BenchmarkBatteryRun
+        {
+            Id = 5,
+            BatteryName = "Broken",
+            RunsPerSuite = 2,
+            RequestedMemberCount = 8,
+            DefinitionJson = "not json"
+        };
+        var member = new BenchmarkBatteryRunMember { SuiteIndex = 0, Round = 1 };
+
+        var battery = BenchmarkRunBatteryContext.From(member, batteryRun);
+
+        Assert.Equal("- **Battery:** Battery run #5 (Broken, revision not recorded), suite 1 of 4, round 1 of 2", battery.ManifestLine());
     }
 
     [Fact]

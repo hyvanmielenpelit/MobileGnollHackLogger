@@ -222,11 +222,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortySix()
+    public void HarnessVersion_IsFortySeven()
     {
-        // Harness 46: Accuracy deductions charged against the rubric reach the claim verifier, and a
-        // supported one raises RubricContradictedBySource.
-        Assert.Equal("46", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 47: a table header row never anchors an accused quote, and the claim verifier
+        // gains instructions 3n and 3o.
+        Assert.Equal("47", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -865,15 +865,14 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs46_ScoringMethodIs13()
+    public void Versions_HarnessIs47_ScoringMethodIs13()
     {
-        Assert.Equal("46", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("47", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 46 changes what reaches the claim verifier, not any score: sentences graders
-        // docked against the rubric are submitted as rubric-cited accused items, a repeated quoted
-        // span is placed on the line its charge names, and a supported rubric-cited item raises the
-        // advisory RubricContradictedBySource. The scoring method stays 13, and no tool guide or chat
-        // prompt changes.
+        // Harness 47 changes what reaches the claim verifier and how it reads the source, not any
+        // score: a quoted span's occurrence on a table header row never anchors it, and the verifier
+        // gains instructions 3n and 3o; the rest of the round changes reports and statistics. The
+        // scoring method stays 13, and no tool guide or chat prompt changes.
         Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

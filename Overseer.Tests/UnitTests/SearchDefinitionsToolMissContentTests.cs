@@ -98,6 +98,38 @@ public class SearchDefinitionsToolMissContentTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A miss under every kind (<c>any</c>, or no kind) is not told to retry with <c>kind: "any"</c>;
+    /// a miss under one kind is.
+    /// </summary>
+    [Theory]
+    [InlineData("""{"symbol": "baz"}""", false)]
+    [InlineData("""{"symbol": "baz", "kind": "any"}""", false)]
+    [InlineData("""{"symbol": "baz", "kind": "function"}""", true)]
+    public async Task SymbolOccursButNoKindMatches_GuidanceFollowsTheRequestedKind(string json, bool suggestsAny)
+    {
+        var (service, netHackService) = await CreateServicesAsync();
+        using (service)
+        using (netHackService)
+        {
+            var tool = new SearchDefinitionsTool(service, netHackService);
+            var arguments = JsonDocument.Parse(json).RootElement;
+
+            var result = await tool.ExecuteAsync(arguments, CreateContext(4004), CancellationToken.None);
+
+            Assert.True(result.Success);
+            if (suggestsAny)
+            {
+                Assert.Contains(" The symbol occurs but no definition line matched this kind: try `kind: \"any\"`, or `source_code_search` with `context_lines` on the named file.", result.Content);
+            }
+            else
+            {
+                Assert.Contains(" The symbol occurs but no definition line matched: try `source_code_search` with `context_lines` on the named file.", result.Content);
+                Assert.DoesNotContain("kind: \"any\"", result.Content);
+            }
+        }
+    }
+
     /// <summary>A symbol absent from the corpus altogether is told so, rather than getting an occurrence summary.</summary>
     [Fact]
     public async Task SymbolAbsentFromCorpus_MissSaysItDoesNotOccur()

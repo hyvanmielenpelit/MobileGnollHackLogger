@@ -718,6 +718,10 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         public int? SpeedIndex { get; set; }
         public int? TerminalFailureAnswerCount { get; set; }
         public int TotalQuestionCount { get; set; }
+        public int AnsweredQuestionCount { get; set; }
+        public double? QualityIndexStandardError { get; set; }
+        public int ClaimsRefutedCount { get; set; }
+        public int AdvisoryFlagAnswerCount { get; set; }
         public DateTime StartedAtUtc { get; set; }
         public DateTime? CompletedAtUtc { get; set; }
         public long TestedModelSnapshotId { get; set; }
@@ -739,6 +743,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         public Dictionary<long, MemberRunInfo> Runs { get; init; } = new();
         public Dictionary<long, int> AnsweredCounts { get; init; } = new();
         public Dictionary<long, string?> ModelLabels { get; init; } = new();
+
+        /// <summary>The run manager's stage of each running member run this process drives.</summary>
+        public Dictionary<long, string> Stages { get; init; } = new();
 
         public IEnumerable<BenchmarkBatteryRunMember> Of(long batteryRunId)
             => Members.Where(m => m.BenchmarkBatteryRunId == batteryRunId);
@@ -771,6 +778,10 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                 SpeedIndex = r.SpeedIndex,
                 TerminalFailureAnswerCount = r.TerminalFailureAnswerCount,
                 TotalQuestionCount = r.TotalQuestionCount,
+                AnsweredQuestionCount = r.AnsweredQuestionCount,
+                QualityIndexStandardError = r.QualityIndexStandardError,
+                ClaimsRefutedCount = r.ClaimsRefutedCount,
+                AdvisoryFlagAnswerCount = r.AdvisoryFlagAnswerCount,
                 StartedAtUtc = r.StartedAtUtc,
                 CompletedAtUtc = r.CompletedAtUtc,
                 TestedModelSnapshotId = r.TestedModelSnapshotId
@@ -779,6 +790,12 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         // Answer rows only for the runs in flight: the progress line of the running member.
         var runningIds = runs.Values.Where(r => r.Status == BenchmarkRunStatus.Running).Select(r => r.Id).ToList();
+
+        var stages = new Dictionary<long, string>();
+        foreach (long runningId in runningIds)
+        {
+            if (_runManager.GetStage(runningId) is BenchmarkRunStage stage) stages[runningId] = stage.ToString();
+        }
         var answered = runningIds.Count == 0
             ? new Dictionary<long, int>()
             : await _db.BenchmarkRunAnswers
@@ -799,6 +816,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             Members = members,
             Runs = runs,
             AnsweredCounts = answered,
+            Stages = stages,
             ModelLabels = runs.Values.ToDictionary(
                 r => r.Id,
                 r => snapshotLabels.TryGetValue(r.TestedModelSnapshotId, out var label) ? label : null)
@@ -826,6 +844,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         var latest = await LoadLatestAnalysesAsync(ids, ct);
         var configLabels = await LoadConfigurationLabelsAsync(batteryRuns, ct);
         var identities = await _leaderboard.LoadIdentitiesAsync(batteryRuns, IdentityRunIds(batteryRuns, state), ct);
+        var writers = await LoadReportWritersAsync(batteryRuns, ct);
+        var documentCounts = await LoadReportDocumentCountsAsync(ids, ct);
 
         var dtos = batteryRuns
             .Select(b => ToRunDto(
@@ -833,7 +853,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                 state,
                 latest.TryGetValue(b.Id, out var analysis) ? analysis : null,
                 configLabels,
-                identities.TryGetValue(b.Id, out var identity) ? identity : null))
+                identities.TryGetValue(b.Id, out var identity) ? identity : null,
+                b.ReportWriterModelConfigurationId is long writerId && writers.TryGetValue(writerId, out var writer) ? writer : null,
+                documentCounts.TryGetValue(b.Id, out int documents) ? documents : 0))
             .ToList();
 
         foreach (var dto in dtos)
@@ -842,6 +864,62 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         }
 
         return dtos;
+    }
+
+    /// <summary>The report writers' configurations by id, in one query; a deleted configuration is absent.</summary>
+    private async Task<Dictionary<long, BenchmarkBatteryRoleModel>> LoadReportWritersAsync(
+        IReadOnlyList<BenchmarkBatteryRun> batteryRuns, CancellationToken ct)
+    {
+        var writerIds = batteryRuns
+            .Select(b => b.ReportWriterModelConfigurationId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        if (writerIds.Count == 0) return new Dictionary<long, BenchmarkBatteryRoleModel>();
+
+        return await _db.SystemAiApiConfigurations
+            .AsNoTracking()
+            .Where(c => writerIds.Contains(c.Id))
+            .Select(c => new
+            {
+                c.Id,
+                Model = new BenchmarkBatteryRoleModel
+                {
+                    DisplayName = c.DisplayName,
+                    Provider = c.Provider,
+                    ModelId = c.ModelId,
+                    ThinkingLevel = c.ThinkingLevel,
+                    ReasoningMode = c.ReasoningMode,
+                    ServiceTier = c.ServiceTier
+                }
+            })
+            .ToDictionaryAsync(c => c.Id, c => c.Model, ct);
+    }
+
+    /// <summary>
+    /// Per battery run, its battery-completion documents that exist: the subject and origin the AI
+    /// Reports tab lists them by, counted in one query.
+    /// </summary>
+    private async Task<Dictionary<long, int>> LoadReportDocumentCountsAsync(IReadOnlyCollection<long> batteryRunIds, CancellationToken ct)
+    {
+        var idBySubject = batteryRunIds
+            .Distinct()
+            .ToDictionary(BenchmarkBatteryReportDocumentService.SubjectKeyOf, id => id, StringComparer.Ordinal);
+        var subjectKeys = idBySubject.Keys.ToList();
+
+        var counts = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => subjectKeys.Contains(d.SubjectKey) && d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion)
+            .GroupBy(d => d.SubjectKey)
+            .Select(g => new { SubjectKey = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return counts
+            .Where(c => idBySubject.ContainsKey(c.SubjectKey))
+            .ToDictionary(c => idBySubject[c.SubjectKey], c => c.Count);
     }
 
     /// <summary>The latest analysis of each battery run, by battery run id.</summary>
@@ -971,7 +1049,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         MemberState state,
         BenchmarkBatteryAnalysis? latestAnalysis,
         IReadOnlyDictionary<long, string> configLabels,
-        BenchmarkBatteryRunIdentity? identity)
+        BenchmarkBatteryRunIdentity? identity,
+        BenchmarkBatteryRoleModel? reportWriter,
+        int reportDocumentsWrittenCount)
     {
         var definition = TryReadDefinition(batteryRun.DefinitionJson);
         int suiteCount = SuiteCountOf(batteryRun, definition);
@@ -1061,12 +1141,25 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             TestedReasoningMode = identity?.TestedReasoningMode,
             TestedServiceTier = identity?.TestedServiceTier,
             AssessorLabel = identity?.AssessorLabel,
+            AssessorProvider = identity?.AssessorProvider,
+            AssessorThinkingLevel = identity?.AssessorThinkingLevel,
+            AssessorReasoningMode = identity?.AssessorReasoningMode,
             CoAssessorLabel = identity?.CoAssessorLabel,
+            CoAssessorProvider = identity?.CoAssessorProvider,
+            CoAssessorThinkingLevel = identity?.CoAssessorThinkingLevel,
+            CoAssessorReasoningMode = identity?.CoAssessorReasoningMode,
             ScoringProfileName = identity?.ScoringProfileName,
             VerboseMode = identity?.VerboseMode ?? false,
             ReportWriterModelConfigurationId = batteryRun.ReportWriterModelConfigurationId,
+            ReportWriterDisplayName = reportWriter?.DisplayName,
+            ReportWriterProvider = reportWriter?.Provider,
+            ReportWriterModelId = reportWriter?.ModelId,
+            ReportWriterThinkingLevel = reportWriter?.ThinkingLevel,
+            ReportWriterReasoningMode = reportWriter?.ReasoningMode,
+            ReportWriterServiceTier = reportWriter?.ServiceTier,
             ReportDocumentsStatus = batteryRun.ReportDocumentsStatus,
             ReportDocumentsMessage = batteryRun.ReportDocumentsMessage,
+            ReportDocumentsWrittenCount = reportDocumentsWrittenCount,
             Slots = slots,
             Members = members
         };
@@ -1081,6 +1174,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     {
         state.Runs.TryGetValue(member.BenchmarkRunId, out var run);
         string? reason = state.UnusableReason(member);
+        bool running = run?.Status == BenchmarkRunStatus.Running;
 
         return new BenchmarkBatteryMemberDto
         {
@@ -1099,8 +1193,19 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             AddedAtUtc = member.AddedAtUtc,
             RunStartedAtUtc = run?.StartedAtUtc,
             RunCompletedAtUtc = run?.CompletedAtUtc,
-            AnsweredQuestionCount = state.AnsweredCounts.TryGetValue(member.BenchmarkRunId, out int answered) ? answered : 0,
-            TotalQuestionCount = run?.TotalQuestionCount ?? 0
+            AnsweredQuestionCount = running
+                ? (state.AnsweredCounts.TryGetValue(member.BenchmarkRunId, out int answered) ? answered : 0)
+                : run?.AnsweredQuestionCount ?? 0,
+            TotalQuestionCount = run?.TotalQuestionCount ?? 0,
+            Stage = running && state.Stages.TryGetValue(member.BenchmarkRunId, out var stage) ? stage : null,
+            QualityIndexHalfWidth = run != null && run.QualityIndex.HasValue && run.QualityIndexStandardError is double se
+                ? 1.96 * se
+                : null,
+            DurationMs = run != null && run.CompletedAtUtc is DateTime completed
+                ? (long)(completed - run.StartedAtUtc).TotalMilliseconds
+                : null,
+            ClaimsRefutedCount = run?.ClaimsRefutedCount ?? 0,
+            AdvisoryFlagAnswerCount = run?.AdvisoryFlagAnswerCount ?? 0
         };
     }
 
@@ -1326,9 +1431,11 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         }
 
         var answerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(_db, memberRunIds, withRefutedSentences: true, ct);
+        var graders = await _analysisService.LoadGradersAsync(batteryRun, memberRuns, ct);
+        var earlierRuns = await _analysisService.LoadEarlierRunsAsync(batteryRun, ct);
         string markdown = BenchmarkBatteryReportBuilder.BuildMarkdownReport(
             batteryRun, definition, result, analysis, memberRuns, comparability, comparison, comparisonLabel,
-            GetOverseerVersion(), answerOutcomes);
+            GetOverseerVersion(), answerOutcomes, graders, earlierRuns);
 
         string? modelName = memberRuns
             .Select(r => r.TestedModelSnapshot.Label())

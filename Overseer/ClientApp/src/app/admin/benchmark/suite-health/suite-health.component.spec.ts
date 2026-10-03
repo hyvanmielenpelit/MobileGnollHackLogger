@@ -464,7 +464,7 @@ describe('SuiteHealthComponent', () => {
     expect(list.getAttribute('aria-label')).toBe('Suite health sections');
   });
 
-  describe('Rubric contradicted by source', () => {
+  describe('Rubric-charged deduction contradicted by source', () => {
     function openGapsTab(): string {
       open();
       (fixture.nativeElement.querySelector('#sh-tab-gaps') as HTMLButtonElement).click();
@@ -526,14 +526,14 @@ describe('SuiteHealthComponent', () => {
       expect(second).not.toContain('Charged part');
       expect((rows[1].children[2].textContent || '').trim()).toBe('—');
 
-      expect(text).toContain('Rubric contradicted by source');
+      expect(text).toContain('Rubric-charged deduction contradicted by source');
       expect(text).not.toContain('No rubric point has been contradicted by the source.');
     });
 
     it('should say so when no rubric point has been contradicted', () => {
       const text = openGapsTab();
 
-      expect(text).toContain('Rubric contradicted by source');
+      expect(text).toContain('Rubric-charged deduction contradicted by source');
       expect(text).toContain('No rubric point has been contradicted by the source.');
       expect(fixture.nativeElement.querySelector('.rubric-contradiction-table')).toBeNull();
     });

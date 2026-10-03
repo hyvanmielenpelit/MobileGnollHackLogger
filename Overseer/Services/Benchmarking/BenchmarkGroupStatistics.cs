@@ -507,9 +507,10 @@ public sealed record BenchmarkGroupDimensionStatistics
     public string Dimension { get; init; } = string.Empty;
 
     /// <summary>
-    /// One unweighted mean per member, over that member's scored answers. Empty when no member
-    /// recorded this dimension — emitted as an empty list rather than omitting the dimension, so a
-    /// consumer never has to distinguish "absent" from "unscored".
+    /// One unweighted mean per member, over that member's scored answers; a panel member's answers
+    /// carry the mean of both panel members' scores, and an answer only one member scored is left
+    /// out. Empty when no member recorded this dimension — emitted as an empty list rather than
+    /// omitting the dimension, so a consumer never has to distinguish "absent" from "unscored".
     /// </summary>
     public IReadOnlyList<double> PerRunMeans { get; init; } = Array.Empty<double>();
 
@@ -1353,7 +1354,53 @@ public static class BenchmarkGroupStatistics
     }
 
     /// <summary>
-    /// The four scoring dimensions across the members.
+    /// The four dimensions in result order: member A's stored score and member B's level on each.
+    /// </summary>
+    private static readonly (string Name, Func<BenchmarkRunAnswer, int?> ScoreA, Func<BenchmarkCoAssessmentRecord, int?> LevelB)[] DimensionReaders =
+    {
+        ("Accuracy", a => a.AccuracyScore, r => r.AccuracyLevel),
+        ("Completeness", a => a.CompletenessScore, r => r.CompletenessLevel),
+        ("Conciseness", a => a.ConcisenessScore, r => r.ConcisenessLevel),
+        ("Readability", a => a.ReadabilityScore, r => r.ReadabilityLevel)
+    };
+
+    /// <summary>
+    /// An answer's four dimension scores, in <see cref="DimensionReaders"/> order, as the index reads
+    /// its quality. A single-assessor answer carries the assessor's stored scores. A panel answer
+    /// carries, per dimension, the mean of member A's stored score and member B's level scored on
+    /// <paramref name="levelScores"/> — the run report's Panel row per answer — and null unless both
+    /// members scored that dimension.
+    /// </summary>
+    internal static double?[] DimensionScores(BenchmarkRunAnswer answer, bool isPanelRun, IReadOnlyList<int>? levelScores)
+    {
+        ArgumentNullException.ThrowIfNull(answer);
+
+        var scores = new double?[DimensionReaders.Length];
+        var memberB = isPanelRun && answer.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
+            ? BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)
+            : null;
+
+        for (int d = 0; d < DimensionReaders.Length; d++)
+        {
+            int? scoreA = DimensionReaders[d].ScoreA(answer);
+            if (!isPanelRun)
+            {
+                scores[d] = scoreA;
+                continue;
+            }
+
+            int? levelB = memberB != null ? DimensionReaders[d].LevelB(memberB) : null;
+            scores[d] = scoreA.HasValue && levelB.HasValue
+                ? (scoreA.Value + BenchmarkScoring.Score(levelB.Value, levelScores)) / 2.0
+                : null;
+        }
+
+        return scores;
+    }
+
+    /// <summary>
+    /// The four scoring dimensions across the members, each answer read through
+    /// <see cref="DimensionScores"/>: a panel run's dimensions are the panel's, as its index is.
     ///
     /// Restricted to answered items in the group, exactly as the speed pool is: an item no member
     /// answered is not part of the group's item set, so its absent dimension scores must not enter
@@ -1365,44 +1412,49 @@ public static class BenchmarkGroupStatistics
     {
         var questionIds = new HashSet<long>(items.Select(i => i.QuestionId));
 
-        var selectors = new (string Name, Func<BenchmarkRunAnswer, int?> Score)[]
-        {
-            ("Accuracy", a => a.AccuracyScore),
-            ("Completeness", a => a.CompletenessScore),
-            ("Conciseness", a => a.ConcisenessScore),
-            ("Readability", a => a.ReadabilityScore)
-        };
+        // Each member's counted answers with their four dimension scores, read once.
+        var memberScores = members
+            .Select(member =>
+            {
+                bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(member);
+                var levelScores = isPanelRun
+                    ? BenchmarkScoring.ConstantsFromSnapshot(member.ScoringProfileSnapshotJson).LevelScores
+                    : null;
 
-        var result = new List<BenchmarkGroupDimensionStatistics>(selectors.Length);
+                return (member.Answers ?? new List<BenchmarkRunAnswer>())
+                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
+                                && BenchmarkItemAnalysis.QuestionKey(a) is long key
+                                && questionIds.Contains(key))
+                    .Select(a => (QuestionId: BenchmarkItemAnalysis.QuestionKey(a)!.Value, Scores: DimensionScores(a, isPanelRun, levelScores)))
+                    .ToList();
+            })
+            .ToList();
 
-        foreach (var (name, score) in selectors)
+        var result = new List<BenchmarkGroupDimensionStatistics>(DimensionReaders.Length);
+
+        for (int d = 0; d < DimensionReaders.Length; d++)
         {
+            string name = DimensionReaders[d].Name;
             var perRunMeans = new List<double>();
             var byQuestion = new Dictionary<long, List<double>>();
 
-            foreach (var member in members)
+            foreach (var answers in memberScores)
             {
-                var scored = (member.Answers ?? new List<BenchmarkRunAnswer>())
-                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
-                                && BenchmarkItemAnalysis.QuestionKey(a) is long key
-                                && questionIds.Contains(key)
-                                && score(a).HasValue)
-                    .ToList();
+                var scored = answers.Where(a => a.Scores[d].HasValue).ToList();
 
                 if (scored.Count == 0) continue;
 
-                perRunMeans.Add(scored.Average(a => (double)score(a)!.Value));
+                perRunMeans.Add(scored.Average(a => a.Scores[d]!.Value));
 
                 foreach (var answer in scored)
                 {
-                    long questionId = BenchmarkItemAnalysis.QuestionKey(answer)!.Value;
-                    if (!byQuestion.TryGetValue(questionId, out var list))
+                    if (!byQuestion.TryGetValue(answer.QuestionId, out var list))
                     {
                         list = new List<double>();
-                        byQuestion[questionId] = list;
+                        byQuestion[answer.QuestionId] = list;
                     }
 
-                    list.Add(score(answer)!.Value);
+                    list.Add(answer.Scores[d]!.Value);
                 }
             }
 

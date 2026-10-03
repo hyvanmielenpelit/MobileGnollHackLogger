@@ -8,6 +8,88 @@ using System.Linq;
 using System.Text;
 using MobileGnollHackLogger.Data;
 
+/// <summary>One model a battery run used, with the settings the manifest's Graders block prints.</summary>
+public sealed record BenchmarkBatteryRoleModel
+{
+    public string? DisplayName { get; init; }
+    public string Provider { get; init; } = string.Empty;
+    public string ModelId { get; init; } = string.Empty;
+    public string? ThinkingLevel { get; init; }
+    public string? ReasoningMode { get; init; }
+    public string? ServiceTier { get; init; }
+
+    /// <summary>A run's recorded snapshot of the role; null when the run recorded none.</summary>
+    public static BenchmarkBatteryRoleModel? Of(SystemAiConfigurationSnapshot? snapshot)
+        => snapshot == null
+            ? null
+            : new BenchmarkBatteryRoleModel
+            {
+                DisplayName = snapshot.DisplayName,
+                Provider = snapshot.Provider,
+                ModelId = snapshot.ModelId,
+                ThinkingLevel = snapshot.ThinkingLevel,
+                ReasoningMode = snapshot.ReasoningMode,
+                ServiceTier = snapshot.ServiceTier
+            };
+}
+
+/// <summary>
+/// The models a battery run was measured and written with: every grading role as the newest usable
+/// member run recorded it, and the report writer from the battery run's own configuration.
+/// </summary>
+public sealed record BenchmarkBatteryGraders
+{
+    /// <summary>The member run the roles were read from; null when there is no usable member.</summary>
+    public long? SourceRunId { get; init; }
+
+    /// <summary>The source run was graded by an assessor panel.</summary>
+    public bool Panel { get; init; }
+
+    public BenchmarkBatteryRoleModel? ModelUnderTest { get; init; }
+    public BenchmarkBatteryRoleModel? Assessor { get; init; }
+
+    /// <summary>Panel member B; null on a single-assessor run.</summary>
+    public BenchmarkBatteryRoleModel? CoAssessor { get; init; }
+
+    /// <summary>The reference reader of a panel run, the second reader of a single-assessor run.</summary>
+    public BenchmarkBatteryRoleModel? Reader { get; init; }
+
+    /// <summary>How the source run used its reader.</summary>
+    public BenchmarkSecondOpinionMode ReaderMode { get; init; }
+
+    /// <summary>Answers the source run's reader graded, and the source run's questions.</summary>
+    public int ReaderGradedAnswerCount { get; init; }
+    public int ReaderQuestionCount { get; init; }
+
+    public BenchmarkBatteryRoleModel? ClaimVerifier { get; init; }
+
+    /// <summary>The battery run's report-writer configuration id; null when none was chosen.</summary>
+    public long? ReportWriterConfigurationId { get; init; }
+
+    /// <summary>The report writer's configuration; null when none was chosen or it has been deleted.</summary>
+    public BenchmarkBatteryRoleModel? ReportWriter { get; init; }
+}
+
+/// <summary>An earlier finished battery run of the same battery, as the manifest's history table lists it.</summary>
+public sealed record BenchmarkBatteryEarlierRun
+{
+    public long BatteryRunId { get; init; }
+    public DateTime? FinishedAtUtc { get; init; }
+
+    /// <summary>The battery run has a stored analysis; the fields below are read from its latest.</summary>
+    public bool Analysed { get; init; }
+
+    public string? HarnessVersion { get; init; }
+
+    /// <summary>Null when the latest analysis is incomplete or carries no headline.</summary>
+    public double? OverallIndex { get; init; }
+
+    public double? OverallIndexHalfWidth { get; init; }
+
+    /// <summary>Null while the latest analysis is incomplete.</summary>
+    public string? ComparabilityClassSha256 { get; init; }
+}
+
 /// <summary>
 /// Builds the Markdown report of one battery analysis (multi-suite method, M1–M10).
 ///
@@ -118,6 +200,15 @@ public static class BenchmarkBatteryReportBuilder
     /// The usable members' tool-call outcomes and refuted answer sentences, from
     /// <see cref="BenchmarkBatteryAnswerOutcomes.LoadAsync"/>; when null, the usage section leaves them out.
     /// </param>
+    /// <param name="graders">
+    /// The manifest's Graders block, from <see cref="BenchmarkBatteryAnalysisService.LoadGradersAsync"/>;
+    /// when null, the block is left out.
+    /// </param>
+    /// <param name="earlierRuns">
+    /// Earlier finished battery runs of the same battery, newest first, from
+    /// <see cref="BenchmarkBatteryAnalysisService.LoadEarlierRunsAsync"/>; the manifest's history table
+    /// is left out when there is none.
+    /// </param>
     public static string BuildMarkdownReport(
         BenchmarkBatteryRun batteryRun,
         BenchmarkBatteryDefinition definition,
@@ -128,7 +219,9 @@ public static class BenchmarkBatteryReportBuilder
         BenchmarkBatteryComparison? comparison = null,
         string? comparisonLabel = null,
         string? overseerVersion = null,
-        BenchmarkBatteryAnswerOutcomes? answerOutcomes = null)
+        BenchmarkBatteryAnswerOutcomes? answerOutcomes = null,
+        BenchmarkBatteryGraders? graders = null,
+        IReadOnlyList<BenchmarkBatteryEarlierRun>? earlierRuns = null)
     {
         ArgumentNullException.ThrowIfNull(batteryRun);
         ArgumentNullException.ThrowIfNull(definition);
@@ -139,7 +232,7 @@ public static class BenchmarkBatteryReportBuilder
         int section = 0;
 
         AppendHeader(sb, batteryRun, result, analysis, runs, overseerVersion);
-        AppendManifest(sb, ++section, batteryRun, definition, result, analysis, runs, comparability);
+        AppendManifest(sb, ++section, batteryRun, definition, result, analysis, runs, comparability, graders, earlierRuns);
         AppendOverall(sb, ++section, result);
         AppendProfile(sb, ++section, result);
         AppendSensitivity(sb, ++section, result);
@@ -207,7 +300,9 @@ public static class BenchmarkBatteryReportBuilder
         BenchmarkBatteryStatisticsResult result,
         BenchmarkBatteryAnalysis? analysis,
         IReadOnlyList<BenchmarkRun> runs,
-        BenchmarkBatteryComparabilityResult? comparability)
+        BenchmarkBatteryComparabilityResult? comparability,
+        BenchmarkBatteryGraders? graders,
+        IReadOnlyList<BenchmarkBatteryEarlierRun>? earlierRuns)
     {
         sb.AppendLine($"## {section}. Battery Manifest");
         sb.AppendLine();
@@ -235,6 +330,8 @@ public static class BenchmarkBatteryReportBuilder
             sb.AppendLine("- **Battery wall clock:** — *the battery run has not finished.*");
         }
         sb.AppendLine();
+
+        AppendGraders(sb, graders);
 
         sb.AppendLine("| # | Suite | Suite id | Declared weight | Count weight | Exam items | Difficulty mass | Usable runs | Game board |");
         sb.AppendLine("|---:|---|---:|---:|---:|---:|---:|---:|---|");
@@ -297,8 +394,114 @@ public static class BenchmarkBatteryReportBuilder
         }
 
         AppendPromptUnderTest(sb, section, result);
+        AppendEarlierRuns(sb, section, analysis, earlierRuns);
 
         sb.AppendLine("---");
+        sb.AppendLine();
+    }
+
+    /// <summary>The sentence under the history table of earlier battery runs.</summary>
+    public const string EarlierRunsComparisonNote =
+        "Only a run of the same class may be compared with this one; use the Paired Test tab for a test.";
+
+    /// <summary>
+    /// The models the battery run was measured and written with, one row per role, each with its
+    /// thinking level. Left out when the caller loaded no roster.
+    /// </summary>
+    private static void AppendGraders(StringBuilder sb, BenchmarkBatteryGraders? graders)
+    {
+        if (graders == null) return;
+
+        string source = graders.SourceRunId.HasValue
+            ? $"as recorded on run {graders.SourceRunId.Value.ToString(CultureInfo.InvariantCulture)}, the newest usable member"
+            : "no usable member run recorded them";
+        sb.AppendLine($"**Graders** — {source}; the report writer is the battery run's own configuration.");
+        sb.AppendLine();
+        sb.AppendLine("| Role | Model | Provider | Thinking level | Settings |");
+        sb.AppendLine("|---|---|---|---|---|");
+
+        var tested = graders.ModelUnderTest;
+        RoleRow(sb, "Model under test", tested,
+            tested == null ? null : $"reasoning mode {Setting(tested.ReasoningMode)} · service tier {Setting(tested.ServiceTier)}",
+            "not recorded");
+        RoleRow(sb, graders.Panel ? "Assessor (panel member A)" : "Assessor", graders.Assessor, null, "not recorded");
+        RoleRow(sb, "Co-assessor (panel member B)", graders.CoAssessor, null, "none — a single assessor graded every answer");
+
+        string coverage = $"coverage: {ReaderModeLabel(graders.ReaderMode)} (`{graders.ReaderMode}`)"
+            + (graders.SourceRunId.HasValue && graders.ReaderQuestionCount > 0
+                ? $", {Int(graders.ReaderGradedAnswerCount)} of {Int(graders.ReaderQuestionCount)} answers on run {graders.SourceRunId.Value.ToString(CultureInfo.InvariantCulture)}"
+                : string.Empty);
+        RoleRow(sb, graders.Panel ? "Reference reader" : "Second reader", graders.Reader, coverage, "none");
+        RoleRow(sb, "Claim verifier", graders.ClaimVerifier, null, "none");
+        RoleRow(sb, "Report writer", graders.ReportWriter, "writes the AI-written battery documents; grades nothing",
+            graders.ReportWriterConfigurationId.HasValue
+                ? $"configuration #{graders.ReportWriterConfigurationId.Value.ToString(CultureInfo.InvariantCulture)}, since deleted"
+                : "none chosen");
+        sb.AppendLine();
+    }
+
+    private static void RoleRow(StringBuilder sb, string role, BenchmarkBatteryRoleModel? model, string? settings, string absentText)
+    {
+        if (model == null)
+        {
+            sb.AppendLine($"| {role} | *{absentText}* | — | — | — |");
+            return;
+        }
+
+        string name = string.IsNullOrWhiteSpace(model.DisplayName) || string.Equals(model.DisplayName, model.ModelId, StringComparison.Ordinal)
+            ? $"`{Cell(model.ModelId)}`"
+            : $"{Cell(model.DisplayName)} (`{Cell(model.ModelId)}`)";
+        sb.AppendLine($"| {role} | {name} | {Cell(model.Provider)} | {Setting(model.ThinkingLevel)} | {(string.IsNullOrWhiteSpace(settings) ? "—" : settings)} |");
+    }
+
+    /// <summary>A recorded setting, or <c>Default</c> when the configuration left it unset.</summary>
+    private static string Setting(string? value) => string.IsNullOrWhiteSpace(value) ? "Default" : Cell(value);
+
+    private static string ReaderModeLabel(BenchmarkSecondOpinionMode mode) => mode switch
+    {
+        BenchmarkSecondOpinionMode.Off => "off",
+        BenchmarkSecondOpinionMode.Flagged => "flagged answers",
+        BenchmarkSecondOpinionMode.FlaggedAndOutliers => "flagged answers and outliers",
+        BenchmarkSecondOpinionMode.All => "every answer",
+        BenchmarkSecondOpinionMode.FlaggedPlusSample => "flagged answers plus a sample",
+        _ => mode.ToString()
+    };
+
+    /// <summary>
+    /// Earlier finished battery runs of the same battery, newest first, each marked by whether it
+    /// shares this analysis's comparability class. Left out when there is none.
+    /// </summary>
+    private static void AppendEarlierRuns(
+        StringBuilder sb,
+        int section,
+        BenchmarkBatteryAnalysis? analysis,
+        IReadOnlyList<BenchmarkBatteryEarlierRun>? earlierRuns)
+    {
+        if (earlierRuns == null || earlierRuns.Count == 0) return;
+
+        string? ownClass = analysis?.ComparabilityClassSha256;
+
+        sb.AppendLine($"### {section}.2 Earlier Runs of This Battery");
+        sb.AppendLine();
+        sb.AppendLine("| Battery run | Finished | Harness version | Overall Index | Same class |");
+        sb.AppendLine("|---:|---|---|---:|---|");
+        foreach (var earlier in earlierRuns.Take(BenchmarkBatteryAnalysisService.EarlierRunLimit))
+        {
+            string index = earlier.OverallIndex.HasValue
+                ? Inv(earlier.OverallIndex.Value, "F2") + (earlier.OverallIndexHalfWidth.HasValue ? " ± " + Inv(earlier.OverallIndexHalfWidth.Value, "F2") : string.Empty)
+                : earlier.Analysed ? "*Incomplete*" : "*not analysed*";
+            bool sameClass = !string.IsNullOrEmpty(ownClass)
+                             && string.Equals(ownClass, earlier.ComparabilityClassSha256, StringComparison.OrdinalIgnoreCase);
+
+            sb.AppendLine(
+                $"| #{earlier.BatteryRunId.ToString(CultureInfo.InvariantCulture)} " +
+                $"| {(earlier.FinishedAtUtc.HasValue ? Stamp(earlier.FinishedAtUtc.Value, "yyyy-MM-dd HH:mm") + " UTC" : "—")} " +
+                $"| {(string.IsNullOrWhiteSpace(earlier.HarnessVersion) ? "—" : Cell(earlier.HarnessVersion))} " +
+                $"| {index} " +
+                $"| {(sameClass ? "yes" : "no")} |");
+        }
+        sb.AppendLine();
+        sb.AppendLine(EarlierRunsComparisonNote);
         sb.AppendLine();
     }
 

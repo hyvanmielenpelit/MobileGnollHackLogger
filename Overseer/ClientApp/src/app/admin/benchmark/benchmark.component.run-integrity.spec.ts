@@ -363,12 +363,12 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.advisoryFlagQuestionNumbers).toBe('7');
     });
 
-    it('should treat RubricContradictedBySource as advisory and badge it as rubric contradicted', () => {
+    it('should treat RubricContradictedBySource as advisory and badge it as a contradicted rubric-charged deduction', () => {
       const contradicted = buildScoredAnswer(9, { answerFlags: 16384, answerFlagNames: ['RubricContradictedBySource'] });
 
       expect(component.hasAdvisoryFlag(contradicted)).toBe(true);
       expect(component.hasTransportDefect(contradicted)).toBe(false);
-      expect(component.flagBadgeLabel('RubricContradictedBySource')).toBe('rubric contradicted');
+      expect(component.flagBadgeLabel('RubricContradictedBySource')).toBe('rubric-charged deduction contradicted');
       expect(component.flagBadgeLabel('ContestedAccuracyDeduction')).toBe('contested deduction');
       expect(component.flagBadgeLabel('DimensionOutlier')).toBe('dimension outlier');
       expect(component.flagBadgeLabel('ReasoningBleed')).toBe('ReasoningBleed');

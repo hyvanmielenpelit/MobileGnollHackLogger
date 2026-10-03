@@ -803,6 +803,42 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.True(index4 > index3m, "Instruction 4 must follow 3m, unrenumbered.");
     }
 
+    // --- Instructions 3n and 3o: branch conditions, and a wiki hedge -------------------------
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3n_ReadsTheCaseLabelsAndConditionsAboveACitedLine_AndFollows3m(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        Assert.Contains("3n. A line inside a `switch` is reached only for that `case`'s labels, and a line inside an `if` only when its condition holds. Before citing a line as what an item does, read the `case` labels and the `if`/`else` conditions above it; a branch that tests for an item inside a `case` whose labels do not include that item never runs for it, and a branch guarded by a condition (charges, a state, a flag) applies only when that condition holds.", prompt);
+
+        int index3m = prompt.IndexOf("3m. A sentence that reports what a source says", System.StringComparison.Ordinal);
+        int index3n = prompt.IndexOf("3n. A line inside a `switch`", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3n > index3m, "Instruction 3n must follow instruction 3m.");
+        Assert.True(index4 > index3n, "Instruction 4 must follow 3n, unrenumbered.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3o_JudgesAWikiHedgeByTheCode_AndFollows3n(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        Assert.Contains("3o. A wiki page's hedge — usually, often, typically, in most cases — is not evidence that exceptions exist. When the implementing code or data shows the rule without an exception, judge the claim by the code and say in the basis that the wiki hedges.", prompt);
+
+        int index3n = prompt.IndexOf("3n. A line inside a `switch`", System.StringComparison.Ordinal);
+        int index3o = prompt.IndexOf("3o. A wiki page's hedge", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3o > index3n, "Instruction 3o must follow instruction 3n.");
+        Assert.True(index4 > index3o, "Instruction 4 must follow 3o, unrenumbered.");
+    }
+
     // --- The antecedent of a claim that opens with a pronoun (run 74, Q12) -----------------
 
     private const string DonationSentence = "Donate 400 gold per level to the temple priest for protection.";

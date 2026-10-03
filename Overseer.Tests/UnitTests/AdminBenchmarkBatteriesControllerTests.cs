@@ -807,8 +807,9 @@ public class AdminBenchmarkBatteriesControllerTests
         newest.TestedModelSnapshot = BenchmarkModelSnapshots.Model(
             provider: "OpenAI", modelId: "gpt-6", displayName: "GPT 6",
             thinkingLevel: "high", reasoningMode: "enabled", serviceTier: "flex");
-        newest.AssessorModelSnapshot = BenchmarkModelSnapshots.Model("Google", "gemini-3.7-pro", "Gemini Grader");
-        newest.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model("Anthropic", "claude-co-reader", "Co Reader");
+        newest.AssessorModelSnapshot = BenchmarkModelSnapshots.Model("Google", "gemini-3.7-pro", "Gemini Grader", thinkingLevel: "medium");
+        newest.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+            "Anthropic", "claude-co-reader", "Co Reader", thinkingLevel: "low", reasoningMode: "enabled");
         newest.ScoringProfile = new BenchmarkScoringProfile { Name = "Strict" };
         newest.CandidatePromptOptionsJson = "{\"verboseMode\":true}";
         await f.Db.SaveChangesAsync(ct);
@@ -829,7 +830,12 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.Equal("enabled", dto.TestedReasoningMode);
         Assert.Equal("flex", dto.TestedServiceTier);
         Assert.Equal("Gemini Grader", dto.AssessorLabel);
+        Assert.Equal("Google", dto.AssessorProvider);
+        Assert.Equal("medium", dto.AssessorThinkingLevel);
         Assert.Equal("Co Reader", dto.CoAssessorLabel);
+        Assert.Equal("Anthropic", dto.CoAssessorProvider);
+        Assert.Equal("low", dto.CoAssessorThinkingLevel);
+        Assert.Equal("enabled", dto.CoAssessorReasoningMode);
         Assert.Equal("Strict", dto.ScoringProfileName);
         Assert.True(dto.VerboseMode);
 
@@ -866,11 +872,131 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.Null(dto.TestedReasoningMode);
         Assert.Equal("priority", dto.TestedServiceTier);
         Assert.Equal("Assessor Configured", dto.AssessorLabel);
+        Assert.Equal("Google", dto.AssessorProvider);
+        Assert.Null(dto.AssessorThinkingLevel);
         Assert.Null(dto.CoAssessorLabel);
+        Assert.Null(dto.CoAssessorProvider);
         Assert.Null(dto.ScoringProfileName);
         Assert.False(dto.VerboseMode);
         Assert.Null(dto.ReportWriterModelConfigurationId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, dto.ReportDocumentsStatus);
+        Assert.Null(dto.ReportWriterDisplayName);
+        Assert.Equal(0, dto.ReportDocumentsWrittenCount);
+    }
+
+    [Fact]
+    public async Task BatteryRun_CarriesItsReportWritersSettings_AndCountsItsWrittenDocuments()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        f.Db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = 9,
+            DisplayName = "Writer Configured",
+            Provider = "Anthropic",
+            ModelId = "claude-writer",
+            ThinkingLevel = "high",
+            ReasoningMode = "adaptive",
+            ServiceTier = "priority"
+        });
+        await f.Db.SaveChangesAsync(ct);
+
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        batteryRun.ReportWriterModelConfigurationId = 9;
+        var orphaned = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        orphaned.ReportWriterModelConfigurationId = 99;
+        f.Db.BenchmarkReportDocuments.AddRange(
+            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.ExecutiveSummary),
+            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.TechnicalReport),
+            BatteryReportHarness.BatteryDocument(orphaned.Id, BenchmarkReportAudience.ExecutiveSummary));
+        await f.Db.SaveChangesAsync(ct);
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
+
+        Assert.Equal("Writer Configured", dto.ReportWriterDisplayName);
+        Assert.Equal("Anthropic", dto.ReportWriterProvider);
+        Assert.Equal("claude-writer", dto.ReportWriterModelId);
+        Assert.Equal("high", dto.ReportWriterThinkingLevel);
+        Assert.Equal("adaptive", dto.ReportWriterReasoningMode);
+        Assert.Equal("priority", dto.ReportWriterServiceTier);
+        Assert.Equal(2, dto.ReportDocumentsWrittenCount);
+
+        // A writer whose configuration has been deleted keeps its id and loses its settings.
+        var gone = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(orphaned.Id, ct)).Value);
+
+        Assert.Equal((long?)99, gone.ReportWriterModelConfigurationId);
+        Assert.Null(gone.ReportWriterDisplayName);
+        Assert.Null(gone.ReportWriterProvider);
+        Assert.Null(gone.ReportWriterModelId);
+        Assert.Null(gone.ReportWriterThinkingLevel);
+        Assert.Null(gone.ReportWriterReasoningMode);
+        Assert.Null(gone.ReportWriterServiceTier);
+        Assert.Equal(1, gone.ReportDocumentsWrittenCount);
+    }
+
+    [Fact]
+    public async Task BatteryRun_Members_CarryTheirStageProgressHalfWidthDurationAndCounts()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Running);
+
+        var finished = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        finished.AnsweredQuestionCount = 1;
+        finished.QualityIndexStandardError = 2.5;
+        finished.CompletedAtUtc = finished.StartedAtUtc.AddMinutes(13).AddSeconds(40);
+        finished.ClaimsRefutedCount = 2;
+        finished.AdvisoryFlagAnswerCount = 3;
+
+        var running = await SeedMemberAsync(f, batteryRun, suiteIndex: 1, status: BenchmarkRunStatus.Running, qualityIndex: null);
+        running.TotalQuestionCount = 2;
+        running.QualityIndexStandardError = 4.0;
+        running.Answers.Add(new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            QuestionText = "Suite B Q1",
+            AnswerText = "An answer.",
+            Status = BenchmarkAnswerStatus.Ok
+        });
+        await f.Db.SaveChangesAsync(ct);
+
+        using var cts = new CancellationTokenSource();
+        Assert.True(f.RunManager.TryStart(running.Id, cts, out _));
+        try
+        {
+            f.RunManager.MarkStage(running.Id, BenchmarkRunStage.Verifying);
+
+            var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+                Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
+
+            // Finished: the run's own answered count, 1.96 × SE, 13 min 40 s, and its counts.
+            var done = dto.Members.Single(m => m.RunId == finished.Id);
+            Assert.Null(done.Stage);
+            Assert.Equal(1, done.AnsweredQuestionCount);
+            Assert.Equal(1.96 * 2.5, done.QualityIndexHalfWidth!.Value, 9);
+            Assert.Equal(820_000L, done.DurationMs);
+            Assert.Equal(2, done.ClaimsRefutedCount);
+            Assert.Equal(3, done.AdvisoryFlagAnswerCount);
+
+            // Running: the run manager's stage and the answer rows so far; no index, so no half-width.
+            var live = dto.Members.Single(m => m.RunId == running.Id);
+            Assert.Equal("Verifying", live.Stage);
+            Assert.Equal(1, live.AnsweredQuestionCount);
+            Assert.Equal(2, live.TotalQuestionCount);
+            Assert.Null(live.QualityIndexHalfWidth);
+            Assert.Null(live.DurationMs);
+        }
+        finally
+        {
+            f.RunManager.Complete(running.Id);
+        }
+
+        // Once this process no longer drives it, a member still marked running carries no stage.
+        var after = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
+        Assert.Null(after.Members.Single(m => m.RunId == running.Id).Stage);
     }
 
     [Fact]

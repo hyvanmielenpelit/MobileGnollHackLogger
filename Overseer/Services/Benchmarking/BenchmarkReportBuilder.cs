@@ -564,15 +564,23 @@ public static class BenchmarkReportBuilder
     private static bool PredatesRubricChargedVerification(BenchmarkRun run)
         => int.TryParse(run.HarnessVersion, out int version) && version < RubricChargedVerificationHarnessVersion;
 
-    /// <summary>The line the Rubric Contradicted by Source bullet ends with.</summary>
-    internal const string RubricRepairLeadLine = "Suite repair lead: check the rubric point against the cited source before the next run.";
+    /// <summary>
+    /// The display label of <see cref="BenchmarkAnswerFlags.RubricContradictedBySource"/>. The flag
+    /// says the source supports a sentence a grader docked against the rubric, not which of the two
+    /// is wrong.
+    /// </summary>
+    internal const string RubricContradictedLabel = "Rubric-charged deduction contradicted by source";
+
+    /// <summary>The line the <see cref="RubricContradictedLabel"/> bullet ends with.</summary>
+    internal const string RubricRepairLeadLine = "Check both the rubric point and the grader's reading of it against the cited source before the next run.";
 
     /// <summary>
-    /// The Rubric Contradicted by Source bullet: for each answer <see cref="BenchmarkRunFinalizer.IsRubricContradicted"/>
+    /// The <see cref="RubricContradictedLabel"/> bullet: for each answer <see cref="BenchmarkRunFinalizer.IsRubricContradicted"/>
     /// holds for, every accused item docked against the rubric that the claim verifier supported with a
     /// citation (<see cref="BenchmarkService.SupportedRubricContradictions"/>), with its question, the
-    /// charged sentence and part, the rubric text the grader relied on, and the verifier's citation and
-    /// basis; then <see cref="RubricRepairLeadLine"/>. Nothing when no answer is flagged.
+    /// charged sentence and part, the rubric text the grader quoted (or that it quoted none), and the
+    /// verifier's citation, followed by its basis when that says more than the citation; then
+    /// <see cref="RubricRepairLeadLine"/>. Nothing when no answer is flagged.
     /// </summary>
     private static void AppendRubricContradictions(StringBuilder sb, IReadOnlyList<BenchmarkRunAnswer> answers, bool isPanelRun)
     {
@@ -585,7 +593,7 @@ public static class BenchmarkReportBuilder
             return;
         }
 
-        sb.AppendLine($"- **Rubric Contradicted by Source:** {Inv(flagged.Count)} (question(s) {string.Join(", ", flagged.Select(a => $"Q{a.OrderIndex}"))}) — a sentence {(isPanelRun ? "a panel member" : "the assessor")} docked because it disagrees with the rubric's text was checked by the claim verifier against the source code/wiki and **supported** with a citation. Advisory: the deduction stands and no index moved.");
+        sb.AppendLine($"- **{RubricContradictedLabel}:** {Inv(flagged.Count)} (question(s) {string.Join(", ", flagged.Select(a => $"Q{a.OrderIndex}"))}) — a sentence {(isPanelRun ? "a panel member" : "the assessor")} docked because it disagrees with the rubric's text was checked by the claim verifier against the source code/wiki and **supported** with a citation. Either the rubric point is wrong or the grader misread a correct one; the flag does not say which. Advisory: the deduction stands and no index moved.");
         foreach (var answer in flagged)
         {
             foreach (var item in BenchmarkService.SupportedRubricContradictions(ClaimVerificationsOf(answer)))
@@ -596,8 +604,14 @@ public static class BenchmarkReportBuilder
                 string accusers = isPanelRun && item.AccusingMembers is { Count: > 0 } members
                     ? $" — accused by {string.Join(" and ", members)}"
                     : string.Empty;
-                string rubric = string.IsNullOrWhiteSpace(item.RubricQuote) ? "not found" : $"\"{item.RubricQuote}\"";
-                sb.AppendLine($"  - Q{answer.OrderIndex}: \"{item.Claim}\"{chargedPart}{accusers} — rubric: {rubric} — source: {item.Citation} — {item.Basis}");
+                string rubric = string.IsNullOrWhiteSpace(item.RubricQuote)
+                    ? "rubric text: not quoted by the grader"
+                    : $"rubric: \"{item.RubricQuote}\"";
+                string basis = item.Basis?.Trim() ?? string.Empty;
+                string basisPart = basis.Length > 0 && !string.Equals(basis, item.Citation?.Trim() ?? string.Empty, StringComparison.Ordinal)
+                    ? $" — {item.Basis}"
+                    : string.Empty;
+                sb.AppendLine($"  - Q{answer.OrderIndex}: \"{item.Claim}\"{chargedPart}{accusers} — {rubric} — source: {item.Citation}{basisPart}");
             }
         }
         sb.AppendLine($"  - *{RubricRepairLeadLine}*");
@@ -660,6 +674,50 @@ public static class BenchmarkReportBuilder
         }
         return causes;
     }
+
+    /// <summary>
+    /// A cause from <see cref="ContestedDeductionCauses"/> as printed for <paramref name="member"/>:
+    /// member B's supported accusation names member B as the one that quoted the sentence.
+    /// </summary>
+    private static string CauseText(string cause, BenchmarkPanelMember? member)
+        => member == BenchmarkPanelMember.B && cause == AccusationSupportedCause
+            ? "a sentence member B quoted as false was supported"
+            : cause;
+
+    /// <summary>
+    /// Member B's advisory flags as the <see cref="BenchmarkAnswerFlags"/> bits that are their
+    /// counterparts on member A's answer, read from <see cref="BenchmarkRunAnswer.CoAssessmentJson"/>.
+    /// <c>None</c> without a record or a flag. The completeness-out-of-scope and readability-form-only
+    /// markers have no bit and are not included.
+    /// </summary>
+    internal static BenchmarkAnswerFlags CoAssessmentAnswerFlags(BenchmarkRunAnswer answer)
+        => CoAssessmentAnswerFlags(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)?.Flags);
+
+    /// <summary><see cref="CoAssessmentAnswerFlags(BenchmarkRunAnswer)"/> for a parsed flag set.</summary>
+    internal static BenchmarkAnswerFlags CoAssessmentAnswerFlags(BenchmarkCoAssessmentFlags? flags)
+    {
+        if (flags == null) return BenchmarkAnswerFlags.None;
+
+        var result = BenchmarkAnswerFlags.None;
+        if (flags.ContestedVerdict) result |= BenchmarkAnswerFlags.ContestedVerdict;
+        if (flags.UnevidencedDeduction) result |= BenchmarkAnswerFlags.UnevidencedDeduction;
+        if (flags.OmissionAsAccuracy) result |= BenchmarkAnswerFlags.OmissionAsAccuracy;
+        if (flags.OutOfRubricAccuracy) result |= BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction;
+        if (flags.ContestedCriticalError) result |= BenchmarkAnswerFlags.ContestedCriticalError;
+        if (flags.ContestedAccuracyDeduction) result |= BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        if (flags.DimensionOutlier) result |= BenchmarkAnswerFlags.DimensionOutlier;
+        if (flags.RubricContradictedBySource) result |= BenchmarkAnswerFlags.RubricContradictedBySource;
+        return result;
+    }
+
+    /// <summary>The names of the set bits of <paramref name="flags"/>, in enum order; empty for <c>None</c>.</summary>
+    internal static List<string> AnswerFlagNamesOf(BenchmarkAnswerFlags flags)
+        => flags == BenchmarkAnswerFlags.None
+            ? new List<string>()
+            : Enum.GetValues<BenchmarkAnswerFlags>()
+                .Where(f => f != BenchmarkAnswerFlags.None && flags.HasFlag(f))
+                .Select(f => f.ToString())
+                .ToList();
 
     /// <summary>
     /// The manifest line for the BOARD FACTS quote check stamped at launch, or null for a run that
@@ -1371,7 +1429,15 @@ public static class BenchmarkReportBuilder
         Group("Weaknesses", "weakness");
     }
 
-    public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null, BenchmarkRunPricing? runPricing = null)
+    /// <summary>
+    /// The run's Markdown report. <paramref name="battery"/> is the battery run slot the run fills,
+    /// printed in the manifest; null when the run is no battery member.
+    /// </summary>
+    public static string BuildMarkdownReport(
+        BenchmarkRun run,
+        string? overseerVersion = null,
+        BenchmarkRunPricing? runPricing = null,
+        BenchmarkRunBatteryContext? battery = null)
     {
         var sb = new StringBuilder();
         // Read back from the run's own profile snapshot, so the report describes the run in
@@ -1422,6 +1488,10 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Overseer Version:** {overseerVersion ?? "1.0.0"}");
         sb.AppendLine($"- **Suite Name:** {run.SuiteName}");
         sb.AppendLine($"- **Suite origin:** {SuiteOriginText(run)}");
+        if (battery != null)
+        {
+            sb.AppendLine(battery.ManifestLine());
+        }
         if (!string.IsNullOrEmpty(run.GameSnapshotNameUsed))
         {
             string shaPrefix = run.GameSnapshotSha256Used?.Length >= 12
@@ -2932,6 +3002,11 @@ public static class BenchmarkReportBuilder
         int harnessLimitCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
         int unansweredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Unanswered);
         int advisoryCount = answers.Count(BenchmarkRunFinalizer.HasAdvisoryFlag);
+        // The count above is member A's, as the run stores it; a panel run adds the answers either
+        // member flagged, computed from the answers.
+        string eitherMemberAdvisoryText = isPanelRun
+            ? $"; {Inv(answers.Count(a => BenchmarkRunFinalizer.HasAdvisoryFlag(a) || CoAssessmentAnswerFlags(a) != BenchmarkAnswerFlags.None))} answer(s) on either member"
+            : string.Empty;
         // NarrationBlockCount is the honest figure: how many narration blocks the scrubber
         // actually removed from this answer. Runs before harness version 6 did not record it,
         // and there null means "not recorded" — never zero. For those the old proxy stands, a
@@ -3018,7 +3093,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, rubric contradicted by source: {FlagFigure(rubricContradictedFigure, f => f.RubricContradictedBySource)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount}{eitherMemberAdvisoryText} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, rubric-charged deduction contradicted: {FlagFigure(rubricContradictedFigure, f => f.RubricContradictedBySource)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
 
         // The Accuracy-specific share of the generic unevidenced-deduction flag, which is shared
         // by dimensions. Read from the stored evidence, so a run graded before the rule existed
@@ -3077,11 +3152,11 @@ public static class BenchmarkReportBuilder
             var byCauseB = MemberBFlagged(f => f.ContestedAccuracyDeduction)
                 .SelectMany(a => ContestedDeductionCauses(a, BenchmarkPanelMember.B).Select(cause => (Cause: cause, Answer: a)))
                 .ToList();
-            IEnumerable<string> CauseParts(List<(string Cause, BenchmarkRunAnswer Answer)> causes)
+            IEnumerable<string> CauseParts(List<(string Cause, BenchmarkRunAnswer Answer)> causes, BenchmarkPanelMember? member = null)
                 => new[] { BasisRefutedCause, AccusationSupportedCause, AssessorStatementRefutedCause, DockedSuspicionSupportedCause, CauseNotRecorded }
                     .Select(cause => (Cause: cause, Answers: causes.Where(x => x.Cause == cause).Select(x => $"Q{x.Answer.OrderIndex}").ToList()))
                     .Where(p => p.Answers.Count > 0)
-                    .Select(p => $"{p.Cause}: {string.Join(", ", p.Answers)}");
+                    .Select(p => $"{CauseText(p.Cause, member)}: {string.Join(", ", p.Answers)}");
             var causeParts = CauseParts(byCause);
             var allCauses = byCause.Concat(byCauseB).ToList();
             // The third cause is named only where it occurs, so a report without one reads as before.
@@ -3096,7 +3171,7 @@ public static class BenchmarkReportBuilder
                 ? string.Join("; ", new[]
                     {
                         byCause.Count > 0 ? $"member A — {string.Join("; ", causeParts)}" : null,
-                        byCauseB.Count > 0 ? $"member B — {string.Join("; ", CauseParts(byCauseB))}" : null
+                        byCauseB.Count > 0 ? $"member B — {string.Join("; ", CauseParts(byCauseB, BenchmarkPanelMember.B))}" : null
                     }.Where(p => p != null))
                 : string.Join("; ", causeParts);
             string countText = isPanelRun
@@ -3263,11 +3338,11 @@ public static class BenchmarkReportBuilder
             }
             if (suspectedFalseRunCount > 0 && isPanelRun)
             {
-                sb.AppendLine($"- **Suspected False by the Panel:** {suspectedFalseRunCount} ({MemberSplitText(suspectedFalseByAnswer.SelectMany(x => x.Claims), membersOf: v => v.SuspectingMembers)}) across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the member), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences a panel member believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
+                sb.AppendLine($"- **Suspected False by the Panel:** {suspectedFalseRunCount} ({MemberSplitText(suspectedFalseByAnswer.SelectMany(x => x.Claims), membersOf: v => v.SuspectingMembers)}) across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the member), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences a panel member believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method {Inv(run.ScoringMethodVersion)} they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
             }
             else if (suspectedFalseRunCount > 0)
             {
-                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the assessor), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
+                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the assessor), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method {Inv(run.ScoringMethodVersion)} they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
             }
             if (supportedAccusations.Count > 0)
             {
@@ -3974,7 +4049,7 @@ public static class BenchmarkReportBuilder
                 : string.Empty;
             sb.AppendLine(
                 $"- **Band Drift:** {movedUp} assessed harder than authored, {movedDown} easier; mean signed delta " +
-                $"**{(meanSignedDelta > 0 ? "+" : string.Empty)}{Inv(meanSignedDelta, "F1")}** points against the authored band midpoint. " +
+                $"**{(meanSignedDelta > 0 ? "+" : string.Empty)}{Inv(meanSignedDelta, "F1")}** points against the authored band's reference difficulty (25 / 55 / 85). " +
                 $"Assessed difficulty is the Intelligence Index weight, so this shifts the headline as well as the bucketing.{driftDirection}");
             sb.AppendLine();
 
@@ -4381,6 +4456,11 @@ public static class BenchmarkReportBuilder
             {
                 var flags = (BenchmarkAnswerFlags)a.AnswerFlags;
                 sb.AppendLine($"- **Integrity Flags:** {flags}");
+            }
+            var memberBFlags = isPanelRun ? CoAssessmentAnswerFlags(a) : BenchmarkAnswerFlags.None;
+            if (memberBFlags != BenchmarkAnswerFlags.None)
+            {
+                sb.AppendLine($"- **Integrity Flags (member B):** {memberBFlags}");
             }
             if (a.ScrubbedArtifactCount > 0)
             {
@@ -4822,7 +4902,8 @@ public static class BenchmarkReportBuilder
             a.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
                 or BenchmarkAnswerStatus.Canceled or BenchmarkAnswerStatus.EmptyAnswer
             || a.ToolBudgetExhausted
-            || a.AnswerFlags != 0).ToList();
+            || a.AnswerFlags != 0
+            || (isPanelRun && CoAssessmentAnswerFlags(a) != BenchmarkAnswerFlags.None)).ToList();
 
         if (issueAnswers.Count == 0 && string.IsNullOrEmpty(run.ErrorMessage))
         {
@@ -4883,9 +4964,22 @@ public static class BenchmarkReportBuilder
                 {
                     flagDescriptions.Add($"Contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia, isPanelRun ? BenchmarkPanelMember.A : (BenchmarkPanelMember?)null))})");
                 }
-                if (iaFlags.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add("Rubric contradicted by source: a sentence docked against the rubric was supported with a citation (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add($"{RubricContradictedLabel}: a sentence docked against the rubric was supported with a citation (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
+
+                // Member B's flags, from its co-assessment record, each named for the member.
+                var iaFlagsB = isPanelRun ? CoAssessmentAnswerFlags(ia) : BenchmarkAnswerFlags.None;
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.ContestedVerdict)) flagDescriptions.Add("Member B: contested verdict (advisory, changed no score)");
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)) flagDescriptions.Add("Member B: unevidenced deduction (advisory, changed no score)");
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)) flagDescriptions.Add("Member B: contested critical error (advisory, changed no score)");
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
+                {
+                    flagDescriptions.Add($"Member B: contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia, BenchmarkPanelMember.B).Select(c => CauseText(c, BenchmarkPanelMember.B)))})");
+                }
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add($"Member B: {RubricContradictedLabel.ToLowerInvariant()}: a sentence docked against the rubric was supported with a citation (advisory, changed no score)");
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Member B: omission docked as accuracy (advisory, changed no score)");
+                if (iaFlagsB.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Member B: dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)
                 {
                     flagDescriptions.Add($"Tool call budget reached ({FormatToolBudgetLine(ia)}) — configured harness limit, not an error");
@@ -5558,5 +5652,67 @@ public static class BenchmarkReportBuilder
             return $"{ts.Minutes}m {ts.Seconds}s";
         }
         return $"{ts.Seconds}.{ts.Milliseconds / 100}s";
+    }
+}
+
+/// <summary>
+/// The battery run slot a benchmark run fills, as the run's report manifest names it: the battery
+/// run, the battery's name and definition revision, the 1-based suite position of
+/// <see cref="SuiteCount"/> and the round of <see cref="RoundCount"/>. <see cref="Revision"/> is
+/// null when the battery run's stored definition cannot be read.
+/// </summary>
+public sealed record BenchmarkRunBatteryContext(
+    long BatteryRunId,
+    string BatteryName,
+    int? Revision,
+    int SuiteNumber,
+    int SuiteCount,
+    int Round,
+    int RoundCount)
+{
+    /// <summary>
+    /// The context of <paramref name="member"/> within <paramref name="batteryRun"/>. The revision and
+    /// the suite count are read from the battery run's definition snapshot; when it cannot be read the
+    /// suite count falls back to the requested member count over the runs per suite.
+    /// </summary>
+    public static BenchmarkRunBatteryContext From(BenchmarkBatteryRunMember member, BenchmarkBatteryRun batteryRun)
+    {
+        ArgumentNullException.ThrowIfNull(member);
+        ArgumentNullException.ThrowIfNull(batteryRun);
+
+        BenchmarkBatteryDefinition? definition;
+        try
+        {
+            definition = BenchmarkBatteryDefinition.FromJson(batteryRun.DefinitionJson ?? string.Empty);
+        }
+        catch (JsonException)
+        {
+            definition = null;
+        }
+
+        int suiteCount = definition?.Suites.Count
+            ?? (batteryRun.RunsPerSuite > 0 ? batteryRun.RequestedMemberCount / batteryRun.RunsPerSuite : 0);
+
+        return new BenchmarkRunBatteryContext(
+            batteryRun.Id,
+            batteryRun.BatteryName,
+            definition?.Revision,
+            member.SuiteIndex + 1,
+            suiteCount,
+            member.Round,
+            batteryRun.RunsPerSuite);
+    }
+
+    /// <summary>
+    /// The manifest line, e.g. <c>- **Battery:** Battery run #4 (Core, revision 2), suite 1 of 3, round 2 of 3</c>.
+    /// </summary>
+    public string ManifestLine()
+    {
+        string revision = Revision.HasValue
+            ? $"revision {Revision.Value.ToString(CultureInfo.InvariantCulture)}"
+            : "revision not recorded";
+        return $"- **Battery:** Battery run #{BatteryRunId.ToString(CultureInfo.InvariantCulture)} ({BatteryName}, {revision}), "
+            + $"suite {SuiteNumber.ToString(CultureInfo.InvariantCulture)} of {SuiteCount.ToString(CultureInfo.InvariantCulture)}, "
+            + $"round {Round.ToString(CultureInfo.InvariantCulture)} of {RoundCount.ToString(CultureInfo.InvariantCulture)}";
     }
 }

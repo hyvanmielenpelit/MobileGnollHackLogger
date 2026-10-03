@@ -21,8 +21,7 @@ import {
   copyImageToClipboard,
   encodeFigureImage,
   exportTimestamp,
-  saveFigureBlob,
-  wrapText
+  saveFigureBlob
 } from '../model-comparison/figure-export';
 import type { ClipboardImageOutcome } from '../model-comparison/figure-export';
 import { safeFileName } from '../../../utils/download.util';
@@ -1149,9 +1148,45 @@ function fontOf(size: number, weight: string): string {
   return `${weight} ${size}px ${FIGURE_FONT_STACK}`;
 }
 
-/** A {@link TextWrapper} measuring in `context`, through the figure composer's own `wrapText`. */
+/** A unit after a figure in a caption: `14.3 s`, `850 ms`, `4 min`, `2 h`, `31 %`. */
+const FIGURE_UNIT = /(\d)[ \t]+(ms|s|min|h|%)(?=$|[\s.,;:)*·/])/g;
+
+/** Ordinary whitespace, where a caption may wrap; U+00A0 is not part of it. */
+const BREAKABLE_SPACE = /[^\S ]+/;
+
+/** Joins each figure to the unit after it with U+00A0, so a caption never wraps between the two. */
+export function bindFigureUnits(text: string): string {
+  return text.replace(FIGURE_UNIT, '$1 $2');
+}
+
+/**
+ * A {@link TextWrapper} measuring in `context`: the figure composer's greedy word wrap, breaking
+ * only at ordinary whitespace once {@link bindFigureUnits} has joined each figure to its unit. A
+ * word wider than the column is left to overflow rather than broken.
+ */
 export function canvasTextWrapper(context: CanvasRenderingContext2D): TextWrapper {
-  return (text, maxWidth, sizePx, weight) => wrapText(context, text, maxWidth, sizePx, weight, FIGURE_FONT_STACK);
+  return (text, maxWidth, sizePx, weight) => {
+    const trimmed = bindFigureUnits((text ?? '').trim());
+    if (trimmed === '') {
+      return [];
+    }
+    context.font = fontOf(sizePx, weight);
+    const lines: string[] = [];
+    let current = '';
+    for (const word of trimmed.split(BREAKABLE_SPACE)) {
+      const candidate = current === '' ? word : `${current} ${word}`;
+      if (current !== '' && context.measureText(candidate).width > maxWidth) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current !== '') {
+      lines.push(current);
+    }
+    return lines;
+  };
 }
 
 /** A {@link TextMeasurer} measuring in `context`. */

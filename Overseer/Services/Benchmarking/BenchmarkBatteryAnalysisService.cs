@@ -368,6 +368,162 @@ public class BenchmarkBatteryAnalysisService
         return IsStale(loaded.UsableMemberRunIds, analysis);
     }
 
+    // --- Report manifest ---------------------------------------------------------------------------
+
+    /// <summary>The most earlier battery runs <see cref="LoadEarlierRunsAsync"/> returns.</summary>
+    public const int EarlierRunLimit = 5;
+
+    /// <summary>
+    /// The models the battery run was measured and written with, for the report's Graders block:
+    /// every grading role from the newest of <paramref name="usableRuns"/> (see <see cref="GradersOf"/>),
+    /// and the report writer from the battery run's configuration, loaded here.
+    /// </summary>
+    public async Task<BenchmarkBatteryGraders> LoadGradersAsync(
+        BenchmarkBatteryRun batteryRun,
+        IReadOnlyList<BenchmarkRun> usableRuns,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(batteryRun);
+
+        BenchmarkBatteryRoleModel? writer = null;
+        if (batteryRun.ReportWriterModelConfigurationId is long writerId)
+        {
+            writer = await _db.SystemAiApiConfigurations
+                .AsNoTracking()
+                .Where(c => c.Id == writerId)
+                .Select(c => new BenchmarkBatteryRoleModel
+                {
+                    DisplayName = c.DisplayName,
+                    Provider = c.Provider,
+                    ModelId = c.ModelId,
+                    ThinkingLevel = c.ThinkingLevel,
+                    ReasoningMode = c.ReasoningMode,
+                    ServiceTier = c.ServiceTier
+                })
+                .FirstOrDefaultAsync(ct);
+        }
+
+        return GradersOf(batteryRun, usableRuns, writer);
+    }
+
+    /// <summary>
+    /// The Graders block's roles: the model under test, the assessor, the co-assessor, the reader and
+    /// the claim verifier as the newest of <paramref name="usableRuns"/> — by start time, then id, the
+    /// run the analysis reads its harness version from — recorded them in its snapshots; the report
+    /// writer as given.
+    /// </summary>
+    public static BenchmarkBatteryGraders GradersOf(
+        BenchmarkBatteryRun batteryRun,
+        IReadOnlyList<BenchmarkRun>? usableRuns,
+        BenchmarkBatteryRoleModel? reportWriter)
+    {
+        ArgumentNullException.ThrowIfNull(batteryRun);
+
+        var newest = (usableRuns ?? Array.Empty<BenchmarkRun>())
+            .Where(r => r != null)
+            .OrderByDescending(r => r.StartedAtUtc)
+            .ThenByDescending(r => r.Id)
+            .FirstOrDefault();
+
+        var graders = new BenchmarkBatteryGraders
+        {
+            ReportWriterConfigurationId = batteryRun.ReportWriterModelConfigurationId,
+            ReportWriter = reportWriter
+        };
+
+        if (newest == null) return graders;
+
+        return graders with
+        {
+            SourceRunId = newest.Id,
+            Panel = BenchmarkRunFinalizer.IsPanelRun(newest),
+            ModelUnderTest = BenchmarkBatteryRoleModel.Of(newest.TestedModelSnapshot),
+            Assessor = BenchmarkBatteryRoleModel.Of(newest.AssessorModelSnapshot),
+            CoAssessor = BenchmarkRunFinalizer.IsPanelRun(newest) ? BenchmarkBatteryRoleModel.Of(newest.CoAssessorModelSnapshot) : null,
+            Reader = BenchmarkBatteryRoleModel.Of(newest.SecondOpinionAssessorModelSnapshot),
+            ReaderMode = Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), newest.SecondOpinionModeUsed)
+                ? (BenchmarkSecondOpinionMode)newest.SecondOpinionModeUsed
+                : BenchmarkSecondOpinionMode.Off,
+            ReaderGradedAnswerCount = newest.SecondOpinionGradedAnswerCount,
+            ReaderQuestionCount = newest.TotalQuestionCount,
+            ClaimVerifier = BenchmarkBatteryRoleModel.Of(newest.ClaimVerifierModelSnapshot)
+        };
+    }
+
+    /// <summary>
+    /// Up to <see cref="EarlierRunLimit"/> finished battery runs of the same battery that started
+    /// before <paramref name="batteryRun"/>, newest first, each with its latest analysis's harness
+    /// version, Overall Index and comparability class. Empty when the battery has been deleted.
+    /// </summary>
+    public async Task<IReadOnlyList<BenchmarkBatteryEarlierRun>> LoadEarlierRunsAsync(
+        BenchmarkBatteryRun batteryRun,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(batteryRun);
+        if (batteryRun.BenchmarkBatteryId is not long batteryId) return Array.Empty<BenchmarkBatteryEarlierRun>();
+
+        long ownId = batteryRun.Id;
+        DateTime ownStart = batteryRun.StartedAtUtc;
+
+        // Finished as BenchmarkBatteryModelComparison.IsFinished reads it.
+        var earlier = await _db.BenchmarkBatteryRuns
+            .AsNoTracking()
+            .Where(r => r.BenchmarkBatteryId == batteryId
+                        && r.Id != ownId
+                        && r.StartedAtUtc < ownStart
+                        && r.Status != BenchmarkRunSeriesStatus.Pending
+                        && r.Status != BenchmarkRunSeriesStatus.Running
+                        && r.Status != BenchmarkRunSeriesStatus.WaitingForCap)
+            .OrderByDescending(r => r.StartedAtUtc)
+            .ThenByDescending(r => r.Id)
+            .Take(EarlierRunLimit)
+            .Select(r => new { r.Id, r.CompletedAtUtc })
+            .ToListAsync(ct);
+
+        if (earlier.Count == 0) return Array.Empty<BenchmarkBatteryEarlierRun>();
+
+        var ids = earlier.Select(r => r.Id).ToList();
+        var heads = await _db.BenchmarkBatteryAnalyses
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.BenchmarkBatteryRunId))
+            .Select(a => new { a.Id, a.BenchmarkBatteryRunId, a.ComputedAtUtc })
+            .ToListAsync(ct);
+
+        var latestIds = heads
+            .GroupBy(a => a.BenchmarkBatteryRunId)
+            .Select(g => g.OrderByDescending(a => a.ComputedAtUtc).ThenByDescending(a => a.Id).First().Id)
+            .ToList();
+
+        var latest = latestIds.Count == 0
+            ? new Dictionary<long, BenchmarkBatteryAnalysis>()
+            : await _db.BenchmarkBatteryAnalyses
+                .AsNoTracking()
+                .Where(a => latestIds.Contains(a.Id))
+                .ToDictionaryAsync(a => a.BenchmarkBatteryRunId, ct);
+
+        return earlier
+            .Select(r =>
+            {
+                if (!latest.TryGetValue(r.Id, out var analysis))
+                {
+                    return new BenchmarkBatteryEarlierRun { BatteryRunId = r.Id, FinishedAtUtc = r.CompletedAtUtc };
+                }
+
+                var overall = analysis.Complete ? DeserializeResult(analysis)?.OverallIndex : null;
+                return new BenchmarkBatteryEarlierRun
+                {
+                    BatteryRunId = r.Id,
+                    FinishedAtUtc = r.CompletedAtUtc,
+                    Analysed = true,
+                    HarnessVersion = analysis.HarnessVersion,
+                    OverallIndex = overall?.PointEstimate,
+                    OverallIndexHalfWidth = overall?.CombinedHalfWidth,
+                    ComparabilityClassSha256 = analysis.ComparabilityClassSha256
+                };
+            })
+            .ToList();
+    }
+
     /// <summary>Deserializes a stored result; null when absent or malformed.</summary>
     public static BenchmarkBatteryStatisticsResult? DeserializeResult(BenchmarkBatteryAnalysis? analysis)
     {

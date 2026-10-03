@@ -255,6 +255,32 @@
     color: #999;
   }
 
+  /* A running member: stage caption, its own progress bar and count, and its elapsed time. */
+  .bp-member-stage {
+    color: #ddd;
+  }
+
+  .bp-member-progress {
+    display: block;
+    inline-size: 100%;
+    max-inline-size: 16rem;
+    margin-block-start: 6px;
+  }
+
+  .bp-member-elapsed,
+  .bp-member-facts {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A finished member: its index badge above the facts line. */
+  .bp-member-index {
+    margin-block-start: 6px;
+  }
+
+  .bp-cell-waiting {
+    color: #999;
+  }
+
   .bp-empty {
     color: #999;
     font-style: italic;
