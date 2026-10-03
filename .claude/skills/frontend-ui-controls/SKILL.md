@@ -9,9 +9,11 @@ description: >-
   when a control is a tab rather than a button. Also covers the shared data-table
   layer (TableState, app-sort-header, app-table-pager, .gh-datatable) that gives a
   table paging, column sorting and column filtering, and the rules that keep a
-  paged table honest about selection, and the shared model picker (app-model-picker)
-  with its collapsible-listbox keyboard and ARIA contract. Read before adding or
-  restyling any button, icon button, toolbar, tab row, model picker, or data table.
+  paged table honest about selection; card lists with a faceted filter bar
+  (app-filter-facet, search, chips, Sort by, Load more) for rows that are small
+  forms; and the shared model picker (app-model-picker) with its
+  collapsible-listbox keyboard and ARIA contract. Read before adding or restyling
+  any button, icon button, toolbar, tab row, model picker, data table, or card list.
 ---
 
 The full skill lives in this repository's tool-neutral agent directory (`.agents/`),

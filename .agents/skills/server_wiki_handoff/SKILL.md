@@ -525,10 +525,12 @@ Rung 2 is exempt from the re-run requirement (`server_benchmark_to_chat_transfer
 is the common case; the defect is silence about the check, not the absence of a gate.
 
 **The gate and both closing messages also appear in the round's Developer Runbook**
-([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md)) as numbered steps — Step 2,
-Step 3, the commit and push, and the wait for the 10-minute wiki re-index or the restart — so
+([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md)) as `CHANGE` steps of its
+one numbered list — the validation session (this document's Step 2), the execution session
+(Step 3), the commit and push, and the wait for the 10-minute wiki re-index or the restart — so
 the developer sees where the wiki work falls relative to the rubric import and the next run.
-This section still owns the gate's wording and its read-only verification.
+The runbook numbers its own steps, so it names these two by what they are, not by this
+document's numbers. This section still owns the gate's wording and its read-only verification.
 
 ## 5. After the Wiki Session
 

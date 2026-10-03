@@ -469,7 +469,7 @@ A protocol that authorises production prompt edits but specifies no way to detec
 
 Rungs 1 and 2 — knowledge base and wiki content — are exempt from the re-run requirement, because they add facts rather than change instructions. They are still recorded in § 11, since rung 1 alters the frozen prompt segment (§ 7). **Exemption from re-running is not exemption from sequencing**: whenever another step of the round reads the edited pages, see [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 4a for the gate that holds it until the user confirms that the change passed validation against the GnollHack source and the wiki session has finished.
 
-**The re-run is specified, not just required.** Obligation 1 above is discharged by a run card in the round's Developer Runbook ([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) § 5): the exact launcher values, what must stay unchanged from the motivating run, the comparability tier the pair will land in, and each pre-declared criterion with the place in the report where it is read. "Re-run under the same configuration" without that card has been followed wrongly before.
+**The re-run is specified, not just required.** Obligation 1 above is discharged by a `RUN` step in the round's Developer Runbook ([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) § 5): the exact launcher values, what must stay unchanged from the motivating run, the comparability tier the pair will land in, and each pre-declared criterion with the place in the report where it is read. "Re-run under the same configuration" without that step has been followed wrongly before.
 
 ---
 
@@ -495,11 +495,11 @@ The columns of that table are defined in the diagnostics skill, so this item **c
 
 It **MUST** end in a **Developer Runbook** — `developer_runbook_v<N>.md`, a member of the round's document set, in the format [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) defines — and the chat message that delivers the round repeats its step list in short form. The runbook carries:
 
-- **every action the round leaves to a human, in one dependency-ordered numbered list** — plan approval, the rubric repair import, the wiki handoff's Steps 2 and 3, a `gnollhack_` plan, a knowledge-base push, the Overseer restart, roster or profile changes — each as a step card;
-- **one or more run cards** — one can be enough — each tagged with the purposes it serves, which are ranked (§ *What the Benchmark Is For*) and proposed, ordered and marked Required in that rank: **C** improve the main chat, **B** improve the benchmarking system, **M** decide which models perform best as the Overseer AI on intelligence, speed and cost — and **V**, validate this round's fixes, which takes the rank of the fixes it validates; and
-- **what to hand back after each run**, including a ready-to-paste prompt for the next analysis.
+- **every action the round leaves to a human, in one dependency-ordered numbered list** — plan approval, the rubric repair import, the wiki handoff's validation and execution sessions, a `gnollhack_` plan, a knowledge-base push, the Overseer restart, roster or profile changes — each as a step of one numbered list in the order of doing;
+- **one or more `RUN` steps in that same list**, each preceded by its pre-launch `CHECK` step and followed by its `SAVE` step — one run can be enough — each tagged with the purposes it serves, which are ranked (§ *What the Benchmark Is For*) and proposed, ordered and marked Required in that rank: **C** improve the main chat, **B** improve the benchmarking system, **M** decide which models perform best as the Overseer AI on intelligence, speed and cost — and **V**, validate this round's fixes, which takes the rank of the fixes it validates; and
+- **a `SAVE` step after each run**: what to download, whether to go on, and a ready-to-paste prompt for the next analysis.
 
-The step-card and run-card fields are defined in that skill, so this item cannot be satisfied without loading it. Read it **once the findings are triaged and before the plan is written** — it is not one of the five up-front reads, because nothing in it can be applied before the findings exist. **An analysis with no fix to apply still owes a runbook**: its Part A says so in one line and its Part B proposes the next run on purposes C, B or M, in that order of preference.
+The step kinds and the fields of each are defined in that skill, so this item cannot be satisfied without loading it. Read it **once the findings are triaged and before the plan is written** — it is not one of the five up-front reads, because nothing in it can be applied before the findings exist. **An analysis with no fix to apply still owes a runbook**: its list says so in one line and consists of the next run's `CHECK`, `RUN` and `SAVE` steps, on purposes C, B or M, in that order of preference.
 
 Any implementation plan derived from a benchmark run must replicate this section or explicitly state: *"No chat-transferable changes proposed in this plan."*
 
@@ -761,4 +761,4 @@ breakdown, and the wire-level check now in place.
 - [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — the corpora, their paths and what each index excludes
 - [`server_tool_parameter_reference`](../server_tool_parameter_reference/SKILL.md) — the per-tool parameter and result contract
 - [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — pre-flight checklist, the three-step handoff document (proposed changes, source validation, execution) and its templates
-- [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) — the Developer Runbook every analysis ends in: ordered fix steps and the run cards for the following runs
+- [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) — the Developer Runbook every analysis ends in: one numbered step list, the following runs included as steps

@@ -167,7 +167,7 @@ This is **unconditional**. There is no finding-shaped condition to evaluate firs
 
 The analysis **MUST** produce the **Chat Transfer** section `server-benchmark-to-chat-transfer` § 10 specifies, including the tool-diagnostics table and "Limits of this pass" statement that section requires. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. Both skills are living documents: every analysis appends its run to the model behaviour notes.
 
-The analysis **MUST** also end in a **Developer Runbook** — `developer_runbook_v<N>.md`, in the format the `server-benchmark-runbook` skill defines: every action the round leaves to a human as one dependency-ordered list of steps, each easy enough to follow without opening any other document, followed by one or more **run cards** for the runs to make next. The runs validate the round's fixes and follow the priority order above: first improving the main Overseer chat, then the benchmarking system, then determining which models perform best as the Overseer AI on intelligence, speed and cost; one run can be enough. That skill is **not** one of the five: it is read once the findings are triaged, before the plan is written, and the agent never launches a run itself.
+The analysis **MUST** also end in a **Developer Runbook** — `developer_runbook_v<N>.md`, in the format the `server-benchmark-runbook` skill defines: every action the round leaves to a human as **one numbered step list in the order of doing**, each step easy enough to follow without opening any other document, with the runs to make next as steps at their place in it. The runs validate the round's fixes and follow the priority order above: first improving the main Overseer chat, then the benchmarking system, then determining which models perform best as the Overseer AI on intelligence, speed and cost; one run can be enough. That skill is **not** one of the five: it is read once the findings are triaged, before the plan is written, and the agent never launches a run itself.
 
 **The implementation plan of such a round runs uninterrupted and leaves the developer's manual jobs for the very end.** Exports from and imports into Overseer go at the start or the end; a mid-plan pause in which the developer must build and run Overseer is a special case the plan has to justify, and before asking, the agent proves the partly changed solution compiles and says plainly that it has not finished and will continue afterwards. `server_implementation_planning` § *The plan runs uninterrupted; the developer's jobs come last* has the rules.
 
@@ -190,8 +190,8 @@ Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
 Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`, `server_wiki_handoff`,
 `server_rubric_handoff` (the YAML repair file a Suite Defect finding hands off for one-action import),
-`server_benchmark_runbook` (the Developer Runbook every benchmark analysis ends in: ordered fix
-steps and the run cards for the following runs),
+`server_benchmark_runbook` (the Developer Runbook every benchmark analysis ends in: one numbered
+step list, the following runs included as steps),
 `server_data_privacy_framework`, `server_snapshot_suite_authoring` (turning an exported GnollHack
 AI snapshot into a one-file benchmark suite YAML, offline), and the tool-layer trio
 `server_tool_data_sources`, `server_tool_parameter_reference` and
