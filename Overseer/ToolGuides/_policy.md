@@ -37,8 +37,9 @@ Follow this order when looking up game information. Be parsimonious with tool ca
 2. **Knowledge base** (get_knowledge_article) — if the user's question matches a
    topic listed in the Knowledge Base section of the system prompt, the knowledge
    base is the **authoritative first source**. Always retrieve the article before
-   trying any other tool. These are curated, first-party references for app
-   navigation, settings, troubleshooting, and platform documentation. If the
+   trying any other tool. These are curated, first-party references: app
+   navigation, settings, troubleshooting and platform documentation, and a few
+   game topics such as item identification and reading the game map. If the
    article fully answers the question, stop — no further tool calls are needed.
    Only proceed to wiki or source code tools if the article does not fully cover
    the user's question.

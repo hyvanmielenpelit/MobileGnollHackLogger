@@ -2,7 +2,8 @@
   CHOOSE KEY FIGURES
 
   Nested in the run report dialog, so its own close, cancel and click events stop here. Every change
-  applies at once; Done and the close button only close.
+  applies at once; Done and the close button only close. Two columns from a 44 rem body: What to show
+  (the figures and the image details) and Image file (format and size); one column below.
 -->
 <dialog #chooserDialog class="gh-dialog kfch-dialog" [attr.aria-labelledby]="idPrefix + 'Title'" closedby="any"
         (click)="onDialogClick($event)" (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
@@ -20,67 +21,95 @@
       </button>
       <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-close-tip'" [attr.style]="'position-anchor: --' + idPrefix + '-close-tip'">Close</div>
     </div>
-    <div class="dialog-body">
-      <div class="kfch-group" role="group" [attr.aria-labelledby]="idPrefix + 'Caption'">
-        <div class="kfch-group-head">
-          <p class="kfch-caption" [id]="idPrefix + 'Caption'">Figures</p>
-          <span class="kfch-bulk">
-            <button type="button" class="btn-link kfch-all" (click)="selectAll()">All<span class="visually-hidden"> key figures</span></button>
-            <button type="button" class="btn-link kfch-none" (click)="selectNone()">None<span class="visually-hidden"> of the key figures</span></button>
-          </span>
-        </div>
-        <ul class="kfch-list" role="list">
-          @for (figure of figures; track figure.key) {
-            <li class="kfch-item" [attr.data-figure]="figure.key">
-              <label class="checkbox-label align-start kfch-row">
-                <input type="checkbox" [id]="idPrefix + '-' + figure.key"
-                       [checked]="isChecked(figure.key)"
-                       (change)="onToggle(figure.key, $event)">
-                <span class="kfch-text">
-                  <span class="kfch-label">{{ figure.label }}</span>
-                  @if (figure.value) {
-                    <span class="kfch-value"> — {{ figure.value }}</span>
-                  }
-                </span>
-              </label>
-            </li>
-          }
-        </ul>
-      </div>
-      <p class="kfch-count" role="status">{{ countText }}</p>
-      <p class="kfch-hint">{{ figuresHint }}</p>
-      @if (detailRows.length > 0) {
-        <div class="kfch-group kfch-group-details" role="group" [attr.aria-labelledby]="idPrefix + 'DetailsCaption'">
-          <div class="kfch-group-head">
-            <p class="kfch-caption" [id]="idPrefix + 'DetailsCaption'">Image details</p>
-            <span class="kfch-bulk">
-              <button type="button" class="btn-link kfch-details-all" (click)="selectAllDetails()">All<span class="visually-hidden"> image details</span></button>
-              <button type="button" class="btn-link kfch-details-none" (click)="selectNoDetails()">None<span class="visually-hidden"> of the image details</span></button>
-            </span>
+    <div class="dialog-body kfch-body">
+      <div class="kfch-layout">
+        <!-- First in the DOM, so the figures count stays the dialog's first status line. -->
+        <div class="kfch-column kfch-show">
+          <h4 class="kfch-column-title" [id]="idPrefix + 'ShowTitle'">What to show</h4>
+          <div class="kfch-group" role="group" [attr.aria-labelledby]="idPrefix + 'Caption'">
+            <div class="kfch-group-head">
+              <p class="kfch-caption" [id]="idPrefix + 'Caption'">Figures</p>
+              <span class="kfch-bulk">
+                <button type="button" class="btn-link kfch-all" (click)="selectAll()">All<span class="visually-hidden"> key figures</span></button>
+                <button type="button" class="btn-link kfch-none" (click)="selectNone()">None<span class="visually-hidden"> of the key figures</span></button>
+              </span>
+            </div>
+            <ul class="kfch-list" role="list">
+              @for (figure of figures; track figure.key) {
+                <li class="kfch-item" [attr.data-figure]="figure.key">
+                  <label class="checkbox-label align-start kfch-row">
+                    <input type="checkbox" [id]="idPrefix + '-' + figure.key"
+                           [checked]="isChecked(figure.key)"
+                           (change)="onToggle(figure.key, $event)">
+                    <span class="kfch-text">
+                      <span class="kfch-label">{{ figure.label }}</span>
+                      @if (figure.value) {
+                        <span class="kfch-value"> — {{ figure.value }}</span>
+                      }
+                    </span>
+                  </label>
+                </li>
+              }
+            </ul>
           </div>
-          <ul class="kfch-list" role="list">
-            @for (row of detailRows; track row.key) {
-              <li class="kfch-item" [attr.data-detail]="row.key">
-                <label class="checkbox-label align-start kfch-row">
-                  <input type="checkbox" [id]="idPrefix + '-detail-' + row.key"
-                         [checked]="isDetailChecked(row.key)"
-                         (change)="toggleDetail(row.key, $event)">
-                  <span class="kfch-text">
-                    <span class="kfch-label">{{ row.label }}</span>
-                    @if (row.value) {
-                      <span class="kfch-value"> — {{ row.value }}</span>
-                    }
-                  </span>
-                </label>
-              </li>
-            }
-          </ul>
+          <p class="kfch-count" role="status">{{ countText }}</p>
+          <p class="kfch-hint">{{ figuresHint }}</p>
+          @if (detailRows.length > 0) {
+            <div class="kfch-group kfch-group-details" role="group" [attr.aria-labelledby]="idPrefix + 'DetailsCaption'">
+              <div class="kfch-group-head">
+                <p class="kfch-caption" [id]="idPrefix + 'DetailsCaption'">Image details</p>
+                <span class="kfch-bulk">
+                  <button type="button" class="btn-link kfch-details-all" (click)="selectAllDetails()">All<span class="visually-hidden"> image details</span></button>
+                  <button type="button" class="btn-link kfch-details-none" (click)="selectNoDetails()">None<span class="visually-hidden"> of the image details</span></button>
+                </span>
+              </div>
+              <ul class="kfch-list" role="list">
+                @for (row of detailRows; track row.key) {
+                  <li class="kfch-item" [attr.data-detail]="row.key">
+                    <label class="checkbox-label align-start kfch-row">
+                      <input type="checkbox" [id]="idPrefix + '-detail-' + row.key"
+                             [checked]="isDetailChecked(row.key)"
+                             (change)="toggleDetail(row.key, $event)">
+                      <span class="kfch-text">
+                        <span class="kfch-label">{{ row.label }}</span>
+                        @if (row.value) {
+                          <span class="kfch-value"> — {{ row.value }}</span>
+                        }
+                      </span>
+                    </label>
+                  </li>
+                }
+              </ul>
+            </div>
+            <p class="kfch-count kfch-detail-count" role="status">{{ detailCountText }}</p>
+            <p class="kfch-hint kfch-detail-hint">{{ detailsHint }}</p>
+          }
         </div>
-        <p class="kfch-count kfch-detail-count" role="status">{{ detailCountText }}</p>
-        <p class="kfch-hint kfch-detail-hint">{{ detailsHint }}</p>
-      }
+
+        <div class="kfch-column kfch-file">
+          <h4 class="kfch-column-title" [id]="idPrefix + 'FileTitle'">Image file</h4>
+          <app-export-format-section [idPrefix]="idPrefix + '-fmt'"
+                                     note="Copy always places a PNG on the clipboard; browsers do not accept WebP there."
+                                     [format]="settings.format" [webpQuality]="settings.webpQuality"
+                                     [open]="sections.format"
+                                     (formatChange)="onFormatChange($event)" (qualityChange)="onQualityChange($event)"
+                                     (openChange)="onSectionOpenChange('format', $event)" (reset)="onFormatReset()" />
+          <!-- [title] binds the input only, so the host element carries no native title tooltip. -->
+          <app-export-size-section [title]="'Image size'" [idPrefix]="idPrefix + '-size'" [allowFit]="true"
+                                   fitLabel="Fit the figures"
+                                   fitHint="The image is as large as its figures need; density sets its sharpness."
+                                   [showTextSize]="false"
+                                   boxHint="The figures are laid out for the chosen aspect ratio and scaled to fill it."
+                                   [displayDensity]="displayDensity" errorNoun="image" layoutRule="plain"
+                                   [settings]="settings.size" [defaults]="sizeDefaults" [open]="sections.size"
+                                   [refusal]="sizeRefusal"
+                                   (settingsChange)="onSizeChange($event)" (openChange)="onSectionOpenChange('size', $event)"
+                                   (reset)="onSizeReset()" />
+        </div>
+      </div>
     </div>
-    <div class="dialog-footer">
+    <div class="dialog-footer kfch-footer">
+      <p class="kfch-summary" [id]="idPrefix + 'Summary'">{{ summary }}</p>
       <button type="button" class="btn-gh btn-gh-cancel kfch-done" (click)="done()">Done</button>
     </div>
   </div>

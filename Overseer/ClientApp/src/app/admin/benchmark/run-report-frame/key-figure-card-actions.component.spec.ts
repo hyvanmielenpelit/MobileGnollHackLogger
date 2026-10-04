@@ -36,6 +36,11 @@ class CardHostComponent {
       <span class="score-subvalue">$1.08</span>
       <app-key-figure-card-actions [runId]="7" cardLabel="Total Cost" />
     </div>
+    <div class="score-card" style="position: relative;">
+      <span class="score-label">Total Cost</span>
+      <span class="score-subvalue">$2.00</span>
+      <app-key-figure-card-actions [runId]="8" cardLabel="Total Cost" subjectLabel="battery run 8" subjectKey="battery8" formatLabel="WebP" />
+    </div>
   `
 })
 class SubjectHostComponent {}
@@ -142,6 +147,15 @@ describe('KeyFigureCardActionsComponent with a host subject', () => {
     const [copy, download] = buttonsOf(0);
     expect(copy.getAttribute('aria-label')).toBe('Copy Total Cost of battery run 7 as an image');
     expect(download.getAttribute('aria-label')).toBe('Download Total Cost of battery run 7 as a PNG image');
+  });
+
+  it('names the download by the format the host gives, PNG by default', () => {
+    const [, pngDownload] = buttonsOf(1);
+    expect(pngDownload.getAttribute('aria-label')).toBe('Download Total Cost of run 7 as a PNG image');
+    const [, webpDownload] = buttonsOf(2);
+    expect(webpDownload.getAttribute('aria-label')).toBe('Download Total Cost of battery run 8 as a WebP image');
+    expect(host.querySelector('#kfc-download-battery8-total-cost')?.textContent?.trim()).toBe('Download as WebP');
+    expect(buttonsOf(2)[0].getAttribute('aria-label')).toBe('Copy Total Cost of battery run 8 as an image');
   });
 
   it('keys its tooltips by the subject, apart from a run with the same id', () => {

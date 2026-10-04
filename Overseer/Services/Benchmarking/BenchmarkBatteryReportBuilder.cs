@@ -872,9 +872,39 @@ public static class BenchmarkBatteryReportBuilder
         sb.AppendLine();
         sb.AppendLine("> A dimension can be low because the prompt instructed the model to answer that way. Check the response style in the manifest before reading a low figure here as a model weakness.");
         sb.AppendLine();
+
+        if (result.PanelAgreement is { } panel)
+        {
+            AppendPanelAgreement(sb, section, panel);
+        }
+
         sb.AppendLine("---");
         sb.AppendLine();
     }
+
+    /// <summary>The panel agreement block of a panel battery, pooled over its member runs.</summary>
+    private static void AppendPanelAgreement(StringBuilder sb, int section, BenchmarkBatteryPanelAgreement panel)
+    {
+        int pairs = panel.PairCount ?? 0;
+        sb.AppendLine($"### {section}.1 Panel Agreement");
+        sb.AppendLine();
+        sb.AppendLine("| Figure | Value |");
+        sb.AppendLine("|---|---:|");
+        sb.AppendLine($"| Member A alone, under the declared weights | {Inv(panel.MemberAAloneIndex, "F2")} |");
+        sb.AppendLine($"| Member B alone, under the declared weights | {Inv(panel.MemberBAloneIndex, "F2")} |");
+        sb.AppendLine($"| Reference reader (advisory), under the declared weights | {Inv(panel.ReferenceReaderIndex, "F2")} |");
+        sb.AppendLine($"| Reference reader's mean offset from the panel | {Points(panel.ReferenceReaderOffset)} |");
+        sb.AppendLine($"| Mean \\|B − A\\| | {Points(panel.MeanAbsoluteDelta, signed: false)} |");
+        sb.AppendLine($"| Mean signed B − A | {Points(panel.MeanSignedDelta)} |");
+        sb.AppendLine($"| Pooled ICC(A,1) | {Inv(panel.IntraclassCorrelation, "F2")} over {Int(pairs)} answers both members scored |");
+        sb.AppendLine($"| Disagreements | {(panel.Disagreements is int disagreements ? $"{Int(disagreements)} of {Int(pairs)} answers" : "—")} |");
+        sb.AppendLine();
+        sb.AppendLine("The ICC is computed over the pooled answers; it is not the mean of the runs' ICCs.");
+        sb.AppendLine();
+    }
+
+    private static string Points(double? value, bool signed = true)
+        => value.HasValue ? (signed ? Signed(value) : Inv(value.Value)) + " points" : "—";
 
     private static void AppendSpeed(StringBuilder sb, int section, BenchmarkBatteryRun batteryRun, BenchmarkBatteryStatisticsResult result)
     {
@@ -964,6 +994,8 @@ public static class BenchmarkBatteryReportBuilder
             sb.AppendLine();
         }
 
+        sb.AppendLine("The report writer's cost is not included: it is spent after this analysis is computed, and the battery progress dialog's Total cost shows it once the AI-written reports exist.");
+        sb.AppendLine();
         sb.AppendLine("---");
         sb.AppendLine();
     }

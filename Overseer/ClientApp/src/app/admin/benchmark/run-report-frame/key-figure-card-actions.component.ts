@@ -38,6 +38,9 @@ export class KeyFigureCardActionsComponent implements OnInit {
   /** The subject part of the tooltip ids, slugged, as in `battery7`; null reads `run{runId}`. */
   @Input() subjectKey: string | null = null;
 
+  /** The download's format as its name and tooltip print it, `PNG` or `WebP`; Copy always writes PNG. */
+  @Input() formatLabel = 'PNG';
+
   @Output() readonly exportRequested = new EventEmitter<KeyFigureCardExportRequest>();
 
   ngOnInit(): void {

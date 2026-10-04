@@ -1,5 +1,5 @@
 /**
- * The run report's key figures as a PNG image: the whole strip, or one card.
+ * The run report's key figures as a PNG or WebP image: the whole strip, or one card.
  *
  * No Angular. The cells are read from the rendered `.score-card`s, so the image says what the dialog
  * says, and composed on a canvas in the dialog's dark theme. The run's settings above the figures are
@@ -7,9 +7,12 @@
  * are pure functions over a {@link TextWrapper} and a {@link TextMeasurer}, so they unit-test without
  * a canvas.
  *
- * Both compositions are square first: the strip picks the column count and card width whose image is
- * closest to square without being taller than wide, and pads it to an exact square when it is within
- * {@link STRIP_SQUARE_TOLERANCE}; the card image is 640 × 640 unless its notes need more width.
+ * The size comes from {@link KeyFiguresExportSettings}. Fit (the default) draws the layout at its own
+ * size times the pixel density. Both fit compositions are square first: the strip picks the column
+ * count and card width whose image is closest to square without being taller than wide, and pads it
+ * to an exact square when it is within {@link STRIP_SQUARE_TOLERANCE}; the card image is 640 × 640
+ * unless its notes need more width. A box size (a preset or a custom width and height) picks the
+ * layout closest to the box's aspect ratio, pads it to exactly that ratio and scales it to fill the box.
  */
 
 import {
@@ -18,13 +21,17 @@ import {
   FIGURE_MUTED_COLOR,
   FIGURE_RULE_COLOR,
   FIGURE_TITLE_COLOR,
+  FigureExportFormat,
+  bitmapRefusal,
   copyImageToClipboard,
   encodeFigureImage,
   exportTimestamp,
   saveFigureBlob
 } from '../model-comparison/figure-export';
 import type { ClipboardImageOutcome } from '../model-comparison/figure-export';
+import { FIT_RESOLUTION_ID, resolveSizeDensity, resolveSizeResolution, sizeErrors } from '../model-comparison/figure-size';
 import { safeFileName } from '../../../utils/download.util';
+import { KeyFiguresExportSettings, defaultKeyFiguresExportSettings } from './key-figures-export-settings';
 import { RunFactRow, runFactBadges } from './run-facts';
 
 /** The `badge-score-*` class on a card's value, or `na` for a muted value with none. */
@@ -136,13 +143,26 @@ export const estimateTextWidth: TextMeasurer = (text, sizePx) => text.length * s
 
 export type KeyFiguresAction = 'copy' | 'download';
 
-/** A clipboard outcome, a completed download, a strip with no figure selected, or a composition that failed. */
-export type KeyFiguresOutcome = ClipboardImageOutcome | 'downloaded' | 'empty' | 'failed';
+/**
+ * A clipboard outcome, a completed download, a WebP download the browser wrote as PNG, a strip with no
+ * figure selected, or a composition that failed.
+ */
+export type KeyFiguresOutcome = ClipboardImageOutcome | 'downloaded' | 'webp-fallback' | 'empty' | 'failed';
 
 /** One encoded image and the name it is saved under. */
 export interface KeyFiguresImage {
   readonly blob: Blob;
   readonly fileName: string;
+  /** WebP was asked for and the browser wrote PNG; the name ends in `.png`. */
+  readonly fellBackToPng?: boolean;
+}
+
+/** Thrown before composing when the chosen size would write a bitmap the browser cannot hold; the message is the refusal. */
+export class KeyFiguresImageRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'KeyFiguresImageRefusal';
+  }
 }
 
 export type KeyFiguresLoadedImage = HTMLImageElement | HTMLCanvasElement | ImageBitmap;
@@ -158,7 +178,7 @@ export const keyFiguresImageIo = {
   now: (): Date => new Date()
 };
 
-/** Device pixels per logical pixel in both images. */
+/** Device pixels per logical pixel in both images at the default density, 200 %. */
 export const KEY_FIGURES_IMAGE_SCALE = 2;
 
 /** Colors of the dialog's dark theme. */
@@ -650,14 +670,14 @@ export function keyFiguresFooterText(overseerVersion: string | null, now: Date):
   return `GnollBench · Overseer ${version} · exported ${formatUtcMinute(now)} UTC`;
 }
 
-/** `gnollbench_run72_<suite>_<model>_key-figures_<yyyyMMdd_HHmmss>.png`. */
-export function keyFiguresFileName(context: ImageContext, now: Date): string {
-  return `${fileNameStem(context)}_key-figures_${exportTimestamp(now)}.png`;
+/** `gnollbench_run72_<suite>_<model>_key-figures_<yyyyMMdd_HHmmss>.<png|webp>`; `ext` is the encoded format. */
+export function keyFiguresFileName(context: ImageContext, now: Date, ext: FigureExportFormat = 'png'): string {
+  return `${fileNameStem(context)}_key-figures_${exportTimestamp(now)}.${ext}`;
 }
 
-/** `gnollbench_run72_<suite>_<model>_<card-label>_<yyyyMMdd_HHmmss>.png`. */
-export function keyFigureCardFileName(context: ImageContext, cardLabel: string, now: Date): string {
-  return `${fileNameStem(context)}_${safeFileName(cardLabel)}_${exportTimestamp(now)}.png`;
+/** `gnollbench_run72_<suite>_<model>_<card-label>_<yyyyMMdd_HHmmss>.<png|webp>`; `ext` is the encoded format. */
+export function keyFigureCardFileName(context: ImageContext, cardLabel: string, now: Date, ext: FigureExportFormat = 'png'): string {
+  return `${fileNameStem(context)}_${safeFileName(cardLabel)}_${exportTimestamp(now)}.${ext}`;
 }
 
 function fileNameStem(context: ImageContext): string {
@@ -676,6 +696,8 @@ export function keyFiguresStatusMessage(outcome: KeyFiguresOutcome, subject: str
       return 'Could not copy the image.';
     case 'downloaded':
       return 'Image downloaded.';
+    case 'webp-fallback':
+      return 'This browser cannot write WebP; the image was saved as PNG.';
     case 'empty':
       return 'None of this run\'s key figures is selected; use Choose figures.';
     default:
@@ -824,13 +846,18 @@ interface StripCandidate {
  * is, and past {@link STRIP_FALLBACK_MAX_CARD_WIDTH} the width is padded to the height, so the result
  * is never portrait. `cells` may be any selection of the cards, with or without the main card. The
  * run facts under the title are laid out at the grid's width by {@link layoutFactRows}.
+ *
+ * Given a `targetAspect` (width over height), the candidate closest to it by `|ln(aspect / target)|`
+ * is chosen instead — among the landscape ones unless the target is portrait — with the same ties, and
+ * padded to exactly that aspect: in height as the square is padded, or in width, the grid centered.
  */
 export function chooseStripLayout(
   cells: readonly KeyFigureCell[],
   text: StripText,
   wrap: TextWrapper,
   logoHeight: number = STRIP_LOGO_HEIGHT,
-  measure: TextMeasurer = estimateTextWidth
+  measure: TextMeasurer = estimateTextWidth,
+  targetAspect?: number
 ): StripLayout {
   const factCache = new Map<number, FactLayout>();
   const factsAt = (gridWidth: number): FactLayout => {
@@ -936,6 +963,15 @@ export function chooseStripLayout(
   }
 
   const landscape = candidates.filter(entry => entry.width >= entry.naturalHeight);
+
+  if (isUsableAspect(targetAspect)) {
+    const target = targetAspect;
+    const pool = target < 1 || landscape.length === 0 ? candidates : landscape;
+    const best = pool.reduce((current, entry) => (closerStripCandidate(entry, current, target) ? entry : current));
+    const boxWidth = best.width / best.naturalHeight >= target ? best.width : best.naturalHeight * target;
+    return paddedStripLayout(best, boxWidth, boxWidth / target, logoHeight);
+  }
+
   let chosen: StripCandidate;
   if (landscape.length > 0) {
     chosen = landscape.reduce((best, entry) => (betterStripCandidate(entry, best) ? entry : best));
@@ -952,6 +988,19 @@ export function chooseStripLayout(
   const square = ratio <= STRIP_SQUARE_TOLERANCE;
   const imageWidth = Math.max(chosen.width, chosen.naturalHeight);
   const height = square ? imageWidth : chosen.naturalHeight;
+  return paddedStripLayout(chosen, imageWidth, height, logoHeight);
+}
+
+/** A finite, positive aspect ratio. */
+function isUsableAspect(aspect: number | undefined): aspect is number {
+  return typeof aspect === 'number' && Number.isFinite(aspect) && aspect > 0;
+}
+
+/**
+ * The chosen candidate as an image `width` × `height`, both at least its own: the extra height split
+ * above and below the grid, the extra width split either side of it.
+ */
+function paddedStripLayout(chosen: StripCandidate, width: number, height: number, logoHeight: number): StripLayout {
   const extra = height - chosen.naturalHeight;
   const above = Math.floor(extra / 2);
   const gridTop = STRIP_PAD + chosen.headerHeight + STRIP_HEADER_GAP + above;
@@ -960,10 +1009,10 @@ export function chooseStripLayout(
     columns: chosen.columns,
     cardWidth: chosen.cardWidth,
     mainSpans: chosen.mainSpans,
-    width: imageWidth,
+    width,
     height,
     naturalHeight: chosen.naturalHeight,
-    square: imageWidth === height,
+    square: width === height,
     logoHeight,
     titleLines: chosen.titleLines,
     facts: chosen.facts,
@@ -983,6 +1032,23 @@ function betterStripCandidate(entry: StripCandidate, best: StripCandidate): bool
   const bestRatio = best.width / best.naturalHeight;
   if (Math.abs(entryRatio - bestRatio) > epsilon) {
     return entryRatio < bestRatio;
+  }
+  if (entry.columns !== best.columns) {
+    return entry.columns > best.columns;
+  }
+  if (entry.cardWidth !== best.cardWidth) {
+    return entry.cardWidth > best.cardWidth;
+  }
+  return entry.mainSpans && !best.mainSpans;
+}
+
+/** Nearer `target` by `|ln(aspect / target)|`; on a tie, {@link betterStripCandidate}'s order after the ratio. */
+function closerStripCandidate(entry: StripCandidate, best: StripCandidate, target: number): boolean {
+  const epsilon = 1e-9;
+  const entryDistance = Math.abs(Math.log(entry.width / entry.naturalHeight / target));
+  const bestDistance = Math.abs(Math.log(best.width / best.naturalHeight / target));
+  if (Math.abs(entryDistance - bestDistance) > epsilon) {
+    return entryDistance < bestDistance;
   }
   if (entry.columns !== best.columns) {
     return entry.columns > best.columns;
@@ -1074,9 +1140,9 @@ function cardImageLayoutAt(
   width: number,
   notePx: number,
   hasEmblem: boolean,
-  measure: TextMeasurer
+  measure: TextMeasurer,
+  height: number = CARD_IMAGE_SIZE
 ): CardImageLayout {
-  const height = CARD_IMAGE_SIZE;
   const contentWidth = width - CARD_IMAGE_PAD * 2;
   const headerTextX = CARD_IMAGE_PAD + (hasEmblem ? CARD_IMAGE_EMBLEM + CARD_IMAGE_EMBLEM_GAP : 0);
   const headerTextWidth = width - CARD_IMAGE_PAD - headerTextX;
@@ -1118,14 +1184,46 @@ function cardImageLayoutAt(
  * {@link CARD_IMAGE_MAX_WIDTH} (4 : 3); a card that still does not fit is laid out at 4 : 3 with its
  * notes at {@link CARD_IMAGE_SMALL_NOTE_PX}. The height never changes, so the image is never portrait.
  * The header carries the primary run facts, laid out beside the emblem.
+ *
+ * Given a `targetAspect` (width over height), every size that fits — the widths above at
+ * {@link CARD_IMAGE_SIZE} tall, and, for a portrait target, the same steps in height at
+ * {@link CARD_IMAGE_SIZE} wide — is ranked by `|ln(aspect / target)|` and the nearest is chosen, the
+ * smaller on a tie; with none fitting, the 4 : 3 fallback (3 : 4 for a portrait target). The caller
+ * pads the result to the target aspect.
  */
 export function chooseCardImageLayout(
   cell: KeyFigureCell,
   text: CardImageText,
   wrap: TextWrapper,
   hasEmblem = true,
-  measure: TextMeasurer = estimateTextWidth
+  measure: TextMeasurer = estimateTextWidth,
+  targetAspect?: number
 ): CardImageLayout {
+  if (isUsableAspect(targetAspect)) {
+    const target = targetAspect;
+    const portrait = target < 1;
+    const steps: number[] = [];
+    for (let side = CARD_IMAGE_SIZE; side < CARD_IMAGE_MAX_WIDTH; side += CARD_IMAGE_WIDTH_STEP) {
+      steps.push(side);
+    }
+    steps.push(CARD_IMAGE_MAX_WIDTH);
+    const sizes = steps.map(side => ({ width: side, height: CARD_IMAGE_SIZE }));
+    if (portrait) {
+      sizes.push(...steps.slice(1).map(side => ({ width: CARD_IMAGE_SIZE, height: side })));
+    }
+    const distance = (layout: CardImageLayout): number => Math.abs(Math.log(layout.width / layout.height / target));
+    let nearest: CardImageLayout | null = null;
+    for (const size of sizes) {
+      const layout = cardImageLayoutAt(cell, text, wrap, size.width, CARD_IMAGE_NOTE_PX, hasEmblem, measure, size.height);
+      if (layout.fits && (!nearest || distance(layout) < distance(nearest) - 1e-9)) {
+        nearest = layout;
+      }
+    }
+    return nearest ?? (portrait
+      ? cardImageLayoutAt(cell, text, wrap, CARD_IMAGE_SIZE, CARD_IMAGE_SMALL_NOTE_PX, hasEmblem, measure, CARD_IMAGE_MAX_WIDTH)
+      : cardImageLayoutAt(cell, text, wrap, CARD_IMAGE_MAX_WIDTH, CARD_IMAGE_SMALL_NOTE_PX, hasEmblem, measure));
+  }
+
   const widths: number[] = [];
   for (let width = CARD_IMAGE_SIZE; width < CARD_IMAGE_MAX_WIDTH; width += CARD_IMAGE_WIDTH_STEP) {
     widths.push(width);
@@ -1351,18 +1449,88 @@ function drawFooter(context: CanvasRenderingContext2D, lines: readonly string[],
   drawLines(context, lines, x, y + ruleGap, size, '400', FIGURE_MUTED_COLOR);
 }
 
-function newCanvas(width: number, height: number): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D | null } {
+/**
+ * Where a layout lands in the written bitmap: its pixel size, the scale from layout to device pixels,
+ * and the layout's offset inside the padded frame, in layout pixels.
+ */
+export interface KeyFiguresImageFrame {
+  readonly pixelWidth: number;
+  readonly pixelHeight: number;
+  readonly scale: number;
+  readonly offsetX: number;
+  readonly offsetY: number;
+}
+
+/**
+ * The frame a `width` × `height` layout is written in, or the refusal of a size the browser cannot
+ * write. Fit: the layout times the density. A box W × H: `round(W × density)` × `round(H × density)`,
+ * the layout padded to the box's aspect and scaled by `W × density` over the padded width, centered.
+ * Absent settings are the defaults, fit at 200 %.
+ */
+export function keyFiguresImageFrame(
+  width: number,
+  height: number,
+  settings: KeyFiguresExportSettings = defaultKeyFiguresExportSettings()
+): KeyFiguresImageFrame | { readonly refusal: string } {
+  const size = settings.size;
+  const errors = sizeErrors(size, 'image');
+  if (errors.any) {
+    return { refusal: errors.any };
+  }
+  const density = resolveSizeDensity(size);
+  if (size.resolutionId === FIT_RESOLUTION_ID) {
+    const refusal = bitmapRefusal(width, height, density);
+    return refusal
+      ? { refusal }
+      : { pixelWidth: Math.round(width * density), pixelHeight: Math.round(height * density), scale: density, offsetX: 0, offsetY: 0 };
+  }
+  const box = resolveSizeResolution(size);
+  const target = box.widthPx / box.heightPx;
+  const paddedWidth = Math.max(width, height * target);
+  const paddedHeight = Math.max(height, width / target);
+  return {
+    pixelWidth: Math.round(box.widthPx * density),
+    pixelHeight: Math.round(box.heightPx * density),
+    scale: box.widthPx * density / paddedWidth,
+    offsetX: (paddedWidth - width) / 2,
+    offsetY: (paddedHeight - height) / 2
+  };
+}
+
+/** The box's aspect ratio for the layout choice, or undefined in fit mode. */
+function targetAspectOf(settings: KeyFiguresExportSettings | undefined): number | undefined {
+  if (!settings || settings.size.resolutionId === FIT_RESOLUTION_ID) {
+    return undefined;
+  }
+  const box = resolveSizeResolution(settings.size);
+  return box.widthPx / box.heightPx;
+}
+
+/** A canvas of the frame's pixel size, filled with the background, scaled and offset to draw the layout on. */
+function newCanvas(frame: KeyFiguresImageFrame): { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D | null } {
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * KEY_FIGURES_IMAGE_SCALE);
-  canvas.height = Math.round(height * KEY_FIGURES_IMAGE_SCALE);
+  canvas.width = frame.pixelWidth;
+  canvas.height = frame.pixelHeight;
   const context = canvas.getContext('2d');
   if (context) {
-    context.scale(KEY_FIGURES_IMAGE_SCALE, KEY_FIGURES_IMAGE_SCALE);
+    context.scale(frame.scale, frame.scale);
     context.textBaseline = 'top';
     context.fillStyle = FIGURE_BACKGROUND;
-    context.fillRect(0, 0, width, height);
+    context.fillRect(0, 0, frame.pixelWidth / frame.scale, frame.pixelHeight / frame.scale);
+    if (frame.offsetX !== 0 || frame.offsetY !== 0) {
+      context.translate(frame.offsetX, frame.offsetY);
+    }
   }
   return { canvas, context };
+}
+
+/** The frame for a layout, or a thrown {@link KeyFiguresImageRefusal}. */
+function frameOrRefuse(width: number, height: number, settings: KeyFiguresExportSettings | undefined): KeyFiguresImageFrame {
+  const frame = keyFiguresImageFrame(width, height, settings);
+  if ('refusal' in frame) {
+    throw new KeyFiguresImageRefusal(frame.refusal);
+  }
+  return frame;
 }
 
 function measuringContext(): CanvasRenderingContext2D | null {
@@ -1380,24 +1548,40 @@ export function stripFootnotes(cells: readonly KeyFigureCell[]): string[] {
   return footnotes;
 }
 
-/** The whole key-figures strip on one canvas, laid out by {@link chooseStripLayout}. */
-export async function composeStripImage(
+/** The strip's layout for `cells`, measured in a canvas where there is one. */
+function stripLayoutFor(
   cells: readonly KeyFigureCell[],
   context: ImageContext,
-  logos: KeyFigureLogos,
-  now: Date
-): Promise<HTMLCanvasElement> {
-  await loadKeyFigureFonts();
+  hasWideLogo: boolean,
+  now: Date,
+  settings: KeyFiguresExportSettings | undefined
+): StripLayout {
   const measure = measuringContext();
   const wrap: TextWrapper = measure ? canvasTextWrapper(measure) : text => (text.trim() ? [text] : []);
-  const layout = chooseStripLayout(cells, {
+  return chooseStripLayout(cells, {
     title: context.title,
     facts: context.facts,
     footnotes: stripFootnotes(cells),
     footer: keyFiguresFooterText(context.overseerVersion, now)
-  }, wrap, logos.wide ? STRIP_LOGO_HEIGHT : 0, measure ? canvasTextMeasurer(measure) : estimateTextWidth);
+  }, wrap, hasWideLogo ? STRIP_LOGO_HEIGHT : 0, measure ? canvasTextMeasurer(measure) : estimateTextWidth,
+  targetAspectOf(settings));
+}
 
-  const { canvas, context: draw } = newCanvas(layout.width, layout.height);
+/**
+ * The whole key-figures strip on one canvas, laid out by {@link chooseStripLayout} at the size the
+ * settings give; absent, fit at 200 %. Throws {@link KeyFiguresImageRefusal} for a size it cannot write.
+ */
+export async function composeStripImage(
+  cells: readonly KeyFigureCell[],
+  context: ImageContext,
+  logos: KeyFigureLogos,
+  now: Date,
+  settings?: KeyFiguresExportSettings
+): Promise<HTMLCanvasElement> {
+  await loadKeyFigureFonts();
+  const layout = stripLayoutFor(cells, context, logos.wide !== null, now, settings);
+
+  const { canvas, context: draw } = newCanvas(frameOrRefuse(layout.width, layout.height, settings));
   if (!draw) {
     return canvas;
   }
@@ -1432,12 +1616,16 @@ export async function composeStripImage(
   return canvas;
 }
 
-/** One card, enlarged and centered, laid out by {@link chooseCardImageLayout}. */
+/**
+ * One card, enlarged and centered, laid out by {@link chooseCardImageLayout} at the size the settings
+ * give; absent, fit at 200 %. Throws {@link KeyFiguresImageRefusal} for a size it cannot write.
+ */
 export async function composeCardImage(
   cell: KeyFigureCell,
   context: ImageContext,
   logos: KeyFigureLogos,
-  now: Date
+  now: Date,
+  settings?: KeyFiguresExportSettings
 ): Promise<HTMLCanvasElement> {
   await loadKeyFigureFonts();
   const measure = measuringContext();
@@ -1447,9 +1635,9 @@ export async function composeCardImage(
     facts: context.facts,
     footnotes: cell.footnotes,
     footer: keyFiguresFooterText(context.overseerVersion, now)
-  }, wrap, logos.emblem !== null, measure ? canvasTextMeasurer(measure) : estimateTextWidth);
+  }, wrap, logos.emblem !== null, measure ? canvasTextMeasurer(measure) : estimateTextWidth, targetAspectOf(settings));
 
-  const { canvas, context: draw } = newCanvas(layout.width, layout.height);
+  const { canvas, context: draw } = newCanvas(frameOrRefuse(layout.width, layout.height, settings));
   if (!draw) {
     return canvas;
   }
@@ -1518,57 +1706,102 @@ export async function loadKeyFigureLogos(): Promise<KeyFigureLogos> {
   return { wide, emblem };
 }
 
-/** The strip under `root`, limited to the cells `include` accepts, encoded as PNG. */
+/**
+ * The strip under `root`, limited to the cells `include` accepts, at the settings' size, encoded in
+ * `format` (the settings' own unless given). The file name ends in the format the browser wrote.
+ */
 export async function renderKeyFiguresStripImage(
   root: ParentNode,
   context: ImageContext,
-  include?: KeyFigureFilter
+  include?: KeyFigureFilter,
+  settings: KeyFiguresExportSettings = defaultKeyFiguresExportSettings(),
+  format: FigureExportFormat = settings.format
 ): Promise<KeyFiguresImage> {
   const cells = filterKeyFigureCells(readKeyFigureCells(root), include);
   const now = keyFiguresImageIo.now();
-  const canvas = await composeStripImage(cells, context, await loadKeyFigureLogos(), now);
-  const { blob } = await encodeFigureImage(canvas, 'png');
-  return { blob, fileName: keyFiguresFileName(context, now) };
+  const canvas = await composeStripImage(cells, context, await loadKeyFigureLogos(), now, settings);
+  const encoded = await encodeFigureImage(canvas, format, settings.webpQuality);
+  return { blob: encoded.blob, fileName: keyFiguresFileName(context, now, encoded.format), fellBackToPng: encoded.fellBackToPng };
 }
 
-/** One card, encoded as PNG. */
-export async function renderKeyFigureCardImage(card: HTMLElement, context: ImageContext): Promise<KeyFiguresImage> {
+/** One card at the settings' size, encoded in `format` (the settings' own unless given). */
+export async function renderKeyFigureCardImage(
+  card: HTMLElement,
+  context: ImageContext,
+  settings: KeyFiguresExportSettings = defaultKeyFiguresExportSettings(),
+  format: FigureExportFormat = settings.format
+): Promise<KeyFiguresImage> {
   const cell = readKeyFigureCell(card);
   const now = keyFiguresImageIo.now();
-  const canvas = await composeCardImage(cell, context, await loadKeyFigureLogos(), now);
-  const { blob } = await encodeFigureImage(canvas, 'png');
-  return { blob, fileName: keyFigureCardFileName(context, cell.label, now) };
+  const canvas = await composeCardImage(cell, context, await loadKeyFigureLogos(), now, settings);
+  const encoded = await encodeFigureImage(canvas, format, settings.webpQuality);
+  return { blob: encoded.blob, fileName: keyFigureCardFileName(context, cell.label, now, encoded.format), fellBackToPng: encoded.fellBackToPng };
 }
 
 /**
  * Composes the strip (`card` null, read under `root` and limited to the cells `include` accepts) or
- * one card, then copies or saves it, and returns the status line to announce. A strip with no cell
- * left is not composed. Never throws.
+ * one card at the settings' size, then copies or saves it, and returns the status line to announce.
+ * A download is encoded in the settings' format; a copy is always PNG, which is all the clipboard
+ * takes. A strip with no cell left is not composed, and a size the browser cannot write is refused
+ * with its reason as the status line. Absent settings are the defaults. Never throws.
  */
 export async function exportKeyFiguresImage(
   action: KeyFiguresAction,
   root: ParentNode,
   card: HTMLElement | null,
   context: ImageContext,
-  include?: KeyFigureFilter
+  include?: KeyFigureFilter,
+  settings: KeyFiguresExportSettings = defaultKeyFiguresExportSettings()
 ): Promise<string> {
   const subject = card ? (readKeyFigureCell(card).label || 'Key figure') : 'Key figures';
   if (!card && filterKeyFigureCells(readKeyFigureCells(root), include).length === 0) {
     return keyFiguresStatusMessage('empty', subject);
   }
+  const format: FigureExportFormat = action === 'copy' ? 'png' : settings.format;
   let outcome: KeyFiguresOutcome;
   try {
     const image = card
-      ? await renderKeyFigureCardImage(card, context)
-      : await renderKeyFiguresStripImage(root, context, include);
+      ? await renderKeyFigureCardImage(card, context, settings, format)
+      : await renderKeyFiguresStripImage(root, context, include, settings, format);
     if (action === 'download') {
       keyFiguresImageIo.save(image.blob, image.fileName);
-      outcome = 'downloaded';
+      outcome = image.fellBackToPng ? 'webp-fallback' : 'downloaded';
     } else {
       outcome = await keyFiguresImageIo.copy(image.blob);
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof KeyFiguresImageRefusal) {
+      return error.message;
+    }
     outcome = 'failed';
   }
   return keyFiguresStatusMessage(outcome, subject);
+}
+
+/** What the chooser shows of the next image: its pixel size, or why it cannot be written. */
+export type KeyFiguresImageMeasure =
+  | { readonly widthPx: number; readonly heightPx: number }
+  | { readonly refusal: string };
+
+/**
+ * The size the next whole-strip image would have, without drawing it. A box size is exact; fit
+ * measures the layout with the fonts as they are now and assumes the wordmark loads, so it can differ
+ * a little from the written image.
+ */
+export function measureKeyFiguresImage(
+  root: ParentNode,
+  context: ImageContext,
+  include: KeyFigureFilter | undefined,
+  settings: KeyFiguresExportSettings
+): KeyFiguresImageMeasure {
+  let frame: KeyFiguresImageFrame | { readonly refusal: string };
+  if (settings.size.resolutionId === FIT_RESOLUTION_ID) {
+    const cells = filterKeyFigureCells(readKeyFigureCells(root), include);
+    const layout = stripLayoutFor(cells, context, true, keyFiguresImageIo.now(), settings);
+    frame = keyFiguresImageFrame(layout.width, layout.height, settings);
+  } else {
+    // The box decides the bitmap whatever the layout, so no layout is measured.
+    frame = keyFiguresImageFrame(1, 1, settings);
+  }
+  return 'refusal' in frame ? { refusal: frame.refusal } : { widthPx: frame.pixelWidth, heightPx: frame.pixelHeight };
 }

@@ -206,6 +206,27 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.True(index4 > index3j, "Instruction 4 must follow 3j, unrenumbered.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3p_BatchesLookups_Between3oAnd4_WithAndWithoutABoard(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        const string instruction3p = "3p. Plan your lookups before you call a tool. Tool calls you issue together in one turn run in parallel and count as one round, and every round re-reads everything gathered so far. In your first turn, issue the first lookup for every claim, or for as many as the tool budget allows, together; batch your follow-up lookups the same way. Issue a call by itself only when its arguments depend on a result you do not have yet.";
+        int index3o = prompt.IndexOf("3o. A wiki page's hedge", System.StringComparison.Ordinal);
+        int index3p = prompt.IndexOf(instruction3p, System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3o >= 0);
+        Assert.True(index3p > index3o, "Instruction 3p must follow instruction 3o.");
+        Assert.True(index4 > index3p, "Instruction 4 must follow 3p, unrenumbered.");
+
+        // 3p sits in the fixed head, ahead of the board.
+        int boardStart = prompt.IndexOf("--- GAME BOARD", System.StringComparison.Ordinal);
+        Assert.True(boardStart < 0 || index3p < boardStart, "Instruction 3p must precede the board.");
+    }
+
     [Fact]
     public void BuildPrompt_Instructions3dAnd3e_SayWhatALiveCallSiteAndANumberRequire()
     {

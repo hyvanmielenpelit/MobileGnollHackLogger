@@ -318,6 +318,9 @@ public static class BenchmarkClaimVerificationParser
     /// <summary>The <see cref="BenchmarkClaimVerification.CitationNote"/> of a charged-part item whose <c>chargedPartVerdict</c> is missing or unparseable.</summary>
     public const string ChargedPartNotJudgedNote = "the charged part was not judged separately";
 
+    /// <summary>The <see cref="BenchmarkClaimVerification.Basis"/> of a submitted item the verifier's response did not answer.</summary>
+    public const string AbsentFromResponseBasis = "[Harness: absent from verifier response; defaulted to Indeterminate.]";
+
     private const string MissingCitationDemotion = "[Harness: demoted to Indeterminate — missing citation.]";
 
     /// <summary>
@@ -513,7 +516,7 @@ public static class BenchmarkClaimVerificationParser
                         submittedClaims[i],
                         BenchmarkClaimVerdict.Indeterminate,
                         null,
-                        "[Harness: absent from verifier response; defaulted to Indeterminate.]")
+                        AbsentFromResponseBasis)
                     {
                         ChargedPart = IsChargedPartItem(i) ? true : null
                     };

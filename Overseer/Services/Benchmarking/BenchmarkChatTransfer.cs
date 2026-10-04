@@ -391,14 +391,18 @@ public static class BenchmarkChatTransfer
 
     /// <summary>
     /// Words that mark a question as one the knowledge base answers: app navigation, settings,
-    /// troubleshooting and platform documentation, the scope <c>ChatService</c>'s "Information
-    /// Routing" and <c>get_knowledge_article.md</c> give it.
+    /// troubleshooting and platform documentation, and the game topics its Knowledge Base section
+    /// lists, item identification and reading the game map, as <c>ChatService</c>'s "Information
+    /// Routing" and <c>get_knowledge_article.md</c> give it. The map words are phrases: a bare "map"
+    /// or "symbol" occurs in ordinary game questions.
     /// </summary>
     public static readonly IReadOnlyList<string> KnowledgeBaseTopicKeywords = new[]
     {
         "navigation", "settings", "options menu", "game options", "troubleshooting", "crash",
         "account", "controls", "replay", "save management", "import", "export",
-        "system requirements", "developer tools", "vault", "get_knowledge_article"
+        "system requirements", "developer tools", "vault", "get_knowledge_article",
+        "item identification", "unidentified", "identify", "appearance",
+        "game map", "map symbol", "glyph"
     };
 
     /// <summary>

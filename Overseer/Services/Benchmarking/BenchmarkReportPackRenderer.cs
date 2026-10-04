@@ -113,7 +113,7 @@ public static class BenchmarkReportJson
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 10;
+    public const int ReportFormatVersion = 11;
 
     private const string PairedDifferenceNote = "Paired difference: mean per-question difference, subject minus peer, over the questions "
         + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
@@ -1175,8 +1175,9 @@ public static class BenchmarkReportPackRenderer
     {
         if (ctx.Battery)
         {
-            if (key == "cost.perRun") return "Cost per battery pass";
-            if (key == "cost.totalRunPerRun") return "Total cost per battery pass, graders included";
+            if (key == "cost.perQuestion") return "Candidate cost per question";
+            if (key == "cost.perRun") return "Candidate cost per battery pass";
+            if (key == "cost.totalRunPerRun") return "Total cost per battery pass (every grading and synthesis role; report writer excluded)";
         }
         return Label(key);
     }
@@ -1292,13 +1293,16 @@ public static class BenchmarkReportPackRenderer
 
     /// <summary>
     /// A battery's per-question table: each question by its suite-qualified reference, with its mean
-    /// score over the runs that scored it, those runs, and the rounds with a critical error.
+    /// score over the runs that scored it, those runs, and the rounds with a critical error. The runs
+    /// column is left out when one run scored every question.
     /// </summary>
     private static void BatteryQuestionTable(
         StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool sentences, string refutedHeader)
     {
-        Line(sb, "| Question | Topic | Assessed band | Authored | Mean score | Runs scored | Critical errors | " + refutedHeader + " | Tool calls | Model time |");
-        Line(sb, "|---|---|---|---|---|---|---|---|---|---|");
+        bool oneRunEach = questions.Count > 0 && questions.All(q => q.RunCount == 1);
+        Line(sb, "| Question | Topic | Assessed band | Authored | Mean score | " + (oneRunEach ? string.Empty : "Runs scored | ")
+            + "Critical errors | " + refutedHeader + " | Tool calls | Model time |");
+        Line(sb, oneRunEach ? "|---|---|---|---|---|---|---|---|---|" : "|---|---|---|---|---|---|---|---|---|---|");
         foreach (var q in questions)
         {
             Line(sb, "| " + ctx.QuestionLabel(q.Number)
@@ -1306,7 +1310,7 @@ public static class BenchmarkReportPackRenderer
                 + " | " + q.Band
                 + " | " + (string.IsNullOrWhiteSpace(q.AuthoredBand) ? NoValue : Cell(q.AuthoredBand))
                 + " | " + (q.Score.HasValue ? BenchmarkReportFormat.Whole(q.Score.Value) : NoValue)
-                + " | " + Inv(q.RunCount)
+                + (oneRunEach ? string.Empty : " | " + Inv(q.RunCount))
                 + " | " + Inv(q.CriticalErrorCount ?? (q.CriticalError ? 1 : 0))
                 + " | " + Inv(sentences ? q.RefutedAnswerSentences!.Value : q.RefutedClaims)
                 + " | " + BenchmarkReportFormat.CompactDecimal(q.ToolCalls)
@@ -1314,7 +1318,9 @@ public static class BenchmarkReportPackRenderer
                 + " |");
         }
         Line(sb);
-        Line(sb, "*Each question's mean score is over the member runs that scored it; its critical errors count those runs with a critical error.*");
+        Line(sb, oneRunEach
+            ? "*One member run scored each question, so each mean score is that run's score; its critical errors count whether that run had a critical error.*"
+            : "*Each question's mean score is over the member runs that scored it; its critical errors count those runs with a critical error.*");
         Line(sb);
     }
 

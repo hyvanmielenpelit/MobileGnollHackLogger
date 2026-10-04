@@ -8,9 +8,17 @@ using MobileGnollHackLogger.Data;
 /// <summary>
 /// A panel run's verification-cleared Accuracy sensitivity: the Intelligence Index recomputed with
 /// the lifted members' Accuracy one level higher, and the question order indices lifted for each
-/// member. <see cref="Index"/> is null when neither list has an entry.
+/// member. <see cref="Index"/> is null when neither list has an entry. <see cref="UnroundedIndex"/>
+/// is the lifted index before rounding and <see cref="UnroundedPublished"/> the same answers' index
+/// from their stored panel scores, so a lift that rounding hides still shows as their difference;
+/// both are null on <see cref="Empty"/>.
 /// </summary>
-public sealed record PanelSensitivityResult(double? Index, IReadOnlyList<int> LiftedA, IReadOnlyList<int> LiftedB)
+public sealed record PanelSensitivityResult(
+    double? Index,
+    IReadOnlyList<int> LiftedA,
+    IReadOnlyList<int> LiftedB,
+    double? UnroundedIndex = null,
+    double? UnroundedPublished = null)
 {
     public static PanelSensitivityResult Empty { get; } = new(null, Array.Empty<int>(), Array.Empty<int>());
 }
@@ -62,16 +70,20 @@ public static class BenchmarkPanelSensitivity
         var liftedA = new List<int>();
         var liftedB = new List<int>();
         var items = new List<(double? QualityScore, int Difficulty)>();
+        var storedItems = new List<(double? QualityScore, int Difficulty)>();
         foreach (var answer in indexAnswers.Where(BenchmarkRunFinalizer.CountsTowardQualityIndex))
         {
-            double? score = BenchmarkScoring.IndexQuality(answer, isPanelRun: true);
+            double? stored = BenchmarkScoring.IndexQuality(answer, isPanelRun: true);
+            double? score = stored;
             if (LiftedPanelScore(answer, constants) is { } lifted)
             {
                 score = lifted.Score;
                 if (lifted.LiftedA) liftedA.Add(answer.OrderIndex);
                 if (lifted.LiftedB) liftedB.Add(answer.OrderIndex);
             }
-            items.Add((score, answer.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(answer.Difficulty)));
+            int difficulty = answer.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(answer.Difficulty);
+            items.Add((score, difficulty));
+            storedItems.Add((stored, difficulty));
         }
 
         if (liftedA.Count == 0 && liftedB.Count == 0) return PanelSensitivityResult.Empty;
@@ -79,7 +91,12 @@ public static class BenchmarkPanelSensitivity
         liftedA.Sort();
         liftedB.Sort();
         int? index = BenchmarkScoring.QualityIndex(items);
-        return new PanelSensitivityResult(index, liftedA, liftedB);
+        return new PanelSensitivityResult(
+            index,
+            liftedA,
+            liftedB,
+            BenchmarkScoring.QualityIndexUnrounded(items),
+            BenchmarkScoring.QualityIndexUnrounded(storedItems));
     }
 
     /// <summary>

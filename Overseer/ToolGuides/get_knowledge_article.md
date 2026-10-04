@@ -1,4 +1,4 @@
-This tool retrieves curated first-party reference articles about the GnollHack app.
+This tool retrieves curated first-party reference articles: about the GnollHack app, and on a few game topics such as item identification and reading the game map.
 
 - Use this when the user asks about app navigation, settings, troubleshooting, or other topics listed in the Knowledge Base section of the system prompt.
 - The `topic` parameter must match one of the available topic keys exactly.

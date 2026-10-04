@@ -154,7 +154,19 @@ public class BenchmarkClaimVerificationParserTests
             Assert.Equal(BenchmarkClaimVerdict.Indeterminate, result.Verifications[i].Verdict);
             Assert.Equal(claims[i], result.Verifications[i].Claim);
             Assert.Contains("absent from verifier response", result.Verifications[i].Basis);
+            Assert.Equal(BenchmarkClaimVerificationParser.AbsentFromResponseBasis, result.Verifications[i].Basis);
         }
+
+        // An answered item never carries the unanswered basis.
+        Assert.NotEqual(BenchmarkClaimVerificationParser.AbsentFromResponseBasis, result.Verifications[0].Basis);
+    }
+
+    [Fact]
+    public void AbsentFromResponseBasis_IsTheHarnessDefaultNote()
+    {
+        Assert.Equal(
+            "[Harness: absent from verifier response; defaulted to Indeterminate.]",
+            BenchmarkClaimVerificationParser.AbsentFromResponseBasis);
     }
 
     [Fact]

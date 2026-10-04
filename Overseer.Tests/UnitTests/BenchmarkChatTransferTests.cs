@@ -319,6 +319,12 @@ public class BenchmarkChatTransferTests
     [InlineData("How do I export a save file?")]
     [InlineData("What does get_knowledge_article say about the vault?")]
     [InlineData("Does the game crash when the replay ends?")]
+    [InlineData("How do I tell what an unidentified wand does?")]
+    [InlineData("What is the fastest way to identify a ring?")]
+    [InlineData("Which potion has an orange appearance in this game?")]
+    [InlineData("How does item identification work?")]
+    [InlineData("What does the brown glyph on the game map mean?")]
+    [InlineData("Which map symbol marks a fountain?")]
     public void HasKnowledgeBaseRoutingQuestion_FindsATopicInTheQuestion(string question)
     {
         Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));
@@ -328,6 +334,9 @@ public class BenchmarkChatTransferTests
     [InlineData("What are my options if I am surrounded by soldier ants?")]
     [InlineData("What does src/vault.c decide about the guard?")]
     [InlineData("Which flag in include\\vault.h and vault.guard sets the guard's gold?")]
+    // A bare "map" or "symbol" is an ordinary game word, not a knowledge-base topic.
+    [InlineData("Where on this map is the altar?")]
+    [InlineData("Does praying with a holy symbol help against undead?")]
     public void HasKnowledgeBaseRoutingQuestion_IgnoresBareOptionsAndFileNamesInTheQuestion(string question)
     {
         Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));

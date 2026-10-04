@@ -87,6 +87,9 @@ internal static class BenchmarkPdfMarkdownComposer
     private const int NarrowTableMaxColumns = 3;
     private const double NarrowTableMaxShare = 0.6;
 
+    /// <summary>A table with at most this many body rows is kept on one page when it fits on one.</summary>
+    internal const int ShortTableMaxBodyRows = 10;
+
     internal enum CellAlign
     {
         Left,
@@ -635,10 +638,11 @@ internal static class BenchmarkPdfMarkdownComposer
     /// A pipe table as a decoration: the header row above the body, repeated on every page, and the
     /// body as a column of one-row tables sharing the header's column definitions, zebra-striped with
     /// hairline rules. Each body row is kept on one page when it fits on one, so a row's cells always
-    /// start on the same page; a row taller than a page breaks across pages. A column whose non-empty
-    /// body cells are all numbers, percentages, currency amounts or durations is right-aligned unless
-    /// the Markdown sets its alignment, and a narrow table (<see cref="PdfColumnLayout"/>) is set at
-    /// its preferred widths against the left margin.
+    /// start on the same page; a row taller than a page breaks across pages. A table of at most
+    /// <see cref="ShortTableMaxBodyRows"/> body rows is kept on one page when it fits on one. A column
+    /// whose non-empty body cells are all numbers, percentages, currency amounts or durations is
+    /// right-aligned unless the Markdown sets its alignment, and a narrow table
+    /// (<see cref="PdfColumnLayout"/>) is set at its preferred widths against the left margin.
     /// </summary>
     private static void ComposeTable(IContainer container, MdTable table, Context ctx)
     {
@@ -666,7 +670,10 @@ internal static class BenchmarkPdfMarkdownComposer
             }
         });
 
-        (constant ? container.AlignLeft() : container).SemanticTable().Decoration(d =>
+        var target = constant ? container.AlignLeft() : container;
+        if (bodyRows.Count <= ShortTableMaxBodyRows) target = target.PreventPageBreak();
+
+        target.SemanticTable().Decoration(d =>
         {
             if (headerRows.Count > 0)
             {
@@ -701,15 +708,16 @@ internal static class BenchmarkPdfMarkdownComposer
     }
 
     /// <summary>
-    /// <see cref="ColumnLayout"/> for the PDF: relative weights across the text width, or, for a
-    /// table of at most <see cref="NarrowTableMaxColumns"/> columns whose preferred widths fill less
-    /// than <see cref="NarrowTableMaxShare"/> of it, constant widths in points at those preferred widths.
+    /// The PDF's column layout: relative weights across the text width from
+    /// <see cref="PdfColumnWeights"/>, or, for a table of at most <see cref="NarrowTableMaxColumns"/>
+    /// columns whose preferred widths fill less than <see cref="NarrowTableMaxShare"/> of it, constant
+    /// widths in points at those preferred widths.
     /// </summary>
     internal static (CellAlign[] Aligns, float[] Widths, bool Constant) PdfColumnLayout(
         MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
         int columns, string source)
     {
-        var (aligns, bodyMinimum, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
+        var (aligns, bodyMinimum, headerMinimum, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
 
         var preferredPoints = preferred.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
         if (columns <= NarrowTableMaxColumns && preferredPoints.Sum() < TableWidthPoints * NarrowTableMaxShare)
@@ -717,8 +725,48 @@ internal static class BenchmarkPdfMarkdownComposer
             return (aligns, preferredPoints, true);
         }
 
-        return (aligns, ColumnWeights(bodyMinimum, minimum, preferred), false);
+        return (aligns, PdfColumnWeights(aligns, bodyMinimum, headerMinimum, minimum, preferred), false);
     }
+
+    /// <summary>
+    /// Relative column widths for the PDF, in points for the A4 text width. Every column's minimum is
+    /// its longest token, header and body together. When the minimums fit, the widths are those of
+    /// <see cref="ColumnWeights"/>. When they do not, a right-aligned (numeric) column keeps its
+    /// minimum and only the other columns shrink, each in proportion to how far its minimum exceeds
+    /// its header's longest token, so a header word does not break inside itself; only when the
+    /// header tokens alone do not fit do those columns shrink in proportion to them.
+    /// </summary>
+    internal static float[] PdfColumnWeights(
+        CellAlign[] aligns, double[] bodyMinimum, double[] headerMinimum, double[] minimum, double[] preferred)
+    {
+        int columns = minimum.Length;
+        double capacity = Capacity(columns);
+        if (minimum.Sum() <= capacity) return ColumnWeights(bodyMinimum, minimum, preferred);
+
+        var text = Enumerable.Range(0, columns).Where(c => aligns[c] != CellAlign.Right).ToList();
+        var widths = (double[])minimum.Clone();
+        double room = capacity - Enumerable.Range(0, columns).Where(c => aligns[c] == CellAlign.Right).Sum(c => minimum[c]);
+
+        if (text.Count > 0 && room > 0)
+        {
+            var floor = text.ToDictionary(c => c, c => Math.Min(headerMinimum[c], minimum[c]));
+            double floorSum = floor.Values.Sum();
+            double textSum = text.Sum(c => minimum[c]);
+
+            foreach (int c in text)
+            {
+                widths[c] = room >= floorSum
+                    ? floor[c] + (minimum[c] - floor[c]) * (room - floorSum) / (textSum - floorSum)
+                    : floor[c] * room / floorSum;
+            }
+        }
+
+        return widths.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
+    }
+
+    /// <summary>The estimated characters of cell text a table of <paramref name="columns"/> columns holds across the text width.</summary>
+    private static double Capacity(int columns)
+        => Math.Max(columns * 3.0, (TableWidthPoints - columns * CellPaddingPoints) / AverageCharacterPoints);
 
     /// <summary>
     /// Each column's alignment and relative width, in points for the A4 text width: a declared
@@ -729,15 +777,15 @@ internal static class BenchmarkPdfMarkdownComposer
         MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
         int columns, string source)
     {
-        var (aligns, bodyMinimum, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
+        var (aligns, bodyMinimum, _, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
         return (aligns, ColumnWeights(bodyMinimum, minimum, preferred));
     }
 
     /// <summary>
-    /// Each column's alignment, and its body's longest word, longest word with the header's, and
-    /// preferred width, in estimated characters.
+    /// Each column's alignment, and its body's longest word, its header's longest word, the longer of
+    /// the two, and its preferred width, in estimated characters.
     /// </summary>
-    private static (CellAlign[] Aligns, double[] BodyMinimum, double[] Minimum, double[] Preferred) MeasureColumns(
+    private static (CellAlign[] Aligns, double[] BodyMinimum, double[] HeaderMinimum, double[] Minimum, double[] Preferred) MeasureColumns(
         MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
         int columns, string source)
     {
@@ -754,6 +802,7 @@ internal static class BenchmarkPdfMarkdownComposer
 
         var aligns = new CellAlign[columns];
         var bodyMinimum = new double[columns];
+        var headerMinimum = new double[columns];
         var minimum = new double[columns];
         var preferred = new double[columns];
         for (int c = 0; c < columns; c++)
@@ -785,11 +834,12 @@ internal static class BenchmarkPdfMarkdownComposer
 
             int longest = values.Select(v => v.Length).DefaultIfEmpty(1).Max();
             bodyMinimum[c] = Fit(LongestWord(bodyWords));
-            minimum[c] = Math.Max(bodyMinimum[c], Fit(LongestWord(headerWords)));
+            headerMinimum[c] = Fit(LongestWord(headerWords));
+            minimum[c] = Math.Max(bodyMinimum[c], headerMinimum[c]);
             preferred[c] = Math.Max(minimum[c], Math.Min(longest, MaxColumnTextCharacters));
         }
 
-        return (aligns, bodyMinimum, minimum, preferred);
+        return (aligns, bodyMinimum, headerMinimum, minimum, preferred);
     }
 
     /// <summary>
@@ -803,7 +853,7 @@ internal static class BenchmarkPdfMarkdownComposer
     internal static float[] ColumnWeights(double[] bodyMinimum, double[] minimum, double[] preferred)
     {
         int columns = minimum.Length;
-        double capacity = Math.Max(columns * 3.0, (TableWidthPoints - columns * CellPaddingPoints) / AverageCharacterPoints);
+        double capacity = Capacity(columns);
 
         double[] Share(double[] low, double[] high)
         {

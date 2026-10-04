@@ -2150,7 +2150,8 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
         Assert.DoesNotContain("Knowledge base under-use:", report);
-        Assert.Contains("Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`", report);
+        Assert.Contains(" answered question(s) made zero `get_knowledge_article` calls. The prompt (`Overseer/Services/ChatService.cs` § \"Information Routing\") tells the model to call `get_knowledge_article` first for the topics listed in its Knowledge Base section, and to skip the knowledge base for game mechanics, monsters, items, spells and other topics not listed there. The listed topics include game topics such as item identification and reading the game map, so zero calls is prompt-compliant only on a question outside them.", report);
+        Assert.DoesNotContain("the knowledge base is scoped to app navigation", report);
 
         // When a question covers a KB topic, the under-use line appears
         var qKb = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
@@ -2207,7 +2208,21 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
         Assert.DoesNotContain("Knowledge base under-use:", report);
-        Assert.Contains("Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`", report);
+        Assert.Contains("so zero calls is prompt-compliant only on a question outside them.", report);
+    }
+
+    [Fact]
+    public void KnowledgeBaseRouting_AnItemIdentificationQuestionIsAKnowledgeBaseTopic()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.QuestionText = "How do I tell what an unidentified wand does?";
+        q1.ToolCallSummary = "wiki_search×1";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("- **Knowledge base under-use:** ", report);
+        Assert.DoesNotContain("prompt-compliant only on a question outside them", report);
     }
 
     [Fact]
@@ -2514,6 +2529,153 @@ public class BenchmarkReportBuilderTests
         Assert.Contains(
             "- **Verifier spend by answer:** highest Q2 (120,000 input tokens), Q3, Q1; mean 80,000 input tokens and 10.0 tool calls per verified answer.",
             report);
+    }
+
+    [Fact]
+    public void ClaimVerification_CarriesModelCallsAndCacheReadShare_WhenRecorded()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimVerificationToolCallCount = 6;
+        q1.ClaimVerificationModelCallCount = 3;
+        q1.ClaimVerificationInputTokens = 40_000;
+        q1.ClaimVerificationCacheReadTokens = 10_000;
+        q1.ClaimVerificationDurationMs = 12_500;
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 75);
+        q2.UnverifiedClaimCount = 1;
+        q2.ClaimsRefutedCount = 1;
+        q2.ClaimVerificationToolCallCount = 14;
+        q2.ClaimVerificationModelCallCount = 5;
+        q2.ClaimVerificationInputTokens = 120_000;
+        q2.ClaimVerificationCacheReadTokens = 60_000;
+        q2.ClaimVerificationDurationMs = 30_000;
+        // Q3 predates the model-call record and stored no cache reads.
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Advanced, 85, 90);
+        q3.UnverifiedClaimCount = 1;
+        q3.ClaimsIndeterminateCount = 1;
+        q3.ClaimVerificationToolCallCount = 10;
+        q3.ClaimVerificationInputTokens = 80_000;
+        q3.ClaimVerificationDurationMs = 20_000;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalClaimVerificationInputTokens = 240_000;
+        run.TotalClaimVerificationOutputTokens = 10_000;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("advisory, not reflected in the score.* — 6 tool call(s), 3 model call(s), 40,000 input tokens (cache read 25%), 12.5 s", report);
+        Assert.Contains("advisory, not reflected in the score.* — 14 tool call(s), 5 model call(s), 120,000 input tokens (cache read 50%), 30.0 s", report);
+        Assert.Contains("advisory, not reflected in the score.* — 10 tool call(s), 80,000 input tokens, 20.0 s", report);
+
+        // Model calls (3 + 5) / 2 and cache reads 70,000 of 160,000 over Q1 and Q2, the answers that recorded them.
+        Assert.Contains(
+            "- **Verifier spend by answer:** highest Q2 (120,000 input tokens), Q3, Q1; mean 80,000 input tokens and 10.0 tool calls per verified answer, 4.0 model calls per verified answer, cache read 44% of verifier input.",
+            report);
+    }
+
+    [Fact]
+    public void ClaimVerification_CountsTheItemsTheVerifierDidNotAnswer()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 3;
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimsIndeterminateCount = 2;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Prayer timeout starts at 300.", BenchmarkClaimVerdict.Supported, "src/pray.c:120", "The source sets it.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            new BenchmarkClaimVerification(1, "Altars convert on a successful prayer.", BenchmarkClaimVerdict.Indeterminate, null, BenchmarkClaimVerificationParser.AbsentFromResponseBasis)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            new BenchmarkClaimVerification(2, "Luck times out every 600 turns.", BenchmarkClaimVerdict.Indeterminate, null, BenchmarkClaimVerificationParser.AbsentFromResponseBasis)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            }
+        });
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
+        run.TotalInputTokens = 1_000_000;
+        run.TotalOutputTokens = 50_000;
+        run.TotalAssessmentInputTokens = 200_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 100_000;
+        run.TotalClaimVerificationOutputTokens = 5_000;
+        run.ClaimsSupportedCount = 1;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 2;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains("1 supported, 0 refuted, 2 indeterminate (2 not answered by the verifier) — *checked against source/wiki", report);
+        Assert.Contains("- **Claim Verification Yield:** 3 claim(s) checked — 1 supported, 0 refuted, 2 indeterminate; 2 not answered by the verifier. $", report);
+    }
+
+    [Fact]
+    public void ClaimVerification_PrintsNoUnansweredCount_WhenTheVerifierAnsweredEveryItem()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 1;
+        q1.ClaimsIndeterminateCount = 1;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Altars convert on a successful prayer.", BenchmarkClaimVerdict.Indeterminate, null, "The source does not settle it.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            }
+        });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("0 supported, 0 refuted, 1 indeterminate — *checked against source/wiki", report);
+        Assert.DoesNotContain("not answered by the verifier", report);
+    }
+
+    [Fact]
+    public void EstimatedCost_NamesTheClaimVerifiersTier_OnlyWhenItsMultiplierApplied()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini", serviceTier: "flex");
+        run.TotalInputTokens = 1_000_000;
+        run.TotalOutputTokens = 50_000;
+        run.TotalAssessmentInputTokens = 200_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 100_000;
+        run.TotalClaimVerificationOutputTokens = 5_000;
+
+        BenchmarkRunPricing Pricing(IReadOnlyDictionary<string, decimal>? tiers) => new(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom, ServiceTierMultipliers: tiers),
+            IsSnapshot: true);
+
+        // $0.10 in and $0.02 out at the standard price, halved on flex.
+        var halved = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: Pricing(new Dictionary<string, decimal> { ["flex"] = 0.5m }));
+        Assert.Contains("  - Claim Verifier (gpt-5-mini, flex tier): $0.06 (in: $0.05, out: $0.01)", halved);
+
+        // A card without multipliers prices the tier at 1, and the line names no tier.
+        var standard = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: Pricing(null));
+        Assert.Contains("  - Claim Verifier (gpt-5-mini): $0.12 (in: $0.10, out: $0.02)", standard);
     }
 
     [Fact]
@@ -4778,6 +4940,34 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void PanelSensitivityClause_PrintsOneDecimal_WhenRoundingHidesTheLift()
+    {
+        var run = new BenchmarkRun { HarnessVersion = "49", QualityIndex = 88 };
+        var result = new PanelSensitivityResult(88, new[] { 3 }, Array.Empty<int>(), UnroundedIndex: 87.74, UnroundedPublished: 87.61);
+
+        string clause = BenchmarkReportBuilder.PanelSensitivityClause(run, result);
+
+        Assert.StartsWith("Panel verification-cleared Accuracy sensitivity:** 87.7 / 100 (published 87.6) — member A's Accuracy one level higher on Q3, where", clause);
+    }
+
+    [Theory]
+    [InlineData(88, 87.64, 87.61)] // a lift under 0.05 points
+    [InlineData(89, 88.52, 87.61)] // rounding shows the lift
+    public void PanelSensitivityClause_PrintsWholeNumbers_OtherwiseOrWithoutUnroundedFigures(double index, double unrounded, double unroundedPublished)
+    {
+        var run = new BenchmarkRun { HarnessVersion = "49", QualityIndex = 88 };
+
+        string clause = BenchmarkReportBuilder.PanelSensitivityClause(
+            run, new PanelSensitivityResult(index, new[] { 3 }, Array.Empty<int>(), unrounded, unroundedPublished));
+        Assert.StartsWith($"Panel verification-cleared Accuracy sensitivity:** {index:F0} / 100 (published 88) — ", clause);
+
+        // A result without the unrounded figures prints whole numbers.
+        string whole = BenchmarkReportBuilder.PanelSensitivityClause(
+            run, new PanelSensitivityResult(88, new[] { 3 }, Array.Empty<int>()));
+        Assert.StartsWith("Panel verification-cleared Accuracy sensitivity:** 88 / 100 (published 88) — ", whole);
+    }
+
+    [Fact]
     public void Manifest_ListsTheFiveCorpusIndexFingerprints()
     {
         var run = PanelReportRun();
@@ -5185,9 +5375,9 @@ public class BenchmarkReportBuilderTests
     {
         var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
 
-        // Member A's stored count stays the headline: only Q3 carries a flag of member A's. Q2 is
-        // flagged on member B alone.
-        Assert.Contains("- **Advisory Flags:** 1; 2 answer(s) on either member (reasoning bleed: 0,", report);
+        // The headline counts the answers either member flagged, then each member's: only Q3 carries
+        // a flag of member A's, and Q2 is flagged on member B alone.
+        Assert.Contains("- **Advisory Flags:** 2 answer(s) on either member (member A 1, member B 2) (reasoning bleed: 0,", report);
 
         // The per-answer section prints member B's flags under their own label.
         Assert.Contains("- **Integrity Flags (member B):** ContestedVerdict", report);

@@ -334,7 +334,7 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- A claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Attribute it ('the claim verifier judged …'), never state it as a fact about the game, and never list refuted claims in the abstract or the one-sentence result.");
         Line(sb, "- Each claim ruling names what was checked. A ruling on an answer sentence tests the answer; a ruling on a grader's statement tests the grader, so a refuted grader's statement means the claim verifier judged the grader wrong, not the answer.");
         Line(sb, "- Never describe a claim the claim verifier supported as a mistake, even where the rubric leaves it out.");
-        Line(sb, "- When the response-style conflict fact is true, lower completeness is partly the effect of the benchmark's concise-answer instruction, not only of the model. Say so wherever completeness is discussed.");
+        Line(sb, "- When the response-style conflict fact is true, lower completeness is partly the effect of the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is — not only of the model. Say so wherever completeness is discussed, and never call it the benchmark's instruction.");
         Line(sb, "- The response-style note is Overseer's own observation. Never attribute it to a grader.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
         Line(sb, $"- Each question in QUESTIONS with peers carries \"peers: min …, max …, N of M scored clearly higher\": the lowest and highest peer score on that question, and how many of the M peers that answered it scored more than {Words((int)BenchmarkReportFacts.PeerAboveMarginPoints)} points above {{{{subject}}}}.");
@@ -530,7 +530,7 @@ public static class BenchmarkReportPackPrompt
             foreach (var fact in styleFacts)
             {
                 Line(sb, IsTrue(fact)
-                    ? $"{{{{{fact.Key}}}}} is true: the concise-answer instruction conflicts with the completeness the rubrics ask for, so lower completeness is partly the instruction's effect."
+                    ? $"{{{{{fact.Key}}}}} is true: the production chat's concise response style conflicts with the completeness the rubrics ask for, so lower completeness is partly the style's effect."
                     : $"{{{{{fact.Key}}}}} is not true: completeness is not affected by a response-style conflict.");
             }
             Line(sb);

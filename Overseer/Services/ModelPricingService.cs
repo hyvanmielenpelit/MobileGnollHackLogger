@@ -659,6 +659,30 @@ public class ModelPricingService
         => inputTokens > 0 || outputTokens > 0 || cacheReadTokens > 0 || cacheCreationTokens > 0;
 
     /// <summary>
+    /// The service tier the provider served for this run's claim verifications — the most common
+    /// non-null <see cref="BenchmarkRunAnswer.ClaimVerificationServiceTierUsed"/>, resolved as
+    /// <see cref="Benchmarking.BenchmarkRunFinalizer.ResolveServedServiceTier"/> resolves the
+    /// candidate's. Null when no answer recorded one.
+    /// </summary>
+    public static string? ResolveServedClaimVerifierServiceTier(IEnumerable<BenchmarkRunAnswer>? answers)
+        => answers?
+            .Select(a => a.ClaimVerificationServiceTierUsed)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .GroupBy(t => t!, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .Select(g => g.Key)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// The service tier the claim verifier's cost is scaled by: the served tier when the answers
+    /// recorded one, else the tier its model snapshot requested; null when neither is set.
+    /// </summary>
+    public static string? ClaimVerifierCostServiceTier(BenchmarkRun run)
+        => run == null
+            ? null
+            : ResolveServedClaimVerifierServiceTier(run.Answers) ?? run.ClaimVerifierModelSnapshot?.ServiceTier;
+
+    /// <summary>
     /// The one costing of a benchmark run: five roles, their grading subtotal and their total, from
     /// the run's stored totals and the price cards resolved for it. Every surface that reports a run's
     /// cost — the run detail, the history list, the series estimate, the group analysis and the
@@ -667,8 +691,9 @@ public class ModelPricingService
     /// <para>The candidate is costed from totals with its long-context subsets and the service tier the
     /// provider actually served, because its per-call evidence was bucketed at answer time and
     /// persisted. The grading roles are costed flat from aggregate totals, each with its own cache
-    /// read and cache creation figures: no per-call usage is recorded for them, so neither a
-    /// long-context card nor a served tier is knowable for them here.</para>
+    /// read and cache creation figures and its own service tier: the tier its model snapshot
+    /// requested, and for the claim verifier the tier the provider reported serving. No long-context
+    /// subset is recorded for them.</para>
     ///
     /// <para>The final synthesis is priced on <see cref="BenchmarkRunPricing.Assessor"/>: it runs on the
     /// assessor's configuration, which is why <see cref="BenchmarkRunPricing"/> carries no synthesis
@@ -685,9 +710,8 @@ public class ModelPricingService
     /// a provider bills. <see cref="ComputeRunRoleCosts"/> reads its role totals from here, so a surface
     /// printing the parts beside the totals is printing one costing rather than two.
     ///
-    /// <para>The candidate carries its long-context subsets and served tier; the grading roles are flat,
-    /// because no per-call usage is recorded for them — the same asymmetry
-    /// <see cref="ComputeRunRoleCosts"/> documents, for the same reason.</para>
+    /// <para>The candidate carries its long-context subsets and served tier; the grading roles are flat
+    /// and carry their own tiers — the same asymmetry <see cref="ComputeRunRoleCosts"/> documents.</para>
     /// </summary>
     public static BenchmarkRoleCostBreakdowns ComputeRunRoleCostBreakdowns(
         BenchmarkRun run, BenchmarkRunPricing pricing, string? servedServiceTier = null)
@@ -714,16 +738,23 @@ public class ModelPricingService
             : default;
 
         // Every stored Total*InputTokens column is a *total* prompt figure that already contains the
-        // cache reads and cache writes beside it — the shape ComputeCostBreakdownFromTotals takes. With
-        // no long-context subset and no served tier, which no grading role records, it is the flat rate
-        // over the four disjoint buckets, and identical to what a run predating these columns cost.
+        // cache reads and cache writes beside it — the shape ComputeCostBreakdownFromTotals takes. No
+        // grading role records a long-context subset, so each is priced flat over the four disjoint
+        // buckets and scaled by its own service tier: the tier its model snapshot requested, and for
+        // the claim verifier the tier the provider reported serving, which wins when present. A
+        // synthesis runs on its member's configuration and takes that member's tier. With no tier, or
+        // a card without multipliers, the multiplier is 1.
+        string? assessorTier = run.AssessorModelSnapshot?.ServiceTier;
+        string? coAssessorTier = run.CoAssessorModelSnapshot?.ServiceTier;
+
         var assessor = assessorCard != null && RoleHasTokens(
                 run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
                 run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)
             ? ComputeCostBreakdownFromTotals(
                 assessorCard,
                 run.TotalAssessmentInputTokens, run.TotalAssessmentOutputTokens,
-                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens)
+                run.TotalAssessmentCacheReadTokens, run.TotalAssessmentCacheCreationTokens,
+                requestedServiceTier: assessorTier)
             : default;
 
         var secondOpinion = secondOpinionCard != null && RoleHasTokens(
@@ -732,7 +763,8 @@ public class ModelPricingService
             ? ComputeCostBreakdownFromTotals(
                 secondOpinionCard,
                 run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens,
-                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)
+                run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens,
+                requestedServiceTier: run.SecondOpinionAssessorModelSnapshot?.ServiceTier)
             : default;
 
         var claimVerifier = verifierCard != null && RoleHasTokens(
@@ -741,7 +773,9 @@ public class ModelPricingService
             ? ComputeCostBreakdownFromTotals(
                 verifierCard,
                 run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
-                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens)
+                run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens,
+                actualServiceTier: ResolveServedClaimVerifierServiceTier(run.Answers),
+                requestedServiceTier: run.ClaimVerifierModelSnapshot?.ServiceTier)
             : default;
 
         var synthesis = assessorCard != null && RoleHasTokens(
@@ -750,7 +784,8 @@ public class ModelPricingService
             ? ComputeCostBreakdownFromTotals(
                 assessorCard,
                 run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
-                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)
+                run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens,
+                requestedServiceTier: assessorTier)
             : default;
 
         // Panel member B and its own synthesis, both on the co-assessor's card. Zero token totals
@@ -763,7 +798,8 @@ public class ModelPricingService
             ? ComputeCostBreakdownFromTotals(
                 coAssessorCard,
                 run.TotalCoAssessmentInputTokens, run.TotalCoAssessmentOutputTokens,
-                run.TotalCoAssessmentCacheReadTokens, run.TotalCoAssessmentCacheCreationTokens)
+                run.TotalCoAssessmentCacheReadTokens, run.TotalCoAssessmentCacheCreationTokens,
+                requestedServiceTier: coAssessorTier)
             : default;
 
         var coSynthesis = coAssessorCard != null && RoleHasTokens(
@@ -772,7 +808,8 @@ public class ModelPricingService
             ? ComputeCostBreakdownFromTotals(
                 coAssessorCard,
                 run.TotalCoSynthesisInputTokens, run.TotalCoSynthesisOutputTokens,
-                run.TotalCoSynthesisCacheReadTokens, run.TotalCoSynthesisCacheCreationTokens)
+                run.TotalCoSynthesisCacheReadTokens, run.TotalCoSynthesisCacheCreationTokens,
+                requestedServiceTier: coAssessorTier)
             : default;
 
         return new BenchmarkRoleCostBreakdowns(

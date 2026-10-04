@@ -246,6 +246,44 @@ describe('ExportSizeSectionComponent', () => {
     expect(fixture.componentInstance.resetStatus).toBe('');
   });
 
+  describe('as the key-figures image size', () => {
+    function renderKeyFigures(settings: FigureSizeSettings): void {
+      fixture.componentRef.setInput('fitLabel', 'Fit the figures');
+      fixture.componentRef.setInput('fitHint', 'The image is as large as its figures need; density sets its sharpness.');
+      fixture.componentRef.setInput('showTextSize', false);
+      fixture.componentRef.setInput('boxHint', 'The figures are laid out for the chosen aspect ratio and scaled to fill it.');
+      render({ settings, defaults: defaultTableImageSize(), allowFit: true, title: 'Image size', idPrefix: 'kfch-size', errorNoun: 'image' });
+    }
+
+    it('names the fit option, its hint and the read-out for the figures', () => {
+      renderKeyFigures(defaultTableImageSize());
+      const select = control<HTMLSelectElement>('kfch-size-resolution');
+      expect(select.options[0].textContent?.trim()).toBe('Fit the figures');
+      expect(control('kfch-size-fit-hint').textContent?.trim())
+        .toBe('The image is as large as its figures need; density sets its sharpness.');
+      expect(select.getAttribute('aria-describedby')).toBe('kfch-size-fit-hint');
+      expect(host().querySelector('.gh-disclosure-summary-value')?.textContent?.trim()).toBe('Fit the figures · 200%');
+    });
+
+    it('offers no text size, and shows the box hint and the written size once a box is chosen', () => {
+      renderKeyFigures({ ...defaultTableImageSize(), resolutionId: 'fullhd' });
+      expect(maybeControl('kfch-size-text-scale')).toBeNull();
+      expect(maybeControl('kfch-size-fit-hint')).toBeNull();
+      expect(control('kfch-size-box-hint').textContent?.trim())
+        .toBe('The figures are laid out for the chosen aspect ratio and scaled to fill it.');
+      expect(control('kfch-size-resolution').getAttribute('aria-describedby')).toBe('kfch-size-box-hint');
+      expect(host().querySelector('.ess-dimensions')?.textContent?.trim()).toBe('3840 × 2160 px (1920 × 1080 at 200%)');
+      expect(host().querySelector('.gh-disclosure-summary-value')?.textContent?.trim()).toBe('Full HD — 1920 × 1080 · 200%');
+    });
+  });
+
+  it('keeps the wizard\'s text size and its read-out at the default inputs', () => {
+    render({ settings: { ...defaultTableImageSize(), resolutionId: 'fullhd' }, defaults: defaultTableImageSize(), allowFit: true, idPrefix: 'mc-table-image' });
+    expect(control('mc-table-image-text-scale')).not.toBeNull();
+    expect(maybeControl('mc-table-image-box-hint')).toBeNull();
+    expect(host().querySelector('.gh-disclosure-summary-value')?.textContent?.trim()).toBe('Full HD — 1920 × 1080 · 200% · text 100 %');
+  });
+
   it('mirrors the disclosure open state through openChange', () => {
     render({ settings: defaultFigureSize(1), defaults: defaultFigureSize(1) });
     const details = control<HTMLDetailsElement>('mc-export-section');

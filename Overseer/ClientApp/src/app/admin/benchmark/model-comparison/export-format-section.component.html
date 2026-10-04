@@ -1,0 +1,53 @@
+<div class="efs-section">
+  <details class="gh-disclosure gh-disclosure--section" [id]="idPrefix + '-section'"
+           [open]="open" (toggle)="onToggle($event)">
+    <summary>
+      <span class="gh-disclosure-summary-title">{{ title }}</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ readout }}</span>
+    </summary>
+    <div class="gh-disclosure-body efs-body">
+      <fieldset class="gh-choice" [id]="idPrefix + '-format'" [attr.aria-describedby]="noteId">
+        <legend>Format</legend>
+        @for (option of formatOptions; track option.value) {
+          <label class="gh-radio">
+            <input type="radio" [name]="idPrefix + '-format'" [id]="idPrefix + '-format-' + option.value"
+                   [value]="option.value" [checked]="format === option.value"
+                   (change)="onFormatChange(option.value)">
+            {{ option.label }}
+          </label>
+        }
+      </fieldset>
+      <!-- Quality after the format rather than before it, so choosing WebP never shifts the control
+           the reader has just used. -->
+      @if (format === 'webp') {
+        <div class="efs-field">
+          <label [for]="idPrefix + '-quality'">WebP quality</label>
+          <select [id]="idPrefix + '-quality'" class="gh-input efs-quality"
+                  (change)="onQualityChange($any($event.target).value)">
+            @for (q of qualityOptions; track q) {
+              <option [value]="q" [selected]="q === webpQuality">{{ q }}</option>
+            }
+          </select>
+        </div>
+      }
+      @if (note) {
+        <p class="efs-note" [id]="idPrefix + '-note'">{{ note }}</p>
+      }
+    </div>
+  </details>
+  <button type="button" class="action-btn efs-reset" [id]="idPrefix + '-reset'"
+          [attr.aria-label]="'Reset ' + title + ' to defaults'"
+          [attr.aria-disabled]="isDefault ? 'true' : null"
+          [attr.interestfor]="idPrefix + '-reset-tip'" [attr.style]="'anchor-name: --' + idPrefix + '-reset-tip'"
+          (click)="onReset()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 14 4 9l5-5"></path>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+    </svg>
+  </button>
+  <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-reset-tip'"
+       [attr.style]="'position-anchor: --' + idPrefix + '-reset-tip'">{{ resetTip }}</div>
+</div>
+<p class="visually-hidden" role="status">{{ resetStatus }}</p>

@@ -336,10 +336,10 @@ public class BenchmarkBatteryAnalysisServiceTests
         Assert.Equal(66.0, result.OverallIndex!.PointEstimate, 9);
 
         // Run 1's panel scores become (Quality(4, 5, 5, 5) + 60) / 2, 70 and 80 at difficulty 40; its
-        // published index is 70, so the suite moves by the run's lift.
+        // stored panel scores give exactly 70, so the suite moves by the run's unrounded lift.
         int lifted = BenchmarkScoring.Quality(4, 5, 5, 5, false).Score;
-        int runIndex = BenchmarkScoring.QualityIndex(new List<(double?, int)> { ((lifted + 60) / 2.0, 40), (70, 40), (80, 40) })!.Value;
-        double suiteAFigure = 70.0 + (runIndex - 70);
+        double runIndex = BenchmarkScoring.QualityIndexUnrounded(new List<(double?, int)> { ((lifted + 60) / 2.0, 40), (70, 40), (80, 40) })!.Value;
+        double suiteAFigure = 70.0 + (runIndex - 70.0);
         Assert.True(suiteAFigure > 70.0);
         Assert.Equal(suiteAFigure, result.Suites[0].PanelVerificationClearedIndex!.Value, 9);
         Assert.Equal(60.0, result.Suites[1].PanelVerificationClearedIndex!.Value, 9);
@@ -363,6 +363,76 @@ public class BenchmarkBatteryAnalysisServiceTests
         Assert.Null(error);
         Assert.Null(result!.PanelVerificationClearedOverall);
         Assert.All(result.Suites, s => Assert.Null(s.PanelVerificationClearedIndex));
+        Assert.Null(result.PanelAgreement);
+    }
+
+    [Fact]
+    public void PanelVerificationClearedLifts_IsTheUnroundedDifference()
+    {
+        // Member A's lift on Q1 of suite A moves that panel score from 60 to (Quality(4, 5, 5, 5) + 60) / 2
+        // among three equal weights: the run's lift is a third of the half difference, unrounded.
+        int lifted = BenchmarkScoring.Quality(4, 5, 5, 5, false).Score;
+
+        var lifts = BenchmarkBatteryAnalysisService.PanelVerificationClearedLifts(new[]
+        {
+            BenchmarkBatteryTestData.SupportMemberACharge(
+                BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteARun(1)), orderIndex: 1)
+        });
+
+        Assert.Equal((lifted - 60) / 6.0, Assert.Single(lifts), 9);
+    }
+
+    [Fact]
+    public async Task Analyse_PanelMembers_ComputeThePanelAgreementBlock()
+    {
+        // Member B scores as member A did; the reference reader scores every answer 5 points higher.
+        var suiteA = BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteARun(1));
+        var suiteB = BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteBRun(2));
+        foreach (var run in new[] { suiteA, suiteB })
+        {
+            run.SecondOpinionAssessorModelConfigurationId = 11;
+            foreach (var answer in run.Answers) answer.SecondOpinionQualityScore = answer.QualityScore + 5;
+        }
+        suiteA.PanelDisagreementCount = 1;
+        suiteB.PanelDisagreementCount = 2;
+        long id = await BenchmarkBatteryTestData.SeedAsync(
+            _db,
+            BenchmarkBatteryTestData.Definition(),
+            (suiteA, 0, 1),
+            (suiteB, 1, 1));
+
+        var (_, result, _, error) = await Service().AnalyseAsync(id, null, null, TestContext.Current.CancellationToken);
+
+        Assert.Null(error);
+        var panel = result!.PanelAgreement;
+        Assert.NotNull(panel);
+        // w = 0.6 / 0.4 over I_A = 70 and I_B = 60 for both members, and 75 and 65 for the reader.
+        Assert.Equal(66.0, panel!.MemberAAloneIndex!.Value, 9);
+        Assert.Equal(66.0, panel.MemberBAloneIndex!.Value, 9);
+        Assert.Equal(71.0, panel.ReferenceReaderIndex!.Value, 9);
+        Assert.Equal(5.0, panel.ReferenceReaderOffset!.Value, 9);
+        Assert.Equal(0.0, panel.MeanAbsoluteDelta!.Value, 9);
+        Assert.Equal(0.0, panel.MeanSignedDelta!.Value, 9);
+        Assert.Equal(1.0, panel.IntraclassCorrelation!.Value, 9);
+        Assert.Equal(5, panel.PairCount);
+        Assert.Equal(3, panel.Disagreements);
+    }
+
+    [Fact]
+    public void AStoredResultWithoutThePanelAgreement_ReadsItAsNull()
+    {
+        // A result persisted before the panel agreement block existed, with the figures it did carry.
+        var restored = BenchmarkBatteryAnalysisService.DeserializeResult(new BenchmarkBatteryAnalysis
+        {
+            ResultJson = "{\"MethodVersion\":1,\"Complete\":true,\"CompletedSuiteCount\":1,\"SuiteCount\":1,"
+                + "\"Scheme\":\"DifficultyMass\",\"Weights\":[1.0],\"PanelVerificationClearedOverall\":71.5,"
+                + "\"Suites\":[{\"SuiteIndex\":0,\"SuiteName\":\"Suite 21\",\"Index\":70.0,\"PanelVerificationClearedIndex\":71.5}]}"
+        });
+
+        Assert.NotNull(restored);
+        Assert.Null(restored!.PanelAgreement);
+        Assert.Equal(71.5, restored.PanelVerificationClearedOverall!.Value, 9);
+        Assert.Equal(70.0, Assert.Single(restored.Suites).Index!.Value, 9);
     }
 
     [Fact]

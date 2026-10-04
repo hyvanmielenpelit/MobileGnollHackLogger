@@ -150,14 +150,14 @@
                 <div popover="hint" class="gh-tooltip" id="brr-figures-copy-tip"
                      [attr.style]="'position-anchor: --brr-figures-copy-tip'">Copy key figures as an image</div>
                 <button type="button" class="action-btn" id="brr-figures-download-btn"
-                        [attr.aria-label]="'Download key figures of battery run ' + detail.id + ' as a PNG image' + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' key figures' : '')"
+                        [attr.aria-label]="'Download key figures of battery run ' + detail.id + ' as a ' + keyFiguresDownloadFormat + ' image' + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' key figures' : '')"
                         [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
                         interestfor="brr-figures-download-tip" [attr.style]="'anchor-name: --brr-figures-download-tip'"
                         (click)="downloadKeyFigures()">
                   <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 </button>
                 <div popover="hint" class="gh-tooltip" id="brr-figures-download-tip"
-                     [attr.style]="'position-anchor: --brr-figures-download-tip'">Download key figures as PNG</div>
+                     [attr.style]="'position-anchor: --brr-figures-download-tip'">Download key figures as {{ keyFiguresDownloadFormat }}</div>
                 <button #keyFiguresChooserTrigger type="button" class="btn-ghost" id="brr-figures-choose-btn"
                         aria-haspopup="dialog"
                         [attr.aria-label]="'Choose key figures for battery run ' + detail.id + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' selected' : '')"
@@ -190,13 +190,13 @@
                   <span class="score-value text-muted">Not analyzed</span>
                   <span class="score-note">{{ analysisLoading ? 'Loading the analysis' : 'No analysis has been computed' }}</span>
                 }
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Overall Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Overall Intelligence Index" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="critical-errors" [hidden]="!isKeyFigureShown('critical-errors')">
                 <span class="score-label">Critical-Error Rate</span>
                 <span class="score-subvalue" [class.text-muted]="result?.criticalErrorRate == null">{{ formatPercent(result?.criticalErrorRate) }}</span>
                 <span class="score-note">of the scored answers, every suite pooled</span>
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Critical-Error Rate" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Critical-Error Rate" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="answered" [hidden]="!isKeyFigureShown('answered')">
                 <span class="score-label">Scored Items</span>
@@ -206,7 +206,7 @@
                   <span class="score-subvalue text-muted">—</span>
                 }
                 <span class="score-note">scored items of the exam items, {{ detail.suiteCount }} suites</span>
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Scored Items" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Scored Items" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="speed" [hidden]="!isKeyFigureShown('speed')">
                 <span class="score-label">Overall Speed Index</span>
@@ -226,25 +226,25 @@
                 @if (result?.speed?.degraded) {
                   <span class="score-note">advisory: {{ result?.speed?.degradedReason || 'a speed-affecting setting differs between suites' }}</span>
                 }
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Overall Speed Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Overall Speed Index" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="mean-time" [hidden]="!isKeyFigureShown('mean-time')">
                 <span class="score-label">Mean Time per Question</span>
                 <span class="score-subvalue" [class.text-muted]="result?.speed?.modelTimeMeanMs == null">{{ formatMs(result?.speed?.modelTimeMeanMs) }}</span>
                 <span class="score-note">model time per answer · median {{ formatMs(result?.speed?.modelTimeP50Ms) }}</span>
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Mean Time per Question" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Mean Time per Question" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="wall-time" [hidden]="!isKeyFigureShown('wall-time')">
                 <span class="score-label">Battery Duration</span>
-                <span class="score-subvalue" [class.text-muted]="durationMs == null">{{ formatMs(durationMs) }}</span>
+                <span class="score-subvalue" [class.text-muted]="durationMs == null">{{ formatWallClock(durationMs) }}</span>
                 <span class="score-note">{{ isLive ? 'so far; the battery run is still running' : 'start to finish, every member run' }}</span>
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Battery Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Battery Duration" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="model-cost" [hidden]="!isKeyFigureShown('model-cost')">
                 <span class="score-label">Candidate Cost</span>
                 <span class="score-subvalue" [class.text-muted]="candidateCost == null">{{ formatCost(candidateCost) }}</span>
                 <span class="score-note">{{ candidateCostShare || 'the model under test, every member run' }}</span>
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Candidate Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Candidate Cost" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <div class="score-card" data-figure="estimated-cost" [hidden]="!isKeyFigureShown('estimated-cost')">
                 <span class="score-label">Total Cost</span>
@@ -263,7 +263,7 @@
                 } @else {
                   <span class="score-note">every role, every member run</span>
                 }
-                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Total Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Total Cost" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
             </div>
             @if (selectedKeyFigureCount === 0) {
@@ -1098,7 +1098,9 @@
   <app-key-figures-chooser idPrefix="brr-kfch"
                            figuresHint="Shown in the Summary and in the copied or downloaded image. Remembered for every battery run report."
                            detailsHint="The battery run's settings above the figures in the copied or downloaded image. The dialog header always lists them all. Remembered for every battery run report."
+                           [exportSettings]="keyFiguresExportSettings" [measureImage]="keyFiguresMeasurer"
                            (selectionChange)="onKeyFigureSelectionChange($event)"
-                           (detailSelectionChange)="onImageDetailSelectionChange($event)" />
+                           (detailSelectionChange)="onImageDetailSelectionChange($event)"
+                           (exportSettingsChange)="onKeyFiguresExportSettingsChange($event)" />
   <app-benchmark-download-center #brrDownloadCenter (closed)="onDownloadsClosed()"></app-benchmark-download-center>
 </dialog>

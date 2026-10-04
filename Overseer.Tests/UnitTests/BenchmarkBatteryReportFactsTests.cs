@@ -395,6 +395,39 @@ public class BenchmarkBatteryReportFactsTests
     }
 
     [Fact]
+    public async Task APanelBattery_StatesItsPanelFacts_FromThePersistedAgreementBlock()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        // Member B scores every answer as member A did.
+        long id = await SeedThreeRoundsAsync(db, adjust: (run, _) => BenchmarkBatteryTestData.AsPanelRun(run));
+        var panel = (await PersistedResultAsync(db, id)).PanelAgreement;
+        Assert.NotNull(panel);
+
+        var sheet = (await PrepareAsync(db, id)).Sheet;
+
+        // Three rounds of both suites: 15 answers. Suite indices 70 and 60 under w = 0.6 / 0.4.
+        Assert.Equal(15, panel!.PairCount);
+        var icc = Fact(sheet, "panel.icc");
+        Assert.Equal(panel.IntraclassCorrelation!.Value, icc.Value!.GetValue<double>(), 12);
+        Assert.Equal("1.00 (pooled over 15 answers both members scored)", icc.Display);
+        Assert.Equal("66.0 / 100", Fact(sheet, "panel.memberAAlone").Display);
+        Assert.Equal("66.0 / 100", Fact(sheet, "panel.memberBAlone").Display);
+        Assert.Equal("0.0 points", Fact(sheet, "panel.meanAbsDelta").Display);
+        Assert.Single(sheet.Facts, f => f.Key == "panel.icc");
+
+        // No reference reader graded, so its facts keep the run-level reason.
+        Assert.False(Fact(sheet, "panel.referenceReaderIndex").Available);
+    }
+
+    [Fact]
+    public void TheRunLevelTotalCostLabel_NamesWhatItCovers()
+    {
+        Assert.Equal(
+            "Total cost per run (every grading and synthesis role; report writer excluded)",
+            BenchmarkReportFactLabels.Label("cost.totalRunPerRun"));
+    }
+
+    [Fact]
     public async Task EveryQuestion_HasASuiteQualifiedReference_AndItsPersistedMean()
     {
         await using var db = BenchmarkBatteryTestData.NewDb();
@@ -818,7 +851,8 @@ public class BenchmarkBatteryReportFactsTests
         Assert.Contains("  - *Evidence:* S1-Q1 (90 / 100)" + "\n", text);
         Assert.Contains("- Battery analysis: Fewer than three complete rounds: the interval covers item sampling only.\n", text);
         Assert.Contains("A battery report lists no synthesis findings; each member run's report has its own.", text);
-        Assert.Contains("| Cost per battery pass | $0.144 |", text);
+        Assert.Contains("| Candidate cost per battery pass | $0.144 |", text);
+        Assert.Contains("| Candidate cost per question | $0.036 |", text);
     }
 
     [Theory]

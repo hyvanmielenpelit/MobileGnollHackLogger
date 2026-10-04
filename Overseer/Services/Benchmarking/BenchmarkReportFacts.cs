@@ -2000,6 +2000,13 @@ public static class BenchmarkReportFacts
 
         public void Add(string key, bool value, string display) => Add(key, (JsonNode)JsonValue.Create(value), display);
 
+        /// <summary>Every fact keyed <paramref name="key"/> is removed, and one available fact takes its place.</summary>
+        public void Replace(string key, double value, string display)
+        {
+            _facts.RemoveAll(f => string.Equals(f.Key, key, StringComparison.Ordinal));
+            Add(key, value, display);
+        }
+
         public void Unavailable(string key, string? reason)
             => _facts.Add(new BenchmarkReportFact
             {

@@ -536,6 +536,20 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// How many of <paramref name="verifications"/> the verifier's response did not answer: items whose
+    /// basis is <see cref="BenchmarkClaimVerificationParser.AbsentFromResponseBasis"/>, counted as indeterminate.
+    /// </summary>
+    internal static int UnansweredByVerifierCount(IEnumerable<BenchmarkClaimVerification> verifications)
+        => verifications.Count(v => string.Equals(v.Basis, BenchmarkClaimVerificationParser.AbsentFromResponseBasis, StringComparison.Ordinal));
+
+    /// <summary>" (N not answered by the verifier)" when N is above zero; empty otherwise.</summary>
+    private static string UnansweredByVerifierText(IEnumerable<BenchmarkClaimVerification> verifications)
+    {
+        int unanswered = UnansweredByVerifierCount(verifications);
+        return unanswered > 0 ? $" ({Inv(unanswered)} not answered by the verifier)" : string.Empty;
+    }
+
+    /// <summary>
     /// The verdict word as the harness reads it, with the verifier's own verdict beside it when a
     /// citation note demoted it, e.g. <c>indeterminate (verifier: refuted; cited function priest_talk has no live call site)</c>.
     /// </summary>
@@ -565,6 +579,9 @@ public static class BenchmarkReportBuilder
     /// </summary>
     internal static string PanelSensitivityClause(BenchmarkRun run, PanelSensitivityResult result)
     {
+        // The smallest unrounded lift printed with one decimal when the rounded figures are equal.
+        const double HiddenLiftThreshold = 0.05;
+
         const string Label = "Panel verification-cleared Accuracy sensitivity:**";
         if (result.Index is not double index)
         {
@@ -586,10 +603,23 @@ public static class BenchmarkReportBuilder
         }
 
         string published = run.QualityIndex.HasValue ? Inv(run.QualityIndex.Value) : "not published";
+        string figure = $"{Inv(index, "F0")} / 100 (published {published})";
+
+        // One decimal when the rounded figure equals the published index but the unrounded lift is
+        // at least 0.05 points, so a lift that rounding hides stays visible.
+        if (run.QualityIndex is int publishedIndex
+            && Math.Round(index, MidpointRounding.AwayFromZero) == publishedIndex
+            && result.UnroundedIndex is double unroundedIndex
+            && result.UnroundedPublished is double unroundedPublished
+            && unroundedIndex - unroundedPublished >= HiddenLiftThreshold - 1e-9)
+        {
+            figure = $"{Inv(unroundedIndex, "F1")} / 100 (published {Inv(unroundedPublished, "F1")})";
+        }
+
         string approximate = BenchmarkPanelSensitivity.IsApproximate(run)
             ? $" Approximate: this run predates harness {BenchmarkPanelSensitivity.MemberAttributionHarnessVersion}, which records the member that charged or raised each item, so an item without that record counts for both members."
             : string.Empty;
-        return $"{Label} {Inv(index, "F0")} / 100 (published {published}) — {string.Join(", ", lifted)}, where the claim verifier supported every sentence that member charged, or every out-of-rubric claim it raised. Advisory: no score moves. A lower bound: a charge the verifier wrongly refuted is not lifted.{approximate}";
+        return $"{Label} {figure} — {string.Join(", ", lifted)}, where the claim verifier supported every sentence that member charged, or every out-of-rubric claim it raised. Advisory: no score moves. A lower bound: a charge the verifier wrongly refuted is not lifted.{approximate}";
     }
 
     /// <summary>The display name of a corpus key of <see cref="CorpusIndexFingerprintProvider.CorpusKeys"/>.</summary>
@@ -1179,14 +1209,21 @@ public static class BenchmarkReportBuilder
     };
 
     /// <summary>
-    /// " — N tool call(s), X input tokens, Y s" from the answer's stored verifier columns, naming
-    /// only those present; empty when none is.
+    /// " — N tool call(s), M model call(s), X input tokens (cache read P%), Y s" from the answer's
+    /// stored verifier columns, naming only those present; empty when none is.
     /// </summary>
     internal static string ClaimVerificationSpendText(BenchmarkRunAnswer a)
     {
         var parts = new List<string>();
         if (a.ClaimVerificationToolCallCount.HasValue) parts.Add($"{Inv(a.ClaimVerificationToolCallCount.Value, "N0")} tool call(s)");
-        if (a.ClaimVerificationInputTokens.HasValue) parts.Add($"{Inv(a.ClaimVerificationInputTokens.Value, "N0")} input tokens");
+        if (a.ClaimVerificationModelCallCount.HasValue) parts.Add($"{Inv(a.ClaimVerificationModelCallCount.Value, "N0")} model call(s)");
+        if (a.ClaimVerificationInputTokens.HasValue)
+        {
+            string cacheRead = a.ClaimVerificationCacheReadTokens.HasValue && a.ClaimVerificationInputTokens.Value > 0
+                ? $" (cache read {Inv(a.ClaimVerificationCacheReadTokens.Value * 100.0 / a.ClaimVerificationInputTokens.Value, "F0")}%)"
+                : string.Empty;
+            parts.Add($"{Inv(a.ClaimVerificationInputTokens.Value, "N0")} input tokens{cacheRead}");
+        }
         if (a.ClaimVerificationDurationMs.HasValue) parts.Add($"{Inv(a.ClaimVerificationDurationMs.Value / 1000.0, "N1")} s");
         return parts.Count == 0 ? string.Empty : " — " + string.Join(", ", parts);
     }
@@ -1206,8 +1243,10 @@ public static class BenchmarkReportBuilder
 
     /// <summary>
     /// "Verifier spend by answer: highest Q.. (… input tokens), Q.., Q..; mean … input tokens and …
-    /// tool calls per verified answer." over the answers with a stored verifier input-token count;
-    /// null when there is none.
+    /// tool calls per verified answer, … model calls per verified answer, cache read …% of verifier
+    /// input." over the answers with a stored verifier input-token count; null when there is none.
+    /// The model-call mean and the cache-read share are each computed over the answers that recorded
+    /// them, and omitted when none did.
     /// </summary>
     internal static string? VerifierSpendByAnswerLine(IEnumerable<BenchmarkRunAnswer> answers)
     {
@@ -1224,8 +1263,25 @@ public static class BenchmarkReportBuilder
 
         double meanInput = verified.Average(a => (double)a.ClaimVerificationInputTokens!.Value);
         double meanCalls = verified.Average(a => (double)(a.ClaimVerificationToolCallCount ?? 0));
+
+        string modelCalls = string.Empty;
+        var withModelCalls = verified.Where(a => a.ClaimVerificationModelCallCount.HasValue).ToList();
+        if (withModelCalls.Count > 0)
+        {
+            modelCalls = $", {Inv(withModelCalls.Average(a => (double)a.ClaimVerificationModelCallCount!.Value), "N1")} model calls per verified answer";
+        }
+
+        string cacheRead = string.Empty;
+        var withCacheRead = verified.Where(a => a.ClaimVerificationCacheReadTokens.HasValue).ToList();
+        long cacheReadInput = withCacheRead.Sum(a => (long)a.ClaimVerificationInputTokens!.Value);
+        if (withCacheRead.Count > 0 && cacheReadInput > 0)
+        {
+            double share = withCacheRead.Sum(a => (long)a.ClaimVerificationCacheReadTokens!.Value) * 100.0 / cacheReadInput;
+            cacheRead = $", cache read {Inv(share, "F0")}% of verifier input";
+        }
+
         return $"- **Verifier spend by answer:** highest {string.Join(", ", named)}; " +
-            $"mean {Inv(meanInput, "N0")} input tokens and {Inv(meanCalls, "N1")} tool calls per verified answer.";
+            $"mean {Inv(meanInput, "N0")} input tokens and {Inv(meanCalls, "N1")} tool calls per verified answer{modelCalls}{cacheRead}.";
     }
 
     /// <summary>
@@ -2823,7 +2879,16 @@ public static class BenchmarkReportBuilder
 
                 if (hasVerifier && verifierPricing != null)
                 {
-                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelSnapshot?.ModelId}): ${Inv(verifierTotalCost, "F2")} ({CostParts(roleParts.ClaimVerifier, verifierPricing)})");
+                    // The tier is named only when its multiplier changed the price.
+                    string? verifierTier = ModelPricingService.ClaimVerifierCostServiceTier(run);
+                    decimal verifierTierMultiplier = ModelPricingService.ResolveServiceTierMultiplier(
+                        verifierPricing,
+                        ModelPricingService.ResolveServedClaimVerifierServiceTier(run.Answers),
+                        run.ClaimVerifierModelSnapshot?.ServiceTier);
+                    string verifierTierText = verifierTierMultiplier != 1.0m && !string.IsNullOrEmpty(verifierTier)
+                        ? $", {verifierTier} tier"
+                        : string.Empty;
+                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelSnapshot?.ModelId}{verifierTierText}): ${Inv(verifierTotalCost, "F2")} ({CostParts(roleParts.ClaimVerifier, verifierPricing)})");
                 }
 
                 if (hasSynthesis && assessorPricing != null)
@@ -2851,6 +2916,16 @@ public static class BenchmarkReportBuilder
                     // ClaimVerificationJson: the run's claim columns count the answers' own claims only.
                     var accusedChecked = answers.SelectMany(a => AccusedSentencesOf(a)).ToList();
                     var assessorChecked = answers.SelectMany(a => AssessorStatementsOf(a)).ToList();
+
+                    // Items the verifier's response did not answer, over the populations this line counts.
+                    int unansweredByVerifier = UnansweredByVerifierCount(answers
+                        .SelectMany(a => ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())
+                        .Where(BenchmarkClaimRoles.IsOrdinaryClaim)
+                        .Concat(accusedChecked)
+                        .Concat(assessorChecked));
+                    string unansweredClause = unansweredByVerifier > 0
+                        ? $"; {Inv(unansweredByVerifier, "N0")} not answered by the verifier"
+                        : string.Empty;
                     if (claimsChecked > 0 && accusedChecked.Count == 0 && assessorChecked.Count == 0)
                     {
                         decimal costPerClaim = verifierTotalCost / claimsChecked;
@@ -2858,7 +2933,7 @@ public static class BenchmarkReportBuilder
                         sb.AppendLine(
                             $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} claim(s) checked — " +
                             $"{Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
-                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate. " +
+                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate{unansweredClause}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
                     else if (accusedChecked.Count > 0 || assessorChecked.Count > 0)
@@ -2881,6 +2956,10 @@ public static class BenchmarkReportBuilder
                         AddPopulation("accused sentence(s)", "accused sentences", accusedChecked);
                         AddPopulation("assessor statement(s)", "assessor statements", assessorChecked);
                         string over = heads.Count == 2 ? "both" : "all three";
+                        if (unansweredByVerifier > 0)
+                        {
+                            parts.Add($"{Inv(unansweredByVerifier, "N0")} not answered by the verifier");
+                        }
                         sb.AppendLine(
                             $"- **Claim Verification Yield:** {string.Join(" + ", heads)} checked — {string.Join("; ", parts)}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerItem)}/item over {over}), {Inv(verifierCostShare, "F0")}% of run cost.");
@@ -3086,11 +3165,17 @@ public static class BenchmarkReportBuilder
         int harnessLimitCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
         int unansweredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Unanswered);
         int advisoryCount = answers.Count(BenchmarkRunFinalizer.HasAdvisoryFlag);
-        // The count above is member A's, as the run stores it; a panel run adds the answers either
-        // member flagged, computed from the answers.
-        string eitherMemberAdvisoryText = isPanelRun
-            ? $"; {Inv(answers.Count(a => BenchmarkRunFinalizer.HasAdvisoryFlag(a) || CoAssessmentAnswerFlags(a) != BenchmarkAnswerFlags.None))} answer(s) on either member"
-            : string.Empty;
+        // The count above is member A's, as the run stores it. A panel run's headline is the answers
+        // either member flagged, then each member's count, computed from the answers; a flag on the
+        // answer itself rather than on a member's verdict counts for member B too.
+        const BenchmarkAnswerFlags SharedAdvisoryFlags =
+            BenchmarkAnswerFlags.ReasoningBleed
+            | BenchmarkAnswerFlags.RepeatedFragments
+            | BenchmarkAnswerFlags.RefutedClaim
+            | BenchmarkAnswerFlags.AnswerFramingOpener;
+        string advisoryHeadline = isPanelRun
+            ? $"{Inv(answers.Count(a => BenchmarkRunFinalizer.HasAdvisoryFlag(a) || CoAssessmentAnswerFlags(a) != BenchmarkAnswerFlags.None))} answer(s) on either member (member A {Inv(advisoryCount)}, member B {Inv(answers.Count(a => CoAssessmentAnswerFlags(a) != BenchmarkAnswerFlags.None || (((BenchmarkAnswerFlags)a.AnswerFlags) & SharedAdvisoryFlags) != 0))})"
+            : Inv(advisoryCount);
         // NarrationBlockCount is the honest figure: how many narration blocks the scrubber
         // actually removed from this answer. Runs before harness version 6 did not record it,
         // and there null means "not recorded" — never zero. For those the old proxy stands, a
@@ -3177,7 +3262,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount}{eitherMemberAdvisoryText} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, rubric-charged deduction contradicted: {FlagFigure(rubricContradictedFigure, f => f.RubricContradictedBySource)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryHeadline} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, rubric-charged deduction contradicted: {FlagFigure(rubricContradictedFigure, f => f.RubricContradictedBySource)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
 
         // The Accuracy-specific share of the generic unevidenced-deduction flag, which is shared
         // by dimensions. Read from the stored evidence, so a run graded before the rule existed
@@ -4427,7 +4512,7 @@ public static class BenchmarkReportBuilder
             }
             else
             {
-                sb.AppendLine($"- *Prompt observation:* {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls. Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`, the knowledge base is scoped to app navigation, settings, troubleshooting and platform documentation; for game mechanics, monsters, items, spells, or other topics not listed there, the prompt instructs the model to skip the knowledge base entirely.");
+                sb.AppendLine($"- *Prompt observation:* {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls. The prompt (`Overseer/Services/ChatService.cs` § \"Information Routing\") tells the model to call `get_knowledge_article` first for the topics listed in its Knowledge Base section, and to skip the knowledge base for game mechanics, monsters, items, spells and other topics not listed there. The listed topics include game topics such as item identification and reading the game map, so zero calls is prompt-compliant only on a question outside them.");
             }
 
             if (routing.CorrelationSampleSize >= 2)
@@ -4841,7 +4926,10 @@ public static class BenchmarkReportBuilder
                     int sCount = a.ClaimsSupportedCount ?? 0;
                     int rCount = a.ClaimsRefutedCount ?? 0;
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}");
+                    // The unanswered count reads the same population as the three counts: the answer's own claims.
+                    string unansweredText = UnansweredByVerifierText(
+                        (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>()).Where(BenchmarkClaimRoles.IsOrdinaryClaim));
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate{unansweredText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}");
                 }
                 // Every accused sentence submitted, apart from the answer's own claims counted above.
                 var accusedSentences = AccusedSentencesOf(a);
@@ -4849,7 +4937,7 @@ public static class BenchmarkReportBuilder
                 {
                     var (accusedSupported, accusedRefuted, accusedIndeterminate) = VerdictCounts(accusedSentences);
                     string accusedSplit = isPanelRun ? $" ({MemberSplitText(accusedSentences, membersOf: v => v.AccusingMembers)})" : string.Empty;
-                    sb.AppendLine($"> - **Accused sentences checked:** {accusedSentences.Count}{accusedSplit} — supported {accusedSupported}, refuted {accusedRefuted}, indeterminate {accusedIndeterminate}");
+                    sb.AppendLine($"> - **Accused sentences checked:** {accusedSentences.Count}{accusedSplit} — supported {accusedSupported}, refuted {accusedRefuted}, indeterminate {accusedIndeterminate}{UnansweredByVerifierText(accusedSentences)}");
                 }
                 var supportedAccusationsOfAnswer = BenchmarkService.SupportedAccusations(accusedSentences);
                 foreach (var accusation in supportedAccusationsOfAnswer)

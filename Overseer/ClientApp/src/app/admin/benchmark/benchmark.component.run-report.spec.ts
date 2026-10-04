@@ -6,6 +6,12 @@ import {
 } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY, keyFiguresImageIo } from './run-report-frame/key-figures-image';
+import {
+  KEY_FIGURES_EXPORT_STORAGE_KEY,
+  defaultKeyFiguresExportSettings,
+  readStoredKeyFiguresExportSettings,
+  writeStoredKeyFiguresExportSettings
+} from './run-report-frame/key-figures-export-settings';
 import { AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
@@ -1496,6 +1502,61 @@ describe('AdminBenchmarkComponent', () => {
         expect(copy).toHaveBeenCalledTimes(1);
         expect(status()).toBe('Key figures copied as an image.');
         component.keyFigureExclusions = [];
+      });
+
+      it('should download in the stored format, written by either report, label the downloads for it, and still copy a PNG', async () => {
+        // Stored as the Battery Run Report's chooser stores it: one key for both reports.
+        writeStoredKeyFiguresExportSettings({ ...defaultKeyFiguresExportSettings(), format: 'webp' });
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+
+        expect(dialog().querySelector('#rr-figures-download-btn')?.getAttribute('aria-label'))
+          .toBe('Download key figures of run 55 as a WebP image');
+        expect(textOf(dialog().querySelector('#rr-figures-download-tip'))).toBe('Download key figures as WebP');
+        const main = dialog().querySelector('.score-card.main-score') as HTMLElement;
+        expect(main.querySelector('button.kfc-download')?.getAttribute('aria-label'))
+          .toBe('Download Intelligence Index of run 55 as a WebP image');
+
+        const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+        const download = vi.spyOn(component, 'downloadKeyFigures');
+        await clickAndSettle(dialog().querySelector('#rr-figures-download-btn') as HTMLButtonElement, download);
+        const [blob, fileName] = vi.mocked(save).mock.lastCall!;
+        expect(blob.type).toBe('image/webp');
+        expect(fileName).toBe('gnollbench_run55_default-suite_test-model_key-figures_20260928_123456.webp');
+        expect(status()).toBe('Image downloaded.');
+
+        const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
+        const copyHandler = vi.spyOn(component, 'copyKeyFigures');
+        await clickAndSettle(dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement, copyHandler);
+        expect((vi.mocked(copy).mock.lastCall![0] as Blob).type).toBe('image/png');
+      });
+
+      it('should store a format chosen in the chooser under the key both reports read, and relabel the downloads', () => {
+        openReport(reportRun());
+        (dialog().querySelector('#rr-figures-choose-btn') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
+        expect(textOf(chooser.querySelector('.kfch-summary'))).toMatch(/^Downloads a PNG, about \d+ × \d+ px\.$/);
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('9 of 9 selected');
+
+        (chooser.querySelector('#kfch-fmt-format-webp') as HTMLInputElement).click();
+        fixture.detectChanges();
+
+        expect(JSON.parse(localStorage.getItem(KEY_FIGURES_EXPORT_STORAGE_KEY)!))
+          .toEqual(expect.objectContaining({ version: 1, format: 'webp', webpQuality: 85 }));
+        expect(readStoredKeyFiguresExportSettings().format).toBe('webp');
+        expect(dialog().querySelector('#rr-figures-download-btn')?.getAttribute('aria-label'))
+          .toBe('Download key figures of run 55 as a WebP image');
+        expect(textOf(chooser.querySelector('.kfch-summary'))).toMatch(/^Downloads a WebP, about \d+ × \d+ px\.$/);
+      });
+
+      it('should label the downloads PNG while nothing is stored', () => {
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+        expect(localStorage.getItem(KEY_FIGURES_EXPORT_STORAGE_KEY)).toBeNull();
+        expect(component.keyFiguresDownloadFormat).toBe('PNG');
+        expect(dialog().querySelector('.score-card.main-score button.kfc-download')?.getAttribute('aria-label'))
+          .toBe('Download Intelligence Index of run 55 as a PNG image');
       });
 
       it('should read the remembered selection when constructed', () => {

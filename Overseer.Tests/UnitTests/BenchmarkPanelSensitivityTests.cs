@@ -262,6 +262,34 @@ public class BenchmarkPanelSensitivityTests
         Assert.Equal(run.QualityIndex, (int?)result.Index);
     }
 
+    [Fact]
+    public void ALiftHiddenByRounding_StillShowsInTheUnroundedFigures()
+    {
+        // Twenty answers at one score; lifting member A on one of them moves the index by less than
+        // half a point, so the rounded sensitivity equals the published index.
+        const int count = 20;
+        var answers = Enumerable.Range(1, count).Select(i => Answer(i)).ToArray();
+        answers[0].ClaimVerificationJson = Json(Accused("A", BenchmarkClaimVerdict.Supported));
+        var run = Run(answers);
+
+        var result = BenchmarkPanelSensitivity.Compute(run, run.Answers, Constants);
+
+        double lift = (Score(5) - Score(4)) / 2.0 / count;
+        Assert.True(lift > 0.0 && lift < 0.5, $"The fixture's lift is {lift}.");
+        Assert.Equal(new[] { 1 }, result.LiftedA);
+        Assert.Equal(run.QualityIndex, (int?)result.Index);
+        Assert.Equal(Score(4), result.UnroundedPublished!.Value, 9);
+        Assert.Equal(Score(4) + lift, result.UnroundedIndex!.Value, 9);
+        Assert.True(result.UnroundedIndex > result.UnroundedPublished);
+    }
+
+    [Fact]
+    public void TheEmptyResult_HasNoUnroundedFigures()
+    {
+        Assert.Null(PanelSensitivityResult.Empty.UnroundedIndex);
+        Assert.Null(PanelSensitivityResult.Empty.UnroundedPublished);
+    }
+
     [Theory]
     [InlineData("43", true)]
     [InlineData("44", false)]

@@ -2,6 +2,11 @@ import { Component, ViewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { KeyFigureChoice, KeyFiguresChooserComponent } from './key-figures-chooser.component';
+import {
+  KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY,
+  KeyFiguresExportSettings,
+  defaultKeyFiguresExportSettings
+} from './key-figures-export-settings';
 
 @Component({
   standalone: true,
@@ -101,6 +106,10 @@ describe('KeyFiguresChooserComponent', () => {
   function click(element: HTMLElement): void {
     element.click();
     fixture.detectChanges();
+  }
+
+  function textOf(element: Element | null | undefined): string {
+    return (element?.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
   it('keeps a closed, light-dismiss dialog labelled by its title', () => {
@@ -321,6 +330,110 @@ describe('KeyFiguresChooserComponent', () => {
       click(button('.kfch-none'));
       expect(checkedDetails()).toEqual(DETAILS.map(row => row.key));
       expect(fixture.componentInstance.detailChanges).toEqual([DETAILS.map(row => row.key), []]);
+    });
+  });
+
+  describe('image file', () => {
+    function openWith(settings?: KeyFiguresExportSettings): void {
+      fixture.componentInstance.chooser.open(FIGURES, [], opener(), undefined, settings);
+      fixture.detectChanges();
+    }
+
+    afterEach(() => localStorage.removeItem(KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY));
+
+    it('puts What to show and Image file in two titled columns, the file sections under prefixed ids', () => {
+      openWith();
+      const [show, file] = Array.from(dialog().querySelectorAll<HTMLElement>('.kfch-layout > .kfch-column'));
+      expect(show.querySelector('h4#kfchShowTitle')?.textContent?.trim()).toBe('What to show');
+      expect(show.querySelector('#kfchCaption')).not.toBeNull();
+      expect(file.querySelector('h4#kfchFileTitle')?.textContent?.trim()).toBe('Image file');
+
+      const format = file.querySelector('details#kfch-fmt-section') as HTMLDetailsElement;
+      expect(format.querySelector('.gh-disclosure-summary-title')?.textContent?.trim()).toBe('Image format');
+      expect(format.open).toBe(true);
+      expect((file.querySelector('#kfch-fmt-format-png') as HTMLInputElement).checked).toBe(true);
+      expect(file.querySelector('#kfch-fmt-note')?.textContent?.trim())
+        .toBe('Copy always places a PNG on the clipboard; browsers do not accept WebP there.');
+
+      const size = file.querySelector('details#kfch-size-section') as HTMLDetailsElement;
+      expect(size.querySelector('.gh-disclosure-summary-title')?.textContent?.trim()).toBe('Image size');
+      expect((file.querySelector('#kfch-size-resolution') as HTMLSelectElement).options[0].textContent?.trim()).toBe('Fit the figures');
+      expect(file.querySelector('#kfch-size-text-scale')).toBeNull();
+      expect(file.querySelector('app-export-size-section')?.hasAttribute('title')).toBe(false);
+
+      for (const element of Array.from(dialog().querySelectorAll<HTMLElement>('[id]'))) {
+        expect(element.id.startsWith('kfch'), element.id).toBe(true);
+      }
+      expect(status()).toBe('3 of 3 selected');
+      expect(dialog().querySelectorAll('[role="group"]').length).toBe(1);
+    });
+
+    it('emits the whole settings on a format change, and keeps Done the only footer button', () => {
+      openWith();
+      const changes: KeyFiguresExportSettings[] = [];
+      fixture.componentInstance.chooser.exportSettingsChange.subscribe(settings => changes.push(settings));
+
+      click(dialog().querySelector('#kfch-fmt-format-webp') as HTMLInputElement);
+      expect(changes.length).toBe(1);
+      expect(changes[0]).toEqual({ ...defaultKeyFiguresExportSettings(), format: 'webp' });
+      expect(dialog().querySelector('#kfch-fmt-quality')).not.toBeNull();
+      expect(fixture.componentInstance.changes).toEqual([]);
+
+      const footer = Array.from(dialog().querySelectorAll<HTMLButtonElement>('.dialog-footer button'));
+      expect(footer.map(b => b.textContent?.trim())).toEqual(['Done']);
+    });
+
+    it('summarizes the file the next download writes, following the settings', () => {
+      const box: KeyFiguresExportSettings = {
+        ...defaultKeyFiguresExportSettings(),
+        format: 'webp',
+        size: { ...defaultKeyFiguresExportSettings().size, resolutionId: 'fullhd' }
+      };
+      openWith(box);
+      const summary = dialog().querySelector('.dialog-footer p.kfch-summary#kfchSummary') as HTMLElement;
+      expect(summary.textContent?.trim()).toBe('Downloads a WebP, 3840 × 2160 px.');
+      expect(summary.hasAttribute('role')).toBe(false);
+
+      click(dialog().querySelector('#kfch-fmt-format-png') as HTMLInputElement);
+      expect(summary.textContent?.trim()).toBe('Downloads a PNG, 3840 × 2160 px.');
+
+      const resolution = dialog().querySelector('#kfch-size-resolution') as HTMLSelectElement;
+      resolution.value = 'fit';
+      resolution.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(fixture.componentInstance.chooser.settings.size.resolutionId).toBe('fit');
+      expect(summary.textContent?.trim()).toBe('Downloads a PNG.');
+    });
+
+    it('uses the host measurer for the summary, with about in fit mode, and shows its refusal', () => {
+      fixture.componentInstance.chooser.measureImage = () => ({ widthPx: 2152, heightPx: 2152 });
+      openWith();
+      expect(textOf(dialog().querySelector('.kfch-summary'))).toBe('Downloads a PNG, about 2152 × 2152 px.');
+
+      fixture.componentInstance.chooser.measureImage = () => ({ refusal: 'Choose a lower density or a smaller size.' });
+      openWith();
+      expect(textOf(dialog().querySelector('.kfch-summary'))).toBe('Choose a lower density or a smaller size.');
+    });
+
+    it('remembers which file sections are open', () => {
+      localStorage.setItem(KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY, JSON.stringify({ version: 1, format: false, size: true }));
+      openWith();
+      expect((dialog().querySelector('#kfch-fmt-section') as HTMLDetailsElement).open).toBe(false);
+      expect((dialog().querySelector('#kfch-size-section') as HTMLDetailsElement).open).toBe(true);
+
+      const size = dialog().querySelector('#kfch-size-section') as HTMLDetailsElement;
+      size.open = false;
+      size.dispatchEvent(new Event('toggle'));
+      expect(JSON.parse(localStorage.getItem(KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY)!)).toEqual({ version: 1, format: false, size: false });
+    });
+
+    it('lays the two columns out as one at an 800 px viewport', () => {
+      openWith();
+      const layout = dialog().querySelector('.kfch-layout') as HTMLElement;
+      expect(getComputedStyle(layout).display).toBe('grid');
+      expect(getComputedStyle(layout).gridTemplateColumns.trim().split(/\s+/).length).toBe(1);
+      const [show, file] = Array.from(layout.querySelectorAll<HTMLElement>(':scope > .kfch-column'));
+      expect(file.getBoundingClientRect().top).toBeGreaterThanOrEqual(show.getBoundingClientRect().bottom);
     });
   });
 

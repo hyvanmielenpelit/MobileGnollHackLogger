@@ -5,13 +5,19 @@ import { of, throwError } from 'rxjs';
 import { BenchmarkRunReportDocumentsStatus } from '../../../services/admin-benchmark.service';
 import { keyFiguresImageIo } from '../run-report-frame/key-figures-image';
 import {
+  defaultKeyFiguresExportSettings,
+  readStoredKeyFiguresExportSettings,
+  writeStoredKeyFiguresExportSettings
+} from '../run-report-frame/key-figures-export-settings';
+import {
   BATTERY_RUN_KEY_FIGURES,
   BATTERY_RUN_REPORT_HEADER_STORAGE_KEY,
   BATTERY_RUN_REPORT_KEY_FIGURES_STORAGE_KEY,
   BATTERY_RUN_REPORT_TABS,
   BATTERY_RUN_REPORT_TAB_STORAGE_KEY,
   BatteryRunReportDialogComponent,
-  batteryRunDiagnosticsText
+  batteryRunDiagnosticsText,
+  formatBatteryWallClock
 } from './battery-run-report-dialog.component';
 import {
   BatteryRunReportHarness,
@@ -542,6 +548,56 @@ describe('BatteryRunReportDialogComponent', () => {
 
       expect(copy).toHaveBeenCalledTimes(1);
       expect(h.text('.brr-status[role="status"]')).toBe('Key figures copied as an image.');
+    });
+
+    it('downloads in the format the run report stored, labels the downloads for it, and still copies a PNG', async () => {
+      // Stored as the run report's chooser stores it: one key for both reports.
+      writeStoredKeyFiguresExportSettings({ ...defaultKeyFiguresExportSettings(), format: 'webp' });
+      h.open();
+
+      expect(h.el().querySelector('#brr-figures-download-btn')?.getAttribute('aria-label'))
+        .toBe('Download key figures of battery run 7 as a WebP image');
+      expect(h.text('#brr-figures-download-tip')).toBe('Download key figures as WebP');
+      expect(h.el().querySelector('[data-figure="intelligence"] button.kfc-download')?.getAttribute('aria-label'))
+        .toBe('Download Overall Intelligence Index of battery run 7 as a WebP image');
+
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+      await h.component.downloadKeyFigures();
+      h.fixture.detectChanges();
+      const [blob, fileName] = vi.mocked(save).mock.lastCall!;
+      expect(blob.type).toBe('image/webp');
+      expect(fileName).toBe('gnollbench_battery-run-7_core-battery_model-x_key-figures_20260928_123456.webp');
+
+      const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
+      await h.component.copyKeyFigures();
+      expect(vi.mocked(copy).mock.lastCall![0].type).toBe('image/png');
+    });
+
+    it('stores a format chosen in its chooser for the run report to read', () => {
+      h.open();
+      h.click('#brr-figures-choose-btn');
+      const chooser = h.el().querySelector('app-key-figures-chooser') as HTMLElement;
+      expect(chooser.querySelector('#brr-kfch-fmt-section')).not.toBeNull();
+      expect(chooser.querySelector('#brr-kfch-size-section')).not.toBeNull();
+
+      (chooser.querySelector('#brr-kfch-fmt-format-webp') as HTMLInputElement).click();
+      h.fixture.detectChanges();
+      expect(readStoredKeyFiguresExportSettings().format).toBe('webp');
+      expect(h.el().querySelector('#brr-figures-download-btn')?.getAttribute('aria-label'))
+        .toBe('Download key figures of battery run 7 as a WebP image');
+    });
+
+    it('rounds the battery duration as the battery report\'s wall clock does', () => {
+      expect(formatBatteryWallClock(3_599_900)).toBe('59 min 59 s');
+      expect(formatBatteryWallClock(3_600_000)).toBe('1 h 00 min');
+      expect(formatBatteryWallClock(7_259_999)).toBe('2 h 00 min');
+      expect(formatBatteryWallClock(27 * 3_600_000 + 4 * 60_000)).toBe('1 d 3 h 04 min');
+      expect(formatBatteryWallClock(5_400)).toBe('0 min 05 s');
+      expect(formatBatteryWallClock(null)).toBe('—');
+
+      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ startedAtUtc: '2026-10-01T10:00:00Z', completedAtUtc: '2026-10-01T10:59:59.700Z' })));
+      h.open();
+      expect(h.text('[data-figure="wall-time"] .score-subvalue')).toBe('59 min 59 s');
     });
 
     it('hides unselected cards, remembers the selection under the battery key and labels the chooser', () => {

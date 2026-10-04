@@ -839,4 +839,88 @@ public class ModelPricingServiceTests
                 pricing, totalPromptTokens: 1_000_000, totalOutputTokens: 100_000,
                 cacheReadTokens: 400_000, cacheCreationTokens: 0));
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Service tiers of the grading roles.
+    // ---------------------------------------------------------------------------------------------
+
+    private static readonly IReadOnlyDictionary<string, decimal> FlexAndPriority =
+        new Dictionary<string, decimal> { ["flex"] = 0.5m, ["priority"] = 2.0m };
+
+    /// <summary>
+    /// A run whose assessor and claim verifier each spent 1,000,000 input and 100,000 output tokens:
+    /// $1.00 + $0.40 = $1.40 per role at the standard price of the card below.
+    /// </summary>
+    private static BenchmarkRun GradingTierRun(string? assessorTier, string? verifierTier, params string?[] servedVerifierTiers)
+    {
+        var run = new BenchmarkRun
+        {
+            TestedModelSnapshot = new SystemAiConfigurationSnapshot { Provider = "OpenAI", ModelId = "candidate" },
+            AssessorModelSnapshot = new SystemAiConfigurationSnapshot { Provider = "OpenAI", ModelId = "assessor", ServiceTier = assessorTier },
+            ClaimVerifierModelSnapshot = new SystemAiConfigurationSnapshot { Provider = "Google", ModelId = "verifier", ServiceTier = verifierTier },
+            TotalAssessmentInputTokens = 1_000_000,
+            TotalAssessmentOutputTokens = 100_000,
+            TotalClaimVerificationInputTokens = 1_000_000,
+            TotalClaimVerificationOutputTokens = 100_000
+        };
+        int orderIndex = 1;
+        foreach (var served in servedVerifierTiers)
+        {
+            run.Answers.Add(new BenchmarkRunAnswer { OrderIndex = orderIndex++, ClaimVerificationServiceTierUsed = served });
+        }
+        return run;
+    }
+
+    private static BenchmarkRunPricing GradingTierPricing(IReadOnlyDictionary<string, decimal>? tiers)
+    {
+        var card = new ModelPricing(1.00m, 4.00m, ServiceTierMultipliers: tiers);
+        return new BenchmarkRunPricing(Candidate: new ModelPricing(1.00m, 4.00m), Assessor: card, ClaimVerifier: card);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_AClaimVerifierOnFlex_CostsHalf()
+    {
+        var costs = ModelPricingService.ComputeRunRoleCosts(GradingTierRun(null, "flex"), GradingTierPricing(FlexAndPriority));
+
+        Assert.Equal(0.70m, costs.ClaimVerifier);
+        Assert.Equal(1.40m, costs.Assessor);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_TheVerifiersServedTier_WinsOverTheRequestedOne()
+    {
+        // Requested flex, served priority on two of three answers.
+        var run = GradingTierRun(null, "flex", "priority", "priority", "flex");
+
+        Assert.Equal("priority", ModelPricingService.ResolveServedClaimVerifierServiceTier(run.Answers));
+        Assert.Equal("priority", ModelPricingService.ClaimVerifierCostServiceTier(run));
+        Assert.Equal(2.80m, ModelPricingService.ComputeRunRoleCosts(run, GradingTierPricing(FlexAndPriority)).ClaimVerifier);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_TheAssessorsRequestedTier_ScalesTheAssessorAndItsSynthesis()
+    {
+        var run = GradingTierRun("priority", null);
+        run.TotalSynthesisInputTokens = 1_000_000;
+        run.TotalSynthesisOutputTokens = 100_000;
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, GradingTierPricing(FlexAndPriority));
+
+        Assert.Equal(2.80m, costs.Assessor);
+        Assert.Equal(2.80m, costs.Synthesis);
+        Assert.Equal(1.40m, costs.ClaimVerifier);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_NoTier_OrACardWithoutMultipliers_IsUnchanged()
+    {
+        var untiered = ModelPricingService.ComputeRunRoleCosts(GradingTierRun(null, null), GradingTierPricing(FlexAndPriority));
+        Assert.Equal(1.40m, untiered.ClaimVerifier);
+        Assert.Equal(1.40m, untiered.Assessor);
+        Assert.Null(ModelPricingService.ClaimVerifierCostServiceTier(GradingTierRun(null, null)));
+
+        var noMultipliers = ModelPricingService.ComputeRunRoleCosts(GradingTierRun("priority", "flex"), GradingTierPricing(null));
+        Assert.Equal(1.40m, noMultipliers.ClaimVerifier);
+        Assert.Equal(1.40m, noMultipliers.Assessor);
+    }
 }

@@ -82,11 +82,11 @@ export function sameFigureSize(a: FigureSizeSettings, b: FigureSizeSettings): bo
  * offered, reads as Full HD.
  */
 export function readStoredFigureSize(display: FigureExportDensity = displayDensity()): FigureSizeSettings {
-  return readStoredSize(FIGURE_SIZE_STORAGE_KEY, defaultFigureSize(display), false);
+  return readStoredSizeSettings(FIGURE_SIZE_STORAGE_KEY, defaultFigureSize(display), false);
 }
 
 export function writeStoredFigureSize(settings: FigureSizeSettings): void {
-  writeStoredSize(FIGURE_SIZE_STORAGE_KEY, settings);
+  writeStoredSizeSettings(FIGURE_SIZE_STORAGE_KEY, settings);
 }
 
 /**
@@ -106,21 +106,34 @@ export function defaultTableImageSize(): FigureSizeSettings {
 
 /** The stored table image size, validated as {@link readStoredFigureSize} does, with `'fit'` accepted. */
 export function readStoredTableImageSize(): FigureSizeSettings {
-  return readStoredSize(TABLE_IMAGE_SIZE_STORAGE_KEY, defaultTableImageSize(), true);
+  return readStoredSizeSettings(TABLE_IMAGE_SIZE_STORAGE_KEY, defaultTableImageSize(), true);
 }
 
 export function writeStoredTableImageSize(settings: FigureSizeSettings): void {
-  writeStoredSize(TABLE_IMAGE_SIZE_STORAGE_KEY, settings);
+  writeStoredSizeSettings(TABLE_IMAGE_SIZE_STORAGE_KEY, settings);
 }
 
-function readStoredSize(key: string, fallback: FigureSizeSettings, allowFit: boolean): FigureSizeSettings {
+/**
+ * The size stored under `key`, validated by {@link parseSizeSettings}; `defaults` wherever storage is
+ * absent, unreadable or throws.
+ */
+export function readStoredSizeSettings(key: string, defaults: FigureSizeSettings, allowFit: boolean): FigureSizeSettings {
   let stored: unknown = null;
   try {
     const raw = localStorage.getItem(key);
     stored = raw === null ? null : JSON.parse(raw);
   } catch {
-    return fallback;
+    return defaults;
   }
+  return parseSizeSettings(stored, defaults, allowFit);
+}
+
+/**
+ * A size read from any parsed value, field by field: a field missing, out of range or of the wrong
+ * kind takes its value from `fallback`, and anything but a plain object is `fallback` whole. An id no
+ * longer offered reads as Full HD, or as `fallback`'s id where `allowFit` holds.
+ */
+export function parseSizeSettings(stored: unknown, fallback: FigureSizeSettings, allowFit: boolean): FigureSizeSettings {
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
     return fallback;
   }
@@ -146,7 +159,8 @@ function readStoredSize(key: string, fallback: FigureSizeSettings, allowFit: boo
   };
 }
 
-function writeStoredSize(key: string, settings: FigureSizeSettings): void {
+/** Stores a size under `key` as `{ version: 1, ...settings }`; a storage failure is ignored. */
+export function writeStoredSizeSettings(key: string, settings: FigureSizeSettings): void {
   try {
     localStorage.setItem(key, JSON.stringify({ version: 1, ...settings }));
   } catch {
@@ -249,13 +263,32 @@ export function sizeErrors(settings: FigureSizeSettings, noun = 'figure'): SizeE
  * one requested px times the text size. Empty in fit mode, where the size depends on the table.
  */
 export function sizeDimensionsLabel(settings: FigureSizeSettings, rule: 'figure' | 'plain' = 'figure'): string {
+  const written = sizeWrittenLabel(settings);
+  if (written === '') {
+    return '';
+  }
+  const resolution = resolveSizeResolution(settings);
+  const density = resolveSizeDensity(settings);
+  const textScale = settings.textScalePercent / 100;
+  const box = rule === 'figure'
+    ? layoutBoxFor(resolution.widthPx, resolution.heightPx, textScale)
+    : { layoutWidth: resolution.widthPx / textScale, layoutHeight: resolution.heightPx / textScale, density: textScale };
+  return `${written} — laid out at ` +
+    `${Math.round(box.layoutWidth)} × ${Math.round(box.layoutHeight)}, ` +
+    `${formatDensityFactor(box.density * density)}× density`;
+}
+
+/**
+ * The written bitmap and the size and density it comes from, as in
+ * `3840 × 2160 px (1920 × 1080 at 200%)`. Empty in fit mode.
+ */
+export function sizeWrittenLabel(settings: FigureSizeSettings): string {
   if (settings.resolutionId === FIT_RESOLUTION_ID) {
     return '';
   }
   const resolution = resolveSizeResolution(settings);
   const density = resolveSizeDensity(settings);
   const percent = densityPercentLabel(density);
-  const textScale = settings.textScalePercent / 100;
   const written = `${Math.round(resolution.widthPx * density)} × ` +
     `${Math.round(resolution.heightPx * density)} px`;
   // At 100 % the requested size and the written one are the same number, and printing it twice
@@ -263,25 +296,23 @@ export function sizeDimensionsLabel(settings: FigureSizeSettings, rule: 'figure'
   const requested = density === 1
     ? `at ${percent}`
     : `(${resolution.widthPx} × ${resolution.heightPx} at ${percent})`;
-  const box = rule === 'figure'
-    ? layoutBoxFor(resolution.widthPx, resolution.heightPx, textScale)
-    : { layoutWidth: resolution.widthPx / textScale, layoutHeight: resolution.heightPx / textScale, density: textScale };
-  return `${written} ${requested} — laid out at ` +
-    `${Math.round(box.layoutWidth)} × ${Math.round(box.layoutHeight)}, ` +
-    `${formatDensityFactor(box.density * density)}× density`;
+  return `${written} ${requested}`;
 }
 
-/** The closed size section's one-line read-out. */
-export function sizeReadout(settings: FigureSizeSettings): string {
+/**
+ * The closed size section's one-line read-out. `fitLabel` names the fit option; `withTextSize`
+ * false leaves the text size out, for a host that offers none.
+ */
+export function sizeReadout(settings: FigureSizeSettings, fitLabel = 'Fit the table', withTextSize = true): string {
   const density = densityPercentLabel(resolveSizeDensity(settings));
   if (settings.resolutionId === FIT_RESOLUTION_ID) {
-    return `Fit the table · ${density}`;
+    return `${fitLabel} · ${density}`;
   }
   const resolution = resolveSizeResolution(settings);
   const size = settings.resolutionId === 'custom'
     ? `Custom ${resolution.widthPx} × ${resolution.heightPx}`
     : resolution.label;
-  return `${size} · ${density} · text ${settings.textScalePercent} %`;
+  return withTextSize ? `${size} · ${density} · text ${settings.textScalePercent} %` : `${size} · ${density}`;
 }
 
 function isOfferedResolutionId(value: unknown): value is string {

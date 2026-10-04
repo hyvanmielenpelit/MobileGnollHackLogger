@@ -28,6 +28,13 @@ public sealed record BenchmarkBatteryExcludedMember(int SuiteIndex, int Round, l
 /// (<see cref="BenchmarkPanelSensitivity"/>) minus its published Intelligence Index: zero when nothing
 /// is lifted. Null or empty when no member is a panel run.
 /// </param>
+/// <param name="PanelPairs">
+/// One entry per answer of a usable panel member run that counts toward the quality index. Null or
+/// empty when no member is a panel run.
+/// </param>
+/// <param name="PanelDisagreementCount">
+/// The sum of the usable panel member runs' disagreement counts; null when none recorded one.
+/// </param>
 public sealed record BenchmarkBatterySuiteInput(
     int SuiteIndex,
     BenchmarkGroupStatisticsResult? Statistics,
@@ -38,7 +45,32 @@ public sealed record BenchmarkBatterySuiteInput(
     int UsableMemberCount,
     int ExpectedQuestionCount,
     IReadOnlyList<BenchmarkBatteryExcludedMember> Excluded,
-    IReadOnlyList<double>? PanelVerificationClearedLifts = null);
+    IReadOnlyList<double>? PanelVerificationClearedLifts = null,
+    IReadOnlyList<BenchmarkBatteryPanelPair>? PanelPairs = null,
+    int? PanelDisagreementCount = null);
+
+/// <summary>One answer of a panel member run, as the battery panel agreement block reads it.</summary>
+/// <param name="MemberA">Member A's quality score; null unless both members scored the answer.</param>
+/// <param name="MemberB">Member B's quality score; null unless both members scored the answer.</param>
+/// <param name="ReferenceReader">
+/// The score the reference reader's index takes: its own score, or a model-produced empty answer's
+/// panel score; null when it has neither or the run's reader graded nothing.
+/// </param>
+/// <param name="ReferenceReaderOffset">
+/// The reader's score minus the panel score on an answer it graded outside a Manual re-grade; null
+/// otherwise.
+/// </param>
+/// <param name="Difficulty">The difficulty the published index weights the answer by.</param>
+public sealed record BenchmarkBatteryPanelPair(
+    double? MemberA,
+    double? MemberB,
+    double? ReferenceReader,
+    double? ReferenceReaderOffset,
+    int Difficulty)
+{
+    /// <summary>Both members scored the answer.</summary>
+    public bool BothScored => MemberA.HasValue && MemberB.HasValue;
+}
 
 /// <summary>
 /// Degradation flags derived from the battery-wide comparability verdict (M8): a speed- or
@@ -330,6 +362,39 @@ public sealed record BenchmarkBatteryUsageStatistics
     public int ClaimsChecked { get; init; }
 }
 
+/// <summary>
+/// Panel agreement across a battery's panel member runs. The three indices are <c>Σ w_s · I_s</c>
+/// under the declared weights, each <c>I_s</c> that reader's unrounded difficulty-weighted index over
+/// the suite's answers, and null when any suite has none; every other figure is pooled over the
+/// answers both members scored, so the ICC is not the mean of the runs' ICCs.
+/// </summary>
+public sealed record BenchmarkBatteryPanelAgreement
+{
+    public double? MemberAAloneIndex { get; init; }
+    public double? MemberBAloneIndex { get; init; }
+
+    /// <summary>Advisory: the reference reader's composite.</summary>
+    public double? ReferenceReaderIndex { get; init; }
+
+    /// <summary>The reference reader's mean signed difference from the panel score.</summary>
+    public double? ReferenceReaderOffset { get; init; }
+
+    /// <summary>Mean |B − A|.</summary>
+    public double? MeanAbsoluteDelta { get; init; }
+
+    /// <summary>Mean B − A.</summary>
+    public double? MeanSignedDelta { get; init; }
+
+    /// <summary>ICC(A,1) over every pair; null below the minimum pair count.</summary>
+    public double? IntraclassCorrelation { get; init; }
+
+    /// <summary>Answers both members scored.</summary>
+    public int? PairCount { get; init; }
+
+    /// <summary>The sum of the runs' disagreement counts.</summary>
+    public int? Disagreements { get; init; }
+}
+
 /// <summary>The whole battery analysis (M2–M6). Pure arithmetic; every figure is reproducible.</summary>
 public sealed record BenchmarkBatteryStatisticsResult
 {
@@ -381,6 +446,12 @@ public sealed record BenchmarkBatteryStatisticsResult
     /// member is a panel run, and on a result stored before the figure existed.
     /// </summary>
     public double? PanelVerificationClearedOverall { get; init; }
+
+    /// <summary>
+    /// Null when the battery is incomplete or no usable member is a panel run, and on a result stored
+    /// before the block existed.
+    /// </summary>
+    public BenchmarkBatteryPanelAgreement? PanelAgreement { get; init; }
 
     public IReadOnlyList<BenchmarkBatteryLeaveOneOut> LeaveOneSuiteOut { get; init; } = Array.Empty<BenchmarkBatteryLeaveOneOut>();
 
@@ -619,6 +690,7 @@ public static class BenchmarkBatteryStatistics
         var leaveOneOut = new List<BenchmarkBatteryLeaveOneOut>();
         var dimensions = new List<BenchmarkBatteryDimension>();
         double? panelVerificationClearedOverall = null;
+        BenchmarkBatteryPanelAgreement? panelAgreement = null;
         double? criticalErrorRate = null;
         BenchmarkBatterySpeedStatistics? speed = null;
         BenchmarkBatteryCostStatistics? cost = null;
@@ -637,6 +709,8 @@ public static class BenchmarkBatteryStatistics
                     w,
                     Enumerable.Range(0, k).Select(s => profiles[s].PanelVerificationClearedIndex ?? suiteIndices[s]).ToList());
             }
+
+            panelAgreement = ComputePanelAgreement(inputs, w);
 
             overall = ComputeOverall(defs, inputs, stats, w, point, caveats);
             caveats.Add(CriticalValueCaveat);
@@ -726,6 +800,7 @@ public static class BenchmarkBatteryStatistics
             BetweenSuiteRange = betweenRange,
             WeightingSensitivity = sensitivity,
             PanelVerificationClearedOverall = panelVerificationClearedOverall,
+            PanelAgreement = panelAgreement,
             LeaveOneSuiteOut = leaveOneOut,
             Dimensions = dimensions,
             CriticalErrorRate = criticalErrorRate,
@@ -1141,6 +1216,58 @@ public static class BenchmarkBatteryStatistics
             CostPerIndexPoint = point > 0.0 ? pass / point : null,
             Degraded = degraded,
             DegradedReason = degradedReason
+        };
+    }
+
+    /// <summary>
+    /// The battery panel agreement block over the suites' <see cref="BenchmarkBatterySuiteInput.PanelPairs"/>;
+    /// null when no suite has any.
+    /// </summary>
+    private static BenchmarkBatteryPanelAgreement? ComputePanelAgreement(
+        IReadOnlyList<BenchmarkBatterySuiteInput> inputs,
+        IReadOnlyList<double> weights)
+    {
+        var perSuite = inputs
+            .Select(i => i.PanelPairs ?? (IReadOnlyList<BenchmarkBatteryPanelPair>)Array.Empty<BenchmarkBatteryPanelPair>())
+            .ToList();
+        if (perSuite.All(p => p.Count == 0)) return null;
+
+        double? Composite(Func<BenchmarkBatteryPanelPair, double?> score)
+        {
+            double sum = 0.0;
+            for (int s = 0; s < perSuite.Count; s++)
+            {
+                double? index = BenchmarkScoring.QualityIndexUnrounded(
+                    perSuite[s].Select(p => (score(p), p.Difficulty)).ToList());
+                if (!index.HasValue) return null;
+                sum += weights[s] * index.Value;
+            }
+
+            return sum;
+        }
+
+        var both = perSuite.SelectMany(p => p).Where(p => p.BothScored).ToList();
+        var offsets = both
+            .Where(p => p.ReferenceReaderOffset.HasValue)
+            .Select(p => p.ReferenceReaderOffset!.Value)
+            .ToList();
+        var disagreements = inputs
+            .Where(i => i.PanelDisagreementCount.HasValue)
+            .Select(i => i.PanelDisagreementCount!.Value)
+            .ToList();
+
+        return new BenchmarkBatteryPanelAgreement
+        {
+            MemberAAloneIndex = Composite(p => p.MemberA),
+            MemberBAloneIndex = Composite(p => p.MemberB),
+            ReferenceReaderIndex = Composite(p => p.ReferenceReader),
+            ReferenceReaderOffset = offsets.Count > 0 ? offsets.Average() : null,
+            MeanAbsoluteDelta = both.Count > 0 ? both.Average(p => Math.Abs(p.MemberB!.Value - p.MemberA!.Value)) : null,
+            MeanSignedDelta = both.Count > 0 ? both.Average(p => p.MemberB!.Value - p.MemberA!.Value) : null,
+            IntraclassCorrelation = BenchmarkScoring.IntraclassCorrelationAbsolute(
+                both.Select(p => (p.MemberA!.Value, p.MemberB!.Value)).ToList()),
+            PairCount = both.Count,
+            Disagreements = disagreements.Count > 0 ? disagreements.Sum() : null
         };
     }
 

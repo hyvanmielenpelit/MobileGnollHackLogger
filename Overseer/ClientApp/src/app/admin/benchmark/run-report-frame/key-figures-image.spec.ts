@@ -17,9 +17,13 @@ import {
   chooseStripLayout,
   composeCardImage,
   composeStripImage,
+  estimateTextWidth,
   factBadgeHeight,
+  KEY_FIGURES_IMAGE_SCALE,
   KEY_FIGURES_STORAGE_KEY,
   exportKeyFiguresImage,
+  keyFiguresImageFrame,
+  measureKeyFiguresImage,
   filterKeyFigureCells,
   keyFigureCardFileName,
   keyFigureSlug,
@@ -41,6 +45,7 @@ import {
   stripFootnotes,
   toImageFactRows
 } from './key-figures-image';
+import { KeyFiguresExportSettings, defaultKeyFiguresExportSettings } from './key-figures-export-settings';
 import { RunFactModel, RunFactRow } from './run-facts';
 
 /** Every card kind the run report renders, each with a card-actions element that must be ignored. */
@@ -947,5 +952,157 @@ describe('key figures image', () => {
       copy.mockResolvedValue('denied');
       expect(await exportKeyFiguresImage('copy', root, null, CONTEXT)).toBe('Could not copy the image.');
     });
+
+    it('writes a Full HD box at exactly 1920 × 1080 at 100 % and 3840 × 2160 at 200 %', async () => {
+      const cells = readKeyFigureCells(root);
+      const single = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW, boxSettings('fullhd', 1));
+      expect([single.width, single.height]).toEqual([1920, 1080]);
+      const double = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW, boxSettings('fullhd', 2));
+      expect([double.width, double.height]).toEqual([3840, 2160]);
+      const card = await composeCardImage(cells[0], CONTEXT, { wide: null, emblem: null }, NOW, boxSettings('fullhd', 1));
+      expect([card.width, card.height]).toEqual([1920, 1080]);
+    });
+
+    it('writes a 1 : 1 box as a square canvas', async () => {
+      const canvas = await composeStripImage(readKeyFigureCells(root), CONTEXT, { wide: null, emblem: null }, NOW, boxSettings('square1080', 1));
+      expect([canvas.width, canvas.height]).toEqual([1080, 1080]);
+    });
+
+    it('writes fit at 200 % at the same size as without settings', async () => {
+      const cells = readKeyFigureCells(root);
+      const plain = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW);
+      const fit = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW, defaultKeyFiguresExportSettings());
+      expect([fit.width, fit.height]).toEqual([plain.width, plain.height]);
+      const cardPlain = await composeCardImage(cells[0], CONTEXT, { wide: null, emblem: null }, NOW);
+      const cardFit = await composeCardImage(cells[0], CONTEXT, { wide: null, emblem: null }, NOW, defaultKeyFiguresExportSettings());
+      expect([cardFit.width, cardFit.height]).toEqual([cardPlain.width, cardPlain.height]);
+      expect(KEY_FIGURES_IMAGE_SCALE).toBe(2);
+    });
+
+    it('writes fit at the chosen density', async () => {
+      const cells = readKeyFigureCells(root);
+      const plain = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW);
+      const fitSettings = defaultKeyFiguresExportSettings();
+      const single = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW,
+        { ...fitSettings, size: { ...fitSettings.size, densitySelection: 1 } });
+      expect([single.width, single.height]).toEqual([plain.width / 2, plain.height / 2]);
+    });
+
+    it('downloads a WebP as image/webp under a .webp name', async () => {
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+      const message = await exportKeyFiguresImage('download', root, null, CONTEXT, undefined, boxSettings('fit', 2, 'webp'));
+
+      expect(message).toBe('Image downloaded.');
+      const [blob, fileName] = vi.mocked(save).mock.lastCall!;
+      expect(blob.type).toBe('image/webp');
+      expect(fileName).toBe('gnollbench_run72_snapshot-tommi2-2026-09-17_gpt-5.5-high_key-figures_20260928_123456.webp');
+    });
+
+    it('names a WebP the browser wrote as PNG .png, and says so', async () => {
+      vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (callback: BlobCallback) {
+        callback(new Blob(['png'], { type: 'image/png' }));
+      });
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+      const card = root.querySelectorAll<HTMLElement>('.score-card')[0];
+      const message = await exportKeyFiguresImage('download', root, card, CONTEXT, undefined, boxSettings('fit', 2, 'webp'));
+
+      expect(message).toBe('This browser cannot write WebP; the image was saved as PNG.');
+      const [blob, fileName] = vi.mocked(save).mock.lastCall!;
+      expect(blob.type).toBe('image/png');
+      expect(fileName).toBe('gnollbench_run72_snapshot-tommi2-2026-09-17_gpt-5.5-high_intelligence-index_20260928_123456.png');
+    });
+
+    it('copies a PNG whatever the format', async () => {
+      const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
+      expect(await exportKeyFiguresImage('copy', root, null, CONTEXT, undefined, boxSettings('hd', 1, 'webp')))
+        .toBe('Key figures copied as an image.');
+      expect(vi.mocked(copy).mock.lastCall![0].type).toBe('image/png');
+    });
+
+    it('refuses a bitmap larger than the browser can write, and writes nothing', async () => {
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+      const defaults = defaultKeyFiguresExportSettings();
+      const oversized: KeyFiguresExportSettings = {
+        ...defaults,
+        size: { ...defaults.size, resolutionId: 'custom', customWidthPx: 8000, customHeightPx: 8000, densitySelection: 4 }
+      };
+      const message = await exportKeyFiguresImage('download', root, null, CONTEXT, undefined, oversized);
+      expect(message).toContain('at most 16384 px');
+      expect(save).not.toHaveBeenCalled();
+      expect(measureKeyFiguresImage(root, CONTEXT, undefined, oversized)).toEqual({ refusal: message });
+    });
+
+    it('measures the next strip without drawing it', () => {
+      expect(measureKeyFiguresImage(root, CONTEXT, undefined, boxSettings('uhd', 2))).toEqual({ widthPx: 7680, heightPx: 4320 });
+      const fit = measureKeyFiguresImage(root, CONTEXT, undefined, defaultKeyFiguresExportSettings());
+      expect('widthPx' in fit).toBe(true);
+      if ('widthPx' in fit) {
+        expect(fit.widthPx).toBeGreaterThan(0);
+        expect(fit.widthPx).toBeGreaterThanOrEqual(fit.heightPx);
+        expect(fit.widthPx % 2).toBe(0);
+      }
+    });
+  });
+
+  describe('box layouts', () => {
+    it('pads the strip to exactly the target aspect, landscape, square or portrait', () => {
+      for (const target of [16 / 9, 1, 21 / 9, 3 / 4]) {
+        for (const count of [1, 5, 12]) {
+          const layout = chooseStripLayout(cellsOf(count), STRIP_TEXT, noWrap, 36, estimateTextWidth, target);
+          expect(layout.width / layout.height, `${count} cards at ${target}`).toBeCloseTo(target, 6);
+          expect(layout.width).toBeGreaterThanOrEqual(layout.gridWidth);
+          expect(layout.height).toBeGreaterThanOrEqual(layout.naturalHeight);
+          expect(layout.placements.length).toBe(count);
+        }
+      }
+    });
+
+    it('lays the strip out as without a target when none is given', () => {
+      expect(chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap, 36, estimateTextWidth, undefined))
+        .toEqual(chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap));
+    });
+
+    it('lets the strip go portrait only for a portrait target', () => {
+      const wide = chooseStripLayout(cellsOf(12), STRIP_TEXT, noWrap, 36, estimateTextWidth, 16 / 9);
+      expect(wide.naturalHeight).toBeLessThanOrEqual(wide.width);
+      const tall = chooseStripLayout(cellsOf(12), STRIP_TEXT, noWrap, 36, estimateTextWidth, 9 / 16);
+      expect(tall.columns).toBeLessThan(wide.columns);
+    });
+
+    it('picks the card image size nearest the target, and portrait sizes only for a portrait target', () => {
+      const square = chooseCardImageLayout(cell('Speed Index'), CARD_TEXT, noWrap, true, estimateTextWidth, 1);
+      expect([square.width, square.height]).toEqual([CARD_IMAGE_SIZE, CARD_IMAGE_SIZE]);
+      const wide = chooseCardImageLayout(cell('Speed Index'), CARD_TEXT, noWrap, true, estimateTextWidth, 16 / 9);
+      expect([wide.width, wide.height]).toEqual([CARD_IMAGE_MAX_WIDTH, CARD_IMAGE_SIZE]);
+      const tall = chooseCardImageLayout(cell('Speed Index'), CARD_TEXT, noWrap, true, estimateTextWidth, 3 / 4);
+      expect([tall.width, tall.height]).toEqual([CARD_IMAGE_SIZE, CARD_IMAGE_MAX_WIDTH]);
+    });
+
+    it('frames a layout in its box, centered, at the box size times the density', () => {
+      const frame = keyFiguresImageFrame(600, 600, boxSettings('fullhd', 2));
+      if (!('pixelWidth' in frame)) {
+        throw new Error('refused');
+      }
+      expect([frame.pixelWidth, frame.pixelHeight]).toEqual([3840, 2160]);
+      expect(frame.scale).toBeCloseTo(3840 / (600 * 16 / 9), 9);
+      expect(frame.offsetX).toBeCloseTo((600 * 16 / 9 - 600) / 2, 9);
+      expect(frame.offsetY).toBe(0);
+      // The padded layout, scaled, fills the bitmap exactly.
+      expect((600 + frame.offsetX * 2) * frame.scale).toBeCloseTo(3840, 6);
+      expect(keyFiguresImageFrame(300, 200)).toEqual({ pixelWidth: 600, pixelHeight: 400, scale: 2, offsetX: 0, offsetY: 0 });
+    });
+
+    it('names files by the encoded format', () => {
+      expect(keyFiguresFileName(CONTEXT, NOW, 'webp'))
+        .toBe('gnollbench_run72_snapshot-tommi2-2026-09-17_gpt-5.5-high_key-figures_20260928_123456.webp');
+      expect(keyFigureCardFileName(CONTEXT, 'Intelligence Index', NOW, 'webp'))
+        .toBe('gnollbench_run72_snapshot-tommi2-2026-09-17_gpt-5.5-high_intelligence-index_20260928_123456.webp');
+    });
   });
 });
+
+/** Settings at a box or fit size, a listed density, and a format. */
+function boxSettings(resolutionId: string, density: number, format: 'png' | 'webp' = 'png'): KeyFiguresExportSettings {
+  const defaults = defaultKeyFiguresExportSettings();
+  return { ...defaults, format, size: { ...defaults.size, resolutionId, densitySelection: density } };
+}

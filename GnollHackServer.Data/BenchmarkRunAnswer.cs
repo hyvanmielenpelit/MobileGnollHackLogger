@@ -432,6 +432,26 @@ public class BenchmarkRunAnswer
     public long? ClaimVerificationDurationMs { get; set; }
     public int? ClaimVerificationToolCallCount { get; set; }
 
+    /// <summary>
+    /// How many model calls the claim verifier made for this answer, the parse retry included.
+    /// <b>Null means "not recorded"</b>: runs before harness 49 never stored it.
+    /// </summary>
+    public int? ClaimVerificationModelCallCount { get; set; }
+
+    /// <summary>
+    /// The claim verifier's usage per model call, in call order, as a compact JSON array
+    /// <c>[{"p":&lt;prompt tokens&gt;,"c":&lt;cache-read tokens&gt;,"o":&lt;output tokens&gt;}, …]</c> of at
+    /// most 64 entries, the parse retry's calls appended. Null means "not recorded".
+    /// </summary>
+    public string? ClaimVerificationCallUsageJson { get; set; }
+
+    /// <summary>
+    /// The service tier the provider reported serving the claim verifier's calls; null when it
+    /// reported none, or on a run before harness 49.
+    /// </summary>
+    [MaxLength(32)]
+    public string? ClaimVerificationServiceTierUsed { get; set; }
+
     /// <summary>Why verification did not complete for this answer. Never fails the run.</summary>
     [MaxLength(1024)]
     public string? ClaimVerificationError { get; set; }

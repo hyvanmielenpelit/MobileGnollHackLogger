@@ -545,7 +545,36 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 10** (the current one, 2026-10-03, with harness 46 in `ai-benchmark.md`) comes from the
+**Format version 11** (the current one, 2026-10-04, with harness 49 in `ai-benchmark.md`) comes from the
+battery run 4 analysis (runs 82 and 83). It changes no score or index of its own; stored documents
+re-render with the new renderer on their next download, and the prompt changes reach only documents
+written from now on.
+
+- **Battery panel facts (H2)**: when the battery analysis carries its panel agreement block
+  ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) M5), `panel.icc` is the ICC(A,1) pooled
+  over every answer both members scored (*"0.50 (pooled over 36 answers both members scored)"*), not
+  the mean of the runs' ICCs, and `panel.memberAAlone`, `panel.memberBAlone`,
+  `panel.referenceReaderIndex` (one decimal, *"86.9 / 100"*), `panel.referenceReaderOffset` and
+  `panel.meanAbsDelta` are taken from it (`FactList.Replace`). An analysis stored before the block keeps
+  the per-run means.
+- **Response style (H4)**: the writer is told that lower completeness under the response-style conflict
+  is partly the effect of *the production chat's concise response style — the default every Overseer
+  user receives, which the benchmark grades as it is* — and never to call it the benchmark's
+  instruction.
+- **Cost labels (H4)**: a battery's `cost.perQuestion` is *Candidate cost per question*, `cost.perRun`
+  *Candidate cost per battery pass*, and `cost.totalRunPerRun` *Total cost per battery pass (every
+  grading and synthesis role; report writer excluded)* (`BenchmarkReportPackRenderer.SpeedAndCostLabel`);
+  a run's `cost.totalRunPerRun` is *Total cost per run (every grading and synthesis role; report writer
+  excluded)*, since `ModelPricingService.ComputeRunRoleCosts(...).Total` sums the candidate and every
+  grading and synthesis role and the report writer is no run role.
+- **Runs scored (H5)**: a battery's per-question table leaves out the *Runs scored* column when one
+  member run scored every question, and its note then reads *"One member run scored each question, so
+  each mean score is that run's score; its critical errors count whether that run had a critical
+  error."*
+- **PDF layout 5 (H5)**: table columns keep their header words whole (§ 8), and a short table stays on
+  one page.
+
+**Format version 10** (2026-10-03, with harness 46 in `ai-benchmark.md`) comes from the
 battery run 1 analysis (runs 76 and 77). It changes no score, index, grading prompt, comparability key or
 `HarnessVersion`; stored documents re-render with the new renderer on their next download.
 
@@ -979,7 +1008,7 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 4*, and a classification banner — amber
+  *Source {first 16 hex of the source hash} · PDF layout 5*, and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
   *"{Suite} · run #68 · compared with 4 models"* (*group #N* for a group subject); a stand-alone one
@@ -1021,6 +1050,14 @@ still reaches no model client, clock or configuration, and the architecture pins
   (*Evaluation terms*) is kept on one page when its estimated height fits a page
   (`BenchmarkPdfMarkdownComposer.KeptTogetherSectionStart`, an estimate that errs high), so no document
   ends on a page holding one bullet; a taller section flows as before.
+- **Header words and short tables** (*PDF layout 5*, 2026-10-04): every column has a minimum width equal
+  to the longest whitespace-delimited word of its header (`PdfColumnWeights`, used by
+  `PdfColumnLayout`). When the content-sized widths do not fit the text width, right-aligned numeric
+  columns keep their width and the text columns shrink toward their header minimums in proportion to
+  their excess; only when the header words alone do not fit do they shrink further, so a header word
+  breaks mid-word only then. A table of at most 10 body rows (`ShortTableMaxBodyRows`) is kept on one page
+  when it fits on one (`PreventPageBreak`), so a four-row table is no longer split. The Word renderer
+  keeps the shared `ColumnWeights`, and `Autofit` lets Word widen a column to its longest word.
 - **Source hash**: SHA-256 over the UTF-8 Markdown followed by each drawn chart's SHA-256 (lowercase hex)
   in figure order, so a changed chart changes the hash; with no chart drawn it equals the Markdown's own
   hash, as before layout 3. The cover and the footer print its first 16 hex characters.

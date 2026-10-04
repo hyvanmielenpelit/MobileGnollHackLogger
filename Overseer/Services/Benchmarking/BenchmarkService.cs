@@ -3497,6 +3497,37 @@ public class BenchmarkService
         }
     }
 
+    /// <summary>The most per-call entries <see cref="BenchmarkRunAnswer.ClaimVerificationCallUsageJson"/> holds.</summary>
+    internal const int ClaimVerificationCallUsageMaxEntries = 64;
+
+    /// <summary>The length of <see cref="BenchmarkRunAnswer.ClaimVerificationServiceTierUsed"/>.</summary>
+    private const int ClaimVerificationServiceTierMaxLength = 32;
+
+    /// <summary>
+    /// Stores the claim verifier's model-call count, its per-call usage and the tier the provider
+    /// reported serving on <paramref name="answer"/>. The usage is a compact JSON array, one
+    /// <c>{"p","c","o"}</c> entry (prompt, cache-read and output tokens) per call in order, the first
+    /// <see cref="ClaimVerificationCallUsageMaxEntries"/> calls only; null when no call reported usage.
+    /// </summary>
+    internal static void RecordClaimVerificationModelCalls(
+        BenchmarkRunAnswer answer,
+        int modelCallCount,
+        IReadOnlyList<TokenUsageReport> callUsages,
+        string? servedServiceTier)
+    {
+        answer.ClaimVerificationModelCallCount = modelCallCount;
+        answer.ClaimVerificationCallUsageJson = callUsages.Count == 0
+            ? null
+            : JsonSerializer.Serialize(callUsages
+                .Take(ClaimVerificationCallUsageMaxEntries)
+                .Select(u => new { p = u.TotalPromptTokens, c = u.CacheReadTokens, o = u.OutputTokens }));
+        answer.ClaimVerificationServiceTierUsed = string.IsNullOrWhiteSpace(servedServiceTier)
+            ? null
+            : servedServiceTier.Length > ClaimVerificationServiceTierMaxLength
+                ? servedServiceTier.Substring(0, ClaimVerificationServiceTierMaxLength)
+                : servedServiceTier;
+    }
+
     private async Task VerifyAnswerClaimsCoreAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -3643,6 +3674,9 @@ public class BenchmarkService
         int cacheReadTokens = runResult.CacheReadTokens;
         int cacheCreationTokens = runResult.CacheCreationTokens;
         int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
+        int modelCallCount = runResult.ModelCallCount;
+        var callUsages = new List<TokenUsageReport>(runResult.ModelCallUsages);
+        string? servedServiceTier = runResult.ActualServiceTier;
         bool verdictsPersisted = false;
 
         if (!string.IsNullOrWhiteSpace(terminalError))
@@ -3654,6 +3688,7 @@ public class BenchmarkService
             answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
+            RecordClaimVerificationModelCalls(answer, modelCallCount, callUsages, servedServiceTier);
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
             answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
             answer.ClaimVerificationRawText = null;
@@ -3706,6 +3741,9 @@ public class BenchmarkService
                 cacheReadTokens += retryResult.CacheReadTokens;
                 cacheCreationTokens += retryResult.CacheCreationTokens;
                 toolCallsCount += retryResult.ToolCalls.Count(tc => tc.Status == "completed");
+                modelCallCount += retryResult.ModelCallCount;
+                callUsages.AddRange(retryResult.ModelCallUsages);
+                servedServiceTier = retryResult.ActualServiceTier ?? servedServiceTier;
 
                 if (string.IsNullOrWhiteSpace(terminalError))
                 {
@@ -3724,6 +3762,7 @@ public class BenchmarkService
             answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
+            RecordClaimVerificationModelCalls(answer, modelCallCount, callUsages, servedServiceTier);
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
 
             if (!string.IsNullOrWhiteSpace(terminalError))

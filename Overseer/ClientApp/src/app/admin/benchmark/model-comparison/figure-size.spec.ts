@@ -8,7 +8,9 @@ import {
   clampExportDimension,
   defaultFigureSize,
   defaultTableImageSize,
+  parseSizeSettings,
   readStoredFigureSize,
+  readStoredSizeSettings,
   readStoredTableImageSize,
   resolveSizeDensity,
   resolveSizeResolution,
@@ -16,7 +18,9 @@ import {
   sizeDimensionsLabel,
   sizeErrors,
   sizeReadout,
+  sizeWrittenLabel,
   writeStoredFigureSize,
+  writeStoredSizeSettings,
   writeStoredTableImageSize
 } from './figure-size';
 
@@ -222,6 +226,45 @@ describe('figure-size', () => {
       expect(sizeReadout({ ...base, resolutionId: 'custom', customWidthPx: 1480, customHeightPx: 620 }))
         .toBe('Custom 1480 × 620 · 100% · text 100 %');
       expect(sizeReadout(defaultTableImageSize())).toBe('Fit the table · 200%');
+    });
+
+    it('names the fit option and leaves the text size out where the host asks', () => {
+      expect(sizeReadout(defaultTableImageSize(), 'Fit the figures')).toBe('Fit the figures · 200%');
+      expect(sizeReadout({ ...base, densitySelection: 2 }, 'Fit the figures', false)).toBe('Full HD — 1920 × 1080 · 200%');
+    });
+
+    it('labels the written bitmap alone, and nothing in fit mode', () => {
+      expect(sizeWrittenLabel({ ...base, densitySelection: 2 })).toBe('3840 × 2160 px (1920 × 1080 at 200%)');
+      expect(sizeWrittenLabel(base)).toBe('1920 × 1080 px at 100%');
+      expect(sizeWrittenLabel(defaultTableImageSize())).toBe('');
+    });
+  });
+
+  describe('a size under any key', () => {
+    const KEY = 'overseer.test.figureSize.generic';
+
+    afterEach(() => localStorage.removeItem(KEY));
+
+    it('round-trips through the generic read and write, with fit allowed or not', () => {
+      expect(readStoredSizeSettings(KEY, defaultTableImageSize(), true)).toEqual(defaultTableImageSize());
+
+      const custom: FigureSizeSettings = { ...defaultTableImageSize(), resolutionId: 'custom', customWidthPx: 1200, customHeightPx: 1200 };
+      writeStoredSizeSettings(KEY, custom);
+      expect(JSON.parse(localStorage.getItem(KEY)!).version).toBe(1);
+      expect(readStoredSizeSettings(KEY, defaultTableImageSize(), true)).toEqual(custom);
+
+      writeStoredSizeSettings(KEY, defaultTableImageSize());
+      expect(readStoredSizeSettings(KEY, defaultTableImageSize(), true).resolutionId).toBe('fit');
+      expect(readStoredSizeSettings(KEY, defaultFigureSize(1), false).resolutionId).toBe('fullhd');
+    });
+
+    it('validates a parsed value field by field', () => {
+      const fallback = defaultTableImageSize();
+      expect(parseSizeSettings(null, fallback, true)).toBe(fallback);
+      expect(parseSizeSettings([1], fallback, true)).toBe(fallback);
+      const read = parseSizeSettings({ resolutionId: 'square1080', customWidthPx: 5, densitySelection: 1.5, textScalePercent: 'big' }, fallback, true);
+      expect(read).toEqual({ ...fallback, resolutionId: 'square1080', densitySelection: 1.5 });
+      expect(parseSizeSettings({ resolutionId: 'eight-k' }, fallback, true).resolutionId).toBe('fit');
     });
   });
 });

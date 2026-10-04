@@ -1,0 +1,55 @@
+:host {
+  display: block;
+}
+
+/* The section and its reset button over the summary row's end, as the size section places its own
+   (frontend_ui_controls §5b). */
+.efs-section {
+  position: relative;
+
+  > details > summary {
+    padding-inline-end: 50px;
+  }
+}
+
+.efs-reset {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  margin: 0;
+
+  &[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.efs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+
+  label:not(.gh-radio) {
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+}
+
+.efs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.efs-quality {
+  width: auto;
+  min-width: 110px;
+}
+
+.efs-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #898781;
+}

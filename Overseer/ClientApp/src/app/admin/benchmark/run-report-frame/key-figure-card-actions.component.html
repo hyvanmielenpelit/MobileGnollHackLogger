@@ -10,7 +10,7 @@
   </svg>
 </button>
 <button type="button" class="action-btn kfc-download"
-        [attr.aria-label]="'Download ' + cardLabel + ' of ' + subject + ' as a PNG image'"
+        [attr.aria-label]="'Download ' + cardLabel + ' of ' + subject + ' as a ' + formatLabel + ' image'"
         [attr.aria-disabled]="busy ? 'true' : null"
         [attr.interestfor]="tipId('download')"
         [attr.style]="'anchor-name: --' + tipId('download')"
@@ -24,4 +24,4 @@
 <div popover="hint" class="gh-tooltip" [id]="tipId('copy')"
      [attr.style]="'position-anchor: --' + tipId('copy')">Copy as image</div>
 <div popover="hint" class="gh-tooltip" [id]="tipId('download')"
-     [attr.style]="'position-anchor: --' + tipId('download')">Download as PNG</div>
+     [attr.style]="'position-anchor: --' + tipId('download')">Download as {{ formatLabel }}</div>

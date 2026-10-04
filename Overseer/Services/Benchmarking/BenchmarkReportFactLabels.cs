@@ -59,7 +59,7 @@ public static class BenchmarkReportFactLabels
         ["cost.rank"] = "Cost rank",
         ["cost.basis"] = "Cost basis",
         ["cost.pricingAsOf"] = "Price card date",
-        ["cost.totalRunPerRun"] = "Total cost per run, graders included",
+        ["cost.totalRunPerRun"] = "Total cost per run (every grading and synthesis role; report writer excluded)",
         ["tokens.inputPerQuestion"] = "Input tokens per question",
         ["tokens.outputPerQuestion"] = "Output tokens per question",
 

@@ -7,8 +7,9 @@
  * which are this control's own transient UI state rather than anything the host needs to persist.
  * Every other value comes from `settings`, and every change goes out as a whole new settings object
  * through `settingsChange` — the host stores it, validates nothing twice, and hands the same object
- * back down. Two hosts use it: the charts' export size (`allowFit` off) and the table's image size
- * (`allowFit` on, offering *Fit the table* ahead of the presets).
+ * back down. Three hosts use it: the charts' export size (`allowFit` off), the table's image size
+ * (`allowFit` on, offering *Fit the table* ahead of the presets) and the key-figures image size
+ * (`allowFit` on as *Fit the figures*, with no text size control).
  */
 
 import {
@@ -45,7 +46,8 @@ import {
   sameFigureSize,
   sizeDimensionsLabel,
   sizeErrors,
-  sizeReadout
+  sizeReadout,
+  sizeWrittenLabel
 } from './figure-size';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 
@@ -74,6 +76,14 @@ export class ExportSizeSectionComponent implements OnInit, OnChanges {
   @Input() layoutRule: 'figure' | 'plain' = 'figure';
   /** Overrides the written-size line when non-empty; the table uses it in fit mode. */
   @Input() writtenLabel = '';
+  /** The fit option's text, also in the read-out. */
+  @Input() fitLabel = 'Fit the table';
+  /** The hint under the controls in fit mode. */
+  @Input() fitHint = 'The image is as large as the table; density sets its sharpness.';
+  /** Off, there is no text size control and the read-out leaves the text size out. */
+  @Input() showTextSize = true;
+  /** Shown under the controls when there is no text size control and a box size is chosen. */
+  @Input() boxHint = '';
 
   @Output() readonly settingsChange = new EventEmitter<FigureSizeSettings>();
   @Output() readonly openChange = new EventEmitter<boolean>();
@@ -141,12 +151,16 @@ export class ExportSizeSectionComponent implements OnInit, OnChanges {
     return sizeErrors(this.settings, this.errorNoun);
   }
 
+  /** Without a text size control the layout box says nothing the reader can change, so only the written size shows. */
   get dimensionsLabel(): string {
-    return this.writtenLabel !== '' ? this.writtenLabel : sizeDimensionsLabel(this.settings, this.layoutRule);
+    if (this.writtenLabel !== '') {
+      return this.writtenLabel;
+    }
+    return this.showTextSize ? sizeDimensionsLabel(this.settings, this.layoutRule) : sizeWrittenLabel(this.settings);
   }
 
   get readout(): string {
-    return sizeReadout(this.settings);
+    return sizeReadout(this.settings, this.fitLabel, this.showTextSize);
   }
 
   get isDefault(): boolean {
@@ -157,7 +171,7 @@ export class ExportSizeSectionComponent implements OnInit, OnChanges {
     return this.isDefault ? 'Already at defaults' : 'Reset to defaults';
   }
 
-  /** Also read directly by the resolution and density controls' own `aria-describedby`. */
+  /** Also read directly by the density controls' own `aria-describedby`, and by the size select's through {@link resolutionDescribedBy}. */
   get errorId(): string | null {
     return this.errors.any ? `${this.idPrefix}-resolution-error` : null;
   }
@@ -170,6 +184,20 @@ export class ExportSizeSectionComponent implements OnInit, OnChanges {
    * information, when it is showing — so a screen-reader user hears both with either field. */
   get dimensionDescribedBy(): string | null {
     const ids = [this.errorId, this.fitInfoId].filter((id): id is string => id !== null);
+    return ids.length > 0 ? ids.join(' ') : null;
+  }
+
+  /** The fit or box hint under the controls, when one shows; null otherwise. */
+  get sizeHintId(): string | null {
+    if (this.isFit) {
+      return this.fitHint !== '' ? `${this.idPrefix}-fit-hint` : null;
+    }
+    return !this.showTextSize && this.boxHint !== '' ? `${this.idPrefix}-box-hint` : null;
+  }
+
+  /** The size select's described-by set: the error, when there is one, and the size hint. */
+  get resolutionDescribedBy(): string | null {
+    const ids = [this.errorId, this.sizeHintId].filter((id): id is string => id !== null);
     return ids.length > 0 ? ids.join(' ') : null;
   }
 

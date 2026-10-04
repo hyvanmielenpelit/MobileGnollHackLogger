@@ -856,7 +856,20 @@ index* (`ai-benchmark.md` § 1, *Runs That Stop Early*).
   panel runs; the composite is `Σ_s w_s · I'_s` over the declared weights, a suite without the figure
   keeping `I_s`. It is advisory and a **lower bound** — a charge the verifier wrongly refuted is not
   lifted — and moves no score; the report prints it as § 4's *Grading sensitivity (advisory)* and the
-  fact sheet as `sensitivity.panelVerificationCleared`. Null when no member is a panel run.
+  fact sheet as `sensitivity.panelVerificationCleared`. Null when no member is a panel run. From
+  harness 49 a run's lift is the difference of its **unrounded** indices (`UnroundedIndex −
+  UnroundedPublished`, both through `BenchmarkScoring.QualityIndexUnrounded`), so a lift smaller than
+  the rounding step of a run's published integer index still reaches the suite figure; before 49 the
+  two rounded indices were subtracted, and a lift of a few tenths read as 0.
+- **Panel agreement (harness 49, panel members only):** `BenchmarkBatteryStatisticsResult.PanelAgreement`
+  (`BenchmarkBatteryPanelAgreement`). Member A alone, member B alone and the reference reader are each
+  `Σ_s w_s · I_s` under the declared weights, with `I_s` that reader's unrounded difficulty-weighted
+  index over the suite's usable answers; the reference reader's offset, mean |B − A| and signed B − A
+  are pooled over every answer both members scored; the ICC(A,1) is computed over all those pairs
+  pooled (`BenchmarkScoring.IntraclassCorrelationAbsolute`), which is **not** the mean of the member
+  runs' ICCs; and the disagreements are the sum of the runs' counts. Null when the battery is
+  incomplete or no usable member is a panel run, and on an analysis stored before 49, which
+  **Recompute** fills. The analysis method version stays 1.
 
 Both of the last two use the **count weights** `v_s` of M6, not the declared `w_s`. Each is an
 unweighted mean within a suite, so question-count weights make the composite the pooled unweighted mean
@@ -1077,6 +1090,15 @@ Both are read when the report is rendered, not from the persisted analysis:
 A member run's own report names its battery in its manifest, after the *Suite origin* line:
 *Battery: Battery run #<id> (<battery name>, revision <r>), suite <s> of <K>, round <r> of <R>*
 ([`ai-benchmark.md`](ai-benchmark.md) § *Harness Version 47 Updates*).
+
+From harness 49, in a panel battery, *Quality Dimensions* gains **§ 6.1 Panel Agreement**: member A
+alone, member B alone and the reference reader (advisory) to two decimals *under the declared
+weights*, the reference reader's offset, mean |B − A| and signed B − A, the pooled ICC(A,1) *over N
+answers both members scored*, and the disagreements, with the line *"The ICC is computed over the
+pooled answers; it is not the mean of the runs' ICCs."* The fact sheet's `panel.*` facts are taken
+from this block when it is set. *Cost* (§ 8) adds, after the role table, *"The report writer's cost is
+not included: it is spent after this analysis is computed, and the battery progress dialog's Total
+cost shows it once the AI-written reports exist."*
 
 *Token and Tool Usage* (§ 9) also reads the members' per-call tool records, the one part of the report
 not taken from the persisted analysis: *Tool call outcomes: N failed, M refused by the tool budget*, or

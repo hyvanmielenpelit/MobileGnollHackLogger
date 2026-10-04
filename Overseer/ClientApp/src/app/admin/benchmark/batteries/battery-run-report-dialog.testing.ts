@@ -17,6 +17,10 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
+import {
+  KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY,
+  KEY_FIGURES_EXPORT_STORAGE_KEY
+} from '../run-report-frame/key-figures-export-settings';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import { BatteryAiReportsComponent, BatteryReportStatusChange } from './battery-ai-reports.component';
 import {
@@ -389,7 +393,9 @@ const STORAGE_KEYS = [
   BATTERY_RUN_REPORT_TAB_STORAGE_KEY,
   BATTERY_RUN_REPORT_HEADER_STORAGE_KEY,
   BATTERY_RUN_REPORT_KEY_FIGURES_STORAGE_KEY,
-  BATTERY_RUN_REPORT_IMAGE_DETAILS_STORAGE_KEY
+  BATTERY_RUN_REPORT_IMAGE_DETAILS_STORAGE_KEY,
+  KEY_FIGURES_EXPORT_STORAGE_KEY,
+  KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY
 ];
 
 export function clearBatteryRunReportStorage(): void {

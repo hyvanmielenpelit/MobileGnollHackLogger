@@ -3147,6 +3147,22 @@ degraded figures and an export line. They are composed **square**, or landscape 
 content allows, never portrait: the strip's column count and card width are chosen for the ratio nearest
 1 : 1, and a single card widens from 640 × 640 up to 4 : 3 only for long notes.
 
+**Download options (harness-49 round).** *Choose key figures* (see *Key Figures: Mean Time and the
+Figure Chooser* below) has an *Image file* column beside *What to show*. **Image format**: PNG, or WebP
+with a quality from the Model Comparison wizard's list (85 by default); **Copy** always places a PNG on
+the clipboard, because browsers do not accept WebP there, and a browser that cannot write WebP saves a
+PNG and says so. **Image size**: *Fit the figures*, the default, draws the layouts above at the chosen
+pixel density — at 200 % exactly today's images — while a preset or a *Custom* width and height lays the
+figures out for that aspect ratio, pads them to it and scales them to fill it, at the chosen density
+(*Full HD — 1920 × 1080* at 200 % is a 3840 × 2160 image); there is no text-size control, and an
+oversized bitmap is refused rather than cut. The footer says what Download writes (*Downloads a WebP,
+3840 × 2160 px.*; *about* in fit mode, which is measured before drawing). The file extension follows the
+encoded format, and the Download buttons' names and tooltips name it. The settings are stored **once for
+both report dialogs** in `localStorage['overseer.benchmark.keyFigures.export']` (`{ "version": 1,
+"format", "webpQuality", "size" }`) and the two sections' open states in
+`localStorage['overseer.benchmark.keyFigures.exportSections']`; each dialog reads them on every open,
+copy and download, so a change made in one applies in the other.
+
 **GnollBench branding.** The GnollBench wordmark heads the AI Benchmark tab; the square emblem stands
 before *Run #N* in the run report and before the Download Center's and Report Pack dialog's titles, and
 both logos are in every PDF.
@@ -3947,6 +3963,9 @@ level-to-points mapping are unchanged. Levels 4–6:
 | 4 | Fully accurate; all factual claims align with GnollHack mechanics with no meaningful errors. | Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here. |
 | 5 | Highly accurate and precise; demonstrates nuanced understanding of mechanics and interactions. | Accurate, with a single trivial imprecision and nothing a player could act on wrongly. |
 | 6 | Flawless, authoritative precision matching C core source code implementation details exactly. | No false or imprecise statement: every claim the answer makes that you can adjudicate is correct as stated. |
+
+Scoring method 14 (harness 49) rewrites levels 4 and 5 again and adds the rule that a true statement is
+never an imprecision; the current text is in *Harness Version 49 & Scoring Method Version 14 Updates*.
 
 Directly beneath them, a scope rule: *"ACCURACY grades only what the answer states. Depth, length,
 source-level detail and how many mechanics are covered are not ACCURACY criteria. A two-sentence answer
@@ -6643,6 +6662,176 @@ A re-run does not re-stamp it, as it leaves the corpus heads alone.
 **Comparability.** Only the Instrument key `HarnessVersion` moves (47 → 48), so a run on battery run
 3's configuration is **Tier C** against it. A battery run started under harness 47 refuses to resume
 under 48 (`HarnessVersionRefusal`).
+
+### Harness Version 49 & Scoring Method Version 14 Updates
+
+The battery run 4 round (runs 82 and 83, 2026-10-04). The Accuracy anchors stop charging true
+statements, a panel run's sensitivity and a battery's panel figures are computed unrounded and pooled,
+the report writer's facts and wording are corrected, PDF tables keep their header words whole, and the
+claim verifier batches its lookups and records its model calls. `HarnessVersion` moves to **"49"** and
+`ScoringMethodVersion` to **14**. `ReportFormatVersion` moves 10 → 11 and the PDF layout 4 → 5
+(*Format version 11* in [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)). One EF Core
+migration, `AddClaimVerificationCallUsage`, adds three nullable columns to `BenchmarkRunAnswers`. The
+knowledge-base scope sentence of `Overseer/ToolGuides/_policy.md` moves `ToolGuidesSha256` and
+`CandidateSystemPromptSha256`; the first line of `get_knowledge_article.md` moves `ToolGuidesSha256`
+only.
+
+#### What was wrong
+
+- **H3.** All seven member-level Accuracy deductions of battery run 4 docked statements that were true:
+  a figure given as "often" where the rubric had a percentage, a true condition the rubric did not
+  mention, a rule stated without a condition that did not decide the question. The method-11 level-4
+  anchor (*"a loosely stated figure, an imprecise term, a rule stated without a condition that does not
+  apply here"*) let a grader read "less specific than the rubric" as an imprecision.
+- **H1.** The panel verification-cleared sensitivity subtracted two **rounded** indices, so a lift of a
+  few tenths read as 0 in the run report and in the battery's suite figure.
+- **H2.** The battery fact sheet's panel facts were means of the member runs' figures: the ICC was the
+  mean of two runs' ICCs (0.55) rather than one computed over the pooled answers, and the reference
+  reader's index was rounded per run.
+- **H4.** The report writer was told the concise response style was *the benchmark's* instruction (it
+  is the production chat's default), and a battery's *"Cost per battery pass"* was the candidate's alone
+  while the writer read it as the whole cost.
+- **H5.** PDF table headers broke mid-word in narrow columns, a four-row table could split across a
+  page, and a battery's per-question table printed a *Runs scored* column of 1s.
+- **H6.** The run report and the diagnostics text called zero `get_knowledge_article` calls
+  prompt-compliant on game-mechanics topics, although the Knowledge Base lists game topics too (item
+  identification, reading the game map); `_policy.md` and `get_knowledge_article.md` described the
+  knowledge base as app-only.
+- **H7.** A panel run's *Advisory Flags* headline counted member A's flags only.
+- **H8.** Verification items the verifier never answered were counted as Indeterminate with no
+  distinction.
+- **H9.** The battery report dialog's *Battery duration* tile and its image rounded the wall clock
+  differently from the battery report.
+- **H10–H12.** The claim verifier cost US$3.96 of the battery's US$9.44, 74 % of it uncached input:
+  every model call re-sends about 10,000 tokens of tool definitions and every earlier result, and the
+  verifier issued roughly one lookup per round. Its model calls were not recorded, so the cost could be
+  inferred but not measured. A grader on a discounted or surcharged service tier was priced at the
+  standard rate, since only the candidate's tier reached the cost breakdown.
+
+#### Scoring method 14: the Accuracy anchors (H3)
+
+Levels 0–3 and 6, Completeness, Conciseness, Readability, the critical-error rules, the weights and the
+level-to-points mapping are unchanged. Every grading prompt that carries the Accuracy scale — member A,
+member B (the co-assessor) and the reference reader — reads:
+
+| Level | Method 11–13 | Method 14 |
+|---|---|---|
+| 4 | Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here. | Accurate in substance, with minor imprecisions a player could act on slightly wrongly: a figure stated loosely enough to mislead, a term applied to the wrong thing, or a rule stated without a condition that decides the outcome in the question's situation. |
+| 5 | Accurate, with a single trivial imprecision and nothing a player could act on wrongly. | Accurate, with a single trivial imprecision: one statement worded loosely enough to be misread, though nothing a player could act on wrongly. |
+
+Directly after the scope rule (*"ACCURACY grades only what the answer states."*) a new rule:
+
+> **A true statement is never an imprecision.** A statement that is true but less specific than the
+> rubric — "some" or "often" where the rubric gives a percentage, "several" where it lists the items —
+> is graded under COMPLETENESS for what it leaves out, not under ACCURACY. A true condition, exception or
+> qualifier that the rubric does not mention is not an imprecision either; if you believe it false,
+> report it in `unverifiedClaims` (instruction 8). A rule stated without one of its conditions lowers
+> ACCURACY only when that condition decides the outcome in the question's situation, so that a player
+> following the sentence would act wrongly; otherwise the missing condition is a COMPLETENESS omission.
+> Before you lower ACCURACY, quote the statement and say what in it is false or would mislead a player;
+> "less specific than the rubric" is not such a reason.
+
+**Why.** The candidate is graded under the production chat's concise style, which tells it to be brief;
+an anchor that docks Accuracy for brevity measures compliance with that style as if it were a factual
+error, which is what scoring method 11 set out to stop. The deduction belongs to Completeness, where
+the rubric's omitted detail is counted. A statement that would mislead a player is still docked, the
+claim verifier still checks suspected-false claims, and a confirmed false statement graded 6 by both
+members is the round's rollback trigger.
+
+**Comparability.** `ScoringMethodVersion` is a Fundamental key, so **no method-14 Accuracy, quality
+score or index is comparable with a method-13 one**, on any suite. Method-14 figures generally rise
+across the boundary, which says nothing about a candidate.
+
+#### Panel sensitivity unrounded (H1)
+
+`BenchmarkScoring.QualityIndexUnrounded` carries the difficulty-weighted index without its final
+rounding, and `QualityIndex` rounds it, so no published index moves. `PanelSensitivityResult` gains
+`UnroundedIndex` (the lifted answers) and `UnroundedPublished` (the stored panel scores); `Index` stays
+the rounded lifted index. The battery's per-run lift is `UnroundedIndex − UnroundedPublished`
+([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) M5). The run report's *Panel
+verification-cleared Accuracy sensitivity* line prints both figures with one decimal when the rounded
+sensitivity equals the published index but the unrounded lift is at least 0.05 — *"87.7 / 100
+(published 87.6)"* — and is otherwise unchanged.
+
+#### Battery panel agreement and the report writer (H2, H4)
+
+- **Panel agreement.** `BenchmarkBatteryStatisticsResult.PanelAgreement` holds member A alone, member B
+  alone and the reference reader under the declared weights, the reference reader's offset, the mean
+  absolute and signed member deltas and the ICC(A,1), all pooled over every answer both members scored
+  (M5 in [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md)). The battery report gains § 6.1
+  *Panel Agreement*, and the fact sheet's `panel.icc` (*"0.50 (pooled over 36 answers both members
+  scored)"*), `panel.memberAAlone`, `panel.memberBAlone`, `panel.referenceReaderIndex`,
+  `panel.referenceReaderOffset` and `panel.meanAbsDelta` are taken from it, one decimal.
+- **Writer wording.** The writer prompt calls the concise style *the production chat's concise response
+  style — the default every Overseer user receives, which the benchmark grades as it is*, and tells the
+  writer never to call it the benchmark's instruction.
+- **Cost labels.** A battery's `cost.perQuestion` reads *Candidate cost per question*, `cost.perRun`
+  *Candidate cost per battery pass*, and `cost.totalRunPerRun` *Total cost per battery pass (every
+  grading and synthesis role; report writer excluded)*, and a run's `cost.totalRunPerRun` *Total cost
+  per run (every grading and synthesis role; report writer excluded)*; the battery report's § 8 says
+  the report writer is not included and where its cost is shown.
+
+#### Report and diagnostics wording, verifier gaps (H6–H9)
+
+- **Knowledge base (H6).** The run report's *Prompt observation* says the prompt sends the model to
+  `get_knowledge_article` first for the topics listed in its Knowledge Base section, which include game
+  topics such as item identification and reading the game map, so zero calls is prompt-compliant **only
+  on a question outside them**; the diagnostics text says the same. `BenchmarkChatTransfer`'s topic words
+  gain *item identification*, *unidentified*, *identify*, *appearance*, *game map*, *map symbol* and
+  *glyph* — phrases, never bare *map* or *symbol*, which would match ordinary game questions. `_policy.md`
+  and `get_knowledge_article.md` name the game topics beside the app topics (T0).
+- **Advisory flags (H7).** In a panel run the headline is *Advisory Flags: N answer(s) on either member
+  (member A a, member B b)*, followed by the existing breakdown; a single-assessor run is unchanged.
+- **Unanswered verifier items (H8).** An item whose basis is
+  `BenchmarkClaimVerificationParser.AbsentFromResponseBasis` (the verifier's response left it out) is
+  still Indeterminate, and the report counts it apart: *"(N not answered by the verifier)"* on the
+  answer's *Claim Verification* line (its own claims) and *Accused sentences checked* line, and *"; N
+  not answered by the verifier"* on § 2's *Claim Verification Yield*.
+- **Battery duration (H9).** The battery report dialog's *Battery duration* tile and its image round the
+  wall clock as `BenchmarkBatteryReportBuilder` does.
+
+#### The claim verifier's cost (H10–H12)
+
+The verifier's model, thinking level, service tier and verdict rules do not change.
+
+- **Batching (H10).** Instruction 3p: *"Plan your lookups before you call a tool. Tool calls you issue
+  together in one turn run in parallel and count as one round, and every round re-reads everything
+  gathered so far. In your first turn, issue the first lookup for every claim, or for as many as the
+  tool budget allows, together; batch your follow-up lookups the same way. Issue a call by itself only
+  when its arguments depend on a result you do not have yet."* It sits in the fixed head of the prompt,
+  ahead of the board, so the cacheable prefix stays identical across a run's answers; batched calls
+  already run in parallel.
+- **The record (H11).** `BenchmarkRunAnswer` gains `ClaimVerificationModelCallCount`,
+  `ClaimVerificationCallUsageJson` (one `{"p","c","o"}` entry per model call — prompt, cache-read and
+  output tokens — at most 64) and `ClaimVerificationServiceTierUsed`, null meaning *not recorded*; a
+  parse retry's calls are added; the tier is cut to 32 characters. Each *Claim Verification* line ends
+  *"— N tool call(s), M model call(s), X input tokens (cache read P%), Y s"*, each part only when recorded; *Verifier spend by
+  answer* adds the mean model calls per verified answer and the verifier's cache-read share; and the
+  *Claim Verifier* cost line names the tier when a multiplier other than 1 applied. No client or DTO
+  change: the per-call JSON is for analysis through a database query.
+- **Grader tiers (H12).** `ModelPricingService` prices every grading role with its own model snapshot's
+  requested service tier, and the claim verifier with the tier its answers report serving, resolved as
+  the candidate's served tier is; the synthesis roles use their assessor's tier. A role with no tier, or
+  a price card without tier multipliers, is unchanged, so a stored run whose graders named no tier keeps
+  its figures; one whose grader did name a tier re-renders at what it actually cost.
+- **Timeout.** `Benchmark:ClaimVerification:TimeoutSeconds` is 600 (was 300); it is the stage's whole
+  budget per answer, retry included. The longest verification of battery run 4 took 138 seconds.
+- **Not done, by decision.** The verifier is **not** moved to the flex service tier (it has to run fast
+  and reliably, and flex is slower and can be refused under load); nor to a cheaper model or a lower
+  thinking level, a cap on the claims verified, a smaller tool-result cap, the candidate's stored tool
+  results, or an explicit Gemini cache.
+
+#### Key-figure download options (Task 2), no version effect
+
+The *Choose key figures* dialog of the run report and of the battery run report gains an *Image file*
+column beside *What to show*: **Image format** (PNG, or WebP with the Model Comparison wizard's quality
+list) and **Image size** (*Fit the figures*, the wizard's presets, *Custom* width and height, and the
+pixel density). See *Key Figures, GnollBench Branding and PDF Downloads* above for the storage.
+
+**Comparability.** `ScoringMethodVersion` (a Fundamental key) moves 13 → 14 and `HarnessVersion` 48 →
+49, so no run of this round is comparable with an earlier one on any score; `ToolGuidesSha256` and
+`CandidateSystemPromptSha256` move as well. A battery run started under harness 48 refuses to resume under 49
+(`HarnessVersionRefusal`).
 
 ---
 

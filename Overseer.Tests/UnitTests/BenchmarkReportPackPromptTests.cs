@@ -247,6 +247,29 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("{{style.responseStyleConflict}} is true", message);
     }
 
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheResponseStyle_IsNamedAsTheProductionDefault_NeverAsTheBenchmarksInstruction(BenchmarkReportAudience audience)
+    {
+        var prompt = Build(audience);
+
+        foreach (string text in new[] { prompt.SystemPrompt, prompt.UserMessage })
+        {
+            Assert.DoesNotContain("benchmark's concise", text);
+            Assert.DoesNotContain("concise-answer instruction", text);
+            Assert.DoesNotContain("the instruction's effect", text);
+        }
+        Assert.Contains("{{style.responseStyleConflict}} is true: the production chat's concise response style conflicts with the completeness the rubrics ask for, so lower completeness is partly the style's effect.", prompt.UserMessage);
+    }
+
+    [Fact]
+    public void TheWeighingRules_CallTheConciseStyleTheProductionDefault()
+    {
+        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+
+        Assert.Contains("- When the response-style conflict fact is true, lower completeness is partly the effect of the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is — not only of the model. Say so wherever completeness is discussed, and never call it the benchmark's instruction.", system);
+    }
+
     [Fact]
     public void UserMessage_ShowsPeersOnlyByLetterAndGradersOnlyByRole()
     {

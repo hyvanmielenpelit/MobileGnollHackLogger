@@ -84,6 +84,7 @@ import {
   KeyFigureKey,
   KeyFiguresAction,
   exportKeyFiguresImage,
+  measureKeyFiguresImage,
   readKeyFigureCells,
   readStoredImageDetailExclusions,
   readStoredKeyFigureExclusions,
@@ -92,7 +93,13 @@ import {
   storeKeyFigureExclusions,
   toImageFactRows
 } from './run-report-frame/key-figures-image';
-import { KeyFiguresChooserComponent } from './run-report-frame/key-figures-chooser.component';
+import { KeyFiguresChooserComponent, KeyFiguresImageMeasurer } from './run-report-frame/key-figures-chooser.component';
+import {
+  KeyFiguresExportSettings,
+  keyFiguresFormatLabel,
+  readStoredKeyFiguresExportSettings,
+  writeStoredKeyFiguresExportSettings
+} from './run-report-frame/key-figures-export-settings';
 import { RunFactsComponent } from './run-report-frame/run-facts.component';
 import {
   RUN_FACT_PRIMARY_KEYS,
@@ -2490,19 +2497,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         lines.push(`total calls: ${totalCalls} (source: ${sourceCalls}, wiki: ${wikiCalls}, lookup: ${lookupCalls}, kb: ${kbCalls}, other: ${otherCalls})`);
         // Qualified to match the report. Unqualified, this is the artifact most likely to be pasted into an
         // analysis, and it reads as a knowledge-base under-use finding that the transfer skill has already
-        // withdrawn twice (run 11, T4): the prompt scopes the knowledge base away from game mechanics, so a
-        // game-mechanics suite making no knowledge-base calls is compliance, not under-use.
+        // withdrawn twice (run 11, T4): the prompt lists the knowledge base's topics, so a suite outside
+        // them making no knowledge-base calls is compliance, not under-use.
         // Over the gradeable-answer population, which is what the report's own knowledge-base
         // routing lines use. Against run.answers.length the two artifacts printed different
         // denominators for one run.
         lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${facts.gradeable} gradeable (${run.answers.length} answer row(s))`);
         // A suite that asks a knowledge-base topic (the server's HasKnowledgeBaseRoutingQuestion, over the
-        // question texts) gets no compliance qualification: the report judges it instead.
+        // question texts) gets no compliance qualification: the report judges it instead. Any other suite
+        // is compliant only outside the listed topics, which include a few game topics.
         if (run.hasKnowledgeBaseRoutingQuestion) {
           lines.push("  (the suite has knowledge-base topics; see the report's Tool Routing section)");
         } else {
-          lines.push('  (prompt-compliant on game-mechanics topics — ChatService.cs "Information Routing" scopes the');
-          lines.push('   knowledge base to app navigation, settings, controls, replay, vault and troubleshooting)');
+          lines.push('  (prompt-compliant only on questions outside the knowledge base\'s listed topics — ChatService.cs');
+          lines.push('   "Information Routing"; the list includes item identification and reading the game map)');
         }
         lines.push('');
       }
@@ -3438,7 +3446,29 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return selected < total ? `${selected} of ${total}` : null;
   }
 
-  /** Opens the chooser on the cards the Summary panel shows, with their current values. */
+  /**
+   * The key-figures download settings, shared with the Battery Run Report and read from storage at
+   * every use; the same object while storage is unchanged.
+   */
+  get keyFiguresExportSettings(): KeyFiguresExportSettings {
+    return readStoredKeyFiguresExportSettings();
+  }
+
+  /** `PNG` or `WebP`: the format the Download buttons write. */
+  get keyFiguresDownloadFormat(): string {
+    return keyFiguresFormatLabel(this.keyFiguresExportSettings.format);
+  }
+
+  /** The chooser's footer summary: the next whole-strip image of the viewed run, measured without drawing. */
+  readonly keyFiguresMeasurer: KeyFiguresImageMeasurer = settings => {
+    const run = this.selectedRunDetail;
+    const root = this.runDetailDialog?.nativeElement.querySelector('.rr-figures');
+    if (!run || !root) return null;
+    const excluded = new Set(this.keyFigureExclusions);
+    return measureKeyFiguresImage(root, this.keyFiguresContext(run), key => !excluded.has(key), settings);
+  };
+
+  /** Opens the chooser on the cards the Summary panel shows, with their current values and the stored download settings. */
   openKeyFiguresChooser(opener?: HTMLElement): void {
     const root = this.runDetailDialog?.nativeElement.querySelector('.rr-figures');
     if (!this.selectedRunDetail || !root || !this.keyFiguresChooser) return;
@@ -3447,7 +3477,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       rows: this.selectedRunFacts.map(row => ({ key: row.key, label: row.label, value: runFactPlainText(row) })),
       excluded: this.imageDetailExclusions
     };
-    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null, details);
+    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null, details, readStoredKeyFiguresExportSettings());
+  }
+
+  /** The chooser's download settings: remembered at once, for both report dialogs. */
+  onKeyFiguresExportSettingsChange(settings: KeyFiguresExportSettings): void {
+    writeStoredKeyFiguresExportSettings(settings);
+    this.cdr.markForCheck();
   }
 
   /** The chooser's live selection: filters the Summary cards and is remembered at once. */
@@ -3466,7 +3502,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /**
    * Composes the key figures (`card` null, the remembered selection) or one card, copies or saves
-   * it, and announces the outcome. The cards are read from the Summary panel whichever tab is shown.
+   * it, and announces the outcome. The cards are read from the Summary panel whichever tab is shown;
+   * the download settings are read from storage now, so a change made in the other report applies.
    */
   private async exportKeyFigures(action: KeyFiguresAction, card: HTMLElement | null): Promise<void> {
     const run = this.selectedRunDetail;
@@ -3479,7 +3516,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.workspace.overseerBuildVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
       }
       const excluded = new Set(this.keyFigureExclusions);
-      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(run), key => !excluded.has(key));
+      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(run), key => !excluded.has(key),
+        readStoredKeyFiguresExportSettings());
       if (this.runReportCopyTimer) clearTimeout(this.runReportCopyTimer);
       this.runReportCopyStatus = message;
       this.runReportCopyTimer = setTimeout(() => {

@@ -32,12 +32,19 @@ import { batteryStatusBadgeClass, getScoreBadgeClass } from '../benchmark-run-fo
 import { BenchmarkFingerprintEntry, COPY_STATUS_MS, FINGERPRINT_LONG_NAMES } from '../benchmark.models';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from '../run-report-frame/key-figure-card-actions.component';
-import { KeyFiguresChooserComponent } from '../run-report-frame/key-figures-chooser.component';
+import { KeyFiguresChooserComponent, KeyFiguresImageMeasurer } from '../run-report-frame/key-figures-chooser.component';
+import {
+  KeyFiguresExportSettings,
+  keyFiguresFormatLabel,
+  readStoredKeyFiguresExportSettings,
+  writeStoredKeyFiguresExportSettings
+} from '../run-report-frame/key-figures-export-settings';
 import {
   ImageContext,
   KeyFigureKey,
   KeyFiguresAction,
   exportKeyFiguresImage,
+  measureKeyFiguresImage,
   readKeyFigureCells,
   readStoredImageDetailExclusions,
   readStoredKeyFigureExclusions,
@@ -114,6 +121,30 @@ export const BATTERY_RUN_KEY_FIGURES: readonly KeyFigureKey[] = [
 
 /** The cost role of the model under test in `totalCostByRole`. */
 export const CANDIDATE_COST_ROLE = 'Candidate';
+
+/**
+ * A battery's wall clock as the battery report prints it (`BenchmarkBatteryReportBuilder.Duration`):
+ * `2 d 3 h 04 min`, `3 h 04 min` or `4 min 05 s`, every part truncated, never rounded up; an em dash
+ * without a figure.
+ */
+export function formatBatteryWallClock(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) {
+    return '—';
+  }
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor((totalSeconds % 86_400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const mm = minutes.toString().padStart(2, '0');
+  if (days > 0) {
+    return `${days} d ${hours} h ${mm} min`;
+  }
+  if (hours > 0) {
+    return `${hours} h ${mm} min`;
+  }
+  return `${minutes} min ${seconds.toString().padStart(2, '0')} s`;
+}
 
 /** One column of the Configuration tab's suite fingerprints: Run History's label, color class and long name. */
 export interface BatterySuiteFingerprintColumn {
@@ -366,6 +397,7 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
   readonly formatIndexWithHalfWidth = formatIndexWithHalfWidth;
   readonly formatInterval = formatInterval;
   readonly formatMs = formatMs;
+  readonly formatWallClock = formatBatteryWallClock;
   readonly formatNumber = formatNumber;
   readonly formatPercent = formatPercent;
   readonly formatPValue = formatPValue;
@@ -1220,7 +1252,37 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
       rows: this.facts.map(row => ({ key: row.key, label: row.label, value: runFactPlainText(row) })),
       excluded: this.imageDetailExclusions
     };
-    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null, details);
+    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null, details, readStoredKeyFiguresExportSettings());
+  }
+
+  /**
+   * The key-figures download settings, shared with the run report and read from storage at every
+   * use; the same object while storage is unchanged.
+   */
+  get keyFiguresExportSettings(): KeyFiguresExportSettings {
+    return readStoredKeyFiguresExportSettings();
+  }
+
+  /** `PNG` or `WebP`: the format the Download buttons write. */
+  get keyFiguresDownloadFormat(): string {
+    return keyFiguresFormatLabel(this.keyFiguresExportSettings.format);
+  }
+
+  /** The chooser's footer summary: the next whole-strip image of this battery run, measured without drawing. */
+  readonly keyFiguresMeasurer: KeyFiguresImageMeasurer = settings => {
+    const detail = this.detail;
+    const root = this.dialog?.nativeElement.querySelector('.rr-figures');
+    if (!detail || !root) {
+      return null;
+    }
+    const excluded = new Set(this.keyFigureExclusions);
+    return measureKeyFiguresImage(root, this.keyFiguresContext(detail), key => !excluded.has(key), settings);
+  };
+
+  /** The chooser's download settings: remembered at once, for both report dialogs. */
+  onKeyFiguresExportSettingsChange(settings: KeyFiguresExportSettings): void {
+    writeStoredKeyFiguresExportSettings(settings);
+    this.cdr.markForCheck();
   }
 
   onKeyFigureSelectionChange(excluded: string[]): void {
@@ -1264,7 +1326,10 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     return this.exportKeyFigures(request.action, request.card);
   }
 
-  /** Composes the selected key figures (`card` null) or one card, copies or saves it, and announces it. */
+  /**
+   * Composes the selected key figures (`card` null) or one card, copies or saves it, and announces it.
+   * The download settings are read from storage now, so a change made in the run report applies.
+   */
   private async exportKeyFigures(action: KeyFiguresAction, card: HTMLElement | null): Promise<void> {
     const detail = this.detail;
     const root = this.dialog?.nativeElement.querySelector('.rr-figures');
@@ -1278,7 +1343,8 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
         this.overseerVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
       }
       const excluded = new Set(this.keyFigureExclusions);
-      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(detail), key => !excluded.has(key));
+      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(detail), key => !excluded.has(key),
+        readStoredKeyFiguresExportSettings());
       this.announce(message);
     } finally {
       this.keyFiguresExporting = false;

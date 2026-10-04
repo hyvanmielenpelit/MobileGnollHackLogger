@@ -23,8 +23,15 @@ public class BenchmarkBatteryReportBuilderTests
     private Task<string> BuildAsync(params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
         => BuildAsync(null, members);
 
-    private async Task<string> BuildAsync(
+    private Task<string> BuildAsync(
         BenchmarkBatteryAnswerOutcomes? answerOutcomes, params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
+        => BuildAdjustedAsync(null, answerOutcomes, members);
+
+    /// <summary>Analyses the members and renders their report, the result first passed through <paramref name="adjust"/> when given.</summary>
+    private async Task<string> BuildAdjustedAsync(
+        Func<BenchmarkBatteryStatisticsResult, BenchmarkBatteryStatisticsResult>? adjust,
+        BenchmarkBatteryAnswerOutcomes? answerOutcomes,
+        params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
     {
         var definition = BenchmarkBatteryTestData.Definition();
         long id = await BenchmarkBatteryTestData.SeedAsync(_db, definition, members);
@@ -39,7 +46,7 @@ public class BenchmarkBatteryReportBuilderTests
         return BenchmarkBatteryReportBuilder.BuildMarkdownReport(
             batteryRun,
             definition,
-            result!,
+            adjust == null ? result! : adjust(result!),
             analysis,
             loaded!.MemberRuns,
             loaded.Comparability,
@@ -365,10 +372,9 @@ public class BenchmarkBatteryReportBuilderTests
 
         string report = await BuildAsync((suiteA, 0, 1), (suiteB, 1, 1));
 
-        // Run 1's lift: (Quality(4, 5, 5, 5) + 60) / 2, 70 and 80 at equal difficulty, against its 70.
+        // Run 1's lift: (Quality(4, 5, 5, 5) + 60) / 2, 70 and 80 at equal difficulty, unrounded, against its 70.
         int lifted = BenchmarkScoring.Quality(4, 5, 5, 5, false).Score;
-        int runIndex = BenchmarkScoring.QualityIndex(new List<(double?, int)> { ((lifted + 60) / 2.0, 40), (70, 40), (80, 40) })!.Value;
-        double suiteAFigure = runIndex;
+        double suiteAFigure = BenchmarkScoring.QualityIndexUnrounded(new List<(double?, int)> { ((lifted + 60) / 2.0, 40), (70, 40), (80, 40) })!.Value;
         double overall = 0.6 * suiteAFigure + 0.4 * 60.0;
 
         int sensitivity = report.IndexOf("## 4. Weighting Sensitivity", StringComparison.Ordinal);
@@ -391,6 +397,62 @@ public class BenchmarkBatteryReportBuilderTests
         Assert.Contains("Weighting Sensitivity", report);
         Assert.DoesNotContain("Grading sensitivity (advisory)", report);
         Assert.DoesNotContain("Panel verification-cleared", report);
+        Assert.DoesNotContain("Panel Agreement", report);
+    }
+
+    [Fact]
+    public async Task QualityDimensions_PrintThePanelAgreementBlock_ForAPanelBattery()
+    {
+        // Member B scores as member A did, so the members agree exactly.
+        var suiteA = BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteARun(1));
+        var suiteB = BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteBRun(2));
+        suiteA.PanelDisagreementCount = 1;
+        suiteB.PanelDisagreementCount = 0;
+
+        string report = await BuildAsync((suiteA, 0, 1), (suiteB, 1, 1));
+
+        int dimensions = report.IndexOf("## 6. Quality Dimensions", StringComparison.Ordinal);
+        int agreement = report.IndexOf("### 6.1 Panel Agreement", StringComparison.Ordinal);
+        int speed = report.IndexOf("## 7. Speed", StringComparison.Ordinal);
+        Assert.True(dimensions >= 0 && dimensions < agreement && agreement < speed);
+
+        Assert.Contains("| Member A alone, under the declared weights | 66.00 |", report);
+        Assert.Contains("| Member B alone, under the declared weights | 66.00 |", report);
+        Assert.Contains("| Reference reader (advisory), under the declared weights | — |", report);
+        Assert.Contains("| Reference reader's mean offset from the panel | — |", report);
+        Assert.Contains("| Mean \\|B − A\\| | 0.00 points |", report);
+        Assert.Contains("| Mean signed B − A | +0.00 points |", report);
+        Assert.Contains("| Pooled ICC(A,1) | 1.00 over 5 answers both members scored |", report);
+        Assert.Contains("| Disagreements | 1 of 5 answers |", report);
+        Assert.Contains("The ICC is computed over the pooled answers; it is not the mean of the runs' ICCs.", report);
+    }
+
+    [Fact]
+    public async Task TheCostSection_SaysTheReportWriterIsNotIncluded_AfterTheRoleTable()
+    {
+        static BenchmarkBatteryStatisticsResult WithCost(BenchmarkBatteryStatisticsResult result) => result with
+        {
+            Cost = new BenchmarkBatteryCostStatistics
+            {
+                Available = true,
+                TotalCost = 2.0,
+                PassCost = 2.0,
+                AnswerRowCount = 5,
+                CostPerQuestion = 0.4,
+                TotalCostByRole = new Dictionary<string, double> { ["candidate"] = 1.5, ["assessor"] = 0.5 },
+                PassCostByRole = new Dictionary<string, double> { ["candidate"] = 1.5, ["assessor"] = 0.5 }
+            }
+        };
+
+        string report = await BuildAdjustedAsync(
+            WithCost, null, (BenchmarkBatteryTestData.SuiteARun(1), 0, 1), (BenchmarkBatteryTestData.SuiteBRun(2), 1, 1));
+
+        const string note = "The report writer's cost is not included: it is spent after this analysis is computed, and the battery progress dialog's Total cost shows it once the AI-written reports exist.";
+        int roles = report.IndexOf("| Role | Total | Per battery pass | Share |", StringComparison.Ordinal);
+        int written = report.IndexOf(note, StringComparison.Ordinal);
+        int next = report.IndexOf("## 9.", StringComparison.Ordinal);
+        Assert.True(roles >= 0 && roles < written, "The note is not after the role table.");
+        Assert.True(next < 0 || written < next, "The note is not inside the Cost section.");
     }
 
     [Fact]

@@ -12,6 +12,10 @@ import { AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto } fr
 import { SystemService } from '../../services/system.service';
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY } from './run-report-frame/key-figures-image';
+import {
+  KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY,
+  KEY_FIGURES_EXPORT_STORAGE_KEY
+} from './run-report-frame/key-figures-export-settings';
 import { RUN_HISTORY_MEMBERS_STORAGE_KEY } from './benchmark.models';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
 import { BenchmarkWorkspaceStore } from './state/benchmark-workspace.store';
@@ -52,6 +56,8 @@ export function clearStoredState(): void {
     localStorage.removeItem(RUN_HISTORY_MEMBERS_STORAGE_KEY);
     localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
     localStorage.removeItem(IMAGE_DETAILS_STORAGE_KEY);
+    localStorage.removeItem(KEY_FIGURES_EXPORT_STORAGE_KEY);
+    localStorage.removeItem(KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY);
   } catch { /* private-browsing modes throw */ }
 }
 

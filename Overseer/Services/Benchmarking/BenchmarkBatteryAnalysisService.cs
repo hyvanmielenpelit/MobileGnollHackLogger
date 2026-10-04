@@ -672,7 +672,9 @@ public class BenchmarkBatteryAnalysisService
                 runs.Count,
                 runs.Max(r => r.TotalQuestionCount),
                 suite.Excluded,
-                PanelVerificationClearedLifts(runs)));
+                PanelVerificationClearedLifts(runs),
+                PanelPairs(runs),
+                PanelDisagreementCount(runs)));
         }
 
         var outOfRange = loaded.Excluded
@@ -696,24 +698,91 @@ public class BenchmarkBatteryAnalysisService
 
     /// <summary>
     /// Per usable panel run with a published Intelligence Index, its panel verification-cleared
-    /// Accuracy sensitivity over its own answers, under its own scoring profile, minus that index:
-    /// zero when no answer qualifies. Empty when no run is a panel run.
+    /// Accuracy sensitivity over its own answers, under its own scoring profile, as the unrounded
+    /// lifted index minus the unrounded index of the stored panel scores, so a lift rounding would
+    /// hide still counts: zero when no answer qualifies. Empty when no run is a panel run.
     /// </summary>
     internal static IReadOnlyList<double> PanelVerificationClearedLifts(IReadOnlyList<BenchmarkRun> runs)
     {
         var lifts = new List<double>();
         foreach (var run in runs)
         {
-            if (!BenchmarkRunFinalizer.IsPanelRun(run) || run.QualityIndex is not int published) continue;
+            if (!BenchmarkRunFinalizer.IsPanelRun(run) || run.QualityIndex is not int) continue;
 
             var sensitivity = BenchmarkPanelSensitivity.Compute(
                 run,
                 (run.Answers ?? new List<BenchmarkRunAnswer>()).ToList(),
                 BenchmarkScoring.ConstantsFromSnapshot(run.ScoringProfileSnapshotJson));
-            lifts.Add((sensitivity.Index ?? published) - published);
+            lifts.Add(sensitivity.UnroundedIndex is double lifted && sensitivity.UnroundedPublished is double stored
+                ? lifted - stored
+                : 0.0);
         }
 
         return lifts;
+    }
+
+    /// <summary>
+    /// Every answer of the usable panel runs that counts toward the quality index, as the battery
+    /// panel agreement block reads it: the member scores where both members scored, and the reference
+    /// reader's score and offset as the run report computes them. Empty when no run is a panel run.
+    /// </summary>
+    internal static IReadOnlyList<BenchmarkBatteryPanelPair> PanelPairs(IReadOnlyList<BenchmarkRun> runs)
+    {
+        var pairs = new List<BenchmarkBatteryPanelPair>();
+        foreach (var run in runs)
+        {
+            if (!BenchmarkRunFinalizer.IsPanelRun(run)) continue;
+
+            var answers = (run.Answers ?? new List<BenchmarkRunAnswer>())
+                .Where(BenchmarkRunFinalizer.CountsTowardQualityIndex)
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            bool readerGraded = run.SecondOpinionAssessorModelConfigurationId.HasValue
+                && answers.Any(a => a.SecondOpinionQualityScore.HasValue);
+
+            foreach (var answer in answers)
+            {
+                bool bothScored = answer.AssessmentStatus == BenchmarkAssessmentStatus.Scored
+                    && answer.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
+                    && answer.QualityScore.HasValue
+                    && answer.CoAssessmentQualityScore.HasValue;
+
+                double? panel = BenchmarkScoring.IndexQuality(answer, isPanelRun: true);
+                double? reader = null;
+                if (readerGraded && panel.HasValue)
+                {
+                    if (answer.SecondOpinionQualityScore is int readerScore) reader = readerScore;
+                    else if (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(answer)) reader = panel;
+                }
+
+                double? offset = readerGraded
+                    && answer.SecondOpinionQualityScore is int covered
+                    && answer.PanelQualityScore is double panelScore
+                    && !string.Equals(answer.SecondOpinionTrigger, "Manual", StringComparison.Ordinal)
+                        ? covered - panelScore
+                        : null;
+
+                pairs.Add(new BenchmarkBatteryPanelPair(
+                    bothScored ? answer.QualityScore : null,
+                    bothScored ? answer.CoAssessmentQualityScore : null,
+                    reader,
+                    offset,
+                    answer.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(answer.Difficulty)));
+            }
+        }
+
+        return pairs;
+    }
+
+    /// <summary>The sum of the usable panel runs' disagreement counts; null when none recorded one.</summary>
+    internal static int? PanelDisagreementCount(IReadOnlyList<BenchmarkRun> runs)
+    {
+        var counts = runs
+            .Where(BenchmarkRunFinalizer.IsPanelRun)
+            .Where(r => r.PanelDisagreementCount.HasValue)
+            .Select(r => r.PanelDisagreementCount!.Value)
+            .ToList();
+        return counts.Count > 0 ? counts.Sum() : null;
     }
 
     /// <summary>The battery-wide speed and cost degrade flags of the M8 verdict, with the differing keys as the reason.</summary>

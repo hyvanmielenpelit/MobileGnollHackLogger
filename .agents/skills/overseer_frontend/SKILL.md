@@ -533,6 +533,21 @@ To find specific popups, look in the corresponding component's `.html` template:
     single footer **Done**; below it a second checklist, *Image details*, one box per run-fact row with
     its own *All* / *None* and count, emitting `detailSelectionChange` and stored as excluded row keys in
     `localStorage['overseer.benchmark.runReport.imageDetails']` (`["board"]` while nothing is stored).
+    The dialog (`frame.frame($width: 60rem)`) is two columns from a 44 rem container width, one below
+    it: *What to show* (the two checklists) and *Image file*, which holds `app-export-format-section`
+    (`model-comparison/`, PNG or WebP with the wizard's WebP quality list; its note says Copy always
+    places a PNG, because `ClipboardItem` rejects WebP) and `app-export-size-section` with
+    `fitLabel="Fit the figures"` and `[showTextSize]="false"` (a box size lays the figures out for its
+    aspect ratio and scales them to fill it; the default, *Fit the figures* at 200 %, reproduces the
+    unboxed images exactly). The footer's `p.kfch-summary` says what Download writes (*Downloads a
+    WebP, 3840 × 2160 px.*; *about* in fit mode, measured by the host's `measureImage`), beside the one
+    **Done**. The settings, `KeyFiguresExportSettings` (`run-report-frame/key-figures-export-settings.ts`),
+    are stored **once for both report dialogs** in
+    `localStorage['overseer.benchmark.keyFigures.export']` (`{ version: 1, format, webpQuality, size }`)
+    and the two sections' open states in `….keyFigures.exportSections`; each host reads them **fresh on
+    every open, copy and download**, never once at construction, so a change made in one dialog applies
+    in the other. The Download buttons' names and tooltips name the format (*… as a WebP image*), and the
+    file extension follows the encoded format (a browser that cannot write WebP saves a PNG and says so).
     The selection is a live filter on both the Summary cards and the image:
     every change emits `selectionChange` at once, and Done, the close button, Escape and light dismiss
     only close. An unselected card, and the whole `.rr-figures` grid when nothing is selected, gets the
@@ -886,7 +901,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     (unknown → *Summary*): **Summary** (*Key figures* with **Choose figures**, **Copy** and **Download**
     over `.rr-figures` `.score-card`s keyed `intelligence`, `critical-errors`, `answered`, `speed`,
     `mean-time`, `wall-time`, `model-cost`, `estimated-cost`, the choices in
-    `overseer.benchmark.batteryRunReport.keyFigures` and `….imageDetails`, the images named through
+    `overseer.benchmark.batteryRunReport.keyFigures` and `….imageDetails`, the download format and size
+    shared with the run report in `overseer.benchmark.keyFigures.export`, the images named through
     `ImageContext.fileStem` `battery-run-<id>`; then the recompute callout and the caveats),
     **Integrity** (a `gh-tag` *Notice* from one getter), **Suites** (the *Profile unevenness* strip to
     two decimals with a click-mode info tip, then `ul.brr-suite-cards[role=list]` labelled by

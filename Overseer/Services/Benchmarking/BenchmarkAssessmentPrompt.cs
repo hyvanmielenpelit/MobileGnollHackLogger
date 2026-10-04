@@ -256,7 +256,15 @@ public static class BenchmarkAssessmentPrompt
     //   critical-error rate with its 95 % Wilson interval, and the correct, partial, incorrect, not
     //   attempted and no-answer counts.
     // Scores are not comparable with v12 on any answer with a critical error or marked not attempted.
-    public const int ScoringMethodVersion = 13;
+    // v14: ACCURACY levels 4 and 5 anchor on statements a player could act on wrongly. A true
+    //   statement is never an imprecision: one less specific than the rubric, or a true condition the
+    //   rubric does not mention, is graded under COMPLETENESS, and a rule stated without a condition
+    //   lowers ACCURACY only when that condition decides the outcome in the question's situation. A
+    //   lowered level must quote the statement and say what in it is false or would mislead.
+    //   Completeness, Conciseness, Readability, the critical-error definition, the weights and the
+    //   level-to-points mapping do not move.
+    // Scores are not comparable with v13 on Accuracy, and therefore on the quality score and every index.
+    public const int ScoringMethodVersion = 14;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -745,8 +753,18 @@ public static class BenchmarkAssessmentPrompt
     ///     printed in the manifest, the tool-call log and the battery Fingerprints column, and a battery
     ///     whose members differ on one gets a provenance caveat; provenance, not a comparability key (H2).
     ///     ScoringMethodVersion stays 13; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v49: the ACCURACY anchors of scoring method 14 (H3). Panel sensitivity is computed unrounded,
+    ///     and the run report prints one decimal when rounding hides a lift (H1). A battery report
+    ///     gains a pooled Panel Agreement block (H2), the report-writer cost note and battery cost
+    ///     labels (H4), and PDF tables that keep header words whole (H5). The report's knowledge-base
+    ///     prose and topic words cover the knowledge base's game topics (H6), a panel run's advisory
+    ///     headline counts the answers flagged on either member (H7), and verifier items the verifier
+    ///     did not answer are counted (H8). The claim verifier gains 3p (batch independent lookups into one round, H10);
+    ///     each answer records the verifier's model calls, their per-call usage and the served tier
+    ///     (H11); grader costs apply each role's service-tier multiplier (H12). Moves with
+    ///     ScoringMethodVersion 14.
     /// </summary>
-    public const string HarnessVersion = "48";
+    public const string HarnessVersion = "49";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -864,12 +882,13 @@ public static class BenchmarkAssessmentPrompt
         // reached for when it could not verify a claim, which is what instruction 8 now forbids.
         // Fabrication is still covered at levels 0-2 and by CRITICAL ERROR.
         sb.AppendLine("- Level 3: Mostly correct; minor inaccuracies or subtle confusion of edge cases.");
-        // Scoring method v11: levels 4-6 anchor on what the answer states, not on its depth, which
-        // the production concise prompt tells the candidate not to produce.
-        sb.AppendLine("- Level 4: Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here.");
-        sb.AppendLine("- Level 5: Accurate, with a single trivial imprecision and nothing a player could act on wrongly.");
+        // Scoring method v14: levels 4 and 5 anchor on statements a player could act on wrongly, and
+        // levels 4-6 on what the answer states, not on its depth.
+        sb.AppendLine("- Level 4: Accurate in substance, with minor imprecisions a player could act on slightly wrongly: a figure stated loosely enough to mislead, a term applied to the wrong thing, or a rule stated without a condition that decides the outcome in the question's situation.");
+        sb.AppendLine("- Level 5: Accurate, with a single trivial imprecision: one statement worded loosely enough to be misread, though nothing a player could act on wrongly.");
         sb.AppendLine("- Level 6: No false or imprecise statement: every claim the answer makes that you can adjudicate is correct as stated.");
         sb.AppendLine("- **ACCURACY grades only what the answer states.** Depth, length, source-level detail and how many mechanics are covered are not ACCURACY criteria. A two-sentence answer in which you find no false or imprecise statement is level 6; what it leaves out is graded under COMPLETENESS. Never withhold an ACCURACY level because the answer lacks precision, nuance, a formula, a figure or a source reference that it did not attempt to give. A claim you cannot adjudicate goes to `unverifiedClaims` (instruction 8): it does not lower the level, and level 6 does not certify it. Every level below 6 must name a statement the answer makes and say what is wrong or imprecise about it.");
+        sb.AppendLine("- **A true statement is never an imprecision.** A statement that is true but less specific than the rubric — \"some\" or \"often\" where the rubric gives a percentage, \"several\" where it lists the items — is graded under COMPLETENESS for what it leaves out, not under ACCURACY. A true condition, exception or qualifier that the rubric does not mention is not an imprecision either; if you believe it false, report it in `unverifiedClaims` (instruction 8). A rule stated without one of its conditions lowers ACCURACY only when that condition decides the outcome in the question's situation, so that a player following the sentence would act wrongly; otherwise the missing condition is a COMPLETENESS omission. Before you lower ACCURACY, quote the statement and say what in it is false or would mislead a player; \"less specific than the rubric\" is not such a reason.");
         // Scoring method v12: an own-knowledge suspicion goes to the claim verifier as an unverified
         // claim and never lowers the level.
         sb.AppendLine($"- **ACCURACY is graded against the rubric and the GAME BOARD only.** A statement you believe false from your own knowledge, which neither the rubric nor the board settles, **does not lower the level**. Report it instead as an entry of `unverifiedClaims`, quoted verbatim from the answer and prefixed `{BenchmarkSuspectedFalseClaim.Prefix}`, with your reason after an em dash (section 7).");

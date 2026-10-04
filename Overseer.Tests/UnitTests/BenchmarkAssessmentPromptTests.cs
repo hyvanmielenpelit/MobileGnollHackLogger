@@ -194,7 +194,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsThirteen()
+    public void ScoringMethodVersion_IsFourteen()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
@@ -215,18 +215,21 @@ public class BenchmarkAssessmentPromptTests
         // "Suspected false: " unverified claim for the verifier instead of lowering the level. v13
         // confirms critical errors: a one-member panel split is settled by the claim verifier, a
         // critical error comes only from the rubric or the board, and an honest abstention marked
-        // notAttempted is raised to the profile's not-attempted floor.
+        // notAttempted is raised to the profile's not-attempted floor. v14 narrows the ACCURACY
+        // anchors: a true statement is never an imprecision, and a lowered level names a statement
+        // a player could act on wrongly.
         // Scores are not comparable across any of those boundaries on the answers they touch, and
         // the report prints the version so a mixed comparison is visible rather than silent.
-        Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyEight()
+    public void HarnessVersion_IsFortyNine()
     {
-        // Harness 48: the panel verification-cleared Accuracy sensitivity and the corpus index
-        // fingerprints.
-        Assert.Equal("48", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 49: the scoring method 14 ACCURACY anchors, unrounded panel sensitivity, the
+        // battery panel agreement block, and the claim verifier's batching instruction and
+        // model-call record.
+        Assert.Equal("49", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -865,14 +868,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs48_ScoringMethodIs13()
+    public void Versions_HarnessIs49_ScoringMethodIs14()
     {
-        Assert.Equal("48", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("49", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 48 changes reports and what a run records, not any score: an advisory panel
-        // sensitivity and the corpus index fingerprints. The scoring method stays 13, and no tool
-        // guide, grader prompt or chat prompt changes.
-        Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // Harness 49 moves with scoring method 14: the grader prompt's ACCURACY anchors change, so
+        // every index is incomparable with method 13. The chat prompt does not change.
+        Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -1096,8 +1098,8 @@ public class BenchmarkAssessmentPromptTests
         string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
             "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
 
-        Assert.Contains("- Level 4: Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here.", prompt);
-        Assert.Contains("- Level 5: Accurate, with a single trivial imprecision and nothing a player could act on wrongly.", prompt);
+        Assert.Contains("- Level 4: Accurate in substance, with minor imprecisions a player could act on slightly wrongly: a figure stated loosely enough to mislead, a term applied to the wrong thing, or a rule stated without a condition that decides the outcome in the question's situation.", prompt);
+        Assert.Contains("- Level 5: Accurate, with a single trivial imprecision: one statement worded loosely enough to be misread, though nothing a player could act on wrongly.", prompt);
         Assert.Contains("- Level 6: No false or imprecise statement: every claim the answer makes that you can adjudicate is correct as stated.", prompt);
         Assert.Contains("- **ACCURACY grades only what the answer states.** Depth, length, source-level detail and how many mechanics are covered are not ACCURACY criteria. A two-sentence answer in which you find no false or imprecise statement is level 6; what it leaves out is graded under COMPLETENESS. Never withhold an ACCURACY level because the answer lacks precision, nuance, a formula, a figure or a source reference that it did not attempt to give. A claim you cannot adjudicate goes to `unverifiedClaims` (instruction 8): it does not lower the level, and level 6 does not certify it. Every level below 6 must name a statement the answer makes and say what is wrong or imprecise about it.", prompt);
         Assert.Contains("An accuracy deduction must name something the answer **states** that is wrong or imprecise.", prompt);
@@ -1106,6 +1108,21 @@ public class BenchmarkAssessmentPromptTests
         Assert.DoesNotContain("Fully accurate; all factual claims align with GnollHack mechanics", prompt);
         Assert.DoesNotContain("demonstrates nuanced understanding of mechanics and interactions", prompt);
         Assert.DoesNotContain("matching C core source code implementation details exactly", prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_ATrueStatementIsNeverAnImprecision_DirectlyAfterTheGradesOnlyBullet()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
+        string nl = Environment.NewLine;
+
+        const string bullet = "- **A true statement is never an imprecision.** A statement that is true but less specific than the rubric — \"some\" or \"often\" where the rubric gives a percentage, \"several\" where it lists the items — is graded under COMPLETENESS for what it leaves out, not under ACCURACY. A true condition, exception or qualifier that the rubric does not mention is not an imprecision either; if you believe it false, report it in `unverifiedClaims` (instruction 8). A rule stated without one of its conditions lowers ACCURACY only when that condition decides the outcome in the question's situation, so that a player following the sentence would act wrongly; otherwise the missing condition is a COMPLETENESS omission. Before you lower ACCURACY, quote the statement and say what in it is false or would mislead a player; \"less specific than the rubric\" is not such a reason.";
+        Assert.Contains(bullet, prompt);
+        Assert.Contains("say what is wrong or imprecise about it." + nl + bullet + nl, prompt);
+
+        // The method-13 anchors excused a missing condition and a loose figure outright.
+        Assert.DoesNotContain("a rule stated without a condition that does not apply here", prompt);
     }
 
     [Fact]

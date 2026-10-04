@@ -1833,7 +1833,8 @@ describe('AdminBenchmarkComponent', () => {
       ctx.monitor.activeRunDetail = run(false);
       let text = component.runDiagnosticsText;
       expect(text).toContain('answers with 0 knowledge base calls: 2 of 2 gradeable');
-      expect(text).toContain('  (prompt-compliant on game-mechanics topics');
+      expect(text).toContain("  (prompt-compliant only on questions outside the knowledge base's listed topics");
+      expect(text).toContain('the list includes item identification and reading the game map)');
       expect(text).not.toContain('the suite has knowledge-base topics');
 
       ctx.monitor.activeRunDetail = run(true);

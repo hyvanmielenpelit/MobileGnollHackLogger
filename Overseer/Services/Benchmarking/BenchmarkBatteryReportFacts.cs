@@ -42,7 +42,10 @@ using Overseer.Models;
 //                                            the persisted usage totals: rulings on the answers' own claims
 //   claims.refutedAnswerSentences            the questions' refuted answer sentences summed, accused ones included
 //   panel.*                                  as for a run, over the member runs; panel.judgeDependentPairs is
-//                                            unavailable
+//                                            unavailable. With the persisted panel agreement block, panel.icc,
+//                                            .meanAbsDelta, .referenceReaderOffset (pooled over the answers both
+//                                            members scored) and .memberAAlone, .memberBAlone, .referenceReaderIndex
+//                                            (composites under the declared weights) are read from it
 //   scoring.*, run.*                         as for a run, over the member runs
 //   peer.X.*                                 index, interval, rank, overlap, speed, cost and runs, as for a run;
 //                                            no paired difference
@@ -409,6 +412,7 @@ public static class BenchmarkBatteryReportFacts
         }
         if (peers.Count > 0) facts.Withhold(k => k == "tools.callsPerQuestion.peerMean", PeerAnswersReason);
         BenchmarkReportFacts.AddPanelFacts(facts, subject, subjectRuns, comparison, peers);
+        AddPanelAgreementFacts(facts, result.PanelAgreement);
         facts.Withhold(k => k == "panel.judgeDependentPairs", JudgeDependentReason);
         BenchmarkReportFacts.AddStyleFact(facts, subjectRuns, subjectStats);
         BenchmarkReportFacts.AddScoringAndProvenanceFacts(facts, subjectRuns);
@@ -1030,6 +1034,49 @@ public static class BenchmarkBatteryReportFacts
             {
                 facts.Unavailable(prefix + "criticalErrorRate", incomplete);
             }
+        }
+    }
+
+    /// <summary>
+    /// The panel facts the battery's persisted panel agreement block states, in place of the means of
+    /// the runs' figures: the pooled ICC, the member-alone and reference-reader composites under the
+    /// declared weights, the reader's offset and the mean absolute difference. Nothing changes when
+    /// the result has no block.
+    /// </summary>
+    private static void AddPanelAgreementFacts(BenchmarkReportFacts.FactList facts, BenchmarkBatteryPanelAgreement? panel)
+    {
+        if (panel == null) return;
+
+        if (panel.IntraclassCorrelation is double icc)
+        {
+            facts.Replace("panel.icc", icc,
+                icc.ToString("0.00", CultureInfo.InvariantCulture)
+                + " (pooled over " + Inv(panel.PairCount ?? 0) + " answers both members scored)");
+        }
+
+        if (panel.MemberAAloneIndex is double memberA)
+        {
+            facts.Replace("panel.memberAAlone", memberA, BenchmarkReportFormat.OneDecimal(memberA) + " / 100");
+        }
+
+        if (panel.MemberBAloneIndex is double memberB)
+        {
+            facts.Replace("panel.memberBAlone", memberB, BenchmarkReportFormat.OneDecimal(memberB) + " / 100");
+        }
+
+        if (panel.ReferenceReaderIndex is double reader)
+        {
+            facts.Replace("panel.referenceReaderIndex", reader, BenchmarkReportFormat.OneDecimal(reader) + " / 100");
+        }
+
+        if (panel.ReferenceReaderOffset is double offset)
+        {
+            facts.Replace("panel.referenceReaderOffset", offset, BenchmarkReportFormat.SignedOneDecimal(offset) + " points");
+        }
+
+        if (panel.MeanAbsoluteDelta is double meanAbs)
+        {
+            facts.Replace("panel.meanAbsDelta", meanAbs, BenchmarkReportFormat.OneDecimal(meanAbs) + " points");
         }
     }
 

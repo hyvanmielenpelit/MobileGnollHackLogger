@@ -166,6 +166,74 @@ public class BenchmarkPdfRendererTests
     }
 
     [Fact]
+    public void AWideTable_KeepsEveryHeaderWordWhole_AndShrinksOnlyItsTextColumns()
+    {
+        // The minimums (89 estimated characters) exceed the A4 text width (about 80), so the text
+        // columns shrink and the five numeric columns keep their minimums.
+        const string wide =
+            "| Question | Topic | Assessed band | Mean score | Critical errors | Refuted answer sentences | Tool calls | Model time |\n"
+            + "|---|---|---|---|---|---|---|---|\n"
+            + "| S1-Q1 | Throwing gems at unicorns, an item-identification-question | Intermediate | 90 | 0 | 0 | 2 | 8.1 s |\n"
+            + "| S1-Q2 | Reading the map | Simple | 72 | 1 | 1 | 3 | 11.0 s |\n";
+        string[] headers = { "Question", "Topic", "Assessed band", "Mean score", "Critical errors", "Refuted answer sentences", "Tool calls", "Model time" };
+
+        var (aligns, widths, constant) = Layout(wide);
+
+        Assert.False(constant);
+        Assert.Equal(
+            new[] { false, false, false, true, true, true, true, true },
+            aligns.Select(a => a == BenchmarkPdfMarkdownComposer.CellAlign.Right).ToArray());
+
+        // A header word in points as the composer estimates it: semibold characters of 5.2 points,
+        // one character of slack, and the cell padding.
+        static double HeaderWordPoints(string header)
+            => (Math.Ceiling(header.Split(' ').Max(w => w.Length) * 1.08) + 1) * 5.2 + 8;
+        for (int c = 0; c < headers.Length; c++)
+        {
+            Assert.True(widths[c] >= HeaderWordPoints(headers[c]) - 0.001,
+                $"Column '{headers[c]}' is {widths[c]} points, narrower than its longest header word ({HeaderWordPoints(headers[c])}).");
+        }
+
+        // The numeric columns sit at their header words; the Topic column gave up the most.
+        for (int c = 3; c < headers.Length; c++)
+        {
+            Assert.Equal(HeaderWordPoints(headers[c]), widths[c], 3);
+        }
+        Assert.True(widths[1] < (24 * 5.2 + 8), "The Topic column did not shrink.");
+    }
+
+    [Fact]
+    public void AShortTable_StartsAndEndsOnOnePage_WhereverThePageBreakFalls()
+    {
+        bool movedPastPageOne = false;
+        for (int filler = 14; filler <= 60; filler += 2)
+        {
+            var markdown = new StringBuilder();
+            for (int i = 1; i <= filler; i++)
+            {
+                markdown.Append("Filler paragraph ").Append(i).Append(" moves the table down the page.\n\n");
+            }
+            markdown.Append("| TABLEHEADMARKER | Value |\n|---|---|\n");
+            for (int row = 1; row <= 4; row++)
+            {
+                markdown.Append("| Row ").Append(row).Append(" of a short table | ").Append(row * 7).Append(" |\n");
+            }
+            markdown.Append("| LASTROWMARKER | 99 |\n");
+
+            byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(), TestContext.Current.CancellationToken);
+
+            using var reader = PdfDocument.Open(pdf);
+            var pages = reader.GetPages().ToList();
+            int head = pages.First(p => Squash(p.Text).Contains("TABLEHEADMARKER", StringComparison.Ordinal)).Number;
+            int last = pages.First(p => Squash(p.Text).Contains("LASTROWMARKER", StringComparison.Ordinal)).Number;
+            Assert.True(head == last, $"With {filler} filler paragraphs the table starts on page {head} and ends on page {last}.");
+            movedPastPageOne |= head > 1;
+        }
+
+        Assert.True(movedPastPageOne, "No filler count pushed the table past page 1, so no page break fell inside it.");
+    }
+
+    [Fact]
     public void ANumericColumn_StaysRightAligned_WhenACellIsNotAvailable()
     {
         var (aligns, _, _) = Layout("| Model | Score |\n|---|---|\n| One | 80 |\n| Two | not available |\n");
@@ -235,7 +303,7 @@ public class BenchmarkPdfRendererTests
         // The Markdown footer is left out; the cover states its facts once.
         Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
         Assert.DoesNotContain(Squash("rendered with format version"), text);
-        Assert.Contains(Squash("PDF layout 4"), text);
+        Assert.Contains(Squash("PDF layout 5"), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.
         Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
@@ -336,7 +404,7 @@ public class BenchmarkPdfRendererTests
         string second = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, changed));
         Assert.Contains("Source" + original[..16], first);
         Assert.Contains("Source" + altered[..16], second);
-        Assert.Contains("PDFlayout4", first);
+        Assert.Contains("PDFlayout5", first);
 
         // A chart with no marker is not drawn and leaves the hash alone.
         string unplaced = AllText(BenchmarkPdfRenderer.RenderMarkdown("Only text.\n", Info(), TestContext.Current.CancellationToken, charts));
@@ -370,9 +438,9 @@ public class BenchmarkPdfRendererTests
     // --- The last section ----------------------------------------------------------------------------
 
     [Fact]
-    public void TheLayoutVersion_IsFour()
+    public void TheLayoutVersion_IsFive()
     {
-        Assert.Equal(4, BenchmarkPdfRenderer.LayoutVersion);
+        Assert.Equal(5, BenchmarkPdfRenderer.LayoutVersion);
     }
 
     private const string ClosingSection =

@@ -484,6 +484,86 @@ public class BenchmarkBatteryStatisticsTests
         }
     }
 
+    // --- Panel agreement --------------------------------------------------------------------------
+
+    /// <summary>One panel pair per answer, member B and the reader as given, and the reader's offset from the panel mean.</summary>
+    private static BenchmarkBatteryPanelPair[] Pairs(int[] difficulties, int[] memberA, int[] memberB, int[] reader)
+        => difficulties
+            .Select((d, i) => new BenchmarkBatteryPanelPair(
+                memberA[i], memberB[i], reader[i], reader[i] - (memberA[i] + memberB[i]) / 2.0, d))
+            .ToArray();
+
+    [Fact]
+    public void PanelAgreement_PoolsTheIccOverEveryPair_AndComposesTheMemberIndicesUnderTheDeclaredWeights()
+    {
+        // Masses 150 and 300, so w = 1/3 and 2/3. Suite A's members agree closely and suite B's do
+        // not, so the pooled ICC is not the mean of the two runs' ICCs.
+        var qa = Questions(SuiteA, 20, 50, 80);
+        var qb = Questions(SuiteB, DifficultiesB);
+        int[] dA = { 20, 40, 60, 80, 50 };
+        int[] dB = { 30, 40, 60, 70, 90 };
+        var pairsA = Pairs(dA, new[] { 60, 70, 80, 90, 50 }, new[] { 62, 71, 79, 92, 49 }, new[] { 65, 70, 75, 95, 55 });
+        var pairsB = Pairs(dB, new[] { 60, 70, 80, 90, 50 }, new[] { 80, 60, 90, 70, 65 }, new[] { 70, 65, 85, 80, 60 });
+
+        var result = BenchmarkBatteryStatistics.Compute(
+            Definition(BenchmarkBatteryWeightingScheme.DifficultyMass, SuiteA, SuiteB),
+            new[]
+            {
+                Input(0, SuiteA, qa, new[] { Run(1101, SuiteA, qa, S(60, 70, 85)) }) with { PanelPairs = pairsA, PanelDisagreementCount = 0 },
+                Input(1, SuiteB, qb, new[] { Run(1201, SuiteB, qb, S(50, 55, 65, 72, 45, 90)) }) with { PanelPairs = pairsB, PanelDisagreementCount = 2 }
+            });
+
+        double wA = result.Weights[0];
+        double wB = result.Weights[1];
+        Assert.Equal(1.0 / 3.0, wA, 9);
+        Assert.Equal(2.0 / 3.0, wB, 9);
+
+        double Composite(Func<BenchmarkBatteryPanelPair, double> score)
+            => wA * Pooled(dA, pairsA.Select(score).ToList()) + wB * Pooled(dB, pairsB.Select(score).ToList());
+
+        var panel = result.PanelAgreement;
+        Assert.NotNull(panel);
+        Assert.Equal(Composite(p => p.MemberA!.Value), panel!.MemberAAloneIndex!.Value, 9);
+        Assert.Equal(Composite(p => p.MemberB!.Value), panel.MemberBAloneIndex!.Value, 9);
+        Assert.Equal(Composite(p => p.ReferenceReader!.Value), panel.ReferenceReaderIndex!.Value, 9);
+
+        var all = pairsA.Concat(pairsB).ToList();
+        Assert.Equal(10, panel.PairCount);
+        Assert.Equal(2, panel.Disagreements);
+        Assert.Equal(all.Average(p => Math.Abs(p.MemberB!.Value - p.MemberA!.Value)), panel.MeanAbsoluteDelta!.Value, 9);
+        Assert.Equal(all.Average(p => p.MemberB!.Value - p.MemberA!.Value), panel.MeanSignedDelta!.Value, 9);
+        Assert.Equal(all.Average(p => p.ReferenceReaderOffset!.Value), panel.ReferenceReaderOffset!.Value, 9);
+
+        double? Icc(IEnumerable<BenchmarkBatteryPanelPair> pairs)
+            => BenchmarkScoring.IntraclassCorrelationAbsolute(pairs.Select(p => (p.MemberA!.Value, p.MemberB!.Value)).ToList());
+        double pooled = Icc(all)!.Value;
+        double meanOfRuns = (Icc(pairsA)!.Value + Icc(pairsB)!.Value) / 2.0;
+        Assert.Equal(pooled, panel.IntraclassCorrelation!.Value, 9);
+        Assert.True(Math.Abs(pooled - meanOfRuns) > 0.01, $"Pooled {pooled} and the mean of the runs' ICCs {meanOfRuns} should differ.");
+    }
+
+    [Fact]
+    public void PanelAgreement_IsNull_WithoutPanelPairs_AndAMemberIndexIsNull_WhenASuiteHasNone()
+    {
+        var qa = Questions(SuiteA, 20, 50, 80);
+        var qb = Questions(SuiteB, DifficultiesB);
+        var definition = Definition(BenchmarkBatteryWeightingScheme.DifficultyMass, SuiteA, SuiteB);
+        var inputA = Input(0, SuiteA, qa, new[] { Run(1101, SuiteA, qa, S(60, 70, 85)) });
+        var inputB = Input(1, SuiteB, qb, new[] { Run(1201, SuiteB, qb, S(50, 55, 65, 72, 45, 90)) });
+
+        Assert.Null(BenchmarkBatteryStatistics.Compute(definition, new[] { inputA, inputB }).PanelAgreement);
+
+        var pairs = Pairs(new[] { 20, 40, 60, 80, 50 }, new[] { 60, 70, 80, 90, 50 }, new[] { 62, 71, 79, 92, 49 }, new[] { 65, 70, 75, 95, 55 });
+        var panel = BenchmarkBatteryStatistics.Compute(definition, new[] { inputA with { PanelPairs = pairs }, inputB }).PanelAgreement;
+
+        Assert.NotNull(panel);
+        Assert.Null(panel!.MemberAAloneIndex);
+        Assert.Null(panel.ReferenceReaderIndex);
+        Assert.Equal(5, panel.PairCount);
+        Assert.Null(panel.Disagreements);
+        Assert.NotNull(panel.IntraclassCorrelation);
+    }
+
     // --- M6: cost ---------------------------------------------------------------------------------
 
     private static BenchmarkGroupRunCost Cost(long runId, double candidate, double assessor)

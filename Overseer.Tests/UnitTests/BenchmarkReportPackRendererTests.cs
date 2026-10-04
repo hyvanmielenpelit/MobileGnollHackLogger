@@ -1198,9 +1198,33 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheFormatVersion_IsTen()
+    public void TheFormatVersion_IsEleven()
     {
-        Assert.Equal(10, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(11, BenchmarkReportPackRenderer.ReportFormatVersion);
+    }
+
+    [Fact]
+    public void ABatteryPerQuestionTable_LeavesOutTheRunsColumn_WhenOneRunScoredEachQuestion()
+    {
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var sheet = BatteryReportFixture.Sheet();
+        foreach (var question in sheet.Questions) question.RunCount = 1;
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = BenchmarkReportPackRenderer.Render(document, options);
+
+        Assert.Contains("| Question | Topic | Assessed band | Authored | Mean score | Critical errors | Refuted answer sentences | Tool calls | Model time |\n"
+            + "|---|---|---|---|---|---|---|---|---|\n", text);
+        Assert.Contains("| S2-Q1 | Breaking a thrown gem | Intermediate | — | 25 | 1 | 1 | 5 | 15.2 s |\n", text);
+        Assert.DoesNotContain("Runs scored", text);
+        Assert.Contains("*One member run scored each question, so each mean score is that run's score; its critical errors count whether that run had a critical error.*", text);
+
+        // Two runs per question keep the column and the pooled wording.
+        string pooled = BenchmarkReportPackRenderer.Render(BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport), options);
+        Assert.Contains("| Mean score | Runs scored | Critical errors |", pooled);
+        Assert.Contains("| S2-Q1 | Breaking a thrown gem | Intermediate | — | 25 | 2 | 1 | 1 | 5 | 15.2 s |\n", pooled);
+        Assert.Contains("*Each question's mean score is over the member runs that scored it; its critical errors count those runs with a critical error.*", pooled);
     }
 
     [Fact]

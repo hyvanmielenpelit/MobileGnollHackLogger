@@ -355,6 +355,33 @@ public static class BenchmarkScoring
 
     public static int? QualityIndex(IEnumerable<(double? QualityScore, int? Difficulty)> items)
     {
+        double? unrounded = QualityIndexUnrounded(items);
+        return unrounded.HasValue
+            ? (int)Math.Round(unrounded.Value, MidpointRounding.AwayFromZero)
+            : null;
+    }
+
+    public static double? QualityIndexUnrounded(IEnumerable<(int? QualityScore, int? Difficulty)> items)
+    {
+        return QualityIndexUnrounded(items?.Select(i => ((double?)i.QualityScore, i.Difficulty))!);
+    }
+
+    public static double? QualityIndexUnrounded(IEnumerable<(int? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndexUnrounded(items?.Select(i => ((double?)i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    public static double? QualityIndexUnrounded(IEnumerable<(double? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndexUnrounded(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    /// <summary>
+    /// The difficulty-weighted Intelligence Index before rounding; <see cref="QualityIndex(IEnumerable{ValueTuple{double?, int?}})"/>
+    /// rounds it half away from zero.
+    /// </summary>
+    public static double? QualityIndexUnrounded(IEnumerable<(double? QualityScore, int? Difficulty)> items)
+    {
         if (items == null) return null;
 
         double weightedSum = 0.0;
@@ -377,7 +404,7 @@ public static class BenchmarkScoring
             return null;
         }
 
-        return (int)Math.Round(weightedSum / weightSum, MidpointRounding.AwayFromZero);
+        return weightedSum / weightSum;
     }
 
     /// <summary>
