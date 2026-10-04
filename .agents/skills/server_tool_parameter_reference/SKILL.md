@@ -518,7 +518,7 @@ advice is to replace a generic word with a more distinctive one.
 |---|---|---|---|---|
 | `wiki_search` | `query` | `category`, `max_results` | `max_results` default 5, **clamped `1..max(1, configured)`, from the run-37 re-run round (2026-09-11)** — mirroring `nethack_wiki_search`'s existing clamp; before this round it was `maxResults > 0 ? maxResults : 5` passed straight to Lucene's hit count with no upper bound | `Tools:wiki_search:MaxResults`, `Tools:wiki_search:PerResultChars` (2500) |
 | `wiki_view` | `article` | `section` | none | none |
-| `nethack_wiki_search` | `query` | `namespace_filter` (`article`\|`source`\|`category`\|`forum`\|`help`\|`nethackwiki`), `max_results` | `max_results` default **3** (tool-level, distinct from the config ceiling below), clamped `1..max(1, configured)` | `Tools:nethack_wiki_search:MaxResults` (5), `Tools:nethack_wiki_search:PerResultChars` (3000, **from harness 18**) |
+| `nethack_wiki_search` | `query` | `max_results`. **From the 2026-10-04 converter round** there is no `namespace_filter`: the corpus holds only `article` pages, the parameter is gone from the schema, and a call that still passes it gets the unfiltered result. Before that round it took `namespace_filter` (`article`\|`source`\|`category`\|`forum`\|`help`\|`nethackwiki`) | `max_results` default **3** (tool-level, distinct from the config ceiling below), clamped `1..max(1, configured)` | `Tools:nethack_wiki_search:MaxResults` (5), `Tools:nethack_wiki_search:PerResultChars` (3000, **from harness 18**) |
 | `nethack_wiki_view` | `article` | `section` | none | none |
 
 > 🛑 **`wiki_search`'s `category` filter is not a stored taxonomy field.** It compiles to
@@ -535,10 +535,13 @@ advice is to replace a generic word with a more distinctive one.
 > through the unfiltered retry (run 42 T1). In a run stamped 26 or earlier, read every categorised
 > call as effectively unfiltered-or-empty rather than as a narrowed search.
 > `monster_lookup` and `item_lookup` rely on exactly this mechanism (§6) and are built to degrade
-> gracefully — `nethack_wiki_search`'s `namespace_filter`, by contrast, is a real
+> gracefully — `nethack_wiki_search`'s `namespace_filter`, by contrast, was a real
 > `TermQuery` against a `namespace` field parsed from each file's YAML-style frontmatter
 > (default `"article"` when a file has no frontmatter or no `namespace:` key) — the two "category"
-> concepts are not the same mechanism despite the similar name.
+> concepts were not the same mechanism despite the similar name. The tool dropped the parameter in
+> the 2026-10-04 converter round, when the NetHack wiki corpus was cut to main-namespace articles;
+> `NetHackWikiService.GetRelevantContext` still takes a namespace filter, and a run from before
+> that round may show `namespace_filter` arguments that did narrow the search.
 
 **What `wiki_search.md` tells the model about `category`, from harness 35 (the runs 57 and 59 round,
 2026-09-19).** The guide lists the directories and says two things the corpus layout makes true:

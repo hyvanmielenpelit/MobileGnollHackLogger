@@ -274,6 +274,53 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
     }
 
     [Fact]
+    public async Task NetHackWikiSearchTool_ParameterSchema_HasNoNamespaceFilter()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir)
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var searchTool = new NetHackWikiSearchTool(service, config);
+
+        var properties = searchTool.ParameterSchema.GetProperty("properties");
+        Assert.False(properties.TryGetProperty("namespace_filter", out _));
+        Assert.True(properties.TryGetProperty("query", out _));
+        Assert.True(properties.TryGetProperty("max_results", out _));
+    }
+
+    [Fact]
+    public async Task NetHackWikiSearchTool_NamespaceFilterArgument_IsIgnored()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir),
+                new System.Collections.Generic.KeyValuePair<string, string?>("MaxNetHackWikiFileSizeKB", "200")
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var searchTool = new NetHackWikiSearchTool(service, config);
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
+
+        var unfiltered = await searchTool.ExecuteAsync(
+            JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement, context, CancellationToken.None);
+        var filtered = await searchTool.ExecuteAsync(
+            JsonDocument.Parse("{\"query\": \"cockatrice\", \"namespace_filter\": \"source\"}").RootElement, context, CancellationToken.None);
+
+        Assert.True(unfiltered.Success);
+        Assert.True(filtered.Success);
+        Assert.Contains("Cockatrice", filtered.Content);
+        Assert.Equal(unfiltered.Content, filtered.Content);
+    }
+
+    [Fact]
     public async Task NetHackWikiViewTool_ExecutesArticleView_ReturnsContent()
     {
         var config = new ConfigurationBuilder()

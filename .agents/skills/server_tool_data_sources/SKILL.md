@@ -132,7 +132,7 @@ Verified against `WikiService`, `NetHackWikiService`, `SourceCodeService`,
 |---|---|---|---|---|---|---|---|---|---|
 | GnollHack wiki | `WikiPath` | User Secrets | `WikiService` | `.md`, `.txt`, `.html`, all subdirectories | Any file over the size limit, dropped with no log line. An unconfigured key falls back to a hardcoded literal rather than no-opping. **From the run-30 round**: any file whose path relative to the wiki root has a segment beginning with `.` (e.g. `.agents`, `.plans`, `.vscode`) is skipped outright; the skipped count is logged once per index pass | `MaxWikiFileSizeKB` · **100** (this key is set in User Secrets, so the effective value is not the default) | ~10 min Git HEAD poll | yes | `WikiHeadSha`; index `gnollhackWiki` (harness 48+) |
 | GnollHack source | `SourceCodePath` | User Secrets | `SourceCodeService` | Under `src`, `include`, `dat`, `win\win32\xpl` **only**: `.c`, `.h`, `.des`, `.txt`; plus `.cs` and `.xaml`, indexed but flagged `IsNetCode` and hidden unless a tool opts in | Everything outside those four directories. `vis_tab.c`, `vis_tab.h`, `date.h`; any file ending `conf.h`; any `win*.h` except `wintype.h` and `winprocs.h`; any `mac*.h`; any `qt*.h`. Any file over the size limit. **From the run-32 round**: any file whose path relative to the repository root has a segment beginning with `.` is skipped (one Visual Studio `.vs` cache file under `win\win32\xpl` was indexed before it); the skipped count is logged once per index pass. The indexer is shared, so the NetHack source skips them too. **From the run-36 round**: any segment equal to `bin` or `obj` (case-insensitive), counted in the same log line | `MaxSourceFileSizeKB` · **800** (set in neither `appsettings.json` nor User Secrets, so the default applies) | ~10 min Git HEAD poll, plus makedefs header regeneration | yes | `SourceCodeHeadSha`; index `gnollhackSource` (harness 48+) |
-| NetHack wiki | `NetHackWikiPath` | `appsettings.json` — `c:\hmp\nethackwiki` | `NetHackWikiService` | `.md` only, all subdirectories; YAML frontmatter `title` / `namespace` / `summary` parsed into searchable fields | Every non-`.md` file, including the generated `_index.json`. Any file over the size limit. A per-file read or parse error is logged and the article is skipped | `MaxNetHackWikiFileSizeKB` · **500**; `appsettings.json` also sets 500 | **startup only — no timer** | **no — generated, not versioned** | index `nethackWiki` (harness 48+); no HEAD |
+| NetHack wiki | `NetHackWikiPath` | `appsettings.json` — `c:\hmp\nethackwiki` | `NetHackWikiService` | `.md` only, all subdirectories; YAML frontmatter `title` / `namespace` / `summary` parsed into searchable fields. **From the 2026-10-04 converter round** the tree holds only English main-namespace game articles (`namespace: article`): the converter skips the `Source:`, `Forum:`, `Category:`, `Help:` and `NetHackWiki:` namespaces and the non-English, variant-only and non-game articles, and lists every skipped title in `_conversion_report.json` | Every non-`.md` file, including the generated `_index.json` and `_conversion_report.json`. Any file over the size limit. A per-file read or parse error is logged and the article is skipped | `MaxNetHackWikiFileSizeKB` · **500**; `appsettings.json` also sets 500 | **startup only — no timer** | **no — generated, not versioned** | index `nethackWiki` (harness 48+); no HEAD |
 | NetHack source | `NetHackSourceCodePath` | `appsettings.json` — `C:\repos\NetHack\NetHack` | `NetHackSourceCodeService` (derives from `SourceCodeService`) | Under `src`, `include`, `dat` only — **`win\win32\xpl` is not a target directory here** — otherwise the same extension rules | The same filename exclusions as above. Also: no makedefs header regeneration, no structured game-data parse (`monst.c` / `objects.c` macros), no flag descriptions — so the structured stats tools have nothing to read for NetHack and only the raw search and view tools work | `MaxSourceFileSizeKB` · **800** (shared with the GnollHack source; one key governs both) | ~10 min Git HEAD poll | yes | index `nethackSource` (harness 48+); no HEAD |
 | Knowledge base | `KbPath` | User Secrets | `KnowledgeBaseService` | `.md` under **`<KbPath>\Content`**, all subdirectories; topic id is the path relative to `Content` without the extension | Everything outside `Content` — a `Content` directory that does not exist logs a warning and loads **zero** articles. **No size limit at all** | none | ~10 min Git HEAD poll on `KbPath` | yes | `KnowledgeBaseHeadSha`; index `knowledgeBase` (harness 48+) |
 | Dumplog store | `DumpLogPath` | User Secrets | none — `SearchServerDumplogsTool` reads on demand, per call | `<DumpLogPath>\<game.Name>\gnollhack.<game.Name>.<StartTimeUTC>.txt`, located from `GameLog` rows | Any file not matching that exact name. Games older than the newest `BatchSize × MaxBatches` rows — **100 × 5 = 500** by `Tools:search_server_dumplogs` in `appsettings.json`. An unconfigured key returns `Success = false`, *not* "not found" | none | none — read live from disk on every call, so never stale and never warm | no | **none** |
@@ -242,7 +242,10 @@ filing it as a model knowledge gap would be wrong.
 Measured in the same pass: **zero** files exceed either wiki limit — the largest GnollHack wiki
 file is 58.6 KB against a 100 KB default, and the largest of 9,323 NetHack wiki articles is
 402.4 KB against 500 KB. **The wiki size limits are not presently a gap.** Re-measure rather than
-citing this; a single regeneration can change it.
+citing this; a single regeneration can change it. **The NetHack wiki half of this measurement
+predates the 2026-10-04 converter round**, which regenerated the tree to about 2,500 articles and
+dropped the `Source:` pages that held the largest files: re-measure it after that regeneration, or
+read `quality.largest_file` in the tree's `_conversion_report.json`.
 
 **Measured 2026-09-11**: 483 of the 781 candidates were git-ignored build output under
 `win\win32\xpl\**\(bin|obj)` — 480 `.txt` and 3 `.h` — indexed since at least 2026-09-09 and
@@ -389,17 +392,22 @@ they are not restated here.
 
 **The procedure of record is `Overseer/Scripts/NetHackWiki/README.md`**, next to the converter
 `Overseer/Scripts/NetHackWiki/convert_nethackwiki_dump_md.py`. Follow that file — it carries the
-prerequisites, the dump source, the invocation, the test-titles mode and the namespace table. Do
-not re-derive the command from this skill.
+prerequisites, the dump location, the invocation, the test-titles mode, what is converted and the
+conversion report. Do not re-derive the command from this skill.
 
-Three rules this repository adds, and none of them is optional:
+Four rules this repository adds, and none of them is optional:
 
 1. **Articles are never hand-edited.** The converter is the only writer. A manual edit is erased by
    the next regeneration with no trace and no diff, because the tree is not under version control.
 2. **The existing tree is backed up first**, to a new subdirectory of `C:\Backup\NetHack Wiki`
    named for the backup's date and time. The converter writes into the target directory and
    nothing else holds a copy.
-3. **Overseer is restarted afterwards**, or nothing is re-indexed — `NetHackWikiService` is
+3. **The old generated files are removed after the backup is verified** — the top-level `*.md`,
+   `_index.json` and `_conversion_report.json`, once the directory is confirmed to hold no
+   subdirectories and no other file types. The converter writes and never deletes, so without
+   this step an article the new dump no longer has, or the converter no longer converts, stays in
+   the index as a stale page.
+4. **Overseer is restarted afterwards**, or nothing is re-indexed — `NetHackWikiService` is
    startup-only (§ 7), so every NetHack wiki tool keeps answering out of the previous tree.
 
 > 🛑 **The backup directory's name is the only durable record of when a regeneration happened.**

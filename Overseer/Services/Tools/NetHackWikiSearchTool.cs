@@ -40,11 +40,6 @@ namespace Overseer.Services.Tools
                         ""type"": ""string"",
                         ""description"": ""The search terms to look up in the NetHack wiki""
                     },
-                    ""namespace_filter"": {
-                        ""type"": ""string"",
-                        ""enum"": [""article"", ""source"", ""category"", ""forum"", ""help"", ""nethackwiki""],
-                        ""description"": ""Optional. Filter results to a specific namespace. Default: search all namespaces.""
-                    },
                     ""max_results"": {
                         ""type"": ""integer"",
                         ""description"": ""Optional. Maximum number of articles to return (default 3, max 5)""
@@ -79,13 +74,8 @@ namespace Overseer.Services.Tools
             }
             maxResults = Math.Clamp(maxResults, 1, Math.Max(1, _configuredMaxResults));
 
-            string? namespaceFilter = null;
-            if (parameters.TryGetProperty("namespace_filter", out var nsElem))
-            {
-                namespaceFilter = nsElem.GetString();
-            }
-
-            var results = _netHackWikiService.GetRelevantContext(query, namespaceFilter, maxResults)
+            // The corpus holds main-namespace articles only, so a namespace_filter argument is ignored.
+            var results = _netHackWikiService.GetRelevantContext(query, null, maxResults)
                 .Select(CapArticle);
             var content = string.Join("\n\n", results);
 

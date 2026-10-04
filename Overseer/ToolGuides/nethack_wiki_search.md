@@ -12,13 +12,9 @@ Do NOT use this tool when:
 - You need monster/item stats from GnollHack source — use get_monster_stats/get_item_stats
 - You need GnollHack source code — use source_code_search/source_code_view
 
-You can filter by namespace:
-- "article" — main encyclopedic articles (most useful)
-- "source" — annotated NetHack source code pages
-- "category" — category description pages
-- "forum" — community discussion topics
-- "help" — wiki help pages
-- "nethackwiki" — internal wiki pages
+The corpus holds the English main-namespace articles of nethackwiki.com about NetHack itself;
+variant-only articles, articles without game content (community, tournaments, websites,
+development), source-code pages, and forum and wiki administration pages are not included.
 
 Returns up to 5 articles (default 3), each capped at 3,000 characters with a truncation note
 pointing at nethack_wiki_view; the whole result is never cut mid-article.
