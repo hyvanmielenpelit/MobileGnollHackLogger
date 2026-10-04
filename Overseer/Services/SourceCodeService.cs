@@ -60,6 +60,9 @@ namespace Overseer.Services
 
         public bool IsIndexingComplete => _isIndexingComplete;
 
+        /// <summary>What the index the tools currently read holds, generated headers included; null until the first pass finishes.</summary>
+        public CorpusContentFingerprint? ContentFingerprint { get; private set; }
+
         protected virtual string[] TargetDirectories => new[] { "src", "include", "dat", @"win\win32\xpl" };
         
         public SourceCodeService(IConfiguration configuration, ILogger<SourceCodeService> logger)
@@ -426,6 +429,13 @@ namespace Overseer.Services
                 {
                     _constants[kvp.Key] = kvp.Value;
                 }
+
+                var fingerprint = new CorpusContentFingerprintBuilder();
+                foreach (var doc in newDocuments.Values)
+                {
+                    fingerprint.Add(doc.RelativePath, string.Join("\n", doc.ContentLines));
+                }
+                ContentFingerprint = fingerprint.Build();
                 
                 // Update SHA
                 _lastHeadSha = GitHelper.GetGitHeadSha(_sourceCodePath) ?? string.Empty;

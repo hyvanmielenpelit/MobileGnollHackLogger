@@ -23,6 +23,9 @@
     }
   </ng-template>
 
+  <!-- A stat tile's value that is not known yet. -->
+  <ng-template #notAvailable><span aria-hidden="true">—</span><span class="visually-hidden">not available yet</span></ng-template>
+
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
@@ -151,6 +154,40 @@
             <dt>Failed</dt>
             <dd>{{ run.failedMemberCount }}</dd>
           </div>
+          <div class="run-stat bp-stat-mean-answer">
+            <dt>Mean answer</dt>
+            <dd>
+              @if (meanAnswerLabel; as value) {
+                {{ value }}
+              } @else {
+                <ng-container [ngTemplateOutlet]="notAvailable" />
+              }
+              <span class="bp-stat-note">model time, tools excluded</span>
+            </dd>
+          </div>
+          <div class="run-stat bp-stat-candidate-cost">
+            <dt>Candidate cost</dt>
+            <dd>
+              @if (candidateCostLabel; as value) {
+                {{ value }}
+              } @else {
+                <ng-container [ngTemplateOutlet]="notAvailable" />
+              }
+            </dd>
+          </div>
+          <div class="run-stat bp-stat-total-cost">
+            <dt>Total cost</dt>
+            <dd>
+              @if (totalCostLabel; as value) {
+                {{ value }}
+              } @else {
+                <ng-container [ngTemplateOutlet]="notAvailable" />
+              }
+              @if (totalCostNote; as note) {
+                <span class="bp-stat-note">{{ note }}</span>
+              }
+            </dd>
+          </div>
           @if (overallIndexShown) {
             <div class="run-stat bp-stat-index">
               <dt>Overall Index</dt>
@@ -158,6 +195,30 @@
             </div>
           }
         </dl>
+
+        <!-- The per-role split, summed server-side over the non-superseded members; closed by default. -->
+        @if (run.liveCost; as cost) {
+          <details class="gh-disclosure bp-cost-details">
+            <summary>Cost by role</summary>
+            <div class="gh-disclosure-body">
+              <app-benchmark-cost-panel
+                variant="live"
+                [total]="cost.total"
+                [candidate]="cost.candidate"
+                [assessor]="cost.assessor"
+                [coAssessor]="cost.coAssessor"
+                [panel]="isPanelBattery"
+                [secondOpinion]="cost.secondOpinion"
+                [claimVerifier]="cost.claimVerifier"
+                [synthesis]="cost.synthesis"
+                [coSynthesis]="cost.coSynthesis"
+                [grading]="cost.grading"
+                [reportWriter]="reportWriterCost"
+                [pricingSource]="cost.pricingSource"
+                [pricingIncomplete]="cost.pricingIncomplete"></app-benchmark-cost-panel>
+            </div>
+          </details>
+        }
 
         <div class="bp-grid-wrap">
           <table class="bp-grid">

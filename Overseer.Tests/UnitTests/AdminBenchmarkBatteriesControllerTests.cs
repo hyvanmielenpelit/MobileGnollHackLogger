@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
 using Overseer.Models;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
 using Xunit;
@@ -25,7 +26,8 @@ using Xunit;
 /// The battery API: definitions (create, edit, revision and hash), the start refusal of a broken
 /// battery, the outcome-to-status mapping, attaching existing runs (reuse preview, attach,
 /// candidates), delete while a battery run is active, deleting a battery run with and without its
-/// member runs, the battery-run grid and identity, the list sizes, the leaderboard and the
+/// member runs, the battery-run grid and identity, its live cost and mean model time, the list
+/// sizes, the leaderboard and the
 /// ranked-result counts, and the <see cref="AdminBenchmarkController"/> additions (re-run refusal
 /// under an orchestrator claim, the stop-reason text, the run-summary battery fields, the run list size).
 /// </summary>
@@ -997,6 +999,179 @@ public class AdminBenchmarkBatteriesControllerTests
         var after = Assert.IsType<BenchmarkBatteryRunDto>(
             Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
         Assert.Null(after.Members.Single(m => m.RunId == running.Id).Stage);
+    }
+
+    // --- Live cost and mean model time -------------------------------------------------------------
+
+    private static readonly ModelPricing LiveCandidateCard = new(10.00m, 50.00m);
+    private static readonly ModelPricing LiveAssessorCard = new(3.00m, 15.00m);
+
+    /// <summary>A pricing service that returns one fixed card set for every run.</summary>
+    private sealed class FixedPricingService : ModelPricingService
+    {
+        private readonly BenchmarkRunPricing _pricing;
+
+        public FixedPricingService(ApplicationDbContext db, BenchmarkRunPricing pricing)
+            : base(new ModelMetadataService(), db)
+        {
+            _pricing = pricing;
+        }
+
+        public override Task<BenchmarkRunPricing> ResolveForRunAsync(BenchmarkRun run) => Task.FromResult(_pricing);
+    }
+
+    private static BenchmarkRunAnswer TimedAnswer(
+        int orderIndex,
+        long durationMs,
+        long? toolTimeMs,
+        BenchmarkAnswerStatus status = BenchmarkAnswerStatus.Ok) => new()
+    {
+        OrderIndex = orderIndex,
+        QuestionText = $"Q{orderIndex}",
+        AnswerText = "An answer.",
+        Status = status,
+        DurationMs = durationMs,
+        ToolTimeMs = toolTimeMs
+    };
+
+    [Fact]
+    public async Task BatteryRun_LiveFigures_SumTheMembersCostByRole_PoolTheirModelTime_AndAddTheReportWriterCost()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Running);
+        var otherBatteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+
+        // Finished: costed from its finalized columns — candidate $10 + $5, assessor $3.
+        var finished = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        finished.TotalInputTokens = 1_000_000;
+        finished.TotalOutputTokens = 100_000;
+        finished.TotalAssessmentInputTokens = 1_000_000;
+        finished.Answers.Add(TimedAnswer(1, 10_000, 4_000));     // 6,000 ms
+        finished.Answers.Add(TimedAnswer(2, 2_000, null));       // 2,000 ms
+
+        // Running: its columns are still zero, so it is costed from its answer rows — candidate
+        // $5 + $1, assessor $3.
+        var running = await SeedMemberAsync(f, batteryRun, suiteIndex: 1, status: BenchmarkRunStatus.Running, qualityIndex: null);
+        var costed = TimedAnswer(1, 9_000, 1_000);               // 8,000 ms
+        costed.InputTokens = 500_000;
+        costed.OutputTokens = 20_000;
+        costed.AssessmentInputTokens = 1_000_000;
+        running.Answers.Add(costed);
+        running.Answers.Add(TimedAnswer(2, 1_000, 3_000));       // floored at 0 ms
+        running.Answers.Add(TimedAnswer(3, 7_000, 0));           // 7,000 ms
+        running.Answers.Add(TimedAnswer(4, 50_000, null, BenchmarkAnswerStatus.ProviderError));
+
+        // Superseded: neither its cost nor its time counts.
+        var superseded = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        superseded.TotalInputTokens = 2_000_000;
+        superseded.Answers.Add(TimedAnswer(1, 100_000, null));
+        await f.Db.SaveChangesAsync(ct);
+        await SetAddedAtAsync(f, superseded, DateTime.UtcNow, superseded: true);
+
+        var executive = BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.ExecutiveSummary);
+        executive.CostUsd = 0.40m;
+        var technical = BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.TechnicalReport);
+        technical.CostUsd = 0.35m;
+        var otherDocument = BatteryReportHarness.BatteryDocument(otherBatteryRun.Id, BenchmarkReportAudience.ExecutiveSummary);
+        otherDocument.CostUsd = 9.00m;
+        f.Db.BenchmarkReportDocuments.AddRange(executive, technical, otherDocument);
+        await f.Db.SaveChangesAsync(ct);
+
+        var estimator = new BenchmarkRunCostEstimator(new FixedPricingService(
+            f.Db,
+            new BenchmarkRunPricing(Candidate: LiveCandidateCard, Assessor: LiveAssessorCard, ClaimVerifier: null, SecondOpinion: null)));
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct, estimator)).Value);
+
+        var done = dto.Members.Single(m => m.RunId == finished.Id);
+        Assert.Equal(18.00m, done.EstimatedCost);
+        Assert.Equal(15.00m, done.EstimatedCandidateCost);
+        Assert.Equal(4_000.0, done.MeanModelTimeMs!.Value, 9);
+
+        var live = dto.Members.Single(m => m.RunId == running.Id);
+        Assert.Equal(9.00m, live.EstimatedCost);
+        Assert.Equal(6.00m, live.EstimatedCandidateCost);
+        Assert.Equal(5_000.0, live.MeanModelTimeMs!.Value, 9);
+
+        var old = dto.Members.Single(m => m.RunId == superseded.Id);
+        Assert.Null(old.EstimatedCost);
+        Assert.Null(old.EstimatedCandidateCost);
+        Assert.Null(old.MeanModelTimeMs);
+
+        // Pooled over the five Ok answers of the two current members, not the mean of their means.
+        Assert.Equal(5, dto.ModelTimedAnswerCount);
+        Assert.Equal(23_000.0 / 5, dto.MeanModelTimeMs!.Value, 9);
+
+        var cost = Assert.IsType<BenchmarkBatteryLiveCostDto>(dto.LiveCost);
+        Assert.Equal(27.00m, cost.Total);
+        Assert.Equal(21.00m, cost.Candidate);
+        Assert.Equal(6.00m, cost.Assessor);
+        Assert.Equal(6.00m, cost.Grading);
+
+        // A role no member spent anything on has no figure, rather than zero.
+        Assert.Null(cost.SecondOpinion);
+        Assert.Null(cost.ClaimVerifier);
+        Assert.Null(cost.Synthesis);
+        Assert.Null(cost.CoAssessor);
+        Assert.Null(cost.CoSynthesis);
+
+        Assert.False(cost.PricingIncomplete);
+        Assert.Equal("catalog", cost.PricingSource);
+        Assert.Equal(2, cost.PricedMemberCount);
+        Assert.Equal(0.75m, cost.ReportWriterCostUsd);
+
+        // Without an estimator the live cost is absent; the model time does not need one.
+        var unpriced = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
+        Assert.Null(unpriced.LiveCost);
+        Assert.Equal(5, unpriced.ModelTimedAnswerCount);
+
+        // The battery-run list carries none of the live figures.
+        var listed = Assert.IsType<List<BenchmarkBatteryRunDto>>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRuns(null, null, ct)).Value)
+            .Single(r => r.Id == batteryRun.Id);
+        Assert.Null(listed.LiveCost);
+        Assert.Null(listed.MeanModelTimeMs);
+        Assert.Equal(0, listed.ModelTimedAnswerCount);
+        Assert.All(listed.Members, m => Assert.Null(m.EstimatedCost));
+    }
+
+    [Fact]
+    public async Task BatteryRun_LiveCost_IsIncomplete_AndHasNoTotal_WhenAMembersRoleHasNoCard()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+
+        var priced = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        priced.TotalInputTokens = 1_000_000;
+
+        // Its second reader spent tokens against no card.
+        var unpriced = await SeedMemberAsync(f, batteryRun, suiteIndex: 1);
+        unpriced.TotalInputTokens = 1_000_000;
+        unpriced.TotalSecondOpinionInputTokens = 1_000_000;
+        await f.Db.SaveChangesAsync(ct);
+
+        var estimator = new BenchmarkRunCostEstimator(new FixedPricingService(
+            f.Db,
+            new BenchmarkRunPricing(Candidate: LiveCandidateCard, Assessor: LiveAssessorCard, ClaimVerifier: null, SecondOpinion: null)));
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct, estimator)).Value);
+
+        var cost = Assert.IsType<BenchmarkBatteryLiveCostDto>(dto.LiveCost);
+        Assert.True(cost.PricingIncomplete);
+        Assert.Null(cost.Total);
+        Assert.Equal(20.00m, cost.Candidate);
+        Assert.Null(cost.ReportWriterCostUsd);
+        Assert.Null(dto.Members.Single(m => m.RunId == unpriced.Id).EstimatedCost);
+        Assert.Equal(10.00m, dto.Members.Single(m => m.RunId == priced.Id).EstimatedCost);
+
+        // No Ok answer anywhere: no mean, and nothing counted.
+        Assert.Null(dto.MeanModelTimeMs);
+        Assert.Equal(0, dto.ModelTimedAnswerCount);
     }
 
     [Fact]

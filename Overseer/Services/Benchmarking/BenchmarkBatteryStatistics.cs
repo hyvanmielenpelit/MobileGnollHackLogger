@@ -23,6 +23,11 @@ public sealed record BenchmarkBatteryExcludedMember(int SuiteIndex, int Round, l
 /// <param name="UsableMemberCount">Usable members of the suite (M4).</param>
 /// <param name="ExpectedQuestionCount">The members' <c>TotalQuestionCount</c>, for the exam check of M2.</param>
 /// <param name="Excluded">The suite's members left out, with their reasons.</param>
+/// <param name="PanelVerificationClearedLifts">
+/// Per usable panel member run, its panel verification-cleared Accuracy sensitivity
+/// (<see cref="BenchmarkPanelSensitivity"/>) minus its published Intelligence Index: zero when nothing
+/// is lifted. Null or empty when no member is a panel run.
+/// </param>
 public sealed record BenchmarkBatterySuiteInput(
     int SuiteIndex,
     BenchmarkGroupStatisticsResult? Statistics,
@@ -32,7 +37,8 @@ public sealed record BenchmarkBatterySuiteInput(
     IReadOnlyList<double> TtftMs,
     int UsableMemberCount,
     int ExpectedQuestionCount,
-    IReadOnlyList<BenchmarkBatteryExcludedMember> Excluded);
+    IReadOnlyList<BenchmarkBatteryExcludedMember> Excluded,
+    IReadOnlyList<double>? PanelVerificationClearedLifts = null);
 
 /// <summary>
 /// Degradation flags derived from the battery-wide comparability verdict (M8): a speed- or
@@ -194,6 +200,14 @@ public sealed record BenchmarkBatterySuiteProfile
 
     public double? TotalCost { get; init; }
     public double? MeanCostPerRun { get; init; }
+
+    /// <summary>
+    /// Advisory: <see cref="Index"/> plus the mean lift of the suite's usable panel member runs under
+    /// the panel verification-cleared Accuracy sensitivity (<see cref="BenchmarkBatterySuiteInput.PanelVerificationClearedLifts"/>).
+    /// Null when the suite is not complete or no member is a panel run, and on a result stored before
+    /// the figure existed.
+    /// </summary>
+    public double? PanelVerificationClearedIndex { get; init; }
 
     /// <summary>
     /// The suite's full group statistics, kept so a persisted result can be compared with another
@@ -359,6 +373,14 @@ public sealed record BenchmarkBatteryStatisticsResult
 
     /// <summary>The declared scheme first, then every other automatic scheme.</summary>
     public IReadOnlyList<BenchmarkBatterySchemeIndex> WeightingSensitivity { get; init; } = Array.Empty<BenchmarkBatterySchemeIndex>();
+
+    /// <summary>
+    /// Advisory: <c>Σ w_s · I_s</c> under the declared weights with each suite's
+    /// <see cref="BenchmarkBatterySuiteProfile.PanelVerificationClearedIndex"/> in place of its index,
+    /// and the published index for a suite without one. Null when the battery is incomplete or no
+    /// member is a panel run, and on a result stored before the figure existed.
+    /// </summary>
+    public double? PanelVerificationClearedOverall { get; init; }
 
     public IReadOnlyList<BenchmarkBatteryLeaveOneOut> LeaveOneSuiteOut { get; init; } = Array.Empty<BenchmarkBatteryLeaveOneOut>();
 
@@ -596,6 +618,7 @@ public static class BenchmarkBatteryStatistics
         var sensitivity = new List<BenchmarkBatterySchemeIndex>();
         var leaveOneOut = new List<BenchmarkBatteryLeaveOneOut>();
         var dimensions = new List<BenchmarkBatteryDimension>();
+        double? panelVerificationClearedOverall = null;
         double? criticalErrorRate = null;
         BenchmarkBatterySpeedStatistics? speed = null;
         BenchmarkBatteryCostStatistics? cost = null;
@@ -607,6 +630,13 @@ public static class BenchmarkBatteryStatistics
             var stats = inputs.Select(i => i.Statistics!).ToList();
             var suiteIndices = stats.Select(s => s.Index.PointEstimate).ToList();
             double point = WeightedSum(w, suiteIndices);
+
+            if (profiles.Any(p => p.PanelVerificationClearedIndex.HasValue))
+            {
+                panelVerificationClearedOverall = WeightedSum(
+                    w,
+                    Enumerable.Range(0, k).Select(s => profiles[s].PanelVerificationClearedIndex ?? suiteIndices[s]).ToList());
+            }
 
             overall = ComputeOverall(defs, inputs, stats, w, point, caveats);
             caveats.Add(CriticalValueCaveat);
@@ -695,6 +725,7 @@ public static class BenchmarkBatteryStatistics
             BetweenSuiteStandardDeviation = betweenSd,
             BetweenSuiteRange = betweenRange,
             WeightingSensitivity = sensitivity,
+            PanelVerificationClearedOverall = panelVerificationClearedOverall,
             LeaveOneSuiteOut = leaveOneOut,
             Dimensions = dimensions,
             CriticalErrorRate = criticalErrorRate,
@@ -771,6 +802,10 @@ public static class BenchmarkBatteryStatistics
             }
         }
 
+        double? panelVerificationCleared = index.HasValue && input.PanelVerificationClearedLifts is { Count: > 0 } lifts
+            ? index.Value + lifts.Average()
+            : null;
+
         return new BenchmarkBatterySuiteProfile
         {
             SuiteIndex = def.Index,
@@ -799,6 +834,7 @@ public static class BenchmarkBatteryStatistics
             CriticalErrorRate = stats != null && stats.Items.Count > 0 ? stats.Items.Average(i => i.CriticalErrorRate) : null,
             TotalCost = stats?.Cost?.TotalCost,
             MeanCostPerRun = stats?.Cost?.MeanCostPerRun,
+            PanelVerificationClearedIndex = panelVerificationCleared,
             Statistics = stats
         };
     }

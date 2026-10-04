@@ -4698,7 +4698,10 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("Intelligence Index: 75", report);
         Assert.Contains("- **Panel:** mean of both members' per-answer quality. Member A alone: 70 / 100. Member B alone: 80 / 100. Reference reader (advisory): 74 / 100.", report);
-        Assert.Contains("- **Sensitivity figures:** not computed for a panel run.", report);
+        Assert.Contains("- **Panel verification-cleared Accuracy sensitivity:** not computed — no answer qualifies.", report);
+        Assert.Contains("- **Other sensitivity figures:** the contested-verdict, evidence-informed and FORM-cleared sensitivities are not computed for a panel run", report);
+        Assert.Contains("### Panel verification-cleared Accuracy sensitivity: not computed — no answer qualifies.", report);
+        Assert.Contains("### Other Sensitivity Figures: not computed for a panel run", report);
         Assert.Contains("### Panel Member A Alone: 70 / 100", report);
         Assert.Contains("### Panel Member B Alone: 80 / 100", report);
         Assert.Contains("- **Holistic Score, Panel Member A:** 72 / 100", report);
@@ -4706,6 +4709,102 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("### Holistic Score, Panel Member A: 72 / 100", report);
         Assert.Contains("### Holistic Score, Panel Member B: 78 / 100", report);
         Assert.DoesNotContain("Holistic Assessor Score", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsThePanelVerificationClearedSensitivity_WithTheLiftedQuestionsPerMember()
+    {
+        var run = PanelReportRun();
+
+        // Q2: member A charged one sentence and the verifier supported it with a citation; A's
+        // Accuracy 5 lifts to 6, its score to Quality(6, 5, 5, 5) = 94, and the panel score to
+        // (94 + 90) / 2 = 92.
+        var q2 = run.Answers.Single(a => a.OrderIndex == 2);
+        q2.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Prayer timeout starts at 300.", BenchmarkClaimVerdict.Supported, "src/pray.c:120", "The source sets it.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { "A" },
+                AccusedBy = new[] { "A" }
+            }
+        });
+
+        // Q4: member B flagged an unevidenced deduction and every claim it raised was supported; B's
+        // Accuracy 4 lifts to 5, its score to Quality(5, 5, 6, 5) = 88, and the panel score stays 89.
+        var q4 = run.Answers.Single(a => a.OrderIndex == 4);
+        EditMemberB(q4, r => r.Flags!.UnevidencedDeduction = true);
+        q4.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Altars convert on a successful prayer.", BenchmarkClaimVerdict.Supported, "src/pray.c:200", "The source does it.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim },
+                RaisedBy = new[] { "B" }
+            }
+        });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // Panel scores 75 92 82 89 55 at equal weights: 78.6, so 79, against the published 75.
+        const string body = "79 / 100 (published 75) — member A's Accuracy one level higher on Q2, member B's on Q4, where the claim verifier supported every sentence that member charged, or every out-of-rubric claim it raised. Advisory: no score moves. A lower bound: a charge the verifier wrongly refuted is not lifted. Approximate: this run predates harness 44, which records the member that charged or raised each item, so an item without that record counts for both members.";
+        Assert.Contains("- **Panel verification-cleared Accuracy sensitivity:** " + body + Environment.NewLine, report);
+        Assert.Contains("### Panel verification-cleared Accuracy sensitivity: " + body + Environment.NewLine, report);
+        Assert.Contains("- **Other sensitivity figures:** the contested-verdict, evidence-informed and FORM-cleared sensitivities are not computed for a panel run", report);
+
+        // Advisory: no stored score moved.
+        Assert.Equal(75, run.QualityIndex);
+        Assert.Equal(new double?[] { 75, 75, 82, 89, 55 }, run.Answers.OrderBy(a => a.OrderIndex).Select(a => a.PanelQualityScore));
+    }
+
+    [Fact]
+    public void PanelRun_StampedFromHarness44_PrintsNoApproximateNote()
+    {
+        var run = PanelReportRun();
+        run.HarnessVersion = "44";
+        run.Answers.Single(a => a.OrderIndex == 2).ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Prayer timeout starts at 300.", BenchmarkClaimVerdict.Supported, "src/pray.c:120", "The source sets it.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { "A" },
+                AccusedBy = new[] { "A" }
+            }
+        });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Panel verification-cleared Accuracy sensitivity:** 79 / 100 (published 75) — member A's Accuracy one level higher on Q2, where the claim verifier", report);
+        Assert.DoesNotContain("Approximate: this run predates harness 44", report);
+    }
+
+    [Fact]
+    public void Manifest_ListsTheFiveCorpusIndexFingerprints()
+    {
+        var run = PanelReportRun();
+        run.CorpusIndexFingerprintsJson =
+            "{\"gnollhackWiki\":{\"sha256\":\"1a2b3c4d5e6f" + new string('0', 52) + "\",\"fileCount\":410,\"indexedAtUtc\":\"2026-10-04T09:30:00.000Z\"},"
+            + "\"gnollhackSource\":{\"sha256\":\"abcdef012345" + new string('1', 52) + "\",\"fileCount\":1234,\"indexedAtUtc\":\"2026-10-04T09:31:00.000Z\"},"
+            + "\"knowledgeBase\":{\"sha256\":\"0123456789ab" + new string('2', 52) + "\",\"fileCount\":12,\"indexedAtUtc\":\"2026-10-04T09:32:00.000Z\"},"
+            + "\"nethackWiki\":null,"
+            + "\"nethackSource\":{\"sha256\":\"fedcba987654" + new string('3', 52) + "\",\"fileCount\":321,\"indexedAtUtc\":\"2026-10-04T09:33:00.000Z\"}}";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key):" + Environment.NewLine
+            + "  - GnollHack wiki: 1a2b3c4d5e6f (410 files)" + Environment.NewLine
+            + "  - GnollHack source: abcdef012345 (1,234 files)" + Environment.NewLine
+            + "  - Knowledge base: 0123456789ab (12 files)" + Environment.NewLine
+            + "  - NetHack wiki: not indexed yet" + Environment.NewLine
+            + "  - NetHack source: fedcba987654 (321 files)" + Environment.NewLine, report);
+    }
+
+    [Fact]
+    public void Manifest_SaysTheCorpusIndexFingerprintsWereNotRecorded_WhenTheColumnIsNull()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.Contains("- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key): not recorded" + Environment.NewLine, report);
+        Assert.DoesNotContain("  - GnollHack wiki: ", report);
     }
 
     [Fact]
@@ -4923,7 +5022,8 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("Co-Assessor", report);
         Assert.DoesNotContain("Co-Synthesis", report);
         Assert.DoesNotContain("Panel Disclosure", report);
-        Assert.DoesNotContain("Sensitivity figures:** not computed for a panel run", report);
+        Assert.DoesNotContain("not computed for a panel run", report);
+        Assert.DoesNotContain("Panel verification-cleared Accuracy sensitivity", report);
 
         Assert.Contains("### Second Reader", report);
         Assert.Contains("- **Holistic Assessor Score:**", report);
@@ -6173,7 +6273,7 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("- **Critical-error resolution sensitivity (scoring method 13 rule):** " + body + Environment.NewLine, report);
         Assert.Contains("### Critical-error resolution sensitivity (scoring method 13 rule): " + body + Environment.NewLine, report);
 
-        int notComputed = report.IndexOf("- **Sensitivity figures:** not computed for a panel run.", StringComparison.Ordinal);
+        int notComputed = report.IndexOf("- **Other sensitivity figures:** the contested-verdict, evidence-informed and FORM-cleared sensitivities are not computed for a panel run", StringComparison.Ordinal);
         int line = report.IndexOf("- **Critical-error resolution sensitivity", StringComparison.Ordinal);
         int finalIndices = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
         Assert.True(notComputed >= 0 && notComputed < line && line < finalIndices);

@@ -104,7 +104,10 @@ export class BenchmarkDownloadCenterComponent implements OnInit {
     this.dialog?.nativeElement?.close();
   }
 
-  /** The native close event: Escape, Cancel, the close button, or close() from the host. */
+  /**
+   * The native close event: Escape, the close button, or close() from the host. A download in
+   * preparation is abandoned with its requests aborted, and nothing is saved.
+   */
   onDialogClose(): void {
     // The close event is queued: one that arrives after a reopen belongs to the earlier opening.
     if (this.dialog?.nativeElement?.open) {

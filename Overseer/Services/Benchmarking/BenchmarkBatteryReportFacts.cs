@@ -55,6 +55,8 @@ using Overseer.Models;
 //   suite.<n>.name, .weight, .index, .contribution, .interval, .scoredItems, .runs, .speedIndex,
 //   .costPerRun, .criticalErrorRate                 n is the suite's number from 1
 //   sensitivity.<scheme>                             the Overall Index under each weighting scheme
+//   sensitivity.panelVerificationCleared             the advisory panel verification-cleared Overall Index;
+//                                                    absent when no member is a panel run
 //   loo.<n>                                          the Overall Index with suite n left out
 //
 // Questions are numbered 1..N across the battery, suite by suite, and each carries its suite-qualified
@@ -272,6 +274,12 @@ public static class BenchmarkBatteryReportFacts
         string name = scheme.ToString();
         return "sensitivity." + char.ToLowerInvariant(name[0]) + name[1..];
     }
+
+    /// <summary>
+    /// The key of the panel verification-cleared Accuracy sensitivity of the Overall Index
+    /// (<see cref="BenchmarkBatteryStatisticsResult.PanelVerificationClearedOverall"/>).
+    /// </summary>
+    public const string PanelVerificationClearedSensitivityKey = "sensitivity.panelVerificationCleared";
 
     public static BenchmarkBatteryReportFactsResult Build(BenchmarkBatteryReportFactsInput input)
     {
@@ -1033,6 +1041,14 @@ public static class BenchmarkBatteryReportFacts
             facts.Add(SensitivityKey(row.Scheme), row.Index,
                 BenchmarkReportFormat.Whole(row.Index) + " / 100 under the " + SchemeName(row.Scheme) + " weights"
                 + (row.Declared ? " (the declared scheme)" : string.Empty));
+        }
+
+        // Advisory, and only for a battery with a panel member: a battery without one has no such figure.
+        if (result.PanelVerificationClearedOverall is double panelOverall)
+        {
+            facts.Add(PanelVerificationClearedSensitivityKey, panelOverall,
+                BenchmarkReportFormat.Whole(panelOverall) + " / 100 with each panel member's Accuracy one level higher where the claim verifier"
+                + " supported every sentence that member charged, or every out-of-rubric claim it raised; advisory, a lower bound, moves no score");
         }
 
         foreach (var row in result.LeaveOneSuiteOut.GroupBy(r => r.SuiteIndex).Select(g => g.First()))

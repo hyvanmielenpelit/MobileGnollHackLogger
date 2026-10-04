@@ -739,8 +739,14 @@ public static class BenchmarkAssessmentPrompt
     ///     show member B's flags (H3); report wording (H7); battery context in reports (H8); and a
     ///     battery's dimension composite is the panel mean (H9). ScoringMethodVersion stays 13;
     ///     CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v48: a panel run's report states the panel verification-cleared Accuracy sensitivity, member
+    ///     by member, and a battery report its per-suite and composite figure; advisory, no score moves
+    ///     (H1). A run records what each of the five tool corpus indexes held (CorpusIndexFingerprintsJson),
+    ///     printed in the manifest, the tool-call log and the battery Fingerprints column, and a battery
+    ///     whose members differ on one gets a provenance caveat; provenance, not a comparability key (H2).
+    ///     ScoringMethodVersion stays 13; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "47";
+    public const string HarnessVersion = "48";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

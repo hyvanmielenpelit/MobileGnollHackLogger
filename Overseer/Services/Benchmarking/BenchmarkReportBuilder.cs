@@ -558,6 +558,72 @@ public static class BenchmarkReportBuilder
             : $" (quoted: {string.Join(", ", fragments.Select(f => $"\"{f}\""))})";
     }
 
+    /// <summary>
+    /// The panel verification-cleared Accuracy sensitivity clause, bold label closed by <c>:**</c> as
+    /// the other sensitivity clauses are: the recomputed index beside the published one and the
+    /// questions lifted for each member, or "not computed" when no answer qualifies.
+    /// </summary>
+    internal static string PanelSensitivityClause(BenchmarkRun run, PanelSensitivityResult result)
+    {
+        const string Label = "Panel verification-cleared Accuracy sensitivity:**";
+        if (result.Index is not double index)
+        {
+            return $"{Label} not computed — no answer qualifies.";
+        }
+
+        static string Questions(IReadOnlyList<int> orderIndexes) => string.Join(", ", orderIndexes.Select(q => $"Q{q}"));
+
+        var lifted = new List<string>();
+        if (result.LiftedA.Count > 0)
+        {
+            lifted.Add($"member A's Accuracy one level higher on {Questions(result.LiftedA)}");
+        }
+        if (result.LiftedB.Count > 0)
+        {
+            lifted.Add(lifted.Count > 0
+                ? $"member B's on {Questions(result.LiftedB)}"
+                : $"member B's Accuracy one level higher on {Questions(result.LiftedB)}");
+        }
+
+        string published = run.QualityIndex.HasValue ? Inv(run.QualityIndex.Value) : "not published";
+        string approximate = BenchmarkPanelSensitivity.IsApproximate(run)
+            ? $" Approximate: this run predates harness {BenchmarkPanelSensitivity.MemberAttributionHarnessVersion}, which records the member that charged or raised each item, so an item without that record counts for both members."
+            : string.Empty;
+        return $"{Label} {Inv(index, "F0")} / 100 (published {published}) — {string.Join(", ", lifted)}, where the claim verifier supported every sentence that member charged, or every out-of-rubric claim it raised. Advisory: no score moves. A lower bound: a charge the verifier wrongly refuted is not lifted.{approximate}";
+    }
+
+    /// <summary>The display name of a corpus key of <see cref="CorpusIndexFingerprintProvider.CorpusKeys"/>.</summary>
+    internal static string CorpusDisplayName(string key) => key switch
+    {
+        "gnollhackWiki" => "GnollHack wiki",
+        "gnollhackSource" => "GnollHack source",
+        "knowledgeBase" => "Knowledge base",
+        "nethackWiki" => "NetHack wiki",
+        "nethackSource" => "NetHack source",
+        _ => key
+    };
+
+    /// <summary>The first 12 hex characters of a corpus fingerprint.</summary>
+    internal static string ShortCorpusFingerprint(CorpusContentFingerprint fingerprint)
+        => fingerprint.Sha256.Length > 12 ? fingerprint.Sha256[..12] : fingerprint.Sha256;
+
+    /// <summary>
+    /// One line per corpus of a run's <see cref="BenchmarkRun.CorpusIndexFingerprintsJson"/>, in
+    /// <see cref="CorpusIndexFingerprintProvider.CorpusKeys"/> order: <c>GnollHack wiki: 1a2b3c4d5e6f (410 files)</c>,
+    /// or <c>&lt;name&gt;: not indexed yet</c>. Null when the column is not recorded.
+    /// </summary>
+    internal static IReadOnlyList<string>? CorpusFingerprintLines(string? corpusIndexFingerprintsJson)
+    {
+        var fingerprints = CorpusIndexFingerprintProvider.Parse(corpusIndexFingerprintsJson);
+        if (fingerprints == null) return null;
+
+        return CorpusIndexFingerprintProvider.CorpusKeys
+            .Select(key => fingerprints.TryGetValue(key, out var fingerprint) && fingerprint != null
+                ? $"{CorpusDisplayName(key)}: {ShortCorpusFingerprint(fingerprint)} ({Inv(fingerprint.FileCount, "N0")} files)"
+                : $"{CorpusDisplayName(key)}: not indexed yet")
+            .ToList();
+    }
+
     /// <summary>The harness version that first sent sentences docked against the rubric to the claim verifier.</summary>
     private const int RubricChargedVerificationHarnessVersion = 46;
 
@@ -1656,6 +1722,19 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **GnollHack Wiki HEAD SHA:** {run.WikiHeadSha ?? "not recorded"}");
         sb.AppendLine($"- **GnollHack Source HEAD SHA:** {run.SourceCodeHeadSha ?? "not recorded"}");
         sb.AppendLine("  - *Two runs are a reproduction only when `CandidateSystemPromptSha256` matches.*");
+        const string CorpusFingerprintsLabel = "- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key):";
+        if (CorpusFingerprintLines(run.CorpusIndexFingerprintsJson) is { } corpusLines)
+        {
+            sb.AppendLine(CorpusFingerprintsLabel);
+            foreach (string line in corpusLines)
+            {
+                sb.AppendLine($"  - {line}");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"{CorpusFingerprintsLabel} not recorded");
+        }
 
         // A re-run that repairs answers under a system prompt or ToolGuides build different from
         // the run's own leaves the run graded on two instruments rather than one, and this is the
@@ -2187,11 +2266,16 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Outcomes:** {outcomeSummary.CorrectCount} correct, {outcomeSummary.PartialCount} partial, {outcomeSummary.IncorrectCount} incorrect, {outcomeSummary.NotAttemptedCount} not attempted, {outcomeSummary.NoAnswerCount} without an answer · correct when attempted {correctWhenAttempted} · wrong instead of abstaining {wrongInsteadOfAbstaining}");
         }
 
-        // The four sensitivity figures each re-score member A's verdict alone, so a panel run states
-        // once why it has none and points at the member-alone indices instead.
+        // A panel run's verification-cleared Accuracy sensitivity lifts each member on its own
+        // evidence (BenchmarkPanelSensitivity). The other three figures each re-score member A's
+        // verdict alone, so a panel run states once why it has none and points at the member-alone
+        // indices instead. § 7 Final Indices prints the same clauses.
+        string? panelSensitivityClause = null;
         if (isPanelRun)
         {
-            sb.AppendLine("- **Sensitivity figures:** not computed for a panel run. The contested-verdict, evidence-informed, verification-cleared and FORM-cleared sensitivities each re-score member A's verdict alone, which would give one family's judge a correction channel the other does not have; the member-alone indices above bound how much the published index depends on either member.");
+            panelSensitivityClause = PanelSensitivityClause(run, BenchmarkPanelSensitivity.Compute(run, indexAnswers, scoringConstants));
+            sb.AppendLine($"- **{panelSensitivityClause}");
+            sb.AppendLine("- **Other sensitivity figures:** the contested-verdict, evidence-informed and FORM-cleared sensitivities are not computed for a panel run — each re-scores member A's verdict alone, which would give one family's judge a correction channel the other does not have; the member-alone indices above bound how much the published index depends on either member.");
         }
 
         // A panel run scored before method 13: the index the method 13 critical-error rule
@@ -5322,11 +5406,16 @@ public static class BenchmarkReportBuilder
         }
         if (isPanelRun)
         {
-            // The member-alone indices take the sensitivity figures' place: how far the published
-            // index rests on either member.
+            // The member-alone indices take the member-A-only sensitivity figures' place: how far the
+            // published index rests on either member.
             sb.AppendLine($"### Panel Member A Alone: {(run.AssessorOnlyQualityIndex.HasValue ? $"{run.AssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberALabel}, {memberARelation}; advisory, the published index is the panel's.");
             sb.AppendLine($"### Panel Member B Alone: {(run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberBLabel}, {memberBRelation}; advisory, the published index is the panel's.");
-            sb.AppendLine("### Sensitivity Figures: not computed for a panel run — each re-scores member A's verdict alone; see § 2.");
+            // The same clause as § 2, from the same variable.
+            if (panelSensitivityClause != null)
+            {
+                sb.AppendLine($"### {panelSensitivityClause.Replace(":**", ":", StringComparison.Ordinal)}");
+            }
+            sb.AppendLine("### Other Sensitivity Figures: not computed for a panel run — the contested-verdict, evidence-informed and FORM-cleared sensitivities each re-score member A's verdict alone; see § 2.");
         }
         // The same value and clause as § 2, from the same variable.
         if (resolutionSensitivityClause != null)

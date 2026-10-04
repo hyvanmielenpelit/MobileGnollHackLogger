@@ -74,6 +74,34 @@ public class BenchmarkToolCallLogBuilderTests
     }
 
     [Fact]
+    public void Build_HeaderListsTheFiveCorpusIndexFingerprints()
+    {
+        var run = SampleRun();
+        run.CorpusIndexFingerprintsJson =
+            "{\"gnollhackWiki\":{\"sha256\":\"1a2b3c4d5e6f" + new string('0', 52) + "\",\"fileCount\":410,\"indexedAtUtc\":\"2026-10-04T09:30:00.000Z\"},"
+            + "\"gnollhackSource\":{\"sha256\":\"abcdef012345" + new string('1', 52) + "\",\"fileCount\":1234,\"indexedAtUtc\":\"2026-10-04T09:31:00.000Z\"},"
+            + "\"knowledgeBase\":null,\"nethackWiki\":null,\"nethackSource\":null}";
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(run, Array.Empty<BenchmarkRunAnswer>());
+
+        Assert.Contains("- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key):" + Environment.NewLine
+            + "  - GnollHack wiki: 1a2b3c4d5e6f (410 files)" + Environment.NewLine
+            + "  - GnollHack source: abcdef012345 (1,234 files)" + Environment.NewLine
+            + "  - Knowledge base: not indexed yet" + Environment.NewLine
+            + "  - NetHack wiki: not indexed yet" + Environment.NewLine
+            + "  - NetHack source: not indexed yet" + Environment.NewLine, markdown);
+    }
+
+    [Fact]
+    public void Build_HeaderSaysTheCorpusIndexFingerprintsWereNotRecorded_WhenTheColumnIsNull()
+    {
+        string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), Array.Empty<BenchmarkRunAnswer>());
+
+        Assert.Contains("- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key): not recorded", markdown);
+        Assert.DoesNotContain("  - GnollHack wiki: ", markdown);
+    }
+
+    [Fact]
     public void Build_RendersTheLegacyNoRowsSentence_OnARunBeforeHarness17()
     {
         var run = SampleRun();

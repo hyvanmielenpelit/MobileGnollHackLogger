@@ -140,6 +140,27 @@ public static class BenchmarkBatteryReportBuilder
     private static string Short(string? sha)
         => string.IsNullOrWhiteSpace(sha) ? "—" : (sha.Length <= 12 ? sha : sha[..12]);
 
+    /// <summary>The Fingerprints column's label for each corpus key of <see cref="CorpusIndexFingerprintProvider.CorpusKeys"/>, in that order.</summary>
+    private static readonly (string Label, string Key)[] CorpusIndexLabels =
+    {
+        ("WIKI-IDX", "gnollhackWiki"),
+        ("SRC-IDX", "gnollhackSource"),
+        ("KB-IDX", "knowledgeBase"),
+        ("NHW-IDX", "nethackWiki"),
+        ("NHS-IDX", "nethackSource")
+    };
+
+    /// <summary>
+    /// The run's corpus index fingerprints as Fingerprints-column lines, "—" for a corpus not indexed
+    /// yet and for every corpus of a run that did not record them.
+    /// </summary>
+    private static string CorpusIndexFingerprints(BenchmarkRun run)
+    {
+        var fingerprints = CorpusIndexFingerprintProvider.Parse(run.CorpusIndexFingerprintsJson);
+        return string.Join("<br>", CorpusIndexLabels.Select(c =>
+            $"{c.Label} `{Short(fingerprints != null && fingerprints.TryGetValue(c.Key, out var fingerprint) ? fingerprint?.Sha256 : null)}`"));
+    }
+
     private static string Cell(string? text)
         => string.IsNullOrWhiteSpace(text) ? string.Empty : text.Replace("\r", " ").Replace("\n", " ").Replace("|", "\\|").Trim();
 
@@ -552,7 +573,7 @@ public static class BenchmarkBatteryReportBuilder
                 $"| {(run?.QualityIndex.HasValue == true ? run.QualityIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
                 $"| {(run?.SpeedIndex.HasValue == true ? run.SpeedIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
                 $"| {(excludedIds.Contains(row.RunId) ? "no" : "yes")} " +
-                $"| {(run == null ? "—" : $"PROMPT `{Short(run.CandidateSystemPromptSha256)}`<br>GUIDES `{Short(run.ToolGuidesSha256)}`<br>KB `{Short(run.KnowledgeBaseHeadSha)}`<br>WIKI `{Short(run.WikiHeadSha)}`<br>SRC `{Short(run.SourceCodeHeadSha)}`")} |");
+                $"| {(run == null ? "—" : $"PROMPT `{Short(run.CandidateSystemPromptSha256)}`<br>GUIDES `{Short(run.ToolGuidesSha256)}`<br>KB `{Short(run.KnowledgeBaseHeadSha)}`<br>WIKI `{Short(run.WikiHeadSha)}`<br>SRC `{Short(run.SourceCodeHeadSha)}`<br>{CorpusIndexFingerprints(run)}")} |");
         }
         sb.AppendLine();
         sb.AppendLine("*Suite numbers are 1-based positions in the battery definition. Index is the run's stored integer `QualityIndex`; the profile below recomputes each suite from fixed item weights, unrounded.*");
@@ -774,6 +795,24 @@ public static class BenchmarkBatteryReportBuilder
                 $"| {Inv(row.Index, "F2")} |");
         }
         sb.AppendLine();
+
+        if (result.PanelVerificationClearedOverall is double panelOverall)
+        {
+            sb.AppendLine($"### {section}.1 Grading sensitivity (advisory)");
+            sb.AppendLine();
+            sb.AppendLine("The Overall Index with each panel member's Accuracy one level higher where the claim verifier supported every sentence that member charged, or every out-of-rubric claim it raised, under the declared weights; a suite without the figure keeps its published index. It is a lower bound — a charge the verifier wrongly refuted is not lifted — and it moves no score.");
+            sb.AppendLine();
+            sb.AppendLine("| Figure | Published | Panel verification-cleared |");
+            sb.AppendLine("|---|---:|---:|");
+            sb.AppendLine($"| Overall Index (published) | {Inv(result.OverallIndex?.PointEstimate, "F2")} | — |");
+            sb.AppendLine($"| Panel verification-cleared Overall Index | — | {Inv(panelOverall, "F2")} |");
+            foreach (var suite in result.Suites.OrderBy(s => s.SuiteIndex))
+            {
+                sb.AppendLine($"| {Cell(suite.SuiteName)} | {Inv(suite.Index, "F2")} | {Inv(suite.PanelVerificationClearedIndex, "F2")} |");
+            }
+            sb.AppendLine();
+        }
+
         sb.AppendLine("---");
         sb.AppendLine();
     }

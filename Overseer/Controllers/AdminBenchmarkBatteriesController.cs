@@ -493,7 +493,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     /// <c>204 No Content</c> when there is nothing to show, so the client can poll it cheaply.
     /// </summary>
     [HttpGet("runs/active")]
-    public async Task<IActionResult> GetActiveBatteryRun(CancellationToken ct)
+    public async Task<IActionResult> GetActiveBatteryRun(
+        CancellationToken ct,
+        [FromServices] BenchmarkRunCostEstimator? costEstimator = null)
     {
         long? id = _orchestrator.ActiveBatteryRunId;
 
@@ -512,14 +514,21 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         if (id == null) return NoContent();
 
-        var dto = await GetRunDtoAsync(id.Value, ct);
+        var dto = await GetRunDtoAsync(id.Value, ct, includeLiveFigures: true, costEstimator);
         return dto == null ? NoContent() : Ok(dto);
     }
 
+    /// <summary>
+    /// One battery run, with its live cost and mean model time: what the progress dialog polls. The
+    /// live cost is null without a <paramref name="costEstimator"/>.
+    /// </summary>
     [HttpGet("runs/{id:long}")]
-    public async Task<IActionResult> GetBatteryRun(long id, CancellationToken ct)
+    public async Task<IActionResult> GetBatteryRun(
+        long id,
+        CancellationToken ct,
+        [FromServices] BenchmarkRunCostEstimator? costEstimator = null)
     {
-        var dto = await GetRunDtoAsync(id, ct);
+        var dto = await GetRunDtoAsync(id, ct, includeLiveFigures: true, costEstimator);
         return dto == null ? NotFound() : Ok(dto);
     }
 
@@ -823,7 +832,15 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         };
     }
 
-    private async Task<BenchmarkBatteryRunDto?> GetRunDtoAsync(long id, CancellationToken ct)
+    /// <summary>
+    /// One battery run's DTO. With <paramref name="includeLiveFigures"/> it also carries the mean model
+    /// time and, given a <paramref name="costEstimator"/>, the live cost; without, those stay null and 0.
+    /// </summary>
+    private async Task<BenchmarkBatteryRunDto?> GetRunDtoAsync(
+        long id,
+        CancellationToken ct,
+        bool includeLiveFigures = false,
+        BenchmarkRunCostEstimator? costEstimator = null)
     {
         var batteryRun = await _db.BenchmarkBatteryRuns
             .AsNoTracking()
@@ -832,7 +849,180 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         if (batteryRun == null) return null;
 
-        return (await BuildRunDtosAsync(new List<BenchmarkBatteryRun> { batteryRun }, ct)).Single();
+        var dto = (await BuildRunDtosAsync(new List<BenchmarkBatteryRun> { batteryRun }, ct)).Single();
+
+        if (includeLiveFigures)
+        {
+            await SetLiveFiguresAsync(dto, costEstimator, ct);
+        }
+
+        return dto;
+    }
+
+    /// <summary>
+    /// Sets a battery run's live figures over its non-superseded members whose run still exists: each
+    /// member's mean model time and estimated cost, their pooled mean, and their summed cost by role.
+    ///
+    /// <para>Model time is the turn duration less tool time, floored at zero, over Ok answers — the
+    /// single-run dialog's definition — summed in one grouped query. A running member is costed from
+    /// its answer rows, any other from its finalized columns, both through
+    /// <see cref="BenchmarkRunCostEstimator"/>, so a member's figure is the one its own run dialog
+    /// shows.</para>
+    /// </summary>
+    private async Task SetLiveFiguresAsync(
+        BenchmarkBatteryRunDto dto,
+        BenchmarkRunCostEstimator? costEstimator,
+        CancellationToken ct)
+    {
+        var liveMembers = dto.Members.Where(m => !m.Superseded && m.RunStatus != "Deleted").ToList();
+        var runIds = liveMembers.Select(m => m.RunId).Distinct().ToList();
+
+        var times = runIds.Count == 0
+            ? new Dictionary<long, (long Sum, int Count)>()
+            : (await _db.BenchmarkRunAnswers
+                    .AsNoTracking()
+                    .Where(a => runIds.Contains(a.BenchmarkRunId) && a.Status == BenchmarkAnswerStatus.Ok)
+                    .GroupBy(a => a.BenchmarkRunId)
+                    .Select(g => new
+                    {
+                        RunId = g.Key,
+                        Sum = g.Sum(a => a.DurationMs > (a.ToolTimeMs ?? 0L) ? a.DurationMs - (a.ToolTimeMs ?? 0L) : 0L),
+                        Count = g.Count()
+                    })
+                    .ToListAsync(ct))
+                .ToDictionary(x => x.RunId, x => (x.Sum, x.Count));
+
+        long pooledSum = times.Values.Sum(t => t.Sum);
+        int pooledCount = times.Values.Sum(t => t.Count);
+        dto.MeanModelTimeMs = pooledCount > 0 ? (double)pooledSum / pooledCount : null;
+        dto.ModelTimedAnswerCount = pooledCount;
+
+        var estimates = costEstimator == null
+            ? new Dictionary<long, BenchmarkRunCostEstimate>()
+            : await EstimateMemberCostsAsync(runIds, costEstimator, ct);
+
+        foreach (var member in liveMembers)
+        {
+            member.MeanModelTimeMs = times.TryGetValue(member.RunId, out var time) && time.Count > 0
+                ? (double)time.Sum / time.Count
+                : null;
+
+            if (estimates.TryGetValue(member.RunId, out var estimate))
+            {
+                member.EstimatedCost = estimate.Total;
+                member.EstimatedCandidateCost = estimate.Candidate;
+            }
+        }
+
+        if (costEstimator == null) return;
+
+        var all = estimates.Values.ToList();
+
+        // Null when there is no member to sum, or when any member's figure for the role is unknown.
+        decimal? SumOf(Func<BenchmarkRunCostEstimate, decimal?> role)
+            => all.Count == 0 || all.Any(e => role(e) == null) ? null : all.Sum(e => role(e)!.Value);
+
+        var sources = all
+            .Select(e => e.PricingSource)
+            .Where(s => s != null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        dto.LiveCost = new BenchmarkBatteryLiveCostDto
+        {
+            Total = SumOf(e => e.Total),
+            Candidate = SumOf(e => e.Candidate),
+            Assessor = SumOf(e => e.Assessor),
+            CoAssessor = SumOf(e => e.CoAssessor),
+            SecondOpinion = SumOf(e => e.SecondOpinion),
+            ClaimVerifier = SumOf(e => e.ClaimVerifier),
+            Synthesis = SumOf(e => e.Synthesis),
+            CoSynthesis = SumOf(e => e.CoSynthesis),
+            Grading = SumOf(e => e.Grading),
+            PricingIncomplete = all.Any(e => e.PricingIncomplete),
+            PricingSource = sources.Count switch
+            {
+                0 => null,
+                1 => sources[0],
+                _ => "mixed"
+            },
+            PricedMemberCount = all.Count,
+            ReportWriterCostUsd = await LoadReportWriterCostAsync(dto.Id, ct)
+        };
+    }
+
+    /// <summary>
+    /// Each member run's cost estimate, by run id. Only a running run's answers are loaded; any other
+    /// run is costed from its finalized columns, with its served tier read in one projected query.
+    /// </summary>
+    private async Task<Dictionary<long, BenchmarkRunCostEstimate>> EstimateMemberCostsAsync(
+        IReadOnlyCollection<long> runIds,
+        BenchmarkRunCostEstimator costEstimator,
+        CancellationToken ct)
+    {
+        var estimates = new Dictionary<long, BenchmarkRunCostEstimate>();
+        if (runIds.Count == 0) return estimates;
+
+        var finalized = await _db.BenchmarkRuns
+            .AsNoTracking()
+            .Where(r => runIds.Contains(r.Id) && r.Status != BenchmarkRunStatus.Running)
+            .ToListAsync(ct);
+
+        var running = await _db.BenchmarkRuns
+            .AsNoTracking()
+            .Include(r => r.Answers)
+            .Where(r => runIds.Contains(r.Id) && r.Status == BenchmarkRunStatus.Running)
+            .ToListAsync(ct);
+
+        // The served tier as BenchmarkRunFinalizer.ResolveServedServiceTier picks it: the most frequent
+        // non-blank tier the provider reported, case-insensitively.
+        var finalizedIds = finalized.Select(r => r.Id).ToList();
+        var servedTiers = finalizedIds.Count == 0
+            ? new Dictionary<long, string?>()
+            : (await _db.BenchmarkRunAnswers
+                    .AsNoTracking()
+                    .Where(a => finalizedIds.Contains(a.BenchmarkRunId) && a.ActualServiceTierUsed != null)
+                    .Select(a => new { a.BenchmarkRunId, a.ActualServiceTierUsed })
+                    .ToListAsync(ct))
+                .Where(a => !string.IsNullOrWhiteSpace(a.ActualServiceTierUsed))
+                .GroupBy(a => a.BenchmarkRunId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.GroupBy(a => a.ActualServiceTierUsed!, StringComparer.OrdinalIgnoreCase)
+                          .OrderByDescending(t => t.Count())
+                          .Select(t => (string?)t.Key)
+                          .FirstOrDefault());
+
+        foreach (var run in finalized)
+        {
+            estimates[run.Id] = await costEstimator.EstimateAsync(
+                run, BenchmarkRunCostEstimator.TotalsOf(run), servedTiers.GetValueOrDefault(run.Id));
+        }
+
+        foreach (var run in running)
+        {
+            estimates[run.Id] = await costEstimator.EstimateAsync(run);
+        }
+
+        return estimates;
+    }
+
+    /// <summary>
+    /// What the battery run's battery-completion documents cost to write; null when none exists or any
+    /// has no recorded cost.
+    /// </summary>
+    private async Task<decimal?> LoadReportWriterCostAsync(long batteryRunId, CancellationToken ct)
+    {
+        string subjectKey = BenchmarkBatteryReportDocumentService.SubjectKeyOf(batteryRunId);
+
+        var costs = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion)
+            .Select(d => d.CostUsd)
+            .ToListAsync(ct);
+
+        return costs.Count == 0 || costs.Any(c => !c.HasValue) ? null : costs.Sum(c => c!.Value);
     }
 
     private async Task<List<BenchmarkBatteryRunDto>> BuildRunDtosAsync(IReadOnlyList<BenchmarkBatteryRun> batteryRuns, CancellationToken ct)

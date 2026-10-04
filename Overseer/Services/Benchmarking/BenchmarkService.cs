@@ -7967,6 +7967,59 @@ public class BenchmarkService
         {
             run.SourceCodeHeadSha = GitHelper.GetGitHeadSha(sourceCodePath);
         }
+
+        run.CorpusIndexFingerprintsJson = CaptureCorpusIndexFingerprintsJson();
+    }
+
+    /// <summary>
+    /// The current corpus index fingerprints as canonical JSON, or null when no
+    /// <see cref="CorpusIndexFingerprintProvider"/> is available.
+    /// </summary>
+    private string? CaptureCorpusIndexFingerprintsJson()
+    {
+        if (_scopeFactory == null) return null;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var provider = scope.ServiceProvider.GetService<CorpusIndexFingerprintProvider>();
+            return provider == null ? null : SerializeCorpusIndexFingerprints(provider.Snapshot());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Corpus index fingerprints not recorded.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Canonical JSON of a corpus index snapshot: keys in <see cref="CorpusIndexFingerprintProvider.CorpusKeys"/>
+    /// order, camelCase members, <c>indexedAtUtc</c> as ISO-8601, an entry not yet indexed written as null.
+    /// </summary>
+    internal static string SerializeCorpusIndexFingerprints(IReadOnlyDictionary<string, CorpusContentFingerprint?> snapshot)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (string key in CorpusIndexFingerprintProvider.CorpusKeys)
+            {
+                snapshot.TryGetValue(key, out var fingerprint);
+                if (fingerprint == null)
+                {
+                    writer.WriteNull(key);
+                    continue;
+                }
+
+                writer.WriteStartObject(key);
+                writer.WriteString("sha256", fingerprint.Sha256);
+                writer.WriteNumber("fileCount", fingerprint.FileCount);
+                writer.WriteString("indexedAtUtc", fingerprint.IndexedAtUtc.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ", System.Globalization.CultureInfo.InvariantCulture));
+                writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     /// <summary>

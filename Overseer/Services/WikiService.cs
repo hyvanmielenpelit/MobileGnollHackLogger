@@ -34,6 +34,9 @@ public class WikiService : IDisposable
 
     public Task InitializationTask { get; private set; }
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
+
+    /// <summary>What the index the tools currently read holds; null until the first pass finishes.</summary>
+    public CorpusContentFingerprint? ContentFingerprint { get; private set; }
     
     public WikiService(IConfiguration configuration, ILogger<WikiService>? logger = null)
     {
@@ -83,6 +86,7 @@ public class WikiService : IDisposable
         var files = candidates.Where(f => !IsUnderDotDirectory(f)).ToList();
         int skippedDotFiles = candidates.Count - files.Count;
         int indexedCount = 0;
+        var fingerprint = new CorpusContentFingerprintBuilder();
 
         // Porter stemming: title and body tokens match across inflections (material/materials).
         _analyzer = new EnglishAnalyzer(LuceneVersion.LUCENE_48);
@@ -104,9 +108,12 @@ public class WikiService : IDisposable
                     string relativeFile = GetWikiRelativePath(file);
                     string relativePath = StripFileExtension(relativeFile, Path.GetExtension(file));
 
+                    string content = File.ReadAllText(file);
+                    fingerprint.Add(relativeFile, content);
+
                     var doc = new Document();
                     doc.Add(new TextField("title", Path.GetFileNameWithoutExtension(file), Field.Store.YES));
-                    doc.Add(new TextField("content", File.ReadAllText(file), Field.Store.YES));
+                    doc.Add(new TextField("content", content, Field.Store.YES));
                     doc.Add(new StringField("path", file, Field.Store.YES));
                     doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
 
@@ -149,6 +156,7 @@ public class WikiService : IDisposable
             _directory = newDirectory;
             _reader = newReader;
             _searcher = newSearcher;
+            ContentFingerprint = fingerprint.Build();
         }
         
         // Dispose old resources OUTSIDE the lock to avoid blocking queries

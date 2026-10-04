@@ -762,6 +762,15 @@ public class BenchmarkRun
     public string? SourceCodeHeadSha { get; set; }
 
     /// <summary>
+    /// What each tool corpus's index held when the run was stamped: provenance, not a
+    /// comparability key; null means not recorded. A JSON object keyed <c>gnollhackWiki</c>,
+    /// <c>gnollhackSource</c>, <c>knowledgeBase</c>, <c>nethackWiki</c> and <c>nethackSource</c>,
+    /// each value <c>{ sha256, fileCount, indexedAtUtc }</c> or null when that index had not
+    /// finished its first pass.
+    /// </summary>
+    public string? CorpusIndexFingerprintsJson { get; set; }
+
+    /// <summary>
     /// The instrument the most recent re-run (failed-question or single-answer) executed under, recorded separately so the five
     /// fingerprints above keep describing the instrument the run's other answers were produced
     /// under. Those five are the only record that the prompt did not move between two runs, so a

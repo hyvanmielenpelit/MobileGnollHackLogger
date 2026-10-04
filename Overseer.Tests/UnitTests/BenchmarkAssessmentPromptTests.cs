@@ -222,11 +222,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortySeven()
+    public void HarnessVersion_IsFortyEight()
     {
-        // Harness 47: a table header row never anchors an accused quote, and the claim verifier
-        // gains instructions 3n and 3o.
-        Assert.Equal("47", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 48: the panel verification-cleared Accuracy sensitivity and the corpus index
+        // fingerprints.
+        Assert.Equal("48", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -865,14 +865,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs47_ScoringMethodIs13()
+    public void Versions_HarnessIs48_ScoringMethodIs13()
     {
-        Assert.Equal("47", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("48", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 47 changes what reaches the claim verifier and how it reads the source, not any
-        // score: a quoted span's occurrence on a table header row never anchors it, and the verifier
-        // gains instructions 3n and 3o; the rest of the round changes reports and statistics. The
-        // scoring method stays 13, and no tool guide or chat prompt changes.
+        // Harness 48 changes reports and what a run records, not any score: an advisory panel
+        // sensitivity and the corpus index fingerprints. The scoring method stays 13, and no tool
+        // guide, grader prompt or chat prompt changes.
         Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

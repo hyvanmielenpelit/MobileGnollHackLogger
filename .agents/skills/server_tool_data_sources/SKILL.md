@@ -130,11 +130,11 @@ Verified against `WikiService`, `NetHackWikiService`, `SourceCodeService`,
 
 | Corpus | Config key | Key lives in | Owning service | Indexed file types | Silent exclusions | Size limit key · code default | Refresh | Git-backed | Run fingerprint |
 |---|---|---|---|---|---|---|---|---|---|
-| GnollHack wiki | `WikiPath` | User Secrets | `WikiService` | `.md`, `.txt`, `.html`, all subdirectories | Any file over the size limit, dropped with no log line. An unconfigured key falls back to a hardcoded literal rather than no-opping. **From the run-30 round**: any file whose path relative to the wiki root has a segment beginning with `.` (e.g. `.agents`, `.plans`, `.vscode`) is skipped outright; the skipped count is logged once per index pass | `MaxWikiFileSizeKB` · **100** (this key is set in User Secrets, so the effective value is not the default) | ~10 min Git HEAD poll | yes | `WikiHeadSha` |
-| GnollHack source | `SourceCodePath` | User Secrets | `SourceCodeService` | Under `src`, `include`, `dat`, `win\win32\xpl` **only**: `.c`, `.h`, `.des`, `.txt`; plus `.cs` and `.xaml`, indexed but flagged `IsNetCode` and hidden unless a tool opts in | Everything outside those four directories. `vis_tab.c`, `vis_tab.h`, `date.h`; any file ending `conf.h`; any `win*.h` except `wintype.h` and `winprocs.h`; any `mac*.h`; any `qt*.h`. Any file over the size limit. **From the run-32 round**: any file whose path relative to the repository root has a segment beginning with `.` is skipped (one Visual Studio `.vs` cache file under `win\win32\xpl` was indexed before it); the skipped count is logged once per index pass. The indexer is shared, so the NetHack source skips them too. **From the run-36 round**: any segment equal to `bin` or `obj` (case-insensitive), counted in the same log line | `MaxSourceFileSizeKB` · **800** (set in neither `appsettings.json` nor User Secrets, so the default applies) | ~10 min Git HEAD poll, plus makedefs header regeneration | yes | `SourceCodeHeadSha` |
-| NetHack wiki | `NetHackWikiPath` | `appsettings.json` — `c:\hmp\nethackwiki` | `NetHackWikiService` | `.md` only, all subdirectories; YAML frontmatter `title` / `namespace` / `summary` parsed into searchable fields | Every non-`.md` file, including the generated `_index.json`. Any file over the size limit. A per-file read or parse error is logged and the article is skipped | `MaxNetHackWikiFileSizeKB` · **500**; `appsettings.json` also sets 500 | **startup only — no timer** | **no — generated, not versioned** | **none** |
-| NetHack source | `NetHackSourceCodePath` | `appsettings.json` — `C:\repos\NetHack\NetHack` | `NetHackSourceCodeService` (derives from `SourceCodeService`) | Under `src`, `include`, `dat` only — **`win\win32\xpl` is not a target directory here** — otherwise the same extension rules | The same filename exclusions as above. Also: no makedefs header regeneration, no structured game-data parse (`monst.c` / `objects.c` macros), no flag descriptions — so the structured stats tools have nothing to read for NetHack and only the raw search and view tools work | `MaxSourceFileSizeKB` · **800** (shared with the GnollHack source; one key governs both) | ~10 min Git HEAD poll | yes | **none** |
-| Knowledge base | `KbPath` | User Secrets | `KnowledgeBaseService` | `.md` under **`<KbPath>\Content`**, all subdirectories; topic id is the path relative to `Content` without the extension | Everything outside `Content` — a `Content` directory that does not exist logs a warning and loads **zero** articles. **No size limit at all** | none | ~10 min Git HEAD poll on `KbPath` | yes | `KnowledgeBaseHeadSha` |
+| GnollHack wiki | `WikiPath` | User Secrets | `WikiService` | `.md`, `.txt`, `.html`, all subdirectories | Any file over the size limit, dropped with no log line. An unconfigured key falls back to a hardcoded literal rather than no-opping. **From the run-30 round**: any file whose path relative to the wiki root has a segment beginning with `.` (e.g. `.agents`, `.plans`, `.vscode`) is skipped outright; the skipped count is logged once per index pass | `MaxWikiFileSizeKB` · **100** (this key is set in User Secrets, so the effective value is not the default) | ~10 min Git HEAD poll | yes | `WikiHeadSha`; index `gnollhackWiki` (harness 48+) |
+| GnollHack source | `SourceCodePath` | User Secrets | `SourceCodeService` | Under `src`, `include`, `dat`, `win\win32\xpl` **only**: `.c`, `.h`, `.des`, `.txt`; plus `.cs` and `.xaml`, indexed but flagged `IsNetCode` and hidden unless a tool opts in | Everything outside those four directories. `vis_tab.c`, `vis_tab.h`, `date.h`; any file ending `conf.h`; any `win*.h` except `wintype.h` and `winprocs.h`; any `mac*.h`; any `qt*.h`. Any file over the size limit. **From the run-32 round**: any file whose path relative to the repository root has a segment beginning with `.` is skipped (one Visual Studio `.vs` cache file under `win\win32\xpl` was indexed before it); the skipped count is logged once per index pass. The indexer is shared, so the NetHack source skips them too. **From the run-36 round**: any segment equal to `bin` or `obj` (case-insensitive), counted in the same log line | `MaxSourceFileSizeKB` · **800** (set in neither `appsettings.json` nor User Secrets, so the default applies) | ~10 min Git HEAD poll, plus makedefs header regeneration | yes | `SourceCodeHeadSha`; index `gnollhackSource` (harness 48+) |
+| NetHack wiki | `NetHackWikiPath` | `appsettings.json` — `c:\hmp\nethackwiki` | `NetHackWikiService` | `.md` only, all subdirectories; YAML frontmatter `title` / `namespace` / `summary` parsed into searchable fields | Every non-`.md` file, including the generated `_index.json`. Any file over the size limit. A per-file read or parse error is logged and the article is skipped | `MaxNetHackWikiFileSizeKB` · **500**; `appsettings.json` also sets 500 | **startup only — no timer** | **no — generated, not versioned** | index `nethackWiki` (harness 48+); no HEAD |
+| NetHack source | `NetHackSourceCodePath` | `appsettings.json` — `C:\repos\NetHack\NetHack` | `NetHackSourceCodeService` (derives from `SourceCodeService`) | Under `src`, `include`, `dat` only — **`win\win32\xpl` is not a target directory here** — otherwise the same extension rules | The same filename exclusions as above. Also: no makedefs header regeneration, no structured game-data parse (`monst.c` / `objects.c` macros), no flag descriptions — so the structured stats tools have nothing to read for NetHack and only the raw search and view tools work | `MaxSourceFileSizeKB` · **800** (shared with the GnollHack source; one key governs both) | ~10 min Git HEAD poll | yes | index `nethackSource` (harness 48+); no HEAD |
+| Knowledge base | `KbPath` | User Secrets | `KnowledgeBaseService` | `.md` under **`<KbPath>\Content`**, all subdirectories; topic id is the path relative to `Content` without the extension | Everything outside `Content` — a `Content` directory that does not exist logs a warning and loads **zero** articles. **No size limit at all** | none | ~10 min Git HEAD poll on `KbPath` | yes | `KnowledgeBaseHeadSha`; index `knowledgeBase` (harness 48+) |
 | Dumplog store | `DumpLogPath` | User Secrets | none — `SearchServerDumplogsTool` reads on demand, per call | `<DumpLogPath>\<game.Name>\gnollhack.<game.Name>.<StartTimeUTC>.txt`, located from `GameLog` rows | Any file not matching that exact name. Games older than the newest `BatchSize × MaxBatches` rows — **100 × 5 = 500** by `Tools:search_server_dumplogs` in `appsettings.json`. An unconfigured key returns `Success = false`, *not* "not found" | none | none — read live from disk on every call, so never stale and never warm | no | **none** |
 | Tool guides | none — `<AppBase>\ToolGuides` | n/a | `ToolRegistry.LoadGuides` | `_policy.md`, `spoiler_policy.md`, `_policy_parallel_disabled.md`, `_policy_parallel_on_request.md`, `<tool_name>.md` | A guide file is only picked up if the directory exists at the application base; the `Content` item in `Overseer.csproj` copies `ToolGuides\**` on build | none | loaded once, in the `ToolRegistry` constructor | in this repository | `ToolGuidesSha256` — hashed over the **copied output** directory, not the source tree |
 
@@ -276,9 +276,31 @@ detail, including the derived result cap and the retention window, is in
 [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) § **Harness Version 17
 Updates**.
 
-**Two corpora have no fingerprint at all, and both are reachable from a run — the per-call record
-above does not change this, since it records a call's own arguments and result, never a corpus
-revision:**
+**From harness 48, a run also records what each index held.** `BenchmarkRun.CorpusIndexFingerprintsJson`
+carries one entry per corpus — `gnollhackWiki`, `gnollhackSource`, `knowledgeBase`, `nethackWiki`,
+`nethackSource` — each `{ sha256, fileCount, indexedAtUtc }`, or null when that index had not finished
+its first pass. Each indexing service computes it as it indexes: a SHA-256 over an ordinal-sorted
+`relative-path:sha256` manifest of the **text the indexer read** (`CorpusContentFingerprint`), set at
+the moment the new index is swapped in, so it always describes the index the tools were reading. It
+differs from a HEAD SHA in three ways that matter to an analyst:
+
+- **It sees the working tree.** A HEAD SHA reads `.git` only. Two runs whose `WikiHeadSha` is equal
+  while their wiki index fingerprint differs read **different text** — an uncommitted edit, as with
+  the wiki's W1/W2 in battery run 3. The source index also includes the makedefs-generated headers
+  `SourceCodeService` writes into the tree, so its content can move with no commit.
+- **It covers the two NetHack corpora**, which have no HEAD fingerprint (below).
+- **It hashes text, not bytes**, and only what the index admitted: a BOM or an encoding-only change
+  does not move it, and a file the size limit or an exclusion dropped is not in it — `fileCount` is
+  the indexed count, which § 4's exclusions explain.
+
+They are **provenance, not comparability keys**, for the reason the next subsection gives: every run
+before harness 48 is null on the column, and a re-run never re-stamps it. The run report manifest and
+the tool-call log header print the first 12 characters and the file count of each, and a battery
+whose usable members differ on one gets a provenance caveat naming the corpus and the runs.
+
+**Before harness 48, two corpora have no fingerprint at all, and both are reachable from a run — the
+per-call record above does not change this, since it records a call's own arguments and result, never
+a corpus revision:**
 
 - **NetHack source** (`NetHackSourceCodePath`) is a Git working tree but is not fingerprinted.
   Every source tool accepts `repository: "nethack"`.
@@ -287,7 +309,7 @@ revision:**
   revision to record. `nethack_wiki_search` and `nethack_wiki_view` are both in
   `Benchmark:AllowedTools`.
 
-**For those two corpora, and for any run before harness 16, there is no recorded provenance.** Fall
+**For those two corpora on a run before harness 48, and for any run before harness 16, there is no recorded provenance.** Fall
 back to comparing the run's `StartedAtUtc` against the corpus on disk — the ref mtime from § 5 for
 the NetHack source, the backup directory names from § 8 for the NetHack wiki — and **state the
 residual uncertainty in the finding**. "The corpus probably had not moved" is an honest sentence; a

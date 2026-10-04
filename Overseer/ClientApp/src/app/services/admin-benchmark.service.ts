@@ -2229,6 +2229,44 @@ export interface BenchmarkBatteryMemberDto {
   claimsRefutedCount?: number;
   /** Answers carrying at least one advisory integrity flag. */
   advisoryFlagAnswerCount?: number;
+  /**
+   * The member run's estimated cost in US dollars, live while it runs. Null on the battery-run list,
+   * on a superseded member, and when the figure is unknown.
+   */
+  estimatedCost?: number | null;
+  estimatedCandidateCost?: number | null;
+  /**
+   * Mean model time of the member run's Ok answers, in ms: the turn duration less tool time. Null on
+   * the battery-run list, on a superseded member, and while no answer is Ok.
+   */
+  meanModelTimeMs?: number | null;
+}
+
+/**
+ * A battery run's estimated cost so far, in US dollars: each role summed over its non-superseded
+ * member runs. A summed role is null when any member's figure for it is null.
+ */
+export interface BenchmarkBatteryLiveCostDto {
+  total: number | null;
+  candidate: number | null;
+  assessor: number | null;
+  /** Panel member B. */
+  coAssessor: number | null;
+  /** The second or reference reader. */
+  secondOpinion: number | null;
+  claimVerifier: number | null;
+  synthesis: number | null;
+  coSynthesis: number | null;
+  /** Every grading role together. */
+  grading: number | null;
+  /** A member run's pricing was incomplete. */
+  pricingIncomplete: boolean;
+  /** The members' common pricing source; `mixed` when they differ; null when none resolved. */
+  pricingSource: string | null;
+  /** The member runs estimated. */
+  pricedMemberCount: number;
+  /** The battery-completion documents' report-writer cost, not part of `total`; null when none exists or any has no cost. */
+  reportWriterCostUsd: number | null;
 }
 
 /** One (suite, round) cell of the K × R grid. */
@@ -2336,6 +2374,15 @@ export interface BenchmarkBatteryRunDto {
   reportDocumentsMessage?: string | null;
   /** The battery documents written so far. */
   reportDocumentsWrittenCount?: number;
+  /** The estimated cost so far; null on the battery-run list and when no estimator is available. */
+  liveCost?: BenchmarkBatteryLiveCostDto | null;
+  /**
+   * Mean model time over the Ok answers of every non-superseded member run, in ms; null on the
+   * battery-run list and while no answer is Ok.
+   */
+  meanModelTimeMs?: number | null;
+  /** The Ok answers `meanModelTimeMs` is the mean of; 0 on the battery-run list. */
+  modelTimedAnswerCount?: number;
 }
 
 /** Computes a battery analysis, optionally paired against a baseline battery run. */

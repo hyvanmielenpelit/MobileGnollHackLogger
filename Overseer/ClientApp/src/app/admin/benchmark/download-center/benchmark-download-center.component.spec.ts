@@ -1498,14 +1498,63 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.preparing).toBe(false);
       expect(component.progress).toBeNull();
       expect(overlay()).toBeNull();
+      // Closing aborts the request rather than leaving it to finish.
+      expect(pending.cancelled).toBe(true);
 
-      respond(pending, {});
       await done;
       await settle();
       render();
 
       expect(component.progress).toBeNull();
       expect(saveBytes).not.toHaveBeenCalled();
+      expect(status()).not.toBe('Download canceled. Nothing was saved.');
+    });
+
+    it('has no Cancel in the footer while no download is prepared', () => {
+      openRun();
+
+      expect(host().querySelector('.dc-footer .dc-cancel')).toBeNull();
+      expect(downloadButton()).not.toBeNull();
+    });
+
+    it('shows Cancel while a download is prepared; Cancel stops it, keeps the dialog open, saves nothing and says so', async () => {
+      openRun();
+      choose('custom', { 'doc:1': { formats: ['pdf'] }, 'doc:2': { formats: ['pdf'] } });
+      const outer = wrapper.dialog!.nativeElement;
+
+      const done = component.download();
+      const pending = await nextRequest();
+      render();
+
+      const cancel = host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!;
+      expect(cancel).not.toBeNull();
+      expect(cancel.classList.contains('btn-gh-cancel')).toBe(true);
+      expect(cancel.textContent!.trim()).toBe('Cancel');
+      expect(cancel.querySelector('svg')).toBeNull();
+      // Cancel sits left of Download.
+      expect(cancel.nextElementSibling).toBe(downloadButton());
+
+      cancel.click();
+      render();
+
+      expect(pending.cancelled).toBe(true);
+      expect(outer.open).toBe(true);
+      expect(component.preparing).toBe(false);
+      expect(component.progress).toBeNull();
+      expect(overlay()).toBeNull();
+      expect(host().querySelector('.dc-footer .dc-cancel')).toBeNull();
+      expect(status()).toBe('Download canceled. Nothing was saved.');
+      expect(document.activeElement).toBe(downloadButton());
+
+      await done;
+      await settle();
+      render();
+
+      httpMock.expectNone(() => true);
+      expect(saveBytes).not.toHaveBeenCalled();
+      expect(saveBlob).not.toHaveBeenCalled();
+      expect(status()).toBe('Download canceled. Nothing was saved.');
+      expect(component.canDownload).toBe(true);
     });
   });
 
@@ -1697,7 +1746,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
   });
 
-  it('keeps the panel’s nested dialogs from closing it, and closes from the panel’s Cancel', () => {
+  it('keeps the panel’s nested dialogs from closing it', () => {
     openRun();
     const outer = wrapper.dialog!.nativeElement;
     expect(outer.open).toBe(true);
@@ -1716,9 +1765,6 @@ describe('BenchmarkDownloadCenterComponent', () => {
     // The wrapper lends no chart actions.
     expect(host().querySelector('.dc-update-charts')).toBeNull();
     expect(host().querySelector('.dc-option-charts')).toBeNull();
-
-    host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!.click();
-    expect(outer.open).toBe(false);
   });
 
   it('emits closed when the dialog closes', () => {

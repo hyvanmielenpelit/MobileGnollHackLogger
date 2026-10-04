@@ -134,6 +134,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* A tile's sub-note under its value, secondary to it as the strip's in-progress counts are. */
+.bp-body .run-stat-strip .bp-stat-note {
+  display: block;
+  font-family: inherit;
+  font-size: 11px;
+  color: #aaa;
+}
+
+.bp-cost-details {
+  margin: 0 0 16px;
+}
+
 .bp-state-block {
   margin: 0 0 16px;
   padding: 10px 14px;
@@ -263,7 +275,6 @@
   .bp-member-progress {
     display: block;
     inline-size: 100%;
-    max-inline-size: 16rem;
     margin-block-start: 6px;
   }
 

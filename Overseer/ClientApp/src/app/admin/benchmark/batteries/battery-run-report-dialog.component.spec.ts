@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -32,9 +33,11 @@ function accessibleText(element: HTMLElement): string {
 
 describe('BatteryRunReportDialogComponent', () => {
   let h: BatteryRunReportHarness;
+  let armCompletionSignals: Mock;
 
   beforeEach(async () => {
     h = await configureBatteryRunReport();
+    armCompletionSignals = h.monitor.armCompletionSignalsFromGesture;
   });
 
   afterEach(() => {
@@ -247,6 +250,24 @@ describe('BatteryRunReportDialogComponent', () => {
       expect(h.service.resumeBatteryRun).toHaveBeenCalledWith(7, 'Continue');
       expect(h.service.getBatteryRun).toHaveBeenCalledTimes(2);
       h.component.close();
+    });
+
+    it('arms the completion signals inside the click, before the resume request', () => {
+      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true, completedAtUtc: null })));
+      h.open();
+
+      h.action('continue').click();
+
+      expect(armCompletionSignals).toHaveBeenCalledTimes(1);
+      expect(armCompletionSignals.mock.invocationCallOrder[0])
+        .toBeLessThan(h.service.resumeBatteryRun.mock.invocationCallOrder[0]);
+      h.component.close();
+    });
+
+    it('does not arm the completion signals for a disabled resume', () => {
+      h.open();
+      h.action('continue').click();
+      expect(armCompletionSignals).not.toHaveBeenCalled();
     });
 
     it('re-runs under the current instrument after an instrument stop, and refuses Continue', () => {

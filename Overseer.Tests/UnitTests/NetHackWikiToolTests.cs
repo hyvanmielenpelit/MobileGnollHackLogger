@@ -187,6 +187,46 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
     }
 
     [Fact]
+    public async Task NetHackWikiService_ContentFingerprint_MovesWithAnEditedFile()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir),
+                new System.Collections.Generic.KeyValuePair<string, string?>("MaxNetHackWikiFileSizeKB", "200")
+            })
+            .Build();
+        int fileCount = Directory.GetFiles(_tempDir, "*.md", SearchOption.AllDirectories).Length;
+
+        CorpusContentFingerprint? sequential;
+        using (var service = new NetHackWikiService(config, null, 1))
+        {
+            await service.InitializationTask;
+            sequential = service.ContentFingerprint;
+        }
+
+        CorpusContentFingerprint? parallel;
+        using (var service = new NetHackWikiService(config, null, 4))
+        {
+            await service.InitializationTask;
+            parallel = service.ContentFingerprint;
+        }
+
+        Assert.NotNull(sequential);
+        Assert.Equal(fileCount, sequential!.FileCount);
+        Assert.Equal(sequential.Sha256, parallel!.Sha256);
+
+        File.AppendAllText(Path.Combine(_tempDir, "Elbereth.md"), "\nScuffed engravings stop working.\n");
+
+        using var rebuilt = new NetHackWikiService(config, null, 4);
+        await rebuilt.InitializationTask;
+
+        Assert.NotNull(rebuilt.ContentFingerprint);
+        Assert.Equal(fileCount, rebuilt.ContentFingerprint!.FileCount);
+        Assert.NotEqual(sequential.Sha256, rebuilt.ContentFingerprint.Sha256);
+    }
+
+    [Fact]
     public async Task NetHackWikiSearchTool_ExecutesQuery_ReturnsExpectedResults()
     {
         var config = new ConfigurationBuilder()

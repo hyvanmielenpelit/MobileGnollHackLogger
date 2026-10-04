@@ -47,7 +47,7 @@ public sealed record BenchmarkBatteryComparabilityResult(
     public IReadOnlyList<BenchmarkComparabilityKeyDifference> SpeedAndCostDifferences { get; init; }
         = Array.Empty<BenchmarkComparabilityKeyDifference>();
 
-    /// <summary>Provenance notes that refuse nothing: a differing wiki or source-code HEAD.</summary>
+    /// <summary>Provenance notes that refuse nothing: a differing wiki or source-code HEAD, or corpus index fingerprint.</summary>
     public IReadOnlyList<string> Caveats { get; init; } = Array.Empty<string>();
 }
 
@@ -251,8 +251,8 @@ public static class BenchmarkBatteryComparability
     /// Judges the members of one battery run, per suite index. The composite is permitted when
     /// every suite's runs resolve Tier A or B, every battery-wide key agrees across every member,
     /// and every suite of one board class carries one candidate system prompt. Speed-and-cost
-    /// differences set the degraded flags; a differing wiki or source-code HEAD adds a caveat and
-    /// refuses nothing.
+    /// differences set the degraded flags; a differing wiki or source-code HEAD, or corpus index
+    /// fingerprint, adds a caveat and refuses nothing.
     ///
     /// <para>A suite with no runs is not judged: whether every suite has a member is the
     /// completeness question (M4), not this one.</para>
@@ -830,8 +830,54 @@ public static class BenchmarkBatteryComparability
         var caveats = new List<string>();
         AddProvenanceCaveat(caveats, WikiHeadName, runs, r => r.WikiHeadSha, suiteOfRun);
         AddProvenanceCaveat(caveats, SourceCodeHeadName, runs, r => r.SourceCodeHeadSha, suiteOfRun);
+        AddCorpusIndexCaveats(caveats, runs, suiteOfRun);
         return caveats;
     }
+
+    /// <summary>
+    /// One caveat per corpus whose recorded index fingerprint differs between members. A member that
+    /// did not record the fingerprints, or recorded that corpus as not indexed yet, is not compared.
+    /// </summary>
+    private static void AddCorpusIndexCaveats(
+        List<string> caveats,
+        IReadOnlyList<BenchmarkRun> runs,
+        IReadOnlyDictionary<long, int> suiteOfRun)
+    {
+        var parsed = runs
+            .Select(r => (Run: r, Fingerprints: CorpusIndexFingerprintProvider.Parse(r.CorpusIndexFingerprintsJson)))
+            .Where(p => p.Fingerprints != null)
+            .ToList();
+
+        foreach (string key in CorpusIndexFingerprintProvider.CorpusKeys)
+        {
+            var recorded = parsed
+                .Select(p => (p.Run, Sha256: p.Fingerprints!.TryGetValue(key, out var fingerprint) ? fingerprint?.Sha256.Trim() : null))
+                .Where(p => !string.IsNullOrEmpty(p.Sha256))
+                .GroupBy(p => p.Sha256!, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Min(p => p.Run.Id))
+                .ToList();
+
+            if (recorded.Count <= 1) continue;
+
+            var allRunIds = recorded.SelectMany(g => g.Select(p => p.Run.Id)).OrderBy(id => id).ToList();
+            var parts = recorded.Select(g =>
+            {
+                var runIds = g.Select(p => p.Run.Id).OrderBy(id => id).ToList();
+                var suites = runIds.Where(suiteOfRun.ContainsKey).Select(id => suiteOfRun[id]).Distinct().OrderBy(i => i);
+                return $"{Short(g.Key)} (runs {string.Join(", ", runIds)}; suites {string.Join(", ", suites)})";
+            });
+
+            string corpus = key == "knowledgeBase" ? "knowledge base" : BenchmarkReportBuilder.CorpusDisplayName(key);
+            caveats.Add($"The {corpus} index differed between runs {JoinWithAnd(allRunIds)}: {string.Join(" vs ", parts)}. "
+                + "It is provenance, not a comparability key, so nothing was refused; the members' tools may have "
+                + "retrieved from different indexed content.");
+        }
+    }
+
+    private static string JoinWithAnd(IReadOnlyList<long> ids)
+        => ids.Count <= 1
+            ? string.Join(", ", ids)
+            : string.Join(", ", ids.Take(ids.Count - 1)) + " and " + ids[^1];
 
     private static void AddProvenanceCaveat(
         List<string> caveats,

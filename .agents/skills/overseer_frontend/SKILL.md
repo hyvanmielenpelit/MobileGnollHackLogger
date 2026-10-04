@@ -724,7 +724,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 3, migrated from
     version 2). Run diagnostics are captured once per download, so the `.txt`, `.pdf` and `.docx` agree.
     While a package is prepared, an overlay over the body shows a ring spinner, the step and a progress
-    bar. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
+    bar. The footer's Cancel appears only while documents are being prepared and cancels the
+    preparation without closing; the X and Escape close, and abandon a preparation. It is
+    `btn-gh btn-gh-cancel dc-cancel` with no icon, left of **Download**, in every host (the wrapper and
+    Model Comparison's inline panel); it aborts the in-flight requests (`takeUntil` on a cancel notifier
+    around every `firstValueFrom`), saves nothing, announces *Download canceled. Nothing was saved.* in
+    the `role="status"` line and focuses **Download**. A close, a cleared context or the panel's
+    destruction abandons the same way, silently. An *Update charts* run is not a download and shows no
+    Cancel. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
     (`.dc-emblem`) precedes its title at 64 px, 40 px under 600 px — the run report's size — and
     **its title is the focus target on open**
     (`<h3 #downloadCenterHeading tabindex="-1">`, focused after `showModal()`), so the Close button's
@@ -793,13 +800,21 @@ To find specific popups, look in the corresponding component's `.html` template:
     fields, else the report job, else the System AI Configs list. Then the shared `.run-stage-rail`
     (*Suite runs*, *Battery analysis*, and *AI-written reports* when a writer is set, whose *done* note
     counts `reportDocumentsWrittenCount`; stacked below 40 rem of an inline-size container), the
-    labelled progress bar, the state block, the stat strip (a sixth tile, *Overall Index*, holds an
-    `app-index-badge size="md"` once the analysis is done) and a suite × round grid of status chips
+    labelled progress bar, the state block, the stat strip (after *Failed*, three live figures from the
+    polled battery run: *Mean answer* — `meanModelTimeMs` in the run report's `formatModelTime`
+    format, noted *model time, tools excluded* in a `.bp-stat-note` — *Candidate cost* and *Total cost*
+    — `liveCost.total` plus the report writer's cost, noted *so far* while live and *incl. report
+    writer* once that cost exists — each *—* with a visually hidden *not available yet* when missing;
+    then a sixth tile, *Overall Index*, holding an `app-index-badge size="md"` once the analysis is
+    done), below it a closed `details.gh-disclosure.bp-cost-details` *Cost by role* with the live
+    `app-benchmark-cost-panel` (absent while `liveCost` is null), and a suite × round grid of status chips
     (`BATTERY_SLOT_STATE_LABELS`). Under its chip a running member shows *Run #N · Stage n of 3 —
     name* (`runStageCaption`, `run-stage-labels.ts`, whose names the run dialog's rail shares), a
-    native `<progress>` labelled by *n of m questions answered*, and *Elapsed …*; a completed member
-    an `app-index-badge`, a facts line (*Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers*,
-    flagged omitted at 0) and *Run #N*; an empty pending slot of a live run *Waiting for suite …*.
+    full-width `progress.job-progress` labelled by *n of m questions answered* (the shared job bar
+    look applies to `progress.job-progress` anywhere, not only inside `.job-progress-block`), and
+    *Elapsed …*; a completed member
+    an `app-index-badge`, a facts line (*Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers ·
+    est. $0.42*, flagged omitted at 0, the estimate omitted when `estimatedCost` is null) and *Run #N*; an empty pending slot of a live run *Waiting for suite …*.
     Elapsed times and durations are `formatElapsed`. Polling continues after the last member while
     `batteryAwaitsPostRun` holds (analysis or reports under way, `BATTERY_POST_RUN_GRACE_MS` = 120 s),
     and the report job is polled while the reports stage is current. One polite live region (the stage
@@ -807,7 +822,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     which opens the run progress dialog on that run as the monitor's viewed run, with **Back to
     Battery** returning to that battery), **Attach existing run** on
     empty, superseded and index-withheld cells, and **Cancel Battery**, **Re-run under Current
-    Instrument**, **Continue** and **Open Analysis** in the footer. Opened from the battery banner's
+    Instrument**, **Continue** and **Open Analysis** in the footer. Continue and Re-run call the
+    monitor's `armCompletionSignalsFromGesture()` synchronously in the click, as the Battery Run
+    Report's resume actions do. Opened from the battery banner's
     **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery Run
     Report's *Show progress* action. **Open Analysis** emits `openAnalysis` with the battery run id, and
     the shell's `onOpenBatteryAnalysis` opens the Battery Run Report.

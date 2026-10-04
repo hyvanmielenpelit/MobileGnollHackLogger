@@ -3007,8 +3007,7 @@ public class AdminBenchmarkController : ControllerBase
         // once at the end. The mid-run figures are summed from the answer rows by the finalizer's own
         // functions onto a detached copy, so the progress dialog and the finished run are costed by one
         // code path rather than two formulas. The finalizer remains the single writer of the run's columns.
-        bool isLiveRun = run.Status is BenchmarkRunStatus.Running;
-        var totals = isLiveRun ? BuildLiveTotals(run) : run;
+        var totals = BenchmarkRunCostEstimator.TotalsOf(run);
 
         long totalInputTokens = totals.TotalInputTokens;
         long totalOutputTokens = totals.TotalOutputTokens;
@@ -3021,59 +3020,21 @@ public class AdminBenchmarkController : ControllerBase
         // a 1.0x multiplier.
         string? servedServiceTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
 
-        BenchmarkRunPricing? pricing = null;
-        if (_modelPricingService != null)
-        {
-            pricing = await _modelPricingService.ResolveForRunAsync(run);
-        }
+        // A role that spent nothing, or whose card did not resolve, reports null rather than zero.
+        var costEstimate = await new BenchmarkRunCostEstimator(_modelPricingService)
+            .EstimateAsync(run, totals, servedServiceTier);
 
-        var costs = pricing != null
-            ? ModelPricingService.ComputeRunRoleCosts(totals, pricing, servedServiceTier)
-            : default;
-
-        bool hasAssessor = ModelPricingService.RoleHasTokens(
-            totals.TotalAssessmentInputTokens, totals.TotalAssessmentOutputTokens,
-            totals.TotalAssessmentCacheReadTokens, totals.TotalAssessmentCacheCreationTokens);
-        bool hasSecondOpinion = ModelPricingService.RoleHasTokens(
-            totals.TotalSecondOpinionInputTokens, totals.TotalSecondOpinionOutputTokens,
-            totals.TotalSecondOpinionCacheReadTokens, totals.TotalSecondOpinionCacheCreationTokens);
-        bool hasVerifier = ModelPricingService.RoleHasTokens(
-            totals.TotalClaimVerificationInputTokens, totals.TotalClaimVerificationOutputTokens,
-            totals.TotalClaimVerificationCacheReadTokens, totals.TotalClaimVerificationCacheCreationTokens);
-        bool hasSynthesis = ModelPricingService.RoleHasTokens(
-            totals.TotalSynthesisInputTokens, totals.TotalSynthesisOutputTokens,
-            totals.TotalSynthesisCacheReadTokens, totals.TotalSynthesisCacheCreationTokens);
-        bool hasCoAssessor = ModelPricingService.RoleHasTokens(
-            totals.TotalCoAssessmentInputTokens, totals.TotalCoAssessmentOutputTokens,
-            totals.TotalCoAssessmentCacheReadTokens, totals.TotalCoAssessmentCacheCreationTokens);
-        bool hasCoSynthesis = ModelPricingService.RoleHasTokens(
-            totals.TotalCoSynthesisInputTokens, totals.TotalCoSynthesisOutputTokens,
-            totals.TotalCoSynthesisCacheReadTokens, totals.TotalCoSynthesisCacheCreationTokens);
-
-        // A role that spent nothing, or whose card did not resolve, reports no figure at all: the cost
-        // panel omits a null role and keeps a zero one, because zero is a measurement and absence is not.
-        static decimal? Priced(bool participated, ModelPricing? card, decimal cost) =>
-            participated && card != null ? cost : null;
-
-        decimal? candidateCost = Priced(true, pricing?.Candidate, costs.Candidate);
-        decimal? assessorCost = Priced(hasAssessor, pricing?.Assessor, costs.Assessor);
-        decimal? secondOpinionCost = Priced(hasSecondOpinion, pricing?.SecondOpinion, costs.SecondOpinion);
-        decimal? verifierCost = Priced(hasVerifier, pricing?.ClaimVerifier, costs.ClaimVerifier);
-        // The synthesis runs on the assessor's configuration and is priced on the assessor's card.
-        decimal? synthesisCost = Priced(hasSynthesis, pricing?.Assessor, costs.Synthesis);
-        // Panel member B and its own synthesis are both priced on the co-assessor's card.
-        decimal? coAssessorCost = Priced(hasCoAssessor, pricing?.CoAssessor, costs.CoAssessor);
-        decimal? coSynthesisCost = Priced(hasCoSynthesis, pricing?.CoAssessor, costs.CoSynthesis);
-
-        decimal? gradingCost =
-            (assessorCost.HasValue || secondOpinionCost.HasValue || verifierCost.HasValue || synthesisCost.HasValue
-                || coAssessorCost.HasValue || coSynthesisCost.HasValue)
-                ? costs.Grading
-                : null;
-
-        decimal? totalEstimatedCost = costs.Incomplete ? null : costs.Total;
-        string? pricingSource = string.IsNullOrEmpty(costs.Source) ? null : costs.Source;
-        bool pricingIncomplete = costs.Incomplete;
+        decimal? candidateCost = costEstimate.Candidate;
+        decimal? assessorCost = costEstimate.Assessor;
+        decimal? secondOpinionCost = costEstimate.SecondOpinion;
+        decimal? verifierCost = costEstimate.ClaimVerifier;
+        decimal? synthesisCost = costEstimate.Synthesis;
+        decimal? coAssessorCost = costEstimate.CoAssessor;
+        decimal? coSynthesisCost = costEstimate.CoSynthesis;
+        decimal? gradingCost = costEstimate.Grading;
+        decimal? totalEstimatedCost = costEstimate.Total;
+        string? pricingSource = costEstimate.PricingSource;
+        bool pricingIncomplete = costEstimate.PricingIncomplete;
 
         // H4. The verifier's own yield: what its dollars actually bought, and what the deterministic
         // token budget (Benchmark:ClaimVerificationInputTokenBudget) stopped it from checking.
@@ -3620,75 +3581,6 @@ public class AdminBenchmarkController : ControllerBase
             .ToListAsync();
 
         return Ok(toolCalls);
-    }
-
-    /// <summary>
-    /// A detached copy of a still-running run carrying the totals summed from its answer rows, so a
-    /// mid-run figure is the same arithmetic as the finalized one.
-    ///
-    /// <para>Every sum comes from <see cref="BenchmarkRunFinalizer"/>, which stays the only writer of
-    /// the run's own columns — nothing here touches the tracked entity. The synthesis totals are
-    /// run-level, have no per-answer rows to sum from, and are carried across unchanged.</para>
-    /// </summary>
-    private static BenchmarkRun BuildLiveTotals(BenchmarkRun run)
-    {
-        var candidate = BenchmarkRunFinalizer.ComputeCandidateTotals(run.Answers);
-        var longContext = BenchmarkRunFinalizer.ComputeCandidateLongContextTotals(run.Answers);
-        var grading = BenchmarkRunFinalizer.SumGradingTotals(run.Answers);
-
-        return new BenchmarkRun
-        {
-            Id = run.Id,
-            TestedModelSnapshot = run.TestedModelSnapshot,
-
-            TotalInputTokens = candidate.TotalInputTokens,
-            TotalOutputTokens = candidate.TotalOutputTokens,
-            TotalCacheReadTokens = candidate.TotalCacheReadTokens,
-            TotalCacheCreationTokens = candidate.TotalCacheCreationTokens,
-            TotalAnswerDurationMs = candidate.TotalAnswerDurationMs,
-            TotalDurationMs = run.TotalDurationMs,
-
-            TotalLongContextInputTokens = longContext.TotalLongContextInputTokens,
-            TotalLongContextOutputTokens = longContext.TotalLongContextOutputTokens,
-            TotalLongContextCacheReadTokens = longContext.TotalLongContextCacheReadTokens,
-            TotalLongContextCacheCreationTokens = longContext.TotalLongContextCacheCreationTokens,
-
-            TotalAssessmentInputTokens = grading.TotalAssessmentInputTokens,
-            TotalAssessmentOutputTokens = grading.TotalAssessmentOutputTokens,
-            TotalAssessmentCacheReadTokens = grading.TotalAssessmentCacheReadTokens,
-            TotalAssessmentCacheCreationTokens = grading.TotalAssessmentCacheCreationTokens,
-            TotalAssessmentDurationMs = grading.TotalAssessmentDurationMs,
-
-            TotalSecondOpinionInputTokens = grading.TotalSecondOpinionInputTokens,
-            TotalSecondOpinionOutputTokens = grading.TotalSecondOpinionOutputTokens,
-            TotalSecondOpinionCacheReadTokens = grading.TotalSecondOpinionCacheReadTokens,
-            TotalSecondOpinionCacheCreationTokens = grading.TotalSecondOpinionCacheCreationTokens,
-            TotalSecondOpinionDurationMs = grading.TotalSecondOpinionDurationMs,
-
-            TotalClaimVerificationInputTokens = grading.TotalClaimVerificationInputTokens,
-            TotalClaimVerificationOutputTokens = grading.TotalClaimVerificationOutputTokens,
-            TotalClaimVerificationCacheReadTokens = grading.TotalClaimVerificationCacheReadTokens,
-            TotalClaimVerificationCacheCreationTokens = grading.TotalClaimVerificationCacheCreationTokens,
-            TotalClaimVerificationDurationMs = grading.TotalClaimVerificationDurationMs,
-
-            TotalSynthesisInputTokens = run.TotalSynthesisInputTokens,
-            TotalSynthesisOutputTokens = run.TotalSynthesisOutputTokens,
-            TotalSynthesisCacheReadTokens = run.TotalSynthesisCacheReadTokens,
-            TotalSynthesisCacheCreationTokens = run.TotalSynthesisCacheCreationTokens,
-            TotalSynthesisDurationMs = run.TotalSynthesisDurationMs,
-
-            TotalCoAssessmentInputTokens = grading.TotalCoAssessmentInputTokens,
-            TotalCoAssessmentOutputTokens = grading.TotalCoAssessmentOutputTokens,
-            TotalCoAssessmentCacheReadTokens = grading.TotalCoAssessmentCacheReadTokens,
-            TotalCoAssessmentCacheCreationTokens = grading.TotalCoAssessmentCacheCreationTokens,
-            TotalCoAssessmentDurationMs = grading.TotalCoAssessmentDurationMs,
-
-            TotalCoSynthesisInputTokens = run.TotalCoSynthesisInputTokens,
-            TotalCoSynthesisOutputTokens = run.TotalCoSynthesisOutputTokens,
-            TotalCoSynthesisCacheReadTokens = run.TotalCoSynthesisCacheReadTokens,
-            TotalCoSynthesisCacheCreationTokens = run.TotalCoSynthesisCacheCreationTokens,
-            TotalCoSynthesisDurationMs = run.TotalCoSynthesisDurationMs
-        };
     }
 
     /// <summary>

@@ -406,7 +406,7 @@ export interface BatteryRunReportHarness {
   fixture: ComponentFixture<BatteryRunReportDialogComponent>;
   component: BatteryRunReportDialogComponent;
   service: MockedObject<AdminBenchmarkService>;
-  monitor: { openBatteryDialog: Mock };
+  monitor: { openBatteryDialog: Mock; armCompletionSignalsFromGesture: Mock };
   el(): HTMLElement;
   text(selector: string): string;
   click(selector: string): void;
@@ -440,7 +440,10 @@ export async function configureBatteryRunReport(): Promise<BatteryRunReportHarne
   service.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 7 }));
   service.getBatteryLeaderboard.mockReturnValue(of(leaderboard()));
   service.getBatteryPairedComparison.mockReturnValue(of(batteryPairComparison()));
-  const monitor = { openBatteryDialog: vi.fn().mockName('BenchmarkActiveRunMonitor.openBatteryDialog') };
+  const monitor = {
+    openBatteryDialog: vi.fn().mockName('BenchmarkActiveRunMonitor.openBatteryDialog'),
+    armCompletionSignalsFromGesture: vi.fn().mockName('BenchmarkActiveRunMonitor.armCompletionSignalsFromGesture')
+  };
   const system = { getVersion: vi.fn().mockName('SystemService.getVersion').mockReturnValue(of('9.9.9')) };
 
   await TestBed.configureTestingModule({

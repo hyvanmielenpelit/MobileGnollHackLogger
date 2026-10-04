@@ -28,6 +28,9 @@ public class KnowledgeBaseService : IDisposable
 
     public Task InitializationTask { get; private set; }
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
+
+    /// <summary>What the loaded article set holds; null until the first load finishes.</summary>
+    public CorpusContentFingerprint? ContentFingerprint { get; private set; }
     
     public KnowledgeBaseService(ILogger<KnowledgeBaseService> logger, IConfiguration configuration)
     {
@@ -80,12 +83,13 @@ public class KnowledgeBaseService : IDisposable
             }
 
             var newArticles = new Dictionary<string, KnowledgeArticle>(StringComparer.OrdinalIgnoreCase);
+            var fingerprint = new CorpusContentFingerprintBuilder();
             var files = Directory.GetFiles(contentPath, "*.md", SearchOption.AllDirectories);
             foreach (var file in files)
             {
                 try
                 {
-                    var article = ParseArticle(file, contentPath);
+                    var article = ParseArticle(file, contentPath, fingerprint);
                     newArticles[article.Topic] = article;
                     _logger.LogInformation($"Loaded knowledge base article: {article.Topic}");
                 }
@@ -96,6 +100,7 @@ public class KnowledgeBaseService : IDisposable
             }
 
             Interlocked.Exchange(ref _articles, newArticles);
+            ContentFingerprint = fingerprint.Build();
         }
         catch (Exception ex)
         {
@@ -103,11 +108,12 @@ public class KnowledgeBaseService : IDisposable
         }
     }
 
-    private KnowledgeArticle ParseArticle(string filePath, string contentPath)
+    private KnowledgeArticle ParseArticle(string filePath, string contentPath, CorpusContentFingerprintBuilder fingerprint)
     {
         var content = File.ReadAllText(filePath);
         
         var relPath = Path.GetRelativePath(contentPath, filePath);
+        fingerprint.Add(relPath, content);
         var topic = relPath.Replace('\\', '/');
         if (topic.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
         {

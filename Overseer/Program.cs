@@ -298,6 +298,7 @@ Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryLeaderboardService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunCostEstimator>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkPairedComparisonCache>();
@@ -339,6 +340,7 @@ builder.Services.AddSingleton<Overseer.Services.Tools.SignalRClientToolBridge>()
 builder.Services.AddSingleton<Overseer.Services.Tools.IClientToolBridge>(sp => sp.GetRequiredService<Overseer.Services.Tools.SignalRClientToolBridge>());
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolRegistry>();
 builder.Services.AddSingleton<Overseer.Services.KnowledgeBaseService>();
+builder.Services.AddSingleton<Overseer.Services.CorpusIndexFingerprintProvider>();
 builder.Services.AddSingleton<Overseer.Services.Tools.ToolExecutor>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.DelegateToSubAgentTool>();
 builder.Services.AddSingleton<Overseer.Services.Tools.IToolHandler, Overseer.Services.Tools.KnowledgeBaseTool>();

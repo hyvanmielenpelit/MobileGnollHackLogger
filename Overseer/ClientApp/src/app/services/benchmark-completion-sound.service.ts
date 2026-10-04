@@ -1,7 +1,10 @@
 import { Injectable } from '@angular/core';
 
-/** Every outcome `play` can resolve to. `prime` resolves to the first three; neither ever rejects. */
-export type BenchmarkCompletionSoundOutcome = 'played' | 'blocked' | 'unsupported' | 'duplicate' | 'deferred';
+/**
+ * Every outcome `play` can resolve to. `prime` resolves to the first three, mapping every other
+ * outcome to `'unsupported'`; neither ever rejects.
+ */
+export type BenchmarkCompletionSoundOutcome = 'played' | 'blocked' | 'unsupported' | 'duplicate' | 'deferred' | 'timeout';
 
 /** Which playback path an attempt used. */
 export type BenchmarkCompletionSoundPath = 'buffer' | 'element';
@@ -27,6 +30,8 @@ const M4A_URL = '/audio/AIBenchmarkingComplete.m4a';
 const GAIN = 0.6;
 /** How long a hidden tab's element playback may stay pending before it counts as 'deferred'. */
 const DEFERRED_MS = 2000;
+/** How long a visible tab's element playback may stay pending before it counts as 'timeout'. */
+const VISIBLE_PLAY_TIMEOUT_MS = 3000;
 /** How long `ctx.resume()` may stay pending before the buffer path gives up on this attempt. */
 const RESUME_TIMEOUT_MS = 1000;
 /** How long after `source.start(0)` the context clock is checked for having actually advanced. */
@@ -366,34 +371,48 @@ export class BenchmarkCompletionSoundService {
   }
 
   /**
-   * The element path. On a hidden tab, a `play()` that has not settled after `DEFERRED_MS`
-   * resolves `'deferred'` instead of waiting further; handlers stay attached to the *original*
-   * promise so a late fulfilment or rejection is never unhandled and, on a late fulfilment, the
-   * key is marked played so a retry cannot double-chime.
+   * The element path. Neither tab state waits on `play()` without a bound:
+   *
+   * - On a hidden tab, a `play()` that has not settled after {@link DEFERRED_MS} resolves
+   *   `'deferred'`; on a late fulfilment the key is marked played so a retry cannot double-chime.
+   * - On a visible tab, a `play()` that has not settled after {@link VISIBLE_PLAY_TIMEOUT_MS}
+   *   resolves `'timeout'` and the element is paused, so the caller can fall back to the buffer
+   *   without a late element start sounding a second chime; a late fulfilment marks nothing.
+   *
+   * In both cases handlers stay attached to the *original* promise, so a late fulfilment or
+   * rejection is never unhandled.
    */
-  private async attemptPlayElement(key: string): Promise<'played' | 'blocked' | 'unsupported' | 'deferred'> {
+  private async attemptPlayElement(
+    key: string
+  ): Promise<'played' | 'blocked' | 'unsupported' | 'deferred' | 'timeout'> {
     const audio = this.ensureAudio();
     if (!audio) return 'unsupported';
 
     audio.currentTime = 0;
     const startedAt = Date.now();
     const playPromise = audio.play();
-
-    if (!document.hidden) {
-      return this.awaitPlay(playPromise);
-    }
+    const hidden = document.hidden;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const outcome = await Promise.race([
       playPromise.then(() => 'settled' as const, () => 'settled' as const),
       new Promise<'timeout'>(resolve => {
-        timer = setTimeout(() => resolve('timeout'), DEFERRED_MS);
+        timer = setTimeout(() => resolve('timeout'), hidden ? DEFERRED_MS : VISIBLE_PLAY_TIMEOUT_MS);
       })
     ]);
     clearTimeout(timer);
 
     if (outcome !== 'timeout') {
       return this.awaitPlay(playPromise);
+    }
+
+    if (!hidden) {
+      try { audio.pause(); } catch { /* nothing to pause */ }
+      playPromise.then(
+        () => { /* A late fulfilment marks no play and records no attempt. */ },
+        () => { /* A late rejection needs no further handling. */ }
+      );
+      return 'timeout';
     }
 
     playPromise.then(
@@ -455,7 +474,10 @@ export class BenchmarkCompletionSoundService {
     return outcome;
   }
 
-  /** Visible-tab order: the element first, the buffer only on `'blocked'` or `'unsupported'`. */
+  /**
+   * Visible-tab order: the element first, the buffer only on `'blocked'`, `'unsupported'` or
+   * `'timeout'`.
+   */
   private async tryElementThenBuffer(
     key: string,
     attempt: BenchmarkCompletionSoundAttempt
@@ -464,7 +486,7 @@ export class BenchmarkCompletionSoundService {
     const elementOutcome = await this.attemptPlayElement(key);
     if (elementOutcome === 'played') return 'played';
 
-    if ((elementOutcome === 'blocked' || elementOutcome === 'unsupported')
+    if ((elementOutcome === 'blocked' || elementOutcome === 'unsupported' || elementOutcome === 'timeout')
       && this.decodedBuffer && this.audioContext) {
       attempt.path = 'buffer';
       this.lastPlayPath = 'buffer';

@@ -1700,7 +1700,9 @@ a battery document renders through the same code as a run's:
   runs, rounds, definition and class hashes, pooled identity, critical-error rate, speed index, the
   suites' SD and range, excluded members, caveats), `suite.<n>.*` (name, weight, index, contribution,
   interval, scored items, runs, speed index, cost per run, critical-error rate; *n* from 1),
-  `sensitivity.<scheme>` and `loo.<n>`.
+  `sensitivity.<scheme>`, `sensitivity.panelVerificationCleared` (harness 48, only when a member is a
+  panel run: the advisory panel grading sensitivity, not a weighting scheme; the writer is told never to
+  present it as a corrected result) and `loo.<n>`.
 
 A battery sheet has **no finding rows**: its items cite fact keys and question references as evidence.
 

@@ -142,6 +142,7 @@ import {
   answerShortfallOf,
   formatDuration,
   formatElapsed,
+  formatModelTime as formatModelTimeText,
   DELIBERATING_THINKING_LEVELS,
   INTERACTIVE_SPEED_TARGET_MAX_MS,
   MISSING_BOARD_QUOTE_LIST_CAP
@@ -4984,12 +4985,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** One decimal of seconds under a minute (`17.2 s`), whole minutes and seconds from one (`1m 12s`). */
   formatModelTime(ms: number): string {
-    const tenths = Math.round(Math.max(0, ms) / 100);
-    if (tenths < 600) {
-      return `${(tenths / 10).toFixed(1)} s`;
-    }
-    const totalSecs = Math.round(ms / 1000);
-    return `${Math.floor(totalSecs / 60)}m ${totalSecs % 60}s`;
+    return formatModelTimeText(ms);
   }
 
   /**

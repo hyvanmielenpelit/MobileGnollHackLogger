@@ -28,12 +28,14 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { IndexBadgeComponent } from '../../../shared/index-badge/index-badge.component';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { BenchmarkCostPanelComponent } from '../cost-panel/benchmark-cost-panel.component';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ELAPSED_TICK_MS, startElapsedTicker } from '../../../utils/elapsed-ticker';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { formatElapsed } from '../benchmark-run-format';
+import { formatElapsed, formatModelTime } from '../benchmark-run-format';
 import { RunFactBadge, RunFactModel, runFactBadges } from '../run-report-frame/run-facts';
 import { runStageCaption } from '../run-stage-labels';
+import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
   INDEX_WITHHELD_HINT,
@@ -45,6 +47,7 @@ import {
   batteryPostRunGraceOpen,
   batteryReportDocumentsStatusName,
   batteryRunStatusLabel,
+  formatCost,
   formatNumber,
   httpErrorText,
   isFinishedBatteryRunStatus,
@@ -155,7 +158,7 @@ interface AttachSlot {
 @Component({
   selector: 'app-battery-progress-dialog',
   standalone: true,
-  imports: [NgTemplateOutlet, ProviderBadgeComponent, IndexBadgeComponent],
+  imports: [NgTemplateOutlet, ProviderBadgeComponent, IndexBadgeComponent, BenchmarkCostPanelComponent],
   templateUrl: './battery-progress-dialog.component.html',
   styleUrls: ['./battery-progress-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -165,6 +168,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   private cdr = inject(ChangeDetectorRef);
   /** The configurations, for the report writer's name before a job view names it. */
   private readonly workspace = inject(BenchmarkWorkspaceStore, { optional: true });
+  /** Arms the completion signals under a resume click's gesture. */
+  private readonly monitor = inject(BenchmarkActiveRunMonitor, { optional: true });
 
   static readonly POLL_INTERVAL_MS = 2000;
   /** Poll delays after consecutive failures; the last repeats. */
@@ -507,6 +512,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     if (!run || this.resumeInFlight) {
       return;
     }
+    // Synchronous, inside the click's gesture, so the completion sound may play later from a hidden tab.
+    this.monitor?.armCompletionSignalsFromGesture();
     this.resumeInFlight = true;
     this.actionError = null;
     this.benchmarkService.resumeBatteryRun(run.id, mode).subscribe({
@@ -903,6 +910,54 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     return !!run && this.isFinished && run.overallIndex != null && !batteryAnalysisPending(run);
   }
 
+  /** The Mean answer tile: the members' mean model time in the run report's units; null while unknown. */
+  get meanAnswerLabel(): string | null {
+    const ms = this.batteryRun?.meanModelTimeMs;
+    return ms != null && Number.isFinite(ms) ? formatModelTime(ms) : null;
+  }
+
+  /** The Candidate cost tile; null while unknown. */
+  get candidateCostLabel(): string | null {
+    const candidate = this.batteryRun?.liveCost?.candidate;
+    return candidate != null && Number.isFinite(candidate) ? formatCost(candidate) : null;
+  }
+
+  /**
+   * The report writer's cost: the job's running cost while the reports stage is current, then the
+   * battery documents' stored total.
+   */
+  get reportWriterCost(): number | null {
+    if (this.reportsStageCurrent) {
+      return this.reportJob?.job?.costUsd ?? null;
+    }
+    return this.batteryRun?.liveCost?.reportWriterCostUsd ?? null;
+  }
+
+  /** The battery run's cost so far, the report writer's included; null while pricing is incomplete. */
+  get totalCost(): number | null {
+    const total = this.batteryRun?.liveCost?.total;
+    if (total == null || !Number.isFinite(total)) return null;
+    return total + (this.reportWriterCost ?? 0);
+  }
+
+  get totalCostLabel(): string | null {
+    const total = this.totalCost;
+    return total == null ? null : formatCost(total);
+  }
+
+  /** *incl. report writer* once a writer cost exists, else *so far* while the battery runs. */
+  get totalCostNote(): string | null {
+    if (this.totalCost == null) return null;
+    if (this.reportWriterCost != null) return 'incl. report writer';
+    return this.isLive ? 'so far' : null;
+  }
+
+  /** A panel battery run, whose second-opinion slot is the reference reader. */
+  get isPanelBattery(): boolean {
+    const run = this.batteryRun;
+    return !!run?.coAssessorLabel || run?.liveCost?.coAssessor != null;
+  }
+
   // --- Member cells ----------------------------------------------------------------------------
 
   /** A running member's caption: *Run #79 · Stage 1 of 3 — Answering and grading*, or *Starting*. */
@@ -917,8 +972,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   }
 
   /**
-   * A finished member's facts: *Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers*, each part
-   * left out when it is not recorded, the flagged answers also when there are none.
+   * A finished member's facts: *Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers · est. $0.4210*,
+   * each part left out when it is not recorded, the flagged answers also when there are none.
    */
   memberFactsLine(member: BenchmarkBatteryMemberDto): string {
     const parts: string[] = [];
@@ -937,6 +992,9 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     const flagged = member.advisoryFlagAnswerCount ?? 0;
     if (flagged > 0) {
       parts.push(`${flagged} flagged ${flagged === 1 ? 'answer' : 'answers'}`);
+    }
+    if (member.estimatedCost != null && Number.isFinite(member.estimatedCost)) {
+      parts.push(`est. ${formatCost(member.estimatedCost)}`);
     }
     return parts.join(' · ');
   }

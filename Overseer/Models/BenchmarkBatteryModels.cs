@@ -325,6 +325,56 @@ public class BenchmarkBatteryMemberDto
 
     public int ClaimsRefutedCount { get; set; }
     public int AdvisoryFlagAnswerCount { get; set; }
+
+    // The member run's estimated cost in US dollars, live while it runs. Null on the battery-run list,
+    // on a superseded member, and when the figure is unknown.
+    public decimal? EstimatedCost { get; set; }
+    public decimal? EstimatedCandidateCost { get; set; }
+
+    /// <summary>
+    /// Mean model time of the member run's Ok answers, in ms: the turn duration less tool time.
+    /// Null on the battery-run list, on a superseded member, and while no answer is Ok.
+    /// </summary>
+    public double? MeanModelTimeMs { get; set; }
+}
+
+/// <summary>
+/// A battery run's estimated cost so far, in US dollars: each role summed over its non-superseded
+/// member runs. A summed role is null when any member's figure for it is null.
+/// </summary>
+public class BenchmarkBatteryLiveCostDto
+{
+    public decimal? Total { get; set; }
+    public decimal? Candidate { get; set; }
+    public decimal? Assessor { get; set; }
+
+    /// <summary>Panel member B.</summary>
+    public decimal? CoAssessor { get; set; }
+
+    /// <summary>The second or reference reader.</summary>
+    public decimal? SecondOpinion { get; set; }
+
+    public decimal? ClaimVerifier { get; set; }
+    public decimal? Synthesis { get; set; }
+    public decimal? CoSynthesis { get; set; }
+
+    /// <summary>Every grading role together.</summary>
+    public decimal? Grading { get; set; }
+
+    /// <summary>A member run's pricing was incomplete.</summary>
+    public bool PricingIncomplete { get; set; }
+
+    /// <summary>The members' common pricing source; <c>mixed</c> when they differ; null when none resolved.</summary>
+    public string? PricingSource { get; set; }
+
+    /// <summary>The member runs estimated.</summary>
+    public int PricedMemberCount { get; set; }
+
+    /// <summary>
+    /// The battery-completion documents' report-writer cost; null when none exists or any has no cost.
+    /// Not part of <see cref="Total"/>.
+    /// </summary>
+    public decimal? ReportWriterCostUsd { get; set; }
 }
 
 /// <summary>One (suite, round) cell of the K × R grid, with the member occupying it, if any.</summary>
@@ -463,6 +513,18 @@ public class BenchmarkBatteryRunDto
 
     /// <summary>Every member row, superseded ones included, in suite, round and insertion order.</summary>
     public List<BenchmarkBatteryMemberDto> Members { get; set; } = new();
+
+    /// <summary>The estimated cost so far; null on the battery-run list and when no estimator is available.</summary>
+    public BenchmarkBatteryLiveCostDto? LiveCost { get; set; }
+
+    /// <summary>
+    /// Mean model time over the Ok answers of every non-superseded member run, in ms; null on the
+    /// battery-run list and while no answer is Ok.
+    /// </summary>
+    public double? MeanModelTimeMs { get; set; }
+
+    /// <summary>The Ok answers <see cref="MeanModelTimeMs"/> is the mean of; 0 on the battery-run list.</summary>
+    public int ModelTimedAnswerCount { get; set; }
 
     // The latest analysis, summarized for the battery-run table. All null until one is computed.
     public long? LatestAnalysisId { get; set; }

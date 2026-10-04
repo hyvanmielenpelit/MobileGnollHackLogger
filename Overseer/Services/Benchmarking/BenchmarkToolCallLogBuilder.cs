@@ -66,6 +66,19 @@ public static class BenchmarkToolCallLogBuilder
         sb.AppendLine($"- **Knowledge Base HEAD SHA:** {run.KnowledgeBaseHeadSha ?? "not recorded"}");
         sb.AppendLine($"- **GnollHack Wiki HEAD SHA:** {run.WikiHeadSha ?? "not recorded"}");
         sb.AppendLine($"- **GnollHack Source HEAD SHA:** {run.SourceCodeHeadSha ?? "not recorded"}");
+        const string CorpusFingerprintsLabel = "- **Corpus Index Fingerprints** (what each index held; provenance, not a comparability key):";
+        if (BenchmarkReportBuilder.CorpusFingerprintLines(run.CorpusIndexFingerprintsJson) is { } corpusLines)
+        {
+            sb.AppendLine(CorpusFingerprintsLabel);
+            foreach (string line in corpusLines)
+            {
+                sb.AppendLine($"  - {line}");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"{CorpusFingerprintsLabel} not recorded");
+        }
         sb.AppendLine();
 
         foreach (var answer in answers.OrderBy(a => a.OrderIndex))

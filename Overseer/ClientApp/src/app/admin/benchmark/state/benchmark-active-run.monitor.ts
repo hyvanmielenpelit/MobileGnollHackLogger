@@ -11,7 +11,7 @@ import {
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
-import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
+import { BenchmarkCompletionSoundOutcome, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
   BenchmarkCompletionNotificationService,
   BenchmarkNotificationPermissionOutcome,
@@ -350,7 +350,8 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   /** Set only when the last chime attempt was blocked by the browser's autoplay policy, or deferred by it. */
   completionSoundStatus: string | null = null;
 
-  lastCompletionSoundOutcome: 'played' | 'blocked' | 'unsupported' | 'duplicate' | 'deferred' | null = null;
+  /** `'error'` when `play()` itself rejected, which the service is never meant to do. */
+  lastCompletionSoundOutcome: BenchmarkCompletionSoundOutcome | 'error' | null = null;
 
   /** The reason a notification permission request did not end in `completionNotification` being on. */
   completionNotificationStatus: string | null = null;
@@ -1130,6 +1131,9 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         } else if (outcome === 'deferred') {
           this.completionSoundStatus = 'The browser held the sound until this tab was shown.';
         }
+        this.viewSync.notify();
+      }).catch(() => {
+        this.lastCompletionSoundOutcome = 'error';
         this.viewSync.notify();
       });
     }

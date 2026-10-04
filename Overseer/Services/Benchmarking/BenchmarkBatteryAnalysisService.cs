@@ -671,7 +671,8 @@ public class BenchmarkBatteryAnalysisService
                 pooled.Where(a => a.TimeToFirstTokenMs.HasValue).Select(a => (double)a.TimeToFirstTokenMs!.Value).ToList(),
                 runs.Count,
                 runs.Max(r => r.TotalQuestionCount),
-                suite.Excluded));
+                suite.Excluded,
+                PanelVerificationClearedLifts(runs)));
         }
 
         var outOfRange = loaded.Excluded
@@ -691,6 +692,28 @@ public class BenchmarkBatteryAnalysisService
             Caveats = caveats,
             ExcludedMembers = result.ExcludedMembers.Concat(outOfRange).ToList()
         };
+    }
+
+    /// <summary>
+    /// Per usable panel run with a published Intelligence Index, its panel verification-cleared
+    /// Accuracy sensitivity over its own answers, under its own scoring profile, minus that index:
+    /// zero when no answer qualifies. Empty when no run is a panel run.
+    /// </summary>
+    internal static IReadOnlyList<double> PanelVerificationClearedLifts(IReadOnlyList<BenchmarkRun> runs)
+    {
+        var lifts = new List<double>();
+        foreach (var run in runs)
+        {
+            if (!BenchmarkRunFinalizer.IsPanelRun(run) || run.QualityIndex is not int published) continue;
+
+            var sensitivity = BenchmarkPanelSensitivity.Compute(
+                run,
+                (run.Answers ?? new List<BenchmarkRunAnswer>()).ToList(),
+                BenchmarkScoring.ConstantsFromSnapshot(run.ScoringProfileSnapshotJson));
+            lifts.Add((sensitivity.Index ?? published) - published);
+        }
+
+        return lifts;
     }
 
     /// <summary>The battery-wide speed and cost degrade flags of the M8 verdict, with the differing keys as the reason.</summary>

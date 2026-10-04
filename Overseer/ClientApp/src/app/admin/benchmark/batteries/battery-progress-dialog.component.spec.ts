@@ -1,14 +1,18 @@
-import type { MockedObject } from "vitest";
+import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
 
 import {
   AdminBenchmarkService,
   BenchmarkBatteryAttachCandidateDto,
+  BenchmarkBatteryLiveCostDto,
   BenchmarkBatteryMemberDto,
   BenchmarkBatteryRunDto,
   BenchmarkBatterySlotDto
 } from '../../../services/admin-benchmark.service';
+import { BenchmarkCostPanelComponent } from '../cost-panel/benchmark-cost-panel.component';
+import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import {
   BatteryProgressDialogComponent,
   batterySlotState
@@ -108,10 +112,31 @@ function batteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkB
   });
 }
 
+/** A priced battery run's cost so far: the candidate and the grading roles add up to the total. */
+function liveCost(overrides: Partial<BenchmarkBatteryLiveCostDto> = {}): BenchmarkBatteryLiveCostDto {
+  return {
+    total: 1.5,
+    candidate: 0.4321,
+    assessor: 0.6,
+    coAssessor: null,
+    secondOpinion: 0.2,
+    claimVerifier: 0.1,
+    synthesis: 0.1679,
+    coSynthesis: null,
+    grading: 1.0679,
+    pricingIncomplete: false,
+    pricingSource: 'Model catalog',
+    pricedMemberCount: 3,
+    reportWriterCostUsd: null,
+    ...overrides
+  };
+}
+
 describe('BatteryProgressDialogComponent', () => {
   let fixture: ComponentFixture<BatteryProgressDialogComponent>;
   let component: BatteryProgressDialogComponent;
   let service: MockedObject<AdminBenchmarkService>;
+  let monitor: { armCompletionSignalsFromGesture: Mock };
 
   function open(run: BenchmarkBatteryRunDto): void {
     service.getBatteryRun.mockReturnValue(of(run));
@@ -153,10 +178,16 @@ describe('BatteryProgressDialogComponent', () => {
     service.getBatteryRun.mockReturnValue(of(batteryRun()));
     service.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 7 }));
     service.cancelBatteryRun.mockReturnValue(of(void 0));
+    monitor = {
+      armCompletionSignalsFromGesture: vi.fn().mockName('BenchmarkActiveRunMonitor.armCompletionSignalsFromGesture')
+    };
 
     await TestBed.configureTestingModule({
       imports: [BatteryProgressDialogComponent],
-      providers: [{ provide: AdminBenchmarkService, useValue: service }]
+      providers: [
+        { provide: AdminBenchmarkService, useValue: service },
+        { provide: BenchmarkActiveRunMonitor, useValue: monitor }
+      ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(BatteryProgressDialogComponent);
@@ -262,6 +293,25 @@ describe('BatteryProgressDialogComponent', () => {
     expect(text('.bp-action-error')).toBe('The harness version changed.');
     expect(button('.bp-continue')).toBeNull();
     expect(button('.bp-rerun')).not.toBeNull();
+  });
+
+  it('arms the completion signals inside the Continue click, before the request and the batteryResumed emit', () => {
+    const run = batteryRun({
+      status: 'Stopped', stopReason: 'MemberFailed', resumable: true,
+      runsPerSuite: 1, requestedMemberCount: 2,
+      slots: [slot(0, 1, member()), slot(1, 1, null)], members: [member()]
+    });
+    open(run);
+    const resumed = vi.fn().mockName('resumed');
+    component.batteryResumed.subscribe(resumed);
+
+    button('.bp-continue')!.click();
+
+    expect(monitor.armCompletionSignalsFromGesture).toHaveBeenCalledTimes(1);
+    expect(resumed).toHaveBeenCalledWith(7);
+    const armedAt = monitor.armCompletionSignalsFromGesture.mock.invocationCallOrder[0];
+    expect(armedAt).toBeLessThan(service.resumeBatteryRun.mock.invocationCallOrder[0]);
+    expect(armedAt).toBeLessThan(resumed.mock.invocationCallOrder[0]);
   });
 
   it('cancels a running battery', () => {
@@ -603,6 +653,31 @@ describe('BatteryProgressDialogComponent', () => {
         .toBe('Speed 55 · 9s · 1 refuted claim');
     });
 
+    it('ends the facts line with the member\'s estimated cost', () => {
+      const cheap = member({ speedIndex: 55, durationMs: 9_400, claimsRefutedCount: 1, advisoryFlagAnswerCount: 0, estimatedCost: 0.421 });
+      const base = batteryRun();
+      open(batteryRun({ slots: [slot(0, 1, cheap), base.slots[1], base.slots[2], base.slots[3]] }));
+      expect((cell(0, 1).querySelector('.bp-member-facts')?.textContent ?? '').trim())
+        .toBe('Speed 55 · 9s · 1 refuted claim · est. $0.4210');
+
+      const dear = member({ speedIndex: 55, durationMs: 9_400, claimsRefutedCount: 1, advisoryFlagAnswerCount: 0, estimatedCost: 2.5 });
+      close();
+      open(batteryRun({ id: 8, slots: [slot(0, 1, dear), base.slots[1], base.slots[2], base.slots[3]] }));
+      expect((cell(0, 1).querySelector('.bp-member-facts')?.textContent ?? '').trim())
+        .toBe('Speed 55 · 9s · 1 refuted claim · est. $2.50');
+    });
+
+    it('draws a running member\'s bar as a job progress bar across the whole cell', () => {
+      open(batteryRun());
+      const progress = cell(0, 2).querySelector('progress.bp-member-progress') as HTMLProgressElement;
+      expect(progress.classList).toContain('job-progress');
+      const style = getComputedStyle(progress);
+      // `display: block` proves the component's style sheet applies, so `none` is not a default.
+      expect(style.display).toBe('block');
+      expect(style.maxInlineSize).toBe('none');
+      expect(style.maxWidth).toBe('none');
+    });
+
     it('says what a pending slot of a live battery run waits for', () => {
       open(batteryRun());
       expect((cell(1, 2).querySelector('.bp-cell-waiting')?.textContent ?? '').trim()).toBe('Waiting for suite 1');
@@ -611,6 +686,125 @@ describe('BatteryProgressDialogComponent', () => {
     it('keeps a single live region with running and finished members shown', () => {
       open(batteryRun());
       expect(el().querySelectorAll('[aria-live], [role="status"]').length).toBe(1);
+    });
+  });
+
+  describe('mean answer and cost', () => {
+    const tile = (label: string): HTMLElement => {
+      const stat = Array.from(el().querySelectorAll<HTMLElement>('.run-stat-strip .run-stat'))
+        .find(node => (node.querySelector('dt')?.textContent ?? '').trim() === label);
+      expect(stat, label).toBeTruthy();
+      return stat!;
+    };
+    /** The tile's value without its sub-note. */
+    const tileValue = (label: string): string => {
+      const dd = tile(label).querySelector('dd')!.cloneNode(true) as HTMLElement;
+      dd.querySelectorAll('.bp-stat-note').forEach(node => node.remove());
+      return (dd.textContent ?? '').replace(/\s+/g, ' ').trim();
+    };
+    const tileNote = (label: string): string | null =>
+      tile(label).querySelector('.bp-stat-note')?.textContent?.trim() ?? null;
+    const expectNotAvailable = (label: string): void => {
+      const dd = tile(label).querySelector('dd')!;
+      expect(dd.querySelector('[aria-hidden="true"]')?.textContent, label).toBe('—');
+      expect(dd.querySelector('.visually-hidden')?.textContent?.trim(), label).toBe('not available yet');
+    };
+    const costPanel = (): BenchmarkCostPanelComponent =>
+      fixture.debugElement.query(By.css('.bp-cost-details app-benchmark-cost-panel')).componentInstance as BenchmarkCostPanelComponent;
+
+    it('places the three tiles after Failed and before the Overall Index', () => {
+      open(batteryRun({ liveCost: liveCost(), meanModelTimeMs: 23_400, modelTimedAnswerCount: 14 }));
+      const labels = Array.from(el().querySelectorAll('.run-stat-strip .run-stat dt')).map(dt => dt.textContent?.trim());
+      expect(labels).toEqual(['Status', 'Elapsed', 'Suites complete', 'Usable slots', 'Failed', 'Mean answer', 'Candidate cost', 'Total cost']);
+    });
+
+    it('shows the mean model time, the candidate cost and the total so far while the battery runs', () => {
+      open(batteryRun({ liveCost: liveCost(), meanModelTimeMs: 23_400, modelTimedAnswerCount: 14 }));
+
+      expect(tileValue('Mean answer')).toBe('23.4 s');
+      expect(tileNote('Mean answer')).toBe('model time, tools excluded');
+      expect(tileValue('Candidate cost')).toBe('$0.4321');
+      expect(tileNote('Candidate cost')).toBeNull();
+      expect(tileValue('Total cost')).toBe('$1.50');
+      expect(tileNote('Total cost')).toBe('so far');
+    });
+
+    it('shows a dash with a hidden "not available yet" for every value it does not have', () => {
+      open(batteryRun());
+
+      for (const label of ['Mean answer', 'Candidate cost', 'Total cost']) {
+        expectNotAvailable(label);
+      }
+      expect(tileNote('Mean answer')).toBe('model time, tools excluded');
+      expect(tileNote('Total cost')).toBeNull();
+    });
+
+    it('shows no total while pricing is incomplete, but still the candidate cost', () => {
+      open(batteryRun({ liveCost: liveCost({ total: null, pricingIncomplete: true }) }));
+
+      expect(tileValue('Candidate cost')).toBe('$0.4321');
+      expectNotAvailable('Total cost');
+      expect(tileNote('Total cost')).toBeNull();
+    });
+
+    it('adds the stored report writer cost to the total of a finished battery run', () => {
+      open(batteryRun({
+        status: 'Completed', completedAtUtc: '2026-10-01T12:00:00Z', isDriving: false,
+        reportWriterModelConfigurationId: 3, reportDocumentsStatus: 3,
+        liveCost: liveCost({ reportWriterCostUsd: 0.25 })
+      }));
+
+      expect(tileValue('Total cost')).toBe('$1.75');
+      expect(tileNote('Total cost')).toBe('incl. report writer');
+    });
+
+    it('adds the report job\'s running cost while the reports are written', () => {
+      service.getBatteryReportJob = vi.fn().mockName('AdminBenchmarkService.getBatteryReportJob')
+        .mockReturnValue(of({ runId: 7, writerConfigId: 3, job: { documents: [], costUsd: 0.1 } })) as any;
+      open(batteryRun({
+        status: 'Completed', completedAtUtc: new Date().toISOString(), isDriving: false,
+        reportWriterModelConfigurationId: 3, reportDocumentsStatus: 2,
+        liveCost: liveCost({ reportWriterCostUsd: null })
+      }));
+      fixture.detectChanges();
+
+      expect(service.getBatteryReportJob).toHaveBeenCalledWith(7);
+      expect(tileValue('Total cost')).toBe('$1.60');
+      expect(tileNote('Total cost')).toBe('incl. report writer');
+      expect(costPanel().reportWriter).toBe(0.1);
+    });
+
+    it('puts the cost by role in a closed disclosure holding the live cost panel', () => {
+      open(batteryRun({ liveCost: liveCost() }));
+
+      const details = el().querySelector('details.gh-disclosure.bp-cost-details') as HTMLDetailsElement;
+      expect(details).not.toBeNull();
+      expect(details.open).toBe(false);
+      expect(details.hasAttribute('open')).toBe(false);
+      expect((details.querySelector('summary')?.textContent ?? '').trim()).toBe('Cost by role');
+      expect(details.querySelector('.gh-disclosure-body app-benchmark-cost-panel')).not.toBeNull();
+
+      const panel = costPanel();
+      expect(panel.variant).toBe('live');
+      expect(panel.total).toBe(1.5);
+      expect(panel.candidate).toBe(0.4321);
+      expect(panel.grading).toBe(1.0679);
+      expect(panel.pricingSource).toBe('Model catalog');
+      expect(panel.pricingIncomplete).toBe(false);
+      expect(panel.panel).toBe(false);
+      expect(panel.reportWriter).toBeNull();
+    });
+
+    it('marks the cost panel a panel run when the battery run has a co-assessor', () => {
+      open(batteryRun({ liveCost: liveCost({ coAssessor: 0.3, coSynthesis: 0.05 }), coAssessorLabel: 'Assessor B' }));
+      expect(costPanel().panel).toBe(true);
+      expect(costPanel().coAssessor).toBe(0.3);
+    });
+
+    it('leaves the disclosure out while there is no live cost', () => {
+      open(batteryRun());
+      expect(el().querySelector('.bp-cost-details')).toBeNull();
+      expect(el().querySelector('app-benchmark-cost-panel')).toBeNull();
     });
   });
 

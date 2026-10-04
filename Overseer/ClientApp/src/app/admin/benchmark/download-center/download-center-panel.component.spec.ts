@@ -1156,4 +1156,112 @@ describe('DownloadCenterPanelComponent', () => {
       http.expectNone(JOB_URL);
     }));
   });
+
+  // -------------------------------------------------------------------------------------------
+  // The footer's Cancel
+  // -------------------------------------------------------------------------------------------
+
+  describe('the footer Cancel', () => {
+    const cancelButton = (): HTMLButtonElement | null => q<HTMLButtonElement>('.dc-footer .dc-cancel');
+    const downloadButton = (): HTMLButtonElement => q<HTMLButtonElement>('.dc-footer .dc-download')!;
+
+    function spySaves(): Mock[] {
+      return [
+        vi.spyOn(downloadCenterIo, 'saveText').mockReturnValue(undefined),
+        vi.spyOn(downloadCenterIo, 'saveBytes').mockReturnValue(undefined),
+        vi.spyOn(downloadCenterIo, 'saveBlob').mockReturnValue(undefined)
+      ] as unknown as Mock[];
+    }
+
+    it('is absent while no download is prepared', () => {
+      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+
+      expect(cancelButton()).toBeNull();
+      expect(downloadButton()).not.toBeNull();
+    });
+
+    it('appears while a download is prepared; it stops the download, keeps the panel, saves nothing and says so', async () => {
+      const saves = spySaves();
+      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      const keys = rowKeys();
+      expect(panel().plannedFiles.length).toBeGreaterThan(1);
+
+      const done = panel().download();
+      const pending = http.match(() => true);
+      expect(pending.length).toBe(1);
+      fixture.detectChanges();
+
+      const cancel = cancelButton()!;
+      expect(cancel).not.toBeNull();
+      expect(cancel.classList.contains('btn-gh-cancel')).toBe(true);
+      expect(flat(cancel)).toBe('Cancel');
+      expect(cancel.querySelector('svg')).toBeNull();
+      expect(cancel.nextElementSibling).toBe(downloadButton());
+
+      cancel.click();
+      fixture.detectChanges();
+
+      expect(pending[0].cancelled).toBe(true);
+      expect(panel().preparing).toBe(false);
+      expect(panel().progress).toBeNull();
+      expect(q('.dc-preparing')).toBeNull();
+      expect(cancelButton()).toBeNull();
+      expect(q('.dc-status')!.getAttribute('role')).toBe('status');
+      expect(text('.dc-status')).toBe('Download canceled. Nothing was saved.');
+      expect(document.activeElement).toBe(downloadButton());
+      expect(rowKeys()).toEqual(keys);
+
+      await done;
+      await settle();
+      fixture.detectChanges();
+
+      http.expectNone(() => true);
+      for (const save of saves) {
+        expect(save).not.toHaveBeenCalled();
+      }
+      expect(text('.dc-status')).toBe('Download canceled. Nothing was saved.');
+      expect(panel().canDownload).toBe(true);
+    });
+
+    it('aborts a download in preparation when the host takes the context away, without announcing a cancel', async () => {
+      const saves = spySaves();
+      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+
+      const done = panel().download();
+      const pending = http.match(() => true);
+      expect(pending.length).toBe(1);
+
+      hostComponent.context = null;
+      fixture.detectChanges();
+
+      expect(pending[0].cancelled).toBe(true);
+      expect(panel().preparing).toBe(false);
+      await done;
+      await settle();
+
+      http.expectNone(() => true);
+      for (const save of saves) {
+        expect(save).not.toHaveBeenCalled();
+      }
+      expect(panel().statusMessage).not.toBe('Download canceled. Nothing was saved.');
+    });
+
+    it('aborts a download in preparation when the panel is destroyed', async () => {
+      const saves = spySaves();
+      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+
+      const done = panel().download();
+      const pending = http.match(() => true);
+      expect(pending.length).toBe(1);
+
+      fixture.destroy();
+
+      expect(pending[0].cancelled).toBe(true);
+      await done;
+      await settle();
+      for (const save of saves) {
+        expect(save).not.toHaveBeenCalled();
+      }
+    });
+  });
 });

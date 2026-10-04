@@ -429,12 +429,29 @@ polled while its analysis or its reports are under way (`batteryAwaitsPostRun`),
 says so: *Computing the battery analysis…*, *Writing the AI reports…*, then *Completed: 2 of 2 suites ·
 reports written* (or *· reports failed*). The completion chime fires once, after that post-run work,
 followed by a Run History reload; a member run does not chime while its battery still awaits post-run
-work.
+work. **Continue** and **Re-run under Current Instrument** re-arm the chime and the notification under
+their click, as the Battery Run Report's *Continue battery* and *Re-run under current instrument* do,
+and on a visible tab a chime whose audio element does not start within 3 seconds plays through the armed
+buffer instead ([`ai-benchmark.md`](ai-benchmark.md) § *Harness Version 48 Updates*).
 
 **Stat strip and elapsed time.** The strip holds *Status*, *Elapsed*, *Suites complete*, *Usable
-slots* and *Failed*, and a sixth tile, *Overall Index*, once the finished battery run's analysis has
-computed one (absent before, and while the analysis is pending): an `app-index-badge` of size `md`
-holding `overallIndex` and `overallIndexHalfWidth` (*84 ± 3*). The rail's *Overall Index 84.9* note
+slots* and *Failed*; then three live figures from the polled battery run (`GetBatteryRun`, harness 48):
+
+- *Mean answer* — the pooled mean model time over the members' Ok answers, `meanModelTimeMs`, in the
+  run report's format (*23.4 s*), noted *model time, tools excluded*;
+- *Candidate cost* — `liveCost.candidate`, the candidate's cost summed over the members;
+- *Total cost* — `liveCost.total` plus the report writer's cost (the live report job's while the
+  reports are written, else `reportWriterCostUsd`), noted *so far* while the battery runs and *incl.
+  report writer* once that cost exists; *—* while any member's pricing is incomplete.
+
+A missing figure shows *—* with a visually hidden *not available yet*. Then a sixth tile, *Overall
+Index*, once the finished battery run's analysis has computed one (absent before, and while the
+analysis is pending): an `app-index-badge` of size `md` holding `overallIndex` and
+`overallIndexHalfWidth` (*84 ± 3*). Below the strip a closed `<details class="gh-disclosure">`, *Cost
+by role*, holds the run dialog's `app-benchmark-cost-panel variant="live"` fed from `liveCost` (the
+panel's roles when the battery has a co-assessor); it is absent while `liveCost` is null. Each member's
+estimate is the single-run dialog's (`BenchmarkRunCostEstimator`): live totals for a running member,
+the finalized columns otherwise, superseded members excluded; a role is null when any member's is. The rail's *Overall Index 84.9* note
 stays text. *Elapsed*, each running member's elapsed time and each finished member's duration use
 `formatElapsed` (`benchmark-run-format.ts`) — *45s*, *3m 05s*, *1h 02m 05s*, whole seconds floored —
 the format of the run and multi-run progress dialogs. The display refreshes through the same
@@ -832,6 +849,14 @@ index* (`ai-benchmark.md` § 1, *Runs That Stop Early*).
   refreshes it, and the index does not move.
 - **Critical-error rate:** `Σ_s v_s · rate_s`, with `rate_s` the mean of the suite's item
   critical-error rates.
+- **Grading sensitivity (harness 48, panel members only):** the Overall Index with a panel member's
+  Accuracy one level higher where the claim verifier supported every sentence that member charged, or
+  every out-of-rubric claim it raised (`BenchmarkPanelSensitivity`, [`ai-benchmark.md`](ai-benchmark.md)
+  § *Harness Version 48 Updates*). Per suite it is `I_s` plus the mean lift over the suite's usable
+  panel runs; the composite is `Σ_s w_s · I'_s` over the declared weights, a suite without the figure
+  keeping `I_s`. It is advisory and a **lower bound** — a charge the verifier wrongly refuted is not
+  lifted — and moves no score; the report prints it as § 4's *Grading sensitivity (advisory)* and the
+  fact sheet as `sensitivity.panelVerificationCleared`. Null when no member is a panel run.
 
 Both of the last two use the **count weights** `v_s` of M6, not the declared `w_s`. Each is an
 unweighted mean within a suite, so question-count weights make the composite the pooled unweighted mean
@@ -982,7 +1007,10 @@ Within each suite, its usable member runs must resolve to Tier A or B
 
 `WikiHeadSha` and `SourceCodeHeadSha` are provenance, not comparability keys (`ai-benchmark.md`,
 harness 16), and are not part of this verdict. When they differ across members the result carries a
-caveat naming them. (Attaching is stricter about them; see § 3.6.)
+caveat naming them. (Attaching is stricter about them; see § 3.6.) The five corpus index fingerprints
+of harness 48 (`CorpusIndexFingerprintsJson`) are provenance in the same way: when two usable members
+both recorded one corpus's fingerprint and they differ, a caveat names the corpus and the runs, and the
+Fingerprints column prints them as `WIKI-IDX`, `SRC-IDX`, `KB-IDX`, `NHW-IDX` and `NHS-IDX`.
 
 ### M9. The definition hash and the comparability class
 

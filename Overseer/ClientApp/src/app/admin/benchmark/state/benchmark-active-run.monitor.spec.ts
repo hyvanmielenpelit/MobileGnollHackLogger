@@ -504,4 +504,23 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       expect(play).not.toHaveBeenCalled();
     });
   });
+
+  describe('completion signals', () => {
+    it('records "error" when play() rejects, and still fires the notification', async () => {
+      const notifications = TestBed.inject(BenchmarkCompletionNotificationService) as unknown as { notify: Mock };
+      launcher.completionNotification = true;
+      play.mockImplementation(() => Promise.reject(new Error('audio pipeline gone')));
+      monitor.activeRunDetail = runDetail(5, 'Completed') as any;
+
+      (monitor as any).signalCompletion('run:5');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(play).toHaveBeenCalledWith('run:5');
+      expect(monitor.lastCompletionSoundOutcome).toBe('error');
+      expect(notifications.notify).toHaveBeenCalledTimes(1);
+      expect(notifications.notify).toHaveBeenCalledWith('run:5', 'AI Benchmark', expect.stringContaining('Run #5'));
+    });
+  });
 });

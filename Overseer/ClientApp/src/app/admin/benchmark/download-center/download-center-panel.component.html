@@ -533,10 +533,10 @@
     <p class="dc-summary">{{ summaryLine }}</p>
     <p class="dc-status" role="status">{{ statusMessage }}</p>
   </div>
-  @if (showCancel) {
-    <button type="button" class="btn-gh btn-gh-cancel dc-cancel" (click)="cancelRequested.emit()">Cancel</button>
+  @if (preparingDownload) {
+    <button type="button" class="btn-gh btn-gh-cancel dc-cancel" (click)="cancelPreparation()">Cancel</button>
   }
-  <button type="button" class="btn-gh dc-download"
+  <button #downloadButton type="button" class="btn-gh dc-download"
           [attr.aria-disabled]="canDownload ? null : 'true'"
           (click)="download()">
     @if (preparing) {

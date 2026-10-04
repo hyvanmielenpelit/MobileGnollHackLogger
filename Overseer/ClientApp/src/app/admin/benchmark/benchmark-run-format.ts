@@ -190,6 +190,19 @@ export function formatElapsed(ms: number): string {
   return `${secs}s`;
 }
 
+/**
+ * A model time as the run report's Mean Time per Question card reads it: one decimal of seconds
+ * under a minute (`17.2 s`), whole minutes and seconds from one (`1m 12s`).
+ */
+export function formatModelTime(ms: number): string {
+  const tenths = Math.round(Math.max(0, ms) / 100);
+  if (tenths < 600) {
+    return `${(tenths / 10).toFixed(1)} s`;
+  }
+  const totalSecs = Math.round(ms / 1000);
+  return `${Math.floor(totalSecs / 60)}m ${totalSecs % 60}s`;
+}
+
 // rather than a block — but it is shown before the run, not explained after it.
 export const DELIBERATING_THINKING_LEVELS: readonly string[] = ['high', 'max'];
 

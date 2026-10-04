@@ -176,6 +176,59 @@ internal static class BenchmarkBatteryTestData
     public static BenchmarkRun SuiteBRun(long runId, string modelId = "gpt-5.6-luna", int shift = 0)
         => Run(runId, SuiteB, new[] { 90 + shift, 50 + shift }, new[] { 20, 60 }, modelId);
 
+    /// <summary>
+    /// Makes <paramref name="run"/> a panel run: member B scores every answer as member A did, both
+    /// at Accuracy 3 and every other level 5, and the panel score is that score, so the stored index
+    /// is unchanged.
+    /// </summary>
+    public static BenchmarkRun AsPanelRun(BenchmarkRun run)
+    {
+        run.CoAssessorModelConfigurationId = 9;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-judge", displayName: "Claude Judge");
+        foreach (var answer in run.Answers)
+        {
+            int score = answer.QualityScore!.Value;
+            answer.AccuracyLevel = 3;
+            answer.CompletenessLevel = 5;
+            answer.ConcisenessLevel = 5;
+            answer.ReadabilityLevel = 5;
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+            answer.CoAssessmentQualityScore = score;
+            answer.CoAssessmentRawQualityScore = score;
+            answer.CoAssessmentCriticalError = false;
+            answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = 3,
+                CompletenessLevel = 5,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                QualityScore = score,
+                RawQualityScore = score
+            }.Serialize();
+            answer.PanelQualityScore = score;
+        }
+
+        return run;
+    }
+
+    /// <summary>
+    /// Member A charged one sentence of the answer at <paramref name="orderIndex"/>, and the claim
+    /// verifier supported it with a citation: member A's Accuracy 3 lifts to 4 there.
+    /// </summary>
+    public static BenchmarkRun SupportMemberACharge(BenchmarkRun run, int orderIndex)
+    {
+        run.Answers.Single(a => a.OrderIndex == orderIndex).ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Prayer timeout starts at 300.", BenchmarkClaimVerdict.Supported, "src/pray.c:120", "The source sets it.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { "A" },
+                AccusedBy = new[] { "A" }
+            }
+        });
+        return run;
+    }
+
     public static ApplicationDbContext NewDb()
         => new(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -261,6 +314,80 @@ public class BenchmarkBatteryAnalysisServiceTests
         Assert.Null(analysis.ComparedWithBatteryRunId);
         Assert.Equal(new long[] { 1, 2 }, JsonSerializer.Deserialize<long[]>(analysis.MemberRunIdsJson));
         Assert.Single(await _db.BenchmarkBatteryAnalyses.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Analyse_PanelMembers_ComputeThePanelVerificationClearedFigurePerSuiteAndOverall()
+    {
+        // Suite A's Q1 lifts member A from Accuracy 3 to 4; suite B lifts nothing.
+        var suiteA = BenchmarkBatteryTestData.SupportMemberACharge(
+            BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteARun(1)), orderIndex: 1);
+        var suiteB = BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteBRun(2));
+        long id = await BenchmarkBatteryTestData.SeedAsync(
+            _db,
+            BenchmarkBatteryTestData.Definition(),
+            (suiteA, 0, 1),
+            (suiteB, 1, 1));
+
+        var (_, result, _, error) = await Service().AnalyseAsync(id, null, null, TestContext.Current.CancellationToken);
+
+        Assert.Null(error);
+        Assert.True(result!.Complete);
+        Assert.Equal(66.0, result.OverallIndex!.PointEstimate, 9);
+
+        // Run 1's panel scores become (Quality(4, 5, 5, 5) + 60) / 2, 70 and 80 at difficulty 40; its
+        // published index is 70, so the suite moves by the run's lift.
+        int lifted = BenchmarkScoring.Quality(4, 5, 5, 5, false).Score;
+        int runIndex = BenchmarkScoring.QualityIndex(new List<(double?, int)> { ((lifted + 60) / 2.0, 40), (70, 40), (80, 40) })!.Value;
+        double suiteAFigure = 70.0 + (runIndex - 70);
+        Assert.True(suiteAFigure > 70.0);
+        Assert.Equal(suiteAFigure, result.Suites[0].PanelVerificationClearedIndex!.Value, 9);
+        Assert.Equal(60.0, result.Suites[1].PanelVerificationClearedIndex!.Value, 9);
+        Assert.Equal(0.6 * suiteAFigure + 0.4 * 60.0, result.PanelVerificationClearedOverall!.Value, 9);
+
+        // Advisory: the published figures did not move.
+        Assert.Equal(70.0, result.Suites[0].Index!.Value, 9);
+    }
+
+    [Fact]
+    public async Task Analyse_WithoutAPanelMember_HasNoPanelVerificationClearedFigure()
+    {
+        long id = await BenchmarkBatteryTestData.SeedAsync(
+            _db,
+            BenchmarkBatteryTestData.Definition(),
+            (BenchmarkBatteryTestData.SuiteARun(1), 0, 1),
+            (BenchmarkBatteryTestData.SuiteBRun(2), 1, 1));
+
+        var (_, result, _, error) = await Service().AnalyseAsync(id, null, null, TestContext.Current.CancellationToken);
+
+        Assert.Null(error);
+        Assert.Null(result!.PanelVerificationClearedOverall);
+        Assert.All(result.Suites, s => Assert.Null(s.PanelVerificationClearedIndex));
+    }
+
+    [Fact]
+    public void PanelVerificationClearedLifts_IsZeroForAPanelRunWithNothingLifted_AndAbsentForASingleAssessorRun()
+    {
+        var lifts = BenchmarkBatteryAnalysisService.PanelVerificationClearedLifts(new[]
+        {
+            BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteARun(1)),
+            BenchmarkBatteryTestData.SuiteARun(2)
+        });
+
+        Assert.Equal(new[] { 0.0 }, lifts);
+    }
+
+    [Fact]
+    public void AStoredResultWithoutThePanelFigure_ReadsItAsNull()
+    {
+        var restored = BenchmarkBatteryAnalysisService.DeserializeResult(new BenchmarkBatteryAnalysis
+        {
+            ResultJson = "{\"MethodVersion\":1,\"Complete\":true,\"Suites\":[{\"SuiteIndex\":0,\"SuiteName\":\"Suite 21\",\"Index\":70.0}]}"
+        });
+
+        Assert.NotNull(restored);
+        Assert.Null(restored!.PanelVerificationClearedOverall);
+        Assert.Null(Assert.Single(restored.Suites).PanelVerificationClearedIndex);
     }
 
     [Fact]

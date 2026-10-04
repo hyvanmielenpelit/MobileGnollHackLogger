@@ -14,8 +14,8 @@ import {
   inject
 } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, Subscription, firstValueFrom, forkJoin, of, timer } from 'rxjs';
-import { catchError, map, switchMap } from 'rxjs/operators';
+import { Observable, Subject, Subscription, firstValueFrom, forkJoin, of, timer } from 'rxjs';
+import { catchError, map, switchMap, takeUntil } from 'rxjs/operators';
 
 import {
   AdminBenchmarkService,
@@ -383,6 +383,9 @@ export const DOWNLOAD_CENTER_VIEW_STORAGE_KEY = 'overseer.benchmark.downloadCent
 /** The wait after the last keystroke before the search filters the list and the status line changes. */
 export const DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS = 200;
 
+/** The footer's status line after Cancel stopped a download in preparation. */
+export const DOWNLOAD_CANCELED_MESSAGE = 'Download canceled. Nothing was saved.';
+
 export type DownloadSortId =
   | 'created-desc' | 'created-asc' | 'type' | 'title' | 'subject' | 'suite' | 'writer' | 'cost-desc' | 'changed-first';
 
@@ -506,14 +509,11 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   @Input() idPrefix = `dcp${++nextInstanceId}`;
   /** Chart actions for the documents of the comparison open beside the panel; none without them. */
   @Input() chartActions: DownloadCenterChartActions | null = null;
-  /** Shows the footer's Cancel, for the dialog wrapper. */
-  @Input() showCancel = false;
 
-  /** The footer's Cancel. */
-  @Output() readonly cancelRequested = new EventEmitter<void>();
   /** A document was deleted, or its charts were updated or removed. */
   @Output() readonly documentsChanged = new EventEmitter<void>();
 
+  @ViewChild('downloadButton') downloadButton?: ElementRef<HTMLButtonElement>;
   @ViewChild(PdfViewerDialogComponent) pdfViewer?: PdfViewerDialogComponent;
   @ViewChild('deleteDialog') deleteDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('chartsDialog') chartsDialog?: ElementRef<HTMLDialogElement>;
@@ -536,7 +536,10 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   loadingDocuments = false;
   /** Notices above the list: runs that no longer exist, documents that could not be loaded. */
   notices: string[] = [];
+  /** A download or a chart update is in preparation. */
   preparing = false;
+  /** A download, not a chart update, is in preparation: the footer shows Cancel. */
+  preparingDownload = false;
   /** The download or chart update in preparation, shown over the body; null while none is. */
   progress: DownloadProgress | null = null;
   statusMessage = '';
@@ -676,6 +679,10 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   private loaded: DownloadCenterContext | null = null;
   /** Bumped on every load and deactivation, so an abandoned request or download never lands. */
   private generation = 0;
+  /** Bumped when a download is canceled or abandoned, so its result never lands; the rows and their loads stay. */
+  private downloadGeneration = 0;
+  /** Emits when a download is canceled or abandoned; every request of a download stops on it. */
+  private cancel$ = new Subject<void>();
   private reportJobSub: Subscription | null = null;
   private listSub: Subscription | null = null;
   private deleteSub: Subscription | null = null;
@@ -708,6 +715,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   ngOnDestroy(): void {
     this.generation++;
+    this.abandonDownload();
     this.cardList?.dispose();
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
@@ -721,6 +729,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   /** Lists a context's files afresh, at the last package and paper used. */
   load(context: DownloadCenterContext): void {
     this.generation++;
+    this.abandonDownload();
     this.loaded = context;
     this.rows = [];
     this.states.clear();
@@ -769,15 +778,47 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     }
   }
 
-  /** Drops everything in flight: a list, the job poll, a download. The rows stay. */
+  /** Drops everything in flight: a list, the job poll, a download and its requests. The rows stay. */
   deactivate(): void {
     this.generation++;
+    this.abandonDownload();
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
     this.loadingDocuments = false;
     this.preparing = false;
     this.progress = null;
     this.cdr.markForCheck();
+  }
+
+  /**
+   * The footer's Cancel: stops the download in preparation, aborting its requests, saves nothing
+   * and says so. The panel, its rows, their loads and the report job poll stay; focus moves to
+   * Download. A no-op while no download is prepared.
+   */
+  cancelPreparation(): void {
+    if (!this.preparingDownload) {
+      return;
+    }
+    this.abandonDownload();
+    this.preparing = false;
+    this.progress = null;
+    this.statusMessage = DOWNLOAD_CANCELED_MESSAGE;
+    this.cdr.markForCheck();
+    this.downloadButton?.nativeElement.focus();
+  }
+
+  /** Makes a download in preparation stale and aborts its requests, which then reject with EmptyError. */
+  private abandonDownload(): void {
+    this.downloadGeneration++;
+    this.preparingDownload = false;
+    this.cancel$.next();
+    this.cancel$.complete();
+    this.cancel$ = new Subject<void>();
+  }
+
+  /** The first value of a download's request, which a cancel unsubscribes from, aborting it. */
+  private untilCanceled<T>(source: Observable<T>): Promise<T> {
+    return firstValueFrom(source.pipe(takeUntil(this.cancel$)));
   }
 
   /** The notice above the list while the run's or battery run's AI-written reports are being written, or null. */
@@ -1224,12 +1265,16 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   /**
    * Fetches and converts every chosen file, one at a time, then saves one file as itself or
    * several as a ZIP with `MANIFEST.md`. A file that fails is listed and the rest still download.
+   * A canceled or abandoned download returns quietly and saves nothing: its aborted requests
+   * reject with EmptyError after the cancel has already made it stale.
    */
   async download(): Promise<void> {
     if (!this.canDownload || !this.loaded) {
       return;
     }
     const generation = this.generation;
+    const downloadGeneration = this.downloadGeneration;
+    const abandoned = (): boolean => generation !== this.generation || downloadGeneration !== this.downloadGeneration;
     const context = this.loaded;
     const packagedAt = downloadCenterIo.now();
     const plan = this.plannedFiles.map(file => ({ ...file, state: { ...this.stateOf(file.row), formats: [...this.stateOf(file.row).formats] } }));
@@ -1239,6 +1284,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
     const progress: DownloadProgress = { done: 0, total: plan.length + 1, step: '' };
     this.preparing = true;
+    this.preparingDownload = true;
     this.progress = progress;
     this.failures = [];
     this.persistSettings();
@@ -1253,13 +1299,13 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         const source = format === 'pdf' || format === 'docx'
           ? await this.binarySource(row, state, context, texts, paper, format)
           : await this.sourceText(row, state, context, texts);
-        if (generation !== this.generation) {
+        if (abandoned()) {
           this.releaseProgress(progress);
           return;
         }
         produced.push(this.produceFile(row, state, format, source, context, packagedAt, paper));
       } catch (error) {
-        if (generation !== this.generation) {
+        if (abandoned()) {
           this.releaseProgress(progress);
           return;
         }
@@ -1296,14 +1342,14 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
           : { name: names[index], text: file.text, mtime: file.mtime });
         entries.push({ name: MANIFEST_FILE_NAME, text: manifest, mtime: packagedAt });
         const archive = await buildTextArchive(entries);
-        if (generation !== this.generation) {
+        if (abandoned()) {
           this.releaseProgress(progress);
           return;
         }
         downloadCenterIo.saveBlob(archive, this.zipFileName(context, packagedAt));
       }
     } catch (error) {
-      if (generation !== this.generation) {
+      if (abandoned()) {
         this.releaseProgress(progress);
         return;
       }
@@ -1312,6 +1358,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     }
 
     this.preparing = false;
+    this.preparingDownload = false;
     this.progress = null;
     this.failures = failures;
     this.statusMessage = completionMessage(plan.length, produced.length, failures.length);
@@ -2215,21 +2262,21 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     switch (row.kind) {
       case 'pack':
         return {
-          text: await firstValueFrom(this.benchmarkService.renderReportDocument(row.doc!.id, state.disclosure, state.naming)),
+          text: await this.untilCanceled(this.benchmarkService.renderReportDocument(row.doc!.id, state.disclosure, state.naming)),
           fileName: null,
           capturedAt: null
         };
       case 'runReport':
-        return { ...await firstValueFrom(this.benchmarkService.getRunReportText(row.runId!)), capturedAt: null };
+        return { ...await this.untilCanceled(this.benchmarkService.getRunReportText(row.runId!)), capturedAt: null };
       case 'toolCallLog':
-        return { ...await firstValueFrom(this.benchmarkService.getToolCallLogText(row.runId!)), capturedAt: null };
+        return { ...await this.untilCanceled(this.benchmarkService.getToolCallLogText(row.runId!)), capturedAt: null };
       case 'diagnostics':
         if (context.kind !== 'run') {
           throw new Error('Diagnostics exist only for a run.');
         }
         return { text: context.diagnosticsText(), fileName: null, capturedAt: downloadCenterIo.now() };
       case 'batteryReport':
-        return { ...await firstValueFrom(this.batteryReportText(row.batteryRunId!)), capturedAt: null };
+        return { ...await this.untilCanceled(this.batteryReportText(row.batteryRunId!)), capturedAt: null };
     }
   }
 
@@ -2266,15 +2313,15 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         const file = word
           ? service.getReportDocumentDocx(id, state.disclosure, state.naming, paper)
           : service.getReportDocumentPdf(id, state.disclosure, state.naming, paper);
-        return { ...await firstValueFrom(file), capturedAt: null };
+        return { ...await this.untilCanceled(file), capturedAt: null };
       }
       case 'runReport': {
         const file = word ? service.getRunReportDocx(row.runId!, paper) : service.getRunReportPdf(row.runId!, paper);
-        return { ...await firstValueFrom(file), capturedAt: null };
+        return { ...await this.untilCanceled(file), capturedAt: null };
       }
       case 'toolCallLog': {
         const file = word ? service.getToolCallLogDocx(row.runId!, paper) : service.getToolCallLogPdf(row.runId!, paper);
-        return { ...await firstValueFrom(file), capturedAt: null };
+        return { ...await this.untilCanceled(file), capturedAt: null };
       }
       case 'diagnostics': {
         const captured = await this.sourceText(row, state, context, cache);
@@ -2282,7 +2329,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         const file = word
           ? service.renderDiagnosticsDocx(row.runId!, captured.text, isoSeconds(capturedAt), paper)
           : service.renderDiagnosticsPdf(row.runId!, captured.text, isoSeconds(capturedAt), paper);
-        return { ...await firstValueFrom(file), capturedAt };
+        return { ...await this.untilCanceled(file), capturedAt };
       }
       case 'batteryReport':
         throw new Error('The battery analysis report is Markdown only.');

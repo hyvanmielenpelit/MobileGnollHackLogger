@@ -324,6 +324,59 @@ public class BenchmarkBatteryComparabilityTests
         Assert.Empty(result.Caveats);
     }
 
+    /// <summary>A corpus index fingerprint column with the GnollHack wiki at <paramref name="wikiSha"/>; null writes it as not indexed yet.</summary>
+    private static string CorpusIndexFingerprints(string? wikiSha)
+        => "{\"gnollhackWiki\":" + (wikiSha == null ? "null" : "{\"sha256\":\"" + wikiSha + "\",\"fileCount\":410,\"indexedAtUtc\":\"2026-10-04T09:30:00.000Z\"}")
+            + ",\"gnollhackSource\":null,\"knowledgeBase\":null,\"nethackWiki\":null,\"nethackSource\":null}";
+
+    private static readonly string WikiIndexOne = "1a2b3c4d5e6f" + new string('0', 52);
+    private static readonly string WikiIndexTwo = "6f5e4d3c2b1a" + new string('0', 52);
+
+    [Fact]
+    public void ADifferingCorpusIndexFingerprint_AddsACaveatNamingTheCorpusAndTheRuns()
+    {
+        var first = Run(80, 10);
+        first.CorpusIndexFingerprintsJson = CorpusIndexFingerprints(WikiIndexOne);
+        var second = Run(81, 20);
+        second.CorpusIndexFingerprintsJson = CorpusIndexFingerprints(WikiIndexTwo);
+
+        var result = BenchmarkBatteryComparability.Resolve(Members((0, new[] { first }), (1, new[] { second })));
+
+        Assert.True(result.CompositePermitted, result.Explanation);
+        var caveat = Assert.Single(result.Caveats);
+        Assert.StartsWith("The GnollHack wiki index differed between runs 80 and 81: 1a2b3c4d5e6f (runs 80; suites 0) vs 6f5e4d3c2b1a (runs 81; suites 1).", caveat);
+        Assert.Contains("provenance, not a comparability key", caveat);
+    }
+
+    [Fact]
+    public void AnEqualCorpusIndexFingerprint_AddsNoCaveat()
+    {
+        var first = Run(80, 10);
+        first.CorpusIndexFingerprintsJson = CorpusIndexFingerprints(WikiIndexOne);
+        var second = Run(81, 20);
+        second.CorpusIndexFingerprintsJson = CorpusIndexFingerprints(WikiIndexOne);
+
+        var result = BenchmarkBatteryComparability.Resolve(Members((0, new[] { first }), (1, new[] { second })));
+
+        Assert.Empty(result.Caveats);
+    }
+
+    [Fact]
+    public void ACorpusIndexFingerprintRecordedOnOneSideOnly_IsNotCompared()
+    {
+        // One member without the column, one with the corpus not indexed yet: neither is compared.
+        var recorded = Run(80, 10);
+        recorded.CorpusIndexFingerprintsJson = CorpusIndexFingerprints(WikiIndexOne);
+        var unrecorded = Run(81, 20);
+        unrecorded.CorpusIndexFingerprintsJson = null;
+        var notIndexed = Run(82, 20);
+        notIndexed.CorpusIndexFingerprintsJson = CorpusIndexFingerprints(null);
+
+        var result = BenchmarkBatteryComparability.Resolve(Members((0, new[] { recorded }), (1, new[] { unrecorded, notIndexed })));
+
+        Assert.Empty(result.Caveats);
+    }
+
     [Fact]
     public void ASuiteWhoseOwnRunsDoNotPool_RefusesAndIsNamed()
     {

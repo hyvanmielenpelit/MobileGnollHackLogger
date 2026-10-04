@@ -953,6 +953,8 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     if (id == null || this.resumeInFlight) {
       return;
     }
+    // Synchronous, inside the action's click gesture, so the completion sound may play later from a hidden tab.
+    this.monitor?.armCompletionSignalsFromGesture();
     const token = this.loadToken;
     this.resumeInFlight = true;
     this.actionError = null;

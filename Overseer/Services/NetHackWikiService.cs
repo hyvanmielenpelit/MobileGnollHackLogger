@@ -32,6 +32,9 @@ public class NetHackWikiService : IDisposable
 
     public Task InitializationTask { get; private set; }
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
+
+    /// <summary>What the index the tools currently read holds; null until the first pass finishes.</summary>
+    public CorpusContentFingerprint? ContentFingerprint { get; private set; }
     
     public NetHackWikiService(IConfiguration configuration, ILogger<NetHackWikiService>? logger = null)
         : this(configuration, logger, null)
@@ -81,13 +84,14 @@ public class NetHackWikiService : IDisposable
         int chunkCount = Math.Min(_indexingParallelism, Math.Max(files.Count, 1));
         int chunkSize = (files.Count + chunkCount - 1) / chunkCount;
 
+        var fingerprint = new CorpusContentFingerprintBuilder();
         int indexedCount = 0;
         if (chunkCount == 1)
         {
             using var writer = new IndexWriter(newDirectory, config);
             foreach (var file in files)
             {
-                if (IndexWikiFile(writer, file)) indexedCount++;
+                if (IndexWikiFile(writer, file, fingerprint)) indexedCount++;
             }
             writer.Commit();
         }
@@ -110,7 +114,7 @@ public class NetHackWikiService : IDisposable
                     int end = Math.Min((chunk + 1) * chunkSize, files.Count);
                     for (int i = chunk * chunkSize; i < end; i++)
                     {
-                        if (IndexWikiFile(chunkWriter, files[i])) chunkCounts[chunk]++;
+                        if (IndexWikiFile(chunkWriter, files[i], fingerprint)) chunkCounts[chunk]++;
                     }
                     chunkWriter.Commit();
                 });
@@ -154,6 +158,7 @@ public class NetHackWikiService : IDisposable
             _directory = newDirectory;
             _reader = newReader;
             _searcher = newSearcher;
+            ContentFingerprint = fingerprint.Build();
         }
         
         // Dispose old resources OUTSIDE the lock to avoid blocking queries
@@ -163,7 +168,7 @@ public class NetHackWikiService : IDisposable
         _logger?.LogInformation("Indexed {Count} NetHack wiki articles.", indexedCount);
     }
 
-    private bool IndexWikiFile(IndexWriter writer, string file)
+    private bool IndexWikiFile(IndexWriter writer, string file, CorpusContentFingerprintBuilder fingerprint)
     {
         var fileInfo = new FileInfo(file);
         if (fileInfo.Length > _maxFileSizeKB * 1024)
@@ -219,6 +224,7 @@ public class NetHackWikiService : IDisposable
             doc.Add(new StringField("namespace", ns, Field.Store.YES));
             doc.Add(new TextField("summary", summary, Field.Store.YES));
             writer.AddDocument(doc);
+            fingerprint.Add(Path.GetRelativePath(_wikiPath, file), rawContent);
             return true;
         }
         catch (Exception ex)

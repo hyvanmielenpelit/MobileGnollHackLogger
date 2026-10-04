@@ -1592,6 +1592,75 @@ public class BenchmarkServiceTests
         }
     }
 
+    private sealed class FixedCorpusIndexFingerprintProvider : CorpusIndexFingerprintProvider
+    {
+        private readonly IReadOnlyDictionary<string, CorpusContentFingerprint?> _snapshot;
+
+        public FixedCorpusIndexFingerprintProvider(IReadOnlyDictionary<string, CorpusContentFingerprint?> snapshot)
+        {
+            _snapshot = snapshot;
+        }
+
+        public override IReadOnlyDictionary<string, CorpusContentFingerprint?> Snapshot() => _snapshot;
+    }
+
+    [Fact]
+    public void PopulateInstrumentFingerprint_WithProvider_RecordsTheFiveCorpusIndexFingerprints()
+    {
+        var indexedAt = new DateTime(2026, 10, 4, 9, 30, 0, DateTimeKind.Utc);
+        var snapshot = new Dictionary<string, CorpusContentFingerprint?>
+        {
+            ["gnollhackWiki"] = new CorpusContentFingerprint(new string('1', 64), 410, indexedAt),
+            ["gnollhackSource"] = new CorpusContentFingerprint(new string('2', 64), 520, indexedAt),
+            ["knowledgeBase"] = new CorpusContentFingerprint(new string('3', 64), 7, indexedAt),
+            ["nethackWiki"] = null,
+            ["nethackSource"] = new CorpusContentFingerprint(new string('5', 64), 300, indexedAt)
+        };
+        var services = new ServiceCollection();
+        services.AddSingleton<CorpusIndexFingerprintProvider>(new FixedCorpusIndexFingerprintProvider(snapshot));
+        using var serviceProvider = services.BuildServiceProvider();
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Benchmark:StoreSystemPromptText"] = "false" })
+            .Build();
+        var service = new BenchmarkService(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(), null!, null!, null!, null!, null!, null!, null!,
+            config,
+            NullLogger<BenchmarkService>.Instance);
+
+        var run = new BenchmarkRun();
+        service.PopulateInstrumentFingerprint(run, "You are an assistant for GnollHack.");
+
+        Assert.NotNull(run.CorpusIndexFingerprintsJson);
+        using var doc = System.Text.Json.JsonDocument.Parse(run.CorpusIndexFingerprintsJson!);
+        Assert.Equal(
+            new[] { "gnollhackWiki", "gnollhackSource", "knowledgeBase", "nethackWiki", "nethackSource" },
+            doc.RootElement.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, doc.RootElement.GetProperty("nethackWiki").ValueKind);
+        Assert.Equal(new string('1', 64), doc.RootElement.GetProperty("gnollhackWiki").GetProperty("sha256").GetString());
+        Assert.Equal(410, doc.RootElement.GetProperty("gnollhackWiki").GetProperty("fileCount").GetInt32());
+        Assert.Equal("2026-10-04T09:30:00.000Z", doc.RootElement.GetProperty("gnollhackWiki").GetProperty("indexedAtUtc").GetString());
+    }
+
+    [Fact]
+    public void PopulateInstrumentFingerprint_WithoutProvider_LeavesCorpusIndexFingerprintsNull()
+    {
+        using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Benchmark:StoreSystemPromptText"] = "false" })
+            .Build();
+        var service = new BenchmarkService(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(), null!, null!, null!, null!, null!, null!, null!,
+            config,
+            NullLogger<BenchmarkService>.Instance);
+
+        var run = new BenchmarkRun();
+        service.PopulateInstrumentFingerprint(run, "You are an assistant for GnollHack.");
+
+        Assert.Null(run.CorpusIndexFingerprintsJson);
+        Assert.NotNull(run.CandidateSystemPromptSha256);
+    }
+
     [Fact]
     public void ExtractDisputedClaims_ExtractsCriticalErrorQuote_NumericAssertions_AndCounterClaims()
     {

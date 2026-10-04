@@ -13,6 +13,7 @@ class FakeAudioElement {
   volume = 1;
   currentTime = 0;
   playCallCount = 0;
+  pauseCallCount = 0;
   readonly appendedSources: { src: string; type: string }[] = [];
   playResult: 'resolve' | DOMException = 'resolve';
 
@@ -22,6 +23,10 @@ class FakeAudioElement {
   }
 
   load(): void { }
+
+  pause(): void {
+    this.pauseCallCount++;
+  }
 
   play(): Promise<void> {
     this.playCallCount++;
@@ -427,6 +432,101 @@ describe('BenchmarkCompletionSoundService', () => {
     it('does not defer on a visible tab: it awaits play() to its real outcome', async () => {
       const outcome = await service.play('run:1');
       expect(outcome).toBe('played');
+    });
+  });
+
+  describe('the visible-tab play timeout', () => {
+    let resolvePlay!: () => void;
+
+    beforeEach(() => {
+      const pending = new Promise<void>(resolve => { resolvePlay = resolve; });
+      fakeAudio.play = () => { fakeAudio.playCallCount++; return pending; };
+    });
+
+    it('times out a play() that never settles, pauses the element and plays the armed buffer instead', async () => {
+      const fakeCtx = new FakeAudioContext();
+      (service as any).audioContext = fakeCtx;
+      (service as any).decodedBuffer = {} as AudioBuffer;
+
+      vi.useFakeTimers();
+      let outcome: string | undefined;
+      try {
+        const outcomePromise = service.play('run:1');
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(fakeAudio.pauseCallCount).toBe(0);
+        await vi.advanceTimersByTimeAsync(1001);
+        outcome = await outcomePromise;
+      }
+      finally {
+        vi.useRealTimers();
+      }
+
+      expect(outcome).toBe('played');
+      expect(fakeAudio.pauseCallCount).toBe(1);
+      expect(fakeCtx.createdBufferSources.some(s => s.started)).toBe(true);
+      const attempts = service.diagnostics.attempts;
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].path).toBe('buffer');
+      expect(attempts[0].outcome).toBe('played');
+    });
+
+    it('records the attempt as "timeout" when no buffer is armed', async () => {
+      vi.useFakeTimers();
+      let outcome: string | undefined;
+      try {
+        const outcomePromise = service.play('run:1');
+        await vi.advanceTimersByTimeAsync(3001);
+        outcome = await outcomePromise;
+      }
+      finally {
+        vi.useRealTimers();
+      }
+
+      expect(outcome).toBe('timeout');
+      expect(fakeAudio.pauseCallCount).toBe(1);
+      const attempts = service.diagnostics.attempts;
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].path).toBe('element');
+      expect(attempts[0].outcome).toBe('timeout');
+    });
+
+    it('marks no play and records no attempt when the timed-out play() fulfils late', async () => {
+      vi.useFakeTimers();
+      let outcome: string | undefined;
+      try {
+        const outcomePromise = service.play('run:1');
+        await vi.advanceTimersByTimeAsync(3001);
+        outcome = await outcomePromise;
+      }
+      finally {
+        vi.useRealTimers();
+      }
+      expect(outcome).toBe('timeout');
+
+      resolvePlay();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(service.diagnostics.attempts.length).toBe(1);
+      const retry = await service.play('run:1');
+      expect(retry).not.toBe('duplicate');
+      expect(fakeAudio.playCallCount).toBe(2);
+    });
+
+    it('maps a timeout to "unsupported" for prime()', async () => {
+      vi.useFakeTimers();
+      let outcome: string | undefined;
+      try {
+        const outcomePromise = service.prime();
+        await vi.advanceTimersByTimeAsync(3001);
+        outcome = await outcomePromise;
+      }
+      finally {
+        vi.useRealTimers();
+      }
+
+      expect(outcome).toBe('unsupported');
     });
   });
 

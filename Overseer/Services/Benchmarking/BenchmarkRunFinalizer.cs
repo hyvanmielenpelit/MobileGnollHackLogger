@@ -299,7 +299,7 @@ public static class BenchmarkRunFinalizer
 
     /// <summary>
     /// Computes candidate token and timing totals from a collection of answers.
-    /// Shared with AdminBenchmarkController for live run-detail reporting while a run is pending or running.
+    /// Shared with BenchmarkRunCostEstimator for live cost reporting while a run is pending or running.
     /// Note: BenchmarkRunFinalizer.Apply remains the only writer to the database entities.
     /// </summary>
     public static (long TotalInputTokens, long TotalOutputTokens, long TotalCacheReadTokens, long TotalCacheCreationTokens, long TotalAnswerDurationMs) ComputeCandidateTotals(IEnumerable<BenchmarkRunAnswer> answers)
@@ -375,7 +375,7 @@ public static class BenchmarkRunFinalizer
         long TotalClaimVerificationDurationMs);
 
     /// <summary>
-    /// Sums the per-role grading totals over a run's answers. Shared with AdminBenchmarkController
+    /// Sums the per-role grading totals over a run's answers. Shared with BenchmarkRunCostEstimator
     /// for live run-detail reporting while a run is pending or running, so the mid-run figure and the
     /// finalized one come from one copy of the arithmetic.
     /// </summary>

@@ -4129,7 +4129,9 @@ so the comparison view already refuses to pool across the boundary.
   this on the first real run.
   - **Arming on Start.** `BenchmarkCompletionSoundService.arm()` is called synchronously from the click
     handlers that start or resume watched work: Start (which also covers series launch), Resume series,
-    both failed-question re-run entry points, *Test sound*, and the series dialog's *Continue series*.
+    both failed-question re-run entry points, *Test sound*, the series dialog's *Continue series*, and
+    the battery progress dialog's and the Battery Run Report's *Continue* and *Re-run under current
+    instrument* (through `BenchmarkActiveRunMonitor.armCompletionSignalsFromGesture()`).
     Before its first `await` it creates an `AudioContext`, calls `resume()` and starts a one-sample
     silent buffer, so the gesture's activation is not spent waiting on the network. It then creates and
     loads the fallback element, and fetches and decodes the Opus chime (the M4A on a failed fetch,
@@ -4147,6 +4149,15 @@ so the comparison view already refuses to pool across the boundary.
     means the element's `play()` had not settled 2 seconds into a hidden tab. The status then reads
     *"The browser held the sound until this tab was shown."* A late fulfilment still marks the key
     played, so a retry cannot chime twice.
+  - **A visible tab's element play is bounded too.** In a visible tab the element's `play()` is raced
+    against `VISIBLE_PLAY_TIMEOUT_MS` (3,000 ms). One that has not settled by then is paused, so a late
+    start cannot sound after the fallback, and the outcome is **`'timeout'`**: the armed buffer then
+    plays, recorded as path `buffer`, and with no armed buffer the attempt is recorded as `timeout`.
+    A late fulfilment after the timeout marks nothing and records nothing. Battery run 3 showed the
+    unbounded wait: an element idle 26 minutes since arming never settled, no attempt was recorded,
+    and no chime played although the armed `AudioContext` was `running`. A `play()` that rejects in
+    `signalCompletion` records the outcome `error` (the diagnostics print *last outcome error*), and
+    the desktop notification still fires.
   - **Desktop notification.** A second checkbox, *Show a desktop notification*, is independent of the
     sound: either, both or neither may be on. Permission is requested when the box is ticked, while
     the operator is at the screen. It is requested again under the Start gesture (and the other
@@ -6500,6 +6511,138 @@ All three change text written by C# code, not a file under `Overseer/ToolGuides`
 **Comparability.** Only the Instrument key `HarnessVersion` moves (46 → 47), so a run on battery run
 2's configuration is **Tier C** against it. A battery run started under harness 46 refuses to resume
 under 47 (`HarnessVersionRefusal`).
+
+### Harness Version 48 Updates
+
+The battery run 3 round (runs 80 and 81, 2026-10-04). A panel run's report gains an advisory grading
+sensitivity, every run records what each tool corpus's index held, the battery progress dialog shows
+cost and time while it runs, the completion chime is bounded on a visible tab, and the Download
+Center's Cancel stops a preparation. `HarnessVersion` moves to **"48"**. `ScoringMethodVersion` stays
+**13**: no anchor, weight, level mapping, cap or grader prompt changes. `ToolGuidesSha256`
+(`9f7742b5…`) and `CandidateSystemPromptSha256` do not move. One EF Core migration,
+`AddCorpusIndexFingerprints`, adds a nullable column.
+
+#### What was wrong
+
+- **H1.** Five of the battery's seven Accuracy deductions docked a correct but less specific statement
+  under the level-4 anchor (*"a loosely stated figure, an imprecise term"*), and nothing in a panel
+  run's report showed how much they cost: the contested-verdict, evidence-informed, verification-cleared
+  and FORM-cleared sensitivities are not computed for a panel run. Narrowing the anchor would be a
+  scoring-method change; it is decided after the next battery, and this round only measures.
+- **H2.** `WikiHeadSha`, `SourceCodeHeadSha` and `KnowledgeBaseHeadSha` read `.git`, never the working
+  tree: the wiki's uncommitted edits were indexed while the run reported the committed HEAD, and the
+  source index holds makedefs-generated headers. The NetHack wiki and NetHack source had no fingerprint.
+- **H3.** The battery progress dialog showed no cost and no time. Its one cost came from the battery
+  analysis, so it was null until the suites had finished, and the report writer's cost was in no
+  battery figure.
+- **H4.** The chime did not play at the end of a battery: on a visible tab the element's `play()` was
+  awaited with no timeout and never settled. Neither battery dialog's resume re-armed the signals.
+- **U1.** The battery member progress bar was capped at 16 rem and drawn as a native browser bar, since
+  the shared `.job-progress` look applied only inside a `.job-progress-block`.
+- **U2.** The Download Center's footer Cancel only closed the dialog, as the X does, and a preparation
+  could not be stopped; in-flight requests were never aborted.
+
+#### Panel verification-cleared Accuracy sensitivity (H1)
+
+`BenchmarkPanelSensitivity.Compute` re-scores a panel run's answers with a member's Accuracy one level
+higher, capped at 6, where that member's charge was cleared by the claim verifier, and returns the
+Intelligence Index that results with the lifted questions per member. An answer is eligible for member
+M only when both members scored it, M's Accuracy is below 6, **neither** member set `criticalError`
+(so the method-13 critical-error resolver stays out of it), and either:
+
+- **(i)** M accused at least one sentence (`accusedQuote` items that `AccusedByMembers` attributes to M),
+  and every one was verified **Supported** with a citation; or
+- **(ii)** M itself raised `UnevidencedDeduction` (member A's `AnswerFlags`, member B's
+  `CoAssessmentJson.flags`), M raised at least one ordinary unverified claim, and every one of them was
+  **Supported** — the per-member twin of `IsVerificationClearedAccuracyDeduction`.
+
+M's score is recomputed with `BenchmarkScoring.Quality` from its own levels, the answer's panel score
+is the mean of the two member scores, every other answer keeps its stored panel score, and the index
+uses the difficulties `BenchmarkRunFinalizer.Apply` uses, so lifting nothing reproduces the published
+index. It is a pure function; the battery analysis calls it per member run.
+
+- **Run report.** § 2 and § 7 of a panel run print *Panel verification-cleared Accuracy sensitivity:
+  {index} / 100 (published {index}) — member A's Accuracy one level higher on Q…, member B's on Q…*,
+  stating that it is advisory, that no score moves, and that it is a **lower bound**: a charge the
+  verifier wrongly refuted is not lifted. *"not computed — no answer qualifies"* when nothing is
+  eligible. A run stamped before harness 44 has no per-role member attribution, so an item without it
+  counts for both members and the line says the figure is approximate. The other three sensitivities
+  are still not computed for a panel run, and a separate line says why.
+- **Battery.** Each suite's `PanelVerificationClearedIndex` is the suite's published index plus the
+  mean lift over its usable panel runs (a panel run with nothing lifted counts as 0), and
+  `PanelVerificationClearedOverall` is Σ *w*ₛ · *I*ₛ over the declared weights with a suite without
+  the figure keeping its published index; both are null when no member is a panel run. The battery
+  report's § 4 adds *Grading sensitivity (advisory)*, the fact sheet the key
+  `sensitivity.panelVerificationCleared` when it is set, and the report writer is told it is not a
+  weighting scheme and never a corrected result. Both are nullable additions, so an analysis stored
+  before 48 renders as before and the analysis method version stays 1.
+
+#### Corpus index fingerprints (H2)
+
+Each indexing service — `WikiService`, `SourceCodeService` (and `NetHackSourceCodeService`, which
+inherits it), `KnowledgeBaseService`, `NetHackWikiService` — computes a `CorpusContentFingerprint` as
+it indexes: a SHA-256 over an ordinal-sorted `relative-path:sha256` manifest, one line per indexed
+file, each hashed from the **text the indexer read** (UTF-8), plus the file count and the time. It is
+set at the moment the new index is swapped in, so it always describes the index the tools are reading;
+the NetHack wiki's parallel indexer adds to one thread-safe builder. Hashing the text rather than the
+bytes is deliberate: a BOM or an encoding-only change does not move it. The source index includes the
+generated makedefs headers, because they are what the index holds. Fingerprinting the 9,323 NetHack
+wiki files (77 MB) costs about 0.2 s of SHA-256, small beside the index pass.
+
+`CorpusIndexFingerprintProvider.Snapshot()` collects the five, and `PopulateInstrumentFingerprint`
+stores them in `BenchmarkRun.CorpusIndexFingerprintsJson` as canonical JSON — keys `gnollhackWiki`,
+`gnollhackSource`, `knowledgeBase`, `nethackWiki`, `nethackSource` in that order, each
+`{ "sha256", "fileCount", "indexedAtUtc" }` or null when that index had not finished its first pass.
+A re-run does not re-stamp it, as it leaves the corpus heads alone.
+
+- **Where it shows.** The run report manifest, after *GnollHack Source HEAD SHA*, lists *Corpus Index
+  Fingerprints* (the first 12 hex characters and the file count per corpus; *not recorded* for a null
+  column, *not indexed yet* for a null entry), the tool-call log header prints the same lines, and the
+  battery report's Fingerprints column adds `WIKI-IDX`, `SRC-IDX`, `KB-IDX`, `NHW-IDX` and `NHS-IDX`.
+- **A provenance caveat.** When two usable battery members both recorded a fingerprint for one corpus
+  and they differ, the battery adds a caveat naming the corpus and the runs.
+- **Provenance, not a comparability key.** Every earlier run is null on the column, so a key would make
+  every new run non-comparable with all history; it is not in `BenchmarkComparabilityKey`
+  (`DefinitionVersion` stays 2) and not in any resume guard. Two runs with equal `WikiHeadSha` and
+  different wiki index fingerprints read different text.
+
+#### Battery progress dialog (H3, U1)
+
+- **Server.** `BenchmarkRunCostEstimator` holds the run-cost code of the single-run dialog (live totals
+  for a running run, the finalized columns otherwise, priced per role); `GetRun` uses it unchanged.
+  `GetBatteryRun` and `GetActiveBatteryRun` estimate every non-superseded member that has a run and
+  fill `BenchmarkBatteryRunDto.LiveCost` (`BenchmarkBatteryLiveCostDto`: the role sums, null for a role
+  any member lacks; `PricingIncomplete` when any member's is; `PricingSource`, `mixed` when members
+  differ; `PricedMemberCount`; and `ReportWriterCostUsd`, the sum of the battery's completion
+  documents' `CostUsd`, null when there are none or one is unpriced). One grouped query gives the
+  pooled `MeanModelTimeMs` and `ModelTimedAnswerCount` over the members' Ok answers, with model time
+  `DurationMs − ToolTimeMs` as the run dialog computes it, and each member gains `EstimatedCost`,
+  `EstimatedCandidateCost` and `MeanModelTimeMs`. The run list leaves them null.
+- **Client.** The stat strip gains *Mean answer* (*model time, tools excluded*), *Candidate cost* and
+  *Total cost* (the live total plus the report writer — the report job's cost while the reports are
+  written — noted *so far* while the battery runs and *incl. report writer* once that cost exists),
+  with *—* and a hidden *not available yet* for a missing figure. Below it a closed `<details>` *Cost by
+  role* holds the run dialog's live cost panel, and a member's facts line ends in *est. $x.xx*. The
+  member bar is full width and drawn like every other job bar: the element look moved to
+  `progress.job-progress`, without the `.job-progress-block` ancestor
+  ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 4.3).
+
+#### Completion chime (H4) and Download Center (U2), no version effect
+
+- The chime's visible-tab bound, the `'timeout'` and `error` outcomes, and the battery dialogs' re-arm
+  are under *Completion signals in a background tab* above.
+- **Download Center Cancel.** The footer shows **Cancel** only while documents are being prepared for
+  download, in every host, Model Comparison's inline panel included. It aborts the in-flight requests
+  (every request of the download runs until a cancel notifier), keeps the dialog open, saves nothing,
+  announces *"Download canceled. Nothing was saved."* and moves focus to **Download**. Closing with the
+  X or Escape, the host clearing the panel's context, and the panel's destruction abandon a
+  preparation the same way, silently. A download starts no server-side job, so there is nothing to
+  cancel on the server: a render request already received completes and its result is dropped. An
+  *Update charts* run is not a download and shows no Cancel.
+
+**Comparability.** Only the Instrument key `HarnessVersion` moves (47 → 48), so a run on battery run
+3's configuration is **Tier C** against it. A battery run started under harness 47 refuses to resume
+under 48 (`HarnessVersionRefusal`).
 
 ---
 

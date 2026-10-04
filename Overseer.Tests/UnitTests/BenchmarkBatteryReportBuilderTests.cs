@@ -357,6 +357,60 @@ public class BenchmarkBatteryReportBuilderTests
     }
 
     [Fact]
+    public async Task WeightingSensitivity_PrintsTheGradingSensitivityRows_ForAPanelBattery()
+    {
+        var suiteA = BenchmarkBatteryTestData.SupportMemberACharge(
+            BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteARun(1)), orderIndex: 1);
+        var suiteB = BenchmarkBatteryTestData.AsPanelRun(BenchmarkBatteryTestData.SuiteBRun(2));
+
+        string report = await BuildAsync((suiteA, 0, 1), (suiteB, 1, 1));
+
+        // Run 1's lift: (Quality(4, 5, 5, 5) + 60) / 2, 70 and 80 at equal difficulty, against its 70.
+        int lifted = BenchmarkScoring.Quality(4, 5, 5, 5, false).Score;
+        int runIndex = BenchmarkScoring.QualityIndex(new List<(double?, int)> { ((lifted + 60) / 2.0, 40), (70, 40), (80, 40) })!.Value;
+        double suiteAFigure = runIndex;
+        double overall = 0.6 * suiteAFigure + 0.4 * 60.0;
+
+        int sensitivity = report.IndexOf("## 4. Weighting Sensitivity", StringComparison.Ordinal);
+        int grading = report.IndexOf("### 4.1 Grading sensitivity (advisory)", StringComparison.Ordinal);
+        int leaveOneOut = report.IndexOf("## 5. Leave-One-Suite-Out", StringComparison.Ordinal);
+        Assert.True(sensitivity >= 0 && sensitivity < grading && grading < leaveOneOut);
+
+        Assert.Contains("It is a lower bound — a charge the verifier wrongly refuted is not lifted — and it moves no score.", report);
+        Assert.Contains("| Overall Index (published) | 66.00 | — |", report);
+        Assert.Contains($"| Panel verification-cleared Overall Index | — | {overall.ToString("F2", CultureInfo.InvariantCulture)} |", report);
+        Assert.Contains($"| Suite 21 | 70.00 | {suiteAFigure.ToString("F2", CultureInfo.InvariantCulture)} |", report);
+        Assert.Contains("| Suite 22 | 60.00 | 60.00 |", report);
+    }
+
+    [Fact]
+    public async Task WeightingSensitivity_OmitsTheGradingSensitivity_WithoutAPanelMember()
+    {
+        string report = await BuildAsync((BenchmarkBatteryTestData.SuiteARun(1), 0, 1), (BenchmarkBatteryTestData.SuiteBRun(2), 1, 1));
+
+        Assert.Contains("Weighting Sensitivity", report);
+        Assert.DoesNotContain("Grading sensitivity (advisory)", report);
+        Assert.DoesNotContain("Panel verification-cleared", report);
+    }
+
+    [Fact]
+    public async Task TheMemberTable_ListsTheCorpusIndexFingerprints_WithADashForAnUnrecordedOne()
+    {
+        var suiteA = BenchmarkBatteryTestData.SuiteARun(1);
+        suiteA.CorpusIndexFingerprintsJson =
+            "{\"gnollhackWiki\":{\"sha256\":\"1a2b3c4d5e6f" + new string('0', 52) + "\",\"fileCount\":410,\"indexedAtUtc\":\"2026-10-04T09:30:00.000Z\"},"
+            + "\"gnollhackSource\":{\"sha256\":\"abcdef012345" + new string('1', 52) + "\",\"fileCount\":1234,\"indexedAtUtc\":\"2026-10-04T09:31:00.000Z\"},"
+            + "\"knowledgeBase\":null,\"nethackWiki\":null,\"nethackSource\":null}";
+        var suiteB = BenchmarkBatteryTestData.SuiteBRun(2);
+
+        string report = await BuildAsync((suiteA, 0, 1), (suiteB, 1, 1));
+
+        // Every hash in the column is cut to 12 characters, the source HEAD's "source-head-1" included.
+        Assert.Contains("SRC `source-head-`<br>WIKI-IDX `1a2b3c4d5e6f`<br>SRC-IDX `abcdef012345`<br>KB-IDX `—`<br>NHW-IDX `—`<br>NHS-IDX `—` |", report);
+        Assert.Contains("SRC `source-head-`<br>WIKI-IDX `—`<br>SRC-IDX `—`<br>KB-IDX `—`<br>NHW-IDX `—`<br>NHS-IDX `—` |", report);
+    }
+
+    [Fact]
     public async Task IncompleteBattery_PrintsNoHeadline_AndNamesTheExcludedMember()
     {
         string report = await BuildAsync(

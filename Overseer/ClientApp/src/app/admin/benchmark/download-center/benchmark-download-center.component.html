@@ -26,8 +26,7 @@
     </div>
 
     <!-- The body and the footer; the panel's own nested dialogs stop their events inside it. -->
-    <app-download-center-panel [idPrefix]="idPrefix" [showCancel]="true"
-                               (cancelRequested)="close()"
+    <app-download-center-panel [idPrefix]="idPrefix"
                                (documentsChanged)="documentsChanged.emit()"></app-download-center-panel>
   </div>
 </dialog>
