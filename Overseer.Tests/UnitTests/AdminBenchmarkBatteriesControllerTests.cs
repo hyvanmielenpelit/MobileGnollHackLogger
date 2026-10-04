@@ -1020,6 +1020,22 @@ public class AdminBenchmarkBatteriesControllerTests
         public override Task<BenchmarkRunPricing> ResolveForRunAsync(BenchmarkRun run) => Task.FromResult(_pricing);
     }
 
+    private static readonly ModelPricing LiveVerifierCard = new(2.00m, 8.00m);
+
+    /// <summary>A pricing service that picks each run's card set by the run.</summary>
+    private sealed class PerRunPricingService : ModelPricingService
+    {
+        private readonly Func<BenchmarkRun, BenchmarkRunPricing> _pricing;
+
+        public PerRunPricingService(ApplicationDbContext db, Func<BenchmarkRun, BenchmarkRunPricing> pricing)
+            : base(new ModelMetadataService(), db)
+        {
+            _pricing = pricing;
+        }
+
+        public override Task<BenchmarkRunPricing> ResolveForRunAsync(BenchmarkRun run) => Task.FromResult(_pricing(run));
+    }
+
     private static BenchmarkRunAnswer TimedAnswer(
         int orderIndex,
         long durationMs,
@@ -1172,6 +1188,85 @@ public class AdminBenchmarkBatteriesControllerTests
         // No Ok answer anywhere: no mean, and nothing counted.
         Assert.Null(dto.MeanModelTimeMs);
         Assert.Equal(0, dto.ModelTimedAnswerCount);
+    }
+
+    [Fact]
+    public async Task BatteryRun_LiveCost_KeepsARoleTheRunningMemberHasNotSpentOnYet()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Running);
+
+        // Finished: candidate $10, assessor $3, claim verifier $2, synthesis $3 on the assessor's card.
+        var finished = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        finished.TotalInputTokens = 1_000_000;
+        finished.TotalAssessmentInputTokens = 1_000_000;
+        finished.TotalClaimVerificationInputTokens = 1_000_000;
+        finished.TotalSynthesisInputTokens = 1_000_000;
+
+        // Running: candidate $5 and assessor $3 so far; no verification or synthesis yet.
+        var running = await SeedMemberAsync(f, batteryRun, suiteIndex: 1, status: BenchmarkRunStatus.Running, qualityIndex: null);
+        var costed = TimedAnswer(1, 9_000, 1_000);
+        costed.InputTokens = 500_000;
+        costed.AssessmentInputTokens = 1_000_000;
+        running.Answers.Add(costed);
+        await f.Db.SaveChangesAsync(ct);
+
+        var estimator = new BenchmarkRunCostEstimator(new FixedPricingService(
+            f.Db,
+            new BenchmarkRunPricing(Candidate: LiveCandidateCard, Assessor: LiveAssessorCard, ClaimVerifier: LiveVerifierCard, SecondOpinion: null)));
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct, estimator)).Value);
+
+        var cost = Assert.IsType<BenchmarkBatteryLiveCostDto>(dto.LiveCost);
+        Assert.Equal(2.00m, cost.ClaimVerifier);
+        Assert.Equal(3.00m, cost.Synthesis);
+        Assert.Equal(6.00m, cost.Assessor);
+        Assert.Equal(15.00m, cost.Candidate);
+        Assert.Equal(11.00m, cost.Grading);
+        Assert.Equal(26.00m, cost.Total);
+        Assert.Equal(cost.Candidate + cost.Grading, cost.Total);
+        Assert.False(cost.PricingIncomplete);
+
+        Assert.Null(cost.SecondOpinion);
+        Assert.Null(cost.CoAssessor);
+        Assert.Null(cost.CoSynthesis);
+    }
+
+    [Fact]
+    public async Task BatteryRun_LiveCost_RoleIsNull_WhenAMemberSpentOnItWithoutACard()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+
+        // Both members' verifiers spent tokens; only the first one's has a card.
+        var priced = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        priced.TotalInputTokens = 1_000_000;
+        priced.TotalClaimVerificationInputTokens = 1_000_000;
+
+        var unpriced = await SeedMemberAsync(f, batteryRun, suiteIndex: 1);
+        unpriced.TotalInputTokens = 1_000_000;
+        unpriced.TotalClaimVerificationInputTokens = 1_000_000;
+        await f.Db.SaveChangesAsync(ct);
+
+        var estimator = new BenchmarkRunCostEstimator(new PerRunPricingService(
+            f.Db,
+            run => new BenchmarkRunPricing(
+                Candidate: LiveCandidateCard,
+                Assessor: LiveAssessorCard,
+                ClaimVerifier: run.Id == priced.Id ? LiveVerifierCard : null,
+                SecondOpinion: null)));
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct, estimator)).Value);
+
+        var cost = Assert.IsType<BenchmarkBatteryLiveCostDto>(dto.LiveCost);
+        Assert.Null(cost.ClaimVerifier);
+        Assert.True(cost.PricingIncomplete);
+        Assert.Null(cost.Total);
+        Assert.Equal(20.00m, cost.Candidate);
     }
 
     [Fact]

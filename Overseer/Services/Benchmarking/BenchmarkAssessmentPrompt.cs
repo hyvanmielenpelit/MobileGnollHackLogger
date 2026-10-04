@@ -763,8 +763,14 @@ public static class BenchmarkAssessmentPrompt
     ///     each answer records the verifier's model calls, their per-call usage and the served tier
     ///     (H11); grader costs apply each role's service-tier multiplier (H12). Moves with
     ///     ScoringMethodVersion 14.
+    /// v50: the claim verifier's parse retry is a separate tool-less request with a fresh budget of
+    ///     two model calls, seeded with the prompt and a digest of the evidence the first loop gathered,
+    ///     so its model calls are counted once; an empty verification text records how each loop
+    ///     ended (H2). A failed verification line ends in one period (H3). get_item_stats resolves a
+    ///     name with one or two trailing words after a unique item name (T1). ScoringMethodVersion
+    ///     stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "49";
+    public const string HarnessVersion = "50";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

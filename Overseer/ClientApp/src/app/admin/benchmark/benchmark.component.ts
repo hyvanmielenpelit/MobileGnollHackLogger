@@ -2365,8 +2365,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           - (run.toolStarvedAnswerCount ?? 0);
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
         // A null contested-accuracy-deduction count is a run before harness 20: not recorded, never 0.
-        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, rubric-charged deduction contradicted: ${run.rubricContradictedAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
-        // The run-level counts above are member A's; member B's come from its own record.
+        // The run-level rubric-contradicted count covers either member, so a panel run counts
+        // member A's own answer flags instead.
+        const rubricContradictedHere = run.isPanelRun
+          ? (run.answers ?? []).filter(a => (a.answerFlagNames ?? []).includes('RubricContradictedBySource')).length
+          : run.rubricContradictedAnswerCount ?? 'not recorded';
+        lines.push(`${run.isPanelRun ? 'member A flags: ' : ''}advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, rubric-charged deduction contradicted: ${rubricContradictedHere}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        // In a panel run the line above is member A's and the next one member B's, from its own record.
         if (run.isPanelRun) {
           lines.push(this.memberBFlagsLine(run));
         }

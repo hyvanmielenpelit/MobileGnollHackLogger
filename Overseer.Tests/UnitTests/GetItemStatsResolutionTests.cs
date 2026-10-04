@@ -11,7 +11,9 @@ using Xunit;
 
 /// <summary>
 /// get_item_stats resolves a name that misses to the one item whose name ends in "of &lt;name&gt;",
-/// and says so in its message; zero or several such items leave the miss unchanged. Runs against
+/// and says so in its message; zero or several such items leave the miss unchanged. Failing that, it
+/// resolves a name carrying one or two trailing words to the one item named by the rest, which must
+/// keep at least two words. Runs against
 /// the real src/objects.c and include/objclass.h, copied from the GnollHack clone when it is present
 /// on this machine, so the cases are the real item names a model asks for.
 /// </summary>
@@ -137,5 +139,94 @@ public class GetItemStatsResolutionTests : IDisposable
         Assert.Null(response.Stats);
         Assert.NotNull(response.Error);
         Assert.StartsWith("No item named 'experience' found in the game data.", response.Error);
+    }
+
+    [Fact]
+    public async Task TrailingWords_ResolveToTheItemNamedByTheRest_WithANote()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var mail = service.GetItemStats("silver dragon scale mail concept?");
+        Assert.Null(mail.Error);
+        Assert.Contains("DRGN_ARMR(\"silver dragon scale mail\"", mail.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'silver dragon scale mail concept?' to 'silver dragon scale mail': no item is named 'silver dragon scale mail concept?'.",
+            mail.Message);
+
+        var belt = service.GetItemStats("belt of hill giant strength excluding");
+        Assert.Null(belt.Error);
+        Assert.NotNull(belt.Stats);
+        Assert.Contains("\"belt of hill giant strength\"", belt.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'belt of hill giant strength excluding' to 'belt of hill giant strength': no item is named 'belt of hill giant strength excluding'.",
+            belt.Message);
+
+        var twoWords = service.GetItemStats("belt of hill giant strength worth wearing");
+        Assert.Null(twoWords.Error);
+        Assert.StartsWith(
+            "Resolved 'belt of hill giant strength worth wearing' to 'belt of hill giant strength':",
+            twoWords.Message);
+    }
+
+    [Fact]
+    public async Task ThreeTrailingWords_StayAMiss()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var response = service.GetItemStats("belt of hill giant strength worth wearing now");
+        Assert.Null(response.Stats);
+        Assert.NotNull(response.Error);
+        Assert.StartsWith("No item named 'belt of hill giant strength worth wearing now' found in the game data.", response.Error);
+    }
+
+    [Fact]
+    public async Task Appearance_StaysAMissWithItsAppearanceNote()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        // "orange" is an item, but a one-word prefix never resolves.
+        var response = service.GetItemStats("orange potion");
+        Assert.Null(response.Stats);
+        Assert.NotNull(response.Error);
+        Assert.StartsWith("No item named 'orange potion' found in the game data.", response.Error);
+        Assert.Contains("appearances are randomized per game", response.Error);
+        Assert.DoesNotContain("Resolved '", response.Message ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task ObjectClass_StillFiltersTheTrailingWordMatch()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var excluded = service.GetItemStats("belt of hill giant strength excluding", "WEAPON_CLASS");
+        Assert.Null(excluded.Stats);
+        Assert.NotNull(excluded.Error);
+        Assert.StartsWith("No item named 'belt of hill giant strength excluding' found in the game data.", excluded.Error);
+
+        var included = service.GetItemStats("silver dragon scale mail concept?", "ARMOR_CLASS");
+        Assert.Null(included.Error);
+        Assert.Contains("DRGN_ARMR(\"silver dragon scale mail\"", included.RawDefinition);
+        Assert.StartsWith("Resolved 'silver dragon scale mail concept?' to 'silver dragon scale mail':", included.Message);
+    }
+
+    [Fact]
+    public async Task ExactMultiWordName_ResolvesDirectly_WithoutANote()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var mail = service.GetItemStats("silver dragon scale mail");
+        Assert.Null(mail.Error);
+        Assert.Contains("DRGN_ARMR(\"silver dragon scale mail\"", mail.RawDefinition);
+        Assert.DoesNotContain("Resolved '", mail.Message ?? string.Empty);
     }
 }

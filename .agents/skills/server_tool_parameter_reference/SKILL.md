@@ -868,8 +868,9 @@ written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` resp
 `get_item_stats` that is the `oc_name`, whose form depends on the class: wands, rings, potions,
 scrolls and spellbooks drop their class word (`digging`, `identify`, `adornment`), and every other
 class keeps its full name (`amulet of reflection`, `belt of hill giant strength`, `ioun stone of
-experience`, `triple-headed flail`); a unique *"… of <name>"* match is resolved by the tool itself
-(see the callout at the end of this section). It also takes
+experience`, `triple-headed flail`); a unique *"… of <name>"* match, and from harness 50 a unique name
+followed by one or two trailing words, is resolved by the tool itself (see the callouts at the end of
+this section). It also takes
 an optional **`object_class`** (`WAND_CLASS`, `SCROLL_CLASS`, …) which selects among the object
 classes that hold an entry of that name; the other two take `name` only.
 All three guard on `SourceCodeService.IsIndexingComplete`
@@ -1062,6 +1063,19 @@ exists for all three tools, by two different mechanisms:**
 > not a miss: read the `Resolved '…'` opening, and check that the item it names is the one the
 > question was about. In a run stamped 42 or earlier a name such as `reflection` or `experience` is a
 > plain miss, whose `Did you mean:` list usually names the full name (run 74 Q17: two such misses).
+
+> 🛑 **From harness 50 `get_item_stats` also resolves a unique item name followed by one or two
+> trailing words.** When neither the exact name nor the *"… of <name>"* suffix matches,
+> `SourceCodeService.FindUniqueLeadingItemName` splits the trimmed name on whitespace and drops the
+> last word, then the last two, **as long as at least two words remain**, comparing the rest with the
+> item names case-insensitively (restricted to `object_class` when one is given). The first drop that
+> matches anything decides: **exactly one** name resolves with the same note as the suffix path,
+> *"Resolved 'X' to 'Y': no item is named 'X'."* (`silver dragon scale mail concept?`, `belt of hill
+> giant strength excluding`); two or more return the usual miss, never a shorter prefix. Three trailing
+> words stay a miss, and the two-word floor keeps an appearance such as `orange potion` a miss with its
+> appearance note, although `orange` is an item. As with the suffix path, read the `Resolved '…'`
+> opening and check that the item it names is the one the question was about; in a run stamped 49 or
+> earlier such a name is a plain miss (battery run 5).
 
 ---
 

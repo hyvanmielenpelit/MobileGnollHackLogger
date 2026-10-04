@@ -186,4 +186,35 @@ public class BenchmarkRunCostEstimatorTests
         Assert.True(estimate.Candidate > 0m);
         Assert.True(estimate.Assessor > 0m);
     }
+
+    [Fact]
+    public async Task UnpricedRoles_NamesTheRolesThatSpentWithoutACard()
+    {
+        await using var db = CreateDbContext();
+
+        // Neither the second reader nor the verifier has a card; only the second reader spent tokens.
+        var pricing = new BenchmarkRunPricing(
+            Candidate: CandidateCard,
+            Assessor: AssessorCard,
+            ClaimVerifier: null,
+            SecondOpinion: null);
+        var estimator = new BenchmarkRunCostEstimator(new FixedPricingService(db, pricing));
+
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            Id = 1,
+            Status = BenchmarkRunStatus.Running,
+            Answers = Answers()
+        });
+
+        var estimate = await estimator.EstimateAsync(run);
+
+        Assert.Equal(BenchmarkCostRoles.SecondOpinion, estimate.UnpricedRoles);
+        Assert.Null(estimate.ClaimVerifier);
+        Assert.True(estimate.PricingIncomplete);
+
+        // Every role that spent has a card: nothing is unpriced.
+        var priced = await new BenchmarkRunCostEstimator(new FixedPricingService(db, Pricing())).EstimateAsync(run);
+        Assert.Equal(BenchmarkCostRoles.None, priced.UnpricedRoles);
+    }
 }

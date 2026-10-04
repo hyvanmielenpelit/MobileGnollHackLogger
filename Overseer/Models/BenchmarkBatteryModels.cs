@@ -339,8 +339,9 @@ public class BenchmarkBatteryMemberDto
 }
 
 /// <summary>
-/// A battery run's estimated cost so far, in US dollars: each role summed over its non-superseded
-/// member runs. A summed role is null when any member's figure for it is null.
+/// A battery run's estimated cost so far, in US dollars: each role summed over the non-superseded
+/// member runs that report a figure for it. A role is null when no member has one, or when any member
+/// spent on it without a price card; Total is null when any member's pricing is incomplete.
 /// </summary>
 public class BenchmarkBatteryLiveCostDto
 {

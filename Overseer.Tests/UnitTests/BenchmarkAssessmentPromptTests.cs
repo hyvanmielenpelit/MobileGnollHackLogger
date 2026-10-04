@@ -224,12 +224,12 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyNine()
+    public void HarnessVersion_IsFifty()
     {
-        // Harness 49: the scoring method 14 ACCURACY anchors, unrounded panel sensitivity, the
-        // battery panel agreement block, and the claim verifier's batching instruction and
-        // model-call record.
-        Assert.Equal("49", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 50: the claim verifier's tool-less parse retry with an evidence digest and a
+        // fresh budget, the recorded cause of an empty verification text, the single period
+        // after a failed verification, and get_item_stats trailing-word resolution.
+        Assert.Equal("50", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -868,12 +868,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs49_ScoringMethodIs14()
+    public void Versions_HarnessIs50_ScoringMethodIs14()
     {
-        Assert.Equal("49", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("50", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 49 moves with scoring method 14: the grader prompt's ACCURACY anchors change, so
-        // every index is incomparable with method 13. The chat prompt does not change.
+        // Harness 50 changes the claim verifier's retry, a report line and a tool's name resolution;
+        // the grader prompt and its ACCURACY anchors do not change, so scoring method 14 stays.
+        // The chat prompt does not change.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

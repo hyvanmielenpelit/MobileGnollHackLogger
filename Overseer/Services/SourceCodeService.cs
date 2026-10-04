@@ -1285,7 +1285,8 @@ namespace Overseer.Services
 
             if (matchLine == -1)
             {
-                string? fullName = FindUniqueOfSuffixItemName(name, objectClass);
+                string? fullName = FindUniqueOfSuffixItemName(name, objectClass)
+                    ?? FindUniqueLeadingItemName(name, objectClass);
                 if (fullName != null)
                 {
                     var resolved = GetItemStats(fullName, objectClass);
@@ -1377,6 +1378,38 @@ namespace Overseer.Services
                 .Take(2)
                 .ToList();
             return matches.Count == 1 ? matches[0] : null;
+        }
+
+        /// <summary>
+        /// The one item name equal (case-insensitive) to <paramref name="name"/> without its last
+        /// word, or else without its last two, restricted to <paramref name="objectClass"/> when
+        /// given, so that <c>belt of hill giant strength excluding</c> finds <c>belt of hill giant
+        /// strength</c>. The remaining prefix must keep at least two words, so <c>orange potion</c>
+        /// never resolves to <c>orange</c>. Null when no prefix matches, or when the first prefix
+        /// that matches names more than one item.
+        /// </summary>
+        private string? FindUniqueLeadingItemName(string name, string? objectClass)
+        {
+            string[] words = (name ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+            for (int drop = 1; drop <= 2 && words.Length - drop >= 2; drop++)
+            {
+                string prefix = string.Join(" ", words, 0, words.Length - drop);
+                var matches = _itemResolver.ItemNames
+                    .Where(n => string.Equals(n, prefix, StringComparison.OrdinalIgnoreCase))
+                    .Where(n => string.IsNullOrWhiteSpace(objectClass)
+                        || _itemResolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(2)
+                    .ToList();
+
+                if (matches.Count > 0)
+                {
+                    return matches.Count == 1 ? matches[0] : null;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>

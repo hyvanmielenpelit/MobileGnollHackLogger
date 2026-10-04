@@ -451,7 +451,7 @@ analysis is pending): an `app-index-badge` of size `md` holding `overallIndex` a
 by role*, holds the run dialog's `app-benchmark-cost-panel variant="live"` fed from `liveCost` (the
 panel's roles when the battery has a co-assessor); it is absent while `liveCost` is null. Each member's
 estimate is the single-run dialog's (`BenchmarkRunCostEstimator`): live totals for a running member,
-the finalized columns otherwise, superseded members excluded; a role is null when any member's is. The rail's *Overall Index 84.9* note
+the finalized columns otherwise, superseded members excluded; a role sums the members that report a figure for it, so a role an earlier member spent on stays listed while a new member has not reached it; it is null when no member has a figure or a member spent on it without a price card. The rail's *Overall Index 84.9* note
 stays text. *Elapsed*, each running member's elapsed time and each finished member's duration use
 `formatElapsed` (`benchmark-run-format.ts`) — *45s*, *3m 05s*, *1h 02m 05s*, whole seconds floored —
 the format of the run and multi-run progress dialogs. The display refreshes through the same

@@ -37,6 +37,23 @@ public sealed record BenchmarkRunCostEstimate
     public string? PricingSource { get; init; }
 
     public bool PricingIncomplete { get; init; }
+
+    /// <summary>The roles that spent tokens and had no price card.</summary>
+    public BenchmarkCostRoles UnpricedRoles { get; init; }
+}
+
+/// <summary>The roles a benchmark run's cost is split across.</summary>
+[Flags]
+public enum BenchmarkCostRoles
+{
+    None = 0,
+    Candidate = 1,
+    Assessor = 2,
+    CoAssessor = 4,
+    SecondOpinion = 8,
+    ClaimVerifier = 16,
+    Synthesis = 32,
+    CoSynthesis = 64
 }
 
 /// <summary>
@@ -120,6 +137,18 @@ public class BenchmarkRunCostEstimator
         decimal? coAssessorCost = Priced(hasCoAssessor, pricing?.CoAssessor, costs.CoAssessor);
         decimal? coSynthesisCost = Priced(hasCoSynthesis, pricing?.CoAssessor, costs.CoSynthesis);
 
+        static BenchmarkCostRoles Unpriced(bool participated, ModelPricing? card, BenchmarkCostRoles role) =>
+            participated && card == null ? role : BenchmarkCostRoles.None;
+
+        BenchmarkCostRoles unpricedRoles =
+            Unpriced(true, pricing?.Candidate, BenchmarkCostRoles.Candidate)
+            | Unpriced(hasAssessor, pricing?.Assessor, BenchmarkCostRoles.Assessor)
+            | Unpriced(hasSecondOpinion, pricing?.SecondOpinion, BenchmarkCostRoles.SecondOpinion)
+            | Unpriced(hasVerifier, pricing?.ClaimVerifier, BenchmarkCostRoles.ClaimVerifier)
+            | Unpriced(hasSynthesis, pricing?.Assessor, BenchmarkCostRoles.Synthesis)
+            | Unpriced(hasCoAssessor, pricing?.CoAssessor, BenchmarkCostRoles.CoAssessor)
+            | Unpriced(hasCoSynthesis, pricing?.CoAssessor, BenchmarkCostRoles.CoSynthesis);
+
         decimal? gradingCost =
             (assessorCost.HasValue || secondOpinionCost.HasValue || verifierCost.HasValue || synthesisCost.HasValue
                 || coAssessorCost.HasValue || coSynthesisCost.HasValue)
@@ -138,7 +167,8 @@ public class BenchmarkRunCostEstimator
             CoSynthesis = coSynthesisCost,
             Grading = gradingCost,
             PricingSource = string.IsNullOrEmpty(costs.Source) ? null : costs.Source,
-            PricingIncomplete = costs.Incomplete
+            PricingIncomplete = costs.Incomplete,
+            UnpricedRoles = unpricedRoles
         };
     }
 

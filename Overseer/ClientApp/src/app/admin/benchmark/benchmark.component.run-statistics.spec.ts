@@ -362,7 +362,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(text).toContain('holistic: A 91, B 88, quality index: 94');
       expect(text).toContain('panel: A-alone 93, B-alone 90, mean |B−A| 6.2, mean B−A −3.5, ICC 0.81, disagreements 1, critical-error splits 0');
-      const advisory = lines.findIndex(l => l.startsWith('advisory flags:'));
+      const advisory = lines.findIndex(l => l.startsWith('member A flags: advisory flags:'));
       expect(lines[advisory + 1]).toBe('member B flags: contested verdicts: 2, unevidenced deductions: 0, omission as accuracy: 0, '
         + 'out-of-rubric accuracy: 0, dimension outliers: 0, completeness out of scope: 0, readability form only: 1, '
         + 'contested critical errors: 0, contested accuracy deductions: 0, rubric-charged deduction contradicted: 0');
@@ -391,6 +391,37 @@ describe('AdminBenchmarkComponent', () => {
       expect(single).not.toContain('member B flags');
       expect(single).not.toContain('panel=');
       expect(single).toContain('unverified claims: 2');
+    });
+
+    it('labels the first flags line member A\'s in a panel run and counts member A\'s rubric-charged answers only', () => {
+      // The run-level count covers either member; here only member B flagged an answer.
+      const run = buildDiagnosticsRun({ isPanelRun: true, rubricContradictedAnswerCount: 1 });
+      run.answers[0] = {
+        ...run.answers[0],
+        coAssessmentFlagNames: ['RubricContradictedBySource'],
+        coAssessmentJson: JSON.stringify({ flags: { rubricContradictedBySource: true } })
+      };
+      ctx.monitor.activeRunDetail = run;
+      const lines = component.runDiagnosticsText.split('\n');
+
+      const memberA = lines.findIndex(l => l.startsWith('member A flags: advisory flags:'));
+      expect(memberA).toBeGreaterThan(-1);
+      expect(lines[memberA]).toContain('rubric-charged deduction contradicted: 0, dimension outliers:');
+      expect(lines[memberA + 1]).toMatch(/^member B flags: .*rubric-charged deduction contradicted: 1$/);
+      expect(lines.some(l => l.startsWith('advisory flags:'))).toBe(false);
+
+      // Member A's own flag counts, whatever the run-level figure says.
+      run.answers[1] = { ...run.answers[1], answerFlagNames: ['RubricContradictedBySource'] };
+      ctx.monitor.activeRunDetail = { ...run, rubricContradictedAnswerCount: 2 };
+      expect(component.runDiagnosticsText).toContain('member A flags: advisory flags: 1,');
+      expect(component.runDiagnosticsText.split('\n').find(l => l.startsWith('member A flags:')))
+        .toContain('rubric-charged deduction contradicted: 1, dimension outliers:');
+
+      // A single-assessor capture keeps the unlabeled line and the run-level figure.
+      ctx.monitor.activeRunDetail = buildDiagnosticsRun({ rubricContradictedAnswerCount: 1 });
+      const single = component.runDiagnosticsText;
+      expect(single).not.toContain('member A flags:');
+      expect(single).toMatch(/^advisory flags: .*rubric-charged deduction contradicted: 1, dimension outliers:/m);
     });
 
     it('should count either member\'s critical error on a panel run, with the member split', () => {

@@ -4918,7 +4918,8 @@ public static class BenchmarkReportBuilder
                 {
                     string verifierName = a.ClaimVerificationByModelSnapshot.Label() ?? run.ClaimVerifierModelSnapshot.Label() ?? "claim verifier";
                     string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}. The unverified claims above were not checked{ClaimVerificationSpendText(a)}.{ClaimVerificationRawTextHead(a)}");
+                    string errEnd = err.EndsWith('.') || err.EndsWith('!') || err.EndsWith('?') ? string.Empty : ".";
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}{errEnd} The unverified claims above were not checked{ClaimVerificationSpendText(a)}.{ClaimVerificationRawTextHead(a)}");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson) || a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue)
                 {

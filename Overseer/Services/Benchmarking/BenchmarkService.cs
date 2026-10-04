@@ -3699,6 +3699,9 @@ public class BenchmarkService
         else
         {
             var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims, chargedPartItems);
+            var firstResult = runResult;
+            AgentRunResult? retryRun = null;
+            string? parsedText = runResult.FinalText;
 
             bool retryEnabled = _configuration.GetValue<bool>("Benchmark:ClaimVerification:ParseRetryEnabled", true);
             if (!parseResult.Success && retryEnabled)
@@ -3706,14 +3709,24 @@ public class BenchmarkService
                 _logger.LogWarning(
                     "Benchmark run {RunId} answer {OrderIndex}: claim verification output failed JSON parsing. Retrying once...",
                     run.Id, answer.OrderIndex);
-                runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
-                runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping, code fences, or extra text." });
+
+                // The retry runs without tools on a fresh budget, seeded with the first loop's tool results.
+                int evidenceMaxChars = _configuration.GetValue<int>(
+                    "Benchmark:ClaimVerification:RetryEvidenceMaxChars", DefaultClaimVerificationRetryEvidenceMaxChars);
+                var retryRequest = BuildClaimVerificationRetryRequest(
+                    runRequest,
+                    prompt,
+                    runResult.ToolCalls,
+                    runResult.FinalText,
+                    parseResult.ErrorMessage ?? "Claim verification parse failed.",
+                    evidenceMaxChars);
 
                 var retryResult = new AgentRunResult();
+                retryRun = retryResult;
                 try
                 {
-                    VerifyClaimVerificationDelivery(runRequest, run, answer.OrderIndex);
-                    await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, verifyCts.Token))
+                    VerifyClaimVerificationDelivery(retryRequest, run, answer.OrderIndex);
+                    await foreach (var evt in _agentLoopRunner.RunAsync(retryRequest, retryRequest.Budget, retryResult, verifyCts.Token))
                     {
                         if (evt.Type == "error")
                         {
@@ -3748,6 +3761,7 @@ public class BenchmarkService
                 if (string.IsNullOrWhiteSpace(terminalError))
                 {
                     parseResult = BenchmarkClaimVerificationParser.Parse(retryResult.FinalText, claims, chargedPartItems);
+                    parsedText = retryResult.FinalText;
                     if (retryResult.TotalPromptTokens > 0)
                     {
                         runResult = retryResult;
@@ -3775,11 +3789,19 @@ public class BenchmarkService
             }
             else if (!parseResult.Success)
             {
-                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? "Claim verification parse failed.", BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+                string parseError = parseResult.ErrorMessage ?? "Claim verification parse failed.";
+                if (string.IsNullOrWhiteSpace(parsedText))
+                {
+                    parseError = retryRun == null
+                        ? $"Verification text was empty (first attempt: {DescribeVerificationEnd(firstResult)})."
+                        : $"Verification text was empty (first attempt: {DescribeVerificationEnd(firstResult)}; retry: {DescribeVerificationEnd(retryRun)}).";
+                }
+
+                answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(parseError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
                 answer.ClaimVerificationRawText = BenchmarkAssessmentFailure.Truncate(parseResult.RawResponse, 8000);
                 _logger.LogWarning(
                     "Benchmark run {RunId} answer {OrderIndex}: claim verification parse failed ({Error}).",
-                    run.Id, answer.OrderIndex, parseResult.ErrorMessage);
+                    run.Id, answer.OrderIndex, parseError);
             }
             else
             {
@@ -5042,6 +5064,102 @@ public class BenchmarkService
             }
         };
     }
+
+    /// <summary>How much of each gathered tool result the claim verifier's parse retry repeats.</summary>
+    internal const int ClaimVerificationRetryResultMaxChars = 2000;
+
+    /// <summary>The default for <c>Benchmark:ClaimVerification:RetryEvidenceMaxChars</c>.</summary>
+    internal const int DefaultClaimVerificationRetryEvidenceMaxChars = 40000;
+
+    /// <summary>
+    /// The claim verifier's parse retry after <paramref name="first"/>: the same model and settings
+    /// with tools off and a fresh budget of two model calls, seeded with one user message that
+    /// repeats <paramref name="prompt"/>, lists the completed calls of <paramref name="gathered"/> in
+    /// order, each result cut to <see cref="ClaimVerificationRetryResultMaxChars"/> characters and
+    /// the list to <paramref name="evidenceMaxChars"/>, and asks again for the JSON object. A call is
+    /// completed when its status is <c>completed</c> and it carries a result.
+    /// </summary>
+    internal static AgentRunRequest BuildClaimVerificationRetryRequest(
+        AgentRunRequest first,
+        string prompt,
+        IReadOnlyList<ChatMessageToolCall> gathered,
+        string? previousText,
+        string parseError,
+        int evidenceMaxChars)
+    {
+        var completed = gathered
+            .Where(tc => string.Equals(tc.Status, "completed", StringComparison.Ordinal) && tc.Result != null)
+            .ToList();
+
+        var sb = new StringBuilder(prompt);
+        sb.Append("\n\nEvidence you already gathered with your tools (each result shortened):\n");
+
+        int used = 0;
+        int listed = 0;
+        for (; listed < completed.Count; listed++)
+        {
+            var call = completed[listed];
+            string result = call.Result!;
+            if (result.Length > ClaimVerificationRetryResultMaxChars)
+            {
+                int cut = ClaimVerificationRetryResultMaxChars;
+                if (char.IsHighSurrogate(result[cut - 1])) cut--;
+                result = result[..cut];
+            }
+
+            string entry = $"\n[{listed + 1}] {call.Name} {call.ArgsText}\n{result}\n";
+            if (used + entry.Length > evidenceMaxChars) break;
+            sb.Append(entry);
+            used += entry.Length;
+        }
+
+        if (completed.Count == 0)
+        {
+            sb.Append("\n(none)\n");
+        }
+        else if (listed < completed.Count)
+        {
+            sb.Append($"\n… {completed.Count - listed} further results omitted.\n");
+        }
+
+        sb.Append('\n');
+        sb.Append(string.IsNullOrWhiteSpace(previousText)
+            ? "Your previous response was empty. From the evidence above, output ONLY the JSON object the schema above requires, with a verdict for every item. Do not call tools."
+            : $"Your previous response could not be parsed: {parseError}. Output ONLY the raw JSON object according to the schema, without markdown wrapping, code fences or extra text.");
+
+        return new AgentRunRequest
+        {
+            ProviderName = first.ProviderName,
+            ModelId = first.ModelId,
+            ApiKey = first.ApiKey,
+            Endpoint = first.Endpoint,
+            ModelDisplayName = first.ModelDisplayName,
+            SystemPrompt = first.SystemPrompt,
+            ThinkingLevel = first.ThinkingLevel,
+            ReasoningMode = first.ReasoningMode,
+            ReasoningSummary = first.ReasoningSummary,
+            ServiceTier = first.ServiceTier,
+            MaxOutputTokens = first.MaxOutputTokens,
+            // One iteration with tools off: at 0 the loop would force a final turn and report
+            // iteration_limit on every retry, hiding how the retry actually ended.
+            MaxToolIterations = 1,
+            EnableToolUse = false,
+            EnableWebSearch = false,
+            EnableSubAgents = false,
+            AllowedTools = first.AllowedTools,
+            SystemModelId = first.SystemModelId,
+            Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
+            ToolExecutionContext = first.ToolExecutionContext,
+            SeedHistory = new List<object>
+            {
+                new { role = "user", content = sb.ToString() }
+            }
+        };
+    }
+
+    /// <summary>How a claim verification loop ended, for an error that reports an empty verification text.</summary>
+    internal static string DescribeVerificationEnd(AgentRunResult r)
+        => $"loop ended {r.TerminationReason ?? "unknown"}, provider finish reason {r.ProviderFinishReason ?? "not reported"}";
 
     private static double Median(IEnumerable<double> values)
     {

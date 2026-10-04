@@ -2496,6 +2496,20 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void ClaimVerificationFailure_ErrorEndingInAPeriod_GetsNoSecondPeriod()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "Verification text was empty.";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains("failed — Verification text was empty. The unverified claims", report);
+        Assert.DoesNotContain("Verification text was empty..", report);
+    }
+
+    [Fact]
     public void ClaimVerification_CarriesEachAnswersSpend_AndTheRunListsTheHighest()
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);

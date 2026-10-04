@@ -918,9 +918,20 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         var all = estimates.Values.ToList();
 
-        // Null when there is no member to sum, or when any member's figure for the role is unknown.
-        decimal? SumOf(Func<BenchmarkRunCostEstimate, decimal?> role)
-            => all.Count == 0 || all.Any(e => role(e) == null) ? null : all.Sum(e => role(e)!.Value);
+        // A role sums the members that report a figure for it, so a role an earlier member spent on stays
+        // listed while a new member has not reached it. It is null when no member has a figure, or when any
+        // member spent on it without a price card. Grading sums the members that report it; the total is
+        // strict, null when there is no member or any member's total is unknown.
+        decimal? SumReported(Func<BenchmarkRunCostEstimate, decimal?> role)
+        {
+            var figures = all.Select(role).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            return figures.Count == 0 ? null : figures.Sum();
+        }
+
+        decimal? SumRole(Func<BenchmarkRunCostEstimate, decimal?> role, BenchmarkCostRoles flag)
+            => all.Any(e => (e.UnpricedRoles & flag) != 0) ? null : SumReported(role);
+
+        decimal? total = all.Count == 0 || all.Any(e => e.Total == null) ? null : all.Sum(e => e.Total!.Value);
 
         var sources = all
             .Select(e => e.PricingSource)
@@ -930,15 +941,15 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         dto.LiveCost = new BenchmarkBatteryLiveCostDto
         {
-            Total = SumOf(e => e.Total),
-            Candidate = SumOf(e => e.Candidate),
-            Assessor = SumOf(e => e.Assessor),
-            CoAssessor = SumOf(e => e.CoAssessor),
-            SecondOpinion = SumOf(e => e.SecondOpinion),
-            ClaimVerifier = SumOf(e => e.ClaimVerifier),
-            Synthesis = SumOf(e => e.Synthesis),
-            CoSynthesis = SumOf(e => e.CoSynthesis),
-            Grading = SumOf(e => e.Grading),
+            Total = total,
+            Candidate = SumRole(e => e.Candidate, BenchmarkCostRoles.Candidate),
+            Assessor = SumRole(e => e.Assessor, BenchmarkCostRoles.Assessor),
+            CoAssessor = SumRole(e => e.CoAssessor, BenchmarkCostRoles.CoAssessor),
+            SecondOpinion = SumRole(e => e.SecondOpinion, BenchmarkCostRoles.SecondOpinion),
+            ClaimVerifier = SumRole(e => e.ClaimVerifier, BenchmarkCostRoles.ClaimVerifier),
+            Synthesis = SumRole(e => e.Synthesis, BenchmarkCostRoles.Synthesis),
+            CoSynthesis = SumRole(e => e.CoSynthesis, BenchmarkCostRoles.CoSynthesis),
+            Grading = SumReported(e => e.Grading),
             PricingIncomplete = all.Any(e => e.PricingIncomplete),
             PricingSource = sources.Count switch
             {

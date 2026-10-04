@@ -6833,6 +6833,70 @@ pixel density). See *Key Figures, GnollBench Branding and PDF Downloads* above f
 `CandidateSystemPromptSha256` move as well. A battery run started under harness 48 refuses to resume under 49
 (`HarnessVersionRefusal`).
 
+### Harness Version 50 Updates
+
+The battery run 5 round (runs 84 and 85, 2026-10-04), applied after its R2 (battery run 6, runs 86 and
+87). The claim verifier's parse retry keeps the evidence the first loop gathered and counts its model
+calls once, an empty verification records how each loop ended, a failed verification's report line ends
+in one period, and `get_item_stats` resolves a name with one or two trailing words. `HarnessVersion`
+moves to **"50"**; `ScoringMethodVersion` stays **14**. No migration, no client change, and neither
+`ToolGuidesSha256` nor `CandidateSystemPromptSha256` moves.
+
+#### What was wrong
+
+- **H2.** A verification whose output failed to parse was retried by appending the empty or unparsable
+  assistant turn and a re-ask to the first request's seed and running the **same** request on the
+  **same** `AgentRunBudget`. That budget was already at or near its limit, so the retry got at most a
+  few model calls and then a forced final turn; its seed carried the prompt but **none** of the tool
+  results the first loop had gathered; and `AgentLoopRunner` reports `ModelCallCount` as the budget's
+  cumulative count, which the accounting then added to the first loop's count again. An empty final
+  text was stored only as *"Verification text was empty."*, with no trace of why.
+- **H3.** A failed verification's report line appended its own period after an error that already
+  ended in one: *"failed — Verification text was empty.. The unverified claims …"*.
+- **T1.** `get_item_stats` missed a name with a trailing word the candidate had carried over from its
+  sentence (*silver dragon scale mail concept?*, *belt of hill giant strength excluding*), although the
+  item name before it was exact.
+
+#### What changed
+
+- **The retry request (H2).** `BenchmarkService.BuildClaimVerificationRetryRequest` builds a separate
+  request: the first request's provider, model, key, endpoint, display name, system prompt, thinking
+  level, reasoning mode and summary, service tier, output cap, allowed tools, `SystemModelId` and
+  `ToolExecutionContext`; tools, web search and subagents off; one tool iteration; and a fresh
+  `AgentRunBudget` of **two** model calls. Its seed is one user message: the original prompt, so the
+  board stays where the first request had it and `VerifyClaimVerificationDelivery` checks it as it
+  checks the first; then *"Evidence you already gathered with your tools (each result shortened):"* and
+  each completed call of the first loop in order, as `[k] <name> <arguments>` and the first 2,000
+  characters of its result, stopping before `Benchmark:ClaimVerification:RetryEvidenceMaxChars` (default
+  **40000**, declared in `Overseer/appsettings.json`) would be passed and then writing *"… N further
+  results omitted."*; then the re-ask. An empty previous response gets *"Your previous response was
+  empty. From the evidence above, output ONLY the JSON object the schema above requires, with a verdict
+  for every item. Do not call tools."*; an unparsable one the parse error and the request for raw JSON.
+- **A single count (H2).** With its own budget, the retry's `ModelCallCount` is the retry's alone, so
+  `ClaimVerificationModelCallCount` adds it to the first loop's count once. The accounting lines are
+  otherwise unchanged; the stage's 600-second timeout still covers both attempts.
+- **The empty-text record (H2).** When the parsed text is blank, `ClaimVerificationError` reads
+  *"Verification text was empty (first attempt: loop ended <reason>, provider finish reason <reason>;
+  retry: …)."*, the retry part only when a retry ran. A missing reason prints *unknown* or *not
+  reported* (`BenchmarkService.DescribeVerificationEnd`).
+- **One period (H3).** `BenchmarkReportBuilder` adds the sentence's period only when the error does not
+  already end in `.`, `!` or `?`. Render-time only, so a stored run re-rendered from harness-50 code
+  shows it too.
+- **Trailing words (T1).** When neither the exact name nor the *"… of <name>"* suffix matches,
+  `SourceCodeService.FindUniqueLeadingItemName` drops the last word, then the last two, as long as at
+  least two words remain, and resolves when exactly one item name (case-insensitive, restricted to
+  `object_class`) equals the rest. The first drop that matches anything decides, so an ambiguous prefix
+  never falls through to a shorter one. The result carries the suffix path's note, *"Resolved 'X' to
+  'Y': no item is named 'X'."* The two-word floor keeps an appearance such as *orange potion* a miss
+  with its appearance note. No tool-guide text changes, so `ToolGuidesSha256` does not move.
+
+**Reading a harness-49 run.** Its *model calls per verified answer* is inflated on every answer whose
+verification was retried, because the retry's cumulative count was added to the first loop's: run 84
+Q1 and Q4 and run 85 Q11 and Q18 at least. Its empty-text failures carry no cause.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 49 → 50, so a harness-50 run is not
+comparable with a harness-49 one on the tier table. A battery run started under harness 49 refuses to resume under 50 (`HarnessVersionRefusal`).
+
 ---
 
 ## 3. Assessor Strategy
