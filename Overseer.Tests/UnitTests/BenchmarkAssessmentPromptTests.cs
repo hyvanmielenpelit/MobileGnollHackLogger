@@ -224,12 +224,12 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFifty()
+    public void HarnessVersion_IsFiftyOne()
     {
-        // Harness 50: the claim verifier's tool-less parse retry with an evidence digest and a
-        // fresh budget, the recorded cause of an empty verification text, the single period
-        // after a failed verification, and get_item_stats trailing-word resolution.
-        Assert.Equal("50", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 51: the claim verifier's parse retry recorded on its calls with how the first
+        // attempt ended and named in the report, a re-ask that asks for a verdict on every item,
+        // and get_item_stats cutting stray characters and any number of trailing words.
+        Assert.Equal("51", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -868,13 +868,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs50_ScoringMethodIs14()
+    public void Versions_HarnessIs51_ScoringMethodIs14()
     {
-        Assert.Equal("50", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("51", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 50 changes the claim verifier's retry, a report line and a tool's name resolution;
-        // the grader prompt and its ACCURACY anchors do not change, so scoring method 14 stays.
-        // The chat prompt does not change.
+        // Harness 51 records and reports the claim verifier's parse retry, makes its re-ask require
+        // every item, and cleans get_item_stats names; the grader prompt and its ACCURACY anchors
+        // do not change, so scoring method 14 stays. The tool-policy text returns to harness 49's.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

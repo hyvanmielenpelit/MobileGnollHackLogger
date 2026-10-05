@@ -6808,7 +6808,8 @@ The verifier's model, thinking level, service tier and verdict rules do not chan
   *"— N tool call(s), M model call(s), X input tokens (cache read P%), Y s"*, each part only when recorded; *Verifier spend by
   answer* adds the mean model calls per verified answer and the verifier's cache-read share; and the
   *Claim Verifier* cost line names the tier when a multiplier other than 1 applied. No client or DTO
-  change: the per-call JSON is for analysis through a database query.
+  change: the per-call JSON is for analysis through a database query. From harness 51 a parse retry's
+  entries carry `"r":1`; see § Harness Version 51 Updates.
 - **Grader tiers (H12).** `ModelPricingService` prices every grading role with its own model snapshot's
   requested service tier, and the claim verifier with the tier its answers report serving, resolved as
   the candidate's served tier is; the synthesis roles use their assessor's tier. A role with no tier, or
@@ -6896,6 +6897,84 @@ Q1 and Q4 and run 85 Q11 and Q18 at least. Its empty-text failures carry no caus
 
 **Comparability.** `HarnessVersion` (an Instrument key) moves 49 → 50, so a harness-50 run is not
 comparable with a harness-49 one on the tier table. A battery run started under harness 49 refuses to resume under 50 (`HarnessVersionRefusal`).
+
+### Harness Version 51 Updates
+
+The battery runs 6–7 round (runs 86–89, 2026-10-05). The tool-policy sentence on retrieved figures is
+removed again, the claim verifier's parse retry is recorded and reported and its re-ask asks for every
+item, and `get_item_stats` cleans a name the model sent with stray characters or a long tail.
+`HarnessVersion` moves to **"51"**; `ScoringMethodVersion` stays **14**. No migration and no client
+change.
+
+#### The retrieved-figures sentence is rolled back (D1)
+
+`Overseer/ToolGuides/_policy.md` no longer carries the bullet *"When a result gives the figure the
+question is about … put that figure in your answer …"*, so the folder is again byte-identical to the
+one battery run 5 ran with. The sentence's pre-declared rollback trigger fired on battery run 6, the
+isolated pair against battery run 5: Completeness rose 0.5 against a required 3.5, retrieved figures
+left out of the reply went from 12 (10 strict) to 11 (7–8 strict) against a ceiling of 6 (5), and
+candidate input per question rose from 84.4 k to 99.7 k against a ceiling of 97.1 k. Battery run 7,
+which carried the same sentence, left out 13 (10 strict). The figures the model drops are rows of a
+table the rubric requires that a concise answer trims, which a policy sentence did not move.
+
+#### The verifier's parse retry is recorded (H5)
+
+Before this version nothing recorded whether a verification was retried: on a harness-49 run a retry
+shows only as model calls above tool calls + 1, and on a harness-50 run, whose retry counts its calls
+once, not at all — there it can be recovered only from the drop in prompt size between consecutive
+entries of the per-call usage. Battery run 7 had 20 claims *not answered by the verifier*, 11 of them
+on one answer, which the retry is the probable but unproven cause of.
+
+- **The record.** `ClaimVerificationCallUsageJson` keeps one `{"p","c","o"}` entry per model call; the
+  parse retry's entries follow the first attempt's and carry `"r":1`, and the first of them carries
+  `"e"`, how the first attempt ended (`BenchmarkService.DescribeVerificationEnd`, at most 200
+  characters). A retry that reported no usage — a provider error or a timeout before any usage report —
+  leaves one entry `{"p":0,"c":0,"o":0,"r":1}`, so a retry always leaves a trace. The 64-entry cap
+  never drops a retry entry: the first attempt's entries are cut to make room. Unmarked entries
+  serialize exactly as before, so a stored harness-49 or -50 value keeps its meaning.
+- **The report.** Each *Claim Verification* line of a retried answer adds *"— parse retry: N model
+  call(s) after the first attempt (<how the first attempt ended>)"*, or *"no model call reported usage
+  after the first attempt"* when the retry left only the zero entry. The run's *Claim Verification
+  Yield* line adds *"; N answer(s) needed a parse retry"* when N is above zero; with none, both lines
+  read as before. The answer's own *model call(s)* figure stays the authoritative count.
+
+#### The retry's re-ask asks for every item (H6)
+
+`BenchmarkService.BuildClaimVerificationRetryRequest` re-asks:
+
+- after an empty response: *"Your previous response was empty. From the evidence above, output ONLY
+  the JSON object the schema above requires, with a verdict for every item; give an item the evidence
+  does not settle the verdict Indeterminate and say so in its basis. Do not call tools."*
+- after an unparsable one: *"Your previous response could not be parsed: <parse error>. Output ONLY
+  the raw JSON object according to the schema, with a verdict for every item — Indeterminate, saying
+  so in its basis, for an item the evidence above does not settle — without markdown wrapping, code
+  fences or extra text."*
+
+An item the retry leaves out is still counted Indeterminate, as before; the re-ask makes the verifier
+say so with a basis instead of omitting it. The assessor, second-reader and synthesis re-asks are
+unchanged.
+
+#### `get_item_stats` name cleanup (T1b)
+
+Battery run 6's run 87 sent item names with non-Latin characters glued to the end (*grail of
+healing*, *belt of hill giant strength*, *ioun stone of experience*) and *triple-headed flail* followed
+by four words of its sentence; each item exists, and each of those calls missed.
+
+- **The cut.** When the name is not an exact item name, `SourceCodeService` cuts it at the first
+  character outside ASCII `A–Z`, `a–z`, `0–9`, space, `'` and `-`, the only characters any item name in
+  `src/objects.c` uses. When the cut changes the name, the cut name is tried as an exact name, then
+  through the *"… of <name>"* suffix path and the trailing-word path, in one lookup.
+- **Trailing words.** `FindUniqueLeadingItemName` drops one word, then two, and so on while at least
+  two remain, longest prefix first; the first drop that matches anything decides, and an ambiguous
+  match is still a miss. The two-word floor keeps an appearance such as *orange potion* a miss with its
+  appearance note.
+- **The note** is unchanged and always quotes the name as the model sent it: *"Resolved 'X' to 'Y': no
+  item is named 'X'."* No tool-guide text changes for this.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 50 → 51. `ToolGuidesSha256` and
+`CandidateSystemPromptSha256` return to battery run 5's harness-49 values, so a harness-51 run matches
+battery run 5 on those keys and differs on `HarnessVersion`. A battery run started under harness 50
+refuses to resume under 51 (`HarnessVersionRefusal`).
 
 ---
 

@@ -12,9 +12,10 @@ using Xunit;
 /// <summary>
 /// get_item_stats resolves a name that misses to the one item whose name ends in "of &lt;name&gt;",
 /// and says so in its message; zero or several such items leave the miss unchanged. Failing that, it
-/// resolves a name carrying one or two trailing words to the one item named by the rest, which must
-/// keep at least two words. Runs against
-/// the real src/objects.c and include/objclass.h, copied from the GnollHack clone when it is present
+/// resolves a name carrying trailing words to the one item named by the rest, which must keep at
+/// least two words. A name holding a character no item name uses is cut before that character and
+/// looked up by the cut part, exactly first, while the note still quotes the name as given. Runs
+/// against the real src/objects.c and include/objclass.h, copied from the GnollHack clone when it is present
 /// on this machine, so the cases are the real item names a model asks for.
 /// </summary>
 public class GetItemStatsResolutionTests : IDisposable
@@ -171,16 +172,108 @@ public class GetItemStatsResolutionTests : IDisposable
     }
 
     [Fact]
-    public async Task ThreeTrailingWords_StayAMiss()
+    public async Task ThreeTrailingWords_ResolveToTheItemNamedByTheRest_WithANote()
     {
         if (!SourceAvailable) return;
 
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("belt of hill giant strength worth wearing now");
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Stats);
+        Assert.Contains("\"belt of hill giant strength\"", response.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'belt of hill giant strength worth wearing now' to 'belt of hill giant strength': no item is named 'belt of hill giant strength worth wearing now'.",
+            response.Message);
+    }
+
+    [Fact]
+    public async Task ManyTrailingWords_AfterAHyphenatedName_Resolve()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var response = service.GetItemStats("triple-headed flail for monk fists comparison");
+        Assert.Null(response.Error);
+        Assert.Contains("GENERAL_WEAPON(\"triple-headed flail\"", response.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'triple-headed flail for monk fists comparison' to 'triple-headed flail':",
+            response.Message);
+    }
+
+    [Fact]
+    public async Task TrailingNonLatinGlyphs_AreCut_AndTheNoteQuotesTheNameAsGiven()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        // Tamil glyphs after an exact item name.
+        var grail = service.GetItemStats("grail of healing\u0BAA\u0BCD\u0BAA\u0BBF");
+        Assert.Null(grail.Error);
+        Assert.Contains("SPELLTOOL(\"grail of healing\"", grail.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'grail of healing\u0BAA\u0BCD\u0BAA\u0BBF' to 'grail of healing': no item is named 'grail of healing\u0BAA\u0BCD\u0BAA\u0BBF'.",
+            grail.Message);
+
+        // A CJK glyph after an exact item name.
+        var belt = service.GetItemStats("belt of hill giant strength\u5F15");
+        Assert.Null(belt.Error);
+        Assert.Contains("\"belt of hill giant strength\"", belt.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'belt of hill giant strength\u5F15' to 'belt of hill giant strength':",
+            belt.Message);
+
+        var ioun = service.GetItemStats("ioun stone of experience\u5F15");
+        Assert.Null(ioun.Error);
+        Assert.Contains("MISCELLANEOUSITEM(\"ioun stone of experience\"", ioun.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'ioun stone of experience\u5F15' to 'ioun stone of experience':",
+            ioun.Message);
+    }
+
+    [Fact]
+    public async Task CutName_FallsBackToTheSuffixMatch()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var response = service.GetItemStats("experience\u5F15");
+        Assert.Null(response.Error);
+        Assert.Contains("MISCELLANEOUSITEM(\"ioun stone of experience\"", response.RawDefinition);
+        Assert.StartsWith(
+            "Resolved 'experience\u5F15' to 'ioun stone of experience': no item is named 'experience\u5F15'.",
+            response.Message);
+    }
+
+    [Fact]
+    public async Task CutAppearance_StaysAMissWithItsAppearanceNote()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var response = service.GetItemStats("orange potion?");
         Assert.Null(response.Stats);
         Assert.NotNull(response.Error);
-        Assert.StartsWith("No item named 'belt of hill giant strength worth wearing now' found in the game data.", response.Error);
+        Assert.StartsWith("No item named 'orange potion?' found in the game data.", response.Error);
+        Assert.Contains("appearances are randomized per game", response.Error);
+        Assert.DoesNotContain("Resolved '", response.Message ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task ObjectClass_StillFiltersTheCutName()
+    {
+        if (!SourceAvailable) return;
+
+        using var service = await CreateServiceAsync();
+
+        var response = service.GetItemStats("belt of hill giant strength\u5F15", "WEAPON_CLASS");
+        Assert.Null(response.Stats);
+        Assert.NotNull(response.Error);
+        Assert.StartsWith("No item named 'belt of hill giant strength\u5F15' found in the game data.", response.Error);
     }
 
     [Fact]

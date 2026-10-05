@@ -1229,6 +1229,78 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// True when the answer's <see cref="BenchmarkRunAnswer.ClaimVerificationCallUsageJson"/> holds an
+    /// entry marked <c>"r":1</c>, a call of the verifier's parse retry; false on null or invalid JSON.
+    /// </summary>
+    internal static bool ClaimVerificationWasRetried(BenchmarkRunAnswer a)
+        => ReadClaimVerificationRetry(a.ClaimVerificationCallUsageJson).Retried;
+
+    /// <summary>
+    /// " — parse retry: N model call(s) after the first attempt (how it ended)", counting the retry
+    /// entries whose prompt or output tokens are above zero, or "… no model call reported usage …"
+    /// when none is; the parenthesis only when the first retry entry carries <c>"e"</c>. Empty when
+    /// the answer was not retried.
+    /// </summary>
+    internal static string ClaimVerificationRetryText(BenchmarkRunAnswer a)
+    {
+        var (retried, callsWithUsage, firstAttemptEnd) = ReadClaimVerificationRetry(a.ClaimVerificationCallUsageJson);
+        if (!retried) return string.Empty;
+
+        string end = string.IsNullOrEmpty(firstAttemptEnd) ? string.Empty : $" ({firstAttemptEnd})";
+        return callsWithUsage > 0
+            ? $" — parse retry: {Inv(callsWithUsage, "N0")} model call(s) after the first attempt{end}"
+            : $" — parse retry: no model call reported usage after the first attempt{end}";
+    }
+
+    private static (bool Retried, int CallsWithUsage, string? FirstAttemptEnd) ReadClaimVerificationRetry(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return (false, 0, null);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return (false, 0, null);
+
+            bool retried = false;
+            int callsWithUsage = 0;
+            string? firstAttemptEnd = null;
+            foreach (var entry in doc.RootElement.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object
+                    || !entry.TryGetProperty("r", out var r)
+                    || r.ValueKind != JsonValueKind.Number
+                    || !r.TryGetInt32(out int retryMark)
+                    || retryMark != 1)
+                {
+                    continue;
+                }
+
+                if (!retried)
+                {
+                    retried = true;
+                    firstAttemptEnd = entry.TryGetProperty("e", out var e) && e.ValueKind == JsonValueKind.String
+                        ? e.GetString()
+                        : null;
+                }
+
+                if (UsageAboveZero(entry, "p") || UsageAboveZero(entry, "o")) callsWithUsage++;
+            }
+
+            return (retried, callsWithUsage, firstAttemptEnd);
+        }
+        catch (JsonException)
+        {
+            return (false, 0, null);
+        }
+
+        static bool UsageAboveZero(JsonElement entry, string property)
+            => entry.TryGetProperty(property, out var value)
+               && value.ValueKind == JsonValueKind.Number
+               && value.TryGetInt64(out long tokens)
+               && tokens > 0;
+    }
+
+    /// <summary>
     /// The first 600 characters of a failed verification's raw response, on one line and with
     /// backticks replaced so the Markdown around it holds; empty when no raw text was stored.
     /// </summary>
@@ -2926,6 +2998,9 @@ public static class BenchmarkReportBuilder
                     string unansweredClause = unansweredByVerifier > 0
                         ? $"; {Inv(unansweredByVerifier, "N0")} not answered by the verifier"
                         : string.Empty;
+                    int retriedAnswers = answers.Count(ClaimVerificationWasRetried);
+                    string retriedPart = $"{Inv(retriedAnswers, "N0")} answer(s) needed a parse retry";
+                    string retriedClause = retriedAnswers > 0 ? $"; {retriedPart}" : string.Empty;
                     if (claimsChecked > 0 && accusedChecked.Count == 0 && assessorChecked.Count == 0)
                     {
                         decimal costPerClaim = verifierTotalCost / claimsChecked;
@@ -2933,7 +3008,7 @@ public static class BenchmarkReportBuilder
                         sb.AppendLine(
                             $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} claim(s) checked — " +
                             $"{Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
-                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate{unansweredClause}. " +
+                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate{unansweredClause}{retriedClause}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
                     else if (accusedChecked.Count > 0 || assessorChecked.Count > 0)
@@ -2959,6 +3034,10 @@ public static class BenchmarkReportBuilder
                         if (unansweredByVerifier > 0)
                         {
                             parts.Add($"{Inv(unansweredByVerifier, "N0")} not answered by the verifier");
+                        }
+                        if (retriedAnswers > 0)
+                        {
+                            parts.Add(retriedPart);
                         }
                         sb.AppendLine(
                             $"- **Claim Verification Yield:** {string.Join(" + ", heads)} checked — {string.Join("; ", parts)}. " +
@@ -4919,7 +4998,7 @@ public static class BenchmarkReportBuilder
                     string verifierName = a.ClaimVerificationByModelSnapshot.Label() ?? run.ClaimVerifierModelSnapshot.Label() ?? "claim verifier";
                     string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
                     string errEnd = err.EndsWith('.') || err.EndsWith('!') || err.EndsWith('?') ? string.Empty : ".";
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}{errEnd} The unverified claims above were not checked{ClaimVerificationSpendText(a)}.{ClaimVerificationRawTextHead(a)}");
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}{errEnd} The unverified claims above were not checked{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}.{ClaimVerificationRawTextHead(a)}");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson) || a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue)
                 {
@@ -4930,7 +5009,7 @@ public static class BenchmarkReportBuilder
                     // The unanswered count reads the same population as the three counts: the answer's own claims.
                     string unansweredText = UnansweredByVerifierText(
                         (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>()).Where(BenchmarkClaimRoles.IsOrdinaryClaim));
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate{unansweredText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}");
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate{unansweredText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}");
                 }
                 // Every accused sentence submitted, apart from the answer's own claims counted above.
                 var accusedSentences = AccusedSentencesOf(a);

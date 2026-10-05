@@ -1285,8 +1285,16 @@ namespace Overseer.Services
 
             if (matchLine == -1)
             {
-                string? fullName = FindUniqueOfSuffixItemName(name, objectClass)
-                    ?? FindUniqueLeadingItemName(name, objectClass);
+                /* A name carrying a character no item name uses is looked up by the part before
+                   it; the note and the miss message still quote the name as given. */
+                string cut = CutAtFirstNonNameCharacter(name);
+                bool cutApplies = cut.Length > 0 && !string.Equals(cut, name.Trim(), StringComparison.Ordinal);
+                string? fullName = cutApplies
+                    ? FindExactItemName(cut, objectClass)
+                        ?? FindUniqueOfSuffixItemName(cut, objectClass)
+                        ?? FindUniqueLeadingItemName(cut, objectClass)
+                    : FindUniqueOfSuffixItemName(name, objectClass)
+                        ?? FindUniqueLeadingItemName(name, objectClass);
                 if (fullName != null)
                 {
                     var resolved = GetItemStats(fullName, objectClass);
@@ -1358,6 +1366,49 @@ namespace Overseer.Services
         private const int MaxItemStatsSuggestions = 5;
 
         /// <summary>
+        /// <paramref name="name"/>, trimmed, up to its first character outside ASCII letters,
+        /// digits, space, <c>'</c> and <c>-</c>, trimmed again: the characters every item name in
+        /// src/objects.c is written in. The test is explicit ASCII because
+        /// <see cref="char.IsLetter(char)"/> accepts the non-Latin glyphs this cuts.
+        /// </summary>
+        private static string CutAtFirstNonNameCharacter(string? name)
+        {
+            string trimmed = name?.Trim() ?? string.Empty;
+            int end = 0;
+            while (end < trimmed.Length)
+            {
+                char c = trimmed[end];
+                bool isNameCharacter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == ' ' || c == '\'' || c == '-';
+                if (!isNameCharacter)
+                {
+                    break;
+                }
+                end++;
+            }
+            return trimmed.Substring(0, end).Trim();
+        }
+
+        /// <summary>
+        /// The item name equal (case-insensitive) to <paramref name="name"/>, restricted to
+        /// <paramref name="objectClass"/> when given. Null when none.
+        /// </summary>
+        private string? FindExactItemName(string name, string? objectClass)
+        {
+            string trimmed = name?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            return _itemResolver.ItemNames
+                .Where(n => string.Equals(n, trimmed, StringComparison.OrdinalIgnoreCase))
+                .Where(n => string.IsNullOrWhiteSpace(objectClass)
+                    || _itemResolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
+                .FirstOrDefault();
+        }
+
+        /// <summary>
         /// The one item name ending in <c>" of " + name</c> (case-insensitive), restricted to
         /// <paramref name="objectClass"/> when given, so that <c>experience</c> finds
         /// <c>ioun stone of experience</c>. Null when no name or more than one name matches.
@@ -1382,17 +1433,17 @@ namespace Overseer.Services
 
         /// <summary>
         /// The one item name equal (case-insensitive) to <paramref name="name"/> without its last
-        /// word, or else without its last two, restricted to <paramref name="objectClass"/> when
-        /// given, so that <c>belt of hill giant strength excluding</c> finds <c>belt of hill giant
-        /// strength</c>. The remaining prefix must keep at least two words, so <c>orange potion</c>
-        /// never resolves to <c>orange</c>. Null when no prefix matches, or when the first prefix
-        /// that matches names more than one item.
+        /// word, or else without its last two, and so on, longest prefix first, restricted to
+        /// <paramref name="objectClass"/> when given, so that <c>belt of hill giant strength worth
+        /// wearing now</c> finds <c>belt of hill giant strength</c>. The remaining prefix must keep
+        /// at least two words, so <c>orange potion</c> never resolves to <c>orange</c>. Null when no
+        /// prefix matches, or when the first prefix that matches names more than one item.
         /// </summary>
         private string? FindUniqueLeadingItemName(string name, string? objectClass)
         {
             string[] words = (name ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
-            for (int drop = 1; drop <= 2 && words.Length - drop >= 2; drop++)
+            for (int drop = 1; words.Length - drop >= 2; drop++)
             {
                 string prefix = string.Join(" ", words, 0, words.Length - drop);
                 var matches = _itemResolver.ItemNames

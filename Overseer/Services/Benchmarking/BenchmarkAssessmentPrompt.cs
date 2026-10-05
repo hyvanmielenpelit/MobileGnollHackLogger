@@ -769,8 +769,14 @@ public static class BenchmarkAssessmentPrompt
     ///     ended (H2). A failed verification line ends in one period (H3). get_item_stats resolves a
     ///     name with one or two trailing words after a unique item name (T1). ScoringMethodVersion
     ///     stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v51: the claim verifier's parse retry is recorded on its calls with how the first attempt
+    ///     ended, and reported (H5); the retry's re-ask asks for a verdict on every item (H6);
+    ///     get_item_stats cuts a name at the first character no item name contains and drops any
+    ///     number of trailing words while two remain (T1b). ScoringMethodVersion stays 14.
+    ///     ToolGuidesSha256 and CandidateSystemPromptSha256 return to their harness-49 values of
+    ///     battery run 5 with the tool-policy text.
     /// </summary>
-    public const string HarnessVersion = "50";
+    public const string HarnessVersion = "51";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

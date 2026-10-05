@@ -3497,8 +3497,14 @@ public class BenchmarkService
         }
     }
 
-    /// <summary>The most per-call entries <see cref="BenchmarkRunAnswer.ClaimVerificationCallUsageJson"/> holds.</summary>
+    /// <summary>
+    /// The most per-call entries <see cref="BenchmarkRunAnswer.ClaimVerificationCallUsageJson"/> holds.
+    /// The parse retry's entries always fit; the first attempt's are cut to make room for them.
+    /// </summary>
     internal const int ClaimVerificationCallUsageMaxEntries = 64;
+
+    /// <summary>The most characters of the <c>"e"</c> field of a parse retry's first usage entry.</summary>
+    internal const int ClaimVerificationFirstAttemptEndMaxLength = 200;
 
     /// <summary>The length of <see cref="BenchmarkRunAnswer.ClaimVerificationServiceTierUsed"/>.</summary>
     private const int ClaimVerificationServiceTierMaxLength = 32;
@@ -3506,26 +3512,109 @@ public class BenchmarkService
     /// <summary>
     /// Stores the claim verifier's model-call count, its per-call usage and the tier the provider
     /// reported serving on <paramref name="answer"/>. The usage is a compact JSON array, one
-    /// <c>{"p","c","o"}</c> entry (prompt, cache-read and output tokens) per call in order, the first
-    /// <see cref="ClaimVerificationCallUsageMaxEntries"/> calls only; null when no call reported usage.
+    /// <c>{"p","c","o"}</c> entry (prompt, cache-read and output tokens) per call in order, at most
+    /// <see cref="ClaimVerificationCallUsageMaxEntries"/> entries. When a parse retry ran,
+    /// <paramref name="retryCallStart"/> is the index in <paramref name="callUsages"/> where its calls
+    /// begin: each of its entries carries <c>"r":1</c>, a retry that reported no usage leaves one
+    /// <c>{"p":0,"c":0,"o":0,"r":1}</c> placeholder, the first retry entry carries <c>"e"</c>,
+    /// <paramref name="firstAttemptEnd"/> cut to <see cref="ClaimVerificationFirstAttemptEndMaxLength"/>
+    /// characters, and the cap cuts the first attempt's entries, never the retry's. Null when no call
+    /// reported usage and no retry ran.
     /// </summary>
     internal static void RecordClaimVerificationModelCalls(
         BenchmarkRunAnswer answer,
         int modelCallCount,
         IReadOnlyList<TokenUsageReport> callUsages,
-        string? servedServiceTier)
+        string? servedServiceTier,
+        int? retryCallStart = null,
+        string? firstAttemptEnd = null)
     {
         answer.ClaimVerificationModelCallCount = modelCallCount;
-        answer.ClaimVerificationCallUsageJson = callUsages.Count == 0
-            ? null
-            : JsonSerializer.Serialize(callUsages
-                .Take(ClaimVerificationCallUsageMaxEntries)
-                .Select(u => new { p = u.TotalPromptTokens, c = u.CacheReadTokens, o = u.OutputTokens }));
+        answer.ClaimVerificationCallUsageJson = SerializeClaimVerificationCallUsage(callUsages, retryCallStart, firstAttemptEnd);
         answer.ClaimVerificationServiceTierUsed = string.IsNullOrWhiteSpace(servedServiceTier)
             ? null
             : servedServiceTier.Length > ClaimVerificationServiceTierMaxLength
                 ? servedServiceTier.Substring(0, ClaimVerificationServiceTierMaxLength)
                 : servedServiceTier;
+    }
+
+    /// <summary>The usage JSON <see cref="RecordClaimVerificationModelCalls"/> stores.</summary>
+    private static string? SerializeClaimVerificationCallUsage(
+        IReadOnlyList<TokenUsageReport> callUsages,
+        int? retryCallStart,
+        string? firstAttemptEnd)
+    {
+        int retryStart = retryCallStart.HasValue
+            ? Math.Clamp(retryCallStart.Value, 0, callUsages.Count)
+            : callUsages.Count;
+
+        var firstAttempt = callUsages.Take(retryStart).Select(ClaimVerificationCallUsageEntry.From).ToList();
+        var retry = callUsages.Skip(retryStart).Select(ClaimVerificationCallUsageEntry.From).ToList();
+        if (retryCallStart.HasValue)
+        {
+            if (retry.Count == 0)
+            {
+                retry.Add(new ClaimVerificationCallUsageEntry());
+            }
+
+            foreach (var entry in retry)
+            {
+                entry.Retry = 1;
+            }
+
+            retry[0].FirstAttemptEnd = CutFirstAttemptEnd(firstAttemptEnd);
+        }
+
+        if (firstAttempt.Count == 0 && retry.Count == 0) return null;
+
+        if (retry.Count > ClaimVerificationCallUsageMaxEntries)
+        {
+            retry = retry.Take(ClaimVerificationCallUsageMaxEntries).ToList();
+        }
+
+        var entries = firstAttempt
+            .Take(ClaimVerificationCallUsageMaxEntries - retry.Count)
+            .Concat(retry);
+        return JsonSerializer.Serialize(entries);
+    }
+
+    private static string? CutFirstAttemptEnd(string? text)
+    {
+        if (text == null || text.Length <= ClaimVerificationFirstAttemptEndMaxLength) return text;
+
+        int cut = ClaimVerificationFirstAttemptEndMaxLength;
+        if (char.IsHighSurrogate(text[cut - 1])) cut--;
+        return text[..cut];
+    }
+
+    /// <summary>One entry of <see cref="BenchmarkRunAnswer.ClaimVerificationCallUsageJson"/>.</summary>
+    private sealed class ClaimVerificationCallUsageEntry
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("p")]
+        public int PromptTokens { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("c")]
+        public int CacheReadTokens { get; init; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("o")]
+        public int OutputTokens { get; init; }
+
+        /// <summary>1 on an entry of the parse retry; null on the first attempt's.</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("r")]
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public int? Retry { get; set; }
+
+        /// <summary>On the first retry entry, how the first attempt ended; otherwise null.</summary>
+        [System.Text.Json.Serialization.JsonPropertyName("e")]
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? FirstAttemptEnd { get; set; }
+
+        public static ClaimVerificationCallUsageEntry From(TokenUsageReport u) => new()
+        {
+            PromptTokens = u.TotalPromptTokens,
+            CacheReadTokens = u.CacheReadTokens,
+            OutputTokens = u.OutputTokens,
+        };
     }
 
     private async Task VerifyAnswerClaimsCoreAsync(
@@ -3701,6 +3790,7 @@ public class BenchmarkService
             var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims, chargedPartItems);
             var firstResult = runResult;
             AgentRunResult? retryRun = null;
+            int? retryCallStart = null;
             string? parsedText = runResult.FinalText;
 
             bool retryEnabled = _configuration.GetValue<bool>("Benchmark:ClaimVerification:ParseRetryEnabled", true);
@@ -3755,6 +3845,7 @@ public class BenchmarkService
                 cacheCreationTokens += retryResult.CacheCreationTokens;
                 toolCallsCount += retryResult.ToolCalls.Count(tc => tc.Status == "completed");
                 modelCallCount += retryResult.ModelCallCount;
+                retryCallStart = callUsages.Count;
                 callUsages.AddRange(retryResult.ModelCallUsages);
                 servedServiceTier = retryResult.ActualServiceTier ?? servedServiceTier;
 
@@ -3776,7 +3867,8 @@ public class BenchmarkService
             answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
-            RecordClaimVerificationModelCalls(answer, modelCallCount, callUsages, servedServiceTier);
+            RecordClaimVerificationModelCalls(
+                answer, modelCallCount, callUsages, servedServiceTier, retryCallStart, DescribeVerificationEnd(firstResult));
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
 
             if (!string.IsNullOrWhiteSpace(terminalError))
@@ -5124,8 +5216,8 @@ public class BenchmarkService
 
         sb.Append('\n');
         sb.Append(string.IsNullOrWhiteSpace(previousText)
-            ? "Your previous response was empty. From the evidence above, output ONLY the JSON object the schema above requires, with a verdict for every item. Do not call tools."
-            : $"Your previous response could not be parsed: {parseError}. Output ONLY the raw JSON object according to the schema, without markdown wrapping, code fences or extra text.");
+            ? "Your previous response was empty. From the evidence above, output ONLY the JSON object the schema above requires, with a verdict for every item; give an item the evidence does not settle the verdict Indeterminate and say so in its basis. Do not call tools."
+            : $"Your previous response could not be parsed: {parseError}. Output ONLY the raw JSON object according to the schema, with a verdict for every item — Indeterminate, saying so in its basis, for an item the evidence above does not settle — without markdown wrapping, code fences or extra text.");
 
         return new AgentRunRequest
         {

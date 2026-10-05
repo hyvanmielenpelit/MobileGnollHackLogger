@@ -546,6 +546,15 @@ Rules for writing a `RUN` step:
   cost the same way, and use the same stop rule as for the Series Projection (§ 4 *Cost and time*).
 - **Name each run R1, R2, …** and use those names everywhere — in the `Needs` of other steps, in
   the chat message, and in the prompt of § 6 — so that "the baseline run" never has to be guessed.
+- **A time criterion carries a TTFT control.** A criterion on model time or wall clock is decided
+  only when the run's TTFT P50 is within ±30 % of the baseline's; otherwise it reads *not decidable
+  (provider latency)* and the token and tool-call criteria decide. Battery run 7's run 89 measured a
+  TTFT P50 of 5.3 s against 1.8 s on identical work, so its time figures said nothing about the change.
+- **A criterion read from the UI names the capture.** The criterion says which screenshot, capture
+  or downloaded image it is read from, the `RUN` step says when to take it (*while the second suite
+  runs*, *after the report is written*), and the `SAVE` step saves it into the run's `UI\` folder
+  (§ 6 *One folder per runbook*). A UI criterion with no saved capture cannot be verified by the next
+  analysis.
 
 ## 6. The `SAVE` Step and the Next Analysis
 
@@ -553,7 +562,7 @@ Rules for writing a `RUN` step:
 *"as Step 6"*:
 
 1. **The downloads.** In the run's detail view, **Download Markdown Report** and **Tool-call
-   log**; save both in your run-artifacts folder, in a new subfolder the step names. If the
+   log**; save both in the run's folder (**One folder per runbook**, below). If the
    round's analysis used the suite's YAML export or a diagnostics capture, say so and name the
    buttons. When the `RUN` step asks for them, also download the two AI-written reports — the
    Executive Summary and the Report for AI Researchers and Developers — from the run's
@@ -580,6 +589,22 @@ difficulties for the rubric import, `ToolGuidesSha256` and `HarnessVersion` for 
 reported **first**, before any finding, because a run made on unrepaired rubrics re-produces the
 previous round's findings and the analysis would otherwise diagnose them again and write a second
 repair that conflicts with the first.
+
+### One folder per runbook
+
+A runbook's artifacts go in **one version folder** of the run-artifacts folder:
+
+- The runbook's first `RUN` step opens the next free version folder, `v<N>`.
+- Every `SAVE` step of that runbook writes into `v<N>\R<k>\`, where `R<k>` is the run's name:
+  `<model folder>\Battery` and `<model folder>\Run <id>` for the reports and tool-call logs, `UI\`
+  for every screenshot, capture and downloaded image a criterion is read from, and, when the step
+  asks for them, the suite YAML exports.
+- A rubric repair file stays beside the export it was made from.
+- The next round's runbook starts `v<N+1>`.
+- Each `SAVE` step names the exact subfolder, so the developer never chooses one.
+
+Set on 2026-10-05 by the user's instruction, after one round's R1–R3 landed in three version folders
+(`v5`, `v6` and `v7`) and the next analysis had to look for each run in a different one.
 
 ## 7. Self-Check Before Handing Over
 
@@ -626,6 +651,11 @@ repair that conflicts with the first.
       paste is named by absolute path.
 - [ ] The *At a Glance* table matches the steps row for row.
 - [ ] Every `SAVE` step has a go / stop line; the last one carries the analysis prompt.
+- [ ] Every `SAVE` step names its `v<N>\R<k>` subfolder, and all of the runbook's runs share one
+      `v<N>` (§ 6 *One folder per runbook*).
+- [ ] Every time criterion carries its TTFT control (± 30 % of the baseline's TTFT P50).
+- [ ] Every UI criterion names its capture and the moment to take it, and a `SAVE` step saves it
+      into `UI\`.
 
 ## 8. Where the UI Facts Come From
 

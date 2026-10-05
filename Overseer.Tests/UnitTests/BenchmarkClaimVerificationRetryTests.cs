@@ -11,8 +11,8 @@ using Xunit;
 namespace Overseer.Tests.UnitTests;
 
 /// <summary>
-/// The claim verifier's parse retry request and the description of how a verification loop ended.
-/// Nothing here reaches a network.
+/// The claim verifier's parse retry request, the description of how a verification loop ended,
+/// and the per-call usage record that marks the retry's calls. Nothing here reaches a network.
 /// </summary>
 public class BenchmarkClaimVerificationRetryTests
 {
@@ -26,7 +26,7 @@ public class BenchmarkClaimVerificationRetryTests
     private const string Rubric = "**BOARD FACTS**\n- \"c - 3 fortune cookies\"\n**REQUIRED**\n- Read the cookies.";
 
     private const string EmptyReAsk =
-        "Your previous response was empty. From the evidence above, output ONLY the JSON object the schema above requires, with a verdict for every item. Do not call tools.";
+        "Your previous response was empty. From the evidence above, output ONLY the JSON object the schema above requires, with a verdict for every item; give an item the evidence does not settle the verdict Indeterminate and say so in its basis. Do not call tools.";
 
     private static SystemAiApiConfiguration VerifierConfig(string provider = "Anthropic") => new()
     {
@@ -165,7 +165,7 @@ public class BenchmarkClaimVerificationRetryTests
         string seed = SeedText(retry);
 
         Assert.EndsWith(
-            "\nYour previous response could not be parsed: PARSE-ERROR. Output ONLY the raw JSON object according to the schema, without markdown wrapping, code fences or extra text.",
+            "\nYour previous response could not be parsed: PARSE-ERROR. Output ONLY the raw JSON object according to the schema, with a verdict for every item \u2014 Indeterminate, saying so in its basis, for an item the evidence above does not settle \u2014 without markdown wrapping, code fences or extra text.",
             seed);
         Assert.DoesNotContain(EmptyReAsk, seed);
     }
@@ -242,5 +242,100 @@ public class BenchmarkClaimVerificationRetryTests
         Assert.Equal(
             "loop ended budget_exhausted, provider finish reason max_tokens",
             BenchmarkService.DescribeVerificationEnd(result));
+    }
+
+    private static TokenUsageReport Usage(int prompt, int cacheRead, int output)
+        => new() { TotalPromptTokens = prompt, CacheReadTokens = cacheRead, OutputTokens = output };
+
+    private const string FirstAttemptEnd = "loop ended completed, provider finish reason max_tokens";
+
+    [Fact]
+    public void RecordModelCalls_WithoutRetry_WritesPromptCacheAndOutputOnly()
+    {
+        var answer = new BenchmarkRunAnswer();
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 2, new List<TokenUsageReport> { Usage(100, 40, 10), Usage(200, 150, 20) }, null);
+
+        Assert.Equal(2, answer.ClaimVerificationModelCallCount);
+        Assert.Equal("[{\"p\":100,\"c\":40,\"o\":10},{\"p\":200,\"c\":150,\"o\":20}]", answer.ClaimVerificationCallUsageJson);
+    }
+
+    [Fact]
+    public void RecordModelCalls_MarksOnlyTheRetryEntries_AndTheFirstCarriesTheFirstAttemptsEnd()
+    {
+        var answer = new BenchmarkRunAnswer();
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 3, new List<TokenUsageReport> { Usage(100, 40, 10), Usage(200, 150, 20), Usage(300, 0, 30) }, null,
+            retryCallStart: 2, firstAttemptEnd: FirstAttemptEnd);
+
+        Assert.Equal(
+            "[{\"p\":100,\"c\":40,\"o\":10},{\"p\":200,\"c\":150,\"o\":20},{\"p\":300,\"c\":0,\"o\":30,\"r\":1,\"e\":\"" + FirstAttemptEnd + "\"}]",
+            answer.ClaimVerificationCallUsageJson);
+    }
+
+    [Fact]
+    public void RecordModelCalls_RetryWithoutUsage_AppendsOnePlaceholderEntry()
+    {
+        var answer = new BenchmarkRunAnswer();
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 2, new List<TokenUsageReport> { Usage(100, 40, 10) }, null,
+            retryCallStart: 1, firstAttemptEnd: FirstAttemptEnd);
+
+        Assert.Equal(
+            "[{\"p\":100,\"c\":40,\"o\":10},{\"p\":0,\"c\":0,\"o\":0,\"r\":1,\"e\":\"" + FirstAttemptEnd + "\"}]",
+            answer.ClaimVerificationCallUsageJson);
+    }
+
+    [Fact]
+    public void RecordModelCalls_NoUsageAndNoRetry_IsNull()
+    {
+        var answer = new BenchmarkRunAnswer { ClaimVerificationCallUsageJson = "stale" };
+
+        BenchmarkService.RecordClaimVerificationModelCalls(answer, 0, new List<TokenUsageReport>(), null);
+
+        Assert.Null(answer.ClaimVerificationCallUsageJson);
+    }
+
+    [Fact]
+    public void RecordModelCalls_CutsTheFirstAttemptsEndAtTwoHundredCharacters()
+    {
+        var answer = new BenchmarkRunAnswer();
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 1, new List<TokenUsageReport>(), null,
+            retryCallStart: 0, firstAttemptEnd: new string('x', 200) + "TAIL");
+
+        Assert.Equal(200, BenchmarkService.ClaimVerificationFirstAttemptEndMaxLength);
+        Assert.Equal(
+            "[{\"p\":0,\"c\":0,\"o\":0,\"r\":1,\"e\":\"" + new string('x', 200) + "\"}]",
+            answer.ClaimVerificationCallUsageJson);
+    }
+
+    [Fact]
+    public void RecordModelCalls_TheCapKeepsTheRetryEntries()
+    {
+        var answer = new BenchmarkRunAnswer();
+        var usages = Enumerable.Range(1, 70).Select(i => Usage(i, 0, 1)).ToList();
+        usages.Add(Usage(1001, 0, 2));
+        usages.Add(Usage(1002, 0, 3));
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 72, usages, null, retryCallStart: 70, firstAttemptEnd: FirstAttemptEnd);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(answer.ClaimVerificationCallUsageJson!);
+        var entries = doc.RootElement.EnumerateArray().ToList();
+        Assert.Equal(BenchmarkService.ClaimVerificationCallUsageMaxEntries, entries.Count);
+        Assert.Equal(1, entries[0].GetProperty("p").GetInt32());
+        Assert.Equal(62, entries[61].GetProperty("p").GetInt32());
+        Assert.False(entries[61].TryGetProperty("r", out _));
+        Assert.Equal(1001, entries[62].GetProperty("p").GetInt32());
+        Assert.Equal(1, entries[62].GetProperty("r").GetInt32());
+        Assert.Equal(FirstAttemptEnd, entries[62].GetProperty("e").GetString());
+        Assert.Equal(1002, entries[63].GetProperty("p").GetInt32());
+        Assert.Equal(1, entries[63].GetProperty("r").GetInt32());
+        Assert.False(entries[63].TryGetProperty("e", out _));
     }
 }

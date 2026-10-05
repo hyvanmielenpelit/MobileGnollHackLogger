@@ -2710,6 +2710,145 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain(new string('z', 600), line);
     }
 
+    private const string RetryFirstAttemptEnd = "loop ended completed, provider finish reason max_tokens";
+
+    private const string RetriedUsageJson =
+        "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":200,\"c\":0,\"o\":20,\"r\":1,\"e\":\"" + RetryFirstAttemptEnd + "\"}]";
+
+    private const string RetryPlaceholderUsageJson =
+        "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":0,\"c\":0,\"o\":0,\"r\":1,\"e\":\"" + RetryFirstAttemptEnd + "\"}]";
+
+    private static string ClaimVerificationLine(string report)
+        => report.Split('\n').Single(l => l.StartsWith("> - **Claim Verification (", StringComparison.Ordinal)).TrimEnd('\r');
+
+    [Fact]
+    public void ClaimVerification_VerdictLine_NamesTheParseRetry_AndHowTheFirstAttemptEnded()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimVerificationModelCallCount = 2;
+        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.EndsWith(
+            "advisory, not reflected in the score.* \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + ")",
+            ClaimVerificationLine(report));
+    }
+
+    [Fact]
+    public void ClaimVerification_FailedLine_NamesTheParseRetry_BeforeThePeriod()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "Verification text was empty.";
+        q1.ClaimVerificationModelCallCount = 2;
+        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.EndsWith(
+            "The unverified claims above were not checked \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + ").",
+            ClaimVerificationLine(report));
+    }
+
+    [Fact]
+    public void ClaimVerification_RetryThatReportedNoUsage_SaysSo()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "Verification text was empty.";
+        q1.ClaimVerificationModelCallCount = 1;
+        q1.ClaimVerificationCallUsageJson = RetryPlaceholderUsageJson;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.EndsWith(
+            "The unverified claims above were not checked \u2014 1 model call(s) \u2014 parse retry: no model call reported usage after the first attempt (" + RetryFirstAttemptEnd + ").",
+            ClaimVerificationLine(report));
+    }
+
+    [Fact]
+    public void ClaimVerificationRetryText_LeavesOutTheParenthesis_WhenTheFirstAttemptsEndIsAbsent()
+    {
+        var answer = new BenchmarkRunAnswer { ClaimVerificationCallUsageJson = "[{\"p\":200,\"c\":0,\"o\":20,\"r\":1}]" };
+
+        Assert.True(BenchmarkReportBuilder.ClaimVerificationWasRetried(answer));
+        Assert.Equal(" \u2014 parse retry: 1 model call(s) after the first attempt", BenchmarkReportBuilder.ClaimVerificationRetryText(answer));
+    }
+
+    [Fact]
+    public void ClaimVerification_WithoutARetry_RendersTheLineUnchanged()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimVerificationModelCallCount = 2;
+        q1.ClaimVerificationCallUsageJson = "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":200,\"c\":0,\"o\":20}]";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.EndsWith("advisory, not reflected in the score.* \u2014 2 model call(s)", ClaimVerificationLine(report));
+        Assert.DoesNotContain("parse retry", report);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData("{\"r\":1}")]
+    public void ClaimVerification_NullEmptyOrInvalidUsageJson_RendersNothingExtra(string? json)
+    {
+        var answer = new BenchmarkRunAnswer { ClaimVerificationCallUsageJson = json };
+        Assert.False(BenchmarkReportBuilder.ClaimVerificationWasRetried(answer));
+        Assert.Equal(string.Empty, BenchmarkReportBuilder.ClaimVerificationRetryText(answer));
+
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimVerificationModelCallCount = 2;
+        q1.ClaimVerificationCallUsageJson = json;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.EndsWith("advisory, not reflected in the score.* \u2014 2 model call(s)", ClaimVerificationLine(report));
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_CountsTheAnswersThatNeededAParseRetry()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 3;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 10 claim(s) checked \u2014 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a parse retry. $1.70 ($0.17/claim), 67% of run cost.",
+            report);
+    }
+
     // -------------------------------------------------------------------------------------
     // Run 22 truthfulness fixes: each fixture below reproduces the shape of the defect the
     // hand analysis of that run found.
@@ -4576,6 +4715,49 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains(
             "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over both), 67% of run cost.",
+            report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_OverSeveralPopulations_CountsTheAnswersThatNeededAParseRetry()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(1, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote)
+        });
+        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 75);
+        q2.ClaimVerificationCallUsageJson = "[{\"p\":0,\"c\":0,\"o\":0,\"r\":1}]";
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 30, 75);
+        q3.ClaimVerificationCallUsageJson = "[{\"p\":100,\"c\":0,\"o\":10}]";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 1;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked \u2014 claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate; 2 answer(s) needed a parse retry. $1.70 ($0.17/item over both), 67% of run cost.",
             report);
     }
 

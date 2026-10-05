@@ -441,7 +441,9 @@ public class BenchmarkRunAnswer
     /// <summary>
     /// The claim verifier's usage per model call, in call order, as a compact JSON array
     /// <c>[{"p":&lt;prompt tokens&gt;,"c":&lt;cache-read tokens&gt;,"o":&lt;output tokens&gt;}, …]</c> of at
-    /// most 64 entries, the parse retry's calls appended. Null means "not recorded".
+    /// most 64 entries. The parse retry's entries are appended, each carrying <c>"r":1</c>, and the
+    /// first of them also carries <c>"e"</c>, how the first attempt ended; a retry that reported no
+    /// usage leaves one zero entry so marked. Null means "not recorded".
     /// </summary>
     public string? ClaimVerificationCallUsageJson { get; set; }
 
