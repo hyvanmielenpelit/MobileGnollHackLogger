@@ -155,6 +155,8 @@ import {
   MISSING_BOARD_QUOTE_LIST_CAP
 } from './benchmark-run-format';
 import { RUN_STAGE_NAMES, runRailIndexOf, runStageFromServer } from './run-stage-labels';
+import * as repair from './run-repair-actions';
+import { RepairActionGate } from './run-repair-actions';
 import { BenchmarkWorkspaceStore } from './state/benchmark-workspace.store';
 import { BenchmarkLauncherState } from './state/benchmark-launcher.state';
 import { BenchmarkDifficultyJobService } from './state/benchmark-difficulty-job.service';
@@ -522,6 +524,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   trialReassessingAnswerId: number | null = null;
 
   rerunningAnswerId: number | null = null;
+
+  /**
+   * The question a Re-run question launched on a run, so the progress dialog's re-run badge counts
+   * it as one question rather than as failed questions. Cleared by a failed-question re-run.
+   */
+  private questionRerun: { runId: number; orderIndex: number } | null = null;
 
   // Calibration panel. A calibration grades a finished run with another model and records only
   // the agreement statistics — no score, level, flag or index moves — so this is where a
@@ -2017,6 +2025,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.effectiveRerunScope.length > 0;
   }
 
+  /** The re-run in scope is a Re-run question launched here, not a re-run of failed questions. */
+  get rerunScopeIsQuestionRerun(): boolean {
+    const launched = this.questionRerun;
+    const runId = this.monitor.dialogRunDetail?.id ?? this.monitor.dialogRunId;
+    const scope = this.effectiveRerunScope;
+    return launched != null && launched.runId === runId && scope.length === 1 && scope[0] === launched.orderIndex;
+  }
+
   isRerunScope(row: BenchmarkRunProgressRow): boolean {
     return this.effectiveRerunScope.includes(row.orderIndex);
   }
@@ -2909,6 +2925,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (runId == null) return;
     const failed = this.runFailedAnswers.map(a => a.orderIndex);
     this.monitor.armCompletionSignalsFromGesture();
+    this.questionRerun = null;
     if (!this.monitor.dialogFollowsLiveRun && detail) {
       // Keeps the header legible during the launch, as the live run's own detail does.
       this.monitor.activeRunDetail = detail;
@@ -2929,6 +2946,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   rerunFailedFromRunDetail(runId: number): void {
     this.monitor.armCompletionSignalsFromGesture();
+    this.questionRerun = null;
     const failed = (this.selectedRunDetail?.answers ?? [])
       .filter(a => this.isAnswerFailed(a))
       .map(a => a.orderIndex);
@@ -3113,57 +3131,121 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.calibrationErrorMessage = null;
     this.rerunPopoverOpen = false;
     this.runReportCopyStatus = '';
+    // Detail polling is what clears these once the repair ends; with it stopped they would go stale.
+    this.clearRepairsInFlight();
   }
 
   // --- Run report: header actions ---
 
   /**
-   * The Re-run popover's items, each listed under the condition that makes it apply. An item that
-   * applies but cannot run now stays listed with its reason.
+   * A repair of the viewed run is executing, or one was sent and polling has not yet seen it running.
+   * The server refuses a second repair until the first ends.
+   */
+  get repairBusy(): boolean {
+    return this.isRunBusy() || this.rescoringRun || this.runningSynthesis || this.retryingAssessments ||
+      this.retryingClaimVerification || this.reassessingAnswerId != null || this.rerunningAnswerId != null ||
+      this.trialReassessingAnswerId != null;
+  }
+
+  private clearRepairsInFlight(): void {
+    this.rescoringRun = false;
+    this.reassessingAnswerId = null;
+    this.trialReassessingAnswerId = null;
+    this.rerunningAnswerId = null;
+    this.runningSynthesis = false;
+    this.retryingAssessments = false;
+    this.retryingClaimVerification = false;
+  }
+
+  /**
+   * The Re-run popover's items, each listed under the condition that makes it apply (`run-repair-actions`).
+   * An item that applies but cannot run now stays listed with its reason. Each label is also the
+   * confirm label of the dialog it opens.
    */
   rerunActions(run: BenchmarkRunDetailDto): RunReportRerunAction[] {
-    const busy = this.isRunBusy() ? 'A retry is already running on this run.' : null;
-    const aborted = isAbortedRun(run) ? 'The run stopped before finishing its suite.' : null;
-    const actions: RunReportRerunAction[] = [{
-      key: 'rescore',
-      label: this.rescoringRun ? 'Re-scoring...' : 'Re-score run',
-      reason: this.rescoringRun ? 'Re-scoring is in progress.' : (busy ?? aborted),
-      run: () => this.rescoreRun(run.id)
-    }];
-    if (run.answers.length > 0) {
-      actions.push({
-        key: 'synthesis',
-        label: this.runningSynthesis ? 'Synthesizing...' : 'Re-run final synthesis',
-        reason: busy,
-        run: () => this.openRetryDialog('synthesis', run.id)
-      });
+    const busy = this.repairBusy;
+    const items: { key: string; label: string; gate: RepairActionGate; run: () => void }[] = [
+      {
+        key: 'failed-questions', label: 'Re-run failed questions',
+        gate: repair.rerunFailedQuestions(run, busy), run: () => this.rerunFailedFromRunDetail(run.id)
+      },
+      {
+        key: 'assessments', label: 'Retry failed assessments',
+        gate: repair.retryAssessments(run, busy), run: () => this.openRetryDialog('assessments', run.id)
+      },
+      {
+        key: 'claim-verification', label: 'Retry claim verification',
+        gate: repair.retryClaimVerification(run, busy), run: () => this.openRetryDialog('claim-verification', run.id)
+      },
+      {
+        key: 'synthesis', label: 'Re-run final synthesis',
+        gate: repair.rerunSynthesis(run, busy), run: () => this.openRetryDialog('synthesis', run.id)
+      },
+      {
+        key: 'rescore', label: 'Re-score run',
+        gate: this.rescoringRun
+          ? { visible: true, disabledReason: 'Re-scoring is in progress.' }
+          : repair.rescore(run, busy),
+        run: () => this.rescoreRun(run.id)
+      }
+    ];
+    return items
+      .filter(item => item.gate.visible)
+      .map(item => ({ key: item.key, label: item.label, reason: item.gate.disabledReason, run: item.run }));
+  }
+
+  /** Re-run failed questions, for the Summary tab's failure alert. */
+  runFailedQuestionsGate(run: BenchmarkRunDetailDto): RepairActionGate {
+    return repair.rerunFailedQuestions(run, this.repairBusy);
+  }
+
+  /** Re-run failed questions, for the run progress dialog's footer; that dialog shows a terminal run. */
+  get progressRerunFailedGate(): RepairActionGate {
+    const run = this.monitor.dialogRunDetail;
+    return run ? repair.rerunFailedQuestions(run, !this.runIsTerminal) : { visible: false, disabledReason: null };
+  }
+
+  /**
+   * The per-question repairs of one answer, and their distinct reasons in order, which the card lists
+   * once under its actions; each disabled button is described by its reason's line.
+   */
+  questionRepairs(run: BenchmarkRunDetailDto, ans: BenchmarkRunAnswerDto): {
+    rerun: RepairActionGate; reassess: RepairActionGate; trial: RepairActionGate; reasons: string[];
+  } {
+    const busy = this.repairBusy;
+    const rerun = repair.rerunQuestion(run, ans, busy);
+    const reassess = repair.reassess(run, ans, busy);
+    const trial = repair.trialReassess(run, ans, busy);
+    const reasons: string[] = [];
+    for (const g of [rerun, reassess, trial]) {
+      if (g.visible && g.disabledReason && !reasons.includes(g.disabledReason)) {
+        reasons.push(g.disabledReason);
+      }
     }
-    if (this.hasUnscoredAssessments()) {
-      actions.push({
-        key: 'assessments',
-        label: this.retryingAssessments ? 'Retrying...' : 'Retry failed assessments',
-        reason: busy,
-        run: () => this.openRetryDialog('assessments', run.id)
-      });
-    }
-    if (this.hasFailedClaimVerifications()) {
-      actions.push({
-        key: 'claim-verification',
-        label: this.retryingClaimVerification ? 'Retrying...' : 'Retry claim verification',
-        reason: busy,
-        run: () => this.openRetryDialog('claim-verification', run.id)
-      });
-    }
-    const status = formatStatus(run.status);
-    if (this.failedAnswers().length > 0 && (status === 'Failed' || status === 'Canceled' || status === 'CompletedWithErrors')) {
-      actions.push({
-        key: 'failed-questions',
-        label: 'Re-run failed questions',
-        reason: busy ?? aborted,
-        run: () => this.rerunFailedFromRunDetail(run.id)
-      });
-    }
-    return actions;
+    return { rerun, reassess, trial, reasons };
+  }
+
+  /** The Summary alert's and the progress footer's Re-run failed questions; inert while gated. */
+  onRerunFailedFromRunDetail(gate: RepairActionGate, runId: number): void {
+    if (gate.disabledReason) return;
+    this.rerunFailedFromRunDetail(runId);
+  }
+
+  onRerunFailedFromProgress(gate: RepairActionGate): void {
+    if (gate.disabledReason) return;
+    this.rerunFailedFromProgress();
+  }
+
+  /** A per-question repair button; inert while gated. */
+  onQuestionRepair(gate: RepairActionGate, scope: 'assessment' | 'trial' | 'question', runId: number, ans: BenchmarkRunAnswerDto): void {
+    if (gate.disabledReason) return;
+    this.openRetryDialog(scope, runId, ans);
+  }
+
+  /** The strip above the run report's panels: a re-run of the run's answers, or the run itself. */
+  get runBusyStripText(): string {
+    const run = this.selectedRunDetail;
+    return run && repair.isRerunInProgress(run) ? 'Retry in progress on this run…' : 'Run in progress.';
   }
 
   onRerunAction(action: RunReportRerunAction): void {
@@ -3230,7 +3312,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         suiteName: run.suiteName,
         modelLabel: run.testedModelDisplayNameUsed,
         startedAtUtc: run.startedAtUtc,
-        completedAtUtc: run.completedAtUtc ?? null
+        completedAtUtc: run.completedAtUtc ?? null,
+        // The run detail does not carry its battery; the history's summary of the run does.
+        batteryRunId: this.workspace.historyRuns.find(r => r.id === run.id)?.batteryRunId ?? null
       },
       diagnosticsText: () => {
         const selected = this.selectedRunDetail;
@@ -3238,6 +3322,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         return this.runDiagnosticsTextFor(current, this.runStageOf(current));
       }
     });
+  }
+
+  /**
+   * The Download Center's Open battery run downloads, on a run that is a battery member: the same
+   * dialog switches to that battery run's documents, as the Battery Run Report's Downloads lists them.
+   */
+  openBatteryDownloads(batteryRunId: number): void {
+    const battery = this.workspace.batteryRuns.find(b => b.id === batteryRunId);
+    const label = battery
+      ? [battery.batteryName, battery.testedModelLabel].filter(part => !!part).join(' · ')
+      : '';
+    this.runDownloadCenter?.open({ kind: 'battery', batteryRunId, label });
   }
 
   /**
@@ -3711,6 +3807,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (statusStr !== 'Running') {
           this.stopDetailPolling();
           this.reassessingAnswerId = null;
+          this.trialReassessingAnswerId = null;
           this.rerunningAnswerId = null;
           this.runningSynthesis = false;
           this.retryingAssessments = false;
@@ -3723,6 +3820,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         console.error('Failed to refresh run details', err);
         this.stopDetailPolling();
         this.reassessingAnswerId = null;
+        this.trialReassessingAnswerId = null;
         this.rerunningAnswerId = null;
         this.runningSynthesis = false;
         this.retryingAssessments = false;
@@ -3852,12 +3950,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       if (!answer) return;
       this.workspace.actionErrorMessage = null;
       this.rerunningAnswerId = answer.id;
+      this.questionRerun = { runId, orderIndex: answer.orderIndex };
       this.benchmarkService.rerunAnswer(runId, answer.id, assessorId).subscribe({
         next: () => {
           this.startDetailPolling(runId);
         },
         error: (err) => {
           this.rerunningAnswerId = null;
+          this.questionRerun = null;
           this.workspace.actionErrorMessage = err?.error || 'Failed to start rerun.';
           this.viewSync.notify();
         }
@@ -3904,10 +4004,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
+  /** Re-scores under the run's own scoring profile: no profile id is sent. */
   rescoreRun(runId: number) {
     this.workspace.actionErrorMessage = null;
     this.rescoringRun = true;
-    this.benchmarkService.rescoreRun(runId, this.launcher.selectedScoringProfileId).subscribe({
+    this.benchmarkService.rescoreRun(runId).subscribe({
       next: () => {
         this.rescoringRun = false;
         this.viewRunDetail(runId);
@@ -3916,23 +4017,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       error: (err) => {
         this.rescoringRun = false;
         this.workspace.actionErrorMessage = err?.error || 'Failed to rescore run.';
-        this.viewSync.notify();
-      }
-    });
-  }
-
-  reassessAnswer(runId: number, answerId: number) {
-    this.workspace.actionErrorMessage = null;
-    this.reassessingAnswerId = answerId;
-    this.benchmarkService.reassessAnswer(runId, answerId, this.launcher.assessorConfigId).subscribe({
-      next: () => {
-        this.reassessingAnswerId = null;
-        this.viewRunDetail(runId);
-        this.workspace.loadHistory();
-      },
-      error: (err) => {
-        this.reassessingAnswerId = null;
-        this.workspace.actionErrorMessage = err?.error || 'Failed to reassess answer.';
         this.viewSync.notify();
       }
     });

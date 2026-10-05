@@ -726,31 +726,44 @@ describe('AdminBenchmarkComponent', () => {
         expect(ctx.monitor.activeBatteryRun).not.toBeNull();
       });
 
-      it('should offer Continue for a stopped battery run and resume it', () => {
+      it('should name the stop reason and point to the progress dialog, with no Continue on the banner', () => {
         attachBattery({ status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'A member run failed', resumable: true });
-        benchmarkServiceMock.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 9 }));
 
+        expect(banner()!.querySelector('.battery-progress-label')!.textContent!.trim())
+          .toBe('Stopped — A member run failed. 0 of 2 suites completed. Continue from the progress dialog.');
+        expect(bannerButton('Continue')).toBeUndefined();
         expect(bannerButton('Re-run under current instrument')).toBeUndefined();
-        const cont = bannerButton('Continue (A member run failed)')!;
-        expect(cont).toBeTruthy();
-        cont.click();
+        expect(bannerButton('Cancel Battery')).toBeTruthy();
 
-        expect(benchmarkServiceMock.resumeBatteryRun).toHaveBeenCalledWith(9, 'Continue');
+        bannerButton('Show Battery Progress')!.click();
+        fixture.detectChanges();
+        expect(ctx.monitor.batteryDialogVisible).toBe(true);
+        expect(benchmarkServiceMock.resumeBatteryRun).not.toHaveBeenCalled();
       });
 
-      it('should offer only Re-run under current instrument and Cancel after an instrument change', () => {
+      it('should offer only Show Battery Progress and Cancel after an instrument change', () => {
         attachBattery({
           status: 'Stopped', stopReason: 'InstrumentChanged',
           stopReasonText: 'A member is not comparable with the others', resumable: true
         });
-        benchmarkServiceMock.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 9 }));
-        benchmarkServiceMock.cancelBatteryRun.mockReturnValue(of(undefined));
 
+        expect(Array.from(banner()!.querySelectorAll('button')).map(b => (b.textContent || '').trim()))
+          .toEqual(['Show Battery Progress', 'Cancel Battery']);
+        expect(banner()!.textContent).toContain('A member is not comparable with the others');
+        expect(banner()!.textContent).toContain('Continue from the progress dialog.');
+      });
+
+      it('should treat a battery run completed with errors as finished, unless the server still works on it', () => {
+        attachBattery({ status: 'CompletedWithErrors', resumable: true });
+        expect(ctx.runTab().batteryBannerVisible).toBe(false);
+        expect(banner()).toBeNull();
+
+        attachBattery({ status: 'CompletedWithErrors', postRunWork: 'Repairing', repairingRunIds: [41] });
+        expect(banner()).toBeTruthy();
+        expect(banner()!.querySelector('.battery-progress-label')!.textContent!.trim())
+          .toBe('Re-run in progress — 0 of 2 suites completed.');
         expect(bannerButton('Continue')).toBeUndefined();
-        expect(bannerButton('Cancel Battery')).toBeTruthy();
-        bannerButton('Re-run under current instrument')!.click();
-
-        expect(benchmarkServiceMock.resumeBatteryRun).toHaveBeenCalledWith(9, 'RerunUnderCurrentInstrument');
+        expect(bannerButton('Show Battery Progress')).toBeTruthy();
       });
 
       it('should cancel the battery run from the banner', () => {
@@ -1031,13 +1044,13 @@ describe('AdminBenchmarkComponent', () => {
         ctx.monitor.pollBatteryRun(9);
       }
 
-      function pollRun(id: number, status: string): void {
+      function pollRun(id: number, status: string, completedAtUtc: string | null = null): void {
         benchmarkServiceMock.getRun.mockReturnValue(of({
           id, benchmarkSuiteId: 1, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Test Model',
           testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'claude-3-5-sonnet',
           assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Anthropic',
           assessorModelIdUsed: 'claude-3-5-sonnet', startedByUserName: 'admin', status,
-          startedAtUtc: '2026-10-02T00:00:00Z', completedAtUtc: null, totalQuestionCount: 3, answers: []
+          startedAtUtc: '2026-10-02T00:00:00Z', completedAtUtc, totalQuestionCount: 3, answers: []
         } as any));
         (ctx.monitor as any).pollRunDetail(id);
       }
@@ -1063,9 +1076,9 @@ describe('AdminBenchmarkComponent', () => {
         pollRun(42, 'Completed');
         pollBattery({ status: 'Completed', completedSuiteCount: 2, currentRunId: null, members: [member(41, 0), member(42, 1)] });
 
-        expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:9']]);
+        expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:9:0:NotRequested']]);
         expect(notifySpy).toHaveBeenCalledTimes(1);
-        expect(notifySpy).toHaveBeenCalledWith('battery:9', 'AI Benchmark', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
+        expect(notifySpy).toHaveBeenCalledWith('battery:9:0:NotRequested', 'AI Benchmark', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
       });
 
       it('should signal a battery run that stops, but not one that is canceled', () => {
@@ -1078,7 +1091,7 @@ describe('AdminBenchmarkComponent', () => {
         component.onBatteryResumedFromDialog(9);
         pollBattery({ status: 'Stopped', stopReason: 'MemberFailed' });
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('battery:9');
+        expect(playSpy).toHaveBeenCalledWith('battery:9:0:NotRequested');
       });
 
       it('should not signal a battery run first seen already finished', () => {
@@ -1086,6 +1099,97 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(playSpy).not.toHaveBeenCalled();
         expect(notifySpy).not.toHaveBeenCalled();
+      });
+
+      it('should count the battery run as one this page signals once the dialog reports a 2xx Continue', () => {
+        benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun({ status: 'Running' })));
+        expect(ctx.monitor.batteriesSeenLive.has(9)).toBe(false);
+
+        // The progress dialog emits batteryResumed only from a successful resume.
+        component.onBatteryResumedFromDialog(9);
+
+        expect(ctx.monitor.batteriesSeenLive.has(9)).toBe(true);
+        expect(ctx.monitor.activeBatteryRunId).toBe(9);
+      });
+
+      describe('one user action, one chain of server work, one signal', () => {
+        /** Battery run 8: two suites, run 91 its second member, finished with errors before the repair. */
+        const battery8 = (overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto => buildBatteryRun({
+          id: 8, status: 'CompletedWithErrors', isDriving: false, completedSuiteCount: 1, currentRunId: null,
+          latestAnalysisId: 11, completedAtUtc: '2026-10-02T01:00:00Z',
+          members: [member(90, 0), member(91, 1)], postRunWork: 'None', repairingRunIds: [],
+          ...overrides
+        });
+
+        function answerBattery8(overrides: Partial<BenchmarkBatteryRunDto>): void {
+          benchmarkServiceMock.getBatteryRun.mockReturnValue(of(battery8(overrides)));
+        }
+
+        beforeEach(() => {
+          ctx.monitor.activeBatteryRunId = 8;
+          ctx.monitor.activeBatteryRun = battery8();
+          answerBattery8({});
+        });
+
+        it('should signal the battery 8 sequence exactly once, battery:8:…, after postRunWork returns to None', () => {
+          // A member re-run is launched and seen Running.
+          ctx.monitor.activeRunId = 91;
+          pollRun(91, 'Running');
+          answerBattery8({ postRunWork: 'Repairing', repairingRunIds: [91] });
+
+          // Continue is refused with 409 while the member is re-run.
+          vi.spyOn(console, 'error').mockReturnValue(undefined);
+          benchmarkServiceMock.resumeBatteryRun.mockReturnValue(throwError(() => ({
+            status: 409, error: { message: 'Run 91 is being re-run; the battery run follows it when the re-run finishes.' }
+          })));
+          ctx.monitor.resumeActiveBattery('Continue');
+          expect(ctx.monitor.batteriesSeenLive.has(8)).toBe(false);
+
+          // The re-run finishes; the server finishes the battery run by itself.
+          answerBattery8({ status: 'Completed', completedSuiteCount: 2, postRunWork: 'Analysing' });
+          pollRun(91, 'Completed');
+          answerBattery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, postRunWork: 'WritingReports', reportDocumentsStatus: 2 });
+          ctx.monitor.pollBatteryRun(8);
+          expect(playSpy).not.toHaveBeenCalled();
+
+          answerBattery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, postRunWork: 'None', reportDocumentsStatus: 3 });
+          ctx.monitor.pollBatteryRun(8);
+          ctx.monitor.pollBatteryRun(8);
+          pollRun(91, 'Completed');
+
+          expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:8:12:Completed']]);
+          expect(notifySpy).toHaveBeenCalledTimes(1);
+          expect(notifySpy).toHaveBeenCalledWith('battery:8:12:Completed', 'AI Benchmark', 'Battery #8 — Core Battery — 2 of 2 suites — Completed');
+        });
+
+        it('should signal nothing for a refused Continue alone', () => {
+          vi.spyOn(console, 'error').mockReturnValue(undefined);
+          benchmarkServiceMock.resumeBatteryRun.mockReturnValue(throwError(() => ({
+            status: 409, error: { message: 'The run slot is busy.' }
+          })));
+
+          ctx.monitor.resumeActiveBattery('Continue');
+          ctx.refresh();
+
+          expect(playSpy).not.toHaveBeenCalled();
+          expect(notifySpy).not.toHaveBeenCalled();
+          expect(ctx.monitor.batteriesSeenLive.has(8)).toBe(false);
+          expect(ctx.monitor.batteryErrorMessage).toBe('The run slot is busy.');
+        });
+
+        it('should signal run:… once for a run in no battery', () => {
+          ctx.monitor.activeBatteryRunId = null;
+          ctx.monitor.activeBatteryRun = null;
+          benchmarkServiceMock.getBatteryRun.mockClear();
+          ctx.monitor.activeRunId = 50;
+
+          pollRun(50, 'Running');
+          pollRun(50, 'Completed', '2026-10-02T02:00:00Z');
+          pollRun(50, 'Completed', '2026-10-02T02:00:00Z');
+
+          expect(vi.mocked(playSpy).mock.calls).toEqual([['run:50:2026-10-02T02:00:00Z']]);
+          expect(benchmarkServiceMock.getBatteryRun).not.toHaveBeenCalled();
+        });
       });
     });
 

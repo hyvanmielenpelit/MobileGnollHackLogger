@@ -503,7 +503,10 @@ to stop if the projection is more than about twice the estimate.
 | # | Criterion (pre-declared) | Where to read it | Pass | If it fails |
 |---|---|---|---|---|
 
-- If questions fail on a provider error: Re-run Failed Questions once, then hand back as is.
+- If questions fail on a provider error: Re-run failed questions once (the alert on the run
+  report's Summary tab), then hand back as is. On a battery member the battery run follows the
+  re-run and finishes itself when every slot is then usable; wait for its progress dialog to show
+  the analysis and reports done before saving.
 ```
 
 Rules for writing a `RUN` step:
@@ -567,7 +570,11 @@ Rules for writing a `RUN` step:
    buttons. When the `RUN` step asks for them, also download the two AI-written reports — the
    Executive Summary and the Report for AI Researchers and Developers — from the run's
    **Downloads** (the Download Center, or **View** in the run report's *AI-Written Reports*
-   section), after that section shows them written.
+   section), after that section shows them written. **For a battery run, they are the battery
+   run's**: write the step as the Battery Run Report's **Downloads** (from Run History's battery card,
+   **View details**), never a member run's. A member run's own **Downloads** lists only that run's own
+   documents and says *"This run is a member of battery run #<id>. Its AI-written documents are in
+   the battery run's downloads."*, with **Open battery run downloads** to switch to them.
 2. **The go / stop line**, built from the `RUN` step's criteria table: *"If criteria 1–3 passed,
    go on with Step <n+1>. If any failed, stop and start the analysis with the prompt below."*
    When the next step needs the analysis whatever the result, the line says so and an `AGENT`

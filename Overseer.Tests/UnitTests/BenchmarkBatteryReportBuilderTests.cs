@@ -363,6 +363,31 @@ public class BenchmarkBatteryReportBuilderTests
         Assert.Contains(BenchmarkBatteryStatistics.NoReproducibilityCaveat, report);
     }
 
+    /// <summary>
+    /// A usable member re-run after the battery run first finished (12:05) is named under Method and
+    /// Limits with the re-run's span; a re-run that ended before the finish is not.
+    /// </summary>
+    [Fact]
+    public async Task MethodAndLimits_NamesAMemberRepairedAfterTheBatteryRunFinished()
+    {
+        var suiteA = BenchmarkBatteryTestData.SuiteARun(1);
+        suiteA.RerunStartedAtUtc = new DateTime(2026, 10, 1, 11, 50, 0, DateTimeKind.Utc);
+        suiteA.RerunCompletedAtUtc = new DateTime(2026, 10, 1, 11, 55, 0, DateTimeKind.Utc);
+        var suiteB = BenchmarkBatteryTestData.SuiteBRun(2);
+        suiteB.RerunStartedAtUtc = new DateTime(2026, 10, 1, 12, 35, 0, DateTimeKind.Utc);
+        suiteB.RerunCompletedAtUtc = new DateTime(2026, 10, 1, 12, 47, 10, DateTimeKind.Utc);
+
+        string report = await BuildAsync((suiteA, 0, 1), (suiteB, 1, 1));
+
+        const string caveat =
+            "- Run #2 was repaired by a re-run (2026-10-01 12:35:00 to 2026-10-01 12:47:10 UTC) after the battery run " +
+            "first finished at 2026-10-01 12:05:00 UTC; the status and this analysis include the repair.";
+        int position = report.IndexOf(caveat, StringComparison.Ordinal);
+        Assert.True(position > report.IndexOf("Method and Limits", StringComparison.Ordinal), "The repair caveat is missing from Method and Limits.");
+        Assert.DoesNotContain("Run #1 was repaired", report);
+        Assert.Contains("**Caveats recorded with this result:**", report);
+    }
+
     [Fact]
     public async Task WeightingSensitivity_PrintsTheGradingSensitivityRows_ForAPanelBattery()
     {

@@ -1,4 +1,5 @@
 import { BenchmarkReportAudience, BenchmarkReportDisclosure } from '../../../services/admin-benchmark.service';
+import { parseServerUtcDate } from '../../../utils/date.util';
 
 /** Which documents a document list holds: those of one comparison, or every Report Pack document. */
 export type ReportDocumentLibraryScope =
@@ -99,12 +100,12 @@ export function formatCostUsd(cost: number | null | undefined): string {
   return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
 }
 
-/** `2026-09-21 16:00 UTC`, from an ISO timestamp. */
+/** `2026-09-21 16:00 UTC`, from a server timestamp; one without a zone is UTC. */
 export function formatUtc(iso: string | null | undefined): string {
   if (!iso) {
     return '';
   }
-  const date = new Date(iso);
+  const date = parseServerUtcDate(iso);
   if (Number.isNaN(date.getTime())) {
     return iso;
   }

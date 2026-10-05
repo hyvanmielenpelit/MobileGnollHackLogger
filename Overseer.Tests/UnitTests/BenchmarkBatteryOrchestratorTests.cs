@@ -20,7 +20,8 @@ using ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode;
 
 /// <summary>
 /// Battery run execution: start, attaching existing runs and the reuse preview, resume, cancel,
-/// startup reconciliation, and the decisions the drive loop makes after each member.
+/// startup reconciliation, reconciling after a member repair, and the decisions the drive loop makes
+/// after each member.
 ///
 /// <para>As for the series, the orchestrator's <b>decisions</b> are tested rather than a live
 /// battery run: executing a member needs a candidate and an assessor. The two guards, the member
@@ -1223,8 +1224,12 @@ public class BenchmarkBatteryOrchestratorTests
         Assert.Null(fixture.RunManager.OrchestratorOwner);
     }
 
+    /// <summary>
+    /// A kept member graded under another scoring method is an instrument change, so the refusal
+    /// carries the moved key and the client offers Re-run under current instrument.
+    /// </summary>
     [Fact]
-    public async Task Resume_IsRefused_WhenAKeptMemberWasGradedUnderAnotherScoringMethod()
+    public async Task Resume_WhenAKeptMemberWasGradedUnderAnotherScoringMethod_IsAnInstrumentChange()
     {
         var fixture = await CreateFixtureAsync();
         var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped);
@@ -1232,9 +1237,12 @@ public class BenchmarkBatteryOrchestratorTests
 
         var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, TestContext.Current.CancellationToken);
 
-        Assert.Equal(BenchmarkBatteryStartOutcome.Invalid, result.Outcome);
+        Assert.Equal(BenchmarkBatteryStartOutcome.InstrumentChanged, result.Outcome);
+        Assert.Equal(new[] { "ScoringMethodVersion" }, result.ChangedInstrumentHashes);
+        Assert.Equal(batteryRun.Id, result.BatteryRunId);
         Assert.Contains("scoring method 10", result.Error);
         Assert.False(fixture.Orchestrator.IsDriving(batteryRun.Id));
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
     }
 
     [Fact]
@@ -1434,6 +1442,231 @@ public class BenchmarkBatteryOrchestratorTests
         Assert.Equal(0, await fixture.Orchestrator.ReconcileOrphanedAsync(empty, ct));
     }
 
+    // --- Reconcile after a member change and finishing through Continue ---------------------------
+
+    /// <summary>Sets a seeded battery run's status, error message and finish time, as a finished battery run holds them.</summary>
+    private static async Task MarkFinishedAsync(
+        Fixture fixture, long batteryRunId, BenchmarkRunSeriesStatus status, string? errorMessage, DateTime completedAtUtc)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        var row = await db.BenchmarkBatteryRuns.SingleAsync(b => b.Id == batteryRunId);
+        row.Status = status;
+        row.StopReason = null;
+        row.ErrorMessage = errorMessage;
+        row.CompletedAtUtc = completedAtUtc;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<BenchmarkBatteryRun> ReadBatteryRunAsync(Fixture fixture, long batteryRunId)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        return await db.BenchmarkBatteryRuns.AsNoTracking().SingleAsync(b => b.Id == batteryRunId);
+    }
+
+    /// <summary>Waits until no drive loop drives the battery run and no claim is held, then reads it.</summary>
+    private static async Task<BenchmarkBatteryRun> WaitUntilDrivenToTheEndAsync(Fixture fixture, long batteryRunId)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (fixture.Orchestrator.IsDriving(batteryRunId) || fixture.RunManager.OrchestratorOwner != null)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The drive loop did not finish in time.");
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+
+        return await ReadBatteryRunAsync(fixture, batteryRunId);
+    }
+
+    /// <summary>
+    /// A CompletedWithErrors battery run whose one index-withheld member a re-run has repaired finishes
+    /// by itself. It becomes Completed with no error message, keeps the
+    /// time it first finished, gets one analysis, and its battery-completion documents are written.
+    /// </summary>
+    [Fact]
+    public async Task ReconcileAfterMemberChange_FinishesARepairedBatteryRun_KeepingItsFinishTime_AndWritesItsDocuments()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var h = await BatteryReportHarness.CreateAsync(analyse: false);
+        const long repairedRunId = 2;
+        DateTime firstFinished = (await h.BatteryRunAsync()).CompletedAtUtc!.Value;
+
+        await h.UpdateBatteryRunAsync(b =>
+        {
+            b.Status = BenchmarkRunSeriesStatus.CompletedWithErrors;
+            b.CompletedMemberCount = 1;
+            b.ErrorMessage = $"Without a usable result: suite 'Suite 22', round 1 (run #{repairedRunId}): index withheld.";
+        });
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(h.Options));
+        services.AddScoped(sp => new BenchmarkBatteryAnalysisService(
+            sp.GetRequiredService<ApplicationDbContext>(), NullLogger<BenchmarkBatteryAnalysisService>.Instance));
+        services.AddSingleton(h.Service);
+        await using var provider = services.BuildServiceProvider();
+        var runManager = new BenchmarkRunManager();
+        var orchestrator = new BenchmarkBatteryOrchestrator(
+            provider.GetRequiredService<IServiceScopeFactory>(), runManager, NullLogger<BenchmarkBatteryOrchestrator>.Instance);
+
+        await orchestrator.ReconcileAfterMemberChangeAsync(repairedRunId, ct);
+
+        var row = await h.BatteryRunAsync();
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, row.Status);
+        Assert.Null(row.ErrorMessage);
+        Assert.Null(row.StopReason);
+        Assert.Equal(2, row.CompletedMemberCount);
+        Assert.Equal((DateTime?)firstFinished, row.CompletedAtUtc);
+        Assert.Null(runManager.OrchestratorOwner);
+        Assert.False(orchestrator.IsAnalysing(h.BatteryRunId));
+
+        await using (var db = new ApplicationDbContext(h.Options))
+        {
+            Assert.Equal(1, await db.BenchmarkBatteryAnalyses.CountAsync(a => a.BenchmarkBatteryRunId == h.BatteryRunId, ct));
+        }
+
+        await BatteryReportHarness.WaitUntilAsync(() => h.Writer.JobCalls == 1 && !h.Service.IsActive(h.BatteryRunId));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    /// <summary>
+    /// With one of two unusable members repaired, the battery run stays CompletedWithErrors; its error
+    /// message names only the slot still without a result, worded as the finish words it.
+    /// </summary>
+    [Fact]
+    public async Task ReconcileAfterMemberChange_WithASlotStillUnusable_KeepsTheStatus_AndListsOnlyThatSlot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        var withheld = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0,
+            status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: null, terminalFailures: 1);
+        var repaired = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1,
+            status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: 66, terminalFailures: 0);
+        var firstFinished = DateTime.UtcNow.AddHours(-1);
+        await MarkFinishedAsync(fixture, batteryRun.Id, BenchmarkRunSeriesStatus.CompletedWithErrors,
+            $"Without a usable result: two slots, run #{withheld.BenchmarkRunId} and run #{repaired.BenchmarkRunId}.", firstFinished);
+
+        await fixture.Orchestrator.ReconcileAfterMemberChangeAsync(repaired.BenchmarkRunId, ct);
+
+        var row = await ReadBatteryRunAsync(fixture, batteryRun.Id);
+        Assert.Equal(BenchmarkRunSeriesStatus.CompletedWithErrors, row.Status);
+        Assert.Equal(1, row.CompletedMemberCount);
+        Assert.Equal((DateTime?)firstFinished, row.CompletedAtUtc);
+        Assert.Equal(
+            $"Without a usable result: suite 'Suite A', round 1 (run #{withheld.BenchmarkRunId}): " +
+            $"{BenchmarkBatteryPlanner.IndexWithheldProviderFailureReason}. Repair a run with Re-run Failed Questions and " +
+            "recompute, or continue the battery run to replace it.",
+            row.ErrorMessage);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Empty(await readback.BenchmarkBatteryAnalyses.ToListAsync(ct));
+    }
+
+    /// <summary>
+    /// A held orchestrator claim skips the reconcile and leaves the claim with its holder: the battery
+    /// run's own drive loop finishes it, and another orchestrator's claim is never taken over. Once
+    /// the claim is free, the reconcile finishes the battery run.
+    /// </summary>
+    [Fact]
+    public async Task ReconcileAfterMemberChange_SkipsWhileTheClaimIsHeld()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        var repaired = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1);
+        await MarkFinishedAsync(fixture, batteryRun.Id, BenchmarkRunSeriesStatus.CompletedWithErrors, "Without a usable result: one slot.", DateTime.UtcNow.AddHours(-1));
+
+        foreach (string owner in new[] { BenchmarkRunManager.BatteryOwner(batteryRun.Id), BenchmarkRunManager.SeriesOwner(3) })
+        {
+            Assert.True(fixture.RunManager.TryClaimOrchestrator(owner));
+
+            await fixture.Orchestrator.ReconcileAfterMemberChangeAsync(repaired.BenchmarkRunId, ct);
+            Assert.False(await fixture.Orchestrator.ReconcileBatteryRunAsync(batteryRun.Id, ct));
+
+            Assert.Equal(BenchmarkRunSeriesStatus.CompletedWithErrors, (await ReadBatteryRunAsync(fixture, batteryRun.Id)).Status);
+            Assert.Equal(owner, fixture.RunManager.OrchestratorOwner);
+            fixture.RunManager.ReleaseOrchestrator(owner);
+        }
+
+        Assert.True(await fixture.Orchestrator.ReconcileBatteryRunAsync(batteryRun.Id, ct));
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, (await ReadBatteryRunAsync(fixture, batteryRun.Id)).Status);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+    }
+
+    /// <summary>A Completed battery run is left alone, and a run in no battery run changes nothing.</summary>
+    [Fact]
+    public async Task ReconcileAfterMemberChange_LeavesACompletedBatteryRunAlone_AndARunInNoBatteryIsANoOp()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var completed = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Completed);
+        var member = await SeedMemberAsync(fixture, completed, suiteIndex: 0, status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: null);
+
+        await fixture.Orchestrator.ReconcileAfterMemberChangeAsync(member.BenchmarkRunId, ct);
+        await fixture.Orchestrator.ReconcileAfterMemberChangeAsync(4242, ct);
+
+        var row = await ReadBatteryRunAsync(fixture, completed.Id);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, row.Status);
+        Assert.Equal(0, row.CompletedMemberCount);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+    }
+
+    /// <summary>
+    /// Continue on a CompletedWithErrors battery run whose every slot is usable launches nothing: the
+    /// drive loop finds no free slot and finishes it.
+    /// </summary>
+    [Fact]
+    public async Task Continue_OnACompletedWithErrorsBatteryRunWithEverySlotUsable_FinishesIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1);
+        await MarkFinishedAsync(fixture, batteryRun.Id, BenchmarkRunSeriesStatus.CompletedWithErrors, "Without a usable result: one slot.", DateTime.UtcNow.AddHours(-1));
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, ct);
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, result.Outcome);
+
+        var row = await WaitUntilDrivenToTheEndAsync(fixture, batteryRun.Id);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, row.Status);
+        Assert.Equal(2, row.CompletedMemberCount);
+        Assert.NotNull(row.CompletedAtUtc);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Equal(2, await readback.BenchmarkRuns.CountAsync(ct));
+        Assert.All(await readback.BenchmarkBatteryRunMembers.ToListAsync(ct), m => Assert.False(m.Superseded));
+    }
+
+    /// <summary>
+    /// A member run in flight while the battery run is not driven is a repair: its slot is held, so
+    /// Continue is a conflict naming the run, and nothing is claimed or changed.
+    /// </summary>
+    [Fact]
+    public async Task Continue_WhileAMemberIsBeingRerun_IsAConflict_NamingTheRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        var rerunning = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1, status: BenchmarkRunStatus.Running, qualityIndex: null);
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.Conflict, result.Outcome);
+        Assert.Equal(
+            $"Run #{rerunning.BenchmarkRunId} is being re-run; the battery run follows it when the re-run finishes.",
+            result.Error);
+        Assert.False(fixture.Orchestrator.IsDriving(batteryRun.Id));
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Equal(BenchmarkRunSeriesStatus.CompletedWithErrors,
+            (await readback.BenchmarkBatteryRuns.SingleAsync(b => b.Id == batteryRun.Id, ct)).Status);
+        Assert.False((await readback.BenchmarkBatteryRunMembers.SingleAsync(m => m.Id == rerunning.Id, ct)).Superseded);
+    }
+
     // --- The two guards ------------------------------------------------------------------------
 
     private static BenchmarkRun GuardRun(long id, long suiteId, string modelId = "claude-opus-5", string harness = "45", string guides = "guides")
@@ -1579,18 +1812,44 @@ public class BenchmarkBatteryOrchestratorTests
     }
 
     [Theory]
-    [InlineData(BenchmarkRunSeriesStatus.Stopped, 4, 4, true)]
-    [InlineData(BenchmarkRunSeriesStatus.Stopped, 4, 1, true)]
-    [InlineData(BenchmarkRunSeriesStatus.CompletedWithErrors, 4, 3, true)]
-    [InlineData(BenchmarkRunSeriesStatus.CompletedWithErrors, 4, 4, false)]
-    [InlineData(BenchmarkRunSeriesStatus.Completed, 4, 4, false)]
-    [InlineData(BenchmarkRunSeriesStatus.Cancelled, 4, 1, false)]
-    [InlineData(BenchmarkRunSeriesStatus.Failed, 4, 1, false)]
-    [InlineData(BenchmarkRunSeriesStatus.Running, 4, 1, false)]
-    public void ResumeStatus_AdmitsStopped_AndCompletedWithErrorsWithAFreeSlot(
-        BenchmarkRunSeriesStatus status, int requested, int usable, bool resumable)
+    [InlineData(BenchmarkRunSeriesStatus.Stopped, true)]
+    [InlineData(BenchmarkRunSeriesStatus.CompletedWithErrors, true)]
+    [InlineData(BenchmarkRunSeriesStatus.Completed, false)]
+    [InlineData(BenchmarkRunSeriesStatus.Cancelled, false)]
+    [InlineData(BenchmarkRunSeriesStatus.Failed, false)]
+    [InlineData(BenchmarkRunSeriesStatus.Running, false)]
+    [InlineData(BenchmarkRunSeriesStatus.Pending, false)]
+    [InlineData(BenchmarkRunSeriesStatus.WaitingForCap, false)]
+    public void ResumeStatus_AdmitsStopped_AndCompletedWithErrorsEvenWithEverySlotUsable(
+        BenchmarkRunSeriesStatus status, bool resumable)
     {
-        Assert.Equal(resumable, BenchmarkBatteryOrchestrator.ResumeStatusRefusal(status, requested, usable) == null);
+        Assert.Equal(resumable, BenchmarkBatteryOrchestrator.ResumeStatusRefusal(status) == null);
+        Assert.Equal(resumable, BenchmarkBatteryOrchestrator.ResumeStatusRefusal(status, Array.Empty<long>()) == null);
+    }
+
+    /// <summary>A member run in flight outside the drive loop holds its slot: a resumable status is refused, naming the run.</summary>
+    [Fact]
+    public void ResumeStatus_RefusesWhileAMemberIsBeingRerun()
+    {
+        Assert.Equal(
+            "Run #7 is being re-run; the battery run follows it when the re-run finishes.",
+            BenchmarkBatteryOrchestrator.ResumeStatusRefusal(BenchmarkRunSeriesStatus.CompletedWithErrors, new long[] { 9, 7 }));
+        Assert.Contains("cannot be resumed",
+            BenchmarkBatteryOrchestrator.ResumeStatusRefusal(BenchmarkRunSeriesStatus.Completed, new long[] { 7 }));
+
+        var running = GuardRun(7, 10);
+        running.Status = BenchmarkRunStatus.Running;
+        var supersededRunning = GuardRun(8, 20);
+        supersededRunning.Status = BenchmarkRunStatus.Running;
+        var members = new List<(BenchmarkBatteryRunMember, BenchmarkRun?)>
+        {
+            (Member(0, 1, 1), GuardRun(1, 10)),
+            (Member(1, 1, 7), running),
+            (Member(1, 1, 8, superseded: true), supersededRunning),
+            (Member(0, 2, 9), null)
+        };
+
+        Assert.Equal(new long[] { 7 }, BenchmarkBatteryOrchestrator.RepairingRunIds(members));
     }
 
     [Fact]

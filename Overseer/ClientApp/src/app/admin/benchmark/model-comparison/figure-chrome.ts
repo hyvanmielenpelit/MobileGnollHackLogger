@@ -6,6 +6,8 @@
  * Pure TypeScript with no Chart.js, Angular or DOM dependency.
  */
 
+import { parseServerUtcDate } from '../../../utils/date.util';
+
 export type FigureBadgeTone = 'neutral' | 'pricing';
 
 /** Which badge a figure's badge is, so the style can hide it by kind. */
@@ -102,11 +104,12 @@ export function figureSummary(chrome: FigureChrome): string {
   return badges === '' ? chrome.detail : `${badges}. ${chrome.detail}`;
 }
 
+/** A server timestamp; one without a zone is UTC. */
 function parseDate(iso: string): Date | null {
   if (!iso) {
     return null;
   }
-  const date = new Date(iso);
+  const date = parseServerUtcDate(iso);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

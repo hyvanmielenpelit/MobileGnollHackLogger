@@ -775,8 +775,13 @@ public static class BenchmarkAssessmentPrompt
     ///     number of trailing words while two remain (T1b). ScoringMethodVersion stays 14.
     ///     ToolGuidesSha256 and CandidateSystemPromptSha256 return to their harness-49 values of
     ///     battery run 5 with the tool-policy text.
+    /// v52: nethack_wiki_view answers an over-cap article requested without a section with a notice
+    ///     listing its headings, classified partial (T1); the agent loop appends a forced-final
+    ///     instruction when the tools run out (T2); a one-line macro's body counts as evidence in the
+    ///     citation liveness check (B6); a terminal per-question timeout's error text records the
+    ///     phase it ended in (H6). ScoringMethodVersion stays 14.
     /// </summary>
-    public const string HarnessVersion = "51";
+    public const string HarnessVersion = "52";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

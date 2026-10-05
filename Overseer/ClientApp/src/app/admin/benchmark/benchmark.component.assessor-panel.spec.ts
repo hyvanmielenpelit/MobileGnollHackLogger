@@ -528,7 +528,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.canTrialReassess(empty)).toBe(true);
 
         const card = expandFirstAnswer();
-        expect(card.querySelector('.btn-gh-trial')).toBeNull();
+        expect(card.querySelector('[data-repair="trial"]')).toBeNull();
 
         component.openRetryDialog('trial', 77, graded);
         component.retryAssessorConfigId = 1;

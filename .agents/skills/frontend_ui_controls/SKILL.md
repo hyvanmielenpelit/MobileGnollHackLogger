@@ -195,9 +195,10 @@ you already read the label, it is noise; drop it.
 | Icon | Buttons | Why it carries information |
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
-| play | Start Benchmark, Acknowledge & Start Run | "This begins now", and it reinforces the consequence of a button that starts real work |
+| play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs) | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
-| refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions, **Re-run** (the run report's popover trigger, followed by a chevron state indicator) | "This runs again" — the circular-arrow convention is universal |
+| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
+| flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Reports step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
@@ -421,6 +422,13 @@ Markdown report**), the* activity *glyph the battery progress button already use
 trash *(**Delete battery run**). The Battery Run Report's header mirrors the run report's: **Downloads**
 (*file-with-arrow*), **Actions** (*rotate* plus a* chevron*, a §4f popover) and icon-only **Copy
 diagnostics** (*copy*). The paired tests' **Compare** buttons are text-only `.btn-gh`: a plain commit.*
+
+*Changed 2026-10-05 (repair and retry actions, §4g): the repair labels are sentence case. **Re-run
+question** and **Re-assess question** take* rotate*; **Try another assessor (does not change the
+score)** is a plain `.btn-ghost` with a new glyph,* flask*, since it is an experiment rather than a
+repair (the `.btn-gh-trial` variant is gone). **Continue — <reason>** takes* play *in the battery and
+series progress dialogs; **Re-run under current instrument**, **Recompute analysis** and *Continue
+anyway (marks the group cross-condition)* are text-only.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -833,8 +841,10 @@ selected option, so the handler must be idempotent.
 ### 4f. Action popovers: `.gh-action-popover`
 
 A labelled trigger that reveals a short list of **related actions** — the run report dialog's
-**Re-run** (*Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
-verification*, *Re-run failed questions*) is the first. The Download Center's per-row **More actions**
+**Re-run** (panel `aria-label` *Re-run and repair*; *Re-run failed questions*, *Retry failed
+assessments*, *Retry claim verification*, *Re-run final synthesis*, *Re-score run*, in that order, each
+listed and gated by §4g) is the first. The Battery Run Report's **Actions** (*Recompute analysis* or
+*Compute analysis*, and *Show progress*) is another. The Download Center's per-row **More actions**
 (*Update charts*, *Remove charts*; Report Pack rows, in the Model Comparison wizard's Documents step
 only) is the second: an icon-only `.action-btn` trigger named *More actions for <document>*, with a
 hint tooltip, whose panel's `aria-label` is *Chart actions for <document>*. It is a **popover-revealed button group,
@@ -853,12 +863,12 @@ visible buttons or icon buttons (§4); a single action stays a button.
   <svg class="btn-icon" ... aria-hidden="true"><!-- chevron --></svg>
 </button>
 <div popover="auto" id="rr-rerun-popover" class="gh-action-popover"
-     role="group" aria-label="Re-run options" (toggle)="onRerunToggle($event)"
+     role="group" aria-label="Re-run and repair" (toggle)="onRerunToggle($event)"
      [attr.style]="'position-anchor: --rr-rerun'">
-  <button type="button" class="gh-action-popover-item" (click)="rescore()">Re-score run</button>
-  <button type="button" class="gh-action-popover-item" aria-disabled="true" (click)="noop()">
-    Retry claim verification
-    <span>The run has no claim verifier.</span>
+  <button type="button" class="gh-action-popover-item" (click)="onRerunAction(failed)">Re-run failed questions</button>
+  <button type="button" class="gh-action-popover-item" aria-disabled="true" (click)="onRerunAction(rescore)">
+    <span>Re-score run</span>
+    <span class="gh-action-popover-item-reason">A retry is already running on this run.</span>
   </button>
 </div>
 ```
@@ -891,6 +901,75 @@ visible buttons or icon buttons (§4); a single action stays a button.
 **Grouping the trigger with its neighbors.** A header's cluster of a few Tab-stop buttons — the run
 report's *Run actions* — is `role="group"` with an `aria-label`, **not** `role="toolbar"`. A toolbar
 promises arrow-key roving focus with one Tab stop; use it only for a group that implements that.
+
+### 4g. Repair and retry actions
+
+The benchmark's run and battery repairs — re-running, retrying, re-assessing, re-scoring, continuing,
+recomputing — follow one set of rules, so an action has the same name, glyph and availability wherever
+it appears.
+
+**One permanent home per action per surface**, plus at most **one contextual call to action** in the
+alert that states the problem. The run report's **Re-run** popover (§4f) is the home of the run-level
+repairs; its Summary tab's failure alert (*Run did not complete cleanly*) repeats **Re-run failed
+questions** as its one contextual button; the run progress dialog's footer has the same action, gated
+the same way. Per question, **Re-run question**, **Re-assess question** and **Try another assessor**
+sit in the question's action row. For a battery run the **battery progress dialog** is the one home of
+**Continue** and **Re-run under current instrument**: the run tab's banners and the Battery Run
+Report's **Actions** only open it (*Show Battery Progress*, *Show progress*). Never add a second
+permanent copy of an action to a banner or a header.
+
+**The verbs.** Each names one kind of work; never use one for another's.
+
+| Verb | Means | Glyph on a labelled button |
+|---|---|---|
+| **Re-run** | Ask the candidate again (*Re-run failed questions*, *Re-run question*, *Re-run final synthesis*) | *refresh-cw* |
+| **Retry** | Repeat a grading step that failed (*Retry failed assessments*, *Retry claim verification*) | *refresh-cw* |
+| **Re-assess** | Grade a stored answer again, replacing its verdict (*Re-assess question*) | *refresh-cw* |
+| **Re-score** | Recompute the scores from the stored levels, with no model call (*Re-score run*) | — |
+| **Continue** | Resume a stopped battery run or series (*Continue — <reason>*) | *play* |
+| **Recompute** | Recompute an analysis (*Recompute analysis*, *Compute analysis* before the first) | none |
+| **Try again** | Reload after a load error | none |
+
+Popover items (§4f) carry no glyph; the trigger carries the family's.
+
+*Try another assessor (does not change the score)* records a second verdict and changes no score: it is
+a plain `.btn-ghost` with the *flask* glyph, never styled as a repair (there is no `.btn-gh-trial`).
+
+**Labels.** Sentence case (*Re-run failed questions*, not *Re-run Failed Questions*). A confirmation
+dialog's confirm button carries **exactly its item's label** — *Re-assess question* confirms *Re-assess
+question* — with no `aria-label` overriding it, and the dialog is `aria-labelledby` its `<h3>`. A
+progress label may stand in while the request runs (*Re-running…*, *Continuing…*).
+
+**Availability is decided once, in pure gates.** `admin/benchmark/run-repair-actions.ts` exports one
+function per action, returning `{ visible, disabledReason }`. The gates **mirror the server's
+refusals** (`AdminBenchmarkController`, `BenchmarkService`), which stay authoritative, and check in the
+server's order:
+
+1. **busy** — the run is executing, or a repair of it was sent and not yet seen running: *"A retry is
+   already running on this run."*
+2. **aborted** — the run stopped before finishing its suite (`isAbortedRun`): *"The run stopped before
+   finishing its suite."*
+3. **older scoring method** — `BenchmarkRunDetailDto.isCurrentScoringMethod === false`: *"Scored under
+   an older scoring method; re-score it first."* Re-score is the one action this does not refuse.
+4. **the action's own precondition** — *"The run has no dimensional level ratings to re-score."*,
+   *"The question text is empty."*
+
+| Action | Visible when |
+|---|---|
+| Re-run failed questions | status Failed, Canceled or CompletedWithErrors, and a failed answer exists |
+| Retry failed assessments | an answer is not Scored (in a panel run, member B's included) |
+| Retry claim verification | an answer carries a claim-verification error |
+| Re-run final synthesis | the run has answers |
+| Re-score run | always |
+| Re-run question | always |
+| Re-assess question | always — one label whether or not the assessment failed |
+| Try another assessor | not a panel run, or the answer's second-opinion slot is empty |
+
+**A repair the server would refuse is never offered enabled.** It is shown `aria-disabled="true"`,
+focusable, with an inert handler and its reason **visible** — on the popover item's second line, or in
+a line under the row that the button's `aria-describedby` points at. Never `[disabled]` without a
+reason, and never silently absent while it is visible by the table above. An action whose visibility
+condition does not hold is left out, because there is nothing to repair.
 
 ---
 
@@ -1542,6 +1621,31 @@ scroll snapping), `.gh-facet-btn` / `.gh-facet-count` / `.gh-facet-chevron`, `.g
 `.gh-filter-chip` / `.gh-filter-chip-facet` / `.gh-filter-chip-value`, `.gh-list-status` and
 `.gh-load-more`. The card itself is component-local.
 
+### 8i. Clear selection in a selection band
+
+A **selection band** sums up what the operator picked in tables elsewhere on the step and lets them
+drop it without scrolling back: the Model Comparison wizard's step 1 band (`.mc-wizard-selection`,
+`role="region"` labelled by `#mc-selection-label`) is the reference.
+
+- **The label is the band's one `role="status"`** — *Your selection — 3 runs and 1 group
+  selected* — and its programmatic focus target, `tabindex="-1"`. It stays rendered when nothing is
+  selected, its text then visually hidden (*Your selection — nothing selected yet*), so a screen
+  reader still hears the state.
+- **Clear selection (N)** is `btn-gh btn-gh-cancel btn-gh-small` — a dismissal in a tight row, so blue,
+  small and text-only (§2, §3a) — labelled with the count, and **first in the chip row**, so it is seen
+  and reached by keyboard before the chips. It exists only while something is selected. After it,
+  **focus moves to the band's label**, because the button that held focus is gone.
+- **Each chip's remove button** is a 32 × 32 `.action-btn` with the *x* glyph, named for its subject
+  (*Remove {detail} {label} from the selection*) with a hint tooltip (§4). Removing a chip moves
+  focus to the **next chip's** remove button, else to **Clear selection**, else to the label.
+- **One visible empty-state message.** With nothing selected the band shows one alert — *Nothing is
+  selected yet* / *Select at least one completed run, analysis group or battery result in the tables
+  above. Compare stays unavailable until you do.* — and no second hint line repeating it. The step's
+  disabled **Compare** and the footer state the same fact once, in their own words (*Select at least
+  one run, analysis group or battery result.*), as a disabled reason (§6).
+- Notices about the selection sit under the chips in a sibling `aria-live="polite"` list, never inside
+  the `role="status"` label, which would double-announce.
+
 ---
 
 ## 9. Checklist
@@ -1600,6 +1704,14 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] A cluster of a few Tab-stop buttons is `role="group"` with an `aria-label`; `role="toolbar"`
       only with arrow-key roving focus.
 
+**Repair and retry actions**
+- [ ] Each action has one permanent home per surface, plus at most one contextual button in the alert
+      that states the problem (§4g); battery Continue and Re-run live only in the progress dialog.
+- [ ] Its verb is the §4g one, in sentence case, with that verb's glyph; a confirm button's label is
+      its item's label, with no overriding `aria-label`.
+- [ ] Availability comes from the `run-repair-actions.ts` gate, never a template condition of its own;
+      a refused action is `aria-disabled` with its visible reason, never `[disabled]` and never enabled.
+
 **Pane resizers**
 - [ ] A user-resizable pane uses `app-pane-resizer` (§4d), named for the pane, with `aria-controls`
       pointing at it, and the width is persisted on `valueCommit` only.
@@ -1653,6 +1765,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Load more focuses the first new card's title, and returns to one batch on a filter, search or
       sort change.
 - [ ] Exactly one polite live region: the list's status line.
+- [ ] A selection band (§8i) leads its chip row with **Clear selection (N)**, moves focus to its
+      `tabindex="-1"` label after it, and shows one visible empty-state message.
 
 **All controls**
 - [ ] Visible `:focus-visible` ring; no unreplaced `outline: none`.

@@ -1,4 +1,3 @@
-import type { Mock } from 'vitest';
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -39,11 +38,9 @@ function accessibleText(element: HTMLElement): string {
 
 describe('BatteryRunReportDialogComponent', () => {
   let h: BatteryRunReportHarness;
-  let armCompletionSignals: Mock;
 
   beforeEach(async () => {
     h = await configureBatteryRunReport();
-    armCompletionSignals = h.monitor.armCompletionSignalsFromGesture;
   });
 
   afterEach(() => {
@@ -197,7 +194,7 @@ describe('BatteryRunReportDialogComponent', () => {
       expect(popover.getAttribute('role')).toBe('group');
       expect(popover.getAttribute('popover')).toBe('auto');
       expect(Array.from(popover.querySelectorAll('[data-action]')).map(b => b.getAttribute('data-action')))
-        .toEqual(['recompute', 'continue', 'rerun', 'progress']);
+        .toEqual(['recompute', 'progress']);
     });
 
     it('opens the Download Center on a battery context', () => {
@@ -216,88 +213,44 @@ describe('BatteryRunReportDialogComponent', () => {
       return (h.action(key).querySelector('.gh-action-popover-item-reason')?.textContent ?? '').trim();
     }
 
-    it('enables Recompute on a finished battery run and disables the rest with their reasons', () => {
+    it('holds only Recompute and Show progress: Continue and the re-run belong to the progress dialog', () => {
+      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true, completedAtUtc: null })));
+      h.open();
+
+      expect(Array.from(h.el().querySelectorAll('#brr-actions-popover [data-action]')).map(b => b.textContent?.trim()))
+        .toEqual(['Recompute analysis', 'Show progress']);
+      expect(h.el().querySelector('[data-action="continue"]')).toBeNull();
+      expect(h.el().querySelector('[data-action="rerun"]')).toBeNull();
+      expect(h.el().querySelector('.brr-action-error')).toBeNull();
+      h.component.close();
+    });
+
+    it('enables Recompute on a finished battery run and disables Show progress with its reason', () => {
       h.open();
       expect(h.action('recompute').getAttribute('aria-disabled')).toBeNull();
       expect(h.action('recompute').textContent).toContain('Recompute analysis');
-      expect(h.action('continue').getAttribute('aria-disabled')).toBe('true');
-      expect(reason('continue')).toBe('Only a stopped battery run, or one completed with an empty slot, can continue.');
-      expect(h.action('rerun').getAttribute('aria-disabled')).toBe('true');
-      expect(reason('rerun')).toContain('stopped by an instrument change');
       expect(h.action('progress').getAttribute('aria-disabled')).toBe('true');
       expect(reason('progress')).toBe('The battery run has finished.');
 
-      h.action('continue').click();
       h.action('progress').click();
-      expect(h.service.resumeBatteryRun).not.toHaveBeenCalled();
       expect(h.monitor.openBatteryDialog).not.toHaveBeenCalled();
 
       h.action('recompute').click();
       expect(h.service.analyseBatteryRun).toHaveBeenCalledWith(7);
+      expect(h.service.resumeBatteryRun).not.toHaveBeenCalled();
     });
 
-    it('disables every resume while the battery run is live, and offers progress', () => {
+    it('offers Show progress while the battery run is live', () => {
       h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Running', completedAtUtc: null })));
       h.open();
-      expect(reason('continue')).toBe('The battery run is still running.');
-      expect(reason('rerun')).toBe('The battery run is still running.');
       expect(h.action('progress').getAttribute('aria-disabled')).toBeNull();
       h.component.close();
     });
 
-    it('continues a stopped battery run', () => {
-      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true, completedAtUtc: null })));
+    it('offers Show progress for a finished battery run the server still works on', () => {
+      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ postRunWork: 'Repairing', repairingRunIds: [101] })));
       h.open();
-      expect(h.action('continue').getAttribute('aria-disabled')).toBeNull();
-      expect(h.action('rerun').getAttribute('aria-disabled')).toBe('true');
-
-      h.action('continue').click();
-      h.fixture.detectChanges();
-      expect(h.service.resumeBatteryRun).toHaveBeenCalledWith(7, 'Continue');
-      expect(h.service.getBatteryRun).toHaveBeenCalledTimes(2);
-      h.component.close();
-    });
-
-    it('arms the completion signals inside the click, before the resume request', () => {
-      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true, completedAtUtc: null })));
-      h.open();
-
-      h.action('continue').click();
-
-      expect(armCompletionSignals).toHaveBeenCalledTimes(1);
-      expect(armCompletionSignals.mock.invocationCallOrder[0])
-        .toBeLessThan(h.service.resumeBatteryRun.mock.invocationCallOrder[0]);
-      h.component.close();
-    });
-
-    it('does not arm the completion signals for a disabled resume', () => {
-      h.open();
-      h.action('continue').click();
-      expect(armCompletionSignals).not.toHaveBeenCalled();
-    });
-
-    it('re-runs under the current instrument after an instrument stop, and refuses Continue', () => {
-      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Stopped', stopReason: 'InstrumentChanged', resumable: true, completedAtUtc: null })));
-      h.open();
-      expect(reason('continue')).toBe('The instrument changed; re-run under the current instrument instead.');
-
-      h.action('rerun').click();
-      h.fixture.detectChanges();
-      expect(h.service.resumeBatteryRun).toHaveBeenCalledWith(7, 'RerunUnderCurrentInstrument');
-      h.component.close();
-    });
-
-    it('offers the re-run after a Continue refused for a moved instrument, and shows the refusal', () => {
-      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true, completedAtUtc: null })));
-      h.service.resumeBatteryRun.mockReturnValue(throwError(() => ({ status: 409, error: 'The instrument changed since this battery run started.' })));
-      h.open();
-
-      h.action('continue').click();
-      h.fixture.detectChanges();
-
-      expect(h.text('.brr-action-error')).toBe('The instrument changed since this battery run started.');
-      expect(h.action('rerun').getAttribute('aria-disabled')).toBeNull();
-      expect(h.action('continue').getAttribute('aria-disabled')).toBe('true');
+      expect(h.action('progress').getAttribute('aria-disabled')).toBeNull();
       h.component.close();
     });
 

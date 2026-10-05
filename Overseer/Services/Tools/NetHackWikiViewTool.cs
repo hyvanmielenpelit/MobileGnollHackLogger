@@ -75,10 +75,14 @@ namespace Overseer.Services.Tools
                 ? BuildResolutionLine(article, resolvedTitle, candidates) + "\n"
                 : string.Empty;
             string spoilerFreeSuffix = context.SpoilerFreeMode ? SpoilerFreeSuffix : string.Empty;
+            int articleBudget = context.MaxResultLength - spoilerFreeSuffix.Length - resolutionPrefix.Length;
 
-            if (sectionMissed)
+            if (string.IsNullOrWhiteSpace(section) && content.Length > articleBudget)
             {
-                int articleBudget = context.MaxResultLength - spoilerFreeSuffix.Length - resolutionPrefix.Length;
+                content = ArticleOverCapNotice.Build(content, articleBudget, ToolName, MarkdownSectionExtractor.Headings(content));
+            }
+            else if (sectionMissed)
+            {
                 content = MarkdownSectionExtractor.CapSectionMiss(content, articleBudget, ToolName) ?? content;
             }
 

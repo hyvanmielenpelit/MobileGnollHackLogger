@@ -203,7 +203,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
     wrapper.open(context);
     const list = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
     expect(list.request.method).toBe('GET');
-    expect(list.request.params.get('runId')).toBe('42');
+    // Only the run's own documents: a battery's or a group's documents that name the run are not asked for.
+    expect(list.request.params.get('subject')).toBe('run:42');
+    expect(list.request.params.has('runId')).toBe(false);
     requested.push(list.request.url);
     list.flush(documents);
     flushJob(job);
@@ -1645,7 +1647,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
       tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
       flushJob(job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
       const reload = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
-      expect(reload.request.params.get('runId')).toBe('42');
+      expect(reload.request.params.get('subject')).toBe('run:42');
+      expect(reload.request.params.has('runId')).toBe(false);
       reload.flush([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
       render();
 
@@ -1776,5 +1779,16 @@ describe('BenchmarkDownloadCenterComponent', () => {
     fixture.nativeElement.querySelector('dialog')!.dispatchEvent(new Event('close'));
 
     expect(closed).toHaveBeenCalled();
+  });
+
+  it('relays the panel\'s Open battery run downloads for a battery member run', () => {
+    openRun(undefined, { ...runContext, run: { ...runContext.run, batteryRunId: 7 } });
+    const relayed = vi.fn().mockName('openBatteryDownloads');
+    wrapper.openBatteryDownloads.subscribe(relayed);
+
+    host().querySelector<HTMLButtonElement>('.dc-battery-pointer .dc-open-battery-downloads')!.click();
+
+    expect(relayed).toHaveBeenCalledTimes(1);
+    expect(relayed).toHaveBeenCalledWith(7);
   });
 });

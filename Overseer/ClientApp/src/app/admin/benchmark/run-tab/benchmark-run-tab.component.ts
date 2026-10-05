@@ -30,6 +30,7 @@ import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import { BenchmarkLauncherState } from '../state/benchmark-launcher.state';
 import { BenchmarkDifficultyJobService } from '../state/benchmark-difficulty-job.service';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
+import { batteryAwaitsPostRun, batteryPostRunWork } from '../batteries/battery.models';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -668,7 +669,8 @@ export class BenchmarkRunTabComponent {
         return `Waiting for run cap — ${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
       case 'Stopped':
         return `Stopped — ${series.stopReasonText || series.stopReason || 'reason not recorded'}. `
-          + `${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
+          + `${series.completedRunCount} of ${series.requestedRunCount} runs completed. `
+          + 'Continue from the progress dialog.';
       case 'Pending':
         return `Launching run 1 of ${series.requestedRunCount}.`;
       case 'Running':
@@ -676,23 +678,6 @@ export class BenchmarkRunTabComponent {
       default:
         return `${series.status} — ${series.completedRunCount} of ${series.requestedRunCount} runs completed.`;
     }
-  }
-
-  /** The Continue button's label, which names the stop reason rather than hiding it behind a verb. */
-  get seriesContinueLabel(): string {
-    const reason = this.monitor.activeSeries?.stopReasonText || this.monitor.activeSeries?.stopReason;
-    return reason ? `Continue (${reason})` : 'Continue';
-  }
-
-  /** True once a refused resume has named a moved hash, which is what offers the override. */
-  get seriesInstrumentChanged(): boolean {
-    return (this.monitor.activeSeries?.changedInstrumentHashes?.length ?? 0) > 0;
-  }
-
-  /** Terminal with nothing left to offer; Stopped and Completed with errors may still be continued. */
-  get batteryIsFinished(): boolean {
-    const status = this.monitor.activeBatteryRun?.status;
-    return status === 'Completed' || status === 'Cancelled' || status === 'Failed';
   }
 
   get batteryIsStopped(): boolean {
@@ -703,19 +688,17 @@ export class BenchmarkRunTabComponent {
     return this.monitor.activeBatteryRun?.status === 'WaitingForCap';
   }
 
-  /** Stopped because a member is not comparable with the others: only a re-run or a cancel is offered. */
-  get batteryStoppedOnInstrumentChange(): boolean {
-    return this.batteryIsStopped && this.monitor.activeBatteryRun?.stopReason === 'InstrumentChanged';
-  }
-
-  /** Continue is offered for a resumable battery run that did not stop on an instrument change. */
-  get batteryCanContinue(): boolean {
-    return !!this.monitor.activeBatteryRun?.resumable && !this.monitor.batteryIsLive && !this.batteryStoppedOnInstrumentChange;
-  }
-
-  /** The battery banner shows while the battery run is live, stopped or continuable, and its dialog is closed. */
+  /**
+   * The battery banner shows while the battery run is live, stopped, or still worked on by the server
+   * (`postRunWork`), and its dialog is closed. Completed with errors is finished here: it is continued,
+   * if at all, from the progress dialog.
+   */
   get batteryBannerVisible(): boolean {
-    return this.monitor.activeBatteryRun != null && !this.monitor.batteryDialogVisible && !this.batteryIsFinished;
+    const batteryRun = this.monitor.activeBatteryRun;
+    if (batteryRun == null || this.monitor.batteryDialogVisible) {
+      return false;
+    }
+    return this.monitor.batteryIsLive || this.batteryIsStopped || batteryAwaitsPostRun(batteryRun);
   }
 
   /** *Suite s of K · round r of R*, or the state that replaces it. */
@@ -723,11 +706,22 @@ export class BenchmarkRunTabComponent {
     const batteryRun = this.monitor.activeBatteryRun;
     if (!batteryRun) return '';
     const suites = `${batteryRun.completedSuiteCount} of ${batteryRun.suiteCount} suites completed`;
+    if (!this.monitor.batteryIsLive) {
+      switch (batteryPostRunWork(batteryRun)) {
+        case 'Repairing':
+          return `Re-run in progress — ${suites}.`;
+        case 'Analysing':
+          return `Computing the battery analysis — ${suites}.`;
+        case 'WritingReports':
+          return `Writing the AI reports — ${suites}.`;
+      }
+    }
     switch (batteryRun.status) {
       case 'WaitingForCap':
         return `Waiting for run cap — ${suites}.`;
       case 'Stopped':
-        return `Stopped — ${batteryRun.stopReasonText || batteryRun.stopReason || 'reason not recorded'}. ${suites}.`;
+        return `Stopped — ${batteryRun.stopReasonText || batteryRun.stopReason || 'reason not recorded'}. ${suites}. `
+          + 'Continue from the progress dialog.';
       case 'Pending':
       case 'Running':
         return batteryRun.currentSuitePosition != null
@@ -740,12 +734,6 @@ export class BenchmarkRunTabComponent {
       default:
         return `${batteryRun.status} — ${suites}.`;
     }
-  }
-
-  /** The Continue button's label, naming the stop reason. */
-  get batteryContinueLabel(): string {
-    const reason = this.monitor.activeBatteryRun?.stopReasonText || this.monitor.activeBatteryRun?.stopReason;
-    return reason ? `Continue (${reason})` : 'Continue';
   }
 
   closeSameProviderDialog() {

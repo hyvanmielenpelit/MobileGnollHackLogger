@@ -17,7 +17,7 @@ import {
   BatteryProgressDialogComponent,
   batterySlotState
 } from './battery-progress-dialog.component';
-import { BATTERY_POST_RUN_GRACE_MS, INDEX_WITHHELD_HINT } from './battery.models';
+import { INDEX_WITHHELD_HINT } from './battery.models';
 
 function dto<T>(value: object): T {
   return value as T;
@@ -108,6 +108,8 @@ function batteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkB
     totalCost: null,
     analysisStale: false,
     analysisHasExcludedMembers: false,
+    postRunWork: 'None',
+    repairingRunIds: [],
     ...overrides
   });
 }
@@ -246,6 +248,7 @@ describe('BatteryProgressDialogComponent', () => {
     expect(cell(1, 1).textContent).toContain('Harness version differs');
     expect(button('.bp-continue')).toBeNull();
     expect(button('.bp-cancel-battery')).not.toBeNull();
+    expect(text('.bp-rerun')).toBe('Re-run under current instrument');
 
     const resumed = vi.fn().mockName('resumed');
     component.batteryResumed.subscribe(resumed);
@@ -272,20 +275,25 @@ describe('BatteryProgressDialogComponent', () => {
     expect(cell(1, 1).querySelector('.job-status-chip')?.textContent?.trim()).toBe('Failed');
     expect(cell(1, 1).textContent).toContain('#105');
     expect(button('.bp-rerun')).toBeNull();
+    expect(text('.bp-continue')).toBe('Continue — A member run failed.');
+    expect(button('.bp-continue')!.querySelector('svg.btn-icon polygon')?.getAttribute('points')).toBe('5 3 19 12 5 21 5 3');
 
     button('.bp-continue')!.click();
     fixture.detectChanges();
     expect(service.resumeBatteryRun).toHaveBeenCalledWith(7, 'Continue');
   });
 
-  it('offers the re-run after Continue is refused with 409', () => {
+  it('offers the re-run after Continue is refused with 409 for a moved instrument', () => {
     const run = batteryRun({
       status: 'Stopped', stopReason: 'MemberFailed', resumable: true,
       runsPerSuite: 1, requestedMemberCount: 2,
       slots: [slot(0, 1, member()), slot(1, 1, null)], members: [member()]
     });
     open(run);
-    service.resumeBatteryRun.mockReturnValue(throwError(() => ({ status: 409, error: 'The harness version changed.' })));
+    service.resumeBatteryRun.mockReturnValue(throwError(() => ({
+      status: 409,
+      error: { message: 'The harness version changed.', instrumentChanged: true, changedInstrumentHashes: ['ScoringMethodVersion'] }
+    })));
 
     button('.bp-continue')!.click();
     fixture.detectChanges();
@@ -293,6 +301,31 @@ describe('BatteryProgressDialogComponent', () => {
     expect(text('.bp-action-error')).toBe('The harness version changed.');
     expect(button('.bp-continue')).toBeNull();
     expect(button('.bp-rerun')).not.toBeNull();
+  });
+
+  it('shows a plain 409 on Continue as its message alone, offering no re-run and emitting nothing', () => {
+    const run = batteryRun({
+      status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'A member run failed.', resumable: true,
+      runsPerSuite: 1, requestedMemberCount: 2,
+      slots: [slot(0, 1, member()), slot(1, 1, null)], members: [member()]
+    });
+    open(run);
+    const resumed = vi.fn().mockName('resumed');
+    component.batteryResumed.subscribe(resumed);
+    service.resumeBatteryRun.mockReturnValue(throwError(() => ({
+      status: 409, error: { message: 'Another run is using the run slot.' }
+    })));
+
+    button('.bp-continue')!.click();
+    fixture.detectChanges();
+
+    expect(text('.bp-action-error')).toBe('Another run is using the run slot.');
+    expect(component.resumeRefusedForInstrument).toBe(false);
+    expect(button('.bp-rerun')).toBeNull();
+    expect(text('.bp-continue')).toBe('Continue — A member run failed.');
+    expect(button('.bp-continue')!.getAttribute('aria-disabled')).toBeNull();
+    // batteryResumed means a 2xx: the host counts the battery run as one this page signals only then.
+    expect(resumed).not.toHaveBeenCalled();
   });
 
   it('arms the completion signals inside the Continue click, before the request and the batteryResumed emit', () => {
@@ -369,8 +402,13 @@ describe('BatteryProgressDialogComponent', () => {
       });
     }
 
+    /** A finished battery run with a report writer; Pending (1) and Writing (2) are the server's WritingReports. */
     const withWriter = (status: number, overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto =>
-      finishedRun({ reportWriterModelConfigurationId: 3, reportDocumentsStatus: status, ...overrides });
+      finishedRun({
+        reportWriterModelConfigurationId: 3, reportDocumentsStatus: status,
+        postRunWork: status === 1 || status === 2 ? 'WritingReports' : 'None',
+        ...overrides
+      });
 
     beforeEach(() => {
       service.getBatteryReportJob = vi.fn().mockName('AdminBenchmarkService.getBatteryReportJob').mockReturnValue(of(null)) as any;
@@ -468,14 +506,15 @@ describe('BatteryProgressDialogComponent', () => {
       expect(items[1].querySelector('.visually-hidden')?.textContent?.trim()).toBe('(done)');
     });
 
-    it('shows the analysis current while it is computed, and ended once the grace has passed', fakeAsync(() => {
-      open(finishedRun({ latestAnalysisId: null, overallIndex: null }));
+    it('shows the analysis current while postRunWork is Analysing, and ended once it is None without one', fakeAsync(() => {
+      open(finishedRun({ latestAnalysisId: null, overallIndex: null, postRunWork: 'Analysing' }));
 
       expect(railItems()[1].classList).toContain('is-current');
       expect(stageNote(railItems()[1])).toBe('Computing the Overall Index…');
       expect(text('.bp-stage-line')).toBe('Computing the battery analysis…');
 
-      tick(BATTERY_POST_RUN_GRACE_MS);
+      service.getBatteryRun.mockReturnValue(of(finishedRun({ latestAnalysisId: null, overallIndex: null, postRunWork: 'None' })));
+      tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
       fixture.detectChanges();
       expect(railItems()[1].classList).toContain('is-ended');
       expect(stageNote(railItems()[1])).toBe('Not computed: use Recompute in the Battery Run Report');
@@ -486,6 +525,37 @@ describe('BatteryProgressDialogComponent', () => {
       close();
       discardPeriodicTasks();
     }));
+
+    it('reads a missing postRunWork, from an older server, as none: no grace window keeps it polling', fakeAsync(() => {
+      const older = finishedRun({ latestAnalysisId: null, overallIndex: null }) as unknown as Record<string, unknown>;
+      delete older['postRunWork'];
+      open(older as unknown as BenchmarkBatteryRunDto);
+
+      expect(railItems()[1].classList).toContain('is-ended');
+      tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS * 3);
+      expect(service.getBatteryRun).toHaveBeenCalledTimes(1);
+      close();
+      discardPeriodicTasks();
+    }));
+
+    it('keeps the reports stage current only while postRunWork is WritingReports', () => {
+      open(withWriter(0, { postRunWork: 'None' }));
+      expect(railItems()[2].classList).toContain('is-ended');
+      expect(stageNote(railItems()[2])).toBe('Not started');
+      expect(service.getBatteryReportJob).not.toHaveBeenCalled();
+    });
+
+    it('marks the runs stage current and the later stages pending while a member is re-run', () => {
+      open(withWriter(3, { status: 'CompletedWithErrors', postRunWork: 'Repairing', repairingRunIds: [102] }));
+
+      const items = railItems();
+      expect(items[0].classList).toContain('is-current');
+      expect(stageNote(items[0])).toBe('Re-run in progress · 2 of 2 runs');
+      expect(items[1].classList).not.toContain('is-current');
+      expect(stageNote(items[1])).toBe('Follows the re-run');
+      expect(stageNote(items[2])).toBe('Follows the analysis');
+      expect(text('.bp-stage-line')).toBe('Re-run in progress: run #102');
+    });
 
     it('shows the reports current while they are written, polls the job, and keeps polling the battery run', fakeAsync(() => {
       open(withWriter(2));
@@ -571,6 +641,28 @@ describe('BatteryProgressDialogComponent', () => {
     expect(analysis).toHaveBeenCalledTimes(1);
     expect(analysis).toHaveBeenCalledWith(7);
   });
+
+  it('keeps polling a finished battery run through Repairing, and stops once postRunWork is None', fakeAsync(() => {
+    const repairing = (postRunWork: 'Repairing' | 'None') => batteryRun({
+      status: 'CompletedWithErrors', isDriving: false, currentRunId: null, currentSuiteIndex: null, currentRound: null,
+      postRunWork, repairingRunIds: postRunWork === 'Repairing' ? [103] : []
+    });
+    open(repairing('Repairing'));
+    expect(service.getBatteryRun).toHaveBeenCalledTimes(1);
+
+    tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
+    expect(service.getBatteryRun).toHaveBeenCalledTimes(2);
+
+    service.getBatteryRun.mockReturnValue(of(repairing('None')));
+    tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
+    expect(service.getBatteryRun).toHaveBeenCalledTimes(3);
+
+    tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS * 3);
+    expect(service.getBatteryRun).toHaveBeenCalledTimes(3);
+
+    close();
+    discardPeriodicTasks();
+  }));
 
   it('polls while the battery run is live and stops once it is not', fakeAsync(() => {
     open(batteryRun());
@@ -678,6 +770,20 @@ describe('BatteryProgressDialogComponent', () => {
       expect(style.maxWidth).toBe('none');
     });
 
+    it('shows Re-run in progress on a member cell whose run is being re-run', () => {
+      open(batteryRun({
+        status: 'CompletedWithErrors', isDriving: false, currentRunId: null, currentSuiteIndex: null, currentRound: null,
+        postRunWork: 'Repairing', repairingRunIds: [103]
+      }));
+
+      const repaired = cell(0, 2);
+      expect(repaired.querySelector('.job-status-chip')?.textContent?.trim()).toBe('Re-run in progress');
+      expect(repaired.getAttribute('data-repairing')).toBe('true');
+      expect(repaired.classList).toContain('is-current');
+      expect(cell(0, 1).querySelector('.job-status-chip')?.textContent?.trim()).toBe('Completed with index');
+      expect(cell(0, 1).getAttribute('data-repairing')).toBeNull();
+    });
+
     it('says what a pending slot of a live battery run waits for', () => {
       open(batteryRun());
       expect((cell(1, 2).querySelector('.bp-cell-waiting')?.textContent ?? '').trim()).toBe('Waiting for suite 1');
@@ -763,7 +869,7 @@ describe('BatteryProgressDialogComponent', () => {
         .mockReturnValue(of({ runId: 7, writerConfigId: 3, job: { documents: [], costUsd: 0.1 } })) as any;
       open(batteryRun({
         status: 'Completed', completedAtUtc: new Date().toISOString(), isDriving: false,
-        reportWriterModelConfigurationId: 3, reportDocumentsStatus: 2,
+        reportWriterModelConfigurationId: 3, reportDocumentsStatus: 2, postRunWork: 'WritingReports',
         liveCost: liveCost({ reportWriterCostUsd: null })
       }));
       fixture.detectChanges();

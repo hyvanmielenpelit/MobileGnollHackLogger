@@ -116,7 +116,8 @@ function chartActions(overrides: Partial<DownloadCenterChartActions> = {}): Fake
   template: `
     <div class="shell" [style.width.px]="width">
       <app-download-center-panel [context]="context" [reloadToken]="reloadToken" [idPrefix]="idPrefix"
-                                 [chartActions]="actions" (documentsChanged)="changes = changes + 1"></app-download-center-panel>
+                                 [chartActions]="actions" (documentsChanged)="changes = changes + 1"
+                                 (openBatteryDownloads)="batteryDownloads.push($event)"></app-download-center-panel>
     </div>
   `
 })
@@ -128,6 +129,8 @@ class PanelHostComponent {
   idPrefix = 'mc-dc';
   actions: DownloadCenterChartActions | null = null;
   changes = 0;
+  /** Every battery run id the panel's Open battery run downloads emitted. */
+  batteryDownloads: number[] = [];
 }
 
 describe('DownloadCenterPanelComponent', () => {
@@ -1155,6 +1158,90 @@ describe('DownloadCenterPanelComponent', () => {
       tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
       http.expectNone(JOB_URL);
     }));
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The run context
+  // -------------------------------------------------------------------------------------------
+
+  describe('run context', () => {
+    const JOB_URL = '/api/admin/benchmark/runs/42/report-documents/job';
+
+    function runContext(batteryRunId: number | null = null): DownloadCenterContext {
+      return {
+        kind: 'run',
+        run: {
+          id: 42,
+          suiteName: 'Board Suite',
+          modelLabel: 'Gemini Flash',
+          startedAtUtc: '2026-10-02T09:00:00Z',
+          completedAtUtc: '2026-10-02T09:40:00Z',
+          batteryRunId
+        },
+        diagnosticsText: () => ''
+      };
+    }
+
+    /** Renders a run context and answers its document list and its job request (no job). */
+    function openRun(context: DownloadCenterContext): TestRequest {
+      hostComponent.context = context;
+      fixture.detectChanges();
+      const list = expectList();
+      list.flush([doc(31, ExecutiveSummary, {
+        subjectKey: 'run:42',
+        subjectRunIds: [42],
+        origin: BenchmarkReportDocumentOrigin.RunCompletion,
+        comparisonKey: null,
+        peerCount: 0,
+        peerLetters: {}
+      })]);
+      const job = http.expectOne(JOB_URL);
+      job.flush(null, { status: 204, statusText: 'No Content' });
+      fixture.detectChanges();
+      return list;
+    }
+
+    const pointer = (): HTMLElement | null => q('.dc-battery-pointer');
+
+    it('lists the run\'s files and only the documents whose subject is the run', () => {
+      const list = openRun(runContext());
+
+      expect(list.request.params.get('subject')).toBe('run:42');
+      expect(list.request.params.has('runId')).toBe(false);
+      expect([...rowKeys()].sort()).toEqual(['diag:42', 'doc:31', 'log:42', 'report:42']);
+    });
+
+    it('shows no battery pointer for a run outside a battery', () => {
+      openRun(runContext());
+
+      expect(pointer()).toBeNull();
+      expect(panel().memberOfBatteryRunId).toBeNull();
+    });
+
+    it('points a battery member to the battery run\'s downloads, emitting the battery run id', () => {
+      openRun(runContext(7));
+
+      expect(text('.dc-battery-pointer-text')).toBe(
+        "This run is a member of battery run #7. Its AI-written documents are in the battery run's downloads.");
+      const button = q<HTMLButtonElement>('.dc-battery-pointer .dc-open-battery-downloads')!;
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.classList.contains('btn-ghost')).toBe(true);
+      expect(flat(button)).toBe('Open battery run downloads');
+      expect(hostComponent.batteryDownloads).toEqual([]);
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(hostComponent.batteryDownloads).toEqual([7]);
+      // The pointer sits above the documents.
+      expect(pointer()!.compareDocumentPosition(rowEl('doc:31')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('shows no battery pointer in a library context', () => {
+      render([doc(11, ExecutiveSummary)]);
+
+      expect(pointer()).toBeNull();
+    });
   });
 
   // -------------------------------------------------------------------------------------------

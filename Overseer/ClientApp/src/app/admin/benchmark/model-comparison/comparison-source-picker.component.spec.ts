@@ -1554,6 +1554,27 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(fixture.nativeElement.querySelector('#csp-src-panel-batteries')).toBeTruthy();
     });
 
+    it('sorts Analyzed by the instant, reading a server timestamp without a zone as UTC', () => {
+      render({
+        batteryRuns: [
+          // 15:00 UTC: no zone, as System.Text.Json writes an unspecified DateTime.
+          buildBattery({ id: 4, latestAnalysisAtUtc: '2026-10-01T15:00:00' }),
+          buildBattery({ id: 5, latestAnalysisAtUtc: '2026-10-01T14:30:00Z' }),
+          // 15:45 UTC.
+          buildBattery({ id: 6, latestAnalysisAtUtc: '2026-10-01T17:45:00+02:00' })
+        ]
+      });
+
+      component.batteryTable.setSort('analyzedAtUtc', 'desc');
+      expect(component.batteryTable.view(component.batteryRuns).map(battery => battery.id)).toEqual([6, 4, 5]);
+      component.batteryTable.setSort('analyzedAtUtc', 'asc');
+      expect(component.batteryTable.view(component.batteryRuns).map(battery => battery.id)).toEqual([5, 4, 6]);
+
+      // Shown in the browser's own time zone, from the UTC instant.
+      expect(component.formatDate('2026-10-01T15:00:00')).toBe(new Date(Date.UTC(2026, 9, 1, 15, 0, 0)).toLocaleString());
+      expect(component.formatDate('2026-10-01T15:00:00Z')).toBe(new Date(Date.UTC(2026, 9, 1, 15, 0, 0)).toLocaleString());
+    });
+
     it('says the suite scope does not apply to battery results', () => {
       render();
       const select = fixture.nativeElement.querySelector('#csp-suite') as HTMLSelectElement;

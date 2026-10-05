@@ -439,7 +439,6 @@ public class BenchmarkCitationLivenessCheckTests
     [InlineData("src/objects.c:10", "cited line src/objects.c:10 is only the definition of macro WAND")]
     [InlineData("src/objects.c:11", "cited line src/objects.c:11 is only the definition of macro WAND")]
     [InlineData("include/objclass.h:4", "cited line include/objclass.h:4 is only the definition of macro objects_delay")]
-    [InlineData("include/objclass.h:6", "cited line include/objclass.h:6 is only the definition of macro MAXSPELL")]
     public void ASingleLineInsideAMultiLineDefineHeader_GetsTheMacroDefinitionNote(string citation, string expected)
     {
         Assert.Equal(expected, MacroCheck().NoteFor(citation));
@@ -458,9 +457,72 @@ public class BenchmarkCitationLivenessCheckTests
     [InlineData("include/objclass.h:4-5")]
     // A header line outside any macro.
     [InlineData("include/objclass.h:2")]
+    // A one-line object-like macro carries its value on the #define line.
+    [InlineData("include/objclass.h:6")]
     public void ALineOutsideADefineHeader_OrARange_GetsNoMacroNote(string citation)
     {
         Assert.Null(MacroCheck().NoteFor(citation));
+    }
+
+    private static BenchmarkCitationLivenessCheck OneLineMacroCheck()
+    {
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["include/general.h"] = new[]
+            {
+                "#define BREATH_WEAPON_MANA_COST 15",                                    // 1
+                "#define LIMIT /* see below */",                                         // 2
+                "#define FALLBACK_LIMIT // set elsewhere",                               // 3
+                "#define FOO(a, b) \\",                                                  // 4
+                "    ((a) + (b))",                                                       // 5
+                "#define BAR(a) /* swaps */ \\",                                         // 6
+                "    (-(a))"                                                             // 7
+            },
+            ["include/rm.h"] = new[]
+            {
+                "struct rm {",                                                           // 1
+                "    schar typ;",                                                        // 2
+                "};",                                                                    // 3
+                "#define ugod_is_angry() (u.ualign.record < 0)"                          // 4
+            }
+        };
+        return new BenchmarkCitationLivenessCheck(() => corpus);
+    }
+
+    [Theory]
+    // Nothing but a comment follows the name of an object-like macro.
+    [InlineData("include/general.h:2", "cited line include/general.h:2 is only the definition of macro LIMIT")]
+    [InlineData("include/general.h:3", "cited line include/general.h:3 is only the definition of macro FALLBACK_LIMIT")]
+    // Nothing but a trailing "\" (and a comment) follows the closing ")" of the parameter list.
+    [InlineData("include/general.h:4", "cited line include/general.h:4 is only the definition of macro FOO")]
+    [InlineData("include/general.h:6", "cited line include/general.h:6 is only the definition of macro BAR")]
+    public void ADefineLineWithoutABody_GetsTheMacroDefinitionNote(string citation, string expected)
+    {
+        Assert.Equal(expected, OneLineMacroCheck().NoteFor(citation));
+    }
+
+    [Theory]
+    // A one-line object-like macro: its value follows the name.
+    [InlineData("include/general.h:1")]
+    // A one-line function-like macro: its body follows the parameter list.
+    [InlineData("include/rm.h:4")]
+    // Body rows after a header that ended on the row before.
+    [InlineData("include/general.h:5")]
+    [InlineData("include/general.h:7")]
+    public void ADefineLineCarryingTheMacroBody_GetsNoMacroNote(string citation)
+    {
+        Assert.Null(OneLineMacroCheck().NoteFor(citation));
+    }
+
+    [Fact]
+    public void AOneLineMacroCitedForItsValue_KeepsItsVerdictForCounting()
+    {
+        var verification = new BenchmarkClaimVerification(0, "Breath weapons cost 15 mana.", BenchmarkClaimVerdict.Supported, "include/general.h:1", "The macro's value is 15.");
+
+        var annotated = Assert.Single(OneLineMacroCheck().Annotate(new[] { verification }));
+
+        Assert.Null(annotated.CitationNote);
+        Assert.Equal(BenchmarkClaimVerdict.Supported, annotated.EffectiveVerdict);
     }
 
     [Fact]

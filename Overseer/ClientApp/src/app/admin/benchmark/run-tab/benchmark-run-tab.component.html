@@ -44,21 +44,10 @@
       @if (monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running') {
         <span>Run #{{ monitor.activeRunDetail.id }}: answered {{ monitor.activeRunDetail.answers.length }} of {{ monitor.activeRunDetail.totalQuestionCount }}</span>
       }
+      <!-- Continue and Continue anyway are the progress dialog's; the banner only opens it. -->
       <button type="button" class="btn-gh" (click)="monitor.openMultiRunDialog()">
         Show Series Progress
       </button>
-      @if (monitor.seriesIsStopped) {
-        <button type="button" class="btn-gh" [disabled]="monitor.resumingSeries || !monitor.activeSeries.resumable"
-                (click)="monitor.resumeActiveSeries()">
-          {{ monitor.resumingSeries ? 'Continuing...' : seriesContinueLabel }}
-        </button>
-        @if (seriesInstrumentChanged) {
-          <button type="button" class="btn-gh btn-gh-delete" [disabled]="monitor.resumingSeries"
-                  (click)="monitor.resumeActiveSeries(true)">
-            Continue anyway (marks the group cross-condition)
-          </button>
-        }
-      }
       @if (monitor.seriesIsLive) {
         <button type="button" class="btn-gh btn-gh-delete" (click)="monitor.cancelActiveSeries()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
@@ -108,21 +97,10 @@
       @if (monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running') {
         <span>Run #{{ monitor.activeRunDetail.id }}: answered {{ monitor.activeRunDetail.answers.length }} of {{ monitor.activeRunDetail.totalQuestionCount }}</span>
       }
+      <!-- Continue and Re-run under current instrument are the progress dialog's; the banner only opens it. -->
       <button type="button" class="btn-gh battery-show-progress" (click)="monitor.openBatteryDialog()">
         Show Battery Progress
       </button>
-      @if (batteryCanContinue) {
-        <button type="button" class="btn-gh battery-continue" [disabled]="monitor.resumingBattery"
-                (click)="monitor.resumeActiveBattery('Continue')">
-          {{ monitor.resumingBattery ? 'Continuing...' : batteryContinueLabel }}
-        </button>
-      }
-      @if (batteryStoppedOnInstrumentChange) {
-        <button type="button" class="btn-gh battery-rerun" [disabled]="monitor.resumingBattery"
-                (click)="monitor.resumeActiveBattery('RerunUnderCurrentInstrument')">
-          {{ monitor.resumingBattery ? 'Starting over...' : 'Re-run under current instrument' }}
-        </button>
-      }
       @if (monitor.batteryIsLive || batteryIsStopped) {
         <button type="button" class="btn-gh btn-gh-delete battery-cancel" (click)="monitor.cancelActiveBattery()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>

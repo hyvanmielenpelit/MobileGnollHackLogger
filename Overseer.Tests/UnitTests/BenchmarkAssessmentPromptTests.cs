@@ -224,12 +224,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyOne()
+    public void HarnessVersion_IsFiftyTwo()
     {
-        // Harness 51: the claim verifier's parse retry recorded on its calls with how the first
-        // attempt ended and named in the report, a re-ask that asks for a verdict on every item,
-        // and get_item_stats cutting stray characters and any number of trailing words.
-        Assert.Equal("51", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 52: nethack_wiki_view's section-less over-cap notice listing the article's
+        // headings, classified partial; a forced-final instruction appended in the agent loop when
+        // the tools run out; a one-line macro's body counted as evidence in the citation liveness
+        // check; and a terminal timeout's error text recording its phase.
+        Assert.Equal("52", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -868,13 +869,15 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs51_ScoringMethodIs14()
+    public void Versions_HarnessIs52_ScoringMethodIs14()
     {
-        Assert.Equal("51", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("52", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 51 records and reports the claim verifier's parse retry, makes its re-ask require
-        // every item, and cleans get_item_stats names; the grader prompt and its ACCURACY anchors
-        // do not change, so scoring method 14 stays. The tool-policy text returns to harness 49's.
+        // Harness 52 gives nethack_wiki_view a section-less over-cap notice with the article's
+        // headings (classified partial), appends a forced-final instruction in the agent loop when
+        // the tools run out, counts a one-line macro's body as evidence in the citation liveness
+        // check, and records a terminal timeout's phase in its error text; the grader prompt and
+        // its ACCURACY anchors do not change, so scoring method 14 stays.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

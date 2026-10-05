@@ -73,7 +73,7 @@ The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there i
 - **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 2 documents, 1m 12s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
 - **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"2 documents, 1m 12s"*), *None written* or *Not written*.
 - **The cost panel** has a *Report writer* row — the job's running cost while writing, then `ReportDocumentsCostUsd` — and *Run total with reports*, in a block of its own under the note that the AI-written reports are outside the benchmark's own cost. The run's stored `EstimatedCost` and every figure above that block are unchanged.
-- **Completion signal.** The chime, the tab-title mark and the desktop notification fire when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends.
+- **Completion signal.** One user action starts one chain of server work, and the chime, the tab-title mark and the desktop notification fire once, at its end: when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends. A battery member's terminal poll reads its battery run fresh; when that battery run is live, still has post-run work (`postRunWork` not `None`), changed status while the run ran, or is already watched, the battery run takes the signal and the member does not chime on its own. The run's signal key carries its generation (`run:<id>:<rerunCompletedAtUtc ?? completedAtUtc>`), so one settled state signals once and a later re-run of the same run signals again (§ *Harness Version 52 Updates*).
 - **Diagnostics** gain a `--- REPORTS ---` block: writer (provider / model id, thinking), status, message, documents written, duration, tokens and cost, marked as outside the run's own cost.
 
 The writing is not part of the run by design. Writing the reports inside the run was rejected: a writer failure would blemish a run whose scoring succeeded, a queue behind a running Report Pack would delay the run's end, and every run's duration would change with the writer.
@@ -6976,6 +6976,181 @@ by four words of its sentence; each item exists, and each of those calls missed.
 battery run 5 on those keys and differs on `HarnessVersion`. A battery run started under harness 50
 refuses to resume under 51 (`HarnessVersionRefusal`).
 
+### Harness Version 52 Updates
+
+The battery run 8 round (runs 90 and 91, 2026-10-05). `nethack_wiki_view` answers an over-cap article
+with the headings-first notice `wiki_view` already gave, the forced final turn tells the model why it
+has no more tools, the macro-definition note stops firing on a one-line macro with a body, a
+per-question timeout records the phase it ended in, and a repaired member run carries its battery run
+with it. `HarnessVersion` moves to **"52"**; `ScoringMethodVersion` stays **14**. No migration and no
+change to `Overseer/ToolGuides/`, so `ToolGuidesSha256` stays `733b710f7524`.
+
+#### `nethack_wiki_view` over an over-cap article (T1)
+
+A `nethack_wiki_view` call without a `section` on an article longer than its budget returns the notice
+`wiki_view` has returned since harness 39:
+
+```
+[Article is N characters; the first M are shown. Headings: H1; H2; …. Call nethack_wiki_view again with section set to one of them to read the rest.]
+```
+
+then a newline and the article's first `M` characters. The budget is `MaxResultLength` less the
+spoiler-free suffix and less the resolution line (`[No NetHack wiki article titled …]`), which stays
+first when the title was not an exact match. The result lands at exactly the cap, so `ToolExecutor`
+never appends its `[Truncated:` suffix. Both tools build the notice with
+`Overseer/Services/Tools/ArticleOverCapNotice.cs` (the headings list capped at 600 characters,
+`ArticleOverCapNotice.NoticeMaxChars`); `wiki_view`'s output is byte-identical to before.
+`BenchmarkToolResultClassifier` marks the notice **`partial`**, never `cut`, on either tool, for
+`nethack_wiki_view` after one optional leading resolution line. Up to harness 51 the same call came back
+cut blind at the cap with the `[Truncated:` suffix and no heading list. No tool guide changed.
+
+#### The forced-final instruction (T2)
+
+When a turn reaches its forced final round — the tool-iteration limit, or a model-call budget
+exhausted — and has already run a tool round, `AgentLoopRunner` appends
+`AgentLoopRunner.ForcedFinalInstruction` to the turn's history as user text, once per turn:
+
+> No more tool calls are available in this turn. Answer now from the tool results above, in the format
+> the request asked for.
+
+A call that never ran tools — `MaxToolIterations` 0 (the graders, the assessor, synthesis, coverage,
+difficulty, the report pack) or a budget spent before the first call — is sent unchanged. The
+instruction is **turn-local**: the runner works on its own copy of the history, never stores it in a
+`ChatMessage` and never yields it as a chat event (the existing `tool_error` *"Tool call limit reached.
+Forcing final response."* stays). It applies to live chat and to the benchmark alike, so it reaches the
+production chat. Each provider appends it through `IAiProvider.AppendUserTextToHistory`: Anthropic adds
+a `text` block to the trailing user message that holds the tool results, so roles keep alternating
+(else a new user message); Google adds a `text` part to the trailing user content holding the function
+responses (else a new user content); OpenAI Responses adds a `user` input item (`input_text`).
+
+#### The macro-definition note (B6)
+
+`BenchmarkCitationLivenessCheck` writes *"cited line … is only the definition of macro <NAME>"* only when
+the cited `#define` row holds no body: for an object-like macro, nothing but whitespace, a trailing `\`
+or a comment after the name; for a function-like macro, nothing but those after the `)` that closes the
+parameter list. Earlier rows of a `\`-continued header stay header rows. So `#define
+BREATH_WEAPON_MANA_COST 15` and `#define ugod_is_angry() (u.ualign.record < 0)` are evidence and get no
+note; `#define LIMIT /* see below */` and `#define FOO(a, b) \` keep it.
+
+#### The timeout's phase (H6)
+
+Both terminal per-question timeouts store the phase the question ended in, after the unchanged opening
+sentence:
+
+> Per-question timeout exceeded (720 s) after 3 model call(s) and 2 tool call(s); first token at 1.6 s;
+> last stream event 690 s before the timeout.
+
+or *"…; no token received; last stream event …"* (`BenchmarkService.BuildQuestionTimeoutError`). A re-run
+keeps the replaced attempt's error text in `RerunOfErrorMessage` (truncated at 512 characters), so the
+phase survives a repair.
+
+#### Battery repair
+
+- **A repair carries its battery run.** After every run-level repair — Re-run failed questions, Re-run
+  question, Retry failed assessments, Retry claim verification, Re-run final synthesis, Re-assess
+  question (not the trial *Try another assessor*) and Re-score —
+  `BenchmarkBatteryOrchestrator.ReconcileAfterMemberChangeAsync(runId)` runs in the background, in its
+  own scope, with a logged catch. For each battery run that holds the run as a non-superseded member,
+  is `Stopped` or `CompletedWithErrors` and is not driven, it takes the orchestrator claim — and skips
+  the battery run when **any** orchestrator claim is held (another battery or series running; a manual
+  *Recompute analysis* reconciles it later) — and recomputes `CompletedMemberCount`. When every slot then
+  holds a usable member it calls `FinishAsync`: status `Completed`, the error cleared, the analysis and,
+  when a writer is set and none exist, the battery-completion documents (`ScheduleIfDue`). When slots are
+  still missing, a `CompletedWithErrors` battery run's error message is rewritten to the slots still
+  without a usable result; a `Stopped` one keeps its stop message. A resume is refused (409, *"This
+  battery run is being updated after a member run changed. Try again in a moment."*) while a reconcile
+  holds the claim.
+- **Finish times.** `FinishAsync` keeps an existing `CompletedAtUtc` when the battery run was
+  `CompletedWithErrors`, so a repaired battery run keeps its original finish time. `StopAsync` never
+  writes `CompletedAtUtc` and `ResumeAsync` clears it, so a `Stopped` battery run that finishes, and one
+  finished by Continue, get the new time.
+- **The report says so.** § 10 *Method and Limits* adds, per usable member whose run's
+  `RerunCompletedAtUtc` is later than the battery run's `CompletedAtUtc`: *"Run #<id> was repaired by a
+  re-run (<start> to <end> UTC) after the battery run first finished at <time> UTC; the status and this
+  analysis include the repair."*
+- **Continue on an all-usable battery run.** A `CompletedWithErrors` battery run whose every slot is
+  usable is resumable: Continue finishes it (Pending, the drive loop, nothing to launch, `FinishAsync`,
+  the analysis, the documents). When nothing will be launched, the spend, scoring-method, composite and
+  harness-version checks are skipped, because nothing new is mixed in.
+- **A slot under repair is held.** While a member run is `Running` and the battery run is not driven,
+  Continue is refused with **409** *"Run #<id> is being re-run; the battery run follows it when the
+  re-run finishes."*, and the DTO's `Resumable` is false.
+- **A scoring-method change is an instrument change.** Continue over a kept member graded under another
+  scoring method is refused with **409**, `instrumentChanged: true` and `changedHashes:
+  ["ScoringMethodVersion"]` (before: 400), so the client offers *Re-run under current instrument*.
+- **Recompute analysis** (`AdminBenchmarkBatteriesController.AnalyseBatteryRun`) first reconciles a
+  `Stopped` or `CompletedWithErrors` battery run, so a repaired one turns `Completed`; then analyzes,
+  reusing the reconcile's analysis when it just made one; then calls
+  `BenchmarkBatteryReportDocumentService.ScheduleIfDue`, whose gates refuse no writer, an incomplete or
+  stale analysis and existing documents.
+- **`BenchmarkBatteryRunDto.PostRunWork`** says what the server still does for the battery run, the
+  first that applies: `Repairing` (a member run is `Running` while the battery run is not live),
+  `Analysing` (the orchestrator's `IsAnalysing`), `WritingReports` (its documents are Pending or
+  Writing), else `None`. `RepairingRunIds` lists the member runs being re-run. These are wire values.
+- `BenchmarkRunDetailDto.IsCurrentScoringMethod` tells the client whether a run was graded under this
+  build's scoring method. **Re-score run** always re-scores under the run's own scoring profile; the
+  endpoint ignores a `scoringProfileId` in the request, which it still accepts for compatibility.
+
+#### Completion signals
+
+The rule is **one user action, one chain of server work, one signal at its end**
+(`benchmark-active-run.monitor.ts`).
+
+- A battery run is signaled only once this page has seen it live or with `postRunWork` other than
+  `None`, or after a 2xx start or Continue (`batteriesSeenLive`). A refused request never signals.
+- A member run's terminal poll fetches its battery run fresh. When that battery run is live, has
+  post-run work, changed status while the run ran, or is already watched, the battery run takes the
+  signal and is polled until `postRunWork` is `None`; the member does not chime on its own.
+- Keys carry a generation: `battery:<id>:<latestAnalysisId ?? 0>:<reportDocumentsStatus>`,
+  `run:<id>:<rerunCompletedAtUtc ?? completedAtUtc>` (plain `run:<id>` when neither is recorded) and
+  `series:<id>:<status>`. The same settled state signals once; a later chain that ends in another
+  state signals again.
+- The 120-second post-run grace window is gone (`BATTERY_POST_RUN_GRACE_MS` removed):
+  `batteryAwaitsPostRun` reads `postRunWork`.
+
+#### Client
+
+- **Battery progress dialog.** It polls while `postRunWork` is not `None`, `Repairing` included; a
+  member cell being re-run shows *Re-run in progress*, and the stage rail follows `postRunWork`. It is
+  the one home of **Continue** (*Continue — <reason>*, with the play glyph) and **Re-run under current
+  instrument**; a 409 on Continue offers the latter only when the body carries `instrumentChanged:
+  true`, and otherwise shows the message. The *Index withheld* hint reads *"Re-run failed questions on
+  this run; the battery run follows the re-run when it finishes."*
+- **Battery Run Report → Actions** holds only *Recompute analysis* (*Compute analysis* before the first)
+  and *Show progress*.
+- **The run tab's battery and series banners** hold only **Show Battery Progress** / **Show Series
+  Progress** (and **Cancel** where it was); a stopped banner ends *"Continue from the progress
+  dialog."* The battery banner shows only while the battery run is live, `Stopped`, or has post-run
+  work; a `CompletedWithErrors` battery run counts as finished there. The series progress dialog keeps
+  *Continue — <reason>* with the play glyph, and *Continue anyway (marks the group cross-condition)* is a
+  plain `.btn-gh`.
+- **Repair and retry controls** are gated by `admin/benchmark/run-repair-actions.ts`, pure functions
+  returning `{ visible, disabledReason }` that mirror the server's refusals in its order — busy, aborted,
+  older scoring method, the action's own precondition — and a refused action is shown `aria-disabled`
+  with its visible reason. The run report's **Re-run** popover (`aria-label` *Re-run and repair*) lists
+  *Re-run failed questions*, *Retry failed assessments*, *Retry claim verification*, *Re-run final
+  synthesis* and *Re-score run*, in that order. The rules, the verb table and the label of every action
+  are in the `frontend_ui_controls` skill § 4g.
+- **B4 — a run's Download Center lists the run's own documents.** It asks for
+  `report-documents?subject=run:<id>`: the run's files and every document whose subject is the run.
+  Battery-completion documents and battery or group Report Pack documents are no longer listed there.
+  A battery member shows an info line, *"This run is a member of battery run #<id>. Its AI-written
+  documents are in the battery run's downloads."*, with a `.btn-ghost` **Open battery run downloads**
+  that switches the same Download Center to the battery run's context. A group's Report Pack documents
+  stay reachable from the group's analysis and the comparison launcher
+  ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 8).
+- **B5 — offset-less server timestamps are UTC.** `parseServerUtcDate` (`utils/date.util.ts`) parses a
+  server timestamp without an offset as UTC in `formatUtc` (report-document format), the comparison
+  source picker (its dates and the *Started*, *Created* and *Analyzed* sorts), the figure chrome, the
+  multi-run tables, the run duration, the model comparison's provenance time, the API keys page, the key
+  verification tooltip, the settings decision stamps and the chat session sort. A calendar date an
+  admin entered (`postureVerifiedUtc`) is deliberately not shifted.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 51 → 52; `ToolGuidesSha256` does not
+move. A battery run started under harness 51 refuses to launch members under 52
+(`HarnessVersionRefusal`), but Continue on one whose every slot is usable only finishes it, so the check
+does not apply there.
+
 ---
 
 ## 3. Assessor Strategy
@@ -8199,13 +8374,13 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/runs`: List historical runs, newest first; optional `?suiteId=` and `?take=` (default 50, at most 1,000, which Run History asks for).
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
 - `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
-- `POST /api/admin/benchmark/runs/{id}/rescore`: Recompute indices for an existing run against a scoring profile (ungated arithmetic).
+- `POST /api/admin/benchmark/runs/{id}/rescore`: Recompute indices for an existing run from its stored levels under the run's own scoring profile (ungated arithmetic). A `scoringProfileId` in the request is accepted for compatibility and ignored.
 - `POST /api/admin/benchmark/runs/{id}/answers/{answerId}/reassess`: Re-assess a single question's answer (gated by spend caps). `trial: true` records the verdict in the second-reader slot (the reference-reader slot in a panel run) and changes **no** score, level, flag or index — including the run's `Status` and `CompletedAtUtc`; overwriting an existing automatic second-reader verdict additionally requires `replaceExistingSecondOpinion: true`.
 - `POST /api/admin/benchmark/runs/{id}/calibrate`: Re-grade every answer of a finished run with another assessor and store the agreement statistics only (gated by spend caps). Writes no `BenchmarkRunAnswer` field.
 - `GET /api/admin/benchmark/runs/{id}/calibrations`: List prior calibrations for a run, newest first.
 - `GET /api/admin/benchmark/suites/{id}/last-assessor`: The assessor of the suite's most recent completed run, for the start dialog's assessor-change advisory. Returns an empty object for a suite with no completed run.
 - `POST /api/admin/benchmark/runs/{id}/cancel`: Cancel an active run. The live run's own abort path records what it consumed — the totals over the answers that completed, and the wall clock up to the stop — and publishes no index. When there is no live run to cancel the row is orphaned and its abort path will never run, so the endpoint records those totals itself, deriving the elapsed figure from the two timestamps. When the row's answer rows already cover its suite — a cancelled retry of a finished run — it is restored to the status those answers describe rather than set to `Canceled`, with `Canceled by operator.` as the reason, so the cancel does not lock the run out of later re-runs.
-- `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run every question whose answer failed, hit a provider error, or came back empty (`BenchmarkRunFinalizer.NeedsReExecution`) (gated by spend caps). Cancelling it restores the run to the status its answers describe.
+- `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run every question whose answer failed, hit a provider error, or came back empty (`BenchmarkRunFinalizer.NeedsReExecution`) (gated by spend caps). Cancelling it restores the run to the status its answers describe. After this and every other run-level repair (rerun answer, retry failed assessments, retry claim verification, rerun synthesis, reassess without `trial`, rescore), each `Stopped` or `CompletedWithErrors` battery run holding the run as a member is reconciled, and finished when every slot is then usable (§ *Harness Version 52 Updates*).
 
 > A run that stopped before finishing its suite is refused by **rescore**, **rerun-failed**, **reassess**, **rerun answer**, **rerun synthesis**, **retry failed assessments** and **retry claim verification**: each ends in a full finalisation, which would publish an Intelligence Index and a Speed Index computed over only the questions that completed, into the same columns a complete run uses. The test is `BenchmarkRunFinalizer.IsAbortedRun` — `Canceled` or `Failed` **and** fewer answer rows than `TotalQuestionCount` — so a `Canceled` run whose answers cover its suite is accepted, and its re-run is finalised over the whole suite. Reading, reporting, calibrating, cancelling and deleting such a run are unaffected, and a `CompletedWithErrors` run — which did reach the end of its suite — is not refused. The run summary and detail DTOs carry the verdict as `isAborted`.
 - `GET /api/admin/benchmark/runs/{id}/report`: Download server-rendered Markdown report with compliance manifest.
@@ -8233,11 +8408,11 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 - `POST …/batteries/{id}/archive`: Hide a battery from the launcher, or show it again with `{ "archived": false }`.
 - `GET …/batteries/runs` (`?batteryId=&take=`, `take` at most 1,000), `GET …/batteries/runs/{id}`, `GET …/batteries/runs/active` (204 when none): Battery runs with their suite × round member grid.
 - `POST …/batteries/runs`: Start a battery run. 202 `{ batteryRunId }`; 409 for a conflict or an unacknowledged same-provider grader or report writer; 404 for an unknown battery; 429 at the spend guard, except that with *Allow cap wait* an hourly or daily cap denial starts the battery run in `WaitingForCap`; 400 for an invalid request, a refused report writer or more launches than `Benchmark:Battery:MaxMembers` (or than the daily cap without *Allow cap wait*).
-- `POST …/batteries/runs/{id}/cancel`: Cancel; 400 for a battery run already Completed, Cancelled or Failed. `POST …/batteries/runs/{id}/resume` with `{ mode: "Continue" | "RerunUnderCurrentInstrument" }`; 409 with the moved hashes when the instrument changed.
+- `POST …/batteries/runs/{id}/cancel`: Cancel; 400 for a battery run already Completed, Cancelled or Failed. `POST …/batteries/runs/{id}/resume` with `{ mode: "Continue" | "RerunUnderCurrentInstrument" }`; 409 with the moved hashes when the instrument changed (a kept member graded under another scoring method included), and 409 while a member run is being re-run.
 - `DELETE …/batteries/runs/{id}?deleteMembers=false`: Delete a battery run with its analyses and battery-completion documents; with `deleteMembers=true`, its member runs too, through the single-run delete. 204; 409 while it is driven or live.
 - `POST …/batteries/runs/{id}/report-documents` (and `…/estimate`, `GET …/job`, `POST …/cancel`, `DELETE …/{documentId}`): The battery run's AI-written battery-completion documents, shaped like a run's run-completion endpoints below; see `ai-benchmark-report-pack.md` §§ 9 and 14.
 - `POST …/batteries/runs/reuse-preview`, `POST …/batteries/runs/{id}/members`, `GET …/batteries/runs/{id}/members/candidates?suiteIndex=&round=`: Preview which earlier runs a start would reuse, attach a run to a slot, and list the candidates for one slot.
-- `POST …/batteries/runs/{id}/analysis` (optional `{ compareWithBatteryRunId }`), `GET …/batteries/runs/{id}/analysis` (204 when none), `GET …/batteries/runs/{id}/report`: The composite analysis, the paired comparison, and the Markdown report from the persisted analysis.
+- `POST …/batteries/runs/{id}/analysis` (optional `{ compareWithBatteryRunId }`), `GET …/batteries/runs/{id}/analysis` (204 when none), `GET …/batteries/runs/{id}/report`: The composite analysis, the paired comparison, and the Markdown report from the persisted analysis. The `POST` first reconciles a `Stopped` or `CompletedWithErrors` battery run, and afterwards schedules its battery-completion documents when they are due.
 - `GET …/batteries/leaderboard?definitionSha256=`: The latest analysis of every battery run of one definition, ranked within each comparability class.
 
 > While a series or a battery is running it holds the orchestrator claim, and `POST runs`, `reassess`, `calibrate`, `answers/{answerId}/rerun`, `rerun-synthesis`, `retry-failed-assessments`, `retry-claim-verification` and `rerun-failed` all answer **409** with *"A benchmark series is running; wait for it or cancel it."* or *"A battery is running; wait for it or cancel it."*

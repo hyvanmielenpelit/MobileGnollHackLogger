@@ -32,10 +32,13 @@ using System.Text.RegularExpressions;
 /// function as a whole identifier and an integer within <see cref="DefinitionLineClaimTolerance"/>
 /// of the cited line, which the definition line settles; it gets the liveness check instead.
 ///
-/// A single-line, unranged reference to a <c>src/*.c</c> or <c>include/*.h</c> line inside a
-/// <c>#define</c> header — the <c>#define</c> line, or for a function-like macro one of the
-/// backslash-continued lines up to the one closing its parameter list — gets a note naming the
-/// macro, the same way. A line of the macro's body falls through to the other checks. An
+/// A single-line, unranged reference to a <c>src/*.c</c> or <c>include/*.h</c> line that holds
+/// only a <c>#define</c> header gets a note naming the macro, the same way. The header ends with the
+/// macro's name for an object-like macro, or with the <c>)</c> closing its parameter list for a
+/// function-like one; the backslash-continued lines before the one it ends on are header lines, and
+/// that line is one only when nothing but whitespace, a comment or a trailing <c>\</c> follows the
+/// header's end. A line carrying any of the macro's body — a one-line
+/// <c>#define BREATH_WEAPON_MANA_COST 15</c> included — falls through to the other checks. An
 /// <c>include/*.h</c> reference is checked for nothing else.
 ///
 /// A reference whose cited line, or every line of its cited range, is blank once comments are
@@ -318,10 +321,13 @@ public sealed class BenchmarkCitationLivenessCheck
         => last.Success ? $"{path}:{first}-{last.Value}" : $"{path}:{first}";
 
     /// <summary>
-    /// The name of the macro whose <c>#define</c> header holds line <paramref name="row"/> (0-based):
-    /// the <c>#define</c> line itself, or — when every line from it up to <paramref name="row"/> ends
-    /// in <c>\</c> — a line no later than <see cref="ParameterListEnd"/>. Null otherwise, including on
-    /// a line of the macro's body.
+    /// The name of the macro whose <c>#define</c> header holds line <paramref name="row"/> (0-based),
+    /// where the header ends with the macro's name for an object-like macro, or with the <c>)</c>
+    /// closing its parameter list for a function-like one (<see cref="HeaderEnd"/>). A row before the
+    /// header's last row, reached from the <c>#define</c> through rows that each end in <c>\</c>, is
+    /// a header row; the last row is one only when nothing but whitespace or a trailing <c>\</c>
+    /// follows the header's end on it (comments are already blanked). Null otherwise, including on a
+    /// row that carries the macro's body.
     /// </summary>
     private static string? MacroDefinedAt(string[] lines, int row)
     {
@@ -348,19 +354,25 @@ public sealed class BenchmarkCitationLivenessCheck
         }
 
         if (definitionRow < 0) return null;
-        return row <= ParameterListEnd(lines, definitionRow, define) ? define.Groups[1].Value : null;
+
+        var (headerRow, headerColumn) = HeaderEnd(lines, definitionRow, define);
+        if (row < headerRow) return define.Groups[1].Value;
+        if (row > headerRow) return null;
+
+        return IsBodyless(lines[row], headerColumn) ? define.Groups[1].Value : null;
     }
 
     /// <summary>
-    /// The row holding the closing <c>)</c> of a function-like macro's parameter list — the
-    /// character right after the name is <c>(</c> — scanning forward over backslash-continued rows;
-    /// <paramref name="definitionRow"/> for an object-like macro.
+    /// Where a macro's header ends: the row and the column just past the name for an object-like
+    /// macro, or for a function-like one — the character right after the name is <c>(</c> — just
+    /// past the <c>)</c> closing its parameter list, scanning forward over backslash-continued rows.
+    /// A parameter list that never closes ends its header at the end of the last row scanned.
     /// </summary>
-    private static int ParameterListEnd(string[] lines, int definitionRow, Match define)
+    private static (int Row, int Column) HeaderEnd(string[] lines, int definitionRow, Match define)
     {
         int column = define.Groups[1].Index + define.Groups[1].Length;
         string first = lines[definitionRow];
-        if (column >= first.Length || first[column] != '(') return definitionRow;
+        if (column >= first.Length || first[column] != '(') return (definitionRow, column);
 
         int last = Math.Min(lines.Length - 1, definitionRow + MaxMacroHeaderLines);
         int depth = 0;
@@ -376,13 +388,21 @@ public sealed class BenchmarkCitationLivenessCheck
                 else if (text[c] == ')')
                 {
                     depth--;
-                    if (depth == 0) return r;
+                    if (depth == 0) return (r, c + 1);
                 }
             }
 
-            if (!text.TrimEnd().EndsWith('\\')) return r;
+            if (!text.TrimEnd().EndsWith('\\')) return (r, text.Length);
         }
 
-        return last;
+        return (last, lines[last].Length);
+    }
+
+    /// <summary>True when <paramref name="line"/> holds nothing but whitespace, or a trailing <c>\</c>, from <paramref name="column"/> on.</summary>
+    private static bool IsBodyless(string line, int column)
+    {
+        string rest = column < line.Length ? line.Substring(column).Trim() : string.Empty;
+        if (rest.EndsWith('\\')) rest = rest.Substring(0, rest.Length - 1).TrimEnd();
+        return rest.Length == 0;
     }
 }

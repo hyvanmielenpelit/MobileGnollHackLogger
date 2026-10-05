@@ -770,24 +770,50 @@
   font-size: 12px;
   font-weight: 600;
   color: #8b8b90;
+
+  /* A programmatic focus target only (tabindex="-1"), ringed like the other ones. */
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
 }
 
-/* The summary line, the Clear selection button pushed to the inline end, and below both — on
-   their own line, forced by their own flex-basis — the chip row or the hint. */
+/* The summary line, and below it the chip row. */
 .mc-selection-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Nothing selected: the head shows nothing, so it takes no room in the band. The label, whose
+   text is visually hidden, leaves the flow (an absolutely positioned flex item gets no gap) and
+   is clipped like `.visually-hidden`, which cannot be put on the label itself: that class reveals
+   an element holding focus, and the label is focused after Clear selection. */
+.mc-selection-head--empty {
+  display: contents;
+
+  .mc-wizard-notice-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Clear selection first, then the chips, wrapping together. */
+.mc-selection-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-}
-
-.mc-selection-clear {
-  margin-inline-start: auto;
+  gap: 6px 8px;
 }
 
 .mc-selection-chips {
   display: flex;
-  flex-basis: 100%;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   gap: 6px;
   list-style: none;
@@ -821,18 +847,6 @@
   font-size: 12px;
   color: #e6e6e6;
   overflow-wrap: anywhere;
-}
-
-.mc-selection-remove {
-  width: 22px;
-  height: 22px;
-}
-
-.mc-wizard-selection-hint {
-  margin: 0;
-  flex-basis: 100%;
-  font-size: 12px;
-  color: #8b8b90;
 }
 
 /* The notices below the chip row, unchanged from what the band used to render on its own. */

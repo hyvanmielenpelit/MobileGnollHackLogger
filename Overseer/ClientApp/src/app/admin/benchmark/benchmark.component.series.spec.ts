@@ -423,7 +423,7 @@ describe('AdminBenchmarkComponent', () => {
         id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
       } as any));
       (ctx.monitor as any).pollSeries(8);
-      expect(playSpy).toHaveBeenCalledWith('series:8');
+      expect(playSpy).toHaveBeenCalledWith('series:8:Completed');
       expect(playSpy).toHaveBeenCalledTimes(1);
 
       // A later poll of the same, already-finished series must not chime a second time.
@@ -579,7 +579,7 @@ describe('AdminBenchmarkComponent', () => {
 
           expect(playSpy).toHaveBeenCalledTimes(1);
 
-          expect(playSpy).toHaveBeenCalledWith('series:8');
+          expect(playSpy).toHaveBeenCalledWith(`series:8:${status}`);
         });
       }
     });
@@ -646,6 +646,50 @@ describe('AdminBenchmarkComponent', () => {
 
       component.rerunFailedFromRunDetail(37);
 
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      component.closeRunProgressDialog();
+    });
+
+    // The two places Re-run failed questions is a button: the Summary alert and the progress footer.
+    const failedRun = (overrides: Record<string, unknown> = {}) => buildRun({
+      id: 37, completedAtUtc: '2026-09-02T00:05:00Z',
+      answers: [{ id: 1, orderIndex: 1, questionText: 'Q1', status: 'ProviderError', assessmentStatus: 'Failed' }],
+      ...overrides
+    });
+
+    it('arms from the Summary alert\'s Re-run failed questions, and not while it is aria-disabled', () => {
+      benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 37 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(failedRun()));
+      component.selectedRunDetail = failedRun({ isCurrentScoringMethod: false });
+      ctx.refresh();
+      const button = () => fixture.nativeElement.querySelector('#rr-rerun-failed-btn') as HTMLButtonElement;
+
+      expect(button().getAttribute('aria-disabled')).toBe('true');
+      button().click();
+      expect(armSpy).not.toHaveBeenCalled();
+      expect(benchmarkServiceMock.rerunFailedQuestions).not.toHaveBeenCalled();
+
+      component.selectedRunDetail = failedRun();
+      ctx.refresh();
+      button().click();
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      component.closeRunProgressDialog();
+    });
+
+    it('arms from the progress footer\'s Re-run failed questions, and not while it is aria-disabled', () => {
+      benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 37 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(failedRun()));
+      ctx.monitor.activeRunDetail = failedRun({ status: 'Canceled', isAborted: true });
+      ctx.refresh();
+      const button = () => fixture.nativeElement.querySelector('#runProgressRerunFailedBtn') as HTMLButtonElement;
+
+      expect(button().getAttribute('aria-disabled')).toBe('true');
+      button().click();
+      expect(armSpy).not.toHaveBeenCalled();
+
+      ctx.monitor.activeRunDetail = failedRun();
+      ctx.refresh();
+      button().click();
       expect(armSpy).toHaveBeenCalledTimes(1);
       component.closeRunProgressDialog();
     });
@@ -1086,12 +1130,25 @@ describe('AdminBenchmarkComponent', () => {
       });
     });
 
-    // Stopped is the one non-terminal end state, and the only one with a Continue button to offer.
+    // Stopped is the one non-terminal end state; it is continued from the progress dialog.
     it('should keep the series banner for a Stopped series, which is resumable', () => {
       attachSeries('Stopped');
 
       expect(ctx.monitor.seriesIsFinished).toBe(false);
       expect(ctx.runTab().seriesBannerVisible).toBe(true);
+    });
+
+    it('should give a Stopped series banner only Show Series Progress, and point Continue at the progress dialog', () => {
+      attachSeries('Stopped');
+      component.activeSubTab = 'run';
+      ctx.refresh();
+
+      const banner = fixture.nativeElement.querySelector('.series-banner') as HTMLElement;
+      const labels = Array.from(banner.querySelectorAll('button')).map(b => (b.textContent || '').replace(/\s+/g, ' ').trim());
+      expect(labels).toEqual(['Show Series Progress']);
+      expect(labels.some(l => l.startsWith('Continue'))).toBe(false);
+      expect(labels.some(l => l.includes('Re-run under current instrument'))).toBe(false);
+      expect((banner.textContent || '').replace(/\s+/g, ' ')).toContain('Continue from the progress dialog.');
     });
 
     ['Completed', 'Cancelled', 'Failed'].forEach(status => {

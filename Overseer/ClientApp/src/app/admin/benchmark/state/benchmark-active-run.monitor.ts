@@ -23,7 +23,7 @@ import { parseServerUtcDate } from '../../../utils/date.util';
 import { ELAPSED_TICK_MS, startElapsedTicker } from '../../../utils/elapsed-ticker';
 import { Subject, Subscription } from 'rxjs';
 import { refusalText, reportDocumentsStatusOf, formatStatus } from '../benchmark-run-format';
-import { batteryAwaitsPostRun } from '../batteries/battery.models';
+import { batteryAwaitsPostRun, batteryReportDocumentsStatusName, isLiveBatteryRunStatus } from '../batteries/battery.models';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkLauncherState } from './benchmark-launcher.state';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
@@ -320,8 +320,18 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   /** The battery run whose poller is live; while set it owns the background lock, as a series does. */
   private lockedBatteryRunId: number | null = null;
 
-  /** Battery runs the poller has observed live; a terminal poll chimes only for one of these. */
+  /**
+   * Battery runs this page saw move: a poll found them live or with post-run work, a start or
+   * Continue request for them succeeded, or a member's re-run handed its signal to them
+   * (`batteryTakesRunSignal`). A poll that finds one settled signals it, once.
+   */
   batteriesSeenLive = new Set<number>();
+
+  /**
+   * For a run seen Running that belongs to a battery run: that battery run and its status then (null
+   * while unknown). The run's terminal poll compares the battery run against it.
+   */
+  private readonly runBatteryAtStart = new Map<number, { batteryRunId: number; status: string | null }>();
 
   /** The Battery Progress dialog's visibility. The dialog element itself belongs to that component. */
   batteryDialogVisible = false;
@@ -472,6 +482,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         // Reuse is decided per start: the next start asks again.
         this.launcher.reuseEarlierRuns = false;
         this.launcher.refreshReusePreview();
+        this.batteriesSeenLive.add(res.batteryRunId);
         this.startBatteryPolling(res.batteryRunId);
         this.workspace.loadHistory();
         this.workspace.loadAllFootprints();
@@ -623,7 +634,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         } else if (this.seriesSeenLive.has(series.id) && (this.seriesIsFinished || this.seriesIsStopped)) {
           this.seriesSeenLive.delete(series.id);
           if (series.status !== 'Cancelled') {
-            this.signalCompletion(`series:${series.id}`);
+            this.signalCompletion(`series:${series.id}:${series.status}`);
           }
         }
         // The member currently running is what the single-run banner and dialog describe, so the
@@ -828,20 +839,22 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         this.batteryNextPollDueAtMs = 0;
         this.clearLostContact('battery');
         this.activeBatteryRun = batteryRun;
-        // A finished battery run is followed through its analysis and its AI-written reports.
+        // A battery run that is not live is followed while the server still works on it: a member
+        // repair, the analysis, the AI-written reports.
         const awaitsPostRun = !this.batteryIsLive && batteryAwaitsPostRun(batteryRun);
-        // One signal per battery run watched live, at whatever end it reaches except a cancel, once its
-        // post-run work has ended. Its members' own completions are accounted for here, so none of
-        // them signals afterwards.
-        if (this.batteryIsLive) {
+        // One signal per chain of server work this page saw, at whatever end it reaches except a
+        // cancel, once its post-run work has ended. Its members' own completions are accounted for
+        // here, so none of them signals afterwards.
+        if (this.batteryIsLive || awaitsPostRun) {
           this.batteriesSeenLive.add(batteryRun.id);
-        } else if (!awaitsPostRun && this.batteriesSeenLive.has(batteryRun.id)) {
+        } else if (this.batteriesSeenLive.has(batteryRun.id)) {
           this.batteriesSeenLive.delete(batteryRun.id);
           for (const member of batteryRun.members ?? []) {
             this.runsSeenLive.delete(member.runId);
+            this.runBatteryAtStart.delete(member.runId);
           }
           if (batteryRun.status !== 'Cancelled') {
-            this.signalCompletion(`battery:${batteryRun.id}`);
+            this.signalCompletion(BenchmarkActiveRunMonitor.batterySignalKey(batteryRun));
           }
         }
         // The run banner and dialog follow the member in flight, as they do for a series.
@@ -874,10 +887,40 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     });
   }
 
+  /**
+   * Reads a battery run into the banner's cached copy without touching `batteriesSeenLive` or the
+   * completion signal: what a refused request leaves behind.
+   */
+  private refreshBatteryRun(batteryRunId: number): void {
+    this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
+      next: (batteryRun) => {
+        if (batteryRunId === this.activeBatteryRunId || this.activeBatteryRun?.id === batteryRunId) {
+          this.activeBatteryRun = batteryRun;
+          this.viewSync.notify();
+        }
+      },
+      error: (err) => console.error('Failed to refresh benchmark battery run', err)
+    });
+  }
+
   /** Pending, Running or WaitingForCap: still going to launch members. */
   get batteryIsLive(): boolean {
-    const status = this.activeBatteryRun?.status;
-    return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
+    return isLiveBatteryRunStatus(this.activeBatteryRun?.status);
+  }
+
+  /**
+   * `battery:<id>:<latest analysis id>:<report documents status>`: a later chain of work on the same
+   * battery run ends in another analysis or documents state, so its signal is not a duplicate.
+   */
+  static batterySignalKey(batteryRun: BenchmarkBatteryRunDto): string {
+    return `battery:${batteryRun.id}:${batteryRun.latestAnalysisId ?? 0}`
+      + `:${batteryReportDocumentsStatusName(batteryRun.reportDocumentsStatus)}`;
+  }
+
+  /** `run:<id>:<completion time>`, the re-run's when there is one; `run:<id>` while no time is recorded. */
+  static runSignalKey(run: BenchmarkRunDetailDto): string {
+    const generation = run.rerunCompletedAtUtc ?? run.completedAtUtc;
+    return generation ? `run:${run.id}:${generation}` : `run:${run.id}`;
   }
 
   // --- Lost contact ---
@@ -942,14 +985,15 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
       error: (err) => {
         console.error('Failed to cancel benchmark battery run', err);
         this.batteryErrorMessage = refusalText(err, 'Failed to cancel the battery run.');
-        this.pollBatteryRun(batteryRunId);
+        this.refreshBatteryRun(batteryRunId);
       }
     });
   }
 
   /**
    * Continues a stopped battery run, or re-runs it under the current instrument after an instrument
-   * change, which supersedes its completed members.
+   * change, which supersedes its completed members. Only an accepted request makes the battery run
+   * one this page signals; a refusal refreshes the banner's copy and nothing else.
    */
   resumeActiveBattery(mode: BenchmarkBatteryResumeMode = 'Continue'): void {
     const batteryRunId = this.activeBatteryRunId;
@@ -960,15 +1004,76 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     this.benchmarkService.resumeBatteryRun(batteryRunId, mode).subscribe({
       next: () => {
         this.resumingBattery = false;
+        this.batteriesSeenLive.add(batteryRunId);
         this.startBatteryPolling(batteryRunId);
         this.viewSync.notify();
       },
       error: (err) => {
         this.resumingBattery = false;
         this.batteryErrorMessage = refusalText(err, 'Failed to continue the battery run.');
-        this.pollBatteryRun(batteryRunId);
+        this.refreshBatteryRun(batteryRunId);
         this.viewSync.notify();
       }
+    });
+  }
+
+  /**
+   * After a member run's re-run ended: a battery run the server is still working on, or one whose
+   * status moved while the run ran, signals for it, once its work is done. The battery run is read
+   * fresh, never from the banner's copy. Returns whether the battery run took over the signal.
+   */
+  private batteryTakesRunSignal(battery: BenchmarkBatteryRunDto, statusAtStart: string | null): boolean {
+    const moved = statusAtStart != null && battery.status !== statusAtStart;
+    if (!isLiveBatteryRunStatus(battery.status) && !batteryAwaitsPostRun(battery) && !moved
+      && !this.batteriesSeenLive.has(battery.id)) {
+      return false;
+    }
+    // One battery poller per page: one following another battery run that is still moving keeps it.
+    if (this.lockedBatteryRunId !== null && this.lockedBatteryRunId !== battery.id
+      && (this.batteryIsLive || batteryAwaitsPostRun(this.activeBatteryRun))) {
+      return false;
+    }
+    this.batteriesSeenLive.add(battery.id);
+    if (this.lockedBatteryRunId !== battery.id) {
+      this.activeBatteryRunId = battery.id;
+      this.activeBatteryRun = battery;
+      this.startBatteryPolling(battery.id);
+    }
+    return true;
+  }
+
+  /**
+   * The battery run a run belongs to, from what this page holds: the banner's battery run, the
+   * battery runs and runs Run History loaded. Null when none names it.
+   */
+  private batteryRunIdOf(runId: number): number | null {
+    const cached = this.activeBatteryRun;
+    if (cached && (cached.currentRunId === runId
+      || (cached.repairingRunIds ?? []).includes(runId)
+      || (cached.members ?? []).some(m => m.runId === runId))) {
+      return cached.id;
+    }
+    const listed = (this.workspace.batteryRuns ?? []).find(b =>
+      (b.repairingRunIds ?? []).includes(runId) || (b.members ?? []).some(m => m.runId === runId));
+    if (listed) return listed.id;
+    return (this.workspace.historyRuns ?? []).find(r => r.id === runId)?.batteryRunId ?? null;
+  }
+
+  /** Records the battery run of a run first seen Running, with its status then, read fresh when not cached. */
+  private noteRunBatteryAtStart(runId: number): void {
+    const batteryRunId = this.batteryRunIdOf(runId);
+    if (batteryRunId == null) return;
+    const cached = this.activeBatteryRun?.id === batteryRunId ? this.activeBatteryRun : null;
+    this.runBatteryAtStart.set(runId, { batteryRunId, status: cached?.status ?? null });
+    if (cached) return;
+    this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
+      next: (battery) => {
+        const start = this.runBatteryAtStart.get(runId);
+        if (start?.batteryRunId === batteryRunId && start.status == null) {
+          start.status = battery.status;
+        }
+      },
+      error: (err) => console.warn('Failed to read the battery run of a starting member run', err)
     });
   }
 
@@ -1081,20 +1186,37 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   /**
    * The run half of transition detection: chimes only for an id this poller watched Running, and
    * only when it is not a member of a series still live — a series chimes once for the whole
-   * group instead, via `signalCompletion` in `pollSeries`. A run ended by cancellation does not
-   * signal at all.
+   * group instead, via `signalCompletion` in `pollSeries`. A member of a battery run reads that
+   * battery run fresh first: when the battery run takes the signal (`batteryTakesRunSignal`), it
+   * signals once for both, after its own work. A run ended by cancellation does not signal at all.
    */
   private maybeSignalRunCompletion(run: BenchmarkRunDetailDto): void {
     if (!this.runsSeenLive.has(run.id)) return;
     this.runsSeenLive.delete(run.id);
     const cancelledByOperator = this.operatorCancelledRunIds.delete(run.id);
+    const start = this.runBatteryAtStart.get(run.id) ?? null;
+    this.runBatteryAtStart.delete(run.id);
     if (this.activeSeries != null && this.seriesIsLive) return;
-    if (this.activeBatteryRun != null && this.batteryIsLive) return;
-    // The battery signals once for its members, after its own post-run work.
-    const battery = this.activeBatteryRun;
-    if (battery != null && batteryAwaitsPostRun(battery) && (battery.members ?? []).some(m => m.runId === run.id)) return;
     if (cancelledByOperator || this.runEndedByCancellation(run)) return;
-    this.signalCompletion(`run:${run.id}`);
+    const batteryRunId = start?.batteryRunId ?? this.batteryRunIdOf(run.id);
+    if (batteryRunId == null) {
+      this.signalCompletion(BenchmarkActiveRunMonitor.runSignalKey(run), run);
+      return;
+    }
+    this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
+      next: (battery) => {
+        if (battery.status === 'Cancelled' || this.batteryTakesRunSignal(battery, start?.status ?? null)) return;
+        this.signalCompletion(BenchmarkActiveRunMonitor.runSignalKey(run), run);
+        this.viewSync.notify();
+      },
+      error: (err) => {
+        console.warn('Failed to read the battery run of a finished member run', err);
+        if (!this.batteriesSeenLive.has(batteryRunId)) {
+          this.signalCompletion(BenchmarkActiveRunMonitor.runSignalKey(run), run);
+          this.viewSync.notify();
+        }
+      }
+    });
   }
 
   /**
@@ -1118,7 +1240,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
    * that merely lacks focus (another window in front, not actually hidden) is not a case worth
    * special-casing away.
    */
-  private signalCompletion(key: string): void {
+  private signalCompletion(key: string, run: BenchmarkRunDetailDto | null = null): void {
     this.markTabTitleForCompletion();
 
     if (this.launcher.completionSound) {
@@ -1139,7 +1261,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     }
 
     if (this.launcher.completionNotification) {
-      const body = this.completionNotificationBody(key);
+      const body = this.completionNotificationBody(key, run);
       if (body) {
         const hidden = typeof document !== 'undefined' ? document.hidden : false;
         const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
@@ -1161,11 +1283,12 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   /**
    * `Run #54 — <suite name> — <status>`, `Series #N — k of n runs — <status>` or
-   * `Battery #N — <battery name> — k of K suites — <status>`.
+   * `Battery #N — <battery name> — k of K suites — <status>`. A run's body is read from `signaled`,
+   * else from the live run.
    */
-  private completionNotificationBody(key: string): string | null {
+  private completionNotificationBody(key: string, signaled: BenchmarkRunDetailDto | null = null): string | null {
     if (key.startsWith('run:')) {
-      const run = this.activeRunDetail;
+      const run = signaled ?? this.activeRunDetail;
       if (!run) return null;
       return `Run #${run.id} — ${run.suiteName} — ${formatStatus(run.status)}`;
     }
@@ -1304,7 +1427,10 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         }
         const statusStr = formatStatus(run.status);
         if (statusStr === 'Running') {
-          this.runsSeenLive.add(run.id);
+          if (!this.runsSeenLive.has(run.id)) {
+            this.runsSeenLive.add(run.id);
+            this.noteRunBatteryAtStart(run.id);
+          }
           this.rerunLaunchPending = false;
           this.rerunLaunchedAtMs = null;
           if (this.runTerminalSeenAt?.runId === run.id) {

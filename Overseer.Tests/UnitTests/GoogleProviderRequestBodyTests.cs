@@ -323,4 +323,57 @@ public class GoogleProviderRequestBodyTests
         Assert.Equal("model", contents[1].GetProperty("role").GetString());
         Assert.DoesNotContain("GAME CONTEXT BOARD", contents.GetRawText());
     }
+
+    [Fact]
+    public void AppendUserTextToHistory_JoinsTheTrailingFunctionResponseContent()
+    {
+        var provider = CreateProvider();
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            new { role = "user", content = "Investigate something" }
+        });
+
+        var toolCalls = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\":\"tc_1\",\"name\":\"wiki_search\",\"arguments\":\"{}\"}").RootElement
+        };
+        provider.AppendAssistantToolCallsToHistory(prepared, "", toolCalls, null);
+        provider.AppendToolResultsToHistory(prepared, new List<ProviderToolResult>
+        {
+            new ProviderToolResult { ToolCallId = "tc_1", ToolName = "wiki_search", Content = "Found it.", Success = true }
+        });
+
+        provider.AppendUserTextToHistory(prepared, "Answer now.");
+
+        using var doc = JsonDocument.Parse(SerializeBody(provider, prepared));
+        var contents = doc.RootElement.GetProperty("contents");
+        Assert.Equal(3, contents.GetArrayLength());
+        Assert.Equal("user", contents[2].GetProperty("role").GetString());
+        var parts = contents[2].GetProperty("parts");
+        Assert.Equal(2, parts.GetArrayLength());
+        Assert.True(parts[0].TryGetProperty("functionResponse", out _));
+        Assert.Equal("Answer now.", parts[1].GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void AppendUserTextToHistory_AddsAUserContentWhenTheLastContentIsNotFunctionResponses()
+    {
+        var provider = CreateProvider();
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            new { role = "user", content = "Question" },
+            new { role = "assistant", content = "Partial answer" }
+        });
+
+        provider.AppendUserTextToHistory(prepared, "Answer now.");
+
+        using var doc = JsonDocument.Parse(SerializeBody(provider, prepared));
+        var contents = doc.RootElement.GetProperty("contents");
+        Assert.Equal(3, contents.GetArrayLength());
+        Assert.Equal("model", contents[1].GetProperty("role").GetString());
+        Assert.Equal("user", contents[2].GetProperty("role").GetString());
+        var parts = contents[2].GetProperty("parts");
+        Assert.Equal(1, parts.GetArrayLength());
+        Assert.Equal("Answer now.", parts[0].GetProperty("text").GetString());
+    }
 }

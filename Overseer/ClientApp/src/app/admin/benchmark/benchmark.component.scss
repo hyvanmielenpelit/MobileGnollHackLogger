@@ -858,12 +858,9 @@
 .second-opinion-trigger { color: #888; }
 .unverified-claim-list { margin: 4px 0; padding-left: 20px; }
 
-// The trial re-assess is outlined rather than filled, because it is the action that changes
-// nothing: the filled neighbour moves the published index and these two must not look alike.
-.btn-gh-trial {
-  border-style: dashed;
-  font-weight: 500;
-}
+// Why an aria-disabled repair action cannot run now, beside or under it.
+.repair-reason { font-size: var(--text-secondary); color: #aaa; }
+p.repair-reason { margin: 6px 0 0; }
 
 .calibration-panel {
   overflow-wrap: anywhere;

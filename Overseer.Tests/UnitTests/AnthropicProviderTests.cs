@@ -112,6 +112,68 @@ public class AnthropicProviderTests
     }
 
     [Fact]
+    public void AppendUserTextToHistory_JoinsTheTrailingToolResultsMessage()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            provider.FormatMessage("system", "Instructions", null),
+            provider.FormatMessage("user", "Investigate something", null)
+        });
+
+        var toolCalls = new List<JsonElement>
+        {
+            JsonDocument.Parse("{\"id\":\"tc_1\",\"name\":\"wiki_search\",\"arguments\":\"{}\"}").RootElement
+        };
+        provider.AppendAssistantToolCallsToHistory(prepared, "", toolCalls, null);
+        provider.AppendToolResultsToHistory(prepared, new List<ProviderToolResult>
+        {
+            new ProviderToolResult { ToolCallId = "tc_1", ToolName = "wiki_search", Content = "Found it.", Success = true }
+        });
+        int countBefore = prepared.Count;
+
+        provider.AppendUserTextToHistory(prepared, "Answer now.");
+
+        Assert.Equal(countBefore, prepared.Count);
+        var last = prepared[^1];
+        Assert.Equal("user", ProviderHelper.GetProperty(last, "role")?.ToString());
+        var blocks = Assert.IsAssignableFrom<IEnumerable<object>>(ProviderHelper.GetProperty(last, "content")).ToList();
+        Assert.Equal(2, blocks.Count);
+        Assert.Equal("tool_result", ProviderHelper.GetProperty(blocks[0], "type")?.ToString());
+        Assert.Equal("text", ProviderHelper.GetProperty(blocks[1], "type")?.ToString());
+        Assert.Equal("Answer now.", ProviderHelper.GetProperty(blocks[1], "text")?.ToString());
+
+        var requestBody = provider.BuildChatRequestBody("claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest());
+        var messages = requestBody["messages"] as List<object>;
+        Assert.NotNull(messages);
+        Assert.Equal(
+            new[] { "user", "assistant", "user" },
+            messages.Select(m => ProviderHelper.GetProperty(m, "role")?.ToString()).ToArray());
+    }
+
+    [Fact]
+    public void AppendUserTextToHistory_AddsAUserMessageWhenTheLastMessageIsNotAUserMessage()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            provider.FormatMessage("user", "Question", null),
+            provider.FormatMessage("assistant", "Partial answer", null)
+        });
+        int countBefore = prepared.Count;
+
+        provider.AppendUserTextToHistory(prepared, "Answer now.");
+
+        Assert.Equal(countBefore + 1, prepared.Count);
+        Assert.Equal("assistant", ProviderHelper.GetProperty(prepared[^2], "role")?.ToString());
+        var last = prepared[^1];
+        Assert.Equal("user", ProviderHelper.GetProperty(last, "role")?.ToString());
+        var block = Assert.Single(Assert.IsAssignableFrom<IEnumerable<object>>(ProviderHelper.GetProperty(last, "content")));
+        Assert.Equal("text", ProviderHelper.GetProperty(block, "type")?.ToString());
+        Assert.Equal("Answer now.", ProviderHelper.GetProperty(block, "text")?.ToString());
+    }
+
+    [Fact]
     public async Task ParseStreamAsync_WithMessageStartServiceTier_EmitsServiceTierEvent()
     {
         var provider = new AnthropicProvider(CreateConfig());

@@ -32,6 +32,7 @@ import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component
 import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPTY } from 'rxjs';
 import { debounce, tap, switchMap, catchError, filter, timeout } from 'rxjs/operators';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
+import { parseServerUtcDate } from '../utils/date.util';
 
 /** The data classes outbound masking can recognise, named as `POST /api/settings/dlp` accepts them. */
 export type DlpMaskClass = keyof DlpSettings;
@@ -919,7 +920,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (!model.isOperatorVerified) {
       return 'self-declared';
     }
-    const stamp = this.formatStamp(model.postureVerifiedUtc);
+    const stamp = this.formatCalendarDate(model.postureVerifiedUtc);
     return stamp ? `verified ${stamp}` : 'verified';
   }
 
@@ -930,6 +931,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** Local calendar date for a stored UTC timestamp, or '' when nothing has been recorded. */
   formatStamp(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const parsed = parseServerUtcDate(iso);
+    return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
+  }
+
+  /**
+   * A date entered as a calendar date (stored as its midnight, with no zone), shown as that same
+   * date in every time zone, or '' when nothing has been recorded.
+   */
+  formatCalendarDate(iso: string | null | undefined): string {
     if (!iso) return '';
     const parsed = new Date(iso);
     return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();

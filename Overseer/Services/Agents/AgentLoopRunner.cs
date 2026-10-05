@@ -15,6 +15,13 @@ public class AgentLoopRunner
     /// <summary>How much of a non-2xx response body is logged and carried on the error event.</summary>
     private const int MaxLoggedErrorBodyLength = 1000;
 
+    /// <summary>
+    /// User text appended to the turn's own history before the forced final model call, once per
+    /// turn. Never yielded as a chat event and never stored.
+    /// </summary>
+    public const string ForcedFinalInstruction =
+        "No more tool calls are available in this turn. Answer now from the tool results above, in the format the request asked for.";
+
     private readonly Dictionary<string, IAiProvider> _aiProviders;
     private readonly ToolRegistry _toolRegistry;
     private readonly ToolExecutor _toolExecutor;
@@ -127,6 +134,7 @@ public class AgentLoopRunner
         bool wasTruncatedByMaxTokens = false;
         bool hitBudgetLimit = false;
         bool hitIterationLimit = false;
+        bool forcedFinalInstructionAppended = false;
 
         int maxTurnResultLength = _configuration.GetValue<int>("ToolExecutionLimits:MaxTurnResultLength", 120000);
         int cumulativeTurnResultLength = 0;
@@ -136,8 +144,10 @@ public class AgentLoopRunner
 
         while (toolIterations <= maxToolIterations && hasToolsToRun && !cancellationToken.IsCancellationRequested)
         {
+            bool forcingFinalResponse = false;
             if (budget != null && !budget.TryIncrementModelCall())
             {
+                forcingFinalResponse = true;
                 hitBudgetLimit = true;
                 if (request.ShowDebugLog)
                 {
@@ -154,12 +164,22 @@ public class AgentLoopRunner
             }
             else if (toolIterations == maxToolIterations && hasToolsToRun)
             {
+                forcingFinalResponse = true;
                 hitIterationLimit = true;
                 yield return new ChatEvent { Type = "tool_error", Data = "Tool call limit reached. Forcing final response." };
                 enableToolUse = false;
                 enableWebSearch = false;
                 enableClientTools = false;
                 enableGameActions = false;
+            }
+
+            // Only after a tool round of this turn, whose results then end the history. A call
+            // that never ran tools (MaxToolIterations 0, or a budget spent before the first call)
+            // is sent unchanged.
+            if (forcingFinalResponse && toolIterations > 0 && !forcedFinalInstructionAppended)
+            {
+                aiProvider.AppendUserTextToHistory(messageHistory, ForcedFinalInstruction);
+                forcedFinalInstructionAppended = true;
             }
 
             hasToolsToRun = false;

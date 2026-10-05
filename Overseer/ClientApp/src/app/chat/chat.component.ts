@@ -16,6 +16,7 @@ import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.
 import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
+import { parseServerUtcDate } from '../utils/date.util';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Observable, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
@@ -2795,7 +2796,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           }
           this.sessions.sort((a, b) => {
             if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
-            return new Date(b.lastMessageUtc).getTime() - new Date(a.lastMessageUtc).getTime();
+            return parseServerUtcDate(b.lastMessageUtc).getTime() - parseServerUtcDate(a.lastMessageUtc).getTime();
           });
           this.cdr.detectChanges();
         }

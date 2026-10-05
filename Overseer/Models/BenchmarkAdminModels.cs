@@ -397,6 +397,10 @@ public class BenchmarkFootprintDto
 
 public class RescoreRunRequest
 {
+    /// <summary>
+    /// Ignored: a re-score always uses the run's own scoring profile. Kept so a body that still
+    /// carries it binds.
+    /// </summary>
     public long? ScoringProfileId { get; set; }
 }
 
@@ -998,6 +1002,14 @@ public class BenchmarkRunDetailDto
     public int? ScoringProfileSecondOpinionQualityThreshold { get; set; }
     public int? ScoringProfileSecondOpinionOutlierDeltaPoints { get; set; }
     public int ScoringMethodVersion { get; set; }
+
+    /// <summary>
+    /// True when the run was graded under the scoring method this build grades under
+    /// (<c>BenchmarkService.IsCurrentScoringMethod</c>); every action that grades part of the run
+    /// is refused otherwise.
+    /// </summary>
+    public bool IsCurrentScoringMethod { get; set; }
+
     public string? HarnessVersion { get; set; }
     public int? MaxToolCallsPerQuestionUsed { get; set; }
     public int DegradedAnswerCount { get; set; }

@@ -18,7 +18,6 @@ import {
   BenchmarkBatteryLeaderboardDto,
   BenchmarkBatteryLeaderboardRowDto,
   BenchmarkBatteryMemberDto,
-  BenchmarkBatteryResumeMode,
   BenchmarkBatteryRunDto,
   BenchmarkBatteryRunSuiteDto,
   BenchmarkPairComparisonDto
@@ -72,6 +71,7 @@ import {
   BenchmarkBatteryOverallIndex,
   BenchmarkBatteryStatisticsResult,
   BenchmarkBatterySuiteProfile,
+  batteryAwaitsPostRun,
   batteryRunStatusLabel,
   batterySchemeLabel,
   formatCost,
@@ -199,7 +199,7 @@ export function readStoredBatteryRunHeaderOpen(): boolean {
 // Header actions, paired test and diagnostics
 // -----------------------------------------------------------------------------------------------
 
-export type BatteryRunReportActionKey = 'recompute' | 'continue' | 'rerun' | 'progress';
+export type BatteryRunReportActionKey = 'recompute' | 'progress';
 
 /** One item of the Actions popover; `reason` set means it is unavailable and says why. */
 export interface BatteryRunReportAction {
@@ -422,11 +422,6 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
   analysisError: string | null = null;
   recomputing = false;
 
-  resumeInFlight = false;
-  /** A Continue refused for a moved instrument: the re-run is offered even without that stop reason. */
-  resumeRefusedForInstrument = false;
-  actionError: string | null = null;
-
   tab: BatteryRunReportTabKey = 'summary';
   headerDetailsOpen = readStoredBatteryRunHeaderOpen();
   actionsOpen = false;
@@ -542,9 +537,6 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     this.analysisLoading = false;
     this.analysisError = null;
     this.recomputing = false;
-    this.resumeInFlight = false;
-    this.resumeRefusedForInstrument = false;
-    this.actionError = null;
     this.actionsOpen = false;
     this.copyStatus = '';
     this.keyFiguresExporting = false;
@@ -839,19 +831,15 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
 
   // --- Actions popover ---
 
-  get stoppedOnInstrument(): boolean {
-    return this.detail?.stopReason === 'InstrumentChanged';
-  }
-
-  /** The Actions popover's items; an unavailable one carries its reason. */
+  /**
+   * The Actions popover's items; an unavailable one carries its reason. Continue and Re-run under
+   * current instrument live in the battery progress dialog, which *Show progress* opens.
+   */
   get reportActions(): BatteryRunReportAction[] {
     const detail = this.detail;
     if (!detail) {
       return [];
     }
-    const live = this.isLive;
-    const stillRunning = 'The battery run is still running.';
-    const resuming = this.resumeInFlight ? 'A resume is in progress.' : null;
 
     const recompute: BatteryRunReportAction = {
       key: 'recompute',
@@ -859,37 +847,15 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
       reason: this.recomputing ? 'The analysis is being computed.' : null
     };
 
-    let continueReason: string | null;
-    if (live) {
-      continueReason = stillRunning;
-    } else if (this.stoppedOnInstrument || this.resumeRefusedForInstrument) {
-      continueReason = 'The instrument changed; re-run under the current instrument instead.';
-    } else if (!detail.resumable) {
-      continueReason = 'Only a stopped battery run, or one completed with an empty slot, can continue.';
-    } else {
-      continueReason = resuming;
-    }
-
-    let rerunReason: string | null;
-    if (live) {
-      rerunReason = stillRunning;
-    } else if (!((this.stoppedOnInstrument && (detail.resumable || detail.status === 'Stopped')) || this.resumeRefusedForInstrument)) {
-      rerunReason = 'Only a battery run stopped by an instrument change is re-run under the current instrument.';
-    } else {
-      rerunReason = resuming;
-    }
-
     let progressReason: string | null = null;
     if (!this.monitor) {
       progressReason = 'Battery progress is not available here.';
-    } else if (!live && !detail.resumable && detail.status !== 'Stopped') {
+    } else if (!this.isLive && !detail.resumable && detail.status !== 'Stopped' && !batteryAwaitsPostRun(detail)) {
       progressReason = 'The battery run has finished.';
     }
 
     return [
       recompute,
-      { key: 'continue', label: 'Continue battery', reason: continueReason },
-      { key: 'rerun', label: 'Re-run under current instrument', reason: rerunReason },
       { key: 'progress', label: 'Show progress', reason: progressReason }
     ];
   }
@@ -902,12 +868,6 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     switch (action.key) {
       case 'recompute':
         this.recompute();
-        break;
-      case 'continue':
-        this.resume('Continue');
-        break;
-      case 'rerun':
-        this.resume('RerunUnderCurrentInstrument');
         break;
       case 'progress':
         this.showProgress();
@@ -975,37 +935,6 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
         if (token !== this.loadToken) return;
         this.recomputing = false;
         this.analysisError = httpErrorText(err, 'The analysis could not be computed.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  private resume(mode: BenchmarkBatteryResumeMode): void {
-    const id = this.detail?.id;
-    if (id == null || this.resumeInFlight) {
-      return;
-    }
-    // Synchronous, inside the action's click gesture, so the completion sound may play later from a hidden tab.
-    this.monitor?.armCompletionSignalsFromGesture();
-    const token = this.loadToken;
-    this.resumeInFlight = true;
-    this.actionError = null;
-    this.cdr.markForCheck();
-    this.benchmarkService.resumeBatteryRun(id, mode).subscribe({
-      next: () => {
-        if (token !== this.loadToken) return;
-        this.resumeInFlight = false;
-        this.resumeRefusedForInstrument = false;
-        this.refreshDetail();
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        if (token !== this.loadToken) return;
-        this.resumeInFlight = false;
-        this.actionError = httpErrorText(err, 'The battery run could not be resumed.');
-        if (mode === 'Continue' && (err as { status?: number } | null)?.status === 409) {
-          this.resumeRefusedForInstrument = true;
-        }
         this.cdr.markForCheck();
       }
     });

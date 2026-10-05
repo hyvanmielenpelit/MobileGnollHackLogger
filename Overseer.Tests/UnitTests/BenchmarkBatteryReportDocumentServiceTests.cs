@@ -144,6 +144,30 @@ public class BenchmarkBatteryReportDocumentServiceTests
         Assert.Equal(1, h.Writer.JobCalls);
     }
 
+    /// <summary>
+    /// A battery run that first finished CompletedWithErrors and was completed by a member repair, with
+    /// its analysis recomputed, is due like any finished battery run while it has no document, and is
+    /// not once it has one.
+    /// </summary>
+    [Fact]
+    public async Task ARepairedBatteryRun_WithAWriterAndNoDocument_IsDue_AndWithADocument_IsNot()
+    {
+        foreach (bool withDocument in new[] { false, true })
+        {
+            await using var h = await BatteryReportHarness.CreateAsync();
+            await h.MarkRepairedAsync(repairedRunId: 2);
+            if (withDocument) await h.AddDocumentAsync(h.BatteryRunId, BenchmarkReportAudience.TechnicalReport);
+
+            await h.Service.ScheduleIfDue(h.BatteryRunId);
+
+            Assert.Equal(withDocument ? 0 : 1, h.Writer.JobCalls);
+            Assert.Equal(withDocument ? 1 : 2, (await h.DocumentsAsync()).Count);
+            Assert.Equal(
+                withDocument ? BenchmarkRunReportDocumentsStatus.NotRequested : BenchmarkRunReportDocumentsStatus.Completed,
+                await h.StatusAsync());
+        }
+    }
+
     [Fact]
     public async Task TheStatus_MovesFromPendingThroughWritingToCompleted()
     {
@@ -606,6 +630,26 @@ internal sealed class BatteryReportHarness : IAsyncDisposable
         db.SystemAiApiConfigurations.Add(config);
         await db.SaveChangesAsync(Ct);
         return config.Id;
+    }
+
+    /// <summary>
+    /// Makes the battery run one that a member repair completed: <paramref name="repairedRunId"/> was
+    /// re-run after the battery run first finished, and the battery run is Completed with no error
+    /// message and its first finish time.
+    /// </summary>
+    public async Task MarkRepairedAsync(long repairedRunId)
+    {
+        await using var db = new ApplicationDbContext(Options);
+        var batteryRun = await db.BenchmarkBatteryRuns.IgnoreAutoIncludes().SingleAsync(b => b.Id == BatteryRunId, Ct);
+        var run = await db.BenchmarkRuns.IgnoreAutoIncludes().SingleAsync(r => r.Id == repairedRunId, Ct);
+        DateTime firstFinished = batteryRun.CompletedAtUtc!.Value;
+
+        run.RerunStartedAtUtc = firstFinished.AddMinutes(30);
+        run.RerunCompletedAtUtc = firstFinished.AddMinutes(42);
+        batteryRun.Status = BenchmarkRunSeriesStatus.Completed;
+        batteryRun.ErrorMessage = null;
+        batteryRun.CompletedMemberCount = 2;
+        await db.SaveChangesAsync(Ct);
     }
 
     /// <summary>A second round of suite A, attached after the analysis, which leaves the analysis stale.</summary>

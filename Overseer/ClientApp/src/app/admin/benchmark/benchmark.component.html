@@ -310,7 +310,7 @@
                where a run's progress is actually visible, so it is offered first. -->
           @if (isRunBusy()) {
             <div class="retry-progress-strip mb-20" role="status">
-              <span>Retry in progress on this run…</span>
+              <span>{{ runBusyStripText }}</span>
               <button type="button" class="btn-gh" (click)="openRunProgressForSelectedRun()">
                 Open run dialog
               </button>
@@ -582,7 +582,9 @@
               <p class="rr-figures-empty">No key figures are selected. Use Choose figures to show them.</p>
             }
 
-            @if (failedAnswers().length > 0 && (formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled' || formatStatus(selectedRunDetail.status) === 'CompletedWithErrors')) {
+            <!-- The alert's one contextual action; the Re-run menu's item of the same name is its permanent home. -->
+            @let failedRerunGate = runFailedQuestionsGate(selectedRunDetail);
+            @if (failedRerunGate.visible) {
               <div class="alert mb-20"
                    [class.alert-danger]="formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled'"
                    [class.alert-warning]="formatStatus(selectedRunDetail.status) === 'CompletedWithErrors'"
@@ -605,10 +607,16 @@
                     }
                   </div>
                   <div class="alert-actions">
-                    <button type="button" class="btn-gh" (click)="rerunFailedFromRunDetail(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-                      Re-run Failed Questions
+                    <button type="button" class="btn-gh" id="rr-rerun-failed-btn"
+                            [attr.aria-disabled]="failedRerunGate.disabledReason ? 'true' : null"
+                            [attr.aria-describedby]="failedRerunGate.disabledReason ? 'rr-rerun-failed-reason' : null"
+                            (click)="onRerunFailedFromRunDetail(failedRerunGate, selectedRunDetail.id)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                      Re-run failed questions
                     </button>
+                    @if (failedRerunGate.disabledReason) {
+                      <span class="repair-reason" id="rr-rerun-failed-reason">{{ failedRerunGate.disabledReason }}</span>
+                    }
                   </div>
                 </div>
               </div>
@@ -1441,14 +1449,22 @@
                         }
                       </div>
 
+                      <!-- Each disabled action is described by the line under the row that gives its reason. -->
+                      @let qr = questionRepairs(selectedRunDetail, ans);
                       <div class="mt-15 flex-row gap-10 question-actions">
-                        <button type="button" class="btn-ghost" (click)="openRetryDialog('question', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || rerunningAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
+                        <button type="button" class="btn-ghost" data-repair="rerun-question"
+                                [attr.aria-disabled]="qr.rerun.disabledReason ? 'true' : null"
+                                [attr.aria-describedby]="qr.rerun.disabledReason ? 'q-repair-reason-' + ans.orderIndex + '-' + qr.reasons.indexOf(qr.rerun.disabledReason) : null"
+                                (click)="onQuestionRepair(qr.rerun, 'question', selectedRunDetail.id, ans)">
                           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                          {{ rerunningAnswerId === ans.id ? 'Re-running...' : 'Re-run Question' }}
+                          {{ rerunningAnswerId === ans.id ? 'Re-running…' : 'Re-run question' }}
                         </button>
-                        <button type="button" class="btn-ghost" (click)="openRetryDialog('assessment', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || reassessingAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
+                        <button type="button" class="btn-ghost" data-repair="reassess"
+                                [attr.aria-disabled]="qr.reassess.disabledReason ? 'true' : null"
+                                [attr.aria-describedby]="qr.reassess.disabledReason ? 'q-repair-reason-' + ans.orderIndex + '-' + qr.reasons.indexOf(qr.reassess.disabledReason) : null"
+                                (click)="onQuestionRepair(qr.reassess, 'assessment', selectedRunDetail.id, ans)">
                           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                          {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : (isAssessmentFailed(ans) ? 'Retry Assessment' : 'Re-assess Question') }}
+                          {{ reassessingAnswerId === ans.id ? 'Re-assessing…' : 'Re-assess question' }}
                         </button>
                         <!--
                           One of these changes the published index and one does not, which is the most
@@ -1459,18 +1475,23 @@
                           In a panel run the second-opinion slot holds the reference reader's verdict,
                           which a trial may never replace, so the trial is offered only where it is empty.
                         -->
-                        @if (canTrialReassess(ans)) {
-                          <button type="button" class="btn-ghost btn-gh-trial" (click)="openRetryDialog('trial', selectedRunDetail.id, ans)"
-                                  [disabled]="isRunBusy() || trialReassessingAnswerId === ans.id"
+                        @if (qr.trial.visible) {
+                          <button type="button" class="btn-ghost" data-repair="trial"
+                                  [attr.aria-disabled]="qr.trial.disabledReason ? 'true' : null"
+                                  [attr.aria-describedby]="qr.trial.disabledReason ? 'q-repair-reason-' + ans.orderIndex + '-' + qr.reasons.indexOf(qr.trial.disabledReason) : null"
+                                  (click)="onQuestionRepair(qr.trial, 'trial', selectedRunDetail.id, ans)"
                                   [attr.interestfor]="'tip-trial-' + ans.orderIndex"
                                   [attr.style]="'anchor-name: --tip-trial-' + ans.orderIndex">
                             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3z"></path><line x1="9" y1="3" x2="15" y2="3"></line></svg>
-                            {{ trialReassessingAnswerId === ans.id ? 'Trying...' : 'Try another assessor (does not change the score)' }}
+                            {{ trialReassessingAnswerId === ans.id ? 'Trying…' : 'Try another assessor (does not change the score)' }}
                           </button>
                           <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'tip-trial-' + ans.orderIndex"
                                [attr.style]="'position-anchor: --tip-trial-' + ans.orderIndex">Records another assessor's verdict in the second-reader slot. Changes no score, level, flag or index.</div>
                         }
                       </div>
+                      @for (reason of qr.reasons; track reason; let r = $index) {
+                        <p class="repair-reason question-repair-reason" [id]="'q-repair-reason-' + ans.orderIndex + '-' + r">{{ reason }}</p>
+                      }
                     </div>
                   }
                 </div>
@@ -1780,7 +1801,8 @@
 </dialog>
 
 <!-- The Download Center of the run report's Downloads. -->
-<app-benchmark-download-center #runDownloadCenter (closed)="onRunDownloadsClosed()"></app-benchmark-download-center>
+<app-benchmark-download-center #runDownloadCenter (closed)="onRunDownloadsClosed()"
+                               (openBatteryDownloads)="openBatteryDownloads($event)"></app-benchmark-download-center>
 
 
 <!-- CONFIRM ACTION DIALOG -->
@@ -1964,8 +1986,8 @@
         <button type="button" class="btn-gh" (click)="assessAgain()">Assess Again</button>
         @if (difficulty.failedDifficultyItems.length > 0) {
           <button type="button" class="btn-gh" [disabled]="difficultyJobStarting" (click)="retryFailedQuestions()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-            Retry Failed Questions
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Retry failed questions
           </button>
         }
       }
@@ -1974,20 +1996,22 @@
 </dialog>
 
 <!-- RETRY / RE-ASSESS DIALOG -->
-<dialog #retryDialog class="gh-dialog benchmark-form-dialog retry-dialog" (cancel)="closeRetryDialog()">
+<!-- The title, the item that opened it and the confirm button share one label. -->
+<dialog #retryDialog class="gh-dialog benchmark-form-dialog retry-dialog" aria-labelledby="retryDialogTitle" (cancel)="closeRetryDialog()">
   <div class="dialog-content flex-col">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3>
-          @if (retryScope === 'assessment') { Re-assess Question }
-          @else if (retryScope === 'question') { Re-run Question }
-          @else if (retryScope === 'synthesis') { Re-run Final Synthesis }
-          @else if (retryScope === 'assessments') { Retry Failed Assessments }
-          @else if (retryScope === 'claim-verification') { Retry Claim Verification }
+        <h3 id="retryDialogTitle">
+          @if (retryScope === 'assessment') { Re-assess question }
+          @else if (retryScope === 'trial') { Try another assessor }
+          @else if (retryScope === 'question') { Re-run question }
+          @else if (retryScope === 'synthesis') { Re-run final synthesis }
+          @else if (retryScope === 'assessments') { Retry failed assessments }
+          @else if (retryScope === 'claim-verification') { Retry claim verification }
         </h3>
       </div>
       <button type="button" class="btn-icon-action" aria-label="Close retry dialog" (click)="closeRetryDialog()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
@@ -1997,6 +2021,8 @@
       <p class="text-muted mb-15">
         @if (retryScope === 'assessment') {
           Re-assessing Q{{ retryAnswer?.orderIndex }}: {{ retryAnswer?.questionText }}.
+        } @else if (retryScope === 'trial') {
+          Grades this answer with the model you choose and shows the verdict beside the panel's. The score does not change.
         } @else if (retryScope === 'question') {
           Re-running the model and re-assessing Q{{ retryAnswer?.orderIndex }}: {{ retryAnswer?.questionText }}. The previous answer will be overwritten.
         } @else if (retryScope === 'synthesis') {
@@ -2069,15 +2095,15 @@
     <div class="dialog-footer">
       <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRetryDialog()">Cancel</button>
       <button type="button" class="btn-gh"
-              aria-label="Confirm retry action"
               [disabled]="!retryUsesPanelMembers && !retryAssessorConfigId"
               (click)="confirmRetry()">
-        @if (retryScope === 'assessment') { Re-assess }
-        @else if (retryScope === 'question') { Re-run Question }
-        @else if (retryScope === 'synthesis') { Re-run Synthesis }
-        @else if (retryScope === 'assessments') { Retry Assessments }
-        @else if (retryScope === 'claim-verification') { Retry Claim Verification }
-        @else { Retry }
+        @if (retryScope === 'assessment') { Re-assess question }
+        @else if (retryScope === 'trial') { Try another assessor }
+        @else if (retryScope === 'question') { Re-run question }
+        @else if (retryScope === 'synthesis') { Re-run final synthesis }
+        @else if (retryScope === 'assessments') { Retry failed assessments }
+        @else if (retryScope === 'claim-verification') { Retry claim verification }
+        @else { Confirm }
       </button>
     </div>
   </div>
@@ -2306,7 +2332,7 @@
 
         @if (runHasRerunScope) {
           <p class="rerun-scope-badge">
-            Re-running {{ effectiveRerunScope.length }} failed
+            Re-running {{ effectiveRerunScope.length }}{{ rerunScopeIsQuestionRerun ? '' : ' failed' }}
             {{ effectiveRerunScope.length === 1 ? 'question' : 'questions' }}. Every question of
             the suite is listed under <strong>Questions</strong>; the re-run ones are marked.
           </p>
@@ -2479,7 +2505,7 @@
               <span class="job-item-index">Q{{ row.orderIndex }}</span>
               <span class="job-item-excerpt">{{ row.questionText }}</span>
               @if (isRerunScope(row)) {
-                <span class="job-item-rerun-marker" title="Being re-run">re-run</span>
+                <span class="job-item-rerun-marker"><span aria-hidden="true">re-run</span><span class="visually-hidden">Being re-run</span></span>
               }
               @let score = runRowScore(row);
               @if (score != null) {
@@ -2500,10 +2526,17 @@
       } @else {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : runProgressReturnsToBattery ? 'Back to Battery' : 'Close' }}</button>
         <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>
-        @if (runFailedAnswerCount > 0) {
-          <button type="button" class="btn-gh" (click)="rerunFailedFromProgress()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-            Re-run Failed Questions
+        @let progressRerunGate = progressRerunFailedGate;
+        @if (progressRerunGate.visible) {
+          @if (progressRerunGate.disabledReason) {
+            <span class="repair-reason" id="runProgressRerunReason">{{ progressRerunGate.disabledReason }}</span>
+          }
+          <button type="button" class="btn-gh" id="runProgressRerunFailedBtn"
+                  [attr.aria-disabled]="progressRerunGate.disabledReason ? 'true' : null"
+                  [attr.aria-describedby]="progressRerunGate.disabledReason ? 'runProgressRerunReason' : null"
+                  (click)="onRerunFailedFromProgress(progressRerunGate)">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Re-run failed questions
           </button>
         }
       }

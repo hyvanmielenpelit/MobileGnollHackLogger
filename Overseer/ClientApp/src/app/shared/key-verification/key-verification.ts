@@ -1,4 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { parseServerUtcDate } from '../../utils/date.util';
 
 /**
  * The client side of the key-save contract shared by the administrator's default keys and a
@@ -115,7 +116,7 @@ export function formatCheckedAt(iso: string | null | undefined): string {
   if (!iso) {
     return '';
   }
-  const parsed = new Date(iso);
+  const parsed = parseServerUtcDate(iso);
   return isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
 }
 

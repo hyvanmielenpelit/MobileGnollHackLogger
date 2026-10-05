@@ -239,10 +239,10 @@
                     {{ row.suiteName }}
                   </th>
                   @for (cell of row.cells; track cell.slot.round) {
-                    <td class="bp-cell" [attr.data-state]="cell.state"
-                        [class.is-current]="run.currentSuiteIndex === row.suiteIndex && run.currentRound === cell.slot.round">
+                    <td class="bp-cell" [attr.data-state]="cell.state" [attr.data-repairing]="cell.repairing ? 'true' : null"
+                        [class.is-current]="cell.repairing || (run.currentSuiteIndex === row.suiteIndex && run.currentRound === cell.slot.round)">
                       <div class="bp-cell-head">
-                        <span [class]="chipClass(cell.state)">{{ slotLabels[cell.state] }}</span>
+                        <span [class]="chipClass(cell.state)">{{ cell.repairing ? repairingLabel : slotLabels[cell.state] }}</span>
                         @if (cell.slot.member; as member) {
                           <button type="button" class="action-btn bp-open-run"
                                   [attr.aria-label]="'Open run progress for run ' + member.runId + ', ' + row.suiteName + ' round ' + cell.slot.round"
@@ -442,18 +442,25 @@
         <button type="button" class="btn-gh btn-gh-delete bp-cancel-battery" [disabled]="cancelInFlight"
                 (click)="cancelBattery()">Cancel Battery</button>
       }
+      <!-- aria-disabled while a resume request is in flight: the button stays focusable, its label says
+           why, and resume() ignores a second click. -->
       @if (canRerun) {
-        <button type="button" class="btn-gh bp-rerun" [disabled]="resumeInFlight"
-                (click)="resume('RerunUnderCurrentInstrument')">Re-run under Current Instrument</button>
+        <button type="button" class="btn-gh bp-rerun"
+                [attr.aria-disabled]="resumeInFlight ? 'true' : null"
+                (click)="resume('RerunUnderCurrentInstrument')">
+          {{ resumeInFlight ? 'Starting over…' : 'Re-run under current instrument' }}
+        </button>
       }
       @if (canContinue) {
-        <button type="button" class="btn-gh bp-continue" [disabled]="resumeInFlight" (click)="resume('Continue')">
+        <button type="button" class="btn-gh bp-continue"
+                [attr.aria-disabled]="resumeInFlight ? 'true' : null"
+                (click)="resume('Continue')">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          Continue
+          {{ resumeInFlight ? 'Continuing…' : continueLabel }}
         </button>
       }
       @if (canOpenAnalysis) {

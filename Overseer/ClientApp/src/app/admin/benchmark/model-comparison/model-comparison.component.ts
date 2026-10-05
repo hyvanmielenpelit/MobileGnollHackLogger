@@ -26,6 +26,7 @@ import { firstValueFrom } from 'rxjs';
 import type { Subscription } from 'rxjs';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { parseServerUtcDate } from '../../../utils/date.util';
 import {
   FigureChrome,
   FigureFooter,
@@ -654,6 +655,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The selection band's Clear selection button, emitted for the host to drop every source at once. */
   @Output() clearSelection = new EventEmitter<void>();
 
+  /** The selection band's label: a programmatic focus target once Clear selection or the last chip goes. */
+  @ViewChild('selectionLabel') private selectionLabel?: ElementRef<HTMLElement>;
+
+  @ViewChild('clearSelectionButton') private clearSelectionButton?: ElementRef<HTMLButtonElement>;
+
+  /** The chips' remove buttons, in chip order. */
+  @ViewChildren('chipRemoveButton') private chipRemoveButtons?: QueryList<ElementRef<HTMLButtonElement>>;
+
   /** The selection counts together, which is what both caps and Next are judged on. */
   get selectedSourceCount(): number {
     return this.selectedRunCount + this.selectedGroupCount + this.selectedBatteryCount;
@@ -1153,7 +1162,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
           : computing;
       }
       if (this.selectedSourceCount === 0) {
-        return 'Select at least one run or analysis group.';
+        return 'Select at least one run, analysis group or battery result.';
       }
       return `${this.selectedSourceCount} sources selected — at most ${this.maxSources} may be ` +
         'compared in one request. A comparison over every stored run is a slow query and an ' +
@@ -1213,14 +1222,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * The band's headline count, in words, from the two selection counts rather than the chip
-   * array — it does not mention the request cap; `nextBlockedReason` already does.
+   * array — it does not mention the request cap; `nextBlockedReason` already does. Read after
+   * *Your selection —*, so it starts in lower case where it starts with a word.
    */
   get selectionSummary(): string {
     const runs = this.selectedRunCount;
     const groups = this.selectedGroupCount;
     const batteries = this.selectedBatteryCount;
     if (runs === 0 && groups === 0 && batteries === 0) {
-      return 'Nothing selected yet';
+      return 'nothing selected yet';
     }
     const parts = [
       runs > 0 ? `${runs} ${runs === 1 ? 'run' : 'runs'}` : '',
@@ -1233,6 +1243,31 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** One chip's tooltip anchor id, for its remove button's `interestfor` / `position-anchor` pair. */
   sourceChipId(source: ComparisonSelectedSource): string {
     return `mc-sel-${source.kind}-${source.id}`;
+  }
+
+  /**
+   * Clear selection. The button goes away with the selection, so focus moves to the band's label,
+   * which stays on step 1 and announces the empty selection.
+   */
+  onClearSelection(): void {
+    this.clearSelection.emit();
+    this.selectionLabel?.nativeElement.focus();
+  }
+
+  /**
+   * One chip's remove button. Focus moves to the next chip's remove button, else to Clear
+   * selection while other chips remain, else to the band's label. The target is chosen before the
+   * emit, since a host that re-renders synchronously has removed the clicked chip by the time it
+   * returns; chips are tracked by source, so the other chips' buttons survive the re-render.
+   */
+  onRemoveSource(source: ComparisonSelectedSource, index: number): void {
+    const removeButtons = this.chipRemoveButtons?.toArray() ?? [];
+    const target = index + 1 < removeButtons.length
+      ? removeButtons[index + 1].nativeElement
+      : this.selectedSources.length > 1 ? this.clearSelectionButton?.nativeElement : undefined;
+    this.removeSource.emit(source);
+    const label = this.selectionLabel?.nativeElement;
+    (target?.isConnected ? target : label)?.focus();
   }
 
   /**
@@ -1271,8 +1306,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       id: 'nothing-selected',
       severity: 'warning',
       heading: 'Nothing is selected yet',
-      body: 'Select at least one completed run or analysis group in the tables above. Compare stays '
-        + 'unavailable until you do.'
+      body: 'Select at least one completed run, analysis group or battery result in the tables above. '
+        + 'Compare stays unavailable until you do.'
     };
   }
 
@@ -3137,7 +3172,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       suite: dto?.baselineSuiteName || 'Suite not set',
       pricingBasis: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
       conditionSignature: (dto?.baselineSignature ?? '').trim().slice(0, 12),
-      computedAt: dto?.computedAtUtc ? new Date(dto.computedAtUtc).toLocaleString() : 'unknown time',
+      computedAt: dto?.computedAtUtc ? parseServerUtcDate(dto.computedAtUtc).toLocaleString() : 'unknown time',
       plottedOfTotal: `${this.plotted.length} of ${this.entries.length} entries charted`,
       notices: this.setNotices
     };

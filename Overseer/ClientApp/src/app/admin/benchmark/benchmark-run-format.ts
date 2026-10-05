@@ -4,6 +4,7 @@ import {
   BenchmarkRunDetailDto,
   BenchmarkRunReportDocumentsStatus
 } from '../../services/admin-benchmark.service';
+import { parseServerUtcDate } from '../../utils/date.util';
 
 // Pure functions over run summaries and details, shared by Run History, the run report and the state services.
 
@@ -143,7 +144,7 @@ export function runDurationMs(run: BenchmarkRunSummaryDto): number {
 
 export function elapsedBetweenTimestamps(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): number {
   if (!run.completedAtUtc) return 0;
-  return Math.max(0, new Date(run.completedAtUtc).getTime() - new Date(run.startedAtUtc).getTime());
+  return Math.max(0, parseServerUtcDate(run.completedAtUtc).getTime() - parseServerUtcDate(run.startedAtUtc).getTime());
 }
 
 /**

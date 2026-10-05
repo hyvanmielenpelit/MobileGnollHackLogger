@@ -140,7 +140,7 @@ describe('ModelComparisonComponent', () => {
   it('pluralises the selection summary across all four forms', () => {
     fixture.componentRef.setInput('selectedRunCount', 0);
     fixture.componentRef.setInput('selectedGroupCount', 0);
-    expect(component.selectionSummary).toBe('Nothing selected yet');
+    expect(component.selectionSummary).toBe('nothing selected yet');
 
     fixture.componentRef.setInput('selectedRunCount', 1);
     expect(component.selectionSummary).toBe('1 run selected');
@@ -209,16 +209,30 @@ describe('ModelComparisonComponent', () => {
     expect(removed).toEqual([source]);
   });
 
-  it('renders on step 1 with nothing selected, and says so in the summary and the hint', () => {
+  it('renders on step 1 with nothing selected, its summary visually hidden and no hint', () => {
     band({ notices: [] });
 
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
-    expect(textOf('.mc-wizard-notice-label')).toContain('Nothing selected yet');
-    expect(textOf('.mc-wizard-selection-hint')).toContain('Select runs or groups above');
+    // Still read to a screen reader, but the alert is the one visible message.
+    expect(textOf('.mc-wizard-notice-label')).toContain('Your selection — nothing selected yet');
+    const summary = fixture.debugElement.query(By.css('#mc-selection-label > span'))
+      .nativeElement as HTMLElement;
+    expect(summary.classList).toContain('visually-hidden');
+    expect(summary.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+    expect(fixture.debugElement.query(By.css('.mc-wizard-selection-hint'))).toBeNull();
+    expect(textOf('.mc-wizard-selection')).not.toContain('Select runs or groups above');
     expect(fixture.debugElement.query(By.css('.mc-selection-chips'))).toBeNull();
   });
 
-  it('offers Clear selection only when something is selected, and emits clearSelection', () => {
+  it('shows the summary text once something is selected', () => {
+    band({ runs: 2, sources: runSources(2), notices: [] });
+
+    const summary = fixture.debugElement.query(By.css('#mc-selection-label > span'))
+      .nativeElement as HTMLElement;
+    expect(summary.classList).not.toContain('visually-hidden');
+  });
+
+  it('offers Clear selection only when something is selected, first in the chip row, and emits clearSelection', () => {
     band({ notices: [] });
     expect(fixture.debugElement.query(By.css('.mc-selection-clear'))).toBeNull();
 
@@ -229,10 +243,100 @@ describe('ModelComparisonComponent', () => {
 
     const button = fixture.debugElement.query(By.css('.mc-selection-clear'))
       .nativeElement as HTMLButtonElement;
-    expect(button.textContent?.trim()).toBe('Clear selection');
+    expect(button.textContent?.trim()).toBe('Clear selection (2)');
+    expect(button.classList).toContain('btn-gh');
+    expect(button.classList).toContain('btn-gh-cancel');
+    expect(button.classList).toContain('btn-gh-small');
+    expect(button.classList).not.toContain('btn-ghost');
+    // Before the chips, so it is reached first by keyboard.
+    const chips = fixture.debugElement.query(By.css('.mc-selection-chips')).nativeElement as HTMLElement;
+    expect(button.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     button.click();
 
     expect(cleared.length).toBe(1);
+  });
+
+  it('sizes the chip remove buttons as 32 by 32 action buttons', () => {
+    band({ runs: 1, sources: runSources(1), notices: [] });
+
+    const remove = fixture.debugElement.query(By.css('.mc-selection-remove')).nativeElement as HTMLElement;
+    expect(remove.classList).toContain('action-btn');
+    const style = getComputedStyle(remove);
+    expect(style.width).toBe('32px');
+    expect(style.height).toBe('32px');
+  });
+
+  describe('focus after a removal', () => {
+    /** As the host does: drops what was removed and checks the view before the emit returns. */
+    function followHost(sources: ComparisonSelectedSource[]): void {
+      let current = [...sources];
+      const apply = (): void => {
+        fixture.componentRef.setInput('selectedRunCount', current.length);
+        fixture.componentRef.setInput('selectedSources', current);
+        fixture.detectChanges();
+      };
+      component.removeSource.subscribe(removed => {
+        current = current.filter(source => source !== removed);
+        apply();
+      });
+      component.clearSelection.subscribe(() => {
+        current = [];
+        apply();
+      });
+    }
+
+    function removeButtons(): HTMLButtonElement[] {
+      return fixture.debugElement.queryAll(By.css('.mc-selection-remove'))
+        .map(element => element.nativeElement as HTMLButtonElement);
+    }
+
+    function label(): HTMLElement {
+      return fixture.debugElement.query(By.css('#mc-selection-label')).nativeElement as HTMLElement;
+    }
+
+    it('moves focus to the band label after Clear selection, which is a programmatic target only', () => {
+      const sources = runSources(2);
+      band({ runs: 2, sources, notices: [] });
+      followHost(sources);
+
+      const button = fixture.debugElement.query(By.css('.mc-selection-clear'))
+        .nativeElement as HTMLButtonElement;
+      button.focus();
+      button.click();
+
+      expect(fixture.debugElement.query(By.css('.mc-selection-clear'))).toBeNull();
+      expect(label().getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(label());
+    });
+
+    it('moves focus to the next chip, then to Clear selection, then to the label', () => {
+      const sources = runSources(3);
+      band({ runs: 3, sources, notices: [] });
+      followHost(sources);
+
+      // The first chip: the next chip's remove button.
+      const [first, second] = removeButtons();
+      first.focus();
+      first.click();
+      expect(removeButtons().length).toBe(2);
+      expect(document.activeElement).toBe(second);
+
+      // The last of two: Clear selection, which stays while a chip remains.
+      const last = removeButtons()[1];
+      last.focus();
+      last.click();
+      expect(removeButtons().length).toBe(1);
+      expect(document.activeElement)
+        .toBe(fixture.debugElement.query(By.css('.mc-selection-clear')).nativeElement);
+
+      // The only chip: the label, since Clear selection goes with it.
+      const only = removeButtons()[0];
+      only.focus();
+      only.click();
+      expect(removeButtons().length).toBe(0);
+      expect(fixture.debugElement.query(By.css('.mc-selection-clear'))).toBeNull();
+      expect(document.activeElement).toBe(label());
+    });
   });
 
   it('keeps the notices below the chip row when the selection carries both', () => {
@@ -356,10 +460,12 @@ describe('ModelComparisonComponent', () => {
     expect(alerts.length).toBe(1);
     // A warning: Compare is blocked, but nothing is wrong with the view or the index.
     expect(alerts[0].classList).toContain('alert-warning');
-    expect(alerts[0].textContent).toContain('Nothing is selected yet');
-    expect(alerts[0].textContent).toContain('Select at least one completed run or analysis group');
+    expect(alerts[0].querySelector('.alert-heading')?.textContent).toContain('Nothing is selected yet');
+    expect(alerts[0].querySelector('.alert-body')?.textContent).toContain(
+      'Select at least one completed run, analysis group or battery result in the tables above. '
+      + 'Compare stays unavailable until you do.');
     // The band explains; the footer names the blocked control, and neither repeats the other.
-    expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
+    expect(textOf('.mc-wizard-blocked')).toContain('Select at least one run, analysis group or battery result.');
 
     fixture.componentRef.setInput('selectedRunCount', 1);
     fixture.detectChanges();

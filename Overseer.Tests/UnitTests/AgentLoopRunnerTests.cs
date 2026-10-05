@@ -34,6 +34,11 @@ public class AgentLoopRunnerTests
             }
         }
 
+        public void AppendUserTextToHistory(List<object> messageHistory, string text)
+        {
+            messageHistory.Add(new { role = "user", content = text });
+        }
+
         public virtual Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true, bool disablePromptCache = false)
         {
             return new Dictionary<string, object> { { "model", modelId }, { "messages", messageHistory } };
@@ -750,5 +755,167 @@ public class AgentLoopRunnerTests
         // Context occupancy is last-report-wins, never the sum.
         Assert.Equal(3000, result.LastPromptTokens);
         Assert.Equal(200, result.LastOutputTokens);
+    }
+
+    /// <summary>
+    /// Calls <c>mock_tool</c> on its first <c>toolRounds</c> model calls and answers after that,
+    /// recording the history each request was built from.
+    /// </summary>
+    private class RequestRecordingToolProvider : MockAiProvider
+    {
+        private readonly int _toolRounds;
+        private int _callCount;
+
+        public RequestRecordingToolProvider(int toolRounds)
+        {
+            _toolRounds = toolRounds;
+        }
+
+        public List<List<object>> RequestHistories { get; } = new();
+
+        public override Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true, bool disablePromptCache = false)
+        {
+            RequestHistories.Add(new List<object>(messageHistory));
+            return base.BuildChatRequestBody(modelId, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier, parallelToolCalls, segmentedPrompt, promptCacheKey, cacheConversationTail, disablePromptCache);
+        }
+
+        public override async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            _callCount++;
+            if (_callCount <= _toolRounds)
+            {
+                var tcJson = JsonSerializer.Serialize(new { id = $"call_{_callCount}", name = "mock_tool", arguments = "{}" });
+                yield return new ChatEvent { Type = "tool_call_complete", Data = tcJson };
+            }
+            else
+            {
+                yield return new ChatEvent { Type = "chunk", Data = "Final answer" };
+            }
+            await Task.CompletedTask;
+        }
+
+        public override object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => new { };
+    }
+
+    private static async Task<(AgentRunResult Result, List<ChatEvent> Events)> RunWithMockToolAsync(
+        RequestRecordingToolProvider provider, int maxToolIterations, AgentRunBudget? budget)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler> { new MockToolHandler() };
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { provider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            MaxToolIterations = maxToolIterations,
+            SeedHistory = new List<object> { new { role = "user", content = "Run tools" } },
+            AiProvider = provider
+        };
+
+        var result = new AgentRunResult();
+        var events = new List<ChatEvent>();
+        await foreach (var evt in runner.RunAsync(request, budget, result, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+        return (result, events);
+    }
+
+    private static bool IsForcedFinalInstruction(object message) =>
+        RoleOf(message) == "user" &&
+        ProviderHelper.GetProperty(message, "content")?.ToString() == AgentLoopRunner.ForcedFinalInstruction;
+
+    [Fact]
+    public async Task RunAsync_AtIterationLimit_ForcedFinalRequestEndsWithTheInstructionOnce()
+    {
+        var provider = new RequestRecordingToolProvider(toolRounds: 2);
+
+        var (result, events) = await RunWithMockToolAsync(provider, maxToolIterations: 2, budget: null);
+
+        Assert.Equal("iteration_limit", result.TerminationReason);
+        Assert.Equal(3, provider.RequestHistories.Count);
+
+        var forcedHistory = provider.RequestHistories[2];
+        Assert.True(IsForcedFinalInstruction(forcedHistory[^1]));
+        Assert.Single(forcedHistory, m => IsForcedFinalInstruction(m));
+
+        Assert.DoesNotContain(provider.RequestHistories[0], m => IsForcedFinalInstruction(m));
+        Assert.DoesNotContain(provider.RequestHistories[1], m => IsForcedFinalInstruction(m));
+
+        // The instruction is turn-local: no chat event carries it.
+        Assert.DoesNotContain(events, e => e.Data != null && e.Data.Contains(AgentLoopRunner.ForcedFinalInstruction));
+        Assert.Contains(events, e => e.Type == "tool_error" && e.Data == "Tool call limit reached. Forcing final response.");
+    }
+
+    [Fact]
+    public async Task RunAsync_OnBudgetExhaustion_ForcedFinalRequestEndsWithTheInstructionOnce()
+    {
+        // The model keeps calling a tool on the first forced call, so the budget branch is taken
+        // a second time; the instruction must not be appended again.
+        var provider = new RequestRecordingToolProvider(toolRounds: 3);
+        var budget = new AgentRunBudget { MaxSubAgentRuns = 3, MaxTotalModelCalls = 2 };
+
+        var (result, events) = await RunWithMockToolAsync(provider, maxToolIterations: 22, budget);
+
+        Assert.Equal("budget_exhausted", result.TerminationReason);
+        Assert.Equal(4, provider.RequestHistories.Count);
+
+        Assert.DoesNotContain(provider.RequestHistories[0], m => IsForcedFinalInstruction(m));
+        Assert.DoesNotContain(provider.RequestHistories[1], m => IsForcedFinalInstruction(m));
+
+        var forcedHistory = provider.RequestHistories[2];
+        Assert.True(IsForcedFinalInstruction(forcedHistory[^1]));
+        Assert.Single(forcedHistory, m => IsForcedFinalInstruction(m));
+
+        Assert.Single(provider.RequestHistories[3], m => IsForcedFinalInstruction(m));
+
+        Assert.DoesNotContain(events, e => e.Data != null && e.Data.Contains(AgentLoopRunner.ForcedFinalInstruction));
+    }
+
+    [Fact]
+    public async Task RunAsync_TurnWithinLimits_CarriesNoForcedFinalInstruction()
+    {
+        var provider = new RequestRecordingToolProvider(toolRounds: 2);
+
+        var (result, _) = await RunWithMockToolAsync(provider, maxToolIterations: 22, budget: null);
+
+        Assert.Equal("completed", result.TerminationReason);
+        Assert.Equal(3, provider.RequestHistories.Count);
+        Assert.All(provider.RequestHistories, h => Assert.DoesNotContain(h, m => IsForcedFinalInstruction(m)));
+    }
+
+    [Fact]
+    public async Task RunAsync_WithZeroToolIterations_CarriesNoForcedFinalInstruction()
+    {
+        // MaxToolIterations 0 takes the iteration-limit branch on its only call, before any tool
+        // round; the single-shot request is sent as the caller built it.
+        var provider = new RequestRecordingToolProvider(toolRounds: 0);
+
+        var (result, _) = await RunWithMockToolAsync(provider, maxToolIterations: 0, budget: null);
+
+        Assert.Equal("iteration_limit", result.TerminationReason);
+        Assert.Single(provider.RequestHistories);
+        Assert.DoesNotContain(provider.RequestHistories[0], m => IsForcedFinalInstruction(m));
     }
 }

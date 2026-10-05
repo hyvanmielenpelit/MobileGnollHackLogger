@@ -1133,7 +1133,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.step).toBe(1);
     expect(component.nextLabel).toBe('Compare');
     expect(component.canGoNext).toBe(false);
-    expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
+    expect(textOf('.mc-wizard-blocked')).toContain('Select at least one run, analysis group or battery result.');
 
     fixture.componentRef.setInput('selectedRunCount', component.maxSources + 1);
     fixture.detectChanges();

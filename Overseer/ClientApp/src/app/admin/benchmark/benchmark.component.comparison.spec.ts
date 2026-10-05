@@ -581,7 +581,7 @@ describe('AdminBenchmarkComponent', () => {
       ctx.comparison.runComparison();
 
       expect(benchmarkServiceMock.compareModels).not.toHaveBeenCalled();
-      expect(ctx.comparison.comparisonError).toContain('at least one run');
+      expect(ctx.comparison.comparisonError).toBe('Select at least one run, analysis group or battery result.');
     });
 
     it('reports the server error text rather than a generic failure', () => {

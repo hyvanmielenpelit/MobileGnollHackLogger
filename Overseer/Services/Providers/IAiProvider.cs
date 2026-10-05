@@ -63,6 +63,13 @@ public interface IAiProvider
         List<object> messageHistory,
         List<ProviderToolResult> results);
 
+    /// <summary>
+    /// Appends a user text to the end of the history in this provider's wire shape, merging it
+    /// into a trailing user message where the provider requires roles to alternate. The default
+    /// adds nothing; every production provider implements it.
+    /// </summary>
+    void AppendUserTextToHistory(List<object> messageHistory, string text) { }
+
     bool TryRewriteToolResult(
         List<object> messageHistory,
         string toolCallId,

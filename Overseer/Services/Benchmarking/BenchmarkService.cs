@@ -799,6 +799,45 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// Hands a run that a repair (re-run, retry, re-assessment, re-synthesis, re-score) has just
+    /// changed to <see cref="BenchmarkBatteryOrchestrator.ReconcileAfterMemberChangeAsync"/>, fire
+    /// and forget, after the repair has released the run slot. The orchestrator is a singleton
+    /// resolved from a scope of its own; with none registered nothing happens, and a run in no
+    /// battery is the orchestrator's no-op. Nothing it throws reaches the repair: it is logged.
+    /// </summary>
+    private void ScheduleBatteryReconcile(long runId)
+    {
+        BenchmarkBatteryOrchestrator? orchestrator;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            orchestrator = scope.ServiceProvider.GetService<BenchmarkBatteryOrchestrator>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Resolving the battery orchestrator to reconcile run {RunId} failed.", runId);
+            return;
+        }
+
+        if (orchestrator != null)
+        {
+            _ = ReconcileBatteriesAsync(orchestrator, runId);
+        }
+    }
+
+    private async Task ReconcileBatteriesAsync(BenchmarkBatteryOrchestrator orchestrator, long runId)
+    {
+        try
+        {
+            await orchestrator.ReconcileAfterMemberChangeAsync(runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Reconciling the batteries of run {RunId} after a repair failed.", runId);
+        }
+    }
+
+    /// <summary>
     /// Re-executes the answers a run failed on, in place, and re-runs every run-level grading stage
     /// over the whole run.
     ///
@@ -1020,6 +1059,7 @@ public class BenchmarkService
         {
             _runManager.Complete(runId);
             ScheduleRunReportDocuments(runId);
+            ScheduleBatteryReconcile(runId);
         }
     }
 
@@ -1408,6 +1448,25 @@ public class BenchmarkService
             BenchmarkAssessmentPrompt.QuestionBlockMarker,
             questionNumber);
 
+    /// <summary>
+    /// The error text of an answer the per-question timeout ended, with the phase it ended in: the
+    /// model and tool calls made, when the first token arrived, and how long the stream had been
+    /// silent. The opening sentence is fixed, so every check on it matches whatever follows.
+    /// </summary>
+    internal static string BuildQuestionTimeoutError(
+        int timeoutSeconds, int modelCalls, int toolCalls, int? firstTokenMs, double secondsSinceLastEvent)
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        string firstToken = firstTokenMs.HasValue
+            ? "first token at " + (firstTokenMs.Value / 1000.0).ToString("0.0", culture) + " s"
+            : "no token received";
+        long silentSeconds = (long)Math.Round(Math.Max(0, secondsSinceLastEvent), MidpointRounding.AwayFromZero);
+
+        return "Per-question timeout exceeded (" + timeoutSeconds.ToString(culture) + " s) after "
+            + modelCalls.ToString(culture) + " model call(s) and " + toolCalls.ToString(culture) + " tool call(s); "
+            + firstToken + "; last stream event " + silentSeconds.ToString(culture) + " s before the timeout.";
+    }
+
     internal async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -1504,6 +1563,10 @@ public class BenchmarkService
         // calls this question "Answering". The mark is cleared in the finally below, so a
         // throw, a timeout or a cancellation cannot leave the row stuck in that state.
         _runManager.MarkQuestionInFlight(run.Id, question.OrderIndex);
+
+        // When the agent loop last yielded an event, on the question's stopwatch; a timeout's error
+        // text reports how long the stream had been silent.
+        TimeSpan lastEventAt = TimeSpan.Zero;
         try
         {
             // The run-level check ran against the first question's seed only. This one runs against
@@ -1516,6 +1579,7 @@ public class BenchmarkService
 
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
+                lastEventAt = sw.Elapsed;
                 if (evt.Type == "error")
                 {
                     // The first event's text is the terminal error; a later, distinct text is
@@ -1532,7 +1596,9 @@ public class BenchmarkService
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
         {
-            terminalError = $"Per-question timeout exceeded ({perQuestionTimeoutSec} s).";
+            terminalError = BuildQuestionTimeoutError(
+                perQuestionTimeoutSec, runRequest.Budget?.TotalModelCalls ?? 0, runResult.ToolCalls.Count,
+                runResult.TimeToFirstTokenMs, (sw.Elapsed - lastEventAt).TotalSeconds);
             terminalException = ex;
         }
         catch (Exception ex)
@@ -1778,6 +1844,9 @@ public class BenchmarkService
 
         // Re-runs show the same Answering state as a first run; see ExecuteSingleQuestionAsync.
         _runManager.MarkQuestionInFlight(run.Id, answer.OrderIndex);
+
+        // See ExecuteSingleQuestionAsync.
+        TimeSpan lastEventAt = TimeSpan.Zero;
         try
         {
             // Per question, on the same contract as ExecuteSingleQuestionAsync.
@@ -1787,6 +1856,7 @@ public class BenchmarkService
 
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
+                lastEventAt = sw.Elapsed;
                 if (evt.Type == "error")
                 {
                     string? text = evt.Data;
@@ -1800,7 +1870,9 @@ public class BenchmarkService
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
         {
-            terminalError = $"Per-question timeout exceeded ({perQuestionTimeoutSec} s).";
+            terminalError = BuildQuestionTimeoutError(
+                perQuestionTimeoutSec, runRequest.Budget?.TotalModelCalls ?? 0, runResult.ToolCalls.Count,
+                runResult.TimeToFirstTokenMs, (sw.Elapsed - lastEventAt).TotalSeconds);
             terminalException = ex;
         }
         catch (Exception ex)
@@ -7426,6 +7498,7 @@ public class BenchmarkService
 
         await db.SaveChangesAsync();
         _logger.LogInformation("Successfully re-scored benchmark run {RunId} using profile '{ProfileName}'.", runId, profile.Name);
+        ScheduleBatteryReconcile(runId);
         return (true, null);
     }
 
@@ -7594,6 +7667,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
+            ScheduleBatteryReconcile(run.Id);
         }
     }
 
@@ -7823,6 +7897,12 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
+
+            // A trial changes no score, so no battery reading it has anything to reconcile.
+            if (!trial)
+            {
+                ScheduleBatteryReconcile(run.Id);
+            }
         }
     }
 
@@ -7925,6 +8005,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
+            ScheduleBatteryReconcile(run.Id);
         }
     }
 
@@ -8050,6 +8131,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
+            ScheduleBatteryReconcile(run.Id);
         }
     }
 
@@ -8157,6 +8239,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
+            ScheduleBatteryReconcile(run.Id);
         }
     }
 

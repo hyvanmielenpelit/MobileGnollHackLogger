@@ -587,6 +587,27 @@ public class GoogleProvider : IAiProvider
         messageHistory.Add(new { role = "user", parts = userParts });
     }
 
+    public void AppendUserTextToHistory(List<object> messageHistory, string text)
+    {
+        var textPart = new { text = text };
+
+        // Joins a trailing user content that carries the function responses as one more part.
+        if (messageHistory.Count > 0 &&
+            ProviderHelper.GetProperty(messageHistory[^1], "role")?.ToString() == "user" &&
+            ProviderHelper.GetProperty(messageHistory[^1], "parts") is IEnumerable<object> existingParts)
+        {
+            var parts = existingParts.ToList();
+            if (parts.Any(p => ProviderHelper.GetProperty(p, "functionResponse") != null))
+            {
+                parts.Add(textPart);
+                messageHistory[^1] = new { role = "user", parts = parts };
+                return;
+            }
+        }
+
+        messageHistory.Add(new { role = "user", parts = new List<object> { textPart } });
+    }
+
     public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
     {
         for (int i = 0; i < messageHistory.Count; i++)

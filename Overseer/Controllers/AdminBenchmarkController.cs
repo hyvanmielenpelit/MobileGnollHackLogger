@@ -3188,6 +3188,7 @@ public class AdminBenchmarkController : ControllerBase
             ScoringProfileSecondOpinionQualityThreshold = runConstants.SecondOpinionQualityThreshold,
             ScoringProfileSecondOpinionOutlierDeltaPoints = runConstants.SecondOpinionOutlierDeltaPoints,
             ScoringMethodVersion = run.ScoringMethodVersion,
+            IsCurrentScoringMethod = BenchmarkService.IsCurrentScoringMethod(run),
             HarnessVersion = run.HarnessVersion,
             MaxToolCallsPerQuestionUsed = run.MaxToolCallsPerQuestionUsed,
             DegradedAnswerCount = run.DegradedAnswerCount,
@@ -3854,10 +3855,14 @@ public class AdminBenchmarkController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Re-scores a run under its own scoring profile. The request's <c>ScoringProfileId</c> is
+    /// ignored: a profile chosen elsewhere in the UI never re-scores a run.
+    /// </summary>
     [HttpPost("runs/{id}/rescore")]
     public async Task<IActionResult> RescoreRun(long id, [FromBody] RescoreRunRequest? request)
     {
-        var (success, error) = await _benchmarkService.RescoreRunAsync(id, request?.ScoringProfileId);
+        var (success, error) = await _benchmarkService.RescoreRunAsync(id);
         if (!success)
         {
             return BadRequest(error);

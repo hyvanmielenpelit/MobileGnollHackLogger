@@ -1673,11 +1673,16 @@
     sibling of the footer shrinks the step panel to make room, so it cannot come to rest over a
     table row the reader is trying to read.
 
-    Always rendered on step 1, whatever the selection: the summary line and, below it, either the
-    chips naming every selected source or a hint to tick something above. Each chip carries a
-    remove button, so a source can be dropped without scrolling back up to the table it was ticked
-    in. Clear selection sits beside the summary and appears only once something is selected, next
-    to the per-chip removal the chips already carry.
+    Always rendered on step 1, whatever the selection: the summary line and, below it, the chips
+    naming every selected source. Each chip carries a remove button, so a source can be dropped
+    without scrolling back up to the table it was ticked in. Clear selection leads the chip row,
+    so it is seen and reached by keyboard before the chips, and appears only once something is
+    selected.
+
+    With nothing selected the summary text is visually hidden and the nothing-selected alert is
+    the one visible message; a screen reader still hears the summary. The label is also the
+    programmatic focus target (`tabindex="-1"`) when Clear selection or the last chip removes the
+    button that held focus.
 
     The notices this band used to gate its own presence on are still here, unchanged, beneath the
     chips whenever there are any. Errors above warnings above information, and none of them
@@ -1700,37 +1705,36 @@
   -->
   @if (step === 1) {
     <div class="mc-wizard-notice mc-wizard-selection" role="region" aria-labelledby="mc-selection-label">
-      <div class="mc-selection-head">
-        <p class="mc-wizard-notice-label" id="mc-selection-label" role="status">
-          Your selection — {{ selectionSummary }}
+      <div class="mc-selection-head" [class.mc-selection-head--empty]="selectedSourceCount === 0">
+        <p class="mc-wizard-notice-label" id="mc-selection-label" role="status" tabindex="-1" #selectionLabel>
+          <span [class.visually-hidden]="selectedSourceCount === 0">Your selection — {{ selectionSummary }}</span>
         </p>
         @if (selectedSources.length > 0) {
-          <button type="button" class="btn-ghost mc-selection-clear" (click)="clearSelection.emit()">Clear selection</button>
-        }
-        @if (selectedSources.length > 0) {
-          <ul class="mc-selection-chips" aria-label="Selected sources">
-            @for (source of selectedSources; track source.kind + source.id) {
-              <li class="mc-selection-chip" [class.mc-selection-chip--group]="source.kind === 'group'">
-                <span class="mc-selection-chip-detail">{{ source.detail }}</span>
-                <span class="mc-selection-chip-label">{{ source.label }}</span>
-                @if (source.provider) { <app-provider-badge [provider]="source.provider"></app-provider-badge> }
-                <button type="button" class="action-btn mc-selection-remove"
-                        [attr.aria-label]="'Remove ' + source.detail + ' ' + source.label + ' from the selection'"
-                        [attr.interestfor]="sourceChipId(source)"
-                        [attr.style]="'anchor-name: --' + sourceChipId(source)"
-                        (click)="removeSource.emit(source)">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="sourceChipId(source)"
-                     [attr.style]="'position-anchor: --' + sourceChipId(source)">Remove from the selection</div>
-              </li>
-            }
-          </ul>
-        } @else {
-          <p class="mc-wizard-selection-hint">Select runs or groups above — they appear here.</p>
+          <div class="mc-selection-row">
+            <button type="button" class="btn-gh btn-gh-cancel btn-gh-small mc-selection-clear" #clearSelectionButton
+                    (click)="onClearSelection()">Clear selection ({{ selectedSourceCount }})</button>
+            <ul class="mc-selection-chips" aria-label="Selected sources">
+              @for (source of selectedSources; track source.kind + source.id) {
+                <li class="mc-selection-chip" [class.mc-selection-chip--group]="source.kind === 'group'">
+                  <span class="mc-selection-chip-detail">{{ source.detail }}</span>
+                  <span class="mc-selection-chip-label">{{ source.label }}</span>
+                  @if (source.provider) { <app-provider-badge [provider]="source.provider"></app-provider-badge> }
+                  <button type="button" class="action-btn mc-selection-remove" #chipRemoveButton
+                          [attr.aria-label]="'Remove ' + source.detail + ' ' + source.label + ' from the selection'"
+                          [attr.interestfor]="sourceChipId(source)"
+                          [attr.style]="'anchor-name: --' + sourceChipId(source)"
+                          (click)="onRemoveSource(source, $index)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="sourceChipId(source)"
+                       [attr.style]="'position-anchor: --' + sourceChipId(source)">Remove from the selection</div>
+                </li>
+              }
+            </ul>
+          </div>
         }
       </div>
       @if (bandNotices.length > 0) {

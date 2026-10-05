@@ -12,7 +12,7 @@ import {
   readStoredKeyFiguresExportSettings,
   writeStoredKeyFiguresExportSettings
 } from './run-report-frame/key-figures-export-settings';
-import { AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
+import { AdminBenchmarkSpecContext, buildBatteryRun, clearStoredState, createAdminBenchmarkFixture } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
   let ctx: AdminBenchmarkSpecContext;
@@ -64,6 +64,9 @@ describe('AdminBenchmarkComponent', () => {
         ...overrides
       };
     }
+
+    /** The four dimensional levels Re-score recomputes a score from. */
+    const LEVELS = { accuracyLevel: 5, completenessLevel: 5, concisenessLevel: 5, readabilityLevel: 5 };
 
     function reportDialog(): HTMLDialogElement {
       return component.runDetailDialog.nativeElement;
@@ -332,7 +335,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(popover.matches(':popover-open')).toBe(true);
       expect(trigger.getAttribute('aria-expanded')).toBe('true');
-      expect(document.activeElement).toBe(popover.querySelector('[data-action="rescore"]'));
+      expect(document.activeElement).toBe(popover.querySelector('[data-action="synthesis"]'));
     });
 
     it('should close only the popover on Escape and return focus to its trigger', async () => {
@@ -372,7 +375,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const items = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item')) as HTMLButtonElement[];
       const item = (key: string) => items.find(i => i.getAttribute('data-action') === key)!;
-      for (const key of ['rescore', 'failed-questions']) {
+      for (const key of ['failed-questions', 'synthesis', 'rescore']) {
         expect(item(key), key).toBeTruthy();
         expect(item(key).getAttribute('aria-disabled'), key).toBe('true');
         expect(item(key).disabled, key).toBe(false);
@@ -391,13 +394,145 @@ describe('AdminBenchmarkComponent', () => {
       const reasons = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item'))
         .map((i: any) => ({ key: i.getAttribute('data-action'), reason: i.querySelector('.gh-action-popover-item-reason')?.textContent?.trim() }));
       expect(reasons).toEqual([
-        { key: 'rescore', reason: 'A retry is already running on this run.' },
-        { key: 'synthesis', reason: 'A retry is already running on this run.' }
+        { key: 'synthesis', reason: 'A retry is already running on this run.' },
+        { key: 'rescore', reason: 'A retry is already running on this run.' }
       ]);
     });
 
-    it('should run an available Re-run action', () => {
+    it('should list every applicable repair in order, in sentence case', () => {
+      component.selectedRunDetail = reportRun({
+        status: 'CompletedWithErrors',
+        answers: [
+          reportAnswer(1, { ...LEVELS }),
+          reportAnswer(2, { status: 'ProviderError', assessmentStatus: 'Failed', qualityScore: null }),
+          reportAnswer(3, { ...LEVELS, claimVerificationError: 'Verifier timed out' })
+        ]
+      });
+      fixture.detectChanges();
+
+      const items = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item')) as HTMLButtonElement[];
+      expect(items.map(i => i.getAttribute('data-action'))).toEqual(['failed-questions', 'assessments', 'claim-verification', 'synthesis', 'rescore']);
+      expect(items.map(i => i.querySelector('span')?.textContent?.trim())).toEqual([
+        'Re-run failed questions', 'Retry failed assessments', 'Retry claim verification', 'Re-run final synthesis', 'Re-score run'
+      ]);
+      for (const i of items) {
+        expect(i.hasAttribute('aria-disabled'), i.getAttribute('data-action')!).toBe(false);
+      }
+    });
+
+    it('should refuse every repair but Re-score on a run scored under an older scoring method', () => {
+      component.selectedRunDetail = reportRun({
+        status: 'CompletedWithErrors',
+        isCurrentScoringMethod: false,
+        answers: [
+          reportAnswer(1, { ...LEVELS }),
+          reportAnswer(2, { status: 'ProviderError', assessmentStatus: 'Failed', qualityScore: null })
+        ]
+      });
+      fixture.detectChanges();
+
+      const reasons = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item'))
+        .map((i: any) => ({ key: i.getAttribute('data-action'), reason: i.querySelector('.gh-action-popover-item-reason')?.textContent?.trim() ?? null }));
+      const older = 'Scored under an older scoring method; re-score it first.';
+      expect(reasons).toEqual([
+        { key: 'failed-questions', reason: older },
+        { key: 'assessments', reason: older },
+        { key: 'synthesis', reason: older },
+        { key: 'rescore', reason: null }
+      ]);
+    });
+
+    it('should say why Re-score is unavailable on a run with no dimensional level ratings', () => {
       component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+      const rescore = fixture.nativeElement.querySelector('#rr-rerun-popover [data-action="rescore"]') as HTMLButtonElement;
+      expect(rescore.getAttribute('aria-disabled')).toBe('true');
+      expect(rescore.querySelector('.gh-action-popover-item-reason')?.textContent?.trim())
+        .toBe('The run has no dimensional level ratings to re-score.');
+    });
+
+    it('should re-score under the run\'s own profile, sending no profile id', () => {
+      const run = reportRun({ answers: [reportAnswer(1, { ...LEVELS })] });
+      openReport(run);
+      ctx.launcher.selectedScoringProfileId = 1;
+      benchmarkServiceMock.rescoreRun.mockReturnValue(of(undefined));
+
+      (fixture.nativeElement.querySelector('#rr-rerun-popover [data-action="rescore"]') as HTMLButtonElement).click();
+
+      expect(benchmarkServiceMock.rescoreRun).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(benchmarkServiceMock.rescoreRun).mock.calls[0]).toEqual([55]);
+      expect(component.rescoringRun).toBe(false);
+    });
+
+    it('should tell the Download Center the run\'s battery, and switch it to that battery run\'s downloads on request', () => {
+      ctx.workspace.historyRuns = [{ id: 55, batteryRunId: 9 } as any];
+      ctx.workspace.batteryRuns = [buildBatteryRun({ id: 9, testedModelLabel: 'Gemini Flash' } as any)];
+      openReport(reportRun());
+      const center = component.runDownloadCenter!;
+      const open = vi.spyOn(center, 'open').mockReturnValue(undefined);
+
+      (fixture.nativeElement.querySelector('#rr-downloads-trigger') as HTMLButtonElement).click();
+      expect(open).toHaveBeenCalledTimes(1);
+      const context = open.mock.calls[0][0] as any;
+      expect(context.kind).toBe('run');
+      expect(context.run.id).toBe(55);
+      expect(context.run.batteryRunId).toBe(9);
+
+      center.openBatteryDownloads.emit(9);
+      expect(open).toHaveBeenCalledTimes(2);
+      expect(open.mock.calls[1][0]).toEqual({ kind: 'battery', batteryRunId: 9, label: 'Core Battery · Gemini Flash' });
+    });
+
+    it('should tell the Download Center no battery for a run outside one', () => {
+      ctx.workspace.historyRuns = [];
+      openReport(reportRun());
+      const open = vi.spyOn(component.runDownloadCenter!, 'open').mockReturnValue(undefined);
+      (fixture.nativeElement.querySelector('#rr-downloads-trigger') as HTMLButtonElement).click();
+      expect((open.mock.calls[0][0] as any).run.batteryRunId).toBeNull();
+    });
+
+    it('should keep the Summary alert\'s one Re-run failed questions, aria-disabled with its reason while busy', () => {
+      const failing = (overrides: any = {}) => reportRun({
+        status: 'CompletedWithErrors',
+        answers: [reportAnswer(1), reportAnswer(2, { status: 'ProviderError', errorMessage: 'boom', qualityScore: null })],
+        ...overrides
+      });
+      component.selectedRunDetail = failing();
+      fixture.detectChanges();
+      const rerunFailed = vi.spyOn(component, 'rerunFailedFromRunDetail').mockReturnValue(undefined);
+
+      const button = () => fixture.nativeElement.querySelector('#rr-panel-summary .alert-actions button') as HTMLButtonElement;
+      expect(fixture.nativeElement.querySelectorAll('#rr-panel-summary .alert-actions button').length).toBe(1);
+      expect(button().textContent?.replace(/\s+/g, ' ').trim()).toBe('Re-run failed questions');
+      expect(button().hasAttribute('disabled')).toBe(false);
+      expect(button().hasAttribute('aria-disabled')).toBe(false);
+      button().click();
+      expect(rerunFailed).toHaveBeenCalledWith(55);
+
+      rerunFailed.mockClear();
+      component.selectedRunDetail = failing({ isCurrentScoringMethod: false });
+      ctx.refresh();
+      expect(button().getAttribute('aria-disabled')).toBe('true');
+      expect(button().disabled).toBe(false);
+      const reason = fixture.nativeElement.querySelector('#' + button().getAttribute('aria-describedby')) as HTMLElement;
+      expect(reason.textContent?.trim()).toBe('Scored under an older scoring method; re-score it first.');
+      button().click();
+      expect(rerunFailed).not.toHaveBeenCalled();
+    });
+
+    it('should say Run in progress for a first execution, and Retry in progress only for a re-run', () => {
+      const strip = () => (fixture.nativeElement.querySelector('.retry-progress-strip > span') as HTMLElement).textContent?.trim();
+      component.selectedRunDetail = reportRun({ status: 'Running' });
+      fixture.detectChanges();
+      expect(strip()).toBe('Run in progress.');
+
+      component.selectedRunDetail = reportRun({ status: 'Running', rerunStartedAtUtc: '2026-09-03T08:00:00Z' });
+      ctx.refresh();
+      expect(strip()).toBe('Retry in progress on this run…');
+    });
+
+    it('should run an available Re-run action', () => {
+      component.selectedRunDetail = reportRun({ answers: [reportAnswer(1, { ...LEVELS })] });
       fixture.detectChanges();
       const rescore = vi.spyOn(component, 'rescoreRun').mockReturnValue(undefined);
       const available = fixture.nativeElement.querySelector('#rr-rerun-popover [data-action="rescore"]') as HTMLButtonElement;
@@ -540,17 +675,73 @@ describe('AdminBenchmarkComponent', () => {
 
       const actions = Array.from(fixture.nativeElement.querySelectorAll('.question-card-body .question-actions > button')) as HTMLButtonElement[];
       expect(actions.map(b => (b.textContent || '').replace(/\s+/g, ' ').trim()))
-        .toEqual(['Re-run Question', 'Re-assess Question', 'Try another assessor (does not change the score)']);
+        .toEqual(['Re-run question', 'Re-assess question', 'Try another assessor (does not change the score)']);
       for (const action of actions) {
         expect(action.classList.contains('btn-ghost')).toBe(true);
         expect(action.classList.contains('btn-gh')).toBe(false);
+        expect(action.hasAttribute('aria-disabled')).toBe(false);
       }
       const trial = actions[2];
-      expect(trial.classList.contains('btn-gh-trial')).toBe(true);
+      expect(trial.className.trim()).toBe('btn-ghost');
+      expect(trial.querySelector('svg.btn-icon')).toBeTruthy();
       expect(trial.hasAttribute('title')).toBe(false);
       const tip = fixture.nativeElement.querySelector('#' + trial.getAttribute('interestfor')) as HTMLElement;
       expect(tip.getAttribute('popover')).toBe('hint');
       expect(tip.textContent).toContain('Changes no score, level, flag or index.');
+    });
+
+    it('should keep Re-assess question one label whether or not the assessment failed', () => {
+      component.selectedRunDetail = reportRun({ answers: [reportAnswer(1, { assessmentStatus: 'Failed', qualityScore: null })] });
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('.question-card-header') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const reassess = fixture.nativeElement.querySelector('.question-actions [data-repair="reassess"]') as HTMLButtonElement;
+      expect(reassess.textContent?.replace(/\s+/g, ' ').trim()).toBe('Re-assess question');
+    });
+
+    it('should show the per-question actions aria-disabled with their reason on an aborted run, and refuse them', () => {
+      component.selectedRunDetail = reportRun({ status: 'Canceled', isAborted: true });
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('.question-card-header') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const open = vi.spyOn(component, 'openRetryDialog').mockReturnValue(undefined);
+
+      const actions = Array.from(fixture.nativeElement.querySelectorAll('.question-card-body .question-actions > button')) as HTMLButtonElement[];
+      expect(actions.length).toBe(3);
+      const reasons = Array.from(fixture.nativeElement.querySelectorAll('.question-card-body .question-repair-reason')) as HTMLElement[];
+      expect(reasons.map(r => r.textContent?.trim())).toEqual(['The run stopped before finishing its suite.']);
+      for (const action of actions) {
+        expect(action.getAttribute('aria-disabled')).toBe('true');
+        expect(action.disabled).toBe(false);
+        expect(action.getAttribute('aria-describedby')).toBe(reasons[0].id);
+        action.click();
+      }
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it('should title the trial scope of the retry dialog, name its confirm by its label, and label the dialog by its heading', () => {
+      component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+      vi.spyOn(component.retryDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      component.openRetryDialog('trial', 55, component.selectedRunDetail!.answers[0]);
+      ctx.refresh();
+
+      const dialog = fixture.nativeElement.querySelector('.retry-dialog') as HTMLDialogElement;
+      const heading = dialog.querySelector('#' + dialog.getAttribute('aria-labelledby')) as HTMLElement;
+      expect(heading.tagName).toBe('H3');
+      expect(heading.textContent?.trim()).toBe('Try another assessor');
+      expect(dialog.querySelector('.dialog-body p')?.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe('Grades this answer with the model you choose and shows the verdict beside the panel\'s. The score does not change.');
+      const confirm = dialog.querySelector('.dialog-footer .btn-gh:not(.btn-gh-cancel)') as HTMLButtonElement;
+      expect(confirm.textContent?.trim()).toBe('Try another assessor');
+      expect(confirm.hasAttribute('aria-label')).toBe(false);
+
+      component.openRetryDialog('synthesis', 55);
+      ctx.refresh();
+      expect(heading.textContent?.trim()).toBe('Re-run final synthesis');
+      expect(confirm.textContent?.trim()).toBe('Re-run final synthesis');
+      component.closeRetryDialog();
     });
 
     it('should clean up exactly once when the header Close closes the report, stopping detail polling', async () => {
@@ -684,7 +875,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(context.kind).toBe('run');
       expect(context.run).toEqual({
         id: 55, suiteName: 'Default Suite', modelLabel: 'Test Model',
-        startedAtUtc: '2026-09-03T06:52:00Z', completedAtUtc: '2026-09-03T07:10:00Z'
+        startedAtUtc: '2026-09-03T06:52:00Z', completedAtUtc: '2026-09-03T07:10:00Z', batteryRunId: null
       });
       const text = context.diagnosticsText() as string;
       expect(text).toContain('Run ID: 55');

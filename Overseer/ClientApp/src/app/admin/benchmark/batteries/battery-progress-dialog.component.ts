@@ -41,10 +41,9 @@ import {
   INDEX_WITHHELD_HINT,
   batteryAnalysisPending,
   batteryAwaitsPostRun,
-  batteryAwaitsReports,
   batteryModelBadges,
   batteryModelName,
-  batteryPostRunGraceOpen,
+  batteryPostRunWork,
   batteryReportDocumentsStatusName,
   batteryRunStatusLabel,
   formatCost,
@@ -136,7 +135,12 @@ interface GridCell {
   readonly slot: BenchmarkBatterySlotDto;
   readonly state: BatterySlotState;
   readonly superseded: readonly BenchmarkBatteryMemberDto[];
+  /** The member's run is being re-run outside the battery's drive loop (`repairingRunIds`). */
+  readonly repairing: boolean;
 }
+
+/** A member cell's chip text while its run is being re-run. */
+export const BATTERY_REPAIRING_LABEL = 'Re-run in progress';
 
 /** The slot whose attach candidates the panel lists. */
 interface AttachSlot {
@@ -222,6 +226,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   cancelInFlight = false;
 
   readonly slotLabels = BATTERY_SLOT_STATE_LABELS;
+  readonly repairingLabel = BATTERY_REPAIRING_LABEL;
   readonly indexWithheldHint = INDEX_WITHHELD_HINT;
   readonly statusLabel = batteryRunStatusLabel;
 
@@ -459,6 +464,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     this.rounds = Array.from({ length: roundCount }, (_, i) => i + 1);
     const suites = [...(run.suites ?? [])].sort((a, b) => a.index - b.index);
     const members = run.members ?? [];
+    const repairing = new Set(run.repairingRunIds ?? []);
     this.grid = suites.map(suite => ({
       suiteIndex: suite.index,
       suiteName: suite.suiteName,
@@ -468,7 +474,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         return {
           slot,
           state: batterySlotState(slot, members),
-          superseded: supersededMembersOf(slot, members)
+          superseded: supersededMembersOf(slot, members),
+          repairing: slot.member != null && repairing.has(slot.member.runId)
         };
       })
     }));
@@ -491,6 +498,12 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   /** Continue: a resumable battery run that did not stop for a moved instrument (decision 6). */
   get canContinue(): boolean {
     return !!this.batteryRun?.resumable && !this.stoppedOnInstrument && !this.resumeRefusedForInstrument;
+  }
+
+  /** *Continue — <stop reason>*, as the multi-run progress dialog names it; plain *Continue* without one. */
+  get continueLabel(): string {
+    const reason = this.batteryRun?.stopReasonText || this.batteryRun?.stopReason;
+    return reason ? `Continue — ${reason}` : 'Continue';
   }
 
   get canRerun(): boolean {
@@ -527,7 +540,9 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
       error: (err) => {
         this.resumeInFlight = false;
         this.actionError = httpErrorText(err, 'The battery run could not be resumed.');
-        if (mode === 'Continue' && err?.status === 409) {
+        // Only a refusal for a moved instrument offers the re-run; any other 409 (a busy run slot,
+        // a member being re-run) is its message alone.
+        if (mode === 'Continue' && err?.status === 409 && err.error?.instrumentChanged === true) {
           this.resumeRefusedForInstrument = true;
         }
         this.cdr.markForCheck();
@@ -750,16 +765,24 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     return this.reportWriter?.name ?? '';
   }
 
-  /** The battery analysis of the finished run is still being computed, within the grace. */
-  private get analysisStageCurrent(): boolean {
-    const run = this.batteryRun;
-    return !!run && this.isFinished && batteryAnalysisPending(run) && batteryPostRunGraceOpen(run);
+  /** What the server is still doing for the battery run (`postRunWork`). */
+  private get postRunWork(): string {
+    return batteryPostRunWork(this.batteryRun);
   }
 
-  /** The AI-written reports of the finished run are queued or written, or still to be queued within the grace. */
+  /** A member run is being re-run while the battery run is not live. */
+  get repairStageCurrent(): boolean {
+    return this.postRunWork === 'Repairing';
+  }
+
+  /** The server is computing the battery analysis. */
+  private get analysisStageCurrent(): boolean {
+    return this.postRunWork === 'Analysing';
+  }
+
+  /** The server is writing the battery's AI-written reports. */
   get reportsStageCurrent(): boolean {
-    const run = this.batteryRun;
-    return !!run && this.isFinished && batteryAwaitsReports(run);
+    return this.postRunWork === 'WritingReports';
   }
 
   /**
@@ -780,6 +803,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     const finished = (run.members ?? []).filter(m => !m.superseded && m.runStatus !== 'Running').length;
     const note = `${Math.min(finished, run.requestedMemberCount)} of ${run.requestedMemberCount} runs`;
     const name = 'Suite runs';
+    if (this.repairStageCurrent) return { key: 'runs', name, state: 'current', note: `${BATTERY_REPAIRING_LABEL} · ${note}` };
     if (this.isFinished) return { key: 'runs', name, state: 'done', note };
     if (this.isLive) return { key: 'runs', name, state: 'current', note };
     return { key: 'runs', name, state: 'ended', note: `${batteryRunStatusLabel(run.status)} at ${note}` };
@@ -787,8 +811,14 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   private analysisRailItem(run: BenchmarkBatteryRunDto): BatteryRailItem {
     const name = 'Battery analysis';
+    if (this.repairStageCurrent) {
+      return { key: 'analysis', name, state: 'pending', note: 'Follows the re-run' };
+    }
     if (!this.isFinished) {
       return { key: 'analysis', name, state: 'pending', note: this.isLive ? null : 'Not reached' };
+    }
+    if (this.analysisStageCurrent) {
+      return { key: 'analysis', name, state: 'current', note: 'Computing the Overall Index…' };
     }
     if (!batteryAnalysisPending(run)) {
       return run.overallIndex != null
@@ -798,25 +828,28 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
           note: `No Overall Index: ${run.completedSuiteCount} of ${run.suiteCount} suites have a usable result`
         };
     }
-    return batteryPostRunGraceOpen(run)
-      ? { key: 'analysis', name, state: 'current', note: 'Computing the Overall Index…' }
-      : { key: 'analysis', name, state: 'ended', note: 'Not computed: use Recompute in the Battery Run Report' };
+    return { key: 'analysis', name, state: 'ended', note: 'Not computed: use Recompute in the Battery Run Report' };
   }
 
   private reportsRailItem(run: BenchmarkBatteryRunDto): BatteryRailItem {
     const name = 'AI-written reports';
+    if (this.repairStageCurrent || this.analysisStageCurrent) {
+      return { key: 'reports', name, state: 'pending', note: 'Follows the analysis' };
+    }
     if (!this.isFinished) {
       return { key: 'reports', name, state: 'pending', note: this.isLive ? null : 'Not reached' };
     }
     const message = run.reportDocumentsMessage?.trim() || null;
-    switch (batteryReportDocumentsStatusName(run.reportDocumentsStatus)) {
-      case 'Pending': {
-        const ahead = this.reportJob?.jobsAhead;
-        const queue = ahead != null && ahead > 0 ? ` (${ahead} ${ahead === 1 ? 'job' : 'jobs'} ahead)` : '';
-        return { key: 'reports', name, state: 'current', note: `Waiting for the report writer${queue}` };
-      }
-      case 'Writing':
+    const status = batteryReportDocumentsStatusName(run.reportDocumentsStatus);
+    if (this.reportsStageCurrent) {
+      if (status === 'Writing') {
         return { key: 'reports', name, state: 'current', note: 'Writing the Executive Summary and the Researcher report' };
+      }
+      const ahead = this.reportJob?.jobsAhead;
+      const queue = ahead != null && ahead > 0 ? ` (${ahead} ${ahead === 1 ? 'job' : 'jobs'} ahead)` : '';
+      return { key: 'reports', name, state: 'current', note: `Waiting for the report writer${queue}` };
+    }
+    switch (status) {
       case 'Completed': {
         const written = run.reportDocumentsWrittenCount ?? 0;
         return {
@@ -833,9 +866,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
       case 'Canceled':
         return { key: 'reports', name, state: 'ended', note: message ? `Canceled: ${message}` : 'Canceled' };
       default:
-        return batteryPostRunGraceOpen(run)
-          ? { key: 'reports', name, state: 'current', note: 'Waiting for the report writer' }
-          : { key: 'reports', name, state: 'ended', note: 'Not started' };
+        return { key: 'reports', name, state: 'ended', note: 'Not started' };
     }
   }
 
@@ -854,6 +885,12 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     const run = this.batteryRun;
     if (!run) {
       return this.loadError ? 'Could not load the battery run.' : 'Loading battery run…';
+    }
+    if (this.repairStageCurrent) {
+      const ids = (run.repairingRunIds ?? []).map(id => `#${id}`);
+      return ids.length > 0
+        ? `${BATTERY_REPAIRING_LABEL}: ${ids.length === 1 ? 'run' : 'runs'} ${ids.join(', ')}`
+        : `${BATTERY_REPAIRING_LABEL}…`;
     }
     if (this.analysisStageCurrent) {
       return 'Computing the battery analysis…';

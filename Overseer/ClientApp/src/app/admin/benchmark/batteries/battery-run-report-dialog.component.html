@@ -125,9 +125,6 @@
           }
         } @else {
           <!-- The run-wide alerts sit above the panels, on every tab. -->
-          @if (actionError) {
-            <div class="alert alert-danger brr-action-error" role="alert">{{ actionError }}</div>
-          }
           @if (analysisError) {
             <div class="alert alert-danger bb-analysis-error" role="alert">{{ analysisError }}</div>
           }

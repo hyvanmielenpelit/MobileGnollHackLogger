@@ -96,7 +96,7 @@ export function buildBatteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {})
     stopReason: null, stopReasonText: null, allowCapWait: false, resumable: false, isDriving: true,
     startedAtUtc: '2026-10-02T00:00:00Z', currentSuitePosition: 1, currentSuiteName: 'Default Suite',
     currentRound: 1, currentRunId: null, slots: [], members: [],
-    analysisStale: false, analysisHasExcludedMembers: false,
+    analysisStale: false, analysisHasExcludedMembers: false, postRunWork: 'None', repairingRunIds: [],
     ...overrides
   };
 }

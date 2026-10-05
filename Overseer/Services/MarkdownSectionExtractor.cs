@@ -166,7 +166,8 @@ internal static class MarkdownSectionExtractor
     /// <summary>
     /// Every Markdown heading in <paramref name="content"/>, in document order, as its title alone
     /// (leading <c>#</c>'s stripped, trimmed). Shared by the section-miss marker line and
-    /// <c>wiki_view</c>'s too-long-article notice, so both list one article's headings the same way.
+    /// the too-long-article notice of <c>wiki_view</c> and <c>nethack_wiki_view</c>, so both list one
+    /// article's headings the same way.
     /// </summary>
     internal static IReadOnlyList<string> Headings(string content)
     {

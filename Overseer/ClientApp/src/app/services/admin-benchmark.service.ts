@@ -1294,6 +1294,11 @@ export interface BenchmarkRunDetailDto {
   scoringProfileSecondOpinionQualityThreshold?: number | null;
   scoringProfileSecondOpinionOutlierDeltaPoints?: number | null;
   scoringMethodVersion: number;
+  /**
+   * The run was graded under the scoring method this server grades under; every action that grades
+   * part of the run is refused otherwise. An older server omits it.
+   */
+  isCurrentScoringMethod?: boolean;
   harnessVersion?: string | null;
   maxToolCallsPerQuestionUsed?: number | null;
   degradedAnswerCount?: number;
@@ -2278,6 +2283,9 @@ export interface BenchmarkBatterySlotDto {
   member?: BenchmarkBatteryMemberDto | null;
 }
 
+/** `BenchmarkBatteryRunDto.postRunWork`'s wire values. */
+export type BenchmarkBatteryPostRunWork = 'None' | 'Repairing' | 'Analysing' | 'WritingReports';
+
 export interface BenchmarkBatteryRunDto {
   id: number;
   /** Null when the battery has been deleted; the run keeps its own snapshot. */
@@ -2303,10 +2311,19 @@ export interface BenchmarkBatteryRunDto {
   stopReason?: string | null;
   stopReasonText?: string | null;
   allowCapWait: boolean;
-  /** Stopped, or Completed with errors while a slot holds no usable member. */
+  /** Stopped, or Completed with errors, while no member run is being repaired. */
   resumable: boolean;
   /** This server process is driving the battery run now. */
   isDriving: boolean;
+  /**
+   * What the server is still doing for the battery run, the first that applies: `Repairing` while a
+   * member run runs outside the drive loop, `Analysing` while the analysis is computed,
+   * `WritingReports` while the battery-completion documents are Pending or Writing, else `None`.
+   * `Analysing` is a wire value. An older server omits it; read that as `None`.
+   */
+  postRunWork: BenchmarkBatteryPostRunWork;
+  /** The member runs being repaired: running while the battery run is not live. Empty otherwise. */
+  repairingRunIds: number[];
   startedAtUtc: string;
   completedAtUtc?: string | null;
   lastProgressAtUtc?: string | null;
@@ -2996,7 +3013,11 @@ export interface BenchmarkReportDocumentDetailDto extends BenchmarkReportDocumen
 /** Which stored documents to list; every field is optional. */
 export interface BenchmarkReportDocumentQuery {
   suiteId?: number | null;
-  /** Documents whose subject includes this run. */
+  /**
+   * Every document whose subject includes this run, a group's, a battery's or a Report Pack's
+   * included; a peer's run never matches. The run Download Center lists only the run's own
+   * documents and uses `subject` (`run:<id>`) instead.
+   */
   runId?: number | null;
   take?: number | null;
   /** A comparison's entry keys (`run:<id>`, `group:<id>`): the documents written for exactly that set. */

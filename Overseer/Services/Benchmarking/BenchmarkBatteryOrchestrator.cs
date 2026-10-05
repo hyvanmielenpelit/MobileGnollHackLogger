@@ -144,6 +144,18 @@ public class BenchmarkBatteryOrchestrator
     /// <summary>Cancellation for the battery run being driven, keyed by battery run id.</summary>
     private readonly ConcurrentDictionary<long, CancellationTokenSource> _active = new();
 
+    /// <summary>
+    /// Guards taking the claim for a reconcile or a resume, and <see cref="_reconciling"/>, so the two
+    /// never hold one battery run's claim at once.
+    /// </summary>
+    private readonly object _claimLock = new();
+
+    /// <summary>The battery runs a reconcile holds the claim for. Guarded by <see cref="_claimLock"/>.</summary>
+    private readonly HashSet<long> _reconciling = new();
+
+    /// <summary>The analyses in progress per battery run id. Guarded by itself.</summary>
+    private readonly Dictionary<long, int> _analysing = new();
+
     public BenchmarkBatteryOrchestrator(
         IServiceScopeFactory scopeFactory,
         BenchmarkRunManager runManager,
@@ -158,6 +170,15 @@ public class BenchmarkBatteryOrchestrator
     public long? ActiveBatteryRunId => _active.IsEmpty ? null : _active.Keys.First();
 
     public bool IsDriving(long batteryRunId) => _active.ContainsKey(batteryRunId);
+
+    /// <summary>The composite analysis of the battery run is being computed by this process.</summary>
+    public virtual bool IsAnalysing(long batteryRunId)
+    {
+        lock (_analysing)
+        {
+            return _analysing.ContainsKey(batteryRunId);
+        }
+    }
 
     // ---------------------------------------------------------------------------------------
     // Start
@@ -1043,14 +1064,17 @@ public class BenchmarkBatteryOrchestrator
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Resumes a <c>Stopped</c> battery run, or a <c>CompletedWithErrors</c> one with a slot that holds
-    /// no usable member.
+    /// Resumes a <c>Stopped</c> or <c>CompletedWithErrors</c> battery run. It is refused with Conflict
+    /// while a member run is being re-run outside the drive loop (<see cref="ResumeStatusRefusal"/>).
     ///
     /// <para><see cref="BenchmarkBatteryResumeMode.Continue"/> keeps every usable member, supersedes
-    /// the others and launches the free slots. It is refused with InstrumentChanged when a member
-    /// carries a guard failure, when the usable members already refuse the composite, when this
-    /// build's harness version differs from theirs, or when a remaining suite's fingerprint moved —
-    /// in each case a member launched now could only trip the guard again.</para>
+    /// the others and launches the free slots. It is refused with InstrumentChanged when a kept member
+    /// was graded under another scoring method, when a member carries a guard failure, when the
+    /// usable members already refuse the composite, when this build's harness version differs from
+    /// theirs, or when a remaining suite's fingerprint moved — in each case a member launched now
+    /// could only trip the guard again. When every slot already holds a usable member, nothing is
+    /// launched: the scoring method, spend, composite and harness checks are skipped, and the drive
+    /// loop finishes the battery run, its analysis and documents included.</para>
     ///
     /// <para><see cref="BenchmarkBatteryResumeMode.RerunUnderCurrentInstrument"/> supersedes every
     /// member, attached ones included, forgets the auto-created groups (they stay as ordinary
@@ -1089,6 +1113,11 @@ public class BenchmarkBatteryOrchestrator
                 BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
+        if (IsReconciling(batteryRunId))
+        {
+            return BenchmarkBatteryStartResult.Fail(BenchmarkBatteryStartOutcome.Conflict, ReconcilingMessage);
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var guard = scope.ServiceProvider.GetRequiredService<BenchmarkComplianceGuard>();
@@ -1119,12 +1148,15 @@ public class BenchmarkBatteryOrchestrator
 
         int suiteCount = definition.Suites.Count;
         var state = await LoadSlotStateAsync(db, batteryRun.Id, ct);
-        int usableSlots = RecomputeCompletedMemberCount(state, suiteCount, batteryRun.RunsPerSuite);
 
-        string? statusRefusal = ResumeStatusRefusal(batteryRun.Status, batteryRun.RequestedMemberCount, usableSlots);
+        var repairing = RepairingRunIds(state);
+        string? statusRefusal = ResumeStatusRefusal(batteryRun.Status, repairing);
         if (statusRefusal != null)
         {
-            return Refuse(BenchmarkBatteryStartOutcome.Invalid, batteryRun.Id, statusRefusal);
+            var outcome = repairing.Count > 0 && IsResumableStatus(batteryRun.Status)
+                ? BenchmarkBatteryStartOutcome.Conflict
+                : BenchmarkBatteryStartOutcome.Invalid;
+            return Refuse(outcome, batteryRun.Id, statusRefusal);
         }
 
         bool rerun = mode == BenchmarkBatteryResumeMode.RerunUnderCurrentInstrument;
@@ -1133,36 +1165,50 @@ public class BenchmarkBatteryOrchestrator
             ? new List<(BenchmarkBatteryRunMember Member, BenchmarkRun? Run)>()
             : live.Where(s => s.Run != null && BenchmarkBatteryPlanner.IsUsable(s.Member, s.Run)).ToList();
 
+        var keptSlots = kept.Select(s => (s.Member.SuiteIndex, s.Member.Round)).ToHashSet();
+        var remainingSuites = definition.Suites
+            .Where(suite => Enumerable.Range(1, batteryRun.RunsPerSuite).Any(round => !keptSlots.Contains((suite.Index, round))))
+            .ToList();
+
+        // Every slot holds a usable member: the drive loop only finishes the battery run.
+        bool launchesNothing = !rerun && remainingSuites.Count == 0;
+
         // Not overridable: a member launched now is graded under this build's scoring method.
-        var foreignMethods = ForeignScoringMethods(kept.Select(s => s.Run!), BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        var foreignMethods = launchesNothing
+            ? Array.Empty<int>()
+            : ForeignScoringMethods(kept.Select(s => s.Run!), BenchmarkAssessmentPrompt.ScoringMethodVersion);
         if (foreignMethods.Count > 0)
         {
-            return Refuse(BenchmarkBatteryStartOutcome.Invalid, batteryRun.Id,
-                "This battery run cannot be resumed because the scoring method changed since its members were graded: " +
-                $"they were graded under scoring method {string.Join(", ", foreignMethods)}, and this build grades " +
-                $"under {BenchmarkAssessmentPrompt.ScoringMethodVersion}. Re-run it under the current instrument, " +
-                "or start a new battery run.");
+            return new BenchmarkBatteryStartResult
+            {
+                Outcome = BenchmarkBatteryStartOutcome.InstrumentChanged,
+                BatteryRunId = batteryRun.Id,
+                ChangedInstrumentHashes = new[] { "ScoringMethodVersion" },
+                Error =
+                    "This battery run cannot be resumed because the scoring method changed since its members were graded: " +
+                    $"they were graded under scoring method {string.Join(", ", foreignMethods)}, and this build grades " +
+                    $"under {BenchmarkAssessmentPrompt.ScoringMethodVersion}. Re-run it under the current instrument, " +
+                    "or start a new battery run."
+            };
         }
 
         // With AllowCapWait a run-cap denial resumes the battery run waiting on the cap; any other
         // denial refuses it.
         bool waitForCap = false;
-        var spend = await guard.CheckSpendAsync(db, ct);
-        if (!spend.Allowed)
+        if (!launchesNothing)
         {
-            if (!batteryRun.AllowCapWait || !spend.IsCapDenial)
+            var spend = await guard.CheckSpendAsync(db, ct);
+            if (!spend.Allowed)
             {
-                return Refuse(BenchmarkBatteryStartOutcome.SpendDenied, batteryRun.Id,
-                    spend.DenialReason ?? "The benchmark spend guard refused this resume.");
+                if (!batteryRun.AllowCapWait || !spend.IsCapDenial)
+                {
+                    return Refuse(BenchmarkBatteryStartOutcome.SpendDenied, batteryRun.Id,
+                        spend.DenialReason ?? "The benchmark spend guard refused this resume.");
+                }
+
+                waitForCap = true;
             }
-
-            waitForCap = true;
         }
-
-        var keptSlots = kept.Select(s => (s.Member.SuiteIndex, s.Member.Round)).ToHashSet();
-        var remainingSuites = definition.Suites
-            .Where(suite => Enumerable.Range(1, batteryRun.RunsPerSuite).Any(round => !keptSlots.Contains((suite.Index, round))))
-            .ToList();
 
         var launcher = ValidatingLauncher(scope.ServiceProvider, admitCapDenials: waitForCap);
         foreach (var suite in remainingSuites)
@@ -1192,7 +1238,7 @@ public class BenchmarkBatteryOrchestrator
             }
 
             var usable = await LoadUsableMembersAsync(db, batteryRun.Id, ct);
-            string? comparabilityRefusal = ComparabilityGuardFailure(usable);
+            string? comparabilityRefusal = launchesNothing ? null : ComparabilityGuardFailure(usable);
             if (comparabilityRefusal != null)
             {
                 return Refuse(BenchmarkBatteryStartOutcome.InstrumentChanged, batteryRun.Id,
@@ -1200,7 +1246,9 @@ public class BenchmarkBatteryOrchestrator
                     comparabilityRefusal + " Re-run it under the current instrument, or cancel it.");
             }
 
-            string? harnessRefusal = HarnessVersionRefusal(usable.Select(u => u.Run), BenchmarkAssessmentPrompt.HarnessVersion);
+            string? harnessRefusal = launchesNothing
+                ? null
+                : HarnessVersionRefusal(usable.Select(u => u.Run), BenchmarkAssessmentPrompt.HarnessVersion);
             if (harnessRefusal != null)
             {
                 return Refuse(BenchmarkBatteryStartOutcome.InstrumentChanged, batteryRun.Id, harnessRefusal);
@@ -1262,12 +1310,22 @@ public class BenchmarkBatteryOrchestrator
         batteryRun.CompletedAtUtc = null;
         batteryRun.LastProgressAtUtc = DateTime.UtcNow;
 
-        // A claim this battery run already holds belongs to its live drive loop, which releases it.
-        bool claimAlreadyHeld = _runManager.OrchestratorOwner == owner;
-        if (!_runManager.TryClaimOrchestrator(owner))
+        // A claim this battery run already holds belongs to its live drive loop, which releases it; a
+        // reconcile's claim refuses the resume.
+        bool claimAlreadyHeld;
+        lock (_claimLock)
         {
-            return BenchmarkBatteryStartResult.Fail(
-                BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+            if (_reconciling.Contains(batteryRunId))
+            {
+                return BenchmarkBatteryStartResult.Fail(BenchmarkBatteryStartOutcome.Conflict, ReconcilingMessage);
+            }
+
+            claimAlreadyHeld = _runManager.OrchestratorOwner == owner;
+            if (!_runManager.TryClaimOrchestrator(owner))
+            {
+                return BenchmarkBatteryStartResult.Fail(
+                    BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+            }
         }
 
         try
@@ -1289,21 +1347,38 @@ public class BenchmarkBatteryOrchestrator
 
     /// <summary>
     /// Why a battery run in <paramref name="status"/> may not be resumed, or null. Resumable:
-    /// <c>Stopped</c>, and <c>CompletedWithErrors</c> while a slot holds no usable member.
+    /// <c>Stopped</c> and <c>CompletedWithErrors</c>, unless a member run is being re-run outside the
+    /// drive loop (<paramref name="repairingRunIds"/>, from <see cref="RepairingRunIds"/>): its slot is
+    /// held, not free. A CompletedWithErrors battery run whose every slot holds a usable member is
+    /// resumable; Continue then only finishes it.
     /// </summary>
-    public static string? ResumeStatusRefusal(BenchmarkRunSeriesStatus status, int requestedMemberCount, int usableSlotCount)
+    public static string? ResumeStatusRefusal(BenchmarkRunSeriesStatus status, IReadOnlyCollection<long>? repairingRunIds = null)
     {
-        if (status == BenchmarkRunSeriesStatus.Stopped) return null;
-
-        if (status == BenchmarkRunSeriesStatus.CompletedWithErrors)
+        if (!IsResumableStatus(status))
         {
-            return usableSlotCount < requestedMemberCount
-                ? null
-                : "Every slot of this battery run already holds a usable member; there is nothing to resume.";
+            return $"A {status} battery run cannot be resumed. Start a new battery run instead.";
         }
 
-        return $"A {status} battery run cannot be resumed. Start a new battery run instead.";
+        long? repairing = repairingRunIds?.OrderBy(id => id).Select(id => (long?)id).FirstOrDefault();
+        return repairing.HasValue
+            ? $"Run #{repairing.Value.ToString(CultureInfo.InvariantCulture)} is being re-run; the battery run follows it when the re-run finishes."
+            : null;
     }
+
+    private static bool IsResumableStatus(BenchmarkRunSeriesStatus status)
+        => status is BenchmarkRunSeriesStatus.Stopped or BenchmarkRunSeriesStatus.CompletedWithErrors;
+
+    /// <summary>
+    /// The runs of the non-superseded members whose run is <c>Running</c>, ascending. Read for a
+    /// battery run no drive loop is driving, each is a repair in flight.
+    /// </summary>
+    public static IReadOnlyList<long> RepairingRunIds(IEnumerable<(BenchmarkBatteryRunMember Member, BenchmarkRun? Run)> members)
+        => (members ?? Array.Empty<(BenchmarkBatteryRunMember, BenchmarkRun?)>())
+            .Where(m => !m.Member.Superseded && m.Run?.Status == BenchmarkRunStatus.Running)
+            .Select(m => m.Member.BenchmarkRunId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
 
     /// <summary>The scoring method versions, ascending, of <paramref name="runs"/> that differ from <paramref name="currentMethod"/>.</summary>
     public static IReadOnlyList<int> ForeignScoringMethods(IEnumerable<BenchmarkRun> runs, int currentMethod)
@@ -1387,6 +1462,156 @@ public class BenchmarkBatteryOrchestrator
         await db.SaveChangesAsync(ct);
 
         return true;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Reconciliation after a member change
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>The refusal of a resume while a reconcile holds the battery run's claim.</summary>
+    public const string ReconcilingMessage =
+        "This battery run is being updated after a member run changed. Try again in a moment.";
+
+    private bool IsReconciling(long batteryRunId)
+    {
+        lock (_claimLock)
+        {
+            return _reconciling.Contains(batteryRunId);
+        }
+    }
+
+    /// <summary>
+    /// Brings every battery run that holds <paramref name="runId"/> as a non-superseded member, is
+    /// <c>Stopped</c> or <c>CompletedWithErrors</c> and is not driven up to date with that run, through
+    /// <see cref="ReconcileBatteryRunAsync"/>. Called after a repair (re-run, retry, re-assessment)
+    /// changed the run. A run in no battery is a no-op. A failure of one battery run is logged and
+    /// does not stop the others; only cancellation is thrown.
+    /// </summary>
+    public virtual async Task ReconcileAfterMemberChangeAsync(long runId, CancellationToken cancellationToken = default)
+    {
+        List<long> batteryRunIds;
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ownerIds = await db.BenchmarkBatteryRunMembers
+                .AsNoTracking()
+                .Where(m => m.BenchmarkRunId == runId && !m.Superseded)
+                .Select(m => m.BenchmarkBatteryRunId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            if (ownerIds.Count == 0) return;
+
+            batteryRunIds = await db.BenchmarkBatteryRuns
+                .AsNoTracking()
+                .Where(b => ownerIds.Contains(b.Id)
+                            && (b.Status == BenchmarkRunSeriesStatus.Stopped
+                                || b.Status == BenchmarkRunSeriesStatus.CompletedWithErrors))
+                .OrderBy(b => b.Id)
+                .Select(b => b.Id)
+                .ToListAsync(cancellationToken);
+        }
+
+        foreach (long batteryRunId in batteryRunIds)
+        {
+            try
+            {
+                await ReconcileBatteryRunAsync(batteryRunId, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex,
+                    "Reconciling benchmark battery run {BatteryRunId} after run {RunId} changed failed.", batteryRunId, runId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Re-evaluates a <c>Stopped</c> or <c>CompletedWithErrors</c> battery run from its member rows,
+    /// under the orchestrator claim. When every slot holds a usable member it is finished as the drive
+    /// loop finishes one (<c>Completed</c>, the error cleared, the analysis and the battery-completion
+    /// documents); a CompletedWithErrors battery run keeps its finish time. Otherwise its usable-slot
+    /// count is recomputed, a CompletedWithErrors battery run's error message lists the slots still
+    /// without a usable result, and its status stands.
+    ///
+    /// <para>Skipped, returning false, while the battery run is driven or any orchestrator claim is
+    /// held: a drive loop of this battery run finishes it itself. True when the battery run was
+    /// finished here, its analysis included.</para>
+    /// </summary>
+    public virtual async Task<bool> ReconcileBatteryRunAsync(long batteryRunId, CancellationToken cancellationToken = default)
+    {
+        if (_active.ContainsKey(batteryRunId)) return false;
+
+        string owner = BenchmarkRunManager.BatteryOwner(batteryRunId);
+        lock (_claimLock)
+        {
+            if (_runManager.OrchestratorOwner != null || !_runManager.TryClaimOrchestrator(owner))
+            {
+                _logger.LogInformation(
+                    "Benchmark battery run {BatteryRunId} was not reconciled: the orchestrator claim is held by {Owner}.",
+                    batteryRunId, _runManager.OrchestratorOwner);
+                return false;
+            }
+
+            _reconciling.Add(batteryRunId);
+        }
+
+        try
+        {
+            return await ReconcileClaimedAsync(batteryRunId, cancellationToken);
+        }
+        finally
+        {
+            lock (_claimLock)
+            {
+                _reconciling.Remove(batteryRunId);
+                _runManager.ReleaseOrchestrator(owner);
+            }
+        }
+    }
+
+    private async Task<bool> ReconcileClaimedAsync(long batteryRunId, CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var batteryRun = await db.BenchmarkBatteryRuns.FirstOrDefaultAsync(b => b.Id == batteryRunId, ct);
+        if (batteryRun == null || !IsResumableStatus(batteryRun.Status)) return false;
+
+        BenchmarkBatteryDefinition definition;
+        try
+        {
+            definition = BenchmarkBatteryDefinition.FromJson(batteryRun.DefinitionJson);
+        }
+        catch (JsonException)
+        {
+            _logger.LogWarning(
+                "Benchmark battery run {BatteryRunId} was not reconciled: its stored definition could not be read.", batteryRunId);
+            return false;
+        }
+
+        var oldStatus = batteryRun.Status;
+        var state = await LoadSlotStateAsync(db, batteryRun.Id, ct);
+        batteryRun.CompletedMemberCount = RecomputeCompletedMemberCount(state, definition.Suites.Count, batteryRun.RunsPerSuite);
+
+        bool finished = batteryRun.CompletedMemberCount >= batteryRun.RequestedMemberCount;
+        if (finished)
+        {
+            await FinishAsync(scope.ServiceProvider, db, batteryRun, definition, ct);
+        }
+        else
+        {
+            if (oldStatus == BenchmarkRunSeriesStatus.CompletedWithErrors)
+            {
+                batteryRun.ErrorMessage = UnusableSlotsMessage(definition, state);
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        _logger.LogInformation(
+            "Benchmark battery run {BatteryRunId} reconciled after a member change: {OldStatus} -> {NewStatus}.",
+            batteryRun.Id, oldStatus, batteryRun.Status);
+        return finished;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1755,7 +1980,8 @@ public class BenchmarkBatteryOrchestrator
 
     /// <summary>
     /// Every slot is occupied. <c>Completed</c> when every slot holds a usable member, otherwise
-    /// <c>CompletedWithErrors</c>, naming the members without a result. With two or more runs per
+    /// <c>CompletedWithErrors</c>, naming the members without a result. A battery run that was
+    /// CompletedWithErrors keeps its finish time; any other is stamped now. With two or more runs per
     /// suite, one ordinary run group per suite with at least two usable members (once per suite);
     /// then the composite analysis, whose refusal is recorded and does not fail the battery run.
     /// </summary>
@@ -1769,26 +1995,14 @@ public class BenchmarkBatteryOrchestrator
         var state = await LoadSlotStateAsync(db, batteryRun.Id, ct);
         batteryRun.CompletedMemberCount = RecomputeCompletedMemberCount(state, definition.Suites.Count, batteryRun.RunsPerSuite);
 
-        var unusable = state
-            .Where(s => !s.Member.Superseded && (s.Run == null || !BenchmarkBatteryPlanner.IsUsable(s.Member, s.Run)))
-            .OrderBy(s => s.Member.Round)
-            .ThenBy(s => s.Member.SuiteIndex)
-            .ToList();
-
+        bool keepFinishTime = batteryRun.Status == BenchmarkRunSeriesStatus.CompletedWithErrors && batteryRun.CompletedAtUtc.HasValue;
         bool complete = batteryRun.CompletedMemberCount >= batteryRun.RequestedMemberCount;
         batteryRun.Status = complete
             ? BenchmarkRunSeriesStatus.Completed
             : BenchmarkRunSeriesStatus.CompletedWithErrors;
         batteryRun.StopReason = null;
-        batteryRun.ErrorMessage = complete
-            ? null
-            : Truncate(
-                "Without a usable result: " + string.Join("; ", unusable.Select(s =>
-                    $"suite '{SuiteNameAt(definition, s.Member.SuiteIndex)}', round {s.Member.Round} (run #{s.Member.BenchmarkRunId}): " +
-                    (s.Run == null ? "run deleted" : BenchmarkBatteryPlanner.UnusableReason(s.Member, s.Run)))) +
-                ". Repair a run with Re-run Failed Questions and recompute, or continue the battery run to replace it.",
-                ErrorMessageMaxLength);
-        batteryRun.CompletedAtUtc = DateTime.UtcNow;
+        batteryRun.ErrorMessage = complete ? null : UnusableSlotsMessage(definition, state);
+        batteryRun.CompletedAtUtc = keepFinishTime ? batteryRun.CompletedAtUtc : DateTime.UtcNow;
         batteryRun.LastProgressAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
@@ -1839,11 +2053,60 @@ public class BenchmarkBatteryOrchestrator
     }
 
     /// <summary>
-    /// Computes and persists the composite analysis. A refusal or an exception is logged and appended
-    /// to the battery run's error message, through a scope of its own so a half-written analysis is
-    /// never saved with it.
+    /// The error message of a battery run with a slot that holds no usable member: each non-superseded
+    /// member without a usable result, by round and suite, with the reason.
+    /// </summary>
+    private static string UnusableSlotsMessage(
+        BenchmarkBatteryDefinition definition,
+        IEnumerable<(BenchmarkBatteryRunMember Member, BenchmarkRun? Run)> state)
+    {
+        var unusable = state
+            .Where(s => !s.Member.Superseded && (s.Run == null || !BenchmarkBatteryPlanner.IsUsable(s.Member, s.Run)))
+            .OrderBy(s => s.Member.Round)
+            .ThenBy(s => s.Member.SuiteIndex)
+            .ToList();
+
+        return Truncate(
+            "Without a usable result: " + string.Join("; ", unusable.Select(s =>
+                $"suite '{SuiteNameAt(definition, s.Member.SuiteIndex)}', round {s.Member.Round} (run #{s.Member.BenchmarkRunId}): " +
+                (s.Run == null ? "run deleted" : BenchmarkBatteryPlanner.UnusableReason(s.Member, s.Run)))) +
+            ". Repair a run with Re-run Failed Questions and recompute, or continue the battery run to replace it.",
+            ErrorMessageMaxLength);
+    }
+
+    /// <summary>
+    /// Computes and persists the composite analysis, marked in <see cref="IsAnalysing"/> while it
+    /// runs. A refusal or an exception is logged and appended to the battery run's error message,
+    /// through a scope of its own so a half-written analysis is never saved with it.
     /// </summary>
     private async Task AnalyseAsync(IServiceProvider services, long batteryRunId, string? userId, CancellationToken ct)
+    {
+        lock (_analysing)
+        {
+            _analysing[batteryRunId] = _analysing.TryGetValue(batteryRunId, out int running) ? running + 1 : 1;
+        }
+
+        try
+        {
+            await AnalyseCoreAsync(services, batteryRunId, userId, ct);
+        }
+        finally
+        {
+            lock (_analysing)
+            {
+                if (_analysing.TryGetValue(batteryRunId, out int running) && running > 1)
+                {
+                    _analysing[batteryRunId] = running - 1;
+                }
+                else
+                {
+                    _analysing.Remove(batteryRunId);
+                }
+            }
+        }
+    }
+
+    private async Task AnalyseCoreAsync(IServiceProvider services, long batteryRunId, string? userId, CancellationToken ct)
     {
         string? problem;
         try

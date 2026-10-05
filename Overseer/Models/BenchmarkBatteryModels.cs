@@ -388,6 +388,18 @@ public class BenchmarkBatterySlotDto
     public BenchmarkBatteryMemberDto? Member { get; set; }
 }
 
+/// <summary>
+/// The values of <see cref="BenchmarkBatteryRunDto.PostRunWork"/>. They are wire values the client
+/// matches, so <see cref="Analysing"/> keeps its spelling.
+/// </summary>
+public static class BenchmarkBatteryPostRunWork
+{
+    public const string None = "None";
+    public const string Repairing = "Repairing";
+    public const string Analysing = "Analysing";
+    public const string WritingReports = "WritingReports";
+}
+
 public class BenchmarkBatteryRunDto
 {
     public long Id { get; set; }
@@ -435,11 +447,22 @@ public class BenchmarkBatteryRunDto
 
     public bool AllowCapWait { get; set; }
 
-    /// <summary>Stopped, or Completed with errors while a slot holds no usable member.</summary>
+    /// <summary>Stopped, or Completed with errors, while no member run is being repaired.</summary>
     public bool Resumable { get; set; }
 
     /// <summary>This process is driving the battery run now.</summary>
     public bool IsDriving { get; set; }
+
+    /// <summary>
+    /// What the server is still doing for the battery run, one of <see cref="BenchmarkBatteryPostRunWork"/>:
+    /// <c>Repairing</c> while a member run is running outside the drive loop, <c>Analysing</c> while the
+    /// analysis is computed, <c>WritingReports</c> while the battery-completion documents are Pending or
+    /// Writing, otherwise <c>None</c>; the first that applies.
+    /// </summary>
+    public string PostRunWork { get; set; } = BenchmarkBatteryPostRunWork.None;
+
+    /// <summary>The member runs being repaired: running while the battery run is not live. Empty otherwise.</summary>
+    public long[] RepairingRunIds { get; set; } = Array.Empty<long>();
 
     public DateTime StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }

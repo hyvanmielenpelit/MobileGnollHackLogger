@@ -432,7 +432,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     `batteryRunDiagnosticsText` and the client-side weight preview are in `batteries/battery.models.ts`.
     The launcher's battery mode, the battery banner (`.battery-banner`, holding the `.lost-contact-notice`
     of the monitor's back-off) and the documentation of the whole feature are in
-    `docs/overseer/ai-benchmark-multi-suite.md`.
+    `docs/overseer/ai-benchmark-multi-suite.md`. The run tab's battery and series banners show progress
+    only: **Show Battery Progress** / **Show Series Progress**, and **Cancel Battery** / **Cancel
+    Series** while there is something to cancel; a stopped banner ends *"Continue from the progress
+    dialog."* The battery banner shows while the battery run is live, `Stopped` or has post-run work
+    (`batteryAwaitsPostRun`); a `CompletedWithErrors` battery run counts as finished and has none.
 
   Not an exhaustive list of the Benchmark dialogs, only the ones recorded here so far. Each names the
   component that holds it when that is not the shell:
@@ -479,13 +483,27 @@ To find specific popups, look in the corresponding component's `.html` template:
     `div.rr-header-controls`: a `role="group"` *Run actions* (never `role="toolbar"`: it has no
     arrow-key roving) and, outside it, **Close** (`.rr-close`, a `.btn-icon-action` named *Close run
     details*: a dialog control, not a run action). The group's direct children are **Downloads** (opens
-    the Download Center), **Re-run** (an action popover, `frontend_ui_controls` §4f: *Re-score run*,
-    *Re-run final synthesis*, *Retry failed assessments*, *Retry claim verification*, *Re-run failed
-    questions*, a disabled one showing its reason) with its popover, and the icon-only **View game
-    snapshot** and **Copy diagnostics**. The group is a two-column grid — Downloads over Re-run, equal
-    width and left-aligned, then snapshot over copy — with the `.rr-status` *Copied* line positioned
-    under it so it takes no cell; below 40 rem of the `run-report-frame` container it is one row. The
-    decorative GnollBench emblem (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under the
+    the Download Center on the run's own documents), **Re-run** (an action popover,
+    `frontend_ui_controls` §4f, `aria-label` *Re-run and repair*: *Re-run failed questions*, *Retry failed
+    assessments*, *Retry claim verification*, *Re-run final synthesis*, *Re-score run*, in that order,
+    each listed and gated by `admin/benchmark/run-repair-actions.ts` and an unavailable one
+    `aria-disabled` with its reason — the rules are `frontend_ui_controls` §4g) with its popover, and the
+    icon-only **View game snapshot** and **Copy diagnostics**. The group is a two-column grid —
+    Downloads over Re-run, equal width and left-aligned, then snapshot over copy — with the `.rr-status`
+    *Copied* line positioned under it so it takes no cell; below 40 rem of the `run-report-frame`
+    container it is one row. **Repairs outside the popover:** the Summary tab's *Run did not complete
+    cleanly* alert carries the one contextual **Re-run failed questions** (*refresh-cw*, same gate, its
+    reason in a `.repair-reason` line it is described by), and each question's row **Re-run question**,
+    **Re-assess question** (*refresh-cw*) and **Try another assessor (does not change the score)** (plain
+    `.btn-ghost`, *flask*), each disabled one described by its reason line under the row. Their
+    confirmation dialog is `aria-labelledby` its `<h3>`, its confirm button labelled as the item (the
+    trial's title *Try another assessor*, its description *"Grades this answer with the model you choose
+    and shows the verdict beside the panel's. The score does not change."*). The busy strip above the
+    run report's panels reads *Retry in progress on this run…* only while a re-run of a Running run is
+    under way (`rerunStartedAtUtc` set), else *Run in progress.* In the run progress dialog the re-run
+    badge reads *Re-running 1 question* for a **Re-run question** (*Re-running N failed questions* for
+    a failed-question re-run), its footer's **Re-run failed questions** is gated like the report's, and
+    a row's *Being re-run* marker is visually hidden text. The decorative GnollBench emblem (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under the
     title the header lists the run's settings as `app-run-facts` (`run-report-frame/run-facts.*`,
     OnPush) built by `buildRunFacts` in `run-facts.ts`: *Model*, *Assessor(s)* (panel members tagged
     `A` / `B`), *Prompt*, *Scoring profile*, *Started* (`<time datetime>`) and *Board*, every model badged
@@ -670,12 +688,16 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **Download Center**: `download-center/download-center-panel.component.*`
     (`app-download-center-panel`) holds the whole body and footer; `benchmark-download-center.component.*`
     (`app-benchmark-download-center`) is a thin dialog wrapper around it — header, emblem, title and
-    Close — with the same `open(context)` / `closed` and a `documentsChanged` output. The wrapper is
+    Close — with the same `open(context)` / `closed`, a `documentsChanged` output and an
+    `openBatteryDownloads` output relaying the panel's **Open battery run downloads** (the battery run
+    id), on which the shell's `openBatteryDownloads` reopens the same dialog on that battery run's
+    `battery` context. The wrapper is
     opened from the run report's **Downloads** (a `run` context), the Battery Run Report's **Downloads**
     and its AI Reports tab (a `battery` context) and from the Model Comparison launcher's **Open
     Download Center**; the panel is also placed directly as the Model Comparison wizard's step 4
-    (below). Contexts: `run`, `battery` (`{ kind: 'battery', batteryRunId, label }`: the **Battery
-    analysis report** file row — the Markdown from `batteries/runs/{id}/report`,
+    (below). Contexts: `run` (the run's files and its own documents, `subject=run:<id>`; see the
+    package paragraph below for a battery member's pointer), `battery` (`{ kind: 'battery',
+    batteryRunId, label }`: the **Battery analysis report** file row — the Markdown from `batteries/runs/{id}/report`,
     `battery-run-<id>_report.md` as fallback name — and every document whose subject is
     `battery:<id>`, battery-completion and Report Pack alike, via `listReportDocuments({ subject })`, with
     the *being written* notice and a 5-s poll of the battery run's report job; **no member-run rows**),
@@ -726,8 +748,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     under *Not charted* with their reason, and a storage-not-configured stop shows a visible warning.
     Package presets *Internal*,
     *External* (the Executive Summary and the Report for AI Researchers and Developers; internal-only
-    rows listed but unselectable, with their reason) and *Custom*; a run context lists every document
-    whose subject includes the run, run-completion documents included;
+    rows listed but unselectable, with their reason) and *Custom*; a run context lists the run's files
+    and the run's own documents — every document whose subject **is** the run,
+    `listReportDocuments({ subject: 'run:<id>' })`, run-completion documents included, never a group's
+    or a battery result's that merely includes it — and, for a battery member, an `alert-info` pointer
+    (`.dc-battery-pointer`) *"This run is a member of battery run #<id>. Its AI-written documents are
+    in the battery run's downloads."* with a `.btn-ghost` **Open battery run downloads**
+    (*file-with-arrow*), which asks the host to switch the same Download Center to the battery run's
+    `battery` context;
     per-document disclosure (*Summary* / *Detailed* / *Full*, from each row's server-supplied
     `allowedDisclosures`: the Executive Summary offers *Summary* / *Full*) and peer naming (*Named* /
     *Anonymized*); `_INTERNAL` file-name suffixes, and a `run-<id>_` prefix for a document whose subject
@@ -830,18 +858,26 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Elapsed …*; a completed member
     an `app-index-badge`, a facts line (*Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers ·
     est. $0.42*, flagged omitted at 0, the estimate omitted when `estimatedCost` is null) and *Run #N*; an empty pending slot of a live run *Waiting for suite …*.
-    Elapsed times and durations are `formatElapsed`. Polling continues after the last member while
-    `batteryAwaitsPostRun` holds (analysis or reports under way, `BATTERY_POST_RUN_GRACE_MS` = 120 s),
-    and the report job is polled while the reports stage is current. One polite live region (the stage
-    line, post-run texts included), per-member *Open run progress* (emits `{ runId, batteryRunId }`,
-    which opens the run progress dialog on that run as the monitor's viewed run, with **Back to
-    Battery** returning to that battery), **Attach existing run** on
-    empty, superseded and index-withheld cells, and **Cancel Battery**, **Re-run under Current
-    Instrument**, **Continue** and **Open Analysis** in the footer. Continue and Re-run call the
-    monitor's `armCompletionSignalsFromGesture()` synchronously in the click, as the Battery Run
-    Report's resume actions do. Opened from the battery banner's
-    **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery Run
-    Report's *Show progress* action. **Open Analysis** emits `openAnalysis` with the battery run id, and
+    A cell whose member run is in `repairingRunIds` shows the chip *Re-run in progress*
+    (`BATTERY_REPAIRING_LABEL`, `data-repairing`) and is marked current; an *Index withheld* cell's hint
+    is `INDEX_WITHHELD_HINT`, *"Re-run failed questions on this run; the battery run follows the re-run
+    when it finishes."* Elapsed times and durations are `formatElapsed`. The dialog polls while the
+    battery run is live and, after it, while `batteryAwaitsPostRun` holds — the server's `postRunWork`
+    is not `None` (`Repairing`, `Analysing` or `WritingReports`, `battery.models.ts`
+    `batteryPostRunWork`); there is no client-side grace window — and the stage rail follows
+    `postRunWork`; the report job is polled while the reports stage is current. One polite live region
+    (the stage line, post-run texts included), per-member *Open run progress* (emits `{ runId,
+    batteryRunId }`, which opens the run progress dialog on that run as the monitor's viewed run, with
+    **Back to Battery** returning to that battery), **Attach existing run** on empty, superseded and
+    index-withheld cells, and **Cancel Battery**, **Re-run under current instrument**, **Continue** and
+    **Open Analysis** in the footer. **This dialog is the one home of Continue and Re-run under current
+    instrument** (`frontend_ui_controls` §4g): Continue reads *Continue — <reason>* (plain *Continue*
+    without a stop reason) behind the *play* glyph; a 409 on Continue offers Re-run under current
+    instrument in its place only when the body carries `instrumentChanged: true`, and any other refusal
+    shows its message alone. Both are `aria-disabled` while a resume is in flight, and call the
+    monitor's `armCompletionSignalsFromGesture()` synchronously in the click. Opened from the battery
+    banner's **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery
+    Run Report's *Show progress* action. **Open Analysis** emits `openAnalysis` with the battery run id, and
     the shell's `onOpenBatteryAnalysis` opens the Battery Run Report.
   - **The progress dialogs' elapsed clock.** The run (`BenchmarkActiveRunMonitor`, stop function in
     `runElapsedInterval`), multi-run and battery progress dialogs share one format, `formatElapsed`
@@ -892,9 +928,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     `buildBatteryRunFacts` in `run-facts.ts`, whose `battery` and `suites` keys a single run never
     emits), its open state in `overseer.benchmark.batteryRunReport.header`. `div.rr-header-controls`
     holds the `role="group"` *Battery run actions* — **Downloads** (*file-with-arrow*, the Download
-    Center's `battery` context), **Actions** (*rotate* plus a *chevron*: a §4f popover of *Recompute
-    analysis* / *Compute analysis*, *Continue battery*, *Re-run under current instrument* and *Show
-    progress*, each `aria-disabled` with its reason on a second line) and an icon-only **Copy
+    Center's `battery` context), **Actions** (*rotate* plus a *chevron*: a §4f popover of only *Recompute
+    analysis* / *Compute analysis* and *Show progress*, each `aria-disabled` with its reason on a second
+    line; Continue and Re-run under current instrument are the progress dialog's, which *Show progress*
+    opens) and an icon-only **Copy
     diagnostics** (*copy*, `batteryRunDiagnosticsText`) — and **Close** outside it; there is no *View
     game snapshot*. The tab row `.gh-tabs .gh-tabs-secondary` *Battery run report sections*, no icons,
     every panel rendered and `hidden`, the chosen tab in `overseer.benchmark.batteryRunReport.tab`
@@ -974,6 +1011,18 @@ To find specific popups, look in the corresponding component's `.html` template:
     added. `BenchmarkShellBridge.openComparisonWizard(preset?)` opens the wizard on step 1 with a preset's
     `batteryRunIds` selected (the leaderboard's **Open in Model Comparison**). The charts plot at most
     `MAX_PLOTTED_ENTRIES` (12) models.
+  - **Step 1's selection band** (`.mc-wizard-selection`, `role="region"` labelled by
+    `#mc-selection-label`; the pattern is `frontend_ui_controls` §8i): the label is the band's one
+    `role="status"` and a `tabindex="-1"` focus target, *Your selection — 2 runs and 1 group selected*,
+    its text visually hidden while nothing is selected (*Your selection — nothing selected yet*). With
+    nothing selected the one visible message is the alert *Nothing is selected yet* / *Select at least
+    one completed run, analysis group or battery result in the tables above. Compare stays unavailable
+    until you do.* — no hint line beside it — and the footer's and Compare's disabled reason, and the
+    state error, read *Select at least one run, analysis group or battery result.* Once something is
+    selected, **Clear selection (N)** (`btn-gh btn-gh-cancel btn-gh-small`) leads the chip row; after it
+    focus moves to the label. Each chip's remove button is a 32 × 32 `.action-btn` named *Remove
+    {detail} {label} from the selection*; removing one moves focus to the next chip's remove button,
+    else to Clear selection, else to the label.
   - No preview dialog: step 2 is a workspace with five view tabs — **All charts** (grid), **Single
     chart** (eye), **Interactive table** (table), **Table preview** (image) and **Paired tests**
     (*columns*; `aria-disabled` while fewer than two entries are comparable, its reason as a visually

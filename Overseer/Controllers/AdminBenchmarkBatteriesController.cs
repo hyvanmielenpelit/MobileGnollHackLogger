@@ -1048,7 +1048,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         var writers = await LoadReportWritersAsync(batteryRuns, ct);
         var documentCounts = await LoadReportDocumentCountsAsync(ids, ct);
 
-        var dtos = batteryRuns
+        return batteryRuns
             .Select(b => ToRunDto(
                 b,
                 state,
@@ -1056,15 +1056,10 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                 configLabels,
                 identities.TryGetValue(b.Id, out var identity) ? identity : null,
                 b.ReportWriterModelConfigurationId is long writerId && writers.TryGetValue(writerId, out var writer) ? writer : null,
-                documentCounts.TryGetValue(b.Id, out int documents) ? documents : 0))
+                documentCounts.TryGetValue(b.Id, out int documents) ? documents : 0,
+                _orchestrator.IsDriving(b.Id),
+                _orchestrator.IsAnalysing(b.Id)))
             .ToList();
-
-        foreach (var dto in dtos)
-        {
-            dto.IsDriving = _orchestrator.IsDriving(dto.Id);
-        }
-
-        return dtos;
     }
 
     /// <summary>The report writers' configurations by id, in one query; a deleted configuration is absent.</summary>
@@ -1252,7 +1247,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         IReadOnlyDictionary<long, string> configLabels,
         BenchmarkBatteryRunIdentity? identity,
         BenchmarkBatteryRoleModel? reportWriter,
-        int reportDocumentsWrittenCount)
+        int reportDocumentsWrittenCount,
+        bool isDriving,
+        bool isAnalysing)
     {
         var definition = TryReadDefinition(batteryRun.DefinitionJson);
         int suiteCount = SuiteCountOf(batteryRun, definition);
@@ -1271,7 +1268,16 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         bool InGrid(BenchmarkBatteryMemberDto m)
             => m.SuiteIndex >= 0 && m.SuiteIndex < suiteCount && m.Round >= 1 && m.Round <= runsPerSuite;
 
-        int usableSlots = live.Where(m => m.Usable && InGrid(m)).Select(m => (m.SuiteIndex, m.Round)).Distinct().Count();
+        // A member run in flight while no drive loop owns the battery run is a repair.
+        bool batteryLive = isDriving || ActiveStatuses.Contains(batteryRun.Status);
+        long[] repairingRunIds = batteryLive
+            ? Array.Empty<long>()
+            : live.Where(m => m.RunStatus == nameof(BenchmarkRunStatus.Running))
+                .Select(m => m.RunId)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToArray();
+
         int completedSuites = live.Where(m => m.Usable && InGrid(m)).Select(m => m.SuiteIndex).Distinct().Count();
 
         var slots = new List<BenchmarkBatterySlotDto>();
@@ -1327,8 +1333,10 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             StopReason = batteryRun.StopReason?.ToString(),
             StopReasonText = AdminBenchmarkController.DescribeStopReason(batteryRun.StopReason),
             AllowCapWait = batteryRun.AllowCapWait,
-            Resumable = BenchmarkBatteryOrchestrator.ResumeStatusRefusal(
-                batteryRun.Status, batteryRun.RequestedMemberCount, usableSlots) == null,
+            Resumable = BenchmarkBatteryOrchestrator.ResumeStatusRefusal(batteryRun.Status, repairingRunIds) == null,
+            IsDriving = isDriving,
+            PostRunWork = PostRunWorkOf(repairingRunIds, isAnalysing, batteryRun.ReportDocumentsStatus),
+            RepairingRunIds = repairingRunIds,
             StartedAtUtc = batteryRun.StartedAtUtc,
             CompletedAtUtc = batteryRun.CompletedAtUtc,
             LastProgressAtUtc = batteryRun.LastProgressAtUtc,
@@ -1369,6 +1377,25 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         SetLatestAnalysis(dto, latestAnalysis, UsableRunIds(batteryRun, state, suiteCount));
 
         return dto;
+    }
+
+    /// <summary>
+    /// What the server is still doing for a battery run, first match wins: a member repair in flight,
+    /// the analysis, then the battery-completion documents.
+    /// </summary>
+    internal static string PostRunWorkOf(
+        IReadOnlyCollection<long> repairingRunIds,
+        bool isAnalysing,
+        BenchmarkRunReportDocumentsStatus reportDocumentsStatus)
+    {
+        if (repairingRunIds.Count > 0) return BenchmarkBatteryPostRunWork.Repairing;
+        if (isAnalysing) return BenchmarkBatteryPostRunWork.Analysing;
+        if (reportDocumentsStatus is BenchmarkRunReportDocumentsStatus.Pending or BenchmarkRunReportDocumentsStatus.Writing)
+        {
+            return BenchmarkBatteryPostRunWork.WritingReports;
+        }
+
+        return BenchmarkBatteryPostRunWork.None;
     }
 
     private static BenchmarkBatteryMemberDto ToMemberDto(BenchmarkBatteryRunMember member, MemberState state)
@@ -1482,22 +1509,56 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     // =======================================================================================
 
     /// <summary>
-    /// Computes and persists the battery analysis, paired against <c>compareWithBatteryRunId</c> when
-    /// given. 400 with the explanation when the members do not form one composite or the comparison
-    /// is not eligible.
+    /// Recompute. A <c>Stopped</c> or <c>CompletedWithErrors</c> battery run is first reconciled with
+    /// its member runs (<see cref="BenchmarkBatteryOrchestrator.ReconcileBatteryRunAsync"/>), which
+    /// finishes it when every slot now holds a usable member. Then the battery analysis is computed and
+    /// persisted, paired against <c>compareWithBatteryRunId</c> when given; an unpaired analysis the
+    /// reconcile has just computed is returned instead of a second one. Last, the battery-completion
+    /// documents are scheduled when they are due. 400 with the explanation when the members do not
+    /// form one composite or the comparison is not eligible.
     /// </summary>
     [HttpPost("runs/{id:long}/analysis")]
-    public async Task<IActionResult> AnalyseBatteryRun(long id, [FromBody] BenchmarkBatteryCompareRequest? request, CancellationToken ct)
+    public async Task<IActionResult> AnalyseBatteryRun(
+        long id,
+        [FromBody] BenchmarkBatteryCompareRequest? request,
+        CancellationToken ct,
+        [FromServices] BenchmarkBatteryReportDocumentService? documents = null)
     {
-        if (!await _db.BenchmarkBatteryRuns.AnyAsync(r => r.Id == id, ct)) return NotFound();
+        var status = await _db.BenchmarkBatteryRuns
+            .Where(r => r.Id == id)
+            .Select(r => (BenchmarkRunSeriesStatus?)r.Status)
+            .FirstOrDefaultAsync(ct);
+        if (status == null) return NotFound();
 
-        var (analysis, _, _, error) = await _analysisService.AnalyseAsync(
-            id, CurrentUserId(), request?.CompareWithBatteryRunId, ct);
+        DateTime reconcileStartedAtUtc = DateTime.UtcNow;
+        bool finished = status is BenchmarkRunSeriesStatus.Stopped or BenchmarkRunSeriesStatus.CompletedWithErrors
+                        && await _orchestrator.ReconcileBatteryRunAsync(id, ct);
+
+        BenchmarkBatteryAnalysis? analysis = null;
+        if (finished && request?.CompareWithBatteryRunId == null)
+        {
+            var latest = await _analysisService.GetLatestAsync(id, ct);
+            if (latest != null && latest.ComparedWithBatteryRunId == null && latest.ComputedAtUtc >= reconcileStartedAtUtc)
+            {
+                analysis = latest;
+            }
+        }
 
         if (analysis == null)
         {
-            return BadRequest(error ?? "The battery run could not be analyzed.");
+            var (computed, _, _, error) = await _analysisService.AnalyseAsync(
+                id, CurrentUserId(), request?.CompareWithBatteryRunId, ct);
+
+            if (computed == null)
+            {
+                return BadRequest(error ?? "The battery run could not be analyzed.");
+            }
+
+            analysis = computed;
         }
+
+        // Its own gates refuse a battery run with no writer, no complete and current analysis, or documents already written.
+        _ = documents?.ScheduleIfDue(id);
 
         var dto = await BuildAnalysisDtoAsync(analysis, ct);
         return dto == null ? NotFound() : Ok(dto);

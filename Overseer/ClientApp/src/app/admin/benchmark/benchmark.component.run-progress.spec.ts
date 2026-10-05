@@ -1056,6 +1056,88 @@ describe('AdminBenchmarkComponent', () => {
       const badge = fixture.nativeElement.querySelector('.rerun-scope-badge') as HTMLElement;
       expect(badge.textContent?.replace(/\s+/g, ' ')).toContain('Every question of the suite is listed under Questions; the re-run ones are marked.');
       expect(badge.querySelector('strong')?.textContent).toBe('Questions');
+      expect(badge.textContent?.replace(/\s+/g, ' ')).toContain('Re-running 1 failed question.');
+    });
+
+    it('should count a Re-run question as one question, not as failed questions', () => {
+      component.selectedRunDetail = buildRun({ id: 42, status: 'Completed', answers: [buildAnswer(1), buildAnswer(2)] });
+      benchmarkServiceMock.rerunAnswer.mockReturnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, answers: [buildAnswer(1), buildAnswer(2)] })));
+      vi.spyOn(component.retryDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      component.openRetryDialog('question', 42, component.selectedRunDetail!.answers[1]);
+      component.confirmRetry();
+      component.stopDetailPolling();
+
+      ctx.monitor.activeRunDetail = buildRun({
+        id: 42, answers: [buildAnswer(1), buildAnswer(2)], rerunScopeOrderIndexes: [2]
+      });
+      ctx.refresh();
+
+      const badge = fixture.nativeElement.querySelector('.rerun-scope-badge') as HTMLElement;
+      expect(badge.textContent?.replace(/\s+/g, ' ')).toContain('Re-running 1 question.');
+      expect(badge.textContent).not.toContain('failed');
+    });
+
+    it('should name a re-run row by visually hidden text rather than a title', () => {
+      ctx.monitor.rerunScopeOrderIndexes = [2];
+      ctx.monitor.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
+      ctx.refresh();
+
+      const marker = fixture.nativeElement.querySelector('.run-question-list .job-item-rerun-marker') as HTMLElement;
+      expect(marker.hasAttribute('title')).toBe(false);
+      expect(marker.querySelector('.visually-hidden')?.textContent).toBe('Being re-run');
+      expect(marker.querySelector('[aria-hidden="true"]')?.textContent).toBe('re-run');
+    });
+
+    describe('footer Re-run failed questions', () => {
+      function footerButton(): HTMLButtonElement | null {
+        return fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-footer #runProgressRerunFailedBtn');
+      }
+
+      it('should offer it on a terminal run with failed answers, in sentence case', () => {
+        ctx.monitor.activeRunDetail = buildRun({
+          status: 'CompletedWithErrors', completedAtUtc: '2026-09-02T00:05:00Z',
+          answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', assessmentStatus: 'Failed' })]
+        });
+        ctx.refresh();
+        const rerun = vi.spyOn(component, 'rerunFailedFromProgress').mockReturnValue(undefined);
+
+        const button = footerButton()!;
+        expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Re-run failed questions');
+        expect(button.hasAttribute('aria-disabled')).toBe(false);
+        button.click();
+        expect(rerun).toHaveBeenCalledTimes(1);
+      });
+
+      it('should show it aria-disabled with the reason on an aborted run or an older scoring method, and refuse it', () => {
+        const rerun = vi.spyOn(component, 'rerunFailedFromProgress').mockReturnValue(undefined);
+        const cases: [any, string][] = [
+          [{ status: 'Canceled', isAborted: true }, 'The run stopped before finishing its suite.'],
+          [{ status: 'CompletedWithErrors', isCurrentScoringMethod: false }, 'Scored under an older scoring method; re-score it first.']
+        ];
+        for (const [overrides, reason] of cases) {
+          ctx.monitor.activeRunDetail = buildRun({
+            completedAtUtc: '2026-09-02T00:05:00Z',
+            answers: [buildAnswer(1, { status: 'Failed', assessmentStatus: 'Failed' })],
+            ...overrides
+          });
+          ctx.refresh();
+
+          const button = footerButton()!;
+          expect(button.getAttribute('aria-disabled'), reason).toBe('true');
+          expect(button.disabled).toBe(false);
+          const described = fixture.nativeElement.querySelector('#' + button.getAttribute('aria-describedby')) as HTMLElement;
+          expect(described.textContent?.trim()).toBe(reason);
+          button.click();
+        }
+        expect(rerun).not.toHaveBeenCalled();
+      });
+
+      it('should not offer it on a terminal run without failed answers', () => {
+        ctx.monitor.activeRunDetail = buildRun({ status: 'Completed', answers: [buildAnswer(1)] });
+        ctx.refresh();
+        expect(footerButton()).toBeNull();
+      });
     });
 
     it('should name the assessor in the active run banner', () => {

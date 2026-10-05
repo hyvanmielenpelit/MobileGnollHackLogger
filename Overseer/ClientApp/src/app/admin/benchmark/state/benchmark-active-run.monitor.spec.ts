@@ -6,7 +6,6 @@ import { BenchmarkBackgroundActivityService } from '../../../services/benchmark-
 import { BenchmarkCompletionNotificationService } from '../../../services/benchmark-completion-notification.service';
 import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import { BenchmarkPollTickerService } from '../../../services/benchmark-poll-ticker.service';
-import { BATTERY_POST_RUN_GRACE_MS } from '../batteries/battery.models';
 import { BenchmarkActiveRunMonitor } from './benchmark-active-run.monitor';
 import { BenchmarkLauncherState } from './benchmark-launcher.state';
 import { BenchmarkShellBridge } from './benchmark-shell-bridge.service';
@@ -206,7 +205,10 @@ describe('BenchmarkActiveRunMonitor: lost contact', () => {
 
 describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', () => {
   let monitor: BenchmarkActiveRunMonitor;
-  let service: { getBatteryRun: Mock; getRunSeries: Mock; getRun: Mock; getRunReportJob: Mock };
+  let service: {
+    getBatteryRun: Mock; getRunSeries: Mock; getRun: Mock; getRunReportJob: Mock;
+    resumeBatteryRun: Mock; rerunFailedQuestions: Mock;
+  };
   let background: { acquireForRun: Mock; acquireForSeries: Mock; acquireForBattery: Mock; release: Mock };
   let workspace: { loadHistory: Mock; loadRunLimits: Mock; loadRunGroups: Mock; loadAllFootprints: Mock };
   let launcher: { completionSound: boolean; completionNotification: boolean };
@@ -215,7 +217,10 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
   let runStatus: Map<number, string>;
 
   const runDetail = (id: number, status = 'Running'): unknown =>
-    ({ id, status, benchmarkSuiteId: 1, suiteName: 'Suite', totalQuestionCount: 3, answers: [] });
+    ({
+      id, status, benchmarkSuiteId: 1, suiteName: 'Suite', totalQuestionCount: 3, answers: [],
+      completedAtUtc: status === 'Running' ? null : '2026-10-03T12:00:00Z'
+    });
 
   const member = (runId: number): unknown =>
     ({ memberId: runId, suiteIndex: 0, round: 1, runId, runStatus: 'Completed', usable: true, superseded: false });
@@ -228,7 +233,9 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       getBatteryRun: vi.fn(),
       getRunSeries: vi.fn(),
       getRun: vi.fn((id: number) => of(runDetail(id, runStatus.get(id) ?? 'Running'))),
-      getRunReportJob: vi.fn(() => of(null))
+      getRunReportJob: vi.fn(() => of(null)),
+      resumeBatteryRun: vi.fn(),
+      rerunFailedQuestions: vi.fn(() => of({ runId: 0 }))
     };
     background = { acquireForRun: vi.fn(), acquireForSeries: vi.fn(), acquireForBattery: vi.fn(), release: vi.fn() };
     workspace = { loadHistory: vi.fn(), loadRunLimits: vi.fn(), loadRunGroups: vi.fn(), loadAllFootprints: vi.fn() };
@@ -438,7 +445,7 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       return {
         id: 9, status: 'Running', currentRunId: null, members: [member(41)], suiteCount: 1, completedSuiteCount: 0,
         batteryName: 'Core', latestAnalysisId: null, analysisStale: false, completedAtUtc: null,
-        reportWriterModelConfigurationId: null, reportDocumentsStatus: 0,
+        reportWriterModelConfigurationId: null, reportDocumentsStatus: 0, postRunWork: 'None', repairingRunIds: [],
         ...overrides
       };
     }
@@ -447,26 +454,26 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       status: 'Completed', completedSuiteCount: 1, completedAtUtc: '2026-10-03T12:00:00Z', ...overrides
     });
 
-    it('keeps polling a finished battery through its analysis and reports, then signals once and loads history', async () => {
+    it('keeps polling a finished battery while postRunWork is not None, then signals once and loads history', async () => {
       let answer: unknown = battery();
       service.getBatteryRun.mockImplementation(() => of(answer));
       monitor.startBatteryPolling(9);
 
-      answer = finished({ reportWriterModelConfigurationId: 3, reportDocumentsStatus: 0 });
+      answer = finished({ postRunWork: 'Analysing', reportWriterModelConfigurationId: 3, reportDocumentsStatus: 0 });
       vi.advanceTimersByTime(SERIES_POLL);
-      answer = finished({ latestAnalysisId: 5, reportWriterModelConfigurationId: 3, reportDocumentsStatus: 1 });
+      answer = finished({ postRunWork: 'WritingReports', latestAnalysisId: 5, reportWriterModelConfigurationId: 3, reportDocumentsStatus: 1 });
       vi.advanceTimersByTime(SERIES_POLL);
-      answer = finished({ latestAnalysisId: 5, reportWriterModelConfigurationId: 3, reportDocumentsStatus: 2 });
+      answer = finished({ postRunWork: 'WritingReports', latestAnalysisId: 5, reportWriterModelConfigurationId: 3, reportDocumentsStatus: 2 });
       vi.advanceTimersByTime(SERIES_POLL);
       await Promise.resolve();
       expect(play).not.toHaveBeenCalled();
       expect(workspace.loadHistory).not.toHaveBeenCalled();
 
-      answer = finished({ latestAnalysisId: 5, reportWriterModelConfigurationId: 3, reportDocumentsStatus: 3 });
+      answer = finished({ postRunWork: 'None', latestAnalysisId: 5, reportWriterModelConfigurationId: 3, reportDocumentsStatus: 3 });
       vi.advanceTimersByTime(SERIES_POLL);
       await Promise.resolve();
       expect(play).toHaveBeenCalledTimes(1);
-      expect(play).toHaveBeenCalledWith('battery:9');
+      expect(play).toHaveBeenCalledWith('battery:9:5:Completed');
       expect(workspace.loadHistory).toHaveBeenCalledTimes(1);
 
       const polls = service.getBatteryRun.mock.calls.length;
@@ -474,20 +481,28 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       expect(service.getBatteryRun.mock.calls.length).toBe(polls);
     });
 
-    it('stops waiting for the analysis once the grace has passed', () => {
+    it('stops polling a finished battery as soon as postRunWork is None, with no grace window', () => {
       let answer: unknown = battery();
       service.getBatteryRun.mockImplementation(() => of(answer));
       monitor.startBatteryPolling(9);
 
-      answer = finished();
+      // No analysis yet and a writer without a job: only postRunWork decides.
+      answer = finished({ postRunWork: 'None', latestAnalysisId: null, reportWriterModelConfigurationId: 3 });
       vi.advanceTimersByTime(SERIES_POLL);
-      expect(workspace.loadHistory).not.toHaveBeenCalled();
-
-      vi.advanceTimersByTime(BATTERY_POST_RUN_GRACE_MS);
       expect(workspace.loadHistory).toHaveBeenCalledTimes(1);
       const polls = service.getBatteryRun.mock.calls.length;
       vi.advanceTimersByTime(SERIES_POLL * 4);
       expect(service.getBatteryRun.mock.calls.length).toBe(polls);
+    });
+
+    it('reads a battery run without postRunWork, from an older server, as having none', () => {
+      const older = finished() as Record<string, unknown>;
+      delete older['postRunWork'];
+      service.getBatteryRun.mockReturnValue(of(older));
+      monitor.startBatteryPolling(9);
+
+      expect(workspace.loadHistory).toHaveBeenCalledTimes(1);
+      expect(monitor.batteriesSeenLive.has(9)).toBe(false);
     });
 
     it('lets no member signal while its battery awaits post-run work', async () => {
@@ -495,13 +510,204 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       monitor.startBatteryPolling(9);
       expect(monitor.activeRunId).toBe(41);
 
-      service.getBatteryRun.mockReturnValue(of(finished({ reportWriterModelConfigurationId: 3, reportDocumentsStatus: 1 })));
+      service.getBatteryRun.mockReturnValue(of(finished({
+        postRunWork: 'WritingReports', reportWriterModelConfigurationId: 3, reportDocumentsStatus: 1
+      })));
       vi.advanceTimersByTime(SERIES_POLL);
       runStatus.set(41, 'Completed');
       vi.advanceTimersByTime(RUN_POLL);
       await Promise.resolve();
 
       expect(play).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('one user action, one chain of server work, one signal', () => {
+    /** Battery run 8: two suites, run 91 its second member, finished with errors before the repair. */
+    function battery8(overrides: Record<string, unknown> = {}): any {
+      return {
+        id: 8, status: 'CompletedWithErrors', currentRunId: null, members: [member(90), member(91)],
+        suiteCount: 2, completedSuiteCount: 1, batteryName: 'Core', latestAnalysisId: 11, analysisStale: false,
+        completedAtUtc: '2026-10-03T11:00:00Z', reportWriterModelConfigurationId: null, reportDocumentsStatus: 0,
+        resumable: false, postRunWork: 'None', repairingRunIds: [],
+        ...overrides
+      };
+    }
+
+    /** What getBatteryRun answers with. */
+    let answer: unknown;
+
+    beforeEach(() => {
+      answer = battery8();
+      service.getBatteryRun.mockImplementation(() => of(answer));
+      // The page shows battery run 8, finished; nothing polls it.
+      monitor.activeBatteryRunId = 8;
+      monitor.activeBatteryRun = battery8();
+    });
+
+    /** Re-runs a member's failed questions, as the run report does; the first poll sees it Running. */
+    function repairMember(runId: number): void {
+      runStatus.set(runId, 'Running');
+      monitor.launchFailedQuestionRerun(runId, [0]);
+    }
+
+    const playedKeys = (): string[] => play.mock.calls.map(call => call[0] as string);
+
+    it('signals the battery 8 sequence exactly once, battery:8:…, after postRunWork returns to None', async () => {
+      repairMember(91);
+      answer = battery8({ postRunWork: 'Repairing', repairingRunIds: [91] });
+
+      // Continue is refused while the member is re-run.
+      service.resumeBatteryRun.mockReturnValue(throwError(() => ({
+        status: 409, error: { message: 'Run 91 is being re-run; the battery run follows it when the re-run finishes.' }
+      })));
+      monitor.resumeActiveBattery('Continue');
+      await Promise.resolve();
+      expect(monitor.batteryErrorMessage).toContain('Run 91 is being re-run');
+      expect(monitor.batteriesSeenLive.has(8)).toBe(false);
+      expect(playedKeys()).toEqual([]);
+
+      // The re-run finishes; the server finishes the battery run by itself.
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, postRunWork: 'Analysing' });
+      runStatus.set(91, 'Completed');
+      vi.advanceTimersByTime(RUN_POLL);
+      await Promise.resolve();
+      expect(playedKeys()).toEqual([]);
+      expect(monitor.batteriesSeenLive.has(8)).toBe(true);
+
+      answer = battery8({
+        status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, postRunWork: 'WritingReports', reportDocumentsStatus: 2
+      });
+      vi.advanceTimersByTime(SERIES_POLL);
+      await Promise.resolve();
+      expect(playedKeys()).toEqual([]);
+
+      answer = battery8({
+        status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, postRunWork: 'None', reportDocumentsStatus: 3
+      });
+      vi.advanceTimersByTime(SERIES_POLL * 4);
+      vi.advanceTimersByTime(RUN_POLL * 4);
+      await Promise.resolve();
+      expect(playedKeys()).toEqual(['battery:8:12:Completed']);
+    });
+
+    it('signals the battery once when the server settled it before the member\'s terminal poll', async () => {
+      repairMember(91);
+
+      // The battery run's status moved while run 91 ran, and its post-run work is already over.
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12 });
+      runStatus.set(91, 'Completed');
+      vi.advanceTimersByTime(RUN_POLL);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual(['battery:8:12:NotRequested']);
+    });
+
+    it('signals nothing for a refused Continue alone', async () => {
+      service.resumeBatteryRun.mockReturnValue(throwError(() => ({ status: 409, error: { message: 'The run slot is busy.' } })));
+      answer = battery8({ postRunWork: 'Repairing', repairingRunIds: [91] });
+
+      monitor.resumeActiveBattery('Continue');
+      vi.advanceTimersByTime(SERIES_POLL * 4);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual([]);
+      expect(monitor.batteriesSeenLive.has(8)).toBe(false);
+      // The banner's copy is read once, and nothing polls the battery run afterwards.
+      expect(service.getBatteryRun).toHaveBeenCalledTimes(1);
+      expect(monitor.activeBatteryRun?.postRunWork).toBe('Repairing');
+    });
+
+    it('makes the battery run one this page signals only when Continue succeeds', async () => {
+      service.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 8 }));
+      answer = battery8({ status: 'Running' });
+
+      monitor.resumeActiveBattery('Continue');
+      expect(monitor.batteriesSeenLive.has(8)).toBe(true);
+
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12 });
+      vi.advanceTimersByTime(SERIES_POLL);
+      await Promise.resolve();
+      expect(playedKeys()).toEqual(['battery:8:12:NotRequested']);
+    });
+
+    it('signals run:… once for a run in no battery, without reading any battery run', async () => {
+      monitor.activeBatteryRunId = null;
+      monitor.activeBatteryRun = null;
+      monitor.activeRunId = 50;
+      monitor.startPolling(50);
+
+      runStatus.set(50, 'Completed');
+      vi.advanceTimersByTime(RUN_POLL * 3);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual(['run:50:2026-10-03T12:00:00Z']);
+      expect(service.getBatteryRun).not.toHaveBeenCalled();
+    });
+
+    it('signals the member run when its battery run stays settled and unmoved', async () => {
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2 });
+      monitor.activeBatteryRun = battery8({ status: 'Completed', completedSuiteCount: 2 });
+      repairMember(91);
+
+      runStatus.set(91, 'Completed');
+      vi.advanceTimersByTime(RUN_POLL);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual(['run:91:2026-10-03T12:00:00Z']);
+      expect(monitor.batteriesSeenLive.has(8)).toBe(false);
+    });
+
+    it('signals a second repair chain on the same battery run again, under its own key', async () => {
+      repairMember(91);
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, postRunWork: 'Analysing' });
+      runStatus.set(91, 'Completed');
+      vi.advanceTimersByTime(RUN_POLL);
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12 });
+      vi.advanceTimersByTime(SERIES_POLL);
+      await Promise.resolve();
+      expect(playedKeys()).toEqual(['battery:8:12:NotRequested']);
+
+      // A later repair of run 90 ends in a new analysis.
+      repairMember(90);
+      answer = battery8({
+        status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, postRunWork: 'Repairing', repairingRunIds: [90]
+      });
+      vi.advanceTimersByTime(SERIES_POLL);
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, postRunWork: 'Analysing' });
+      runStatus.set(90, 'Completed');
+      vi.advanceTimersByTime(RUN_POLL);
+      answer = battery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 13 });
+      vi.advanceTimersByTime(SERIES_POLL * 3);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual(['battery:8:12:NotRequested', 'battery:8:13:NotRequested']);
+    });
+
+    it('signals the same settled state once, however often it is polled', async () => {
+      service.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 8 }));
+      answer = battery8({ status: 'Running' });
+      monitor.resumeActiveBattery('Continue');
+
+      const settled = battery8({ status: 'Completed', completedSuiteCount: 2, latestAnalysisId: 12, reportDocumentsStatus: 3 });
+      answer = settled;
+      vi.advanceTimersByTime(SERIES_POLL);
+      monitor.pollBatteryRun(8);
+      monitor.pollBatteryRun(8);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual(['battery:8:12:Completed']);
+      expect(BenchmarkActiveRunMonitor.batterySignalKey({ ...settled })).toBe('battery:8:12:Completed');
+    });
+
+    it('keys a series by its end status', async () => {
+      service.getRunSeries.mockReturnValue(of({ id: 4, status: 'Running', members: [], completedRunCount: 0, requestedRunCount: 2 }));
+      monitor.startSeriesPolling(4);
+      service.getRunSeries.mockReturnValue(of({ id: 4, status: 'Completed', members: [], completedRunCount: 2, requestedRunCount: 2 }));
+      vi.advanceTimersByTime(SERIES_POLL);
+      await Promise.resolve();
+
+      expect(playedKeys()).toEqual(['series:4:Completed']);
     });
   });
 

@@ -713,6 +713,29 @@ the same article came back cut blind at ≈ 10,117 characters with the suffix an
 66 and 67, *Sacrifice Offering*, 17,840 characters). This is a tool-output change: no tool guide
 changed, so `ToolGuidesSha256` did not move.
 
+**`nethack_wiki_view` answers a section-less over-cap article the same way, from the battery run 8
+round (harness 52).** When `section` is blank and the article is longer than its budget,
+`NetHackWikiViewTool` returns
+
+```
+[Article is N characters; the first M are shown. Headings: H1; H2; …. Call nethack_wiki_view again with section set to one of them to read the rest.]
+```
+
+then a newline and the article's first `M` characters. The budget is `MaxResultLength` less the
+spoiler-free suffix (when that mode is on) and less the resolution line `[No NetHack wiki article titled
+…]` with its newline, which stays **first** when the title was not an exact match — so the whole result
+lands at exactly the cap and `ToolExecutor` never appends `[Truncated:`. Both tools build the line with
+one helper, `Overseer/Services/Tools/ArticleOverCapNotice.cs`: the headings from
+`MarkdownSectionExtractor.Headings`, `; `-separated, the line capped at 600 characters
+(`ArticleOverCapNotice.NoticeMaxChars`) with a trailing `…`, `Headings: (none)` for an article without
+headings, and `M` fitted by fixed point; `wiki_view`'s output is byte-identical to its harness-39 form.
+`BenchmarkToolResultClassifier` marks the notice **`partial`**, never `cut`, on both tools — for
+`nethack_wiki_view` after one optional leading resolution line. A request with a `section`, an article
+that fits, and the section-miss marker above are unchanged. On a run stamped **51 or earlier** the same
+call came back cut blind at the cap with the `[Truncated:` suffix and no heading list, and on a run
+stamped 52 or later a `[Truncated:` suffix on a section-less `nethack_wiki_view` result is a regression.
+No tool guide changed, so `ToolGuidesSha256` did not move.
+
 **Result shape**: `wiki_search` returns per-hit snippets via `WikiSnippetExtractor.BuildSnippet`
 (bounded to `PerResultChars`, query-term-aware). **From harness 30 a snippet keeps an article's lead
 block regardless of score.** When some section scores above zero and the whole article formats to

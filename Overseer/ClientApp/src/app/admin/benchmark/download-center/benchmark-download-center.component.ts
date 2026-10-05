@@ -4,11 +4,13 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  OnDestroy,
   OnInit,
   Output,
   ViewChild,
   inject
 } from '@angular/core';
+import { Subscription } from 'rxjs';
 
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { DownloadCenterContext, DownloadCenterPanelComponent } from './download-center-panel.component';
@@ -66,7 +68,7 @@ let nextInstanceId = 0;
   styleUrls: ['./benchmark-download-center.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class BenchmarkDownloadCenterComponent implements OnInit {
+export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
 
   @ViewChild('downloadCenterDialog') dialog?: ElementRef<HTMLDialogElement>;
@@ -79,12 +81,22 @@ export class BenchmarkDownloadCenterComponent implements OnInit {
   /** A document was deleted, or its charts changed, while the dialog was open. */
   @Output() readonly documentsChanged = new EventEmitter<void>();
 
+  /** The panel's Open battery run downloads: the id of the battery run the listed run is a member of. */
+  @Output() readonly openBatteryDownloads = new EventEmitter<number>();
+
   readonly idPrefix = `dc${++nextInstanceId}`;
 
   context: DownloadCenterContext | null = null;
 
+  private batteryDownloadsSub: Subscription | null = null;
+
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.batteryDownloadsSub = this.panel.openBatteryDownloads.subscribe(id => this.openBatteryDownloads.emit(id));
+  }
+
+  ngOnDestroy(): void {
+    this.batteryDownloadsSub?.unsubscribe();
   }
 
   /** Shows the dialog for a run, a battery run, chosen documents or a library, at the last package and paper used. */

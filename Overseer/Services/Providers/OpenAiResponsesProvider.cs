@@ -647,6 +647,11 @@ public class OpenAiResponsesProvider : IAiProvider
         }
     }
 
+    public void AppendUserTextToHistory(List<object> messageHistory, string text)
+    {
+        messageHistory.Add(new { role = "user", content = new List<object> { new { type = "input_text", text = text } } });
+    }
+
     public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText)
     {
         for (int i = 0; i < messageHistory.Count; i++)

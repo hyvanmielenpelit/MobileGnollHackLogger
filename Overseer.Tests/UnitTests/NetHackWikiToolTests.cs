@@ -786,5 +786,157 @@ Foo has no mention of the search term in its title or body.
         Assert.True(result.Success);
         Assert.StartsWith("[No NetHack wiki article titled 'Spellcasters'.", result.Content);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Section-less over-cap notice.
+    // ---------------------------------------------------------------------------------------
+
+    private const string OverCapTitle = "Longread Treatise";
+    private const string OverCapHeader = "--- " + OverCapTitle + " ---\n";
+    private const int OverCapRenderedLength = 26000;
+
+    // Filler with no heading marker and no newline, so it can be cut to any exact length without
+    // disturbing heading parsing.
+    private const string OverCapFillerUnit =
+        "Dungeon filler prose pads this article well past the result cap without a single heading marker. ";
+
+    private const string ShortArticleBody = "Brief Note is short.\n\n## Only Section\nNothing more to say.\n";
+
+    private static string RepeatTo(string unit, int length)
+    {
+        var sb = new System.Text.StringBuilder(length);
+        while (sb.Length < length)
+        {
+            sb.Append(unit);
+        }
+        sb.Length = length;
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The over-cap article's body: four headings, the last of them far past the 10,000-character
+    /// cap, padded so the rendered article (its <c>--- Title ---</c> header included) totals exactly
+    /// <see cref="OverCapRenderedLength"/> characters.
+    /// </summary>
+    private static string BuildOverCapBody()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("Longread Treatise opens with an introduction.\n\n## Overview\n");
+        sb.Append(RepeatTo(OverCapFillerUnit, 6000));
+        sb.Append("\n\n## Generation\n");
+        sb.Append(RepeatTo(OverCapFillerUnit, 6000));
+        sb.Append("\n\n## Strategy\n");
+        sb.Append(RepeatTo(OverCapFillerUnit, 6000));
+        sb.Append("\n\n## Late Notes\n");
+        sb.Append(RepeatTo(OverCapFillerUnit, OverCapRenderedLength - OverCapHeader.Length - sb.Length));
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Runs <c>nethack_wiki_view</c> once against a corpus of its own holding the over-cap
+    /// "Longread Treatise" and the short "Brief Note".
+    /// </summary>
+    private static async Task<ToolResult> ViewInOverCapCorpusAsync(string jsonParams, ToolExecutionContext context)
+    {
+        var corpusDir = Path.Combine(Path.GetTempPath(), "NetHackWikiOverCapTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(corpusDir);
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(corpusDir, "Longread_Treatise.md"),
+                $"---\ntitle: \"{OverCapTitle}\"\nnamespace: article\nsummary: \"An article longer than the result cap.\"\n---\n\n{BuildOverCapBody()}");
+            File.WriteAllText(
+                Path.Combine(corpusDir, "Brief_Note.md"),
+                $"---\ntitle: \"Brief Note\"\nnamespace: article\nsummary: \"A short article.\"\n---\n\n{ShortArticleBody}");
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new[]
+                {
+                    new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", corpusDir)
+                })
+                .Build();
+
+            using var service = new NetHackWikiService(config);
+            await service.InitializationTask;
+            var viewTool = new NetHackWikiViewTool(service);
+
+            return await viewTool.ExecuteAsync(JsonDocument.Parse(jsonParams).RootElement, context, CancellationToken.None);
+        }
+        finally
+        {
+            if (Directory.Exists(corpusDir))
+            {
+                Directory.Delete(corpusDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_SectionlessArticleOverCap_PrependsNoticeAndLandsAtExactlyTheCap()
+    {
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(4001), SpoilerFreeMode = false };
+
+        var result = await ViewInOverCapCorpusAsync("{\"article\": \"Longread Treatise\"}", context);
+
+        Assert.True(result.Success);
+        string content = result.Content!;
+
+        Assert.Equal(context.MaxResultLength, content.Length);
+        Assert.StartsWith($"[Article is {OverCapRenderedLength} characters; the first ", content);
+        Assert.Contains(
+            " are shown. Headings: Overview; Generation; Strategy; Late Notes. Call nethack_wiki_view again with section set to one of them to read the rest.]\n" + OverCapHeader + "Longread Treatise opens",
+            content);
+        Assert.DoesNotContain("[No NetHack wiki article titled", content);
+        Assert.DoesNotContain("[Truncated:", content);
+
+        // The notice names exactly the number of article characters that follow it.
+        string noticeLine = content.Substring(0, content.IndexOf('\n'));
+        int shown = int.Parse(Regex.Match(noticeLine, @"the first (\d+) are shown").Groups[1].Value);
+        Assert.Equal(content.Length - noticeLine.Length - 1, shown);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_SectionlessArticleOverCap_InSpoilerFreeMode_KeepsTheSuffixWithinTheCap()
+    {
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(4002), SpoilerFreeMode = true };
+
+        var result = await ViewInOverCapCorpusAsync("{\"article\": \"Longread Treatise\"}", context);
+
+        Assert.True(result.Success);
+        Assert.StartsWith($"[Article is {OverCapRenderedLength} characters; the first ", result.Content);
+        Assert.EndsWith("Only share mechanics, not unrevealed content.]", result.Content);
+        Assert.Equal(context.MaxResultLength, result.Content!.Length);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_SectionlessArticleUnderCap_IsReturnedUnchanged()
+    {
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(4003), SpoilerFreeMode = false };
+
+        var result = await ViewInOverCapCorpusAsync("{\"article\": \"Brief Note\"}", context);
+
+        Assert.True(result.Success);
+        Assert.Equal("--- Brief Note ---\n" + ShortArticleBody, result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_NonExactRequestForAnArticleOverCap_KeepsTheResolutionLineFirst()
+    {
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(4004), SpoilerFreeMode = false };
+
+        var result = await ViewInOverCapCorpusAsync("{\"article\": \"Longread\"}", context);
+
+        Assert.True(result.Success);
+        string content = result.Content!;
+
+        Assert.StartsWith(
+            $"[No NetHack wiki article titled 'Longread'. Showing '{OverCapTitle}'.]\n[Article is {OverCapRenderedLength} characters; the first ",
+            content);
+        Assert.Contains(
+            "Headings: Overview; Generation; Strategy; Late Notes. Call nethack_wiki_view again with section set to one of them to read the rest.]\n" + OverCapHeader,
+            content);
+        Assert.DoesNotContain("[Truncated:", content);
+        Assert.Equal(context.MaxResultLength, content.Length);
+    }
 }
 

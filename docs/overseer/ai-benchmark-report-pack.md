@@ -437,7 +437,10 @@ Each **peer** run gets a row too, with `IsPeer = true` and the same fingerprint 
 both subject and peer of one document; if it were, the subject row would win. List responses compare
 the peer rows the same way and flag *Comparison changed* (`peersChangedSinceGeneration`) when a peer run
 was re-scored, re-run or deleted. `runChangedSinceGeneration` and `missingRunIds` look at subject rows
-only, and so does the list's `runId` filter (§ 9), so a run's report lists exactly its own documents.
+only, and so does the list's `runId` filter (§ 9): it matches every document with a subject row for the
+run — a group's or a battery result's documents whose subject includes it among others too — and never
+one where the run is only a peer. A run's own documents are those whose subject key **is** the run,
+`run:<id>`, which is what the run's Download Center lists (`subject=run:<id>`, § 8).
 
 **Rows written before these columns existed.** At startup, `BenchmarkReportDocumentBackfill` gives every
 row with no `ComparisonKey` one derived from its stored `ComparisonRequestJson`, in batches of 200,
@@ -887,9 +890,16 @@ comparison's charts (§ 13).
 | **Custom** | Any selection | Per document | Per document | Any, Word included |
 
 The summary line, the ZIP's `MANIFEST.md` and its file name call them *Internal package* and *External package*.
-Opened on a run, the dialog lists every document whose subject includes the run, so a run's
-run-completion documents (§ 11) appear under both packages beside any Report Pack documents about it;
-while they are still being written, a notice says so and the list reloads when they are done (§ 11).
+Opened on a run, the dialog lists the run's files and every document whose subject **is** the run
+(`report-documents?subject=run:<id>`, § 9): its run-completion documents (§ 11) and any Report Pack
+document written about the run alone, under both packages; while the run-completion documents are still
+being written, a notice says so and the list reloads when they are done (§ 11). A document whose subject
+is a group or a battery result that includes the run is not listed there: a group's Report Pack
+documents are reached from the group's analysis and from the comparison launcher, and a battery
+result's from the battery run. **A battery member** gets an info line above the list, *"This run is a
+member of battery run #<id>. Its AI-written documents are in the battery run's downloads."*, with a
+`.btn-ghost` **Open battery run downloads** that switches the same Download Center to the battery run's
+context (§ 14).
 
 Opened on a list of documents (`DownloadCenterDocumentsContext`, by id) or on a library
 (`DownloadCenterLibraryContext`), the panel may take a `title` and a `subtitle` in place of its own. A
@@ -1210,7 +1220,9 @@ response shapes of the run endpoints above (§ 14):
   group counts once), `peerCount`, `pricingBasis` (`AsRun` or `Current`), `peerLetters` (each peer's entry
   key and its letter, from the fact sheet) and, from the chart manifest only (§ 13), `chartCount`,
   `chartFigureKeys` and `chartSettingsHash`. Every filter is optional:
-  - `runId` matches a run of the **subject** only, never a peer's run (§ 5);
+  - `runId` matches a run of the **subject** only, never a peer's run (§ 5): every document with a
+    subject row for the run, a group's or a battery result's included. For the documents about the run
+    itself use `subject=run:<id>` (below), as the run's Download Center does (§ 8);
   - `comparison=run:1,run:2,group:4` (or `battery:7,battery:9`) takes the comparison's entry keys, in
     any order, and matches the documents whose `ComparisonKey` they hash to; any other form answers 400
     *The comparison must be a comma-separated list of run:&lt;id&gt; and group:&lt;id&gt; keys, or of
@@ -1220,8 +1232,9 @@ response shapes of the run endpoints above (§ 14):
     and any other value is a 400;
   - `subject=` takes **one** entry key (`run:<id>`, `group:<id>` or `battery:<id>`, a positive id,
     exactly as written) and matches it exactly against each document's subject key; any other form is a
-    400. The Download Center's `battery` context lists a battery run's documents this way, its
-    battery-completion and Report Pack documents alike;
+    400. The Download Center lists both of its own contexts this way: a run's documents with
+    `subject=run:<id>`, and a battery run's, its battery-completion and Report Pack documents alike,
+    with `subject=battery:<id>`;
   - `take` defaults to 200 and is capped at 500.
 - `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`:
@@ -1439,13 +1452,16 @@ roster row, stat cell, cost panel rows, diagnostics block — is `ai-benchmark.m
 Dialog*.
 
 **In the Download Center.** Opened on a run, the dialog asks for the run's report job
-(`GET …/runs/{runId}/report-documents/job`) beside the run's documents. While the job's phase is not
-*Finished* it shows, above the table, *"The AI-written reports of this run are being written (<phase>).
-They appear here when they are done."* — the phase reads *waiting for the report writer*, *preparing the
-fact sheet*, *writing* or *finishing* — and asks again every 5 s (`DOWNLOAD_CENTER_REPORT_JOB_POLL_MS`);
-a failed poll is skipped. When the job answers *Finished*, or 204 once it is gone, the dialog reloads the
-run's documents and drops the notice. A job already finished, no job, or a failed first request shows no
-notice. Closing the dialog, or opening it on another subject, stops the poll.
+(`GET …/runs/{runId}/report-documents/job`) beside the run's own documents (`subject=run:<id>`, § 8).
+While the job's phase is not *Finished* it shows, above the table, *"The AI-written reports of this run
+are being written (<phase>). They appear here when they are done."* — the phase reads *waiting for the
+report writer*, *preparing the fact sheet*, *writing* or *finishing* — and asks again every 5 s
+(`DOWNLOAD_CENTER_REPORT_JOB_POLL_MS`); a failed poll is skipped. When the job answers *Finished*, or
+204 once it is gone, the dialog reloads the run's documents and drops the notice. A job already
+finished, no job, or a failed first request shows no notice. Closing the dialog, or opening it on
+another subject, stops the poll. A battery member is launched without a writer, so its Download Center
+shows the battery pointer of § 8 instead, and **Open battery run downloads** opens the battery run's
+documents (§ 14).
 
 **Written once, rewritten after a delete.** A run-completion document is immutable like every other:
 downloads only render it. A later re-synthesis or re-score marks it *Run changed since this document was
@@ -1787,7 +1803,9 @@ tested model, with the same refusal and same-provider warning as a run's (§ 4).
 `AddBatteryReportDocuments`). Its members are launched with no writer.
 
 **When they are written.** `BenchmarkBatteryReportDocumentService.ScheduleIfDue(batteryRunId)` is called
-right after the battery run's automatic analysis succeeds, and returns at once. It writes when all of
+right after the battery run's automatic analysis succeeds — at the end of its drive loop, or when a
+repair of a member run or a Continue finishes it (`ai-benchmark-multi-suite.md` §§ 3.4, 3.5) — and
+after a manual **Recompute analysis**, and returns at once. It writes when all of
 these hold: the battery run has finished; its latest analysis is complete and not stale; it names a
 writer; it has no battery-completion document yet; and no job for it is Pending or Writing. Each document
 is a one-entry comparison of the battery result, stored with `Origin = BatteryCompletion` (3) and the
@@ -1809,4 +1827,7 @@ battery run's own writer), the cost estimate, the same-provider confirmation and
 Download Center, opened on a battery run (its `battery` context), lists the battery's Markdown analysis
 report and every document whose subject is `battery:<id>` — battery-completion and Report Pack alike,
 through `subject=` — with no member-run files, and shows the *being written* notice while the battery
-run's job runs, asking every 5 s.
+run's job runs, asking every 5 s. It is the **only** Download Center that lists them: a member run's
+Download Center lists that run's own documents (`subject=run:<id>`) and, above them, the pointer *"This
+run is a member of battery run #<id>. Its AI-written documents are in the battery run's downloads."*
+with **Open battery run downloads**, which switches the same dialog to this `battery` context (§ 8).

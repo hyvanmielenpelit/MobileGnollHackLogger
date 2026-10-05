@@ -14,6 +14,7 @@ import {
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { parseServerUtcDate } from '../../../utils/date.util';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
@@ -408,8 +409,8 @@ export class MultiRunComponent implements OnInit, OnChanges {
       name: g => g.name,
       tier: g => this.tierOrder(g.tier),
       runCount: g => g.runCount,
-      createdAtUtc: g => new Date(g.createdAtUtc),
-      analysisDate: g => g.latestAnalysisAtUtc ? new Date(g.latestAnalysisAtUtc) : null
+      createdAtUtc: g => parseServerUtcDate(g.createdAtUtc),
+      analysisDate: g => g.latestAnalysisAtUtc ? parseServerUtcDate(g.latestAnalysisAtUtc) : null
     },
     {
       name: g => g.name,
@@ -459,7 +460,7 @@ export class MultiRunComponent implements OnInit, OnChanges {
       selected: r => this.isRunSelected(r.id) ? 0 : 1,
       id: r => r.id,
       testedModel: r => r.testedModelDisplayNameUsed,
-      date: r => new Date(r.startedAtUtc),
+      date: r => parseServerUtcDate(r.startedAtUtc),
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
       index: r => r.qualityIndex ?? r.finalScore,
       speedIndex: r => r.speedIndex
@@ -1267,9 +1268,10 @@ export class MultiRunComponent implements OnInit, OnChanges {
     return `${this.formatNumber(value / 1000, 1)} s`;
   }
 
+  /** A server timestamp in the browser's locale and time zone; one without a zone is UTC. */
   formatDate(value: string | null | undefined): string {
     if (!value) return '—';
-    const parsed = new Date(value);
+    const parsed = parseServerUtcDate(value);
     return isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
   }
 

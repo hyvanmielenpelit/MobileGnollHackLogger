@@ -673,6 +673,35 @@ public class AnthropicProvider : IAiProvider
         messageHistory.AddRange(updated);
     }
 
+    public void AppendUserTextToHistory(List<object> messageHistory, string text)
+    {
+        var textBlock = new { type = "text", text = text };
+
+        // Joins a trailing user message (the tool results) as one more block, so roles keep alternating.
+        if (messageHistory.Count > 0 && ProviderHelper.GetProperty(messageHistory[^1], "role")?.ToString() == "user")
+        {
+            List<object>? blocks = ProviderHelper.GetProperty(messageHistory[^1], "content") switch
+            {
+                string s when s.Length > 0 => new List<object> { new { type = "text", text = s } },
+                string => new List<object>(),
+                IEnumerable<object> existing => existing.ToList(),
+                _ => null
+            };
+            if (blocks != null)
+            {
+                blocks.Add(textBlock);
+                messageHistory[^1] = new { role = "user", content = blocks };
+                return;
+            }
+        }
+
+        messageHistory.Add(new { role = "user", content = new List<object> { textBlock } });
+
+        var updated = AlternateAnthropicMessages(messageHistory);
+        messageHistory.Clear();
+        messageHistory.AddRange(updated);
+    }
+
     public Dictionary<string, object> BuildTitleRequestBody(
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null)
     {

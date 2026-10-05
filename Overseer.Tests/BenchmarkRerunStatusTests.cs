@@ -40,9 +40,12 @@ public class BenchmarkRerunStatusTests
     /// tests below. Duplicated from <see cref="BenchmarkComplianceGuardTests.CreateTestBenchmarkController"/>
     /// rather than folded into it: that fixture's return tuple is destructured by every existing
     /// test in this assembly, and widening it here would touch all of them for two tests' benefit.
+    /// A <paramref name="batteryOrchestrator"/> is registered as the singleton the service resolves
+    /// to reconcile a repaired run's batteries; without one the service resolves none.
     /// </summary>
     private static (BenchmarkService service, BenchmarkRunManager runManager) CreateTestBenchmarkService(
-        DbContextOptions<ApplicationDbContext> dbOptions, IConfiguration config)
+        DbContextOptions<ApplicationDbContext> dbOptions, IConfiguration config,
+        BenchmarkBatteryOrchestrator? batteryOrchestrator = null)
     {
         var runManager = new BenchmarkRunManager();
 
@@ -53,6 +56,10 @@ public class BenchmarkRerunStatusTests
         // the service method directly, so SystemAiConfigService's constructor dependency has to
         // resolve rather than fail silently on an abandoned background task.
         services.AddSingleton<ILogger<SystemAiConfigService>>(NullLogger<SystemAiConfigService>.Instance);
+        if (batteryOrchestrator != null)
+        {
+            services.AddSingleton(batteryOrchestrator);
+        }
         var sp = services.BuildServiceProvider();
         var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
 
@@ -594,5 +601,263 @@ public class BenchmarkRerunStatusTests
         Assert.IsType<OkObjectResult>(result);
         Assert.Equal(BenchmarkRunStatus.Canceled, run.Status);
         Assert.True(run.TotalDurationMs > 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // A terminal per-question timeout's error text records the phase it ended in.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void BuildQuestionTimeoutError_WithFirstToken_NamesCallsFirstTokenAndSilence()
+    {
+        string error = BenchmarkService.BuildQuestionTimeoutError(720, 3, 2, 1600, 690.3);
+
+        Assert.Equal(
+            "Per-question timeout exceeded (720 s) after 3 model call(s) and 2 tool call(s); "
+            + "first token at 1.6 s; last stream event 690 s before the timeout.",
+            error);
+    }
+
+    [Fact]
+    public void BuildQuestionTimeoutError_WithoutToken_SaysNoTokenReceived()
+    {
+        string error = BenchmarkService.BuildQuestionTimeoutError(720, 1, 0, null, 719.6);
+
+        Assert.Equal(
+            "Per-question timeout exceeded (720 s) after 1 model call(s) and 0 tool call(s); "
+            + "no token received; last stream event 720 s before the timeout.",
+            error);
+    }
+
+    // -----------------------------------------------------------------------
+    // Every run-level repair hands the run to the battery orchestrator once, after the run slot
+    // is released, so a battery that holds the run is reconciled with its new state.
+    // -----------------------------------------------------------------------
+
+    /// <summary>Records each reconcile call and whether the run slot was still held when it came.</summary>
+    private sealed class RecordingBatteryOrchestrator : BenchmarkBatteryOrchestrator
+    {
+        public RecordingBatteryOrchestrator(bool throws = false)
+            : base(null!, new BenchmarkRunManager(), NullLogger<BenchmarkBatteryOrchestrator>.Instance)
+        {
+            Throws = throws;
+        }
+
+        public bool Throws { get; }
+
+        /// <summary>The run manager of the service under test, read at each call.</summary>
+        public BenchmarkRunManager? RunManager { get; set; }
+
+        public List<long> Reconciled { get; } = new();
+
+        public List<long?> SlotHeldAtCall { get; } = new();
+
+        public override Task ReconcileAfterMemberChangeAsync(long runId, CancellationToken cancellationToken = default)
+        {
+            lock (Reconciled)
+            {
+                Reconciled.Add(runId);
+                SlotHeldAtCall.Add(RunManager?.CurrentRunId);
+            }
+
+            if (Throws)
+            {
+                throw new InvalidOperationException("Reconcile failed.");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    public static TheoryData<string> RepairKinds => new()
+    {
+        "RunFailedQuestions",
+        "RerunSingleQuestion",
+        "RetryFailedAssessments",
+        "RetryFailedClaimVerification",
+        "RerunFinalSynthesis",
+        "ReassessSingleQuestion",
+        "Rescore"
+    };
+
+    /// <summary>
+    /// Seeds a one-question run whose answer is scored on every dimension, so a re-score has
+    /// levels to work with and every other repair has an answer to act on.
+    /// </summary>
+    private static async Task<(BenchmarkRun run, BenchmarkRunAnswer answer)> SeedRepairableRunAsync(
+        DbContextOptions<ApplicationDbContext> dbOptions, BenchmarkRunStatus status)
+    {
+        using var seedDb = new ApplicationDbContext(dbOptions);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(seedDb);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = status;
+        run.TotalQuestionCount = 1;
+        var answer = new BenchmarkRunAnswer
+        {
+            ExpectedPointsRecorded = true,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            AccuracyLevel = 5,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            AssessedDifficulty = 50,
+            DurationMs = 2000,
+            OrderIndex = 1
+        };
+        run.Answers.Add(answer);
+        seedDb.BenchmarkRuns.Add(run);
+        await seedDb.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return (run, answer);
+    }
+
+    [Theory]
+    [MemberData(nameof(RepairKinds))]
+    public async Task Repair_ReconcilesTheRunsBatteriesOnce_AfterReleasingTheRunSlot(string repair)
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var config = BenchmarkComplianceGuardTests.CreateConfig(maxRunsPerHour: 10);
+        var orchestrator = new RecordingBatteryOrchestrator();
+        var (service, runManager) = CreateTestBenchmarkService(dbOptions, config, orchestrator);
+        orchestrator.RunManager = runManager;
+
+        bool isRescore = repair == "Rescore";
+        var (run, answer) = await SeedRepairableRunAsync(
+            dbOptions, isRescore ? BenchmarkRunStatus.Completed : BenchmarkRunStatus.Running);
+
+        // A re-score takes no run slot; every other repair is entered with the slot the
+        // controller claimed, and releases it in its finally.
+        if (!isRescore)
+        {
+            Assert.True(runManager.TryStart(run.Id, new CancellationTokenSource(), out _));
+        }
+
+        // An already-canceled token takes each repair straight to its cancel handler and finally,
+        // which is the completion path the hook sits on whatever the repair did before it.
+        var canceled = new CancellationToken(canceled: true);
+        switch (repair)
+        {
+            case "RunFailedQuestions":
+                await service.RunFailedQuestionsAsync(run.Id, canceled);
+                break;
+            case "RerunSingleQuestion":
+                await service.RerunSingleQuestionAsync(run.Id, answer.Id, null, canceled);
+                break;
+            case "RetryFailedAssessments":
+                await service.RetryFailedAssessmentsAsync(run.Id, null, canceled);
+                break;
+            case "RetryFailedClaimVerification":
+                await service.RetryFailedClaimVerificationAsync(run.Id, null, CancellationToken.None);
+                break;
+            case "RerunFinalSynthesis":
+                await service.RerunFinalSynthesisAsync(run.Id, null, canceled);
+                break;
+            case "ReassessSingleQuestion":
+                await service.ReassessSingleQuestionAsync(
+                    run.Id, answer.Id, null, trial: false,
+                    BenchmarkRunStatus.CompletedWithErrors, run.CompletedAtUtc, canceled);
+                break;
+            case "Rescore":
+                var (success, error) = await service.RescoreRunAsync(run.Id);
+                Assert.True(success, error);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(repair), repair, null);
+        }
+
+        Assert.Equal(new[] { run.Id }, orchestrator.Reconciled);
+        Assert.Equal(new long?[] { null }, orchestrator.SlotHeldAtCall);
+        Assert.Null(runManager.CurrentRunId);
+    }
+
+    [Fact]
+    public async Task TrialReassessment_DoesNotReconcileBatteries()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var config = BenchmarkComplianceGuardTests.CreateConfig(maxRunsPerHour: 10);
+        var orchestrator = new RecordingBatteryOrchestrator();
+        var (service, runManager) = CreateTestBenchmarkService(dbOptions, config, orchestrator);
+
+        var (run, answer) = await SeedRepairableRunAsync(dbOptions, BenchmarkRunStatus.Running);
+        Assert.True(runManager.TryStart(run.Id, new CancellationTokenSource(), out _));
+
+        await service.ReassessSingleQuestionAsync(
+            run.Id, answer.Id, null, trial: true,
+            BenchmarkRunStatus.CompletedWithErrors, run.CompletedAtUtc, new CancellationToken(canceled: true));
+
+        Assert.Empty(orchestrator.Reconciled);
+        Assert.Null(runManager.CurrentRunId);
+    }
+
+    [Fact]
+    public async Task Repair_CompletesNormally_WhenTheReconcileThrows()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var config = BenchmarkComplianceGuardTests.CreateConfig(maxRunsPerHour: 10);
+        var orchestrator = new RecordingBatteryOrchestrator(throws: true);
+        var (service, runManager) = CreateTestBenchmarkService(dbOptions, config, orchestrator);
+
+        var (run, _) = await SeedRepairableRunAsync(dbOptions, BenchmarkRunStatus.Running);
+        Assert.True(runManager.TryStart(run.Id, new CancellationTokenSource(), out _));
+
+        await service.RetryFailedClaimVerificationAsync(run.Id, null, CancellationToken.None);
+
+        Assert.Equal(new[] { run.Id }, orchestrator.Reconciled);
+        Assert.Null(runManager.CurrentRunId);
+    }
+
+    // -----------------------------------------------------------------------
+    // Re-score always uses the run's own scoring profile.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task RescoreRun_UsesTheRunsOwnProfile_EvenWhenTheRequestNamesAnother()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var own = new BenchmarkScoringProfile { Name = "Own" };
+        var other = new BenchmarkScoringProfile { Name = "Other" };
+        db.BenchmarkScoringProfiles.AddRange(own, other);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Completed;
+        run.TotalQuestionCount = 1;
+        run.ScoringProfileId = own.Id;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            ExpectedPointsRecorded = true,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            AccuracyLevel = 5,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            AssessedDifficulty = 50,
+            DurationMs = 2000,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.RescoreRun(run.Id, new RescoreRunRequest { ScoringProfileId = other.Id });
+
+        Assert.IsType<OkResult>(result);
+        var rescored = await db.BenchmarkRuns.AsNoTracking()
+            .FirstAsync(r => r.Id == run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(own.Id, rescored.ScoringProfileId);
+        Assert.Contains("\"Own\"", rescored.ScoringProfileSnapshotJson);
     }
 }

@@ -1352,7 +1352,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportWriterCost).toBe(0.12);
         expect(pollTicker()).toBeNull();
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('run:55');
+        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z');
 
         const polls = vi.mocked(benchmarkServiceMock.getRun).mock.calls.length;
         tick(10000);
@@ -1381,7 +1381,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportStage).toBe('notWritten');
         expect(component.runStageLabel).toBe('Completed. Answered 2 of 2.');
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('run:55');
+        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z');
 
         const polls = vi.mocked(benchmarkServiceMock.getRun).mock.calls.length;
         tick(10000);
@@ -1402,7 +1402,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportStage).toBe('notWritten');
         expect(benchmarkServiceMock.getRunReportJob).not.toHaveBeenCalled();
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('run:55');
+        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z');
         discardPeriodicTasks();
       }));
 

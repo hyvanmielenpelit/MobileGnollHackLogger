@@ -303,7 +303,7 @@ export class BenchmarkComparisonState implements OnDestroy {
 
   runComparison(): void {
     if (this.comparisonSelectedCount === 0) {
-      this.comparisonError = 'Select at least one run, analysis group or battery result to compare.';
+      this.comparisonError = 'Select at least one run, analysis group or battery result.';
       this.viewSync.notify();
       return;
     }

@@ -216,14 +216,19 @@ public static class BenchmarkToolResultClassifier
     };
 
     /// <summary>
-    /// <c>WikiViewTool</c>'s notice on a section-less article longer than the result cap, at the
-    /// start of the result: the tool cut the article itself, so no per-tool-cap marker follows.
+    /// <c>ArticleOverCapNotice</c>'s notice on a section-less article longer than the result cap, by
+    /// tool, at the start of the result: the tool cut the article itself, so no per-tool-cap marker
+    /// follows. <c>nethack_wiki_view</c> may put its one-line resolution prefix before the notice.
     /// </summary>
-    private static readonly Regex WikiViewTooLongNoticeRegex = new(
-        @"^\[Article is \d+ characters; the first \d+ are shown\. Headings: ",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private const string WikiViewTool = "wiki_view";
+    private static readonly Dictionary<string, Regex> TooLongNoticeRegexes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["wiki_view"] = new Regex(
+            @"^\[Article is \d+ characters; the first \d+ are shown\. Headings: ",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant),
+        ["nethack_wiki_view"] = new Regex(
+            @"^(?:\[No NetHack wiki article titled [^\n]*\n)?\[Article is \d+ characters; the first \d+ are shown\. Headings: ",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant)
+    };
 
     /// <summary>The tools whose section request can miss on a found article.</summary>
     private static readonly HashSet<string> SectionMissTools = new(StringComparer.OrdinalIgnoreCase)
@@ -310,7 +315,7 @@ public static class BenchmarkToolResultClassifier
 
                 partial = ContainsAny(result, PartialMarkers)
                     || HiddenMatchGroupsRegex.IsMatch(result)
-                    || (string.Equals(tool, WikiViewTool, StringComparison.OrdinalIgnoreCase) && WikiViewTooLongNoticeRegex.IsMatch(head));
+                    || (TooLongNoticeRegexes.TryGetValue(tool, out var tooLongNotice) && tooLongNotice.IsMatch(head));
 
                 sectionMiss = SectionMissTools.Contains(tool) && SectionMissRegex.IsMatch(head);
             }

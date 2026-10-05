@@ -82,9 +82,11 @@ export interface DownloadCenterRunInfo {
   modelLabel: string;
   startedAtUtc: string;
   completedAtUtc: string | null;
+  /** The battery run the run is a member of, or null (or absent) for none. */
+  batteryRunId?: number | null;
 }
 
-/** Opened from a run report: the run's files and every pack document whose subject includes the run. */
+/** Opened from a run report: the run's files and every document whose subject is the run. */
 export interface DownloadCenterRunContext {
   kind: 'run';
   run: DownloadCenterRunInfo;
@@ -512,6 +514,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   /** A document was deleted, or its charts were updated or removed. */
   @Output() readonly documentsChanged = new EventEmitter<void>();
+  /** Open battery run downloads was pressed: the id of the battery run the listed run is a member of. */
+  @Output() readonly openBatteryDownloads = new EventEmitter<number>();
 
   @ViewChild('downloadButton') downloadButton?: ElementRef<HTMLButtonElement>;
   @ViewChild(PdfViewerDialogComponent) pdfViewer?: PdfViewerDialogComponent;
@@ -828,6 +832,20 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     return phase === null
       ? null
       : `The AI-written reports of ${subject} are being written (${reportJobPhaseText(phase)}). They appear here when they are done.`;
+  }
+
+  /** In a run context, the battery run the run is a member of, whose downloads hold its AI-written documents; else null. */
+  get memberOfBatteryRunId(): number | null {
+    const context = this.loaded;
+    return context?.kind === 'run' ? context.run.batteryRunId ?? null : null;
+  }
+
+  /** Open battery run downloads: asks the host for the Download Center of the run's battery run. */
+  requestBatteryDownloads(): void {
+    const batteryRunId = this.memberOfBatteryRunId;
+    if (batteryRunId !== null) {
+      this.openBatteryDownloads.emit(batteryRunId);
+    }
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1899,14 +1917,15 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   // Internals
   // -------------------------------------------------------------------------------------------
 
+  /** Every document about the run itself (`run:<id>`), newest first; no battery's or group's documents that include it. */
   private loadRunDocuments(runId: number, generation: number): void {
     this.loadingDocuments = true;
-    this.listSub = this.benchmarkService.listReportDocuments({ runId }).subscribe({
+    this.listSub = this.benchmarkService.listReportDocuments({ subject: `run:${runId}` }).subscribe({
       next: documents => {
         if (generation !== this.generation) {
           return;
         }
-        this.addRows(sortDocuments(documents).map(packRow));
+        this.addRows(sortDocuments(documents ?? []).map(packRow));
         this.loadingDocuments = false;
         this.cdr.markForCheck();
       },

@@ -33,6 +33,13 @@ describe('ApiKeysComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('reads an offset-less stored stamp as UTC', () => {
+    const date = new Date(Date.UTC(2026, 9, 5, 23, 30, 0)).toLocaleDateString();
+    expect(component.formatStamp('2026-10-05T23:30:00')).toBe(date);
+    expect(component.formatStamp('2026-10-05T23:30:00Z')).toBe(date);
+    expect(component.formatStamp(null)).toBe('');
+  });
+
   it('should open delete confirm dialog when requestDeleteKey is called', () => {
     const dialogEl = document.createElement('dialog');
     vi.spyOn(dialogEl, 'showModal').mockReturnValue(undefined);

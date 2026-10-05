@@ -6,7 +6,6 @@
 // This file imports nothing from the service, which imports these types from here.
 
 import type { CardListSort } from '../../../shared/data-table/card-list-state';
-import { parseServerUtcDate } from '../../../utils/date.util';
 import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 
 /** `BenchmarkBatteryWeightingScheme` as the API sends it. */
@@ -341,21 +340,15 @@ export function isFinishedBatteryRunStatus(status: string | null | undefined): b
 
 // --- Post-run work -----------------------------------------------------------------------------
 
-/**
- * How long after a battery run finishes its analysis, and the queuing of its AI-written reports, are
- * waited for. The server computes the one and queues the other just after the last member ends.
- */
-export const BATTERY_POST_RUN_GRACE_MS = 120_000;
-
 /** The fields of a battery run its post-run work is read from. */
 export interface BatteryPostRunFields {
-  readonly status: string;
-  readonly completedAtUtc?: string | null;
   readonly latestAnalysisId?: number | null;
   readonly analysisStale?: boolean;
-  readonly reportWriterModelConfigurationId?: number | null;
-  /** `BenchmarkRunReportDocumentsStatus`, by number or by name. */
-  readonly reportDocumentsStatus?: number | string | null;
+  /**
+   * `BenchmarkBatteryRunDto.postRunWork`: `None`, `Repairing`, `Analysing` or `WritingReports`.
+   * Missing (an older server) reads as `None`.
+   */
+  readonly postRunWork?: string | null;
 }
 
 /** A battery run's `BenchmarkRunReportDocumentsStatus` by name, from its number or its name. */
@@ -373,38 +366,23 @@ export function batteryReportDocumentsStatusName(status: number | string | null 
   return REPORT_DOCUMENTS_STATUS_NAMES.find(name => name === status) ?? 'NotRequested';
 }
 
-/** The battery run finished within the post-run grace; false when it records no completion time. */
-export function batteryPostRunGraceOpen(run: BatteryPostRunFields, nowMs: number = Date.now()): boolean {
-  if (!run.completedAtUtc) {
-    return false;
-  }
-  const completedMs = parseServerUtcDate(run.completedAtUtc).getTime();
-  return !Number.isNaN(completedMs) && nowMs - completedMs < BATTERY_POST_RUN_GRACE_MS;
-}
-
 /** The battery analysis of the finished members is still to come: none yet, or one the members have outdated. */
 export function batteryAnalysisPending(run: BatteryPostRunFields): boolean {
   return run.latestAnalysisId == null || run.analysisStale === true;
 }
 
-/** The battery run names a report writer whose job is queued or writing, or not queued yet within the grace. */
-export function batteryAwaitsReports(run: BatteryPostRunFields, nowMs: number = Date.now()): boolean {
-  if (run.reportWriterModelConfigurationId == null) {
-    return false;
-  }
-  const status = batteryReportDocumentsStatusName(run.reportDocumentsStatus);
-  return status === 'Pending' || status === 'Writing' || (status === 'NotRequested' && batteryPostRunGraceOpen(run, nowMs));
+/** What the server is still doing for the battery run; `None` for a missing run or field. */
+export function batteryPostRunWork(run: BatteryPostRunFields | null | undefined): string {
+  return run?.postRunWork || 'None';
 }
 
 /**
- * A finished battery run whose post-run work is still under way: its analysis within the grace, or
- * its AI-written reports. Pollers keep following the battery run while this holds.
+ * The server is still working on the battery run outside its drive loop: repairing a member,
+ * computing the analysis or writing the AI reports. Pollers keep following the battery run while
+ * this holds.
  */
-export function batteryAwaitsPostRun(run: BatteryPostRunFields | null | undefined, nowMs: number = Date.now()): boolean {
-  if (!run || !isFinishedBatteryRunStatus(run.status)) {
-    return false;
-  }
-  return (batteryAnalysisPending(run) && batteryPostRunGraceOpen(run, nowMs)) || batteryAwaitsReports(run, nowMs);
+export function batteryAwaitsPostRun(run: BatteryPostRunFields | null | undefined): boolean {
+  return batteryPostRunWork(run) !== 'None';
 }
 
 // --- The model under test --------------------------------------------------------------------
@@ -491,7 +469,7 @@ export function batteryWeightMix(
 
 /** What an *Index withheld* grid cell tells the operator to do. */
 export const INDEX_WITHHELD_HINT =
-  'Re-run Failed Questions on this run, then Recompute — or Continue to replace it.';
+  'Re-run failed questions on this run; the battery run follows the re-run when it finishes.';
 
 // --- Number formatting -----------------------------------------------------------------------
 

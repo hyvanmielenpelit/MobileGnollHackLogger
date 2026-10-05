@@ -116,6 +116,13 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
     });
 
+    it('reads an offset-less decision stamp as UTC and keeps a calendar date as entered', () => {
+      const decided = new Date(Date.UTC(2026, 9, 5, 23, 30, 0)).toLocaleDateString();
+      expect(component.formatStamp('2026-10-05T23:30:00')).toBe(decided);
+      expect(component.formatStamp('2026-10-05T23:30:00Z')).toBe(decided);
+      expect(component.formatCalendarDate('2026-10-05T00:00:00')).toBe(new Date(2026, 9, 5).toLocaleDateString());
+    });
+
     it('should default showChatCost to true and bind it to its checkbox', async () => {
       expect(component.showChatCost).toBe(true);
 

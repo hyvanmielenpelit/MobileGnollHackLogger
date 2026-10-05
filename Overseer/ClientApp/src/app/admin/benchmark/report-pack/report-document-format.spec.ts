@@ -74,6 +74,12 @@ describe('report-document-format', () => {
     expect(formatUtc('not a date')).toBe('not a date');
   });
 
+  it('reads a server timestamp without a zone as UTC, whatever the browser\'s time zone', () => {
+    expect(formatUtc('2026-10-05T16:51:44')).toBe('2026-10-05 16:51 UTC');
+    expect(formatUtc('2026-10-05T16:51:44Z')).toBe('2026-10-05 16:51 UTC');
+    expect(formatUtc('2026-10-05T18:51:44+02:00')).toBe('2026-10-05 16:51 UTC');
+  });
+
   it('formats an elapsed time', () => {
     expect(formatElapsed(-5)).toBe('0 s');
     expect(formatElapsed(42_000)).toBe('42 s');

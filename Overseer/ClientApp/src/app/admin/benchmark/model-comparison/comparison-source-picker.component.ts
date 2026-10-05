@@ -16,6 +16,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { copyToClipboard } from '../../../utils/clipboard.util';
+import { parseServerUtcDate } from '../../../utils/date.util';
 import { saveFigureBlob } from './figure-export';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
@@ -297,7 +298,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       testedModel: r => this.runModelText(r),
       status: r => this.runStatus(r),
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
-      startedAtUtc: r => new Date(r.startedAtUtc),
+      startedAtUtc: r => parseServerUtcDate(r.startedAtUtc),
       // Unassigned and self-inconsistent sources sort last under an ascending sort.
       condition: r => this.conditionOrdinal(runKey(r)) ?? Number.MAX_SAFE_INTEGER
     },
@@ -318,7 +319,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       suiteName: g => g.suiteName,
       tier: g => g.tierLabel || String(g.tier),
       runCount: g => g.runCount,
-      createdAtUtc: g => new Date(g.createdAtUtc),
+      createdAtUtc: g => parseServerUtcDate(g.createdAtUtc),
       analysis: g => this.analysisState(g),
       // Unassigned and self-inconsistent sources sort last under an ascending sort.
       condition: g => this.conditionOrdinal(groupKey(g)) ?? Number.MAX_SAFE_INTEGER
@@ -343,7 +344,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       comparabilityClass: b => this.batteryClassText(b),
       overallIndex: b => b.overallIndex,
       runsPerSuite: b => b.runsPerSuite,
-      analyzedAtUtc: b => (b.latestAnalysisAtUtc ? new Date(b.latestAnalysisAtUtc) : null)
+      analyzedAtUtc: b => (b.latestAnalysisAtUtc ? parseServerUtcDate(b.latestAnalysisAtUtc) : null)
     },
     {
       batteryName: exactFilter(b => b.batteryName),
@@ -1479,11 +1480,12 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     }
   }
 
+  /** A server timestamp in the browser's locale and time zone; one without a zone is UTC. */
   formatDate(value: string | null | undefined): string {
     if (!value) {
       return '—';
     }
-    const parsed = new Date(value);
+    const parsed = parseServerUtcDate(value);
     return isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString();
   }
 

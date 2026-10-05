@@ -73,11 +73,26 @@ public class AdminBenchmarkBatteriesControllerTests
         return suite;
     }
 
+    /// <summary>An orchestrator whose analyses in progress the test sets.</summary>
+    private sealed class AnalysingOrchestrator : BenchmarkBatteryOrchestrator
+    {
+        public AnalysingOrchestrator(IServiceScopeFactory scopeFactory, BenchmarkRunManager runManager)
+            : base(scopeFactory, runManager, NullLogger<BenchmarkBatteryOrchestrator>.Instance)
+        {
+        }
+
+        public HashSet<long> Analysing { get; } = new();
+
+        public override bool IsAnalysing(long batteryRunId) => Analysing.Contains(batteryRunId);
+    }
+
     /// <summary>
     /// Three suites (A: difficulties 40 and 60; B: one unassessed question; C: 30), and a controller
-    /// whose orchestrator reads the same in-memory database through its own scopes.
+    /// whose orchestrator reads the same in-memory database through its own scopes; built by
+    /// <paramref name="createOrchestrator"/> when given.
     /// </summary>
-    private static async Task<Fixture> CreateFixtureAsync()
+    private static async Task<Fixture> CreateFixtureAsync(
+        Func<IServiceScopeFactory, BenchmarkRunManager, BenchmarkBatteryOrchestrator>? createOrchestrator = null)
     {
         string dbName = Guid.NewGuid().ToString();
 
@@ -97,10 +112,9 @@ public class AdminBenchmarkBatteriesControllerTests
         var provider = services.BuildServiceProvider();
 
         var runManager = new BenchmarkRunManager();
-        var orchestrator = new BenchmarkBatteryOrchestrator(
-            provider.GetRequiredService<IServiceScopeFactory>(),
-            runManager,
-            NullLogger<BenchmarkBatteryOrchestrator>.Instance);
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+        var orchestrator = createOrchestrator?.Invoke(scopeFactory, runManager)
+                           ?? new BenchmarkBatteryOrchestrator(scopeFactory, runManager, NullLogger<BenchmarkBatteryOrchestrator>.Instance);
 
         var db = CreateDbContext(dbName);
         var suiteA = Suite("Suite A", 40, 60);
@@ -780,6 +794,128 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.Equal(BenchmarkBatteryPlanner.IndexWithheldReason, withheld.UnusableReason);
         Assert.True(dto.Resumable);
         Assert.Equal(1, dto.CompletedSuiteCount);
+    }
+
+    /// <summary>
+    /// What the server is still doing for a battery run: a member run in flight while the battery run
+    /// is not live is a repair (which also holds its slot against Continue), then the analysis, then
+    /// the battery-completion documents; otherwise nothing.
+    /// </summary>
+    [Fact]
+    public async Task BatteryRun_PostRunWork_TakesEachOfItsFourValues()
+    {
+        AnalysingOrchestrator? orchestrator = null;
+        var f = await CreateFixtureAsync((scopes, runs) => orchestrator = new AnalysingOrchestrator(scopes, runs));
+        var ct = TestContext.Current.CancellationToken;
+
+        async Task<BenchmarkBatteryRunDto> DtoAsync(long id)
+            => Assert.IsType<BenchmarkBatteryRunDto>(Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(id, ct)).Value);
+
+        var repaired = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        await SeedMemberAsync(f, repaired, suiteIndex: 0);
+        var rerunning = await SeedMemberAsync(f, repaired, suiteIndex: 1, status: BenchmarkRunStatus.Running, qualityIndex: null);
+
+        var repairing = await DtoAsync(repaired.Id);
+        Assert.Equal(BenchmarkBatteryPostRunWork.Repairing, repairing.PostRunWork);
+        Assert.Equal(new[] { rerunning.Id }, repairing.RepairingRunIds);
+        Assert.False(repairing.Resumable);
+
+        var analysed = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        orchestrator!.Analysing.Add(analysed.Id);
+        var analysing = await DtoAsync(analysed.Id);
+        Assert.Equal("Analysing", analysing.PostRunWork);
+        Assert.Empty(analysing.RepairingRunIds);
+
+        foreach (var documentsStatus in new[] { BenchmarkRunReportDocumentsStatus.Pending, BenchmarkRunReportDocumentsStatus.Writing })
+        {
+            var writing = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+            writing.ReportDocumentsStatus = documentsStatus;
+            await f.Db.SaveChangesAsync(ct);
+            Assert.Equal(BenchmarkBatteryPostRunWork.WritingReports, (await DtoAsync(writing.Id)).PostRunWork);
+        }
+
+        var done = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        done.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed;
+        await f.Db.SaveChangesAsync(ct);
+        Assert.Equal(BenchmarkBatteryPostRunWork.None, (await DtoAsync(done.Id)).PostRunWork);
+
+        // The member in flight of a live battery run is the drive loop's, not a repair.
+        var live = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Running);
+        await SeedMemberAsync(f, live, suiteIndex: 0, status: BenchmarkRunStatus.Running, qualityIndex: null);
+        var driven = await DtoAsync(live.Id);
+        Assert.Equal(BenchmarkBatteryPostRunWork.None, driven.PostRunWork);
+        Assert.Empty(driven.RepairingRunIds);
+    }
+
+    [Fact]
+    public void PostRunWork_PrefersTheRepair_ThenTheAnalysis_ThenTheDocuments()
+    {
+        var none = Array.Empty<long>();
+        var one = new long[] { 4 };
+
+        Assert.Equal("Repairing", AdminBenchmarkBatteriesController.PostRunWorkOf(one, true, BenchmarkRunReportDocumentsStatus.Writing));
+        Assert.Equal("Analysing", AdminBenchmarkBatteriesController.PostRunWorkOf(none, true, BenchmarkRunReportDocumentsStatus.Writing));
+        Assert.Equal("WritingReports", AdminBenchmarkBatteriesController.PostRunWorkOf(none, false, BenchmarkRunReportDocumentsStatus.Pending));
+        Assert.Equal("None", AdminBenchmarkBatteriesController.PostRunWorkOf(none, false, BenchmarkRunReportDocumentsStatus.Failed));
+        Assert.Equal("None", AdminBenchmarkBatteriesController.PostRunWorkOf(none, false, BenchmarkRunReportDocumentsStatus.NotRequested));
+    }
+
+    /// <summary>
+    /// Recompute on a CompletedWithErrors battery run whose last unusable member has been repaired
+    /// reconciles it first: it becomes Completed with its first finish time, the analysis the
+    /// reconcile computed is the one returned, and the battery-completion documents are scheduled.
+    /// </summary>
+    [Fact]
+    public async Task Recompute_OnARepairedBatteryRun_CompletesIt_AndSchedulesItsDocuments()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var h = await BatteryReportHarness.CreateAsync(analyse: false);
+        DateTime firstFinished = (await h.BatteryRunAsync()).CompletedAtUtc!.Value;
+        await h.UpdateBatteryRunAsync(b =>
+        {
+            b.Status = BenchmarkRunSeriesStatus.CompletedWithErrors;
+            b.CompletedMemberCount = 1;
+            b.ErrorMessage = "Without a usable result: suite 'Suite 22', round 1 (run #2): index withheld.";
+        });
+
+        // The orchestrator analyses through its own scopes; only the controller schedules the documents.
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(h.Options));
+        services.AddScoped(sp => new BenchmarkBatteryAnalysisService(
+            sp.GetRequiredService<ApplicationDbContext>(), NullLogger<BenchmarkBatteryAnalysisService>.Instance));
+        await using var provider = services.BuildServiceProvider();
+        var runManager = new BenchmarkRunManager();
+        var orchestrator = new BenchmarkBatteryOrchestrator(
+            provider.GetRequiredService<IServiceScopeFactory>(), runManager, NullLogger<BenchmarkBatteryOrchestrator>.Instance);
+
+        await using var db = new ApplicationDbContext(h.Options);
+        var controller = new AdminBenchmarkBatteriesController(
+            db,
+            orchestrator,
+            new BenchmarkBatteryAnalysisService(db, NullLogger<BenchmarkBatteryAnalysisService>.Instance),
+            new BenchmarkBatteryLeaderboardService(db),
+            runManager)
+        {
+            ControllerContext = UserContext()
+        };
+
+        var analysis = Assert.IsType<BenchmarkBatteryAnalysisDto>(
+            Assert.IsType<OkObjectResult>(await controller.AnalyseBatteryRun(h.BatteryRunId, null, ct, h.Service)).Value);
+        Assert.True(analysis.Complete);
+        Assert.Equal(1, await db.BenchmarkBatteryAnalyses.CountAsync(a => a.BenchmarkBatteryRunId == h.BatteryRunId, ct));
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await controller.GetBatteryRun(h.BatteryRunId, ct)).Value);
+        Assert.Equal("Completed", dto.Status);
+        Assert.Null(dto.ErrorMessage);
+        Assert.Equal((DateTime?)firstFinished, dto.CompletedAtUtc);
+        Assert.Equal(2, dto.CompletedMemberCount);
+        Assert.False(dto.Resumable);
+        Assert.Null(runManager.OrchestratorOwner);
+
+        await BatteryReportHarness.WaitUntilAsync(() => h.Writer.JobCalls == 1 && !h.Service.IsActive(h.BatteryRunId));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
     }
 
     private static async Task SetAddedAtAsync(Fixture fixture, BenchmarkRun run, DateTime addedAtUtc, bool superseded = false)

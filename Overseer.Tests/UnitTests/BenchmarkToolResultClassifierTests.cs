@@ -378,6 +378,8 @@ public class BenchmarkToolResultClassifierTests
     [InlineData("source_code_search", "src/zap.c:1: a\n[... 7 additional match groups in this file hidden ...]\nsrc/wand.c:3: b")]
     [InlineData("nethack_wiki_search", "== Grail ==\ntext... [Article truncated: showing 3000 of 9000 characters. Use nethack_wiki_view for the full article.]")]
     [InlineData("wiki_view", "[Article is 17840 characters; the first 9800 are shown. Headings: Overview; Special Sacrifices. Call wiki_view again with section set to one of them to read the rest.]\n--- Sacrifice Offering.md ---\ntext")]
+    [InlineData("nethack_wiki_view", "[Article is 26286 characters; the first 9790 are shown. Headings: Generation; Strategy. Call nethack_wiki_view again with section set to one of them to read the rest.]\n--- Cockatrice ---\ntext")]
+    [InlineData("nethack_wiki_view", "[No NetHack wiki article titled 'Cockatrices'. Showing 'Cockatrice'. Other candidates: Chickatrice.]\n[Article is 26286 characters; the first 9700 are shown. Headings: Generation; Strategy. Call nethack_wiki_view again with section set to one of them to read the rest.]\n--- Cockatrice ---\ntext")]
     public void Classify_PartialNotice_IsPartial_NotACut(string tool, string result)
     {
         var facets = BenchmarkToolResultClassifier.Classify(Succeeded(tool, result));
@@ -401,6 +403,8 @@ public class BenchmarkToolResultClassifierTests
     [Theory]
     [InlineData("wiki_search", "[Article is 17840 characters; the first 9800 are shown. Headings: Overview. Call wiki_view again with section set to one of them to read the rest.]")]
     [InlineData("wiki_view", "--- Help.md ---\nThe tool may print [Article is 17840 characters; the first 9800 are shown. Headings: Overview.]")]
+    [InlineData("nethack_wiki_view", "--- Cockatrice ---\n[Article is 26286 characters; the first 9790 are shown. Headings: Generation. Call nethack_wiki_view again with section set to one of them to read the rest.]")]
+    [InlineData("wiki_view", "[No NetHack wiki article titled 'Cockatrices'. Showing 'Cockatrice'.]\n[Article is 26286 characters; the first 9700 are shown. Headings: Generation. Call wiki_view again with section set to one of them to read the rest.]")]
     public void Classify_WikiViewNotice_ElsewhereThanTheStartOfAWikiViewResult_IsNotPartial(string tool, string result)
     {
         var facets = BenchmarkToolResultClassifier.Classify(Succeeded(tool, result));

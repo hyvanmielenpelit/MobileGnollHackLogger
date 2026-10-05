@@ -203,10 +203,10 @@ When the member finishes:
   superseded, `FailedMemberCount` grows, and the battery run stops with `MemberFailed`.
 - **Successful, index withheld** (not usable, § 3.2): the member stays in its slot and the battery run
   **continues** with the remaining slots. It ends *Completed with errors*, and the suite has no usable
-  result until the operator repairs that run with **Re-run Failed Questions** and recomputes, or
-  presses **Continue**, which replaces the member with a fresh run. This matches how a series treats
-  such a member. The slot stays occupied for the rest of that drive, so a provider that keeps failing
-  cannot loop.
+  result until the operator repairs that run in place with **Re-run failed questions**, which the
+  battery run then follows (below), or presses **Continue**, which replaces the member with a fresh
+  run. This matches how a series treats such a member. The slot stays occupied for the rest of that
+  drive, so a provider that keeps failing cannot loop.
 - **Successful and usable**: two guards, in this order.
   1. *Fingerprint.* The run's five hashes are compared with those recorded for its suite at start; a
      null on either side does not count as a difference. This is what catches a moved wiki or source
@@ -228,32 +228,61 @@ per suite with at least two usable members is created (*"Auto-created from batte
 name."*) and recorded in `AutoCreatedGroupIdsJson`, so finishing twice never creates a second group for
 a suite.
 
+**A repair finishes the battery run.** Every run-level repair of a member run — *Re-run failed
+questions*, *Re-run question*, *Retry failed assessments*, *Retry claim verification*, *Re-run final
+synthesis*, *Re-assess question* (not the trial *Try another assessor*) and *Re-score* — is followed, in
+the background, by `BenchmarkBatteryOrchestrator.ReconcileAfterMemberChangeAsync`. For each battery run
+that holds the run as a non-superseded member, is `Stopped` or `CompletedWithErrors` and is not driven,
+it takes the orchestrator claim (§ 3.7), recomputes `CompletedMemberCount` from the member rows, and:
+
+- when every slot now holds a usable member, finishes the battery run as the drive loop does —
+  `Completed`, the error cleared, the analysis, and the battery-completion documents when a writer is
+  set and none exist (§ 7.2). A `CompletedWithErrors` battery run keeps its original `CompletedAtUtc`;
+  a `Stopped` one gets the time it finished;
+- otherwise rewrites a `CompletedWithErrors` battery run's error message to the slots still without a
+  usable result; a `Stopped` one keeps its stop message.
+
+The reconcile is skipped while **any** orchestrator claim is held — this battery run driven, another
+battery or a series running — and a later **Recompute analysis** (§ 4.7) reconciles the battery run
+then. While it runs, a resume of the battery run is refused with **409**, *"This battery run is being
+updated after a member run changed. Try again in a moment."* The report's *Method and Limits* names
+every usable member repaired after the battery run first finished (§ 7.1).
+
 The status vocabulary is the series' (`Pending`, `Running`, `WaitingForCap`, `Stopped`, `Completed`,
 `CompletedWithErrors`, `Cancelled`, `Failed`), and so are the stop reasons, plus
 `InstrumentChanged`, which only batteries set.
 
 ### 3.5 Continue, Re-run under the current instrument, Cancel
 
-A battery run is **resumable** when it is `Stopped`, or `CompletedWithErrors` with a slot that holds no
-usable member. Resume has two modes:
+A battery run is **resumable** when it is `Stopped` or `CompletedWithErrors` and no member run is being
+re-run outside the drive loop (`BenchmarkBatteryOrchestrator.ResumeStatusRefusal`). A slot whose member
+run is `Running` while the battery run is not driven is a repair in flight: it is **held**, not free,
+the detail's `Resumable` is false, and a resume is refused with **409**, *"Run #<id> is being re-run;
+the battery run follows it when the re-run finishes."* Resume has two modes:
 
 - **Continue** keeps every usable member, supersedes every other non-superseded member (a member whose
   run the operator has meanwhile repaired in place is usable, and is kept) and launches the free
-  slots. It is refused with **409** and `instrumentChanged: true` when any member carries a guard
-  failure, when the usable members already refuse the composite, when this build's `HarnessVersion`
-  differs from theirs, or when a fingerprint hash of a suite with a free or unusable slot moved since
-  start (naming the suites and hashes) — in each case a member launched now could only trip the guard
-  again.
+  slots. It is refused with **409** and `instrumentChanged: true` when a member it would keep was
+  graded under a scoring method version other than this build's (`changedHashes:
+  ["ScoringMethodVersion"]`), when any member carries a guard failure, when the usable members already
+  refuse the composite, when this build's `HarnessVersion` differs from theirs, or when a fingerprint
+  hash of a suite with a free or unusable slot moved since start (naming the suites and hashes) — in
+  each case a member launched now could only trip the guard again, and *Re-run under the current
+  instrument* is the way forward.
+- **Continue on a battery run whose every slot is usable** launches nothing: it only finishes the
+  battery run (`Pending`, the drive loop, nothing to launch, then the finish of § 3.4 with its analysis
+  and documents), and the battery run gets a new finish time. The spend, scoring-method, composite and
+  harness-version checks are skipped then, because nothing new is mixed in. This is how a
+  `CompletedWithErrors` battery run whose repaired members are all usable is finished when the
+  automatic reconcile (§ 3.4) was skipped.
 - **Re-run under the current instrument** supersedes **every** member, attached ones included, forgets
   the auto-created groups (they stay, as ordinary groups), re-records every suite's fingerprint and
   starts over.
 
-Both are refused with **400** when the status is not resumable or the stored request is no longer
-valid for a suite still to be launched, and with **429** at the spend guard — except that a battery run
-started with *Allow cap wait* resumes in `WaitingForCap` on an hourly or daily run-cap denial, as a
-start does (§ 3.3). *Continue* is also refused
-with **400** when a member it would keep was graded under a scoring method version other than this
-build's; *Re-run under the current instrument* is the way forward then.
+Both are refused with **400** when the status is neither `Stopped` nor `CompletedWithErrors` or the
+stored request is no longer valid for a suite still to be launched, and with **429** at the spend
+guard — except that a battery run started with *Allow cap wait* resumes in `WaitingForCap` on an hourly
+or daily run-cap denial, as a start does (§ 3.3).
 
 **Cancel** cancels the in-flight member through the run manager, so its own finalization runs, and
 marks the battery run `Cancelled`, which is terminal. It is refused with **400** for a battery run that
@@ -312,7 +341,9 @@ ends. While it is held:
   refused with **409** and the same message, before any row is touched;
 - `TryStart` itself refuses a run that does not belong to the owner, as the backstop.
 
-A stopped series or battery holds no claim, so repairs such as *Re-run Failed Questions* work then.
+A stopped series or battery holds no claim, so repairs such as *Re-run failed questions* work then. The
+reconcile that follows a repair of a battery member (§ 3.4) holds the claim, under the battery run's
+owner token, only for its own pass.
 
 ### 3.8 Deleting things a battery uses
 
@@ -370,13 +401,18 @@ broken falls back to *Single suite*.
 
 ### 4.2 The battery banner
 
-While a battery run is live, stopped or continuable, a banner above the launcher reads *Battery Run #id
-(name)* and *Suite s of K (suite name) · round r of R.* (or *Waiting for run cap — …*, *Stopped — reason.
-k of K suites completed.*), with **Show Battery Progress**, **Continue** (naming its reason when
-there is one), **Re-run under current instrument** after an `InstrumentChanged` stop, and **Cancel
-Battery**. It polls through the shared poll ticker and holds the best-effort Web Lock
+While a battery run is live, `Stopped`, or still has post-run work (`postRunWork` other than `None`:
+a member being re-run, the analysis, the AI-written reports), a banner above the launcher reads
+*Battery Run #id (name)* and *Suite s of K (suite name) · round r of R.* (or *Waiting for run cap — …*,
+*Re-run in progress — k of K suites completed.*, *Computing the battery analysis — …*, *Writing the AI
+reports — …*, *Stopped — reason. k of K suites completed. Continue from the progress dialog.*). It shows
+progress only: its actions are **Show Battery Progress** and, while the battery run is live or
+stopped, **Cancel Battery**. Continue and Re-run under current instrument are in the progress dialog
+(§ 4.3). A `CompletedWithErrors` battery run counts as finished here and has no banner. It polls
+through the shared poll ticker and holds the best-effort Web Lock
 `overseer-benchmark-live:battery:<id>`, as a series does. The completion chime and desktop
-notification fire **once, when the battery run finishes**, never per member.
+notification fire **once, when the battery run's chain of work ends** — the last member, then its
+analysis and reports — never per member (§ 4.3, *Completion signals*).
 
 While the battery poll keeps failing it backs off — 5, 10, 20 and 40 s, then every 60 s — instead of
 giving up after a few failures, and after two failures in a row an amber *Lost contact* notice in the
@@ -390,13 +426,26 @@ Full-screen. The title is *Battery Run #id*, the heading *name — revision n*, 
 *Slots with a usable result*, and one polite live region carries the stage line. The body is a suite ×
 round grid of status chips — *Pending*, *Running*, *Completed with index*, *Index withheld*,
 *Instrument changed*, *Failed*, *Superseded* — with a link to each member's own run progress and a
-marker on attached members. An *Index withheld* cell says what to do: *Re-run Failed Questions on this
-run, then Recompute — or Continue to replace it.* Empty, superseded and index-withheld cells offer
-**Attach existing run**, which lists the candidate runs for that slot, newest first, each eligible or
-with the reason it is not. The footer holds **Run in Background** (or **Close**), **Cancel Battery**,
-**Re-run under Current Instrument**, **Continue** and, once finished, **Open Analysis**, which opens the
-Battery Run Report (§ 4.7). The dialog is opened from the banner's **Show Battery Progress**, a Run
-History battery card's **Show progress** and the Battery Run Report's *Show progress* action.
+marker on attached members. An *Index withheld* cell says what to do: *Re-run failed questions on this
+run; the battery run follows the re-run when it finishes.* A cell whose member run is being re-run
+(`repairingRunIds`) shows the chip *Re-run in progress* and is marked current. Empty, superseded and
+index-withheld cells offer **Attach existing run**, which lists the candidate runs for that slot, newest
+first, each eligible or with the reason it is not. The footer holds **Run in Background** (or
+**Close**), **Cancel Battery**, **Re-run under current instrument**, **Continue** and, once finished,
+**Open Analysis**, which opens the Battery Run Report (§ 4.7). The dialog is the **one home** of
+Continue and Re-run under current instrument: the banner (§ 4.2) and the Battery Run Report (§ 4.7) only
+open it. The dialog is opened from the banner's **Show Battery Progress**, a Run History battery card's
+**Show progress** and the Battery Run Report's *Show progress* action.
+
+**Continue and Re-run under current instrument.** **Continue** is offered while the battery run is
+`Resumable` (§ 3.5) and did not stop on an instrument change; its label names the stop reason,
+*Continue — <reason>* (plain *Continue* without one), behind the *play* glyph, and reads *Continuing…*
+while the request is in flight. **Re-run under current instrument** is offered after an
+`InstrumentChanged` stop, and after a Continue the server refused with **409** and `instrumentChanged:
+true` — a moved fingerprint, a guard failure, another harness version or a member graded under an older
+scoring method — and then replaces Continue. Any other refusal, a held slot's 409 among them, shows the
+server's message in the footer's alert and offers nothing new. While a resume request is in flight both
+are `aria-disabled`, focusable, and ignore a second click.
 
 **Header and stage rail.** Under the heading a *Model under test* line names the tested model, and a
 *Report writer* line appears when the battery names one. Both are drawn by one template: the name, then
@@ -409,30 +458,46 @@ report job's writer (name, provider, thinking level), else from the System AI Co
 a stage rail, the labelled progress bar, the state block, a stat strip and the grid. The rail is the
 single-run dialog's (`.run-stage-rail`), with two stages, or three with a writer:
 
-1. **Suite runs**, with *k of N runs*.
-2. **Battery analysis**: current while the Overall Index is computed (*Computing the Overall Index…*),
-   then done (*Overall Index 84.9*), or ended (*No Overall Index: k of K suites have a usable result*);
-   when no analysis appears within `BATTERY_POST_RUN_GRACE_MS` (120 s) of the battery's completion it
-   ends with *Not computed: use Recompute in the Battery Run Report*.
-3. **AI-written reports**, only with a writer, from the battery run's `reportDocumentsStatus`: current
-   while *Pending* (*Waiting for the report writer*, with the queue position) or *Writing* (*Writing the
-   Executive Summary and the Researcher report*); done at *Completed* (*2 documents written*, *1
-   document written*, or *Written* when the count is 0) or *CompletedWithWarnings* (*Written with
-   warnings*); ended with the message at *Failed*, *Skipped* or *Canceled*, and with *Not started* when
-   it is still *NotRequested* after the grace. While the stage is current the dialog also polls the
-   battery report job. The *done* count is the battery run's `reportDocumentsWrittenCount`, never the
-   report job's documents: the job stops being polled once the stage settles.
+The rail follows the battery run's `postRunWork` (§ 5), the server's own account of what it still does
+for the battery run:
+
+1. **Suite runs**, with *k of N runs*; current while the battery run is live, and again, as *Re-run in
+   progress · k of N runs*, while `postRunWork` is `Repairing`.
+2. **Battery analysis**: pending (*Follows the re-run*) while a member is repaired; current while
+   `postRunWork` is `Analysing` (*Computing the Overall Index…*), then done (*Overall Index 84.9*), or
+   ended (*No Overall Index: k of K suites have a usable result*); a finished battery run whose analysis
+   is missing or stale while the server is not computing one ends with *Not computed: use Recompute in
+   the Battery Run Report*.
+3. **AI-written reports**, only with a writer: pending (*Follows the analysis*) while a member is
+   repaired or the analysis is computed; current while `postRunWork` is `WritingReports` — *Waiting for
+   the report writer*, with the queue position, or *Writing the Executive Summary and the Researcher
+   report* once the battery run's `reportDocumentsStatus` is *Writing*; afterwards from that status: done
+   at *Completed* (*2 documents written*, *1 document written*, or *Written* when the count is 0) or
+   *CompletedWithWarnings* (*Written with warnings*); ended with the message at *Failed*, *Skipped* or
+   *Canceled*, and with *Not started* at *NotRequested*. While the stage is current the dialog also polls
+   the battery report job. The *done* count is the battery run's `reportDocumentsWrittenCount`, never
+   the report job's documents: the job stops being polled once the stage settles.
 
 Each stage's state is also given in visually hidden text. The rail stacks below `40rem` of dialog width
-(an inline-size container). **Post-run polling.** A Completed or CompletedWithErrors battery keeps being
-polled while its analysis or its reports are under way (`batteryAwaitsPostRun`), and the live region
-says so: *Computing the battery analysis…*, *Writing the AI reports…*, then *Completed: 2 of 2 suites ·
-reports written* (or *· reports failed*). The completion chime fires once, after that post-run work,
-followed by a Run History reload; a member run does not chime while its battery still awaits post-run
-work. **Continue** and **Re-run under Current Instrument** re-arm the chime and the notification under
-their click, as the Battery Run Report's *Continue battery* and *Re-run under current instrument* do,
-and on a visible tab a chime whose audio element does not start within 3 seconds plays through the armed
-buffer instead ([`ai-benchmark.md`](ai-benchmark.md) § *Harness Version 48 Updates*).
+(an inline-size container). **Post-run polling.** A battery run that is not live keeps being polled
+while `postRunWork` is not `None` (`batteryAwaitsPostRun`) — a member being re-run (`Repairing`), the
+analysis (`Analysing`) or the AI-written reports (`WritingReports`) — and the live region says so:
+*Re-run in progress: run #91*, *Computing the battery analysis…*, *Writing the AI reports…*, then
+*Completed: 2 of 2 suites · reports written* (or *· reports failed*).
+
+**Completion signals.** One user action starts one chain of server work, and it signals once, at its
+end (`benchmark-active-run.monitor.ts`). A battery run is signaled only after this page has seen it live
+or with `postRunWork` other than `None`, or after a start or Continue the server accepted
+(`batteriesSeenLive`); a refused request never signals. When a member run's poll finds it terminal, the
+monitor fetches its battery run fresh: if that battery run is live, has post-run work, changed status
+while the run ran, or is already watched, the **battery run takes the signal** and is polled until
+`postRunWork` is `None`, so a repaired member does not chime ahead of its battery run's analysis and
+reports. The signal key carries a generation — `battery:<id>:<latestAnalysisId ?? 0>:<reportDocumentsStatus>`
+— so one settled state chimes once, while a later repair that ends in another analysis or documents
+state chimes again. The chime is followed by a Run History reload. **Continue** and **Re-run under
+current instrument** arm the chime and the notification under their click, and on a visible tab a chime
+whose audio element does not start within 3 seconds plays through the armed buffer instead
+([`ai-benchmark.md`](ai-benchmark.md) § *Harness Version 48 Updates*).
 
 **Stat strip and elapsed time.** The strip holds *Status*, *Elapsed*, *Suites complete*, *Usable
 slots* and *Failed*; then three live figures from the polled battery run (`GetBatteryRun`, harness 48):
@@ -587,10 +652,14 @@ leaderboard and from the progress dialog's **Open Analysis**.
   (name · revision · scheme) and **Suites** (*k of K complete · R runs per suite*).
 - **Battery run actions:** **Downloads** opens the Download Center on the battery run: the Markdown
   analysis report and every document whose subject is the battery run, with no member-run files.
-  **Actions** is a popover of *Recompute analysis* (*Compute analysis* before the first one),
-  *Continue battery*, *Re-run under current instrument* and *Show progress*, each unavailable with its
-  reason. **Copy diagnostics** copies the definition, status, stop reason, members by suite and round,
-  excluded members and caveats. **Close** sits apart.
+  **Actions** is a popover of two items, each unavailable with its reason: *Recompute analysis*
+  (*Compute analysis* before the first one; *Computing…* while it runs), which also reconciles a
+  `Stopped` or `CompletedWithErrors` battery run first (§ 3.4) and then schedules the AI-written
+  documents when they are due (§ 7.2), and *Show progress*, which opens the battery progress dialog —
+  the one home of Continue and Re-run under current instrument (§ 4.3) — and is unavailable once the
+  battery run has finished with nothing left to resume, watch or wait for. **Copy diagnostics** copies
+  the definition, status, stop reason, members by suite and round, excluded members and caveats.
+  **Close** sits apart.
 - **Eleven tabs**, every panel rendered and the chosen one remembered per browser:
 
   | Tab | Content |
@@ -648,14 +717,14 @@ All routes are under `api/admin/benchmark/batteries` and require the `AdminOnly`
 | GET | `runs` | Battery runs, newest first; optional `?batteryId=` and `?take=` (default 50, at most 1000; Run History asks for 500). Each carries the tested model's identity, the assessor labels, the scoring profile and the report-documents status |
 | POST | `runs` | Start (body `StartBenchmarkBatteryRunRequest`: `batteryId`, `runsPerSuite`, `allowCapWait`, `run` — the ordinary run request, whose `reportWriterModelConfigurationId` becomes the battery run's writer — and optional `attach`). 202 `{ batteryRunId }`; 409 conflict or an unacknowledged same-provider grader or report writer; 404 unknown battery; 429 spend guard, except a run-cap denial with `allowCapWait`, which starts the battery run in `WaitingForCap`; 400 invalid request, a refused report writer or too many launches (§ 3.3) |
 | GET | `runs/active` | The battery run being driven, else the newest live or stopped one; 204 when none |
-| GET | `runs/{id}` | Detail: status, stop reason and its text, `Resumable`, the suite × round slot grid with each member's run status, index, origin, usability and reason, the current position, and the latest analysis' headline and staleness |
+| GET | `runs/{id}` | Detail: status, stop reason and its text, `Resumable` (false while a member run is being re-run, § 3.5), the suite × round slot grid with each member's run status, index, origin, usability and reason, the current position, the latest analysis' headline and staleness, `PostRunWork` — what the server still does for the battery run, the first that applies: `Repairing` (a member run is `Running` while the battery run is not live), `Analysing` (the analysis is being computed), `WritingReports` (its documents are Pending or Writing), else `None`; wire values — and `RepairingRunIds`, the member runs being re-run. The list (`runs`) and `runs/active` carry the same fields |
 | POST | `runs/{id}/cancel` | Cancel. 400 for a battery run already `Completed`, `Cancelled` or `Failed` |
 | DELETE | `runs/{id}?deleteMembers=false` | Delete a battery run with its analyses, member rows and battery-completion documents, canceling a report job of it. With `deleteMembers=true` each member run is deleted through the single-run delete, except one that serves another battery run. 204; 404 unknown; 409 while it is driven or live, or while a member run to delete is in flight (§ 3.8) |
-| POST | `runs/{id}/resume` | Body `{ mode: "Continue" \| "RerunUnderCurrentInstrument" }`. 202; 409 with `{ instrumentChanged, batteryRunId, changedHashes, message }` when the instrument moved; otherwise mapped as the start |
+| POST | `runs/{id}/resume` | Body `{ mode: "Continue" \| "RerunUnderCurrentInstrument" }`. 202; 409 with `{ instrumentChanged, batteryRunId, changedHashes, message }` when the instrument moved — a guard failure, a refused composite, another harness version, a moved fingerprint, or a kept member graded under another scoring method (`changedHashes: ["ScoringMethodVersion"]`); a plain 409 while a member run is being re-run or a reconcile holds the battery run (§§ 3.4, 3.5); 400 when the status is neither `Stopped` nor `CompletedWithErrors`; otherwise mapped as the start. Continue on a battery run whose every slot is usable launches nothing and only finishes it |
 | POST | `runs/reuse-preview` | For a start request not yet sent: per slot, the run that would be reused, or the reason none qualifies. Writes nothing |
 | POST | `runs/{id}/members` | Attach a run to a slot (body `{ suiteIndex, round, runId }`), refused with its reason |
 | GET | `runs/{id}/members/candidates?suiteIndex=&round=` | The runs that could fill one slot, newest first, each eligible or with its reason |
-| POST | `runs/{id}/analysis` | Compute and persist the analysis; body `{ compareWithBatteryRunId }` adds the paired comparison against that baseline (M7). 400 with the explanation when the members do not form one composite or the comparison is not eligible |
+| POST | `runs/{id}/analysis` | Compute and persist the analysis; body `{ compareWithBatteryRunId }` adds the paired comparison against that baseline (M7). A `Stopped` or `CompletedWithErrors` battery run is first reconciled (§ 3.4), and its analysis reused when the reconcile just made one; afterwards `ScheduleIfDue` writes the battery-completion documents when they are due (§ 7.2). 400 with the explanation when the members do not form one composite or the comparison is not eligible |
 | GET | `runs/{id}/analysis` | The latest analysis, or 204 |
 | GET | `runs/{id}/report` | The Markdown report from the latest persisted analysis, `{battery}_{model}_battery_R{n}_{yyyyMMdd_HHmmss}.md`. 400 when there is no analysis yet |
 | GET | `leaderboard?definitionSha256=` | The latest analysis of every battery run with that hash, ranked within each comparability class, incomplete ones apart; each row with the tested model's provider, model id, thinking level, reasoning mode and service tier. 400 without a hash |
@@ -1105,6 +1174,12 @@ not taken from the persisted analysis: *Tool call outcomes: N failed, M refused 
 *not recorded* with the reason when a member predates harness 17, and the claim line adds *refuted answer
 sentences (accused ones included): K* beside the answers' own refuted claims.
 
+*Method and Limits* (§ 10) names every usable member whose run was repaired after the battery run first
+finished — its run's `RerunCompletedAtUtc` later than the battery run's `CompletedAtUtc` — with *"Run
+#<id> was repaired by a re-run (<start> to <end> UTC) after the battery run first finished at <time>
+UTC; the status and this analysis include the repair."* A repaired `CompletedWithErrors` battery run
+keeps its original finish time, which is the time the line names (§ 3.4).
+
 A practical reading order:
 
 1. **Is it complete?** An incomplete battery run has no headline; read which suite is missing and why
@@ -1140,9 +1215,11 @@ outside the team. The deterministic Markdown report is kept as the reproducible 
 **Decision D3 (2026-10-03): the battery's writer writes the battery's two documents; the members write
 none.** A run request's report writer, sent with a battery start, is checked at start against the
 tested model (§ 3.3), stored on the battery run, and cleared from every member's request.
-`BenchmarkBatteryReportDocumentService.ScheduleIfDue` runs after the automatic analysis and writes the
-two documents once the battery run has finished, its latest analysis is complete and current, it names
-a writer, and it has no battery-completion document yet. *Why:* a battery of K suites and R rounds would
+`BenchmarkBatteryReportDocumentService.ScheduleIfDue` runs after every analysis the battery run's
+finish computes — at the end of the drive loop, after a repair or a Continue that finishes the battery
+run (§§ 3.4, 3.5) — and after a manual **Recompute analysis** (§ 4.7), and writes the two documents once
+the battery run has finished, its latest analysis is complete and current, it names a writer, and it
+has no battery-completion document yet. *Why:* a battery of K suites and R rounds would
 otherwise queue up to 2·K·R member documents for the single report-writer slot, each about one run of
 one suite, when the reader needs one account of the composite. A member's own documents can still be
 written on demand from that run's **AI Reports** tab.

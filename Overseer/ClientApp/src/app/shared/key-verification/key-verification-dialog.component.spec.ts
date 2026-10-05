@@ -4,6 +4,7 @@ import { KeyVerificationDialogComponent } from './key-verification-dialog.compon
 import {
   ApiKeyRefusal,
   describeCheckResponse,
+  formatCheckedAt,
   formatElapsed,
   readApiKeyRefusal,
   verificationLabel,
@@ -60,6 +61,12 @@ describe('key-verification helpers', () => {
   it('puts the check time and the stored message in the tooltip', () => {
     const text = verificationTooltip({ status: 'NotVerified', checkedAtUtc: '2026-09-29T10:00:00Z', message: 'No response' });
     expect(text).toMatch(/^Checked .+\nNo response$/);
+  });
+
+  it('reads an offset-less check time as UTC', () => {
+    const instant = new Date(Date.UTC(2026, 9, 5, 16, 51, 44)).toLocaleString();
+    expect(formatCheckedAt('2026-10-05T16:51:44')).toBe(instant);
+    expect(formatCheckedAt('2026-10-05T16:51:44Z')).toBe(instant);
   });
 
   it('describes a missing response and formats elapsed times', () => {
