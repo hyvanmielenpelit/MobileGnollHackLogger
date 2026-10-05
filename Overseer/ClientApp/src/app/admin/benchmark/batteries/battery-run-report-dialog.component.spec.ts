@@ -197,13 +197,28 @@ describe('BatteryRunReportDialogComponent', () => {
         .toEqual(['recompute', 'progress']);
     });
 
-    it('opens the Download Center on a battery context', () => {
+    it('opens the Download Center on a battery context, labeled without the id its subtitle already gives', () => {
       h.open();
       h.click('#brr-downloads-trigger');
       expect(h.downloadCenter().open).toHaveBeenCalledWith({
         kind: 'battery',
         batteryRunId: 7,
-        label: 'Battery Run #7 · Core Battery · Model X'
+        label: 'Core Battery · Model X'
+      });
+    });
+
+    it('hands the host\'s member diagnostics callback to the Download Center and to the AI Reports tab', () => {
+      const memberDiagnosticsText = (run: { id: number }): string => `diagnostics of run ${run.id}`;
+      h.fixture.componentRef.setInput('memberDiagnosticsText', memberDiagnosticsText);
+      h.open();
+      expect(h.aiReports().memberDiagnosticsText).toBe(memberDiagnosticsText);
+
+      h.click('#brr-downloads-trigger');
+      expect(h.downloadCenter().open).toHaveBeenCalledWith({
+        kind: 'battery',
+        batteryRunId: 7,
+        label: 'Core Battery · Model X',
+        memberDiagnosticsText
       });
     });
   });

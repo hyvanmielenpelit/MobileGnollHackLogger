@@ -1295,6 +1295,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
     ...chartLabel(entry),
     provider: (entry.provider ?? '').trim().toLowerCase(),
     runCount: entry.runCount,
+    ...(entry.suiteCount != null && entry.suiteCount > 0 ? { suiteCount: entry.suiteCount } : {}),
 
     intelligenceIndex: entry.quality?.pointEstimate ?? UNMEASURED,
     // Null half-width means neither uncertainty component could be computed, which is not the same

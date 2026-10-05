@@ -22,6 +22,7 @@ import {
   BenchmarkReportPackPreviewDto,
   BenchmarkReportPackPricingBasis,
   BenchmarkReportPackRequest,
+  BenchmarkReportPackWrittenDocumentDto,
   SameProviderWarningDto
 } from '../../../services/admin-benchmark.service';
 import { AdminService, SystemAiConfigDto } from '../../../services/admin.service';
@@ -123,6 +124,21 @@ export const REPORT_PACK_STORAGE_KEY = 'overseer.benchmark.reportPack';
 /** The warning shown when the server has no chart folder. */
 export const REPORT_PACK_CHART_STORAGE_MISSING_TEXT =
   'Chart storage is not configured; documents will be written without charts.';
+
+/** The paragraph under the step heading: what these reports are, and where a run's own reports are written. */
+export const REPORT_PACK_LEAD_TEXT =
+  'These reports compare the chosen model with every other model of this comparison and are kept with the '
+  + 'comparison: step 4 lists them, and so does Comparison reports on the Model Comparison tab. A run\'s or '
+  + 'battery run\'s own reports are written in the AI Reports tab of its report.';
+
+/** The server's refusal of a subject with no peer, word for word (`BenchmarkReportPackPreparation.PeerlessReportRefusal`). */
+export const REPORT_PACK_PEERLESS_REFUSAL =
+  'A comparison report compares one model with at least one other. To write a run\'s or a battery run\'s own '
+  + 'reports, use the AI Reports tab of its report.';
+
+/** Why Generate is unavailable when every document about the subject is already written. */
+export const REPORT_PACK_ALL_WRITTEN_REASON =
+  'Every document about this subject is already written for this comparison. Delete one in step 4 to write it again.';
 
 /** The job statuses after which nothing changes. */
 const FINISHED_JOB_STATUSES = new Set(['Completed', 'CompletedWithErrors', 'Canceled', 'Failed']);
@@ -292,6 +308,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   readonly writerAdvice = REPORT_PACK_WRITER_ADVICE;
   readonly writerAdviceLead = REPORT_WRITER_ADVICE_LEAD;
   readonly chartStorageMissingText = REPORT_PACK_CHART_STORAGE_MISSING_TEXT;
+  readonly leadText = REPORT_PACK_LEAD_TEXT;
   readonly writerEmptyHint =
     'No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.';
 
@@ -305,6 +322,11 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private readonly checkedAudiences = new Set<BenchmarkReportAudience>();
   /** The checked documents, in the fixed audience order; replaced on every change, for the chart picker. */
   selectedAudiences: BenchmarkReportAudience[] = [];
+  /**
+   * The documents already written for this comparison, per subject key, as the last estimate for that
+   * subject listed them. Such a document's audience cannot be checked.
+   */
+  private readonly writtenBySubject = new Map<string, readonly BenchmarkReportPackWrittenDocumentDto[]>();
 
   writers: SystemAiConfigDto[] = [];
   writersLoading = false;
@@ -423,6 +445,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (context) {
       this.refreshSubjects(context);
     }
+    this.writtenBySubject.clear();
     this.checkedAudiences.clear();
     for (const option of REPORT_PACK_AUDIENCES) {
       if (option.checkedByDefault) {
@@ -502,6 +525,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.subjectKey = key;
     this.serverWarning = null;
     this.startError = null;
+    this.uncheckWritten();
     this.schedulePreview();
   }
 
@@ -513,7 +537,43 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.checkedAudiences.has(audience);
   }
 
+  /** The subject's document of this audience already written for this comparison, or null. */
+  writtenDocument(audience: BenchmarkReportAudience): BenchmarkReportPackWrittenDocumentDto | null {
+    if (this.subjectKey === null) {
+      return null;
+    }
+    return this.writtenBySubject.get(this.subjectKey)?.find(doc => doc.audience === audience) ?? null;
+  }
+
+  isAudienceWritten(audience: BenchmarkReportAudience): boolean {
+    return this.writtenDocument(audience) !== null;
+  }
+
+  /** `Written <yyyy-MM-dd HH:mm> UTC by <writer>. Delete it in step 4 to write it again.`, or '' when not written. */
+  writtenHint(audience: BenchmarkReportAudience): string {
+    const doc = this.writtenDocument(audience);
+    if (!doc) {
+      return '';
+    }
+    return `Written ${formatUtc(doc.createdAtUtc)} by ${doc.writerDisplayName || 'an unknown writer'}. `
+      + 'Delete it in step 4 to write it again.';
+  }
+
+  /** The audience checkbox's description: what the document is, and when it was written if it was. */
+  audienceDescribedBy(audience: BenchmarkReportAudience): string {
+    const base = `${this.idPrefix}-audience-${audience}`;
+    return this.isAudienceWritten(audience) ? `${base}-desc ${base}-written` : `${base}-desc`;
+  }
+
+  /** Every document about the subject is already written for this comparison. */
+  get allAudiencesWritten(): boolean {
+    return this.subjectKey !== null && REPORT_PACK_AUDIENCES.every(option => this.isAudienceWritten(option.audience));
+  }
+
   setAudience(audience: BenchmarkReportAudience, checked: boolean): void {
+    if (checked && this.isAudienceWritten(audience)) {
+      return;
+    }
     if (checked) {
       this.checkedAudiences.add(audience);
     } else {
@@ -531,6 +591,21 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private syncSelectedAudiences(): void {
     this.selectedAudiences = REPORT_PACK_AUDIENCES.map(option => option.audience)
       .filter(audience => this.checkedAudiences.has(audience));
+  }
+
+  /** Unchecks every checked document the subject already has; true when one was unchecked. */
+  private uncheckWritten(): boolean {
+    let changed = false;
+    for (const audience of [...this.checkedAudiences]) {
+      if (this.isAudienceWritten(audience)) {
+        this.checkedAudiences.delete(audience);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.syncSelectedAudiences();
+    }
+    return changed;
   }
 
   onChartSelectionChange(selection: ReportChartSelection): void {
@@ -639,6 +714,12 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         if (generation !== this.generation) {
           return;
         }
+        this.writtenBySubject.set(request.subjectKey, preview.writtenDocuments ?? []);
+        // A checked document that turns out written is unchecked, and the estimate asked again without it.
+        if (request.subjectKey === this.subjectKey && this.uncheckWritten()) {
+          this.schedulePreview();
+          return;
+        }
         this.preview = preview;
         this.previewPending = false;
         this.cdr.markForCheck();
@@ -698,6 +779,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (this.subjectKey === null) {
       return 'Every entry of this comparison is Excluded, so none can be the subject.';
     }
+    if (this.allAudiencesWritten) {
+      return REPORT_PACK_ALL_WRITTEN_REASON;
+    }
     if (this.selectedAudiences.length === 0) {
       return 'Choose at least one document.';
     }
@@ -710,10 +794,21 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (this.previewError) {
       return 'The estimate could not be computed. Retry it before generating.';
     }
+    if (this.preview?.refusal === REPORT_PACK_PEERLESS_REFUSAL) {
+      return 'This subject has no other model to be compared with in this comparison.';
+    }
     if (this.preview?.refusal) {
       return 'This writer is refused for this subject. Choose another writer.';
     }
     return null;
+  }
+
+  /**
+   * Generate stays focusable, `aria-disabled`, when every document is already written, so a keyboard
+   * reader lands on it and hears why; every other block disables it.
+   */
+  get generateAriaDisabled(): boolean {
+    return this.generateBlockedReason === REPORT_PACK_ALL_WRITTEN_REASON;
   }
 
   /** The Generate button's description: the estimate, and the reason it is blocked while it is. */

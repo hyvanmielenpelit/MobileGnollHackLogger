@@ -4214,6 +4214,18 @@ public class BenchmarkService
         => ByMembers(verifications, members, v => v.AccusingMembers);
 
     /// <summary>
+    /// The accused sentences attributed to any of <paramref name="members"/> (<see cref="AccusedByMembers"/>)
+    /// that the claim verifier refuted: charges it upheld.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> UpheldAccusations(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkPanelMember members)
+        => AccusedByMembers(verifications, members)
+            .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote)
+                && v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted)
+            .ToList();
+
+    /// <summary>
     /// The verifications whose suspected-false record is attributed to any of <paramref name="members"/>
     /// (<see cref="BenchmarkClaimVerification.SuspectingMembers"/>): <see cref="BenchmarkClaimVerification.SuspectedBy"/>,
     /// or <see cref="BenchmarkClaimVerification.RaisedBy"/> on a record without it. A record with neither counts for every member.
@@ -4541,8 +4553,9 @@ public class BenchmarkService
 
     /// <summary>
     /// Accuracy was docked with no defect named while the answer's out-of-rubric claims were all
-    /// checked and supported — none refuted, none left indeterminate. The report's
-    /// Verification-cleared Accuracy deductions are exactly these answers.
+    /// checked and supported — none refuted, none left indeterminate — and the verifier upheld no
+    /// sentence the primary assessor charged as false. The report's Verification-cleared Accuracy
+    /// deductions are exactly these answers.
     /// </summary>
     internal static bool IsVerificationClearedAccuracyDeduction(BenchmarkRunAnswer a)
         => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)
@@ -4550,7 +4563,8 @@ public class BenchmarkService
             && (a.ClaimsRefutedCount ?? 0) == 0
             && (a.ClaimsIndeterminateCount ?? 0) == 0
             && a.AccuracyLevel.HasValue
-            && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel;
+            && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel
+            && UpheldAccusations(BenchmarkReportContent.ReadVerifications(a.ClaimVerificationJson), BenchmarkPanelMember.A).Count == 0;
 
     /// <summary>
     /// Re-grades a contested answer once with the run's primary assessor, the claim verifier's
@@ -6727,6 +6741,7 @@ public class BenchmarkService
         var supportedList = new List<string>();
         var supportedAccusations = new List<(string Claim, string? Citation)>();
         var refutedAssessorStatements = new List<string>();
+        var chargedCounts = (Supported: 0, Refuted: 0, Indeterminate: 0);
         bool basisRefuted = false;
         int? claimsSupported = isMemberB ? null : a.ClaimsSupportedCount;
         int? claimsRefuted = isMemberB ? null : a.ClaimsRefutedCount;
@@ -6767,6 +6782,8 @@ public class BenchmarkService
                         .DistinctBy(x => x.Claim, StringComparer.Ordinal));
                     refutedAssessorStatements.AddRange(RefutedAssessorStatements(verifications)
                         .Select(v => v.Claim.Trim()));
+                    chargedCounts = BenchmarkReportBuilder.VerdictCounts(
+                        accused.Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote)));
 
                     foreach (var v in ownClaims.Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
                     {
@@ -6848,6 +6865,9 @@ public class BenchmarkService
                         .ToArray()
                     : Array.Empty<string>(),
             SupportedAccusations = supportedAccusations,
+            ChargedSentencesUpheld = chargedCounts.Refuted,
+            ChargedSentencesCleared = chargedCounts.Supported,
+            ChargedSentencesUndecided = chargedCounts.Indeterminate,
             // A rejected or unprovenanced re-grade never reaches the synthesis as a withdrawal.
             EvidenceInformedQualityScore = includeAdvisory && IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedQualityScore : null,
             EvidenceInformedCriticalError = includeAdvisory && IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedCriticalError : null,

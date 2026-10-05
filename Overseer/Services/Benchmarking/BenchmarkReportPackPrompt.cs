@@ -235,7 +235,7 @@ public static class BenchmarkReportPackPrompt
         BenchmarkReportSlots.BenchmarkSystem =>
             $"At most {BenchmarkReportPackValidator.BenchmarkSystemMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's second part, the benchmarking system: signs of harness, grading or rubric problems, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question the data suggests is ambiguous. Where the subject has peers, suspect a question or its rubric first when every model missed it, not when most peers answered it well, as WEIGHING THE EVIDENCE describes.",
         BenchmarkReportSlots.ModelResult =>
-            $"At most {BenchmarkReportPackValidator.ModelResultMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's third part, the model's result: how the subject performed against its peers and why, as far as the data shows. Code appends one sentence right after this paragraph that states the quality interval, its span and what it rests on; do not restate it.",
+            $"At most {BenchmarkReportPackValidator.ModelResultMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's third part, the model's result: how the subject performed, against its peers when it has them, and why, as far as the data shows. Code appends one sentence right after this paragraph that states the quality interval, its span and what it rests on; do not restate it.",
         _ => "Markdown paragraphs."
     };
 

@@ -14,8 +14,9 @@ using Overseer.Models;
 using Overseer.Services;
 
 /// <summary>
-/// Writes a run's two AI-written run-completion documents, the Executive Summary and the Report for
-/// AI Researchers and Developers, once, after the run completes, with the report writer the run names.
+/// Writes a run's three AI-written run-completion documents, the Executive Summary, the Report for
+/// AI Researchers and Developers and the Internal Improvement Brief, once, after the run completes,
+/// with the report writer the run names.
 ///
 /// <para>Each document is an immutable <see cref="BenchmarkReportDocument"/> row with
 /// <see cref="BenchmarkReportDocumentOrigin.RunCompletion"/>, about the run alone, with no peers.
@@ -50,7 +51,8 @@ public sealed class BenchmarkRunReportDocumentService
     public static readonly IReadOnlyList<BenchmarkReportAudience> Audiences = new[]
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief
     };
 
     /// <summary>What <see cref="TryCancel"/> did.</summary>
@@ -647,7 +649,7 @@ public sealed class BenchmarkRunReportDocumentService
             {
                 0 => "Nothing was written.",
                 1 => $"The {written[0]} was written and is kept.",
-                _ => $"The {string.Join(" and the ", written)} were written and are kept."
+                _ => $"The {string.Join(", the ", written.Take(written.Count - 1))} and the {written[^1]} were written and are kept."
             };
             return (BenchmarkRunReportDocumentsStatus.Canceled, CanceledWhileWritingPrefix + kept);
         }

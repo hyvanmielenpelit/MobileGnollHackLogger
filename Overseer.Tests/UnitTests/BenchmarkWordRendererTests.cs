@@ -612,7 +612,7 @@ public class BenchmarkWordRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
@@ -621,7 +621,7 @@ public class BenchmarkWordRendererTests
 
         document.SubjectKey = "group:5";
         Assert.Equal(
-            "vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
@@ -774,10 +774,10 @@ public class BenchmarkWordRendererTests
 
         Assert.Equal(BenchmarkWordRenderer.ContentType, provider.ContentType);
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             provider.FileDownloadName);
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
             full.FileDownloadName);
         AssertValid(provider.FileContents);
         AssertValid(full.FileContents);

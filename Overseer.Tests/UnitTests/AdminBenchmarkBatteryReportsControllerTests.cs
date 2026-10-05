@@ -25,10 +25,11 @@ public class AdminBenchmarkBatteryReportsControllerTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static readonly BenchmarkReportAudience[] BothAudiences =
+    private static readonly BenchmarkReportAudience[] AllAudiences =
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief
     };
 
     private static WriteRunReportDocumentsRequest Request(long writerId, params BenchmarkReportAudience[] audiences) => new()
@@ -50,7 +51,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
     // --- Write now -----------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Write_SetsTheWriter_AnswersAccepted_AndWritesBothDocuments()
+    public async Task Write_SetsTheWriter_AnswersAccepted_AndWritesEveryDocument()
     {
         await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
 
@@ -58,14 +59,14 @@ public class AdminBenchmarkBatteryReportsControllerTests
         var response = Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value);
         Assert.Equal(h.BatteryRunId, response.RunId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Pending, response.Status);
-        Assert.Equal(BothAudiences, response.Audiences);
+        Assert.Equal(AllAudiences, response.Audiences);
 
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
         var batteryRun = await h.BatteryRunAsync();
         Assert.Equal(h.WriterConfig.Id, batteryRun.ReportWriterModelConfigurationId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, batteryRun.ReportDocumentsStatus);
         var documents = await h.DocumentsAsync();
-        Assert.Equal(2, documents.Count);
+        Assert.Equal(3, documents.Count);
         Assert.All(documents, d => Assert.Equal(BenchmarkReportDocumentOrigin.BatteryCompletion, d.Origin));
         Assert.Equal(h.BatteryRunId, h.Writer.LastBatteryRunId);
     }
@@ -89,10 +90,10 @@ public class AdminBenchmarkBatteryReportsControllerTests
 
         Assert.IsType<AcceptedResult>(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
-        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+        Assert.Equal(3, (await h.DocumentsAsync()).Count);
 
-        var both = Assert.IsType<ConflictObjectResult>(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
-        Assert.Contains(AdminBenchmarkBatteryReportsController.BothWrittenMessage, JsonSerializer.Serialize(both.Value));
+        var all = Assert.IsType<ConflictObjectResult>(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
+        Assert.Contains(AdminBenchmarkBatteryReportsController.AllWrittenMessage, JsonSerializer.Serialize(all.Value));
         Assert.Equal(2, h.Writer.JobCalls);
     }
 
@@ -145,7 +146,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
 
         var bad = Assert.IsType<BadRequestObjectResult>(await h.Controller().Write(
-            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.InternalBrief), Ct));
+            h.BatteryRunId, Request(h.WriterConfig.Id, (BenchmarkReportAudience)99), Ct));
         Assert.Contains(AdminBenchmarkBatteryReportsController.InvalidAudienceMessage, JsonSerializer.Serialize(bad.Value));
     }
 
@@ -185,7 +186,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
 
         var documents = await h.DocumentsAsync();
-        Assert.Equal(2, documents.Count);
+        Assert.Equal(3, documents.Count);
         Assert.All(documents, d =>
         {
             Assert.True(d.SameProviderAcknowledged);
@@ -222,7 +223,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         Assert.Equal(h.BatteryRunId, view.RunId);
         Assert.Equal("Finished", view.Phase);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, view.Status);
-        Assert.Equal(BothAudiences, view.Audiences);
+        Assert.Equal(AllAudiences, view.Audiences);
         Assert.Equal(h.WriterConfig.Id, view.WriterConfigId);
         Assert.Equal("Anthropic", view.WriterProvider);
         Assert.Equal(BenchmarkReportPackPreparation.BatteryJobLabel(h.BatteryRunId), view.Job.SubjectLabel);
@@ -271,7 +272,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         var estimate = await EstimateAsync(h.WriterConfig.Id);
         Assert.Null(estimate.Refusal);
         Assert.Null(estimate.SameProviderWarning);
-        Assert.Equal(BothAudiences, estimate.Estimates.Select(e => e.Audience));
+        Assert.Equal(AllAudiences, estimate.Estimates.Select(e => e.Audience));
         Assert.All(estimate.Estimates, e => Assert.True(e.PromptChars > 0));
 
         var one = await EstimateAsync(h.WriterConfig.Id, new List<BenchmarkReportAudience> { BenchmarkReportAudience.TechnicalReport });
@@ -282,7 +283,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         var sameProvider = await EstimateAsync(sameProviderId);
         Assert.Null(sameProvider.Refusal);
         Assert.Equal("reportWriter", sameProvider.SameProviderWarning?.Role);
-        Assert.Equal(2, sameProvider.Estimates.Count);
+        Assert.Equal(3, sameProvider.Estimates.Count);
 
         var sameModel = await EstimateAsync(sameModelId);
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Refusal);
@@ -291,7 +292,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         Assert.IsType<BadRequestObjectResult>(await h.Controller().Estimate(h.BatteryRunId, new BenchmarkRunReportEstimateRequest
         {
             WriterModelConfigurationId = h.WriterConfig.Id,
-            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.InternalBrief }
+            Audiences = new List<BenchmarkReportAudience> { (BenchmarkReportAudience)99 }
         }, Ct));
         Assert.IsType<NotFoundResult>(await h.Controller().Estimate(
             999999, new BenchmarkRunReportEstimateRequest { WriterModelConfigurationId = h.WriterConfig.Id }, Ct));
@@ -323,7 +324,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         await h.UpdateBatteryRunAsync(b => b.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Writing);
         var busy = Assert.IsType<ConflictObjectResult>(await h.Controller().DeleteDocument(h.BatteryRunId, executive.Id, Ct));
         Assert.Contains(AdminBenchmarkBatteryReportsController.DeleteWhileWritingMessage, JsonSerializer.Serialize(busy.Value));
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(4, (await h.DocumentsAsync()).Count);
 
         await h.UpdateBatteryRunAsync(b => b.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed);
         Assert.IsType<NoContentResult>(await h.Controller().DeleteDocument(h.BatteryRunId, executive.Id, Ct));

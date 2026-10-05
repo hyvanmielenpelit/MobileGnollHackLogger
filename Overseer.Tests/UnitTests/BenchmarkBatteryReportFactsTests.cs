@@ -524,6 +524,24 @@ public class BenchmarkBatteryReportFactsTests
         Assert.Equal(BenchmarkBatteryModelComparison.MixedSourcesError, refusal);
     }
 
+    [Fact]
+    public async Task TheBatteryEntry_IsDatedFromItsFirstStartToItsLastCompletion()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        // Round r starts on October r, suite A at 08:00 and suite B at 09:00; each run takes 30 minutes.
+        long id = await SeedThreeRoundsAsync(db, adjust: (run, round) =>
+        {
+            int hour = run.BenchmarkSuiteId == BenchmarkBatteryTestData.SuiteA ? 8 : 9;
+            run.StartedAtUtc = new DateTime(2026, 10, round, hour, 0, 0, DateTimeKind.Utc);
+            run.CompletedAtUtc = run.StartedAtUtc.AddMinutes(30);
+        });
+
+        var entry = Assert.Single((await PrepareAsync(db, id)).Sheet.Entries, e => e.IsSubject);
+
+        Assert.Equal((DateTime?)new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc), entry.FirstRunUtc);
+        Assert.Equal((DateTime?)new DateTime(2026, 10, 3, 9, 30, 0, DateTimeKind.Utc), entry.LastRunUtc);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Tool-call outcomes and refuted answer sentences
     // ---------------------------------------------------------------------------------------------

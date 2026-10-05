@@ -550,6 +550,35 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// The verification of an answer whose own claims were not checked, told by what was: e.g.
+    /// <c>1 charged sentence checked — supported</c>, or <c>2 charged sentences checked — supported 1,
+    /// refuted 1, indeterminate 0; 1 assessor statement checked — refuted</c>. Null when neither list
+    /// has an item.
+    /// </summary>
+    internal static string? ChargesOnlyVerificationText(
+        IReadOnlyList<BenchmarkClaimVerification> accusedSentences,
+        IReadOnlyList<BenchmarkClaimVerification> assessorStatements)
+    {
+        static string? Part(IReadOnlyList<BenchmarkClaimVerification> items, string singular, string plural)
+        {
+            if (items.Count == 0) return null;
+            var (supported, refuted, indeterminate) = VerdictCounts(items);
+            var verdicts = items.Select(v => v.EffectiveVerdict).Distinct().ToList();
+            string verdictText = verdicts.Count == 1
+                ? verdicts[0].ToString().ToLowerInvariant()
+                : $"supported {Inv(supported)}, refuted {Inv(refuted)}, indeterminate {Inv(indeterminate)}";
+            return $"{Inv(items.Count)} {(items.Count == 1 ? singular : plural)} checked — {verdictText}{UnansweredByVerifierText(items)}";
+        }
+
+        var parts = new[]
+        {
+            Part(accusedSentences, "charged sentence", "charged sentences"),
+            Part(assessorStatements, "assessor statement", "assessor statements")
+        }.Where(p => p != null).ToList();
+        return parts.Count == 0 ? null : string.Join("; ", parts);
+    }
+
+    /// <summary>
     /// The verdict word as the harness reads it, with the verifier's own verdict beside it when a
     /// citation note demoted it, e.g. <c>indeterminate (verifier: refuted; cited function priest_talk has no live call site)</c>.
     /// </summary>
@@ -5007,9 +5036,18 @@ public static class BenchmarkReportBuilder
                     int rCount = a.ClaimsRefutedCount ?? 0;
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
                     // The unanswered count reads the same population as the three counts: the answer's own claims.
-                    string unansweredText = UnansweredByVerifierText(
-                        (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>()).Where(BenchmarkClaimRoles.IsOrdinaryClaim));
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate{unansweredText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}");
+                    var ordinaryClaims = (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())
+                        .Where(BenchmarkClaimRoles.IsOrdinaryClaim)
+                        .ToList();
+                    string unansweredText = UnansweredByVerifierText(ordinaryClaims);
+                    // With no claim of the answer's own checked, the line counts the charged sentences
+                    // and assessor statements the verifier did check.
+                    string? chargesOnlyText = sCount + rCount + iCount == 0 && ordinaryClaims.Count == 0
+                        ? ChargesOnlyVerificationText(AccusedSentencesOf(a), AssessorStatementsOf(a))
+                        : null;
+                    sb.AppendLine(chargesOnlyText != null
+                        ? $"> - **Claim Verification ({verifierName}):** {chargesOnlyText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}"
+                        : $"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate{unansweredText} — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}");
                 }
                 // Every accused sentence submitted, apart from the answer's own claims counted above.
                 var accusedSentences = AccusedSentencesOf(a);
@@ -5542,20 +5580,28 @@ public static class BenchmarkReportBuilder
 
         int totalRefutedClaims = run.ClaimsRefutedCount > 0 ? run.ClaimsRefutedCount : answers.Sum(a => a.ClaimsRefutedCount ?? 0);
         int disputedVerdicts = answers.Count(a => a.SecondOpinionDisagreed && a.SecondOpinionQualityScore.HasValue);
-        if (totalRefutedClaims > 0 || disputedVerdicts > 0 || contestedCriticalErrorCount > 0 || contestedAccuracyDeductionCount > 0)
+        // In a panel run, the answers where either member carries the flag.
+        int footerContestedAccuracyDeductionCount = isPanelRun
+            ? answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction)
+                || CoAssessmentAnswerFlags(a).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
+            : contestedAccuracyDeductionCount;
+        // Charged sentences the claim verifier refuted, that is, charges it upheld.
+        int upheldChargeCount = answers.Sum(a => AccusedSentencesOf(a).Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted));
+        if (totalRefutedClaims > 0 || disputedVerdicts > 0 || contestedCriticalErrorCount > 0 || footerContestedAccuracyDeductionCount > 0 || upheldChargeCount > 0)
         {
             // The first two figures are always stated, zero or not: the sentence exists to put the
             // record beside the narrative, and "0 refuted claim(s)" is itself the record. The
-            // contested figures are stated only when non-zero, because a zero there is
-            // indistinguishable from a run whose verifier never checked a critical-error quote or
-            // an out-of-rubric basis at all.
+            // contested and upheld figures are stated only when non-zero, because a zero there is
+            // indistinguishable from a run whose verifier never checked a critical-error quote,
+            // an out-of-rubric basis or a charged sentence at all.
             var countParts = new List<string>
             {
                 $"{totalRefutedClaims} refuted claim(s)",
                 $"{disputedVerdicts} disputed verdict(s)"
             };
             if (contestedCriticalErrorCount > 0) countParts.Add($"{contestedCriticalErrorCount} contested critical error(s)");
-            if (contestedAccuracyDeductionCount > 0) countParts.Add($"{contestedAccuracyDeductionCount} contested accuracy deduction(s)");
+            if (footerContestedAccuracyDeductionCount > 0) countParts.Add($"{footerContestedAccuracyDeductionCount} contested accuracy deduction(s)");
+            if (upheldChargeCount > 0) countParts.Add($"{upheldChargeCount} charged sentence(s) upheld by the claim verifier");
             string counts = string.Join(", ", countParts.Take(countParts.Count - 1)) + " and " + countParts[^1];
             sb.AppendLine(isPanelRun
                 ? $"*The syntheses above are the panel members' own narratives. This run recorded {counts} — see Run Integrity and Disputed Assessments.*"

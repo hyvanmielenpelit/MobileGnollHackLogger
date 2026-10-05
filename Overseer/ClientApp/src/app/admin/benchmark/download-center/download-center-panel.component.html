@@ -163,8 +163,27 @@
           </div>
         }
 
+        <!-- Comparison documents about the run or battery run are kept with their comparisons: this list does not hold them. -->
+        @if (comparisonPointerText; as pointerText) {
+          <div class="alert alert-info dc-comparison-pointer">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <div class="alert-content">
+              <div class="alert-body dc-comparison-pointer-text">{{ pointerText }}</div>
+              <div class="alert-actions">
+                <button type="button" class="btn-ghost dc-open-comparison-documents" (click)="requestComparisonDocuments()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                  Open comparison documents
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
         @for (notice of notices; track $index) {
           <p class="dc-notice">{{ notice }}</p>
+        }
+        @if (memberNotice) {
+          <p class="dc-notice dc-member-notice">{{ memberNotice }}</p>
         }
 
         <!-- Always rendered, so the live region exists before the notice appears in it. -->
@@ -229,6 +248,9 @@
 
         @if (loadingDocuments) {
           <p class="dc-loading">Loading report documents&hellip;</p>
+        }
+        @if (loadingMembers && includeMemberRuns) {
+          <p class="dc-loading dc-loading-members">Listing the member runs&hellip;</p>
         }
 
         @if (rows.length === 0) {
@@ -304,6 +326,20 @@
               }
               @if (shownSelectableRows.length > 0) {
                 <button type="button" class="gh-filter-clear dc-select-shown" [disabled]="preparing" (click)="selectShown()">{{ selectShownLabel }}</button>
+              }
+              @if (offersMemberRuns) {
+                <!-- The info button follows the label: a button may not sit inside a <label>. -->
+                <div class="dc-include-members">
+                  <label class="checkbox-label dc-include-members-label">
+                    <input type="checkbox" [id]="idPrefix + '-include-members'"
+                           [checked]="includeMemberRuns"
+                           [disabled]="preparing"
+                           [attr.aria-describedby]="idPrefix + '-include-members-tip'"
+                           (change)="toggleIncludeMemberRuns($event)">
+                    Include member runs
+                  </label>
+                  <app-info-tip trigger="click" [tipId]="idPrefix + '-include-members-tip'" subject="Include member runs">{{ includeMemberRunsTip }}</app-info-tip>
+                </div>
               }
               @if (chartActions) {
                 <div class="dc-chart-action">

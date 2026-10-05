@@ -37,6 +37,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         [BenchmarkReportAudience.InternalBrief] = 7000
     };
 
+    public const string AllWrittenMessage = "This run already has every AI-written report. Delete one first to write it again.";
+    public const string InvalidAudienceMessage =
+        "Only the Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement Brief are written for a run.";
+
     private readonly ApplicationDbContext _db;
     private readonly BenchmarkReportPackJobManager _jobManager;
     private readonly BenchmarkComplianceGuard _complianceGuard;
@@ -70,9 +74,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     }
 
     /// <summary>
-    /// The subject, its peers, the estimated cost of each document, the same-provider warning and any
-    /// refusal. Computes the fact sheet and the prompts; makes no model call. Battery results mixed with
-    /// runs or groups are a 400; a request the client aborts is a 499.
+    /// The subject, its peers, the documents already written for this comparison and subject, the
+    /// estimated cost of each document, the same-provider warning and any refusal; a subject with no
+    /// peer is refused with no estimate. Computes the fact sheet and the prompts; makes no model call.
+    /// Battery results mixed with runs or groups are a 400; a request the client aborts is a 499.
     /// </summary>
     [HttpPost("report-packs/preview")]
     public async Task<IActionResult> Preview([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
@@ -105,6 +110,13 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 }).ToList()
             };
 
+            if (preview.Peers.Count == 0)
+            {
+                preview.Refusal = BenchmarkReportPackPreparation.PeerlessReportRefusal;
+                return Ok(preview);
+            }
+            preview.WrittenDocuments = await WrittenDocumentsAsync(prep.Subject.Key, request, ct);
+
             SystemAiApiConfiguration? writer = null;
             if (request.WriterModelConfigurationId > 0)
             {
@@ -131,9 +143,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>
     /// Starts a job. Refusals, in order: battery results mixed with runs or groups (400); unknown or
-    /// Excluded subject (400); unusable writer (400); the writer is the subject's model (400); no
-    /// document (400); spend cap (429); same provider, unacknowledged (409 with the warning); a job
-    /// already running (409 with its state).
+    /// Excluded subject (400); a subject with no peer (400); unusable writer (400); the writer is the
+    /// subject's model (400); no document (400); a requested document already written for this
+    /// comparison and subject (409); spend cap (429); same provider, unacknowledged (409 with the
+    /// warning); a job already running (409 with its state).
     /// </summary>
     [HttpPost("report-packs")]
     public async Task<IActionResult> Start([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
@@ -141,8 +154,12 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (request == null) return BadRequest(new { error = "A request body is required." });
         if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
 
-        var (_, subject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(_comparisonService, request, ct);
+        var (comparison, subject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(_comparisonService, request, ct);
         if (refusal != null) return BadRequest(new { error = refusal });
+        if (!BenchmarkReportPackPreparation.HasPeers(comparison!, subject!))
+        {
+            return BadRequest(new { error = BenchmarkReportPackPreparation.PeerlessReportRefusal });
+        }
 
         var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
         string? writerRefusal = WriterRefusal(writer, subject!);
@@ -154,6 +171,16 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             .OrderBy(a => a)
             .ToList();
         if (audiences.Count == 0) return BadRequest(new { error = "Choose at least one document to write." });
+
+        var written = (await WrittenDocumentsAsync(subject!.Key, request, ct)).FirstOrDefault(d => audiences.Contains(d.Audience));
+        if (written != null)
+        {
+            return Conflict(new
+            {
+                error = $"The {BenchmarkReportRenderService.AudienceName(written.Audience)} about {subject.Label} is already written for this comparison. "
+                    + "Delete it in step 4 to write it again."
+            });
+        }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
         if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
@@ -229,7 +256,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// with the run's Pending status and the documents the job will write. Refusals, in order: no body
     /// (400); unknown run (404); the run has no final synthesis yet (400); a job for the run is Pending
     /// or Writing (409); a requested document that is not a run-completion document (400); a requested
-    /// document already written (409), or with none requested, both written (409); an unusable writer or
+    /// document already written (409), or with none requested, every one written (409); an unusable writer or
     /// the model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
     /// warning); a refused endpoint (400); the spend cap (429).
     /// </summary>
@@ -261,7 +288,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         {
             if (missing.Count == 0)
             {
-                return Conflict(new { error = "This run already has both AI-written reports. Delete them first to write them again." });
+                return Conflict(new { error = AllWrittenMessage });
             }
             toWrite = missing;
         }
@@ -474,9 +501,41 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (audiences == null || audiences.Count == 0) return (null, null);
         if (audiences.Any(a => !BenchmarkRunReportDocumentService.Audiences.Contains(a)))
         {
-            return (null, BadRequest(new { error = "Only the Executive Summary and the Report for AI Researchers and Developers are written for a run." }));
+            return (null, BadRequest(new { error = InvalidAudienceMessage }));
         }
         return (BenchmarkRunReportDocumentService.Audiences.Where(audiences.Contains).ToList(), null);
+    }
+
+    /// <summary>
+    /// The Report Pack documents stored for the subject in the comparison of the request's sources,
+    /// keyed as the stored rows were (<see cref="BenchmarkReportComparisonKey.From"/>): the newest per
+    /// audience, in audience order.
+    /// </summary>
+    private async Task<List<BenchmarkReportPackWrittenDocumentDto>> WrittenDocumentsAsync(
+        string subjectKey, BenchmarkReportPackRequest request, CancellationToken ct)
+    {
+        string comparisonKey = BenchmarkReportComparisonKey.From(
+            request.RunIds ?? new List<long>(), request.GroupIds ?? new List<long>(), request.BatteryRunIds ?? new List<long>());
+
+        var stored = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => d.Origin == BenchmarkReportDocumentOrigin.ReportPack && d.SubjectKey == subjectKey && d.ComparisonKey == comparisonKey)
+            .Select(d => new { d.Id, d.Audience, d.CreatedAtUtc, d.WriterDisplayName })
+            .ToListAsync(ct);
+
+        return stored
+            .GroupBy(d => d.Audience)
+            .Select(g => g.OrderByDescending(d => d.CreatedAtUtc).ThenByDescending(d => d.Id).First())
+            .OrderBy(d => d.Audience)
+            .Select(d => new BenchmarkReportPackWrittenDocumentDto
+            {
+                Audience = d.Audience,
+                DocumentId = d.Id,
+                CreatedAtUtc = d.CreatedAtUtc,
+                WriterDisplayName = d.WriterDisplayName
+            })
+            .ToList();
     }
 
     /// <summary>The run's job view with the run's persisted status and message, or null when this process knows no job for it.</summary>

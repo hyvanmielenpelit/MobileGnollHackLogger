@@ -151,6 +151,70 @@ public class BenchmarkReportPackRendererTests
         AssertMatchesGolden(file, rendered);
     }
 
+    /// <summary>
+    /// The run's stand-alone Internal Improvement Brief, a run-completion document: the stand-alone
+    /// writer output with a recommendation for every target and a lead, and no peer anywhere.
+    /// </summary>
+    [Fact]
+    public void TheStandaloneInternalBrief_MatchesItsGoldenFile_AndNamesNoPeer()
+    {
+        var document = StandaloneDocument(BenchmarkReportAudience.InternalBrief);
+        var writer = StandaloneWriter();
+        writer.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} scored {{quality.index}} at {{cost.perQuestion}} per question.";
+        writer.Recommendations.AddRange(Writer().Recommendations.Where(r => r.For != BenchmarkReportSlots.TargetModelDevelopers));
+        writer.Leads.AddRange(Writer().Leads);
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string rendered = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        AssertMatchesGolden("internal_standalone.md", rendered);
+        Assert.Contains("- **Peers:** none; this is a stand-alone report\n", rendered);
+        Assert.DoesNotContain("Compared with", rendered);
+        Assert.DoesNotContain("Peer mean", rendered);
+        Assert.DoesNotContain("No recommendations were recorded.", rendered);
+        Assert.DoesNotContain("No leads were recorded.", rendered);
+    }
+
+    /// <summary>The battery run's stand-alone Internal Improvement Brief, a battery-completion document.</summary>
+    [Fact]
+    public void TheStandaloneBatteryInternalBrief_MatchesItsGoldenFile_AndNamesNoPeer()
+    {
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.InternalBrief);
+        var writer = BatteryReportFixture.Writer();
+        writer.Sections[BenchmarkReportSlots.BenchmarkSystem] = "Both panel members flagged the critical error on S2-Q1.";
+        writer.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} scored {{quality.index}} at {{cost.perQuestion}} per question.";
+        writer.Recommendations.Add(new BenchmarkReportWriterRecommendation
+        {
+            For = BenchmarkReportSlots.TargetOverseerChat,
+            Text = "Send item-destruction questions to the source code first.",
+            Evidence = new List<string> { "tools.share.sourceCode" }
+        });
+        writer.Recommendations.Add(new BenchmarkReportWriterRecommendation
+        {
+            For = BenchmarkReportSlots.TargetBenchmark,
+            Text = "Check the S2-Q1 rubric against the source before the next run.",
+            Questions = new List<int> { 3 },
+            Evidence = new List<string> { "S2-Q1" }
+        });
+        writer.Leads.Add(new BenchmarkReportLead
+        {
+            Triage = "suite",
+            Text = "The S2-Q1 rubric may understate how often a thrown gem survives.",
+            Questions = new List<int> { 3 },
+            Evidence = new List<string> { "S2-Q1" }
+        });
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string rendered = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        AssertMatchesGolden("internal_battery_standalone.md", rendered);
+        Assert.Contains("- **Peers:** none; this is a stand-alone report\n", rendered);
+        Assert.Contains("### The suites of this battery\n", rendered);
+        Assert.DoesNotContain("Compared with", rendered);
+    }
+
     /// <summary>The golden comparison, or with <c>OVERSEER_UPDATE_GOLDENS=1</c> the golden file written from the output.</summary>
     private static void AssertMatchesGolden(string file, string rendered)
     {

@@ -1084,6 +1084,7 @@
           <div role="tabpanel" class="rr-panel rr-panel-medium" id="brr-panel-reports" aria-labelledby="brr-tab-reports" tabindex="0"
                [hidden]="tab !== 'reports'">
             <app-battery-ai-reports [batteryRun]="detail" [analysis]="analysis" [dialogOpen]="dialogOpen"
+                                    [memberDiagnosticsText]="memberDiagnosticsText"
                                     (downloadsRequested)="openDownloads($event)"
                                     (reportStatusChange)="onReportStatusChange($event)"></app-battery-ai-reports>
           </div>

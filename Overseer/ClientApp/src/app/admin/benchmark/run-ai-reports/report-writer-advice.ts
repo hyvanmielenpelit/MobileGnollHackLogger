@@ -44,23 +44,23 @@ export const REPORT_WRITER_ADVICE_BY_AUDIENCE: Readonly<Record<BenchmarkReportAu
 
 /** What every document of a run shares; the AI Reports tab writes each one separately. */
 export const REPORT_WRITER_ADVICE_RUN_SHARED: ReportWriterAdviceEntry = {
-  term: 'Both',
+  term: 'Every document',
   badge: null,
   text: 'Prefer a writer from another provider than the model under test; a writer from the same provider is allowed '
     + 'after a warning. Where the roster allows, prefer one that shares a family with neither panel member either. '
     + 'Avoid economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT Astra). Each document can be '
-    + 'written by a different model: write one, then choose another writer for the other.'
+    + 'written by a different model: write one, then choose another writer for the next.'
 };
 
-/** What both documents of a battery run share; the battery run report's AI Reports tab writes each one separately. */
+/** What every document of a battery run shares; the battery run report's AI Reports tab writes each one separately. */
 export const REPORT_WRITER_ADVICE_BATTERY_SHARED: ReportWriterAdviceEntry = {
-  term: 'Both',
+  term: 'Every document',
   badge: null,
   text: 'A battery’s documents describe a composite index over several suites, so their fact sheets are longer than '
     + 'a run’s and cost more to write. Prefer a writer from another provider than the model under test; a writer from '
     + 'the same provider is allowed after a warning. Avoid economy tiers (Flash, Flash-Lite) and the top tiers (Claude '
     + 'Fable, GPT Astra). Each document can be written by a different model: write one, then choose another writer for '
-    + 'the other.'
+    + 'the next.'
 };
 
 /** What every document of a report pack shares; one writer writes every document the pack generates. */
@@ -73,17 +73,19 @@ export const REPORT_WRITER_ADVICE_PACK_SHARED: ReportWriterAdviceEntry = {
     + 'document a pack generates: to use another writer for one document, generate it on its own.'
 };
 
-/** The run report's AI Reports tab: its two documents, then what they share. */
+/** The run report's AI Reports tab: its three documents, then what they share. */
 export const RUN_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
   REPORT_WRITER_ADVICE_RUN_SHARED
 ];
 
-/** The battery run report's AI Reports tab: its two documents, then what they share. */
+/** The battery run report's AI Reports tab: its three documents, then what they share. */
 export const BATTERY_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
   REPORT_WRITER_ADVICE_BATTERY_SHARED
 ];
 

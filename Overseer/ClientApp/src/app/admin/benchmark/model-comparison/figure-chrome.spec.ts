@@ -1,4 +1,4 @@
-import { figureDirectionRotation, figureDirectionText, questionsBadge } from './figure-chrome';
+import { figureDirectionRotation, figureDirectionText, questionsBadge, runsBadge } from './figure-chrome';
 
 describe('figureDirectionRotation and figureDirectionText', () => {
   it('turns the up-right arrow toward each corner of a trade-off plot', () => {
@@ -48,5 +48,32 @@ describe('questionsBadge', () => {
     expect(questionsBadge(1, 1, 0).text).toBe('1 question');
     expect(questionsBadge(15, 16, 0).text).toBe('15–16 questions');
     expect(questionsBadge(16, 16, 0).ariaLabel).toBeUndefined();
+  });
+});
+
+describe('runsBadge', () => {
+  it('counts runs behind each run or group entry', () => {
+    expect(runsBadge([{ runCount: 1 }, { runCount: 1 }])).toEqual({ text: '1 run each', tone: 'neutral', kind: 'runs' });
+    expect(runsBadge([{ runCount: 3 }, { runCount: 3, suiteCount: null }]).text).toBe('3 runs each');
+    expect(runsBadge([{ runCount: 1 }, { runCount: 3 }]).text).toBe('1–3 runs each');
+    expect(runsBadge([]).text).toBe('No runs');
+  });
+
+  it('counts battery passes when every entry is a battery result', () => {
+    expect(runsBadge([{ runCount: 8, suiteCount: 8 }, { runCount: 8, suiteCount: 8 }]))
+      .toEqual({ text: '1 battery pass each', tone: 'neutral', kind: 'runs' });
+    expect(runsBadge([{ runCount: 24, suiteCount: 8 }]).text).toBe('3 battery passes each');
+    expect(runsBadge([{ runCount: 8, suiteCount: 8 }, { runCount: 24, suiteCount: 8 }]).text)
+      .toBe('1–3 battery passes each');
+  });
+
+  it('rounds a partial battery pass down, and never below one', () => {
+    expect(runsBadge([{ runCount: 13, suiteCount: 8 }]).text).toBe('1 battery pass each');
+    expect(runsBadge([{ runCount: 5, suiteCount: 8 }]).text).toBe('1 battery pass each');
+    expect(runsBadge([{ runCount: 17, suiteCount: 8 }]).text).toBe('2 battery passes each');
+  });
+
+  it('counts runs when battery results are plotted beside runs or groups', () => {
+    expect(runsBadge([{ runCount: 8, suiteCount: 8 }, { runCount: 3 }]).text).toBe('3–8 runs each');
   });
 });

@@ -5566,6 +5566,92 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("contested accuracy deductions: A 1, B 1", report);
     }
 
+    private static string SynthesisCaveatLine(string report)
+        => report.Split('\n').Single(l => l.Contains(" This run recorded ", StringComparison.Ordinal)).TrimEnd('\r');
+
+    [Fact]
+    public void PanelSynthesisCaveat_CountsAContestedDeductionOnMemberBAlone()
+    {
+        var run = PanelReportRun();
+        EditMemberB(run.Answers.Single(a => a.OrderIndex == 1), r => r.Flags!.ContestedAccuracyDeduction = true);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Equal(
+            "*The syntheses above are the panel members' own narratives. This run recorded 0 refuted claim(s), 0 disputed verdict(s) and 1 contested accuracy deduction(s) — see Run Integrity and Disputed Assessments.*",
+            SynthesisCaveatLine(report));
+    }
+
+    [Fact]
+    public void PanelSynthesisCaveat_CountsEachAnswerOnce_AndTheChargesTheVerifierUpheld()
+    {
+        // Q3 carries the contested deduction on both members, and member A's charge "It auto-identifies."
+        // was refuted.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        string line = SynthesisCaveatLine(report);
+        Assert.StartsWith("*The syntheses above are the panel members' own narratives. This run recorded ", line);
+        Assert.EndsWith(" 1 contested accuracy deduction(s) and 1 charged sentence(s) upheld by the claim verifier — see Run Integrity and Disputed Assessments.*", line);
+    }
+
+    private static BenchmarkClaimVerification ChargedSentence(int claimIndex, BenchmarkClaimVerdict verdict)
+        => new(claimIndex, $"Charged sentence {claimIndex}.", verdict, "src/pray.c:120", "The source decides it.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.AccusedQuote }
+        };
+
+    [Fact]
+    public void SynthesisCaveat_PrintsForAChargeTheVerifierUpheld_EvenWithNoOtherFigure()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[] { ChargedSentence(0, BenchmarkClaimVerdict.Refuted) });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.AssessmentText = "Nothing was refuted.";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Equal(
+            "*The synthesis above is the primary assessor's own narrative. This run recorded 0 refuted claim(s), 0 disputed verdict(s) and 1 charged sentence(s) upheld by the claim verifier — see Run Integrity and Disputed Assessments.*",
+            SynthesisCaveatLine(report));
+    }
+
+    [Fact]
+    public void ClaimVerification_WithOnlyAChargedSentenceChecked_CountsTheCharge()
+    {
+        // Run 93 Q16: the answer raised no claim of its own, and the verifier checked one charged sentence.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[] { ChargedSentence(0, BenchmarkClaimVerdict.Supported) });
+
+        string line = ClaimVerificationLine(BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1)));
+
+        Assert.Contains(":** 1 charged sentence checked — supported — *checked against source/wiki; advisory, not reflected in the score.*", line);
+        Assert.DoesNotContain("0 supported, 0 refuted, 0 indeterminate", line);
+    }
+
+    [Fact]
+    public void ChargesOnlyVerificationText_CountsEachVerdict_WhenTheyDiffer()
+    {
+        var accused = new[]
+        {
+            ChargedSentence(0, BenchmarkClaimVerdict.Supported),
+            ChargedSentence(1, BenchmarkClaimVerdict.Refuted)
+        };
+        var statements = new[]
+        {
+            new BenchmarkClaimVerification(2, "The assessor's statement.", BenchmarkClaimVerdict.Refuted, "src/pray.c:300", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.AssessorStatement }
+            }
+        };
+
+        Assert.Equal(
+            "2 charged sentences checked — supported 1, refuted 1, indeterminate 0; 1 assessor statement checked — refuted",
+            BenchmarkReportBuilder.ChargesOnlyVerificationText(accused, statements));
+        Assert.Null(BenchmarkReportBuilder.ChargesOnlyVerificationText(
+            Array.Empty<BenchmarkClaimVerification>(), Array.Empty<BenchmarkClaimVerification>()));
+    }
+
     [Fact]
     public void PanelRun_PrintsMemberBsIntegrityFlags_ListsAMemberBOnlyAnswerUnderIssues_AndCountsEitherMember()
     {

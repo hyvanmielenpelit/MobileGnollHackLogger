@@ -171,6 +171,69 @@ public class BenchmarkPanelSensitivityTests
         Assert.Null(result.Index);
     }
 
+    /// <summary>
+    /// Member A charged a sentence, flagged an unevidenced deduction at <paramref name="accuracyA"/>
+    /// Accuracy and raised one ordinary claim, all with the given verdicts; the single-assessor
+    /// counts are set as the stored verification would set them.
+    /// </summary>
+    private static BenchmarkRunAnswer ChargedUnevidencedDeduction(int orderIndex, int accuracyA, BenchmarkClaimVerdict chargeVerdict)
+    {
+        var answer = Answer(orderIndex, accuracyA: accuracyA);
+        answer.AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction;
+        answer.UnverifiedClaimCount = 1;
+        answer.ClaimsSupportedCount = 1;
+        answer.ClaimsRefutedCount = 0;
+        answer.ClaimsIndeterminateCount = 0;
+        answer.ClaimVerificationJson = Json(
+            Accused("A", chargeVerdict),
+            Claim("A", BenchmarkClaimVerdict.Supported));
+        return answer;
+    }
+
+    [Theory]
+    [InlineData(4)] // Run 93 Q3.
+    [InlineData(5)] // Run 94 Q14.
+    public void AnUpheldCharge_IsNeitherLiftedNorCountedAsVerificationCleared(int accuracyA)
+    {
+        var q1 = ChargedUnevidencedDeduction(1, accuracyA, BenchmarkClaimVerdict.Refuted);
+        var run = Run(q1, Answer(2));
+
+        var result = BenchmarkPanelSensitivity.Compute(run, run.Answers, Constants);
+
+        Assert.Empty(result.LiftedA);
+        Assert.Null(result.Index);
+        Assert.False(BenchmarkService.IsVerificationClearedAccuracyDeduction(q1));
+    }
+
+    [Fact]
+    public void ASupportedCharge_LeavesTheVerificationClearedDeductionLiftedAndCounted()
+    {
+        var q1 = ChargedUnevidencedDeduction(1, 4, BenchmarkClaimVerdict.Supported);
+        var run = Run(q1, Answer(2));
+
+        var result = BenchmarkPanelSensitivity.Compute(run, run.Answers, Constants);
+
+        Assert.Equal(new[] { 1 }, result.LiftedA);
+        Assert.True(BenchmarkService.IsVerificationClearedAccuracyDeduction(q1));
+    }
+
+    [Fact]
+    public void AChargeUpheldForMemberB_DoesNotBlockMemberA()
+    {
+        var q1 = ChargedUnevidencedDeduction(1, 4, BenchmarkClaimVerdict.Supported);
+        q1.ClaimVerificationJson = Json(
+            Accused("A", BenchmarkClaimVerdict.Supported),
+            Claim("A", BenchmarkClaimVerdict.Supported),
+            Accused("B", BenchmarkClaimVerdict.Refuted) with { ClaimIndex = 2, Claim = "A sentence member B charged, upheld." });
+        var run = Run(q1, Answer(2));
+
+        var result = BenchmarkPanelSensitivity.Compute(run, run.Answers, Constants);
+
+        Assert.Equal(new[] { 1 }, result.LiftedA);
+        Assert.Empty(result.LiftedB);
+        Assert.True(BenchmarkService.IsVerificationClearedAccuracyDeduction(q1));
+    }
+
     [Fact]
     public void ASupportedAccusationWithoutACitation_IsNotEligible()
     {

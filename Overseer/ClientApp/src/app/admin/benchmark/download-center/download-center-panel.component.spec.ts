@@ -8,11 +8,14 @@ import { of } from 'rxjs';
 
 import {
   AdminBenchmarkService,
+  BenchmarkBatteryMemberDto,
+  BenchmarkBatteryRunDto,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
   BenchmarkReportPeerNaming,
+  BenchmarkRunDetailDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto,
   BenchmarkRunReportJobPhase
@@ -28,9 +31,15 @@ import {
   DOWNLOAD_CENTER_STORAGE_KEY,
   DOWNLOAD_CENTER_VIEW_STORAGE_KEY,
   DOWNLOAD_SORTS,
+  DownloadCenterBatteryContext,
   DownloadCenterChartActions,
   DownloadCenterContext,
+  DownloadCenterLibraryContext,
   DownloadCenterPanelComponent,
+  DownloadCenterPreselect,
+  INCLUDE_MEMBER_RUNS_TIP,
+  MEMBER_RUNS_FAILED_NOTICE,
+  ROW_NOTES,
   downloadCenterIo,
   reportDocumentFileStem
 } from './download-center-panel.component';
@@ -117,7 +126,8 @@ function chartActions(overrides: Partial<DownloadCenterChartActions> = {}): Fake
     <div class="shell" [style.width.px]="width">
       <app-download-center-panel [context]="context" [reloadToken]="reloadToken" [idPrefix]="idPrefix"
                                  [chartActions]="actions" (documentsChanged)="changes = changes + 1"
-                                 (openBatteryDownloads)="batteryDownloads.push($event)"></app-download-center-panel>
+                                 (openBatteryDownloads)="batteryDownloads.push($event)"
+                                 (openComparisonDocuments)="comparisonDocuments.push($event)"></app-download-center-panel>
     </div>
   `
 })
@@ -131,6 +141,8 @@ class PanelHostComponent {
   changes = 0;
   /** Every battery run id the panel's Open battery run downloads emitted. */
   batteryDownloads: number[] = [];
+  /** Every context the panel's Open comparison documents emitted. */
+  comparisonDocuments: DownloadCenterLibraryContext[] = [];
 }
 
 describe('DownloadCenterPanelComponent', () => {
@@ -217,7 +229,7 @@ describe('DownloadCenterPanelComponent', () => {
     return Promise.resolve();
   }
 
-  function library(preselect: 'all' | 'none' = 'all', scope: 'comparison' | 'all' = 'comparison'): DownloadCenterContext {
+  function library(preselect: DownloadCenterPreselect = 'all', scope: 'comparison' | 'all' = 'comparison'): DownloadCenterContext {
     return {
       kind: 'library',
       scope: scope === 'comparison' ? { kind: 'comparison', entryKeys: ENTRY_KEYS } : { kind: 'all' },
@@ -225,8 +237,10 @@ describe('DownloadCenterPanelComponent', () => {
     };
   }
 
-  function expectList(): TestRequest {
-    return http.expectOne(r => r.method === 'GET' && r.url === DOCUMENTS_URL);
+  /** The one pending document list request, of the given origin when one is named. */
+  function expectList(origin?: string): TestRequest {
+    return http.expectOne(r => r.method === 'GET' && r.url === DOCUMENTS_URL
+      && (origin === undefined || r.params.get('origin') === origin));
   }
 
   /** Renders the host with the context and answers its one list request. */
@@ -261,14 +275,70 @@ describe('DownloadCenterPanelComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   describe('library context', () => {
-    it('lists a comparison\'s documents by one list call, with the reports of their runs', () => {
-      const request = render([doc(11, ExecutiveSummary), doc(12, TechnicalReport, { subjectKey: 'run:2', subjectRunIds: [2] })]);
+    it('lists a comparison\'s documents by one list call, and no run reports', () => {
+      const request = render([
+        doc(11, ExecutiveSummary, { missingRunIds: [3], subjectRunIds: [1, 3] }),
+        doc(12, TechnicalReport, { subjectKey: 'run:2', subjectRunIds: [2] })
+      ]);
 
       expect(request.request.params.get('comparison')).toBe('run:1,run:2,group:4');
       expect(request.request.params.get('origin')).toBe('reportPack');
       expect(request.request.params.has('take')).toBe(false);
       http.expectNone(r => /report-documents\/\d+$/.test(r.url));
-      expect(panel().rows.map(r => r.key)).toEqual(['doc:12', 'doc:11', 'report:1', 'report:2']);
+      expect(panel().rows.map(r => r.key)).toEqual(['doc:12', 'doc:11']);
+      expect(panel().rows.every(r => r.kind === 'pack')).toBe(true);
+      // A missing subject run makes no notice: no run report is listed.
+      expect(el.querySelectorAll('.dc-notice').length).toBe(0);
+    });
+
+    it('lists the comparison documents about one subject, by subject and origin', () => {
+      const request = render([doc(11, ExecutiveSummary), doc(12, TechnicalReport)], {
+        kind: 'library',
+        scope: { kind: 'subject', subjectKey: 'run:1', label: 'run #1 · Board Suite · Gemini Flash' },
+        preselect: 'none'
+      });
+
+      expect(request.request.params.get('subject')).toBe('run:1');
+      expect(request.request.params.get('origin')).toBe('reportPack');
+      expect(request.request.params.has('comparison')).toBe(false);
+      expect(request.request.params.has('take')).toBe(false);
+      expect(panel().rows.map(r => r.key)).toEqual(['doc:12', 'doc:11']);
+      expect(panel().selectedCount).toBe(0);
+    });
+
+    it('says when no comparison document is about the subject', () => {
+      render([], {
+        kind: 'library',
+        scope: { kind: 'subject', subjectKey: 'battery:7', label: 'battery run #7' },
+        preselect: 'none'
+      });
+
+      expect(text('.dc-empty')).toBe('No comparison documents have been written about it.');
+    });
+
+    it('preselects only the listed documents, as the package chooses them, and keeps that on a reload', () => {
+      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport), doc(13, InternalBrief)], library({ ids: [12, 13] }));
+
+      const included = (): string[] => panel().rows.filter(r => panel().isIncluded(r)).map(r => r.key);
+      expect(included().sort()).toEqual(['doc:12', 'doc:13']);
+      expect(rowEl('doc:11').querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+      expect(rowEl('doc:12').querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
+
+      hostComponent.reloadToken++;
+      fixture.detectChanges();
+      expectList().flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport), doc(13, InternalBrief), doc(14, ExecutiveSummary)]);
+      fixture.detectChanges();
+      // The rows still listed keep their choices; a document new on the reload starts chosen only when listed.
+      expect(included().sort()).toEqual(['doc:12', 'doc:13']);
+    });
+
+    it('preselects a listed document only where the package chooses it', () => {
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 3, package: 'provider' }));
+      render([doc(11, ExecutiveSummary), doc(13, InternalBrief)], library({ ids: [11, 13] }));
+
+      // External never chooses the Internal Improvement Brief, listed or not.
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBe(true);
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:13')!)).toBe(false);
     });
 
     it('lists every comparison document, up to the endpoint\'s maximum, in the all scope', () => {
@@ -288,7 +358,7 @@ describe('DownloadCenterPanelComponent', () => {
       fixture.detectChanges();
       expectList().flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
       fixture.detectChanges();
-      expect(panel().selectedCount).toBe(3);
+      expect(panel().selectedCount).toBe(2);
       expect(rowEl('doc:11').querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
     });
 
@@ -301,7 +371,7 @@ describe('DownloadCenterPanelComponent', () => {
       expectList().flush([doc(11, ExecutiveSummary), doc(13, InternalBrief)]);
       fixture.detectChanges();
 
-      expect(panel().rows.map(r => r.key)).toEqual(['doc:13', 'doc:11', 'report:1']);
+      expect(panel().rows.map(r => r.key)).toEqual(['doc:13', 'doc:11']);
       expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBe(true);
       expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:13')!)).toBe(false);
     });
@@ -320,7 +390,7 @@ describe('DownloadCenterPanelComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   describe('the list', () => {
-    /** Three report documents over two subjects and two suites, with their two runs' reports. */
+    /** Three report documents over two subjects, two suites and two writers. */
     function twoSuites(): BenchmarkReportDocumentListItemDto[] {
       const harbor = { subjectLabel: 'Claude Harbor', subjectKey: 'run:2', subjectRunIds: [2], suiteName: 'Wiki Suite' };
       return [
@@ -337,7 +407,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(list.getAttribute('role')).toBe('list');
       expect(list.getAttribute('aria-labelledby')).toBe('mc-dc-documents-title');
       const items = Array.from(list.children);
-      expect(items.length).toBe(3);
+      expect(items.length).toBe(2);
       expect(items.every(item => item.tagName === 'LI' && item.firstElementChild!.matches('article.dc-card'))).toBe(true);
 
       const card = rowEl('doc:11');
@@ -378,13 +448,13 @@ describe('DownloadCenterPanelComponent', () => {
       expect(label.classList).not.toContain('visually-hidden');
       expect(Array.from(select.options).map(option => option.textContent!.trim())).toEqual(DOWNLOAD_SORTS.map(sort => sort.label));
       expect(select.value).toBe('created-desc');
-      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11', 'report:1']);
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11']);
 
       setFilter('mc-dc-sort', 'title');
-      expect(rowKeys()).toEqual(['doc:13', 'doc:11', 'doc:12', 'report:1']);
+      expect(rowKeys()).toEqual(['doc:13', 'doc:11', 'doc:12']);
 
       setFilter('mc-dc-sort', 'changed-first');
-      expect(rowKeys()).toEqual(['doc:12', 'doc:13', 'doc:11', 'report:1']);
+      expect(rowKeys()).toEqual(['doc:12', 'doc:13', 'doc:11']);
       expect(JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, sort: 'changed-first' });
 
       const second = TestBed.createComponent(PanelHostComponent);
@@ -395,7 +465,7 @@ describe('DownloadCenterPanelComponent', () => {
       const secondEl = second.nativeElement as HTMLElement;
       expect(secondEl.querySelector<HTMLSelectElement>('[id="mc-dc-sort"]')!.value).toBe('changed-first');
       expect(Array.from(secondEl.querySelectorAll('article.dc-card')).map(card => card.getAttribute('data-row-key')))
-        .toEqual(['doc:12', 'doc:13', 'doc:11', 'report:1']);
+        .toEqual(['doc:12', 'doc:13', 'doc:11']);
       second.destroy();
 
       localStorage.setItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY, JSON.stringify({ version: 1, sort: 'no-such-order' }));
@@ -418,13 +488,13 @@ describe('DownloadCenterPanelComponent', () => {
       expect(input.type).toBe('search');
 
       typeInto(input, 'harbor');
-      expect(rowKeys().length).toBe(5);
+      expect(rowKeys().length).toBe(3);
       await pauseTyping();
-      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'report:2']);
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12']);
 
       typeInto(input, 'wiki suite');
       await pauseTyping();
-      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'report:2']);
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12']);
 
       typeInto(input, 'gemini writer');
       await pauseTyping();
@@ -442,7 +512,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(escape.defaultPrevented).toBe(true);
       expect(heard).toEqual([]);
       expect(input.value).toBe('');
-      expect(rowKeys().length).toBe(5);
+      expect(rowKeys().length).toBe(3);
 
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       expect(heard).toEqual(['Escape']);
@@ -455,26 +525,30 @@ describe('DownloadCenterPanelComponent', () => {
       // Every row is unchanged, so Changes has one value and is not offered.
       expect(byId('mc-dc-facet-changes-trigger')).toBeNull();
       expect(facetOptions('document').map(option => option.label))
-        .toEqual(['Executive Summary, 2 documents', 'Report for AI Researchers and Developers, 1 document', 'Run report, 2 documents']);
+        .toEqual(['Executive Summary, 2 documents', 'Report for AI Researchers and Developers, 1 document']);
       expect(facetOptions('writer').map(option => option.label))
-        .toEqual(['Claude Opus writer, 2 documents', 'Gemini writer, 1 document', 'No writer — run files, 2 documents']);
+        .toEqual(['Claude Opus writer, 2 documents', 'Gemini writer, 1 document']);
 
       const facetsBefore = panel().facets;
       fixture.detectChanges();
       expect(panel().facets).toBe(facetsBefore);
 
-      pickFacet('document', 'Executive Summary');
-      pickFacet('document', 'Run report');
-      expect(rowKeys()).toEqual(['doc:13', 'doc:11', 'report:1', 'report:2']);
-      expect(text('#mc-dc-facet-document-trigger')).toBe('Document 2 selected');
+      pickFacet('subject', 'Claude Harbor');
+      pickFacet('subject', 'Gemini Flash');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11']);
+      expect(text('#mc-dc-facet-subject-trigger')).toBe('Subject 2 selected');
       expect(panel().facets).not.toBe(facetsBefore);
 
+      pickFacet('document', 'Executive Summary');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:11']);
+      expect(facetOptions('suite').map(option => option.label)).toEqual(['Board Suite, 1 document', 'Wiki Suite, 1 document']);
+
       pickFacet('suite', 'Wiki Suite');
-      expect(rowKeys()).toEqual(['doc:13', 'report:2']);
+      expect(rowKeys()).toEqual(['doc:13']);
       expect(facetOptions('document').map(option => option.label))
-        .toEqual(['Executive Summary, 1 document', 'Report for AI Researchers and Developers, 1 document', 'Run report, 1 document']);
-      expect(facetOptions('suite').map(option => option.label)).toEqual(['Board Suite, 2 documents', 'Wiki Suite, 2 documents']);
-      expect(text('#mc-dc-list-status')).toBe('Showing 2 of 2 documents · filtered from 5');
+        .toEqual(['Executive Summary, 1 document', 'Report for AI Researchers and Developers, 1 document']);
+      expect(facetOptions('suite').map(option => option.label)).toEqual(['Board Suite, 1 document', 'Wiki Suite, 1 document']);
+      expect(text('#mc-dc-list-status')).toBe('One document · filtered from 3');
     });
 
     it('filters by creation time in single mode, against the Download Center clock', () => {
@@ -490,14 +564,14 @@ describe('DownloadCenterPanelComponent', () => {
       expect(rowKeys()).toEqual(['doc:13', 'doc:12']);
 
       pickFacet('created', 'Any time');
-      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11', 'report:1']);
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11']);
     });
 
     it('shows the active filters as removable chips, and Clear all keeps Show selected only', async () => {
       useSearchClock();
       render(twoSuites());
       pickFacet('document', 'Executive Summary');
-      pickFacet('document', 'Run report');
+      pickFacet('document', 'Report for AI Researchers and Developers');
       pickFacet('suite', 'Wiki Suite');
       typeInto(byId<HTMLInputElement>('mc-dc-search')!, 'harbor');
       await pauseTyping();
@@ -507,16 +581,16 @@ describe('DownloadCenterPanelComponent', () => {
       expect(chipList.getAttribute('aria-label')).toBe('Active filters');
       expect(chipNames()).toEqual([
         'Remove filter Document: Executive Summary',
-        'Remove filter Document: Run report',
+        'Remove filter Document: Report for AI Researchers and Developers',
         'Remove filter Suite: Wiki Suite',
         'Remove filter Search: “harbor”'
       ]);
 
       chips()[0].click();
       fixture.detectChanges();
-      expect(chipNames()[0]).toBe('Remove filter Document: Run report');
+      expect(chipNames()[0]).toBe('Remove filter Document: Report for AI Researchers and Developers');
       expect(document.activeElement).toBe(chips()[0]);
-      expect(rowKeys()).toEqual(['report:2']);
+      expect(rowKeys()).toEqual(['doc:12']);
 
       q<HTMLButtonElement>('.dc-show-selected')!.click();
       fixture.detectChanges();
@@ -529,7 +603,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(panel().showSelectedOnly).toBe(true);
       expect(byId<HTMLInputElement>('mc-dc-search')!.value).toBe('');
       expect(document.activeElement).toBe(byId('mc-dc-search'));
-      expect(rowKeys().length).toBe(5);
+      expect(rowKeys().length).toBe(3);
 
       typeInto(byId<HTMLInputElement>('mc-dc-search')!, 'nothing like this');
       await pauseTyping();
@@ -538,9 +612,16 @@ describe('DownloadCenterPanelComponent', () => {
       expect(q('.dc-no-matches button')!.textContent!.trim()).toBe('Clear all filters');
     });
 
+    /** Twelve Executive Summaries and one older Report for AI Researchers and Developers. */
+    function thirteen(): BenchmarkReportDocumentListItemDto[] {
+      return [
+        ...Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` })),
+        doc(300, TechnicalReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
+      ];
+    }
+
     it('shows ten cards, then more on request, focusing the first new card', () => {
-      const many = Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` }));
-      render(many);
+      render(thirteen());
 
       expect(rowKeys().length).toBe(10);
       const status = byId('mc-dc-list-status')!;
@@ -560,7 +641,10 @@ describe('DownloadCenterPanelComponent', () => {
       expect(rowKeys().length).toBe(10);
       expect(text('#mc-dc-list-status')).toBe('Showing 10 of 12 documents · filtered from 13');
 
-      const more = Array.from({ length: 24 }, (_, i) => doc(200 + i, ExecutiveSummary, { createdAtUtc: `2026-09-10T${String(i).padStart(2, '0')}:00:00Z` }));
+      const more = [
+        ...Array.from({ length: 24 }, (_, i) => doc(200 + i, ExecutiveSummary, { createdAtUtc: `2026-09-10T${String(i).padStart(2, '0')}:00:00Z` })),
+        doc(301, TechnicalReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
+      ];
       render(more);
       expect(rowKeys().length).toBe(10);
       const showAll = q<HTMLButtonElement>('.dc-show-all')!;
@@ -572,8 +656,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('counts the selection the list does not show, selects what matches, and has no select-all checkbox', () => {
-      const many = Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` }));
-      render(many, library('none'));
+      render(thirteen(), library('none'));
       const stray = Array.from(el.querySelectorAll('.dc-documents input[type="checkbox"]'))
         .filter(input => !input.closest('.dc-card') && !input.closest('app-filter-facet'));
       expect(stray).toEqual([]);
@@ -596,8 +679,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('keeps the filter bar flush with the top of the scroller from 36rem, and lets it scroll away below', async () => {
-      const many = Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` }));
-      render(many);
+      render(thirteen());
       const shell = q('.shell')!;
       shell.style.display = 'flex';
       shell.style.flexDirection = 'column';
@@ -655,30 +737,12 @@ describe('DownloadCenterPanelComponent', () => {
       expect(request.initialVariant).toBe('detailed');
       expect(request.secondaryVariants?.label).toBe('Peer names');
       expect(request.secondaryVariants?.initial).toBe('named');
-      expect(request.fallbackFileName).toBe('run-1_vs-2-models_gemini-flash_Researcher_Report.pdf');
+      expect(request.fallbackFileName).toBe('run-1_vs-run-2-group-4_gemini-flash_Researcher_Report.pdf');
       request.load('summary', 'anonymized').subscribe();
       expect(pdf).toHaveBeenCalledWith(11, Summary, BenchmarkReportPeerNaming.Anonymized, expect.any(String));
 
       panel().pdfViewer!.closed.emit();
       expect(document.activeElement).toBe(button);
-    });
-
-    it('views a run report row as the run report PDF', () => {
-      const service = TestBed.inject(AdminBenchmarkService);
-      const pdf = vi.spyOn(service, 'getRunReportPdf').mockReturnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
-      render([doc(11, ExecutiveSummary)]);
-      const open = vi.spyOn(panel().pdfViewer!, 'open').mockReturnValue(undefined);
-
-      const rid = panel().rowId(panel().rows.find(r => r.key === 'report:1')!);
-      byId<HTMLButtonElement>(`${rid}-view`)!.click();
-
-      const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
-      expect(request.title).toBe('Run report, run #1');
-      expect(request.variants).toBeUndefined();
-      request.load(null).subscribe();
-      expect(pdf).toHaveBeenCalledWith(1, expect.any(String));
-      // A run report is never deleted here.
-      expect(byId(`${rid}-delete`)).toBeNull();
     });
 
     it('offers Delete only on Report Pack documents', () => {
@@ -716,7 +780,7 @@ describe('DownloadCenterPanelComponent', () => {
       await closed;
       fixture.detectChanges();
 
-      expect(rowKeys()).toEqual(['doc:13', 'doc:11', 'report:1']);
+      expect(rowKeys()).toEqual(['doc:13', 'doc:11']);
       // Newest first: the row after the deleted one is document 11.
       expect(document.activeElement).toBe(byId('mc-dc-doc-11-view'));
       expect(text('.dc-status')).toBe('Deleted Gemini Flash — Report for AI Researchers and Developers, 2026-09-22 16:00 UTC.');
@@ -757,15 +821,43 @@ describe('DownloadCenterPanelComponent', () => {
   // File names
   // -------------------------------------------------------------------------------------------
 
-  it('names a document compared with peers vs-<N>-models_, after run-<id>_ or first for a group subject', () => {
-    expect(reportDocumentFileStem(doc(1, ExecutiveSummary, { peerCount: 4 }), 'x'))
-      .toBe('run-1_vs-4-models_executive-summary-gemini-flash');
-    expect(reportDocumentFileStem(doc(1, ExecutiveSummary, { peerCount: 4, subjectKey: 'group:3' }), 'x'))
-      .toBe('vs-4-models_executive-summary-gemini-flash');
-    expect(reportDocumentFileStem(doc(1, ExecutiveSummary, { peerCount: 0 }), 'x'))
-      .toBe('run-1_executive-summary-gemini-flash');
-    expect(reportDocumentFileStem(doc(2, TechnicalReport, { peerCount: 1 }), 'x'))
-      .toBe('run-1_vs-1-models_gemini-flash_Researcher_Report');
+  describe('file names', () => {
+    const stem = (overrides: Partial<BenchmarkReportDocumentListItemDto>, audience = ExecutiveSummary): string =>
+      reportDocumentFileStem(doc(1, audience, overrides), 'x');
+
+    it('names one to three peers by their entry keys in letter order, after run-<id>_ or first for a group subject', () => {
+      expect(stem({ peerCount: 2, peerLetters: { 'group:4': 'B', 'run:2': 'A' } }))
+        .toBe('run-1_vs-run-2-group-4_executive-summary-gemini-flash');
+      expect(stem({ subjectKey: 'battery:9', peerCount: 1, peerLetters: { 'battery:10': 'A' } }))
+        .toBe('battery-run-9_vs-battery-run-10_executive-summary-gemini-flash');
+      expect(stem({ subjectKey: 'run:92', peerCount: 2, peerLetters: { 'run:95': 'B', 'run:94': 'A' } }))
+        .toBe('run-92_vs-run-94-run-95_executive-summary-gemini-flash');
+      expect(stem({ subjectKey: 'group:3', peerCount: 3, peerLetters: { 'run:5': 'C', 'battery:6': 'A', 'group:7': 'B' } }))
+        .toBe('vs-battery-run-6-group-7-run-5_executive-summary-gemini-flash');
+      expect(stem({ peerCount: 1, peerLetters: { 'run:2': 'A' } }, TechnicalReport))
+        .toBe('run-1_vs-run-2_gemini-flash_Researcher_Report');
+    });
+
+    it('names more than three peers, or peers it cannot spell, by their count and the comparison key', () => {
+      const four = { 'run:2': 'A', 'run:3': 'B', 'run:4': 'C', 'run:5': 'D' };
+      expect(stem({ peerCount: 4, peerLetters: four, comparisonKey: '1a2b3c4d5e6f7a8b' }))
+        .toBe('run-1_vs-4-models-1a2b3c4d_executive-summary-gemini-flash');
+      // A peer key the name cannot spell.
+      expect(stem({ peerCount: 2, peerLetters: { 'run:2': 'A', 'set:9': 'B' }, comparisonKey: 'ffeeddccbbaa' }))
+        .toBe('run-1_vs-2-models-ffeeddcc_executive-summary-gemini-flash');
+      // A peer the document list sends no letter for.
+      expect(stem({ peerCount: 2, peerLetters: { 'run:2': 'A' }, comparisonKey: 'ffeeddccbbaa' }))
+        .toBe('run-1_vs-2-models-ffeeddcc_executive-summary-gemini-flash');
+    });
+
+    it('names a legacy document stored without a comparison key vs-<N>-models_, and one without peers with no comparison part', () => {
+      expect(stem({ peerCount: 4, peerLetters: {}, comparisonKey: null }))
+        .toBe('run-1_vs-4-models_executive-summary-gemini-flash');
+      expect(stem({ subjectKey: 'group:3', peerCount: 4, peerLetters: undefined, comparisonKey: undefined }))
+        .toBe('vs-4-models_executive-summary-gemini-flash');
+      expect(stem({ peerCount: 0, peerLetters: {} }))
+        .toBe('run-1_executive-summary-gemini-flash');
+    });
   });
 
   // -------------------------------------------------------------------------------------------
@@ -798,7 +890,6 @@ describe('DownloadCenterPanelComponent', () => {
       expect(state('doc:13').textContent!.trim()).toBe('3 · differs from step 2');
       expect(state('doc:13').classList).toContain('gh-tag-changed');
       expect(flat(state('doc:11').closest('.dc-option-charts')!.querySelector('.dc-option-label'))).toBe('Charts');
-      expect(rowEl('report:1').querySelector('.dc-option-charts')).toBeNull();
       const help = Array.from(el.querySelectorAll('.dc-help-section'));
       expect(help.map(section => flat(section.querySelector('h4')))).toEqual(['Sharing', 'Disclosure', 'Peer names', 'Formats', 'Charts']);
       expect(Array.from(help[4].querySelectorAll('dt .gh-info-term')).map(flat)).toEqual(['None', 'current', 'differs from step 2']);
@@ -992,7 +1083,7 @@ describe('DownloadCenterPanelComponent', () => {
   describe('battery context', () => {
     const JOB_URL = '/api/admin/benchmark/batteries/runs/7/report-documents/job';
     const REPORT_URL = '/api/admin/benchmark/batteries/runs/7/report';
-    const BATTERY: DownloadCenterContext = { kind: 'battery', batteryRunId: 7, label: 'Core Battery · Gemini Flash' };
+    const BATTERY: DownloadCenterBatteryContext = { kind: 'battery', batteryRunId: 7, label: 'Core Battery · Gemini Flash' };
 
     /** A document about battery run 7: a battery-completion one unless `origin` says otherwise. */
     function batteryDoc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
@@ -1032,27 +1123,61 @@ describe('DownloadCenterPanelComponent', () => {
       }
     }
 
-    /** Renders the battery context and answers its document list and its job request. */
-    function openBattery(documents: BenchmarkReportDocumentListItemDto[], view: BenchmarkRunReportJobDto | null = null): TestRequest {
-      hostComponent.context = BATTERY;
+    const BATTERY_RUN_URL = '/api/admin/benchmark/batteries/runs/7';
+
+    /** A current, usable member in suite 0, round 1, unless the overrides say otherwise. */
+    function member(runId: number, overrides: Partial<BenchmarkBatteryMemberDto> = {}): BenchmarkBatteryMemberDto {
+      return {
+        memberId: runId, suiteIndex: 0, round: 1, runId, runStatus: 'Completed', origin: 'Launched',
+        superseded: false, usable: true, addedAtUtc: '2026-10-01T07:59:00Z',
+        runStartedAtUtc: '2026-10-01T08:00:00Z', runCompletedAtUtc: '2026-10-01T08:30:00Z',
+        answeredQuestionCount: 16, totalQuestionCount: 16,
+        ...overrides
+      };
+    }
+
+    /** Battery run 7 of Core Battery, over Board Suite (0) and Wiki Suite (1), with the given members. */
+    function batteryRun(members: BenchmarkBatteryMemberDto[]): BenchmarkBatteryRunDto {
+      return {
+        id: 7,
+        batteryName: 'Core Battery',
+        testedModelLabel: 'Gemini Flash',
+        suites: [{ index: 0, suiteId: 5, suiteName: 'Board Suite' }, { index: 1, suiteId: 6, suiteName: 'Wiki Suite' }],
+        members
+      } as unknown as BenchmarkBatteryRunDto;
+    }
+
+    /** The battery run's member list request. */
+    function expectMembers(): TestRequest {
+      return http.expectOne(r => r.method === 'GET' && r.url === BATTERY_RUN_URL);
+    }
+
+    /**
+     * Renders the battery context and answers its own document list, its comparison count, its job
+     * request and its member list.
+     */
+    function openBattery(
+      documents: BenchmarkReportDocumentListItemDto[],
+      view: BenchmarkRunReportJobDto | null = null,
+      options: { members?: BenchmarkBatteryMemberDto[]; comparison?: BenchmarkReportDocumentListItemDto[]; context?: DownloadCenterContext } = {}
+    ): TestRequest {
+      hostComponent.context = options.context ?? BATTERY;
       fixture.detectChanges();
-      const list = expectList();
+      const list = expectList('batteryCompletion');
       list.flush(documents);
+      expectList('reportPack').flush(options.comparison ?? []);
       flushJob(view);
+      expectMembers().flush(batteryRun(options.members ?? []));
       fixture.detectChanges();
       return list;
     }
 
-    it('lists the analysis report and every document about the battery run, by subject, and no member run\'s files', () => {
-      const list = openBattery([
-        batteryDoc(21, ExecutiveSummary),
-        batteryDoc(22, TechnicalReport),
-        batteryDoc(23, InternalBrief, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 2 })
-      ]);
+    it('lists the analysis report and the battery run\'s own documents, by subject and origin', () => {
+      const list = openBattery([batteryDoc(21, ExecutiveSummary), batteryDoc(22, TechnicalReport), batteryDoc(23, InternalBrief)]);
 
       expect(list.request.params.get('subject')).toBe('battery:7');
+      expect(list.request.params.get('origin')).toBe('batteryCompletion');
       expect(list.request.params.has('runId')).toBe(false);
-      expect(list.request.params.has('origin')).toBe(false);
       expect([...rowKeys()].sort()).toEqual(['battery-report:7', 'doc:21', 'doc:22', 'doc:23']);
       expect(panel().rows.some(row => row.runId !== null)).toBe(false);
 
@@ -1065,10 +1190,57 @@ describe('DownloadCenterPanelComponent', () => {
       expect(report.querySelector('.dc-delete-btn')).toBeNull();
       expect(panel().rows.find(row => row.key === 'battery-report:7')!.formats).toEqual(['md']);
 
-      // A battery-completion document is not deleted here; a Report Pack document about the battery run is.
+      // A battery-completion document is viewed here, never deleted.
       expect(rowEl('doc:21').querySelector('.dc-view-btn')).not.toBeNull();
       expect(rowEl('doc:21').querySelector('.dc-delete-btn')).toBeNull();
-      expect(rowEl('doc:23').querySelector('.dc-delete-btn')).not.toBeNull();
+    });
+
+    it('points to the comparison documents about the battery run, and opens them in a subject library', () => {
+      openBattery([batteryDoc(21, ExecutiveSummary)], null, {
+        comparison: [
+          batteryDoc(31, ExecutiveSummary, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 1 }),
+          batteryDoc(32, TechnicalReport, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 1 })
+        ]
+      });
+
+      expect(text('.dc-comparison-pointer-text')).toBe(
+        '2 comparison documents compare this battery run with other models. They are kept with their comparisons.');
+      expect(rowKeys()).not.toContain('doc:31');
+      const button = q<HTMLButtonElement>('.dc-comparison-pointer .dc-open-comparison-documents')!;
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.classList.contains('btn-ghost')).toBe(true);
+      expect(flat(button)).toBe('Open comparison documents');
+      expect(hostComponent.comparisonDocuments).toEqual([]);
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(hostComponent.comparisonDocuments).toEqual([{
+        kind: 'library',
+        scope: { kind: 'subject', subjectKey: 'battery:7', label: 'battery run #7 · Core Battery · Gemini Flash' },
+        preselect: 'none'
+      }]);
+      // The pointer sits above the documents.
+      expect(q('.dc-comparison-pointer')!.compareDocumentPosition(rowEl('doc:21')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('says one comparison document in the singular, and shows no pointer for none or a failed count', () => {
+      openBattery([], null, { comparison: [batteryDoc(31, ExecutiveSummary, { origin: BenchmarkReportDocumentOrigin.ReportPack })] });
+      expect(text('.dc-comparison-pointer-text')).toBe(
+        '1 comparison document compares this battery run with other models. It is kept with its comparison.');
+
+      openBattery([], null, { comparison: [], context: { ...BATTERY } });
+      expect(q('.dc-comparison-pointer')).toBeNull();
+
+      hostComponent.context = { ...BATTERY };
+      fixture.detectChanges();
+      expectList('batteryCompletion').flush([]);
+      expectList('reportPack').flush({ error: 'Boom' }, { status: 500, statusText: 'Server Error' });
+      flushJob(null);
+      expectMembers().flush(batteryRun([]));
+      fixture.detectChanges();
+      expect(q('.dc-comparison-pointer')).toBeNull();
+      expect(el.querySelectorAll('.dc-notice').length).toBe(0);
     });
 
     it('names a battery run\'s documents after it', () => {
@@ -1106,8 +1278,10 @@ describe('DownloadCenterPanelComponent', () => {
     it('lists the analysis report alone, with a notice, when the documents cannot be loaded', () => {
       hostComponent.context = BATTERY;
       fixture.detectChanges();
-      expectList().flush({ error: 'Boom' }, { status: 500, statusText: 'Server Error' });
+      expectList('batteryCompletion').flush({ error: 'Boom' }, { status: 500, statusText: 'Server Error' });
+      expectList('reportPack').flush([]);
       flushJob(null);
+      expectMembers().flush(batteryRun([]));
       fixture.detectChanges();
 
       expect(rowKeys()).toEqual(['battery-report:7']);
@@ -1139,7 +1313,7 @@ describe('DownloadCenterPanelComponent', () => {
       // Finished: the battery run's documents are listed again, and the notice goes.
       tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
       flushJob(job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
-      const reload = expectList();
+      const reload = expectList('batteryCompletion');
       expect(reload.request.params.get('subject')).toBe('battery:7');
       reload.flush([batteryDoc(21, ExecutiveSummary), batteryDoc(22, TechnicalReport)]);
       fixture.detectChanges();
@@ -1158,6 +1332,159 @@ describe('DownloadCenterPanelComponent', () => {
       tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
       http.expectNone(JOB_URL);
     }));
+
+    describe('Include member runs', () => {
+      const includeBox = (): HTMLInputElement => byId<HTMLInputElement>('mc-dc-include-members')!;
+
+      function toggleMembers(): void {
+        includeBox().click();
+        fixture.detectChanges();
+      }
+
+      /** Members out of order, one unusable, one superseded and one deleted. */
+      function members(): BenchmarkBatteryMemberDto[] {
+        return [
+          member(102, { suiteIndex: 1, usable: false, unusableReason: 'failed' }),
+          member(103, { superseded: true }),
+          member(101),
+          member(104, { suiteIndex: 1, round: 2, runStatus: 'Deleted' }),
+          member(105, { round: 2 })
+        ];
+      }
+
+      it('is checked whenever a battery run opens, with its click-mode explanation, and lists every current member\'s report and log', () => {
+        openBattery([batteryDoc(21, ExecutiveSummary)], null, { members: members() });
+
+        const box = includeBox();
+        expect(box.checked).toBe(true);
+        expect(box.closest('label')!.textContent!.trim()).toBe('Include member runs');
+        expect(box.getAttribute('aria-describedby')).toBe('mc-dc-include-members-tip');
+        expect(box.closest('.dc-selection')).not.toBeNull();
+        expect(flat(byId('mc-dc-include-members-tip'))).toBe(INCLUDE_MEMBER_RUNS_TIP);
+        expect(q('.dc-include-members .gh-info-btn')!.getAttribute('aria-label')).toBe('About Include member runs');
+
+        // By suite, then round; no superseded or deleted member; no diagnostics without the host's callback.
+        const memberKeys = panel().rows.filter(row => row.runId !== null).map(row => row.key);
+        expect(memberKeys).toEqual(['report:101', 'log:101', 'report:105', 'log:105', 'report:102', 'log:102']);
+
+        const report = panel().rows.find(row => row.key === 'report:101')!;
+        expect(report.label).toBe('Run report, run #101');
+        expect(report.detail).toBe('Board Suite · round 1 · run #101');
+        expect(report.suite).toBe('Board Suite');
+        expect(report.subject).toBe('Gemini Flash');
+        expect(report.note).toBeNull();
+        expect(panel().rows.find(row => row.key === 'log:105')!.detail).toBe('Board Suite · round 2 · run #105');
+
+        // An unusable member is listed, and says it is not used in the battery's statistics.
+        const unusable = panel().rows.find(row => row.key === 'report:102')!;
+        expect(unusable.detail).toBe('Wiki Suite · round 1 · run #102');
+        expect(unusable.note).toBe(ROW_NOTES.unusableMember);
+        expect(panel().rows.find(row => row.key === 'log:102')!.note).toBe(`${ROW_NOTES.unusableMember} ${ROW_NOTES.toolCallLog}`);
+
+        // Internal chooses every member file; External cannot choose them.
+        expect(memberKeys.every(key => panel().isIncluded(panel().rows.find(row => row.key === key)!))).toBe(true);
+        panel().selectPackage('provider');
+        fixture.detectChanges();
+        expect(memberKeys.some(key => panel().isSelectable(panel().rows.find(row => row.key === key)!))).toBe(false);
+      });
+
+      it('is checked again on the next opening after it was unchecked', () => {
+        openBattery([], null, { members: [member(101)] });
+        toggleMembers();
+        expect(includeBox().checked).toBe(false);
+
+        openBattery([], null, { members: [member(101)], context: { ...BATTERY } });
+        expect(includeBox().checked).toBe(true);
+        expect(rowKeys()).toContain('report:101');
+      });
+
+      it('removes the member rows when unchecked, and adds them again, preset again, when checked', () => {
+        openBattery([batteryDoc(21, ExecutiveSummary)], null, { members: [member(101), member(102, { suiteIndex: 1 })] });
+        check('report:101');
+        expect(panel().isIncluded(panel().rows.find(row => row.key === 'report:101')!)).toBe(false);
+
+        toggleMembers();
+        expect(panel().rows.map(row => row.key).sort()).toEqual(['battery-report:7', 'doc:21']);
+        expect(rowKeys().sort()).toEqual(['battery-report:7', 'doc:21']);
+
+        toggleMembers();
+        http.expectNone(BATTERY_RUN_URL);
+        expect(panel().rows.filter(row => row.runId !== null).map(row => row.key))
+          .toEqual(['report:101', 'log:101', 'report:102', 'log:102']);
+        expect(panel().isIncluded(panel().rows.find(row => row.key === 'report:101')!)).toBe(true);
+      });
+
+      it('narrows a large battery with the Suite and Document facets', () => {
+        openBattery([], null, { members: [member(101), member(102, { suiteIndex: 1 }), member(103, { suiteIndex: 1, round: 2 })] });
+
+        pickFacet('suite', 'Wiki Suite');
+        pickFacet('document', 'Tool-call log');
+        expect([...rowKeys()].sort()).toEqual(['log:102', 'log:103']);
+      });
+
+      it('says when the member runs cannot be listed, and lists them when checked again', () => {
+        hostComponent.context = BATTERY;
+        fixture.detectChanges();
+        expectList('batteryCompletion').flush([batteryDoc(21, ExecutiveSummary)]);
+        expectList('reportPack').flush([]);
+        flushJob(null);
+        expectMembers().flush({ error: 'Boom' }, { status: 500, statusText: 'Server Error' });
+        fixture.detectChanges();
+
+        expect(text('.dc-member-notice')).toBe(MEMBER_RUNS_FAILED_NOTICE);
+        expect([...rowKeys()].sort()).toEqual(['battery-report:7', 'doc:21']);
+
+        toggleMembers();
+        expect(q('.dc-member-notice')).toBeNull();
+        http.expectNone(BATTERY_RUN_URL);
+
+        toggleMembers();
+        expect(text('.dc-loading-members')).toBe('Listing the member runs…');
+        expect(panel().canDownload).toBe(false);
+        expectMembers().flush(batteryRun([member(101)]));
+        fixture.detectChanges();
+        expect(q('.dc-loading-members')).toBeNull();
+        expect(rowKeys()).toContain('report:101');
+        expect(panel().canDownload).toBe(true);
+      });
+
+      it('lists member diagnostics with the host\'s callback, and captures them from the member run\'s detail at preparation', async () => {
+        const saveText = vi.spyOn(downloadCenterIo, 'saveText').mockReturnValue(undefined);
+        vi.spyOn(downloadCenterIo, 'now').mockReturnValue(new Date('2026-10-06T12:00:00Z'));
+        const capture = vi.fn((run: BenchmarkRunDetailDto) => `=== DIAGNOSTICS of run ${run.id} ===\n`);
+        openBattery([], null, {
+          members: [member(101), member(102, { suiteIndex: 1, usable: false })],
+          context: { ...BATTERY, memberDiagnosticsText: capture }
+        });
+
+        expect(panel().rows.filter(row => row.kind === 'diagnostics').map(row => row.key)).toEqual(['diag:101', 'diag:102']);
+        const diagnostics = panel().rows.find(row => row.key === 'diag:102')!;
+        expect(diagnostics.label).toBe('Run diagnostics, run #102');
+        expect(diagnostics.note).toBe(`${ROW_NOTES.unusableMember} ${ROW_NOTES.diagnostics}`);
+        expect(capture).not.toHaveBeenCalled();
+
+        panel().selectPackage('custom');
+        for (const row of panel().rows) {
+          const state = panel().stateOf(row);
+          state.selected = row.key === 'diag:101';
+          state.formats = row.key === 'diag:101' ? ['txt'] : state.formats;
+        }
+        fixture.detectChanges();
+
+        const done = panel().download();
+        await settle();
+        http.expectOne(r => r.method === 'GET' && r.url === '/api/admin/benchmark/runs/101').flush({ id: 101 } as BenchmarkRunDetailDto);
+        await done;
+        fixture.detectChanges();
+
+        expect(capture).toHaveBeenCalledTimes(1);
+        expect(capture.mock.calls[0][0].id).toBe(101);
+        const [fileName, content] = vi.mocked(saveText).mock.lastCall!;
+        expect(fileName).toBe('board-suite_gemini-flash_run101_diagnostics_INTERNAL.txt');
+        expect(content).toBe('=== DIAGNOSTICS of run 101 ===\n');
+        http.expectNone(r => r.url === '/api/admin/benchmark/runs/102');
+      });
+    });
   });
 
   // -------------------------------------------------------------------------------------------
@@ -1182,11 +1509,19 @@ describe('DownloadCenterPanelComponent', () => {
       };
     }
 
-    /** Renders a run context and answers its document list and its job request (no job). */
-    function openRun(context: DownloadCenterContext): TestRequest {
+    /** A comparison document about run 42. */
+    function comparisonDoc(id: number): BenchmarkReportDocumentListItemDto {
+      return doc(id, ExecutiveSummary, { subjectKey: 'run:42', subjectRunIds: [42] });
+    }
+
+    /**
+     * Renders a run context and answers its own document list, its comparison count (none unless
+     * given) and its job request (no job).
+     */
+    function openRun(context: DownloadCenterContext, comparison: BenchmarkReportDocumentListItemDto[] = []): TestRequest {
       hostComponent.context = context;
       fixture.detectChanges();
-      const list = expectList();
+      const list = expectList('runCompletion');
       list.flush([doc(31, ExecutiveSummary, {
         subjectKey: 'run:42',
         subjectRunIds: [42],
@@ -1195,6 +1530,9 @@ describe('DownloadCenterPanelComponent', () => {
         peerCount: 0,
         peerLetters: {}
       })]);
+      const count = expectList('reportPack');
+      expect(count.request.params.get('subject')).toBe('run:42');
+      count.flush(comparison);
       const job = http.expectOne(JOB_URL);
       job.flush(null, { status: 204, statusText: 'No Content' });
       fixture.detectChanges();
@@ -1202,13 +1540,74 @@ describe('DownloadCenterPanelComponent', () => {
     }
 
     const pointer = (): HTMLElement | null => q('.dc-battery-pointer');
+    const comparisonPointer = (): HTMLElement | null => q('.dc-comparison-pointer');
 
-    it('lists the run\'s files and only the documents whose subject is the run', () => {
+    it('lists the run\'s files and only its own run-completion documents', () => {
       const list = openRun(runContext());
 
       expect(list.request.params.get('subject')).toBe('run:42');
+      expect(list.request.params.get('origin')).toBe('runCompletion');
       expect(list.request.params.has('runId')).toBe(false);
       expect([...rowKeys()].sort()).toEqual(['diag:42', 'doc:31', 'log:42', 'report:42']);
+      // A run context offers no member runs.
+      expect(byId('mc-dc-include-members')).toBeNull();
+      http.expectNone(r => r.url.includes('/batteries/'));
+    });
+
+    it('views the run report row as the run report PDF', () => {
+      const service = TestBed.inject(AdminBenchmarkService);
+      const pdf = vi.spyOn(service, 'getRunReportPdf').mockReturnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
+      openRun(runContext());
+      const open = vi.spyOn(panel().pdfViewer!, 'open').mockReturnValue(undefined);
+
+      const rid = panel().rowId(panel().rows.find(r => r.key === 'report:42')!);
+      byId<HTMLButtonElement>(`${rid}-view`)!.click();
+
+      const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
+      expect(request.title).toBe('Run report, run #42');
+      expect(request.variants).toBeUndefined();
+      request.load(null).subscribe();
+      expect(pdf).toHaveBeenCalledWith(42, expect.any(String));
+      // A run report is never deleted here.
+      expect(byId(`${rid}-delete`)).toBeNull();
+    });
+
+    it('points to the comparison documents about the run instead of listing them, and opens them in a subject library', () => {
+      openRun(runContext(), [comparisonDoc(51), comparisonDoc(52), comparisonDoc(53)]);
+
+      expect(rowKeys()).not.toContain('doc:51');
+      expect(text('.dc-comparison-pointer-text')).toBe(
+        '3 comparison documents compare this run with other models. They are kept with their comparisons.');
+      const button = q<HTMLButtonElement>('.dc-comparison-pointer .dc-open-comparison-documents')!;
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.classList.contains('btn-ghost')).toBe(true);
+      expect(flat(button)).toBe('Open comparison documents');
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(hostComponent.comparisonDocuments).toEqual([{
+        kind: 'library',
+        scope: { kind: 'subject', subjectKey: 'run:42', label: 'run #42 · Board Suite · Gemini Flash' },
+        preselect: 'none'
+      }]);
+      expect(comparisonPointer()!.compareDocumentPosition(rowEl('doc:31')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('shows no comparison pointer without comparison documents, or in a library context', () => {
+      openRun(runContext());
+      expect(comparisonPointer()).toBeNull();
+
+      render([doc(11, ExecutiveSummary)]);
+      expect(comparisonPointer()).toBeNull();
+    });
+
+    it('shows both pointers for a battery member with comparison documents', () => {
+      openRun(runContext(7), [comparisonDoc(51)]);
+
+      expect(pointer()).not.toBeNull();
+      expect(text('.dc-comparison-pointer-text')).toBe(
+        '1 comparison document compares this run with other models. It is kept with its comparison.');
     });
 
     it('shows no battery pointer for a run outside a battery', () => {

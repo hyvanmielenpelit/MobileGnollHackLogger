@@ -510,10 +510,10 @@ public sealed class BenchmarkReportEntryFigures
     /// </summary>
     public string? HarnessVersion { get; set; }
 
-    /// <summary>The earliest completion time of the entry's runs (the start time of a run that recorded none), UTC.</summary>
+    /// <summary>The earliest start time of the entry's runs, UTC.</summary>
     public DateTime? FirstRunUtc { get; set; }
 
-    /// <summary>The latest completion time of the entry's runs, UTC.</summary>
+    /// <summary>The latest completion time of the entry's runs (the start time of a run that recorded none), UTC.</summary>
     public DateTime? LastRunUtc { get; set; }
 
     /// <summary>Additional per-entry figures (dimensions, bands, tools), sorted by key.</summary>
@@ -766,6 +766,21 @@ public class BenchmarkReportPackPreviewDto
 
     /// <summary>Why the pack cannot be generated as requested, or null when it can.</summary>
     public string? Refusal { get; set; }
+
+    /// <summary>
+    /// The Report Pack documents already stored for this comparison and subject, the newest per
+    /// audience, in audience order. Start refuses to write one of these audiences again.
+    /// </summary>
+    public List<BenchmarkReportPackWrittenDocumentDto> WrittenDocuments { get; set; } = new();
+}
+
+/// <summary>A Report Pack document already stored for the previewed comparison and subject.</summary>
+public class BenchmarkReportPackWrittenDocumentDto
+{
+    public BenchmarkReportAudience Audience { get; set; }
+    public long DocumentId { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public string? WriterDisplayName { get; set; }
 }
 
 public class BenchmarkReportPackStartResponse

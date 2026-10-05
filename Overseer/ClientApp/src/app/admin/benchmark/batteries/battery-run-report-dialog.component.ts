@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  Input,
   OnDestroy,
   OnInit,
   Output,
@@ -20,7 +21,8 @@ import {
   BenchmarkBatteryMemberDto,
   BenchmarkBatteryRunDto,
   BenchmarkBatteryRunSuiteDto,
-  BenchmarkPairComparisonDto
+  BenchmarkPairComparisonDto,
+  BenchmarkRunDetailDto
 } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
@@ -382,6 +384,11 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
   @Output() readonly closed = new EventEmitter<void>();
   /** A member run's id; the host opens that run's report over this dialog. */
   @Output() readonly openRunReport = new EventEmitter<number>();
+  /**
+   * A member run's diagnostics text, as that run's own Download Center captures it, for the Download
+   * Center to list each member run's diagnostics; without it they are not listed.
+   */
+  @Input() memberDiagnosticsText?: (run: BenchmarkRunDetailDto) => string;
 
   @ViewChild('brrDialog', { static: true }) dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('brrTitle') title?: ElementRef<HTMLElement>;
@@ -795,7 +802,8 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     this.downloadCenter?.open({
       kind: 'battery',
       batteryRunId: detail.id,
-      label: `Battery Run #${detail.id} · ${detail.batteryName} · ${detail.testedModelLabel || 'unknown model'}`
+      label: `${detail.batteryName} · ${detail.testedModelLabel || 'unknown model'}`,
+      ...(this.memberDiagnosticsText ? { memberDiagnosticsText: this.memberDiagnosticsText } : {})
     });
   }
 

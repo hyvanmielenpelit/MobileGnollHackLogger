@@ -526,7 +526,7 @@ Rules for writing a `RUN` step:
   assessor".
 - **Choosing the grader models and effort** follows `docs/overseer/ai-benchmark.md` § 3 *Choosing
   grader models and effort*; a `RUN` step names the configured entries as the dropdowns print them.
-- **`Report Writer` is not a comparability key.** It writes the run's two AI-written reports once
+- **`Report Writer` is not a comparability key.** It writes the run's three AI-written reports once
   the run is scored and grades nothing, so a `RUN` step may set or change it without moving the
   predicted tier. The launcher refuses the model under test and any writer from its provider; the recommended
   writer is in the same § 3 table.
@@ -564,17 +564,27 @@ Rules for writing a `RUN` step:
 **One `SAVE` step immediately after every `RUN` step**, written out in full each time, never as
 *"as Step 6"*:
 
-1. **The downloads.** In the run's detail view, **Download Markdown Report** and **Tool-call
-   log**; save both in the run's folder (**One folder per runbook**, below). If the
+1. **The downloads.** For a single run: in the run's detail view, **Download Markdown Report** and
+   **Tool-call log**; save both in the run's folder (**One folder per runbook**, below). If the
    round's analysis used the suite's YAML export or a diagnostics capture, say so and name the
-   buttons. When the `RUN` step asks for them, also download the two AI-written reports — the
-   Executive Summary and the Report for AI Researchers and Developers — from the run's
-   **Downloads** (the Download Center, or **View** in the run report's *AI-Written Reports*
-   section), after that section shows them written. **For a battery run, they are the battery
-   run's**: write the step as the Battery Run Report's **Downloads** (from Run History's battery card,
-   **View details**), never a member run's. A member run's own **Downloads** lists only that run's own
-   documents and says *"This run is a member of battery run #<id>. Its AI-written documents are in
-   the battery run's downloads."*, with **Open battery run downloads** to switch to them.
+   buttons. When the `RUN` step asks for them, also download the three AI-written reports — the
+   Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement
+   Brief — from the run's **Downloads** (the Download Center, or **View** in the run report's
+   **AI Reports** tab), after that tab shows them written.
+
+   **For a battery run, one download covers the battery.** Write the step as: open the Battery Run
+   Report (Run History's battery card, **View details**), press **Downloads**, choose the package
+   **Internal**, leave **Include member runs** checked (it is checked every time the dialog opens),
+   and press **Download**. The one ZIP holds the battery analysis report, the battery's three
+   AI-written reports (the Internal Improvement Brief among them) and every member run's run report,
+   tool-call log and run diagnostics; save it, and its extracted files, in the battery's folder
+   (`<model folder>\Battery`, **One folder per runbook**, below). A `SAVE` step never sends the
+   developer to each member run for its files. A member run's own **Downloads** lists only that run's
+   own documents and points to the battery run's with **Open battery run downloads**.
+
+   **Comparison documents** — a Report Pack written on the Model Comparison wizard's step 3 — are
+   downloaded from Model Comparison (step 4, or **Comparison reports** on the Model Comparison tab),
+   never from a run's or battery run's **Downloads**, which only point to them.
 2. **The go / stop line**, built from the `RUN` step's criteria table: *"If criteria 1–3 passed,
    go on with Step <n+1>. If any failed, stop and start the analysis with the prompt below."*
    When the next step needs the analysis whatever the result, the line says so and an `AGENT`

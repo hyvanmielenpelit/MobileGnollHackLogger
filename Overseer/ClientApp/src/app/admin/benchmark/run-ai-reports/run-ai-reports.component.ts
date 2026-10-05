@@ -80,7 +80,7 @@ export const RUN_REPORT_DOCUMENTS_POLL_MS = 5000;
 /** The pause after the last change of writer or documents before the cost is estimated. */
 export const RUN_REPORT_ESTIMATE_DEBOUNCE_MS = 300;
 
-/** The two AI-written documents of a run, in the order the tab lists them. */
+/** The three AI-written documents of a run, in the order the tab lists them. */
 export const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = REPORT_DOCUMENT_AUDIENCES;
 
 /** The run's report fields as the tab last read them, for the host to keep its copy of the run current. */
@@ -99,7 +99,7 @@ export type RunAiReportStatusKind = ReportDocumentsStatusKind;
 
 /**
  * The cost estimate block: waiting for the estimate, failed, no price card for the writer, or the
- * total with, for two documents, the cost of each.
+ * total with, for two or more documents, the cost of each.
  */
 export type RunReportEstimateView = ReportEstimateView;
 
@@ -366,7 +366,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     return writtenReportLabels(this.documents);
   }
 
-  /** A finished run has fewer than both documents, so the tab offers Write Reports. */
+  /** A finished run lacks one of its documents, so the tab offers Write Reports. */
   get documentsMissing(): boolean {
     return !!this.run && this.documentsLoaded && this.documentsError === null && this.runFinished &&
       this.missingAudiences.length > 0;

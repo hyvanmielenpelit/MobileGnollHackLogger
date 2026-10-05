@@ -16,6 +16,8 @@ import { ReportChartPickerComponent } from './report-chart-picker.component';
 import { DEFAULT_CHART_SELECTION, REPORT_CHART_FIGURES, ReportChartRowStatus, ReportChartSelection } from './report-charts';
 import { reportPackIo } from './report-pack-diagnostics';
 import {
+  REPORT_PACK_ALL_WRITTEN_REASON,
+  REPORT_PACK_PEERLESS_REFUSAL,
   REPORT_PACK_POLL_MS,
   REPORT_PACK_PREVIEW_DEBOUNCE_MS,
   REPORT_PACK_STORAGE_KEY,
@@ -247,6 +249,11 @@ describe('ReportPackPanelComponent', () => {
     expect(heading.textContent!.trim()).toBe('Reports');
     expect(component.headingId).toBe('rp-heading');
     expect(text('.rp-subtitle')).toBe('Board Suite · 4 models · 3 possible subjects');
+    expect(text('.rp-lead')).toBe(
+      'These reports compare the chosen model with every other model of this comparison and are kept with the '
+      + 'comparison: step 4 lists them, and so does Comparison reports on the Model Comparison tab. A run\'s or '
+      + 'battery run\'s own reports are written in the AI Reports tab of its report.');
+    expect(q('.rp-subtitle')!.compareDocumentPosition(q('.rp-lead')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(main.querySelector('#rp-progress-heading')?.textContent?.trim()).toBe('Report pack progress');
 
     // No dialog shell and no document library: the wizard is the dialog, and step 4 lists the documents.
@@ -353,6 +360,129 @@ describe('ReportPackPanelComponent', () => {
 
     generateButton().click();
     http.expectNone(START_URL);
+    fixture.destroy();
+  }));
+
+  it('shows the peerless refusal with its own reason under Generate', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7, previewDto({ refusal: REPORT_PACK_PEERLESS_REFUSAL, peers: [], estimates: [], estimatedTotalCostUsd: null }));
+
+    expect(text('.rp-refusal')).toBe(REPORT_PACK_PEERLESS_REFUSAL);
+    expect(generateButton().disabled).toBe(true);
+    expect(text('#rp-generate-blocked')).toBe('This subject has no other model to be compared with in this comparison.');
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // Documents already written for the comparison
+  // -------------------------------------------------------------------------------------------
+
+  /** A Report Pack document the preview lists as already written for the subject. */
+  function writtenDocument(audience: BenchmarkReportAudience, documentId: number, writerDisplayName: string | null = 'Claude Opus writer') {
+    return { audience, documentId, createdAtUtc: '2026-10-05T14:30:00Z', writerDisplayName };
+  }
+
+  it('shows a document already written for the subject unchecked and disabled, and estimates again without it', fakeAsync(() => {
+    openPanel();
+    const first = chooseWriter(7, previewDto({ writtenDocuments: [writtenDocument(ExecutiveSummary, 41)] }));
+    expect(first.request.body.audiences).toEqual([ExecutiveSummary, TechnicalReport]);
+
+    const executive = q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!;
+    expect(executive.checked).toBe(false);
+    expect(executive.disabled).toBe(true);
+    expect(executive.getAttribute('aria-describedby'))
+      .toBe(`rp-audience-${ExecutiveSummary}-desc rp-audience-${ExecutiveSummary}-written`);
+    expect(text(`#rp-audience-${ExecutiveSummary}-written`))
+      .toBe('Written 2026-10-05 14:30 UTC by Claude Opus writer. Delete it in step 4 to write it again.');
+    const technical = q<HTMLInputElement>(`#rp-audience-${TechnicalReport}`)!;
+    expect(technical.disabled).toBe(false);
+    expect(technical.checked).toBe(true);
+    expect(technical.getAttribute('aria-describedby')).toBe(`rp-audience-${TechnicalReport}-desc`);
+    expect(q(`#rp-audience-${TechnicalReport}-written`)).toBeNull();
+    expect(component.selectedAudiences).toEqual([TechnicalReport]);
+    expect(text('#rp-estimate')).toBe('Estimating…');
+
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    const second = http.expectOne(PREVIEW_URL);
+    expect(second.request.body.audiences).toEqual([TechnicalReport]);
+    second.flush(previewDto({
+      estimates: [previewDto().estimates[1]],
+      estimatedTotalCostUsd: 0.07,
+      writtenDocuments: [writtenDocument(ExecutiveSummary, 41)]
+    }));
+    fixture.detectChanges();
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.07');
+    expect(generateButton().disabled).toBe(false);
+    expect(generateButton().hasAttribute('aria-disabled')).toBe(false);
+
+    // A disabled document cannot be checked from code either.
+    component.setAudience(ExecutiveSummary, true);
+    expect(component.selectedAudiences).toEqual([TechnicalReport]);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+    fixture.destroy();
+  }));
+
+  it('keeps Generate focusable and aria-disabled, with the reason, when every document about the subject is written', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7, previewDto({
+      writtenDocuments: [
+        writtenDocument(ExecutiveSummary, 41),
+        writtenDocument(TechnicalReport, 42),
+        writtenDocument(InternalBrief, 43, null)
+      ]
+    }));
+    // Nothing is left to estimate.
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+
+    expect(component.selectedAudiences).toEqual([]);
+    for (const audience of [ExecutiveSummary, TechnicalReport, InternalBrief]) {
+      expect(q<HTMLInputElement>(`#rp-audience-${audience}`)!.disabled, `${audience}`).toBe(true);
+    }
+    expect(text(`#rp-audience-${InternalBrief}-written`))
+      .toBe('Written 2026-10-05 14:30 UTC by an unknown writer. Delete it in step 4 to write it again.');
+    const button = generateButton();
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-describedby')).toBe('rp-estimate rp-generate-blocked');
+    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_ALL_WRITTEN_REASON);
+    button.click();
+    fixture.detectChanges();
+    http.expectNone(START_URL);
+
+    // Another subject has nothing written; coming back finds the written documents again without asking.
+    const select = q<HTMLSelectElement>('#rp-subject')!;
+    select.value = 'group:4';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.disabled).toBe(false);
+    expect(generateButton().hasAttribute('aria-disabled')).toBe(false);
+    expect(text('#rp-generate-blocked')).toBe('Choose at least one document.');
+
+    select.value = 'run:1';
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.disabled).toBe(true);
+    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_ALL_WRITTEN_REASON);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+    fixture.destroy();
+  }));
+
+  it('shows the server\'s refusal of a document already written as a start error', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    generateButton().click();
+    const message = 'The Executive Summary about Gemini Flash is already written for this comparison. Delete it in step 4 to write it again.';
+    http.expectOne(START_URL).flush({ error: message }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+
+    expect(confirmDialog().open).toBe(false);
+    const alert = q('.rp-start-error')!;
+    expect(alert.getAttribute('role')).toBe('alert');
+    expect(alert.textContent!.trim()).toBe(message);
+    expect(component.activeJobId).toBeNull();
     fixture.destroy();
   }));
 

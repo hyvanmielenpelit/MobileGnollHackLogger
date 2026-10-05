@@ -1002,6 +1002,8 @@ describe('ModelComparisonComponent', () => {
     expect(component.shape).toBe('single');
     expect(component.step).toBe(2);
     expectTableOnly();
+    // A single model has no peer to be compared with, so no comparison report can be written.
+    expect(component.isStepReachable(3)).toBe(false);
     // A refused chart tab does nothing.
     showView('all');
     expect(component.effectiveFigureTab).toBe('table');

@@ -151,17 +151,28 @@ export function pricingNote(basis: string): string {
   return '';
 }
 
-/** How many runs stand behind each plotted entry: `1 run each`, `3 runs each`, or `1–3 runs each`. */
-export function runsBadge(plotted: readonly { readonly runCount: number }[]): FigureBadge {
+/**
+ * How many runs stand behind each plotted entry: `1 run each`, `3 runs each`, or `1–3 runs each`.
+ * When every entry is a battery result (`suiteCount` > 0), it counts battery passes instead — runs
+ * divided by suites, rounded down and at least 1: `1 battery pass each`, `3 battery passes each`,
+ * or `1–3 battery passes each`.
+ */
+export function runsBadge(
+  plotted: readonly { readonly runCount: number; readonly suiteCount?: number | null }[]
+): FigureBadge {
   if (plotted.length === 0) {
     return { text: 'No runs', tone: 'neutral', kind: 'runs' };
   }
-  const counts = plotted.map((entry) => entry.runCount);
+  const batteries = plotted.every((entry) => (entry.suiteCount ?? 0) > 0);
+  const counts = plotted.map((entry) => batteries
+    ? Math.max(1, Math.floor(entry.runCount / (entry.suiteCount as number)))
+    : entry.runCount);
   const min = Math.min(...counts);
   const max = Math.max(...counts);
+  const [one, many] = batteries ? ['battery pass', 'battery passes'] : ['run', 'runs'];
   const text = min === max
-    ? `${min} ${min === 1 ? 'run' : 'runs'} each`
-    : `${min}–${max} runs each`;
+    ? `${min} ${min === 1 ? one : many} each`
+    : `${min}–${max} ${many} each`;
   return { text, tone: 'neutral', kind: 'runs' };
 }
 

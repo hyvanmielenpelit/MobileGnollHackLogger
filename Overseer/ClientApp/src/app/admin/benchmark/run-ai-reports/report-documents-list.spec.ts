@@ -28,7 +28,7 @@ import {
   writtenReportLabels
 } from './report-documents-list';
 
-const { ExecutiveSummary, TechnicalReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
 const { NotRequested, Pending, Writing, Completed, Failed, Skipped, Canceled } = BenchmarkRunReportDocumentsStatus;
 
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
@@ -45,8 +45,8 @@ function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<B
 }
 
 describe('report-documents-list', () => {
-  it('lists the Executive Summary, then the Report for AI Researchers and Developers', () => {
-    expect(REPORT_DOCUMENT_AUDIENCES).toEqual([ExecutiveSummary, TechnicalReport]);
+  it('lists the Executive Summary, the Report for AI Researchers and Developers, then the Internal Improvement Brief', () => {
+    expect(REPORT_DOCUMENT_AUDIENCES).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
     expect(BATTERY_COMPLETION_ORIGIN).toBe(3);
   });
 
@@ -65,11 +65,12 @@ describe('report-documents-list', () => {
       doc(1, TechnicalReport, { createdAtUtc: '2026-10-01T00:00:00Z' }),
       doc(2, TechnicalReport, { createdAtUtc: '2026-10-02T00:00:00Z' }),
       doc(3, ExecutiveSummary),
+      doc(9, InternalBrief),
       // A Report Pack document about the same battery run, and a completion document of another one.
       doc(4, ExecutiveSummary, { origin: BenchmarkReportDocumentOrigin.ReportPack, createdAtUtc: '2026-10-04T00:00:00Z' }),
       doc(5, ExecutiveSummary, { subjectKey: 'battery:8', createdAtUtc: '2026-10-04T00:00:00Z' })
     ];
-    expect(completionDocumentsOf(documents, 'battery:7', BATTERY_COMPLETION_ORIGIN).map(d => d.id)).toEqual([3, 2]);
+    expect(completionDocumentsOf(documents, 'battery:7', BATTERY_COMPLETION_ORIGIN).map(d => d.id)).toEqual([3, 2, 9]);
     expect(completionDocumentsOf(null, 'battery:7', BATTERY_COMPLETION_ORIGIN)).toEqual([]);
     expect(completionDocumentsOf([doc(6, ExecutiveSummary, { subjectKey: 'run:55', origin: BenchmarkReportDocumentOrigin.RunCompletion })],
       'run:55', BenchmarkReportDocumentOrigin.RunCompletion).map(d => d.id)).toEqual([6]);
@@ -79,11 +80,12 @@ describe('report-documents-list', () => {
     const documents = [doc(3, ExecutiveSummary)];
     expect(reportDocumentRows(documents)).toEqual([
       { audience: ExecutiveSummary, label: 'Executive Summary', doc: documents[0] },
-      { audience: TechnicalReport, label: 'Report for AI Researchers and Developers', doc: null }
+      { audience: TechnicalReport, label: 'Report for AI Researchers and Developers', doc: null },
+      { audience: InternalBrief, label: 'Internal Improvement Brief', doc: null }
     ]);
-    expect(missingReportAudiences(documents)).toEqual([TechnicalReport]);
+    expect(missingReportAudiences(documents)).toEqual([TechnicalReport, InternalBrief]);
     expect(writtenReportLabels(documents)).toEqual(['Executive Summary']);
-    expect(missingReportAudiences([])).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(missingReportAudiences([])).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
   });
 
   it('words the job state, and draws it by kind', () => {
@@ -122,7 +124,7 @@ describe('report-documents-list', () => {
     expect(reportDocumentDisclosures(doc(1, ExecutiveSummary, { allowedDisclosures: [] })).highest).toBe(BenchmarkReportDisclosure.Full);
   });
 
-  it('shows the estimate as loading, failed, without a price card, or ready with a breakdown for two documents', () => {
+  it('shows the estimate as loading, failed, without a price card, or ready with a breakdown for two or more documents', () => {
     const estimate = {
       estimates: [
         { audience: ExecutiveSummary, promptChars: 1, estimatedInputTokens: 1, estimatedOutputTokens: 1, estimatedCostUsd: 0.04 },

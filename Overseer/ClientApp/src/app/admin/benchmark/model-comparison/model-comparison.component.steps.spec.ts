@@ -138,6 +138,27 @@ describe('ModelComparisonComponent', () => {
       expect(component.step).toBe(2);
     });
 
+    it('keeps step 3 closed with one comparable model, because a comparison report needs a peer', () => {
+      render(buildDto([comparableSet(1)[0], buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 2);
+
+      expect(component.hasComparisonPeers).toBe(false);
+      expect(component.isStepReachable(3)).toBe(false);
+      expect(component.isStepReachable(4)).toBe(true);
+      expect(component.stepBlockedReason(3)).toBe(
+        'A comparison report compares one model with at least one other. Add another model on step 1, '
+        + 'or write a run\'s or battery run\'s own reports in the AI Reports tab of its report.');
+      const tab3 = fixture.debugElement.query(By.css('#mc-step-tab-3')).nativeElement as HTMLElement;
+      expect(tab3.getAttribute('aria-disabled')).toBe('true');
+      expect(textOf(`#${tab3.getAttribute('aria-describedby')}`)).toContain('AI Reports tab of its report');
+      component.goToStep(3);
+      expect(component.step).toBe(2);
+
+      render(buildDto(comparableSet(2)), 2);
+      expect(component.hasComparisonPeers).toBe(true);
+      expect(component.isStepReachable(3)).toBe(true);
+      expect(component.stepBlockedReason(3)).toBe('');
+    });
+
     it('runs Next from 2 to 3 to 4, where it is Close, and past step 3 when step 3 cannot open', () => {
       render(buildDto(comparableSet(3)), 2);
       expect(component.nextLabel).toBe('Next');
@@ -358,9 +379,47 @@ describe('ModelComparisonComponent', () => {
       expect(component.documentsReloadToken).toBe(token + 2);
       flushDocuments([reportDocument(21)]);
       const panel = documentsPanel()!;
-      expect(panel.context).toEqual(expect.objectContaining({ kind: 'library', preselect: 'all' }));
+      expect(panel.context).toEqual(expect.objectContaining({
+        kind: 'library',
+        preselect: 'all',
+        subtitle: 'Run reports, and each run\'s or battery run\'s own AI reports, are in that report\'s Downloads.'
+      }));
       expect(panel.chartActions).toBe(component.documentChartActions);
       expect(panel.rows.map(row => row.key)).toContain('doc:21');
+      const note = fixture.nativeElement.querySelector('#mc-step-panel-4 .mc-documents-note') as HTMLElement | null;
+      expect(note?.textContent?.trim()).toBe(
+        'Run reports, and each run\'s or battery run\'s own AI reports, are in that report\'s Downloads.');
+    });
+
+    it('chooses on step 4 only the documents the last finished job wrote', () => {
+      render(buildDto(comparableSet(3)), 3);
+      const before = component.documentsContext;
+
+      reportPanel()!.jobFinished.emit({
+        documents: [
+          { audience: BenchmarkReportAudience.ExecutiveSummary, status: 'Completed', documentId: 22, errorMessage: null, modelCalls: 1 },
+          { audience: BenchmarkReportAudience.TechnicalReport, status: 'Failed', documentId: null, errorMessage: 'x', modelCalls: 1 }
+        ]
+      });
+      const context = component.documentsContext;
+      expect(context).not.toBe(before);
+      expect(context).toEqual(expect.objectContaining({ kind: 'library', preselect: { ids: [22] } }));
+      expect(component.documentsContext, 'one object per entry set and ids').toBe(context);
+
+      reportPanel()!.documentsRequested.emit();
+      fixture.detectChanges();
+      flushDocuments([reportDocument(21), reportDocument(22)]);
+      const panel = documentsPanel()!;
+      const chosen = panel.rows.filter(row => panel.isIncluded(row)).map(row => row.key);
+      expect(chosen).toEqual(['doc:22']);
+    });
+
+    it('keeps every row chosen when the finished job wrote nothing', () => {
+      render(buildDto(comparableSet(3)), 3);
+
+      reportPanel()!.jobFinished.emit({ documents: [] });
+
+      expect(component.documentsContext).toEqual(expect.objectContaining({ preselect: 'all' }));
     });
 
     it('lends step 4 chart actions that match only this comparison\'s documents on its prices', () => {

@@ -256,7 +256,7 @@ public class BenchmarkRunLauncher
             }
         }
 
-        // Optional: a report writer writes the run's two AI-written documents once it completes. It
+        // Optional: a report writer writes the run's AI-written documents once it completes. It
         // is neither a grader nor a comparability key, and it is never the model under test; a writer
         // of the candidate's provider needs an acknowledgment, asked below.
         SystemAiApiConfiguration? reportWriterConfig = null;

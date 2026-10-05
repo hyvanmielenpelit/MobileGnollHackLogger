@@ -11,8 +11,8 @@ using Xunit;
 /// <summary>
 /// What the PDF and Word cover says about a report-pack document's comparison, and the download
 /// name that keeps a comparison document apart from the run's own documents: the subject line, the
-/// Compared with and Pricing basis rows under either peer naming, and the <c>vs-&lt;N&gt;-models_</c>
-/// part of the file name. A stand-alone document keeps its cover and name.
+/// Compared with and Pricing basis rows under either peer naming, and the <c>vs-</c> part of the
+/// file name that names the peers or counts them. A stand-alone document keeps its cover and name.
 /// </summary>
 public class BenchmarkReportCoverAndFileNameTests
 {
@@ -196,32 +196,41 @@ public class BenchmarkReportCoverAndFileNameTests
     }
 
     [Fact]
-    public void ABatteryDocumentWithPeers_CarriesThePeerCount_AfterTheBatteryRunNumber()
+    public void ABatteryDocumentWithPeers_NamesThePeers_AfterTheBatteryRunNumber()
     {
         var document = BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = BatteryReportFixture.Sheet();
         sheet.Peers.Add(new BenchmarkReportPeer { Letter = "A", EntryKey = "battery:11", Label = "Grok 5" });
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
 
-        Assert.StartsWith("battery-run-9_vs-1-models_", BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
+        Assert.StartsWith("battery-run-9_vs-battery-run-11_", BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
     }
 
     [Fact]
-    public void AComparisonDocumentsName_CarriesThePeerCount_AfterTheRunNumber()
+    public void AComparisonDocumentsName_NamesThePeersInLetterOrder_AfterTheRunNumber()
     {
         var researcher = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
         var executive = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal(
-            "run-12_vs-2-models_" + SheetTitleBase + "_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_vs-run-14-run-13_" + SheetTitleBase + "_Researcher_Report_detailed_anonymized.pdf",
             BenchmarkPdfFileNames.ForReportDocument(researcher, Options(BenchmarkReportPeerNaming.Anonymized, BenchmarkReportDisclosure.Detailed)));
         Assert.Equal(
-            "run-12_vs-2-models_" + SheetTitleBase + "_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_vs-run-14-run-13_" + SheetTitleBase + "_Researcher_Report_full_named_INTERNAL.pdf",
             BenchmarkPdfFileNames.ForReportDocument(researcher, Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full)));
 
         string pdf = BenchmarkPdfFileNames.ForReportDocument(executive, Options(BenchmarkReportPeerNaming.Named));
-        Assert.Equal("run-12_vs-2-models_" + SheetTitleBase + "-executive-summary_summary_named.pdf", pdf);
+        Assert.Equal("run-12_vs-run-14-run-13_" + SheetTitleBase + "-executive-summary_summary_named.pdf", pdf);
         Assert.Equal(pdf[..^".pdf".Length] + ".docx", BenchmarkPdfFileNames.ForReportDocument(executive, Options(BenchmarkReportPeerNaming.Named), "docx"));
+    }
+
+    [Fact]
+    public void APeerGroup_IsNamedAsAGroup_AndTheComparisonKeyIsNotUsedForNamedPeers()
+    {
+        var document = WithSheet(BenchmarkReportAudience.ExecutiveSummary, sheet => sheet.Peers.Single(p => p.Letter == "B").EntryKey = "group:5");
+        document.ComparisonKey = new string('c', 64);
+
+        Assert.StartsWith("run-12_vs-run-14-group-5_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
     }
 
     [Fact]
@@ -242,23 +251,42 @@ public class BenchmarkReportCoverAndFileNameTests
     [InlineData("group:5")]
     [InlineData("run:")]
     [InlineData("run:7a")]
-    public void ANonRunSubjectsName_StartsWithThePeerCount(string subjectKey)
+    public void ANonRunSubjectsName_StartsWithThePeers(string subjectKey)
     {
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.SubjectKey = subjectKey;
 
         Assert.Equal(
-            "vs-2-models_" + SheetTitleBase + "-executive-summary_summary_named.pdf",
+            "vs-run-14-run-13_" + SheetTitleBase + "-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
     }
 
     [Fact]
-    public void ThePeerCount_IsWrittenAsIs_ForOneAndForFourPeers()
+    public void OneToThreePeers_AreNamed_AndFourAreCountedWithTheComparisonKey()
     {
         var one = WithSheet(BenchmarkReportAudience.ExecutiveSummary, sheet => sheet.Peers.RemoveAll(p => p.Letter == "B"));
+        var three = WithSheet(BenchmarkReportAudience.ExecutiveSummary, sheet =>
+            sheet.Peers.Add(new BenchmarkReportPeer { Letter = "C", EntryKey = "run:15", Label = "Qwen 4" }));
         var four = WithSheet(BenchmarkReportAudience.ExecutiveSummary, AddPeers);
+        four.ComparisonKey = "3f9a0c21" + new string('0', 56);
 
-        Assert.StartsWith("run-12_vs-1-models_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(one, Options(BenchmarkReportPeerNaming.Named)));
+        Assert.StartsWith("run-12_vs-run-14_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(one, Options(BenchmarkReportPeerNaming.Named)));
+        Assert.StartsWith("run-12_vs-run-14-run-13-run-15_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(three, Options(BenchmarkReportPeerNaming.Named)));
+        Assert.StartsWith("run-12_vs-4-models-3f9a0c21_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(four, Options(BenchmarkReportPeerNaming.Named)));
+    }
+
+    [Fact]
+    public void APeerWhoseEntryKeyCannotBeRead_CountsThePeers_AndALegacyRowWithoutAComparisonKeyKeepsTheOldForm()
+    {
+        var document = WithSheet(BenchmarkReportAudience.ExecutiveSummary, sheet => sheet.Peers.Single(p => p.Letter == "B").EntryKey = "custom:13");
+        document.ComparisonKey = "0123456789abcdef" + new string('0', 48);
+
+        Assert.StartsWith("run-12_vs-2-models-01234567_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
+
+        document.ComparisonKey = null;
+        Assert.StartsWith("run-12_vs-2-models_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
+
+        var four = WithSheet(BenchmarkReportAudience.ExecutiveSummary, AddPeers);
         Assert.StartsWith("run-12_vs-4-models_" + SheetTitleBase, BenchmarkPdfFileNames.ForReportDocument(four, Options(BenchmarkReportPeerNaming.Named)));
     }
 

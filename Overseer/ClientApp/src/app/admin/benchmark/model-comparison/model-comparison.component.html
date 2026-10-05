@@ -1648,7 +1648,7 @@
                                [chartStatus]="chartStatus"
                                (graderGuideRequested)="onReportsGraderGuideRequested()"
                                (documentWritten)="onReportDocumentWritten($event)"
-                               (jobFinished)="onReportJobFinished()"
+                               (jobFinished)="onReportJobFinished($event)"
                                (documentsRequested)="onReportDocumentsRequested()"
                                (chartSelectionChange)="onChartSelectionChange($event)"
                                (chartRetryRequested)="onChartRetryRequested($event)"></app-report-pack-panel>
@@ -1658,6 +1658,7 @@
     @if (visited4) {
       <div class="mc-step mc-step--documents" role="tabpanel" tabindex="0"
            id="mc-step-panel-4" aria-labelledby="mc-step-tab-4" [hidden]="step !== 4">
+        <p class="form-hint mc-documents-note">{{ documentsNote }}</p>
         <app-download-center-panel idPrefix="mc-dc"
                                    [context]="documentsContext"
                                    [reloadToken]="documentsReloadToken"

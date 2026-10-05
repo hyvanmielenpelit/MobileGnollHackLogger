@@ -2566,6 +2566,7 @@
 
 <!-- BATTERY RUN REPORT: opened from Run History, the leaderboard and the battery progress dialog. -->
 <app-battery-run-report-dialog #batteryRunReport
+  [memberDiagnosticsText]="memberDiagnosticsText"
   (openRunReport)="viewRunDetail($event)"></app-battery-run-report-dialog>
 
 <!-- SNAPSHOT VIEWER COMPONENT -->

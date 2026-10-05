@@ -843,7 +843,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     const status = batteryReportDocumentsStatusName(run.reportDocumentsStatus);
     if (this.reportsStageCurrent) {
       if (status === 'Writing') {
-        return { key: 'reports', name, state: 'current', note: 'Writing the Executive Summary and the Researcher report' };
+        return { key: 'reports', name, state: 'current', note: 'Writing the AI-written reports' };
       }
       const ahead = this.reportJob?.jobsAhead;
       const queue = ahead != null && ahead > 0 ? ` (${ahead} ${ahead === 1 ? 'job' : 'jobs'} ahead)` : '';

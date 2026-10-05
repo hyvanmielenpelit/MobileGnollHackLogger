@@ -1210,27 +1210,32 @@ public class BenchmarkReportFactsTests
     public void EachEntry_RecordsItsHarnessVersionAndRunDates()
     {
         var subject = SimpleRun(1, "OpenAI");
+        subject.StartedAtUtc = new DateTime(2026, 9, 21, 7, 0, 0, DateTimeKind.Utc);
         subject.CompletedAtUtc = new DateTime(2026, 9, 21, 8, 0, 0, DateTimeKind.Utc);
         var groupFirst = SimpleRun(2, "Google");
+        groupFirst.StartedAtUtc = new DateTime(2026, 9, 22, 10, 0, 0, DateTimeKind.Utc);
+        groupFirst.CompletedAtUtc = new DateTime(2026, 9, 22, 11, 0, 0, DateTimeKind.Utc);
         var groupSecond = SimpleRun(3, "Google");
         groupSecond.HarnessVersion = "42";
-        groupSecond.CompletedAtUtc = new DateTime(2026, 9, 24, 8, 0, 0, DateTimeKind.Utc);
+        groupSecond.StartedAtUtc = new DateTime(2026, 9, 24, 7, 30, 0, DateTimeKind.Utc);
+        groupSecond.CompletedAtUtc = null;
         var comparison = Comparison(
             Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80),
             Entry("group:5", new long[] { 2, 3 }, "Group", "Google", 70));
 
         var sheet = BuildSheet(Input(comparison, "run:1", subject, groupFirst, groupSecond));
 
+        // The first run is dated by its start, the last by its completion.
         var own = Assert.Single(sheet.Entries, e => e.IsSubject);
         Assert.Equal("41", own.HarnessVersion);
-        Assert.Equal(subject.CompletedAtUtc, own.FirstRunUtc);
+        Assert.Equal((DateTime?)subject.StartedAtUtc, own.FirstRunUtc);
         Assert.Equal(subject.CompletedAtUtc, own.LastRunUtc);
 
-        // A run without a completion time is dated by its start.
+        // A last run without a completion time is dated by its start.
         var group = Assert.Single(sheet.Entries, e => e.EntryKey == "group:5");
         Assert.Equal(BenchmarkReportFacts.MixedHarnessVersion, group.HarnessVersion);
         Assert.Equal((DateTime?)groupFirst.StartedAtUtc, group.FirstRunUtc);
-        Assert.Equal(groupSecond.CompletedAtUtc, group.LastRunUtc);
+        Assert.Equal((DateTime?)groupSecond.StartedAtUtc, group.LastRunUtc);
     }
 
     [Fact]

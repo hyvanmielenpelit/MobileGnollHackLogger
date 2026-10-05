@@ -3325,6 +3325,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
+   * A battery member run's diagnostics text, the one that run's own Download Center captures, for a
+   * battery Download Center that lists its member runs.
+   */
+  readonly memberDiagnosticsText = (run: BenchmarkRunDetailDto): string =>
+    this.runDiagnosticsTextFor(run, this.runStageOf(run));
+
+  /**
    * The Download Center's Open battery run downloads, on a run that is a battery member: the same
    * dialog switches to that battery run's documents, as the Battery Run Report's Downloads lists them.
    */
@@ -3333,7 +3340,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const label = battery
       ? [battery.batteryName, battery.testedModelLabel].filter(part => !!part).join(' · ')
       : '';
-    this.runDownloadCenter?.open({ kind: 'battery', batteryRunId, label });
+    this.runDownloadCenter?.open({ kind: 'battery', batteryRunId, label, memberDiagnosticsText: this.memberDiagnosticsText });
   }
 
   /**

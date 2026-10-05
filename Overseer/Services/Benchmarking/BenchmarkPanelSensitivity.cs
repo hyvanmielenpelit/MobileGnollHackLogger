@@ -27,9 +27,10 @@ public sealed record PanelSensitivityResult(
 /// The panel counterpart of the single-assessor verification-cleared Accuracy sensitivity, computed
 /// per member so that neither member gains a correction channel the other lacks. A member's Accuracy
 /// is lifted one level, capped at 6, on an answer both members scored, neither flagged as a critical
-/// error, and where that member's Accuracy is below 6 and either (i) every sentence it charged
-/// (<c>accusedQuote</c>) was supported with a citation, or (ii) it flagged an unevidenced deduction and
-/// every ordinary claim it raised was supported. The answer's panel score becomes the mean of the two
+/// error, and where that member's Accuracy is below 6, the verifier refuted no sentence it charged
+/// (<c>accusedQuote</c>), and either (i) it charged at least one sentence and every one was supported
+/// with a citation, or (ii) it flagged an unevidenced deduction and every ordinary claim it raised was
+/// supported. The answer's panel score becomes the mean of the two
 /// member scores, one or both lifted; every other answer keeps its stored panel score. Advisory and
 /// pure: nothing is written, and a charge the verifier wrongly refuted is not lifted, so the figure
 /// is a lower bound.
@@ -139,8 +140,9 @@ public static class BenchmarkPanelSensitivity
             view.NotAttempted).Score;
 
     /// <summary>
-    /// Whether <paramref name="view"/>'s member qualifies on this answer: Accuracy below 6, and every
-    /// sentence it charged supported with a citation, or its unevidenced deduction verification-cleared.
+    /// Whether <paramref name="view"/>'s member qualifies on this answer: Accuracy below 6, no sentence
+    /// it charged refuted by the verifier, and every sentence it charged supported with a citation, or
+    /// its unevidenced deduction verification-cleared.
     /// </summary>
     internal static bool IsEligible(
         BenchmarkRunAnswer answer,
@@ -148,6 +150,8 @@ public static class BenchmarkPanelSensitivity
         IReadOnlyList<BenchmarkClaimVerification> verifications)
     {
         if (view.AccuracyLevel >= MaxAssessmentLevel) return false;
+        // A refuted charged sentence is one the verifier agreed with the member on.
+        if (BenchmarkService.UpheldAccusations(verifications, view.Member).Count > 0) return false;
         return AccusationsAllSupported(view.Member, verifications)
             || IsVerificationClearedDeduction(answer, view, verifications);
     }

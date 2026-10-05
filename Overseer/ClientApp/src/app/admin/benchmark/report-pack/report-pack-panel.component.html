@@ -11,6 +11,7 @@
   <div runReportHeader class="rp-identity">
     <h4 class="gh-section-title rp-heading" [id]="headingId" tabindex="-1">Reports</h4>
     <p class="rp-subtitle">{{ subtitle }}</p>
+    <p class="form-hint rp-lead">{{ leadText }}</p>
   </div>
 
   <!-- ===================================================================================
@@ -40,11 +41,15 @@
         <label class="checkbox-label align-start rp-audience">
           <input type="checkbox" [id]="idPrefix + '-audience-' + option.audience"
                  [checked]="isAudienceChecked(option.audience)"
-                 [attr.aria-describedby]="idPrefix + '-audience-' + option.audience + '-desc'"
+                 [disabled]="isAudienceWritten(option.audience)"
+                 [attr.aria-describedby]="audienceDescribedBy(option.audience)"
                  (change)="onAudienceChange(option.audience, $event)">
           <span class="rp-audience-text">
             <span class="rp-audience-name">{{ option.label }}</span>
             <span class="rp-audience-desc" [id]="idPrefix + '-audience-' + option.audience + '-desc'">{{ option.description }}</span>
+            @if (isAudienceWritten(option.audience)) {
+              <span class="form-hint rp-audience-written" [id]="idPrefix + '-audience-' + option.audience + '-written'">{{ writtenHint(option.audience) }}</span>
+            }
           </span>
         </label>
       }
@@ -163,7 +168,8 @@
 
     <div class="rp-generate-row">
       <button #generateButton type="button" class="btn-gh rp-generate"
-              [disabled]="generateBlockedReason !== null"
+              [disabled]="generateBlockedReason !== null && !generateAriaDisabled"
+              [attr.aria-disabled]="generateAriaDisabled ? 'true' : null"
               [attr.aria-describedby]="generateDescribedBy"
               [attr.aria-busy]="starting ? 'true' : null"
               (click)="generate()">

@@ -224,13 +224,14 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyTwo()
+    public void HarnessVersion_IsFiftyThree()
     {
-        // Harness 52: nethack_wiki_view's section-less over-cap notice listing the article's
-        // headings, classified partial; a forced-final instruction appended in the agent loop when
-        // the tools run out; a one-line macro's body counted as evidence in the citation liveness
-        // check; and a terminal timeout's error text recording its phase.
-        Assert.Equal("52", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 53: a member whose charged sentence the verifier refuted is never
+        // verification-cleared; the synthesis footer counts a contested deduction on either member
+        // and the charges the verifier upheld; the synthesis data blocks state each assessor's
+        // charged sentences by verdict; and an answer whose own claims were not checked prints its
+        // charged sentences on the Claim Verification line.
+        Assert.Equal("53", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -540,6 +541,82 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains("Unverified claims: 2 across 1 answer(s); verified: 2 supported, 0 refuted, 0 indeterminate", prompt);
         Assert.DoesNotContain("Claims you raised", prompt);
         Assert.DoesNotContain("All claims checked", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_StatesWhatTheVerifierDidWithEachCharge()
+    {
+        // Runs 93 and 94: a synthesis wrote that the verifier refuted nothing while it had upheld a
+        // charged sentence. One answer here carries an upheld charge and the other a cleared one.
+        var q1 = Verdict(1, accuracyLevel: 4, accuracyEvidence: "States the wrong prayer timeout.");
+        q1.ChargedSentencesUpheld = 1;
+        var q2 = Verdict(2, accuracyLevel: 5, accuracyEvidence: "Misstates the altar rule.");
+        q2.ChargedSentencesCleared = 1;
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1, q2 });
+
+        Assert.Contains("Sentences you charged as false in this run: 2 — upheld 1, cleared 1, undecided 0.", prompt);
+        Assert.Contains("Sentences you charged as false: 1 — upheld by the claim verifier (refuted) 1, cleared (supported) 0, undecided 0.", prompt);
+        Assert.Contains("Sentences you charged as false: 1 — upheld by the claim verifier (refuted) 0, cleared (supported) 1, undecided 0.", prompt);
+        Assert.Contains(
+            "A charged sentence the verifier refuted is one where the verifier agreed with you: never write that nothing was refuted when one was.",
+            prompt);
+        // No claim counts were recorded, so the totals block carries the charges alone.
+        Assert.DoesNotContain("Unverified claims: ", prompt);
+
+        int totalsAt = prompt.IndexOf("Sentences you charged as false in this run:", StringComparison.Ordinal);
+        int verdictsAt = prompt.IndexOf("--- PER-QUESTION VERDICTS AND ASSESSMENTS ---", StringComparison.Ordinal);
+        Assert.True(totalsAt >= 0 && totalsAt < verdictsAt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_WithoutCharges_PrintsNoChargedSentenceLine()
+    {
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 });
+
+        Assert.DoesNotContain("Sentences you charged as false", prompt);
+    }
+
+    [Fact]
+    public void BuildVerdictSummary_CountsEachMembersOwnChargesByVerdict()
+    {
+        static BenchmarkClaimVerification Charge(int index, string member, BenchmarkClaimVerdict verdict)
+            => new(index, $"Sentence {index}.", verdict, "src/pray.c:120", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { member },
+                AccusedBy = new[] { member }
+            };
+
+        var run = new BenchmarkRun { Id = 1, HarnessVersion = "53", ScoringMethodVersion = 14, CoAssessorModelConfigurationId = 9 };
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            QuestionText = "Q1",
+            AnswerText = "Answer 1",
+            ExpectedPointsRecorded = true,
+            ExpectedPointsUsed = "Rubric.",
+            Difficulty = BenchmarkDifficulty.Intermediate,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            AccuracyLevel = 4,
+            QualityScore = 70,
+            ClaimVerificationJson = JsonSerializer.Serialize(new[]
+            {
+                Charge(0, "A", BenchmarkClaimVerdict.Refuted),
+                Charge(1, "A", BenchmarkClaimVerdict.Supported),
+                Charge(2, "B", BenchmarkClaimVerdict.Refuted),
+                Charge(3, "B", BenchmarkClaimVerdict.Indeterminate)
+            })
+        };
+
+        var memberA = BenchmarkService.BuildVerdictSummary(run, answer, BenchmarkPanelMember.A, includeAdvisory: false);
+        var memberB = BenchmarkService.BuildVerdictSummary(run, answer, BenchmarkPanelMember.B, includeAdvisory: false);
+
+        Assert.Equal((1, 1, 0), (memberA.ChargedSentencesUpheld, memberA.ChargedSentencesCleared, memberA.ChargedSentencesUndecided));
+        Assert.Equal((1, 0, 1), (memberB.ChargedSentencesUpheld, memberB.ChargedSentencesCleared, memberB.ChargedSentencesUndecided));
     }
 
     [Fact]
@@ -869,14 +946,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs52_ScoringMethodIs14()
+    public void Versions_HarnessIs53_ScoringMethodIs14()
     {
-        Assert.Equal("52", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("53", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 52 gives nethack_wiki_view a section-less over-cap notice with the article's
-        // headings (classified partial), appends a forced-final instruction in the agent loop when
-        // the tools run out, counts a one-line macro's body as evidence in the citation liveness
-        // check, and records a terminal timeout's phase in its error text; the grader prompt and
+        // Harness 53 keeps an upheld charge out of the verification-cleared figures, gives the
+        // synthesis each assessor's charged sentences by verdict, and counts upheld charges and
+        // either member's contested deductions in the report; the per-question grader prompt and
         // its ACCURACY anchors do not change, so scoring method 14 stays.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }

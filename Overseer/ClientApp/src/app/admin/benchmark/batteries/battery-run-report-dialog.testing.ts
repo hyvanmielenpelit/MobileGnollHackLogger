@@ -13,7 +13,8 @@ import {
   BenchmarkBatteryRunDto,
   BenchmarkBatterySlotDto,
   BenchmarkPairComparisonDto,
-  BenchmarkPairedMeasureDto
+  BenchmarkPairedMeasureDto,
+  BenchmarkRunDetailDto
 } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
@@ -377,6 +378,7 @@ export class StubBatteryAiReportsComponent {
   @Input() batteryRun: BenchmarkBatteryRunDto | null = null;
   @Input() analysis: BenchmarkBatteryAnalysisDto | null = null;
   @Input() dialogOpen = true;
+  @Input() memberDiagnosticsText?: (run: BenchmarkRunDetailDto) => string;
   @Output() readonly downloadsRequested = new EventEmitter<HTMLElement>();
   @Output() readonly reportStatusChange = new EventEmitter<BatteryReportStatusChange>();
 }

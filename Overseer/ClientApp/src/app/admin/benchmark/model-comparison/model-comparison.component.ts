@@ -174,7 +174,8 @@ import { AdminAlertService } from '../../../services/admin-alert.service';
 import {
   AdminBenchmarkService,
   BenchmarkReportDocumentListItemDto,
-  BenchmarkReportPackDocumentProgressDto
+  BenchmarkReportPackDocumentProgressDto,
+  BenchmarkReportPackJobDto
 } from '../../../services/admin-benchmark.service';
 import { ReportPackContext, ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
 import {
@@ -249,6 +250,10 @@ import {
 /** Which wizard step is on screen: sources, the charts and the table, the AI reports, the documents. */
 export type ComparisonWizardStep = 1 | 2 | 3 | 4;
 
+/** Step 4's note: where the documents not written by this wizard are kept. */
+export const COMPARISON_DOCUMENTS_NOTE =
+  'Run reports, and each run\'s or battery run\'s own AI reports, are in that report\'s Downloads.';
+
 /**
  * Every wizard step with its title and a one-line summary of what it is for.
  *
@@ -259,7 +264,7 @@ export const COMPARISON_WIZARD_STEPS: readonly {
 }[] = [
   { step: 1, title: 'Sources', summary: 'Choose the single runs or groups to compare, or the battery results, which are compared only with each other.' },
   { step: 2, title: 'Charts & table', summary: 'Choose the models to show, view the charts and the table, and export them.' },
-  { step: 3, title: 'Reports', summary: 'Write AI reports on one model of this comparison.' },
+  { step: 3, title: 'Reports', summary: 'Write AI reports that compare one model with the others in this comparison.' },
   { step: 4, title: 'Documents', summary: 'View, chart, download and delete this comparison’s documents.' }
 ];
 
@@ -1096,12 +1101,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (this.comparison === null) {
       return false;
     }
-    return step !== 3 || this.hasReportSubject;
+    return step !== 3 || this.hasComparisonPeers;
   }
 
-  /** Step 3 needs an entry a report can be about: one the server measured. */
-  get hasReportSubject(): boolean {
-    return (this.comparison?.entries ?? []).some(entry => !entry.excluded);
+  /**
+   * Step 3 needs a subject and at least one peer: two entries the server measured, because a
+   * comparison report compares one model with at least one other.
+   */
+  get hasComparisonPeers(): boolean {
+    return this.comparableEntryCount >= 2;
+  }
+
+  private get comparableEntryCount(): number {
+    return (this.comparison?.entries ?? []).filter(entry => !entry.excluded).length;
   }
 
   /** Why a step cannot be opened, for its tab's description; empty where it can. */
@@ -1111,6 +1123,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     if (this.comparison === null) {
       return 'Compare the selected sources first.';
+    }
+    if (this.comparableEntryCount === 1) {
+      return 'A comparison report compares one model with at least one other. Add another model on step 1, '
+        + 'or write a run\'s or battery run\'s own reports in the AI Reports tab of its report.';
     }
     return 'Every model in this comparison was measured differently, so none of them can be the subject of a report.';
   }
@@ -1958,6 +1974,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Bumped to make step 4 list its documents again: a job finished, or a document was charted. */
   documentsReloadToken = 0;
 
+  readonly documentsNote = COMPARISON_DOCUMENTS_NOTE;
+
   /** The chart actions step 4 is lent; replaced whenever one of their values changes. */
   documentChartActions: DownloadCenterChartActions | null = null;
 
@@ -1972,7 +1990,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private publishQueue: Promise<unknown> = Promise.resolve();
   private pendingPublishes = 0;
   private reportPackContextCache: { comparison: BenchmarkModelComparisonDto; basis: string; context: ReportPackContext } | null = null;
-  private documentsContextCache: { keys: string; context: DownloadCenterContext } | null = null;
+  private documentsContextCache: { keys: string; ids: string; context: DownloadCenterContext } | null = null;
+  /** The documents of the last step 3 job that finished, with the entry set they were written for. */
+  private lastJobDocuments: { keys: string; ids: readonly number[] } | null = null;
 
   /**
    * The computed comparison as the report-pack request carries it: the entries' own sources, so every
@@ -2014,7 +2034,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return context;
   }
 
-  /** Step 4's library: this comparison's documents, every row chosen. One object per entry set. */
+  /**
+   * Step 4's library: this comparison's documents. The documents of the last step 3 job that
+   * finished for this entry set start chosen; without one, every row does. One object per entry set
+   * and chosen ids.
+   */
   get documentsContext(): DownloadCenterContext | null {
     const comparison = this.comparison;
     if (!comparison) {
@@ -2022,16 +2046,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     const entryKeys = comparison.entries.map(entry => entry.key);
     const keys = entryKeys.join(',');
-    if (this.documentsContextCache?.keys === keys) {
+    const lastIds = this.lastJobDocuments?.keys === keys ? this.lastJobDocuments.ids : [];
+    const ids = lastIds.join(',');
+    if (this.documentsContextCache?.keys === keys && this.documentsContextCache.ids === ids) {
       return this.documentsContextCache.context;
     }
     const context: DownloadCenterContext = {
       kind: 'library',
       scope: { kind: 'comparison', entryKeys },
-      preselect: 'all',
-      title: 'Documents of this comparison'
+      preselect: lastIds.length > 0 ? { ids: lastIds } : 'all',
+      title: 'Documents of this comparison',
+      subtitle: COMPARISON_DOCUMENTS_NOTE
     };
-    this.documentsContextCache = { keys, context };
+    this.documentsContextCache = { keys, ids, context };
     return context;
   }
 
@@ -2111,7 +2138,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
   }
 
-  onReportJobFinished(): void {
+  /** Step 3's job finished: step 4 lists afresh, with that job's documents chosen. */
+  onReportJobFinished(job?: Partial<BenchmarkReportPackJobDto> | null): void {
+    const ids = (job?.documents ?? [])
+      .map(doc => doc.documentId)
+      .filter((id): id is number => id !== null && id !== undefined);
+    if (ids.length > 0 && this.comparison) {
+      this.lastJobDocuments = { keys: this.comparison.entries.map(entry => entry.key).join(','), ids };
+    }
     this.documentsReloadToken++;
     this.cdr.markForCheck();
   }

@@ -498,8 +498,8 @@ Every figure in the report is reproducible from the member runs' stored answers,
 it usable as an instrument for deciding whether a change is kept.
 
 This non-goal still holds for the multi-run report. It was reversed for **batteries** on 2026-10-03: a
-battery run's Executive Summary and Report for AI Researchers and Developers are written by a report
-writer under the Report Pack rule — numbers from code, words from the writer, rendering with no AI —
+battery run's Executive Summary, Report for AI Researchers and Developers and Internal Improvement Brief
+are written by a report writer under the Report Pack rule — numbers from code, words from the writer, rendering with no AI —
 while the battery's Markdown report stays arithmetic only. The decision and its reasons are in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 7.2, and the mechanics in
 [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14. A single run already had its own

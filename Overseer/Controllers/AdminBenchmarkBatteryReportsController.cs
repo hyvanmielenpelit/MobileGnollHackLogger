@@ -38,9 +38,9 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     };
 
     public const string AlreadyWritingMessage = "The reports of this battery run are already being written.";
-    public const string BothWrittenMessage = "This battery run already has both AI-written reports. Delete them first to write them again.";
+    public const string AllWrittenMessage = "This battery run already has every AI-written report. Delete one first to write it again.";
     public const string InvalidAudienceMessage =
-        "Only the Executive Summary and the Report for AI Researchers and Developers are written for a battery run.";
+        "Only the Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement Brief are written for a battery run.";
     public const string NothingInProgressMessage = "No report writing is in progress for this battery run.";
     public const string DeleteWhileWritingMessage = "Wait for the writing to finish, or cancel it, before deleting a report.";
 
@@ -78,7 +78,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     /// Refusals, in order: no body (400); unknown battery run (404); the battery run has not finished,
     /// or has no complete, current analysis (400); a job for it is Pending or Writing (409); a
     /// requested document that is not a battery-completion document (400); a requested document
-    /// already written (409), or with none requested, both written (409); an unusable writer or the
+    /// already written (409), or with none requested, every one written (409); an unusable writer or the
     /// model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
     /// warning); a refused endpoint (400); the spend cap (429).
     /// </summary>
@@ -109,7 +109,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
         List<BenchmarkReportAudience> toWrite;
         if (requested == null)
         {
-            if (missing.Count == 0) return Conflict(new { error = BothWrittenMessage });
+            if (missing.Count == 0) return Conflict(new { error = AllWrittenMessage });
             toWrite = missing;
         }
         else

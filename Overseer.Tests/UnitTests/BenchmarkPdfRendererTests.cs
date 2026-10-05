@@ -686,14 +686,14 @@ public class BenchmarkPdfRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
                 PeerNaming = BenchmarkReportPeerNaming.Anonymized
             }));
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Full,
@@ -726,7 +726,7 @@ public class BenchmarkPdfRendererTests
         document.SubjectKey = subjectKey;
 
         Assert.Equal(
-            "vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            "vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Summary,
@@ -742,7 +742,7 @@ public class BenchmarkPdfRendererTests
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named };
 
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, options));
         Assert.Equal(
             "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers",
@@ -751,7 +751,7 @@ public class BenchmarkPdfRendererTests
         // The other audiences keep the title-derived name.
         var executive = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(executive, options));
     }
 

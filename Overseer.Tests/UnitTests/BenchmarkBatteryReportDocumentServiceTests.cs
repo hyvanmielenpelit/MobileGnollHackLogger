@@ -21,7 +21,7 @@ using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
-/// The battery-completion documents: when a finished battery run's two AI-written documents are
+/// The battery-completion documents: when a finished battery run's three AI-written documents are
 /// written (a finished battery, a complete and current analysis, a writer, no document yet), how the
 /// battery run's status moves, the compliance guard, cancellation, the restart settlement, and the
 /// cleanup when a battery run is deleted. The writer is a fake; nothing calls a provider.
@@ -30,10 +30,11 @@ public class BenchmarkBatteryReportDocumentServiceTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static readonly BenchmarkReportAudience[] BothAudiences =
+    private static readonly BenchmarkReportAudience[] AllAudiences =
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief
     };
 
     // --- Scheduling ----------------------------------------------------------------------------------
@@ -109,21 +110,21 @@ public class BenchmarkBatteryReportDocumentServiceTests
     }
 
     [Fact]
-    public async Task ADueBatteryRun_GetsBothDocuments_StoredAsBatteryCompletionDocuments()
+    public async Task ADueBatteryRun_GetsEveryDocument_StoredAsBatteryCompletionDocuments()
     {
         await using var h = await BatteryReportHarness.CreateAsync();
 
         await h.Service.ScheduleIfDue(h.BatteryRunId);
 
         var documents = await h.DocumentsAsync();
-        Assert.Equal(2, documents.Count);
+        Assert.Equal(3, documents.Count);
         Assert.All(documents, d =>
         {
             Assert.Equal(BenchmarkReportDocumentOrigin.BatteryCompletion, d.Origin);
             Assert.Equal(BenchmarkBatteryReportDocumentService.SubjectKeyOf(h.BatteryRunId), d.SubjectKey);
             Assert.False(d.SameProviderAcknowledged);
         });
-        Assert.Equal(BothAudiences, documents.Select(d => d.Audience).OrderBy(a => a));
+        Assert.Equal(AllAudiences, documents.Select(d => d.Audience).OrderBy(a => a));
 
         var batteryRun = await h.BatteryRunAsync();
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, batteryRun.ReportDocumentsStatus);
@@ -161,7 +162,7 @@ public class BenchmarkBatteryReportDocumentServiceTests
             await h.Service.ScheduleIfDue(h.BatteryRunId);
 
             Assert.Equal(withDocument ? 0 : 1, h.Writer.JobCalls);
-            Assert.Equal(withDocument ? 1 : 2, (await h.DocumentsAsync()).Count);
+            Assert.Equal(withDocument ? 1 : 3, (await h.DocumentsAsync()).Count);
             Assert.Equal(
                 withDocument ? BenchmarkRunReportDocumentsStatus.NotRequested : BenchmarkRunReportDocumentsStatus.Completed,
                 await h.StatusAsync());
@@ -208,7 +209,9 @@ public class BenchmarkBatteryReportDocumentServiceTests
             var batteryRun = await h.BatteryRunAsync();
             Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, batteryRun.ReportDocumentsStatus);
             Assert.StartsWith("Report for AI Researchers and Developers: ", batteryRun.ReportDocumentsMessage);
-            Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, Assert.Single(await h.DocumentsAsync()).Audience);
+            Assert.Equal(
+                new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.InternalBrief },
+                (await h.DocumentsAsync()).Select(d => d.Audience));
         }
 
         await using (var h = await BatteryReportHarness.CreateAsync())
@@ -337,10 +340,10 @@ public class BenchmarkBatteryReportDocumentServiceTests
         await h.Service.ScheduleIfDue(h.BatteryRunId);
         long otherBatteryRunId = h.BatteryRunId + 1000;
         long other = await h.AddDocumentAsync(otherBatteryRunId, BenchmarkReportAudience.ExecutiveSummary);
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(4, (await h.DocumentsAsync()).Count);
         Assert.NotNull(h.Service.TryGetJob(h.BatteryRunId));
 
-        Assert.Equal(2, await h.Service.SettleAfterDeleteAsync(h.BatteryRunId, Ct));
+        Assert.Equal(3, await h.Service.SettleAfterDeleteAsync(h.BatteryRunId, Ct));
 
         Assert.Equal(other, Assert.Single(await h.DocumentsAsync()).Id);
         Assert.Null(h.Service.TryGetJob(h.BatteryRunId));

@@ -470,9 +470,10 @@ for the battery run:
    the Battery Run Report*.
 3. **AI-written reports**, only with a writer: pending (*Follows the analysis*) while a member is
    repaired or the analysis is computed; current while `postRunWork` is `WritingReports` — *Waiting for
-   the report writer*, with the queue position, or *Writing the Executive Summary and the Researcher
-   report* once the battery run's `reportDocumentsStatus` is *Writing*; afterwards from that status: done
-   at *Completed* (*2 documents written*, *1 document written*, or *Written* when the count is 0) or
+   the report writer*, with the queue position, or *Writing the AI-written reports* once the battery
+   run's `reportDocumentsStatus` is *Writing*; afterwards from that status: done at *Completed* (*3
+   documents written* when the automatic job wrote all three, *N documents written* or *1 document
+   written* after a partial write, or *Written* when the count is 0) or
    *CompletedWithWarnings* (*Written with warnings*); ended with the message at *Failed*, *Skipped* or
    *Canceled*, and with *Not started* at *NotRequested*. While the stage is current the dialog also polls
    the battery report job. The *done* count is the battery run's `reportDocumentsWrittenCount`, never
@@ -650,8 +651,15 @@ leaderboard and from the progress dialog's **Open Analysis**.
 - **Header.** The GnollBench emblem and *Battery Run #N*; *Model* and *Assessor(s)* always shown; a
   *Run details* disclosure, closed by default, with *Prompt*, *Scoring profile*, *Started*, **Battery**
   (name · revision · scheme) and **Suites** (*k of K complete · R runs per suite*).
-- **Battery run actions:** **Downloads** opens the Download Center on the battery run: the Markdown
-  analysis report and every document whose subject is the battery run, with no member-run files.
+- **Battery run actions:** **Downloads** opens the Download Center on the battery run, subtitled
+  *Battery run #N · <battery> · <model>*: the Markdown analysis report and the battery run's own
+  AI-written documents (§ 7.2), and, with **Include member runs** — a checkbox in the list header,
+  checked every time the dialog opens and never remembered — every current member run's report,
+  tool-call log and diagnostics, so the package **Internal** downloads the whole battery at once. Members
+  are listed by suite and round, superseded and deleted ones left out; a member that is not usable is
+  listed with the note *"Not used in the battery's statistics."* Comparison documents about the battery
+  result are not listed: an info line counts them, with **Open comparison documents**
+  ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 1a and 8).
   **Actions** is a popover of two items, each unavailable with its reason: *Recompute analysis*
   (*Compute analysis* before the first one; *Computing…* while it runs), which also reconciles a
   `Stopped` or `CompletedWithErrors` battery run first (§ 3.4) and then schedules the AI-written
@@ -672,7 +680,7 @@ leaderboard and from the progress dialog's **Open Analysis**.
   | **Dimensions**, **Speed**, **Cost** | The composite figures of M5 and M6; *Cost* adds token and tool usage |
   | **Configuration** | Definition and class hashes, weights and scheme, the start settings and each suite's instrument fingerprints |
   | **Paired Test** | This battery run against another result of the same definition (§ 7.3) |
-  | **AI Reports** | The battery's two AI-written documents (§ 7.2) |
+  | **AI Reports** | The battery's three AI-written documents (§ 7.2) |
 
 ### 4.8 The battery editor
 
@@ -735,7 +743,7 @@ request and response shapes of a run's run-completion documents:
 
 | Method | Route | Purpose |
 |---|---|---|
-| POST | `runs/{id}/report-documents` | Write the finished battery run's missing documents (body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`); the writer becomes the battery run's writer. 202 with the Pending status and the documents to write. Refusals, in order: no body 400; unknown 404; not finished, or no complete, current analysis 400; a job Pending or Writing 409; an audience other than the two 400; a document already written 409; an unusable writer or the model under test 400; an unacknowledged same-provider writer 409 with the warning; the endpoint policy 400; the spend cap 429 |
+| POST | `runs/{id}/report-documents` | Write the finished battery run's missing documents (body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`); the writer becomes the battery run's writer. 202 with the Pending status and the documents to write. Refusals, in order: no body 400; unknown 404; not finished, or no complete, current analysis 400; a job Pending or Writing 409; an audience other than the three (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Improvement Brief) 400; a document already written, or with none requested every one, 409; an unusable writer or the model under test 400; an unacknowledged same-provider writer 409 with the warning; the endpoint policy 400; the spend cap 429 |
 | POST | `runs/{id}/report-documents/estimate` | Per-document and total cost for a writer, with its refusal or warning. No model call |
 | GET | `runs/{id}/report-documents/job` | The current or last job (`BenchmarkRunReportJobDto`, labeled *Battery run #N*); 204 when this process knows none |
 | POST | `runs/{id}/report-documents/cancel` | Cancel the job; documents already written are kept. 202; 409 when nothing is in progress |
@@ -1195,9 +1203,9 @@ A practical reading order:
 
 ### 7.2 The AI-written battery documents
 
-A finished, analyzed battery run can have the two documents a single run has: the **Executive
-Summary** and the **Report for AI Researchers and Developers**, written by a report writer model in the
-stand-alone form. The Markdown report of § 7.1 stays, unchanged and deterministic. The mechanics —
+A finished, analyzed battery run can have the three documents a single run has: the **Executive
+Summary**, the **Report for AI Researchers and Developers** and, from 2026-10-06, the **Internal
+Improvement Brief**, written by a report writer model in the stand-alone form. The Markdown report of § 7.1 stays, unchanged and deterministic. The mechanics —
 fact sheet, prompt, validation, cover, file names, endpoints — are in
 [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14.
 
@@ -1212,15 +1220,17 @@ immutable, so a battery document cannot contradict its own figures any more than
 result is also the figure a model is chosen by, so it is the result most worth explaining to a reader
 outside the team. The deterministic Markdown report is kept as the reproducible instrument.
 
-**Decision D3 (2026-10-03): the battery's writer writes the battery's two documents; the members write
-none.** A run request's report writer, sent with a battery start, is checked at start against the
+**Decision D3 (2026-10-03, amended 2026-10-06): the battery's writer writes the battery's documents —
+two, and three since the Internal Improvement Brief became a completion document (D8); the members
+write none.** A run request's report writer, sent with a battery start, is checked at start against the
 tested model (§ 3.3), stored on the battery run, and cleared from every member's request.
 `BenchmarkBatteryReportDocumentService.ScheduleIfDue` runs after every analysis the battery run's
 finish computes — at the end of the drive loop, after a repair or a Continue that finishes the battery
-run (§§ 3.4, 3.5) — and after a manual **Recompute analysis** (§ 4.7), and writes the two documents once
-the battery run has finished, its latest analysis is complete and current, it names a writer, and it
-has no battery-completion document yet. *Why:* a battery of K suites and R rounds would
-otherwise queue up to 2·K·R member documents for the single report-writer slot, each about one run of
+run (§§ 3.4, 3.5) — and after a manual **Recompute analysis** (§ 4.7), and writes every missing document
+(the three) once the battery run has finished, its latest analysis is complete and current, it names a
+writer, and it has no battery-completion document yet; a battery run that already has some gets the
+missing ones only from its **AI Reports** tab. *Why:* a battery of K suites and R rounds would
+otherwise queue up to 3·K·R member documents for the single report-writer slot, each about one run of
 one suite, when the reader needs one account of the composite. A member's own documents can still be
 written on demand from that run's **AI Reports** tab.
 
@@ -1231,9 +1241,60 @@ included*, beside `claims.refuted`, which counts only the answers' own claims. T
 table leaves out its score columns when no band has a score. While the documents are written, the battery
 progress dialog shows an *AI-written reports* stage (§ 4.3), and the completion chime waits for it.
 
-The Battery Run Report's **AI Reports** tab lists the two documents, written or not, with **View**,
+The Battery Run Report's **AI Reports** tab lists the three documents, written or not, with **View**,
 **Delete**, *Write missing reports* (the writer picker starts on the battery run's own writer), the cost
 estimate, the same-provider confirmation and **Show Progress**, as a single run's tab does.
+
+**Decision D8 (2026-10-06): one home per AI document.** A document's home is decided by whether it has
+peers ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 1a):
+
+| Kind | Home: written in | Listed in | Never listed in |
+|---|---|---|---|
+| A run's own documents (no peers) | Run report → **AI Reports** tab, and automatically at the end of the run | The run's Download Center | Model Comparison |
+| A battery run's own documents (no peers) | Battery Run Report → **AI Reports** tab, and automatically at stage 3 (§ 4.3) | The battery run's Download Center | Model Comparison |
+| Comparison documents (one subject, at least one peer) | Model Comparison → step 3 | Step 4 (this comparison), and the launcher's **Comparison reports** (all comparisons) | A run's or battery run's Download Center. These show a pointer instead |
+
+So the wizard's step 3 writes comparison documents only, and needs two entries that are not Excluded;
+the server refuses a peerless Report Pack preview and start; a comparison holds one document per subject
+and type, and a duplicate is refused with 409; step 4 lists only what the wizard wrote; the run and
+battery Download Centers list their own origin and point to the comparison documents about them; the
+Internal Improvement Brief is the third completion document of a run and of a battery run; and a
+comparison document's file name carries its peers or its comparison key. A battery's member runs' files
+are not documents of the battery, but its Download Center can list them beside its own (**Include member
+runs**, § 4.7), so a battery of many runs downloads in one action.
+
+*Why.* In the battery runs 9–10 round (2026-10-05) the comparison of battery results 9 and 10 showed
+the cost of the earlier model, in which step 3 wrote any document about any entry and every listing
+asked by subject alone:
+
+1. Step 3 wrote a three-document pack about battery 9, then one about battery 10.
+2. Step 4 listed more than step 3 wrote: both packs, plus a *run report* row for every subject run —
+   runs 92 to 95 — because the library appended each listed document's subject runs.
+3. Every row started selected, so the second download carried the first pack and all four run reports
+   again, re-rendered with different hashes.
+4. The battery's own Download Center listed every document whose subject was `battery:9`, whatever its
+   origin, so the three comparison documents sat above the battery run's own Executive Summary and
+   Researcher report, with the battery analysis report at the bottom.
+5. A comparison document was named `battery-run-9_vs-1-models_…`, so a later comparison of battery 9
+   with any other single model produced the same names, and a one-entry comparison document was named
+   exactly like the battery's own completion document.
+
+No stored row was overwritten — `MissingAudiencesAsync` and `ScheduleIfDue` filter on `Origin` — so the
+risk was in the listings and the file names, not the database. The Internal Improvement Brief had to
+become a completion document: removing the one-entry comparison would otherwise have removed the only way
+to write a brief about one battery run, and the brief is the team's input to every benchmark analysis.
+
+*Rejected alternatives,* so they are not proposed again:
+
+- **Keeping one-entry comparisons and naming them differently** leaves two writing paths for one kind of
+  document, and keeps the stand-alone brief outside the subject's own report.
+- **A new `Origin` for comparison documents** is unnecessary: `ReportPack` already means exactly that
+  once peerless packs are refused.
+- **Re-homing existing peerless Report Pack documents** would rewrite stored rows. They stay where they
+  are, listed by the comparison launcher and deletable there.
+- **Moving the analysis-group subject elsewhere:** a group's stand-alone documents lose their only
+  home. No group subject had been used in a benchmark round since the battery work began, and a group
+  can still be a subject *with* peers; this was accepted on 2026-10-06.
 
 ### 7.3 The paired test
 

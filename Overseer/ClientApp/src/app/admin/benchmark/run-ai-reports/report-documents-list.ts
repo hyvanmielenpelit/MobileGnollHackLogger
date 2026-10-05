@@ -25,10 +25,11 @@ import {
  * its tag and meta line, the job status line, and the cost estimate block.
  */
 
-/** The two AI-written completion documents of a run or a battery run, in the order the panels list them. */
+/** The three AI-written completion documents of a run or a battery run, in the order the panels list them. */
 export const REPORT_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] = [
   BenchmarkReportAudience.ExecutiveSummary,
-  BenchmarkReportAudience.TechnicalReport
+  BenchmarkReportAudience.TechnicalReport,
+  BenchmarkReportAudience.InternalBrief
 ];
 
 /** A battery-completion document's origin. */
@@ -46,13 +47,13 @@ export type ReportDocumentsStatusKind = 'plain' | 'progress' | 'failed' | 'skipp
 
 /**
  * The cost estimate block: waiting for the estimate, failed, no price card for the writer, or the
- * total with, for two documents, the cost of each.
+ * total with, for two or more documents, the cost of each.
  */
 export interface ReportEstimateView {
   state: 'loading' | 'failed' | 'noPrice' | 'ready';
   /** The total, formatted; null unless ready. */
   total: string | null;
-  /** One entry per document, only when there are two. */
+  /** One entry per document, only when there are two or more. */
   parts: { name: string; cost: string }[];
 }
 

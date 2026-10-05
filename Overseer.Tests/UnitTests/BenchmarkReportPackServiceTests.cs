@@ -346,7 +346,7 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
-    public async Task Preview_OfABatterySubject_EstimatesItsDocuments()
+    public async Task PreviewAndStart_OfABatterySubjectWithNoPeer_AreRefused()
     {
         await using var h = await Harness.CreateAsync();
         long batteryRunId = await h.SeedBatteryAsync();
@@ -356,13 +356,21 @@ public class BenchmarkReportPackServiceTests
         var ok = Assert.IsType<OkObjectResult>(await h.Controller().Preview(request, CancellationToken.None));
         var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(ok.Value);
 
-        Assert.Null(preview.Refusal);
+        Assert.Equal(BenchmarkReportPackPreparation.PeerlessReportRefusal, preview.Refusal);
         Assert.Equal($"battery:{batteryRunId}", preview.SubjectKey);
         Assert.Equal("Core knowledge", preview.SuiteName);
         Assert.Empty(preview.Peers);
-        Assert.Equal(2, preview.Estimates.Count);
+        Assert.Empty(preview.Estimates);
+        Assert.Empty(preview.WrittenDocuments);
+
+        var start = Assert.IsType<BadRequestObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Equal(BenchmarkReportPackPreparation.PeerlessReportRefusal, ErrorOf(start.Value));
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(0, h.Provider.Calls);
     }
+
+    /// <summary>The <c>error</c> of an anonymous <c>{ error }</c> body, unescaped.</summary>
+    private static string? ErrorOf(object? body) => body?.GetType().GetProperty("error")?.GetValue(body) as string;
 
     [Fact]
     public async Task AProviderError_StoresNothing_AndFailsTheDocument()
@@ -405,6 +413,50 @@ public class BenchmarkReportPackServiceTests
 
         var bad = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Contains("not an entry", JsonSerializer.Serialize(bad.Value));
+    }
+
+    [Fact]
+    public async Task Start_RefusesASubjectWithNoPeer_BeforeAnUnusableWriter()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.StandaloneRequest(Array.Empty<BenchmarkReportAudience>());
+        request.WriterModelConfigurationId = h.Disabled.Id;
+
+        var bad = Assert.IsType<BadRequestObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Equal(BenchmarkReportPackPreparation.PeerlessReportRefusal, ErrorOf(bad.Value));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Start_RefusesADocumentAlreadyWrittenForTheComparisonAndSubject_With409_BeforeTheSpendCap()
+    {
+        await using var h = await Harness.CreateAsync(maxRunsPerHour: 0);
+        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport });
+        await h.StoreDocumentAsync(BenchmarkReportAudience.TechnicalReport, request);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        string? error = ErrorOf(conflict.Value);
+        Assert.StartsWith("The Report for AI Researchers and Developers about ", error);
+        Assert.EndsWith(" is already written for this comparison. Delete it in step 4 to write it again.", error);
+
+        // Another audience of the same comparison goes on to the spend cap.
+        var other = Assert.IsAssignableFrom<ObjectResult>(await h.Controller().Start(
+            h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary }), CancellationToken.None));
+        Assert.Equal(429, other.StatusCode);
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Start_IgnoresDocumentsOfAnotherComparison_AnotherSubjectOrAnotherOrigin()
+    {
+        await using var h = await Harness.CreateAsync(maxRunsPerHour: 0);
+        var request = h.Request();
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, comparisonKey: new string('f', 64));
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, subjectKey: $"run:{h.Seeded.RunIds[1]}");
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, origin: BenchmarkReportDocumentOrigin.RunCompletion);
+
+        var result = Assert.IsAssignableFrom<ObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Equal(429, result.StatusCode);
     }
 
     [Fact]
@@ -489,6 +541,47 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal("A", Assert.Single(preview.Peers).Letter);
         Assert.Equal(2, preview.Estimates.Count);
         Assert.All(preview.Estimates, e => Assert.True(e.EstimatedInputTokens > 0));
+        Assert.Empty(preview.WrittenDocuments);
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Preview_RefusesASubjectWithNoPeer_WithNoEstimate()
+    {
+        await using var h = await Harness.CreateAsync();
+
+        var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(h.StandaloneRequest(), CancellationToken.None)).Value);
+
+        Assert.Equal(BenchmarkReportPackPreparation.PeerlessReportRefusal, preview.Refusal);
+        Assert.Equal($"run:{h.Seeded.RunIds[0]}", preview.SubjectKey);
+        Assert.Empty(preview.Peers);
+        Assert.Empty(preview.Estimates);
+        Assert.Null(preview.EstimatedTotalCostUsd);
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Preview_ListsTheDocumentsWrittenForTheComparisonAndSubject_TheNewestPerAudience()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.Request();
+        long older = await h.StoreDocumentAsync(BenchmarkReportAudience.TechnicalReport, request, createdAtUtc: new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
+        long newer = await h.StoreDocumentAsync(BenchmarkReportAudience.TechnicalReport, request, createdAtUtc: new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc));
+        long brief = await h.StoreDocumentAsync(BenchmarkReportAudience.InternalBrief, request, createdAtUtc: new DateTime(2026, 10, 3, 9, 0, 0, DateTimeKind.Utc));
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, comparisonKey: new string('f', 64));
+        await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, origin: BenchmarkReportDocumentOrigin.RunCompletion);
+
+        var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(request, CancellationToken.None)).Value);
+
+        Assert.Null(preview.Refusal);
+        Assert.Equal(
+            new[] { (BenchmarkReportAudience.TechnicalReport, newer), (BenchmarkReportAudience.InternalBrief, brief) },
+            preview.WrittenDocuments.Select(d => (d.Audience, d.DocumentId)));
+        Assert.NotEqual(older, newer);
+        Assert.Equal(new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc), preview.WrittenDocuments[0].CreatedAtUtc);
+        Assert.Equal("Claude Opus 5.5", preview.WrittenDocuments[0].WriterDisplayName);
         Assert.Equal(0, h.Provider.Calls);
     }
 
@@ -595,11 +688,11 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Equal("application/pdf", provider.ContentType);
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             provider.FileDownloadName);
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(provider.FileContents, 0, 5));
         Assert.Equal(
-            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             full.FileDownloadName);
     }
 
@@ -626,7 +719,7 @@ public class BenchmarkReportPackServiceTests
         Assert.True(string.IsNullOrEmpty(pdf.FileDownloadName));
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(pdf.FileContents, 0, 5));
         Assert.Equal(
-            "inline; filename*=UTF-8''run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "inline; filename*=UTF-8''run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             controller.Response.Headers.ContentDisposition.ToString());
     }
 
@@ -1134,6 +1227,30 @@ public class BenchmarkReportPackServiceTests
             new EndpointPolicy(Configuration),
             scopeFactory: null!,
             Configuration);
+
+        /// <summary>
+        /// Stores a fixture document of <paramref name="audience"/> about the request's subject, keyed by
+        /// the request's comparison, a Report Pack document unless another origin is given; returns its id.
+        /// </summary>
+        public async Task<long> StoreDocumentAsync(
+            BenchmarkReportAudience audience,
+            BenchmarkReportPackRequest request,
+            string? comparisonKey = null,
+            string? subjectKey = null,
+            BenchmarkReportDocumentOrigin origin = BenchmarkReportDocumentOrigin.ReportPack,
+            DateTime? createdAtUtc = null)
+        {
+            var document = BenchmarkReportPackFixture.Document(audience);
+            document.Id = 0;
+            document.Origin = origin;
+            document.SubjectKey = subjectKey ?? request.SubjectKey;
+            document.ComparisonKey = comparisonKey ?? BenchmarkReportComparisonKey.From(request.RunIds, request.GroupIds, request.BatteryRunIds);
+            document.CreatedAtUtc = createdAtUtc ?? BenchmarkReportPackFixture.CreatedAt;
+            document.Runs = new List<BenchmarkReportDocumentRun>();
+            Db.BenchmarkReportDocuments.Add(document);
+            await Db.SaveChangesAsync();
+            return document.Id;
+        }
 
         public BenchmarkReportPackJob StartRunningJob()
         {

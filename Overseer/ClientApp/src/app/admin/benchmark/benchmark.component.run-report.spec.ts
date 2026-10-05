@@ -480,7 +480,19 @@ describe('AdminBenchmarkComponent', () => {
 
       center.openBatteryDownloads.emit(9);
       expect(open).toHaveBeenCalledTimes(2);
-      expect(open.mock.calls[1][0]).toEqual({ kind: 'battery', batteryRunId: 9, label: 'Core Battery · Gemini Flash' });
+      expect(open.mock.calls[1][0]).toEqual({
+        kind: 'battery', batteryRunId: 9, label: 'Core Battery · Gemini Flash', memberDiagnosticsText: component.memberDiagnosticsText
+      });
+    });
+
+    it('should give battery Download Centers a member run\'s own diagnostics text, and hand it to the Battery Run Report', () => {
+      const run = reportRun();
+      const diagnostics = vi.spyOn(component, 'runDiagnosticsTextFor').mockReturnValue('member diagnostics');
+      expect(component.memberDiagnosticsText(run)).toBe('member diagnostics');
+      expect(diagnostics).toHaveBeenCalledWith(run, component.runStageOf(run));
+
+      fixture.detectChanges();
+      expect(component.batteryRunReport!.memberDiagnosticsText).toBe(component.memberDiagnosticsText);
     });
 
     it('should tell the Download Center no battery for a run outside one', () => {

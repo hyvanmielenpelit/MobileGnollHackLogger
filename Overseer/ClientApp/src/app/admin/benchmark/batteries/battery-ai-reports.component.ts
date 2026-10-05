@@ -22,6 +22,7 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPeerNaming,
+  BenchmarkRunDetailDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportEstimateDto,
   BenchmarkRunReportJobDto,
@@ -159,6 +160,11 @@ export class BatteryAiReportsComponent implements OnInit, OnChanges, OnDestroy {
   @Input() writerConfigs: readonly SystemAiConfigDto[] | null = null;
   /** The picker's text when there are no options; the workspace's when unset. */
   @Input() pickerEmptyHint: string | null = null;
+  /**
+   * A member run's diagnostics text, for the tab's own Download Center to list each member run's
+   * diagnostics; without it the member runs' diagnostics are not listed.
+   */
+  @Input() memberDiagnosticsText?: (run: BenchmarkRunDetailDto) => string;
 
   /** The button that asked for the Download Center; with no listener the tab opens its own. */
   @Output() readonly downloadsRequested = new EventEmitter<HTMLElement>();
@@ -735,7 +741,12 @@ export class BatteryAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     this.downloadsReturnFocus = button;
     this.ownDownloadCenter = true;
     this.cdr.detectChanges();
-    const context: DownloadCenterBatteryContext = { kind: 'battery', batteryRunId: run.id, label: this.batteryLabel };
+    const context: DownloadCenterBatteryContext = {
+      kind: 'battery',
+      batteryRunId: run.id,
+      label: this.batteryLabel,
+      ...(this.memberDiagnosticsText ? { memberDiagnosticsText: this.memberDiagnosticsText } : {})
+    };
     this.downloadCenter?.open(context);
   }
 

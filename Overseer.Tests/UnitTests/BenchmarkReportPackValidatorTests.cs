@@ -1387,6 +1387,29 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
+    public void AStandaloneInternalBrief_WithLeadsAndRecommendations_HasNoIssues()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Ib);
+        output.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} scored {{quality.index}}, held back by how it read the board on Q2.";
+        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
+        {
+            For = BenchmarkReportSlots.TargetBenchmark,
+            Text = "Review whether the rubric for Q3 is ambiguous; the graders disagree.",
+            Evidence = { "R3" }
+        });
+        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
+        {
+            For = BenchmarkReportSlots.TargetModelDevelopers,
+            Text = "Check the board state before answering questions about item status.",
+            Evidence = { "R2" }
+        });
+
+        Assert.NotEmpty(output.Leads);
+        Assert.Empty(Validate(Ib, output, StandaloneSheet()));
+        Assert.Equal(BenchmarkReportSlots.InternalBrief.RequiredSlots, BenchmarkReportSlots.InternalBrief.SlotsFor(hasPeers: false));
+    }
+
+    [Fact]
     public void TheLimitationsSlot_IsRequiredInBothForms()
     {
         var output = ReportPackWriterTestData.ValidOutput(Tr);

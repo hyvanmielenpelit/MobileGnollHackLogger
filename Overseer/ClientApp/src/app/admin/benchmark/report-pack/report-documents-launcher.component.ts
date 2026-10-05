@@ -144,7 +144,7 @@ export class ReportDocumentsLauncherComponent implements OnInit, OnChanges, OnDe
       scope: { kind: 'all' },
       preselect: 'none',
       title: 'Comparison reports',
-      subtitle: `${plural(this.documents.length, 'report document', 'report documents')} written from model comparisons, and the reports of their runs`
+      subtitle: `${plural(this.documents.length, 'report document', 'report documents')} written from model comparisons`
     });
   }
 

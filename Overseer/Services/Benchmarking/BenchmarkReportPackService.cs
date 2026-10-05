@@ -40,6 +40,22 @@ public sealed class BenchmarkReportPackPreparation
     public const int DefaultAnswerExcerptChars = 600;
     public const int DefaultMaxOutputTokens = 16000;
 
+    /// <summary>Why the Report Pack refuses a subject with no peer: its documents compare models.</summary>
+    public const string PeerlessReportRefusal =
+        "A comparison report compares one model with at least one other. To write a run's or a battery run's own reports, use the AI Reports tab of its report.";
+
+    /// <summary>
+    /// True when the comparison holds another entry that is not Excluded, the entries the fact sheet
+    /// takes as the subject's peers. Checked by the Report Pack endpoints only: a run's and a battery
+    /// run's own documents are written from a one-entry comparison.
+    /// </summary>
+    public static bool HasPeers(BenchmarkModelComparisonDto comparison, BenchmarkModelComparisonEntryDto subject)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        ArgumentNullException.ThrowIfNull(subject);
+        return comparison.Entries.Any(e => !e.Excluded && !string.Equals(e.Key, subject.Key, StringComparison.Ordinal));
+    }
+
     public static int AnswerExcerptChars(IConfiguration configuration)
         => Math.Max(0, configuration.GetValue<int?>("Benchmark:ReportPack:AnswerExcerptChars") ?? DefaultAnswerExcerptChars);
 

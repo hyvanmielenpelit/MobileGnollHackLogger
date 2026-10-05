@@ -63,6 +63,18 @@ public class BenchmarkPerQuestionVerdictSummary
     public IReadOnlyList<(string Claim, string? Citation)> SupportedAccusations { get; set; } = Array.Empty<(string, string?)>();
 
     /// <summary>
+    /// The sentences of the answer this assessor charged as false that the claim verifier checked,
+    /// by verdict: refuted (the charge upheld), supported (the charge cleared) and indeterminate. In
+    /// a panel run, only the member's own charges.
+    /// </summary>
+    public int ChargedSentencesUpheld { get; set; }
+    public int ChargedSentencesCleared { get; set; }
+    public int ChargedSentencesUndecided { get; set; }
+
+    /// <summary>The total of the three charged-sentence counts.</summary>
+    public int ChargedSentenceCount => ChargedSentencesUpheld + ChargedSentencesCleared + ChargedSentencesUndecided;
+
+    /// <summary>
     /// The primary assessor's advisory re-grade with the verifier's findings in hand, and what it
     /// withdrew. Null when the answer was not re-graded.
     /// </summary>
@@ -780,8 +792,16 @@ public static class BenchmarkAssessmentPrompt
     ///     instruction when the tools run out (T2); a one-line macro's body counts as evidence in the
     ///     citation liveness check (B6); a terminal per-question timeout's error text records the
     ///     phase it ended in (H6). ScoringMethodVersion stays 14.
+    /// v53: a member whose charged sentence the verifier refuted is never verification-cleared, in
+    ///     the panel sensitivity or the single-assessor count (B1). The synthesis footer counts a
+    ///     contested accuracy deduction on either member and the charges the verifier upheld (B2).
+    ///     The synthesis data blocks state each assessor's charged sentences by verdict, and
+    ///     instruction 6 says a refuted charge is one the verifier agreed with (B3). An answer whose
+    ///     own claims were not checked prints its charged sentences on the Claim Verification line
+    ///     (B4). Report facts date each subject's first run by its start (B5). ScoringMethodVersion
+    ///     stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "52";
+    public const string HarnessVersion = "53";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1483,7 +1503,8 @@ public static class BenchmarkAssessmentPrompt
         // one of these data blocks, not to counting sentences. A panel member's own claim figures are
         // not the run's, so a panel run adds the pointer to its run-wide line.
         sb.AppendLine("6. Every count you state — how many answers sit at a given level, how many claims were supported, refuted or indeterminate — is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score."
-            + (panelRunClaimTotals != null ? " When you state a run-wide claim total, copy the 'All claims checked' line." : string.Empty));
+            + (panelRunClaimTotals != null ? " When you state a run-wide claim total, copy the 'All claims checked' line." : string.Empty)
+            + " A charged sentence the verifier refuted is one where the verifier agreed with you: never write that nothing was refuted when one was.");
         // The structured counterpart of the two prose fields: a second synthesis of the same run is
         // compared with this one entry by entry, which prose cannot support.
         sb.AppendLine($"7. List every strength and weakness you name in `findings` as well, one entry each: `kind` is \"strength\" or \"weakness\"; `category` is one of {string.Join(", ", BenchmarkAssessmentParser.SynthesisFindingCategories)}; `questions` lists the question numbers the finding rests on, empty for a run-wide finding; `text` states it in one sentence.");
@@ -1500,7 +1521,9 @@ public static class BenchmarkAssessmentPrompt
         // panel member's summaries carry its own claims only, so a panel run prints them as the
         // member's and adds the run's union, which is what the report prints.
         bool memberCounts = verdicts.Any(v => v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue);
-        if (memberCounts || panelRunClaimTotals?.Claims > 0)
+        bool claimLines = memberCounts || panelRunClaimTotals?.Claims > 0;
+        int chargedTotal = verdicts.Sum(v => v.ChargedSentenceCount);
+        if (claimLines || chargedTotal > 0)
         {
             int unverified = verdicts.Sum(v => v.UnverifiedClaimCount);
             int withClaims = verdicts.Count(v => v.UnverifiedClaimCount > 0);
@@ -1508,15 +1531,19 @@ public static class BenchmarkAssessmentPrompt
             int refuted = verdicts.Sum(v => v.ClaimsRefutedCount ?? 0);
             int indeterminate = verdicts.Sum(v => v.ClaimsIndeterminateCount ?? 0);
             sb.AppendLine("--- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---");
-            if (panelRunClaimTotals == null)
+            if (claimLines && panelRunClaimTotals == null)
             {
                 sb.AppendLine($"Unverified claims: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
             }
-            else
+            else if (claimLines)
             {
-                var all = panelRunClaimTotals;
+                var all = panelRunClaimTotals!;
                 sb.AppendLine($"Claims you raised: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
                 sb.AppendLine($"All claims checked in this run (both members, each counted once): {all.Claims} across {all.Answers} answer(s); verified: {all.Supported} supported, {all.Refuted} refuted, {all.Indeterminate} indeterminate");
+            }
+            if (chargedTotal > 0)
+            {
+                sb.AppendLine($"Sentences you charged as false in this run: {chargedTotal} — upheld {verdicts.Sum(v => v.ChargedSentencesUpheld)}, cleared {verdicts.Sum(v => v.ChargedSentencesCleared)}, undecided {verdicts.Sum(v => v.ChargedSentencesUndecided)}.");
             }
             sb.AppendLine("--- END CLAIM VERIFICATION TOTALS ---");
             sb.AppendLine();
@@ -1607,6 +1634,10 @@ public static class BenchmarkAssessmentPrompt
                 if (v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue)
                 {
                     sb.AppendLine($"Claim verification: {v.ClaimsSupportedCount ?? 0} supported, {v.ClaimsRefutedCount ?? 0} refuted, {v.ClaimsIndeterminateCount ?? 0} indeterminate (checked against source/wiki after grading; advisory, not reflected in the scores above)");
+                }
+                if (v.ChargedSentenceCount > 0)
+                {
+                    sb.AppendLine($"Sentences you charged as false: {v.ChargedSentenceCount} — upheld by the claim verifier (refuted) {v.ChargedSentencesUpheld}, cleared (supported) {v.ChargedSentencesCleared}, undecided {v.ChargedSentencesUndecided}.");
                 }
                 if (v.RefutedClaims != null && v.RefutedClaims.Count > 0)
                 {

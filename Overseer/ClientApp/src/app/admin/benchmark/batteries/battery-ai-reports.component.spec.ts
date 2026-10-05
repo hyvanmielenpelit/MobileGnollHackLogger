@@ -205,13 +205,14 @@ describe('BatteryAiReportsComponent', () => {
 
   // --- Rows and tags ---
 
-  it('lists both documents as not written, from the battery run\'s battery-completion documents', () => {
+  it('lists every document as not written, from the battery run\'s battery-completion documents', () => {
     setUp();
     load(batteryRun());
 
     expect(service.listReportDocuments).toHaveBeenCalledWith({ subject: 'battery:7', origin: 'batteryCompletion' });
     expect(status()).toBe('');
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-name'))).toEqual(['Executive Summary', 'Report for AI Researchers and Developers']);
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-name')))
+      .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
     for (const row of rows()) {
       expect(rowText(row, '.rr-ai-doc-status.is-missing')).toBe('Not written');
       expect(row.querySelector('button')).toBeNull();
@@ -229,6 +230,7 @@ describe('BatteryAiReportsComponent', () => {
         status: 'CompletedWithWarnings', durationMs: 72000, costUsd: 0.08, sameProviderAcknowledged: true
       }),
       aiDoc(71, 1),
+      aiDoc(74, 3),
       // A Report Pack document about the same battery run is not one of its AI-written reports.
       aiDoc(73, 1, { origin: 1, createdAtUtc: '2026-10-03T00:00:00Z' })
     ]));
@@ -236,18 +238,19 @@ describe('BatteryAiReportsComponent', () => {
     load(batteryRun({ reportDocumentsStatus: 4 }));
 
     const list = rows();
-    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Written with warnings']);
+    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Written with warnings', 'Written']);
     expect(list[1].querySelector('.rr-ai-doc-status')?.classList).toContain('is-warning');
-    expect(list.map(row => row.getAttribute('data-document-id'))).toEqual(['71', '72']);
+    expect(list.map(row => row.getAttribute('data-document-id'))).toEqual(['71', '72', '74']);
     expect(list.map(row => rowText(row, '.rr-ai-doc-meta'))).toEqual([
       'by Test Writer on 2026-10-02 10:15 UTC',
-      'by Writer B on 2026-10-02 11:00 UTC · 1 min 12 s · $0.08 · same provider, acknowledged'
+      'by Writer B on 2026-10-02 11:00 UTC · 1 min 12 s · $0.08 · same provider, acknowledged',
+      'by Test Writer on 2026-10-02 10:15 UTC'
     ]);
     expect(list[0].querySelector('.gh-tag-changed')).toBeNull();
     expect(list[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('A member run changed since this document was written');
     const views = list.map(row => row.querySelector('button.rr-ai-doc-view') as HTMLButtonElement);
     expect(views.map(button => button.getAttribute('aria-label')))
-      .toEqual(['View the Executive Summary', 'View the Report for AI Researchers and Developers']);
+      .toEqual(['View the Executive Summary', 'View the Report for AI Researchers and Developers', 'View the Internal Improvement Brief']);
     const deletes = list.map(row => row.querySelector('button.rr-ai-doc-delete') as HTMLButtonElement);
     for (const button of deletes) {
       expect(button.classList).toContain('action-btn-danger');
@@ -314,7 +317,7 @@ describe('BatteryAiReportsComponent', () => {
       expect(service.deleteBatteryReportDocument).toHaveBeenCalledWith(7, 71);
       expect(confirm.open).toBe(false);
       expect(status()).toBe('The Executive Summary was deleted.');
-      expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Not written']);
+      expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Not written', 'Not written']);
       expect(component.writerConfigId).toBeNull();
       expect(section().querySelector('.rr-ai-writer-note')?.textContent?.trim())
         .toBe('Choose a report writer. The deleted document was written by Test Writer.');
@@ -397,7 +400,7 @@ describe('BatteryAiReportsComponent', () => {
     const tip = byId('ReportWriterHint') as HTMLElement;
     const groups = Array.from(tip.querySelectorAll('dl > div')) as HTMLElement[];
     expect(groups.map(group => group.querySelector('.gh-info-term')?.textContent?.trim()))
-      .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Both']);
+      .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief', 'Every document']);
     expect((tip.textContent ?? '').replace(/\s+/g, ' ')).toContain('composite index over several suites');
   });
 
@@ -413,7 +416,7 @@ describe('BatteryAiReportsComponent', () => {
     expect((byId('WriteEstimate')?.textContent ?? '').trim()).toBe('Estimating…');
     tick(BATTERY_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
-    expect(service.estimateBatteryReports).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 2] });
+    expect(service.estimateBatteryReports).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 2, 3] });
     const estimate = byId('WriteEstimate') as HTMLElement;
     expect(estimate.classList).toContain('gh-estimate-panel');
     expect(estimate.getAttribute('role')).toBe('status');
@@ -425,7 +428,7 @@ describe('BatteryAiReportsComponent', () => {
     writeButton().click();
     fixture.detectChanges();
 
-    expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 2] });
+    expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 2, 3] });
     expect(status()).toBe('Waiting for the report writer');
     expect(writeButton().disabled).toBe(true);
     expect(changes.map(change => change.status)).toEqual([1]);
@@ -447,11 +450,11 @@ describe('BatteryAiReportsComponent', () => {
 
     // The status poll sees the job finish and lists the documents again.
     service.getBatteryReportJob.mockReturnValue(of(jobView(3)));
-    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1), aiDoc(72, 2)]));
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1), aiDoc(72, 2), aiDoc(74, 3)]));
     tick(BATTERY_REPORT_DOCUMENTS_POLL_MS);
     fixture.detectChanges();
     expect(status()).toBe('');
-    expect(section().querySelectorAll('.rr-ai-doc-view').length).toBe(2);
+    expect(section().querySelectorAll('.rr-ai-doc-view').length).toBe(3);
     expect(section().querySelector('.rr-ai-write')).toBeNull();
     expect(changes.map(change => change.status)).toEqual([1, 3]);
     flush();
@@ -465,7 +468,11 @@ describe('BatteryAiReportsComponent', () => {
 
     expect(checkbox(1).checked).toBe(true);
     expect(checkbox(2).checked).toBe(true);
+    expect(checkbox(3).checked).toBe(true);
     checkbox(1).click();
+    fixture.detectChanges();
+    expect(writeButton().textContent?.trim()).toBe('Write Reports');
+    checkbox(3).click();
     fixture.detectChanges();
     expect(writeButton().textContent?.trim()).toBe('Write Report');
     writeButton().click();
@@ -528,7 +535,7 @@ describe('BatteryAiReportsComponent', () => {
     expect(anyway.querySelector('svg.btn-icon')).not.toBeNull();
     anyway.click();
     expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, {
-      writerModelConfigurationId: 9, audiences: [1, 2], acknowledgeSameProvider: true
+      writerModelConfigurationId: 9, audiences: [1, 2, 3], acknowledgeSameProvider: true
     });
     expect(confirm.open).toBe(false);
   });
@@ -687,7 +694,7 @@ describe('BatteryAiReportsComponent', () => {
 
     component.writingDialog!.finished.emit(jobView(3));
     fixture.detectChanges();
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written', 'Not written']);
 
     component.writingDialog!.viewRequested.emit(71);
     expect(viewerOpen).toHaveBeenCalledTimes(1);
@@ -721,6 +728,20 @@ describe('BatteryAiReportsComponent', () => {
     expect(document.activeElement).toBe(button);
   });
 
+  it('hands its member diagnostics callback to its own Download Center', () => {
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
+    setUp();
+    const memberDiagnosticsText = (run: { id: number }): string => `diagnostics of run ${run.id}`;
+    fixture.componentRef.setInput('memberDiagnosticsText', memberDiagnosticsText);
+    load(batteryRun());
+
+    (section().querySelector('.rr-ai-open-downloads') as HTMLButtonElement).click();
+
+    expect(vi.mocked(downloadCenterOpen).mock.lastCall![0]).toEqual({
+      kind: 'battery', batteryRunId: 7, label: 'Core Battery · Test Model', memberDiagnosticsText
+    });
+  });
+
   it('hands the button to a host that listens', () => {
     service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
     setUp();
@@ -740,10 +761,10 @@ describe('BatteryAiReportsComponent', () => {
     setUp();
     load(batteryRun());
 
-    expect(rows().length).toBe(2);
+    expect(rows().length).toBe(3);
     expect(section().querySelector('.rr-ai-doc-status')).toBeNull();
     pending.next([aiDoc(71, 1)]);
     fixture.detectChanges();
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written', 'Not written']);
   });
 });

@@ -563,7 +563,7 @@ describe('BatteryProgressDialogComponent', () => {
       const items = railItems();
       expect(items[2].classList).toContain('is-current');
       expect(items[2].getAttribute('aria-current')).toBe('step');
-      expect(stageNote(items[2])).toBe('Writing the Executive Summary and the Researcher report');
+      expect(stageNote(items[2])).toBe('Writing the AI-written reports');
       expect(text('.bp-stage-line')).toBe('Writing the AI reports…');
       expect(service.getBatteryReportJob).toHaveBeenCalledWith(7);
 

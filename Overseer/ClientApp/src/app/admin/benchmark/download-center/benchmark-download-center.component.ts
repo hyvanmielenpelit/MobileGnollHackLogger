@@ -20,7 +20,9 @@ export {
   DOWNLOAD_CENTER_REPORT_JOB_POLL_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
   DOWNLOAD_PACKAGES,
+  INCLUDE_MEMBER_RUNS_TIP,
   INTERNAL_REASONS,
+  MEMBER_RUNS_FAILED_NOTICE,
   PDF_PAPERS,
   ROW_NOTES,
   STORED_SETTINGS_VERSION,
@@ -36,8 +38,11 @@ export type {
   DownloadCenterContext,
   DownloadCenterDocumentsContext,
   DownloadCenterLibraryContext,
+  DownloadCenterLibraryScope,
+  DownloadCenterPreselect,
   DownloadCenterRunContext,
   DownloadCenterRunInfo,
+  DownloadCenterSubjectScope,
   DownloadFailure,
   DownloadFormat,
   DownloadPackage,
@@ -55,7 +60,8 @@ let nextInstanceId = 0;
  * The Download Center dialog: its `<dialog>`, header and close button around
  * `app-download-center-panel`, which holds the packages, the documents table and the download.
  * Opened by the run report's and the battery run report's **Downloads** and by the Model Comparison
- * launcher's **Open Download Center**; none lends chart actions.
+ * launcher's **Open Download Center**; none lends chart actions. The panel's **Open comparison
+ * documents** switches this dialog to the comparison documents about the run or battery run.
  *
  * The panel's nested dialogs stop their own close and cancel events, so this dialog's `close` event
  * is always its own.
@@ -89,14 +95,17 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   context: DownloadCenterContext | null = null;
 
   private batteryDownloadsSub: Subscription | null = null;
+  private comparisonDocumentsSub: Subscription | null = null;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
     this.batteryDownloadsSub = this.panel.openBatteryDownloads.subscribe(id => this.openBatteryDownloads.emit(id));
+    this.comparisonDocumentsSub = this.panel.openComparisonDocuments.subscribe(context => this.open(context));
   }
 
   ngOnDestroy(): void {
     this.batteryDownloadsSub?.unsubscribe();
+    this.comparisonDocumentsSub?.unsubscribe();
   }
 
   /** Shows the dialog for a run, a battery run, chosen documents or a library, at the last package and paper used. */
@@ -136,7 +145,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       return context.title;
     }
     if (context?.kind === 'library') {
-      return context.title || 'Report documents';
+      return context.title || (context.scope.kind === 'subject' ? 'Comparison documents' : 'Report documents');
     }
     return 'Downloads';
   }
@@ -158,11 +167,13 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       return context.subtitle;
     }
     if (context.kind === 'library') {
-      return context.scope.kind === 'comparison'
-        ? 'The report documents of this comparison and the reports of their runs'
-        : 'Every report document written from a model comparison, and the reports of their runs';
+      switch (context.scope.kind) {
+        case 'comparison': return 'The report documents of this comparison';
+        case 'subject': return `About ${context.scope.label}`;
+        default: return 'Every report document written from a model comparison';
+      }
     }
     const count = context.documentIds.length;
-    return `${count} report document${count === 1 ? '' : 's'} and the reports of their runs`;
+    return `${count} report document${count === 1 ? '' : 's'}`;
   }
 }

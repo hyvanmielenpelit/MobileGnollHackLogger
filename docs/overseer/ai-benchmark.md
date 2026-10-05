@@ -44,7 +44,7 @@ The launcher's *Test Setup* fieldset opens with **Run Target**, a radio group:
 
 *Start* then starts a battery run (`POST /api/admin/benchmark/batteries/runs`) instead of a run or a
 series, and a battery banner follows it. Every launcher setting is remembered across reloads as soon as
-it is changed, Run Target and the battery included; the reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's two documents once it
+it is changed, Run Target and the battery included; the reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's three documents once it
 has finished and been analyzed, and the member runs write none. Batteries are defined on the
 **Multi-Suite** tab, and battery runs are listed in **Run History**. Everything about batteries is in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
@@ -70,8 +70,8 @@ The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there i
 **Stage 4 — Writing reports.** When the run names a report writer (`reportWriterModelConfigurationId`), the roster has a *Report writer* row (name, thinking level, provider badge, from `ReportWriterDisplayName`, `ReportWriterThinkingLevel` and `ReportWriterProvider`), the stage rail has a fourth item, *Writing reports*, and every stage label reads *Stage n of 4* (*of 3* without a writer, the diagnostics' `Stage:` line included). The run itself is not in this stage: it ends **Completed** when scoring ends, and stage 4 follows it, driven by the run's `reportDocumentsStatus` (the automatic run-completion documents of [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 11).
 
 - **Current** while a Completed run's status is *Pending* or *Writing*, and — because the server queues the job just after scoring — while it is still *NotRequested* for up to `RUN_REPORT_STAGE_GRACE_MS` = 30 s after the dialog first saw the run terminal. Stages 1–3 then show as done. The dialog keeps polling the run, and polls the run's report job (`GET …/runs/{runId}/report-documents/job`) beside it; the status line reads, for example, *"Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)"*, *"… preparing the fact sheet"* or *"… writing the Executive Summary (1 of 2)"* (*repairing* during a repair turn).
-- **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 2 documents, 1m 12s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
-- **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"2 documents, 1m 12s"*), *None written* or *Not written*.
+- **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 3 documents, 1m 48s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
+- **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"3 documents, 1m 48s"*), *None written* or *Not written*.
 - **The cost panel** has a *Report writer* row — the job's running cost while writing, then `ReportDocumentsCostUsd` — and *Run total with reports*, in a block of its own under the note that the AI-written reports are outside the benchmark's own cost. The run's stored `EstimatedCost` and every figure above that block are unchanged.
 - **Completion signal.** One user action starts one chain of server work, and the chime, the tab-title mark and the desktop notification fire once, at its end: when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends. A battery member's terminal poll reads its battery run fresh; when that battery run is live, still has post-run work (`postRunWork` not `None`), changed status while the run ran, or is already watched, the battery run takes the signal and the member does not chime on its own. The run's signal key carries its generation (`run:<id>:<rerunCompletedAtUtc ?? completedAtUtc>`), so one settled state signals once and a later re-run of the same run signals again (§ *Harness Version 52 Updates*).
 - **Diagnostics** gain a `--- REPORTS ---` block: writer (provider / model id, thinking), status, message, documents written, duration, tokens and cost, marked as outside the run's own cost.
@@ -7151,6 +7151,118 @@ move. A battery run started under harness 51 refuses to launch members under 52
 (`HarnessVersionRefusal`), but Continue on one whose every slot is usable only finishes it, so the check
 does not apply there.
 
+### Harness Version 53 Updates
+
+The battery runs 9–10 round (runs 92–95, 2026-10-06). A member whose charged sentence the claim verifier
+refuted is never verification-cleared, the synthesis footer counts both panel members and the charges
+the verifier upheld, the final synthesis is told what the verifier did with each sentence its assessor
+charged, an answer whose own claims were not checked says what was, and report facts date a subject's
+first run by its start. `HarnessVersion` moves to **"53"**; `ScoringMethodVersion` stays **14**. No
+migration, and neither `ToolGuidesSha256` nor `CandidateSystemPromptSha256` moves. The same round gives
+every AI-written document one home (*Document homes*, below), which moves no version.
+
+#### What was wrong
+
+- **B1.** A charged (accused) sentence the verifier **refuted** is one where the verifier agreed with the
+  assessor that charged it. The panel verification-cleared Accuracy sensitivity and the single-assessor
+  *Verification-cleared Accuracy deductions* count read only the member's ordinary claims, so a member
+  whose charge the verifier upheld, but whose own claims were all supported, was still counted as
+  cleared and lifted (the shapes of run 93 Q3 and run 94 Q14).
+- **B2.** In a panel run the synthesis footer counted *contested accuracy deduction(s)* on member A only,
+  and never named a charge the verifier upheld.
+- **B3.** The final synthesis's data blocks gave each assessor the verdicts on the claims it raised but
+  not on the sentences it charged as false, so nothing stopped a synthesis from writing that nothing was
+  refuted when one of its charges had been upheld.
+- **B4.** An answer whose own claims were not checked printed *"Claim Verification: 0 supported, 0
+  refuted, 0 indeterminate"* although the verifier had checked its charged sentences or assessor
+  statements (run 93 Q16).
+- **B5.** A comparison document's *Compared models* table dated each subject's *first run* by its
+  earliest **completion**, and the Model Comparison figure badge counted a battery result's member runs
+  rather than its battery passes.
+
+#### Grading
+
+- **Upheld charges are never cleared (B1).** `BenchmarkService.UpheldAccusations(verifications, members)`
+  lists the accused-quote items attributed to the members (`accusedBy`, else `raisedBy`; an item with
+  neither counts for every member) whose effective verdict is Refuted. `BenchmarkPanelSensitivity.IsEligible`
+  returns false for a member with any, and `BenchmarkService.IsVerificationClearedAccuracyDeduction`
+  also requires none for member A (so an unlabeled single-assessor item counts). Because
+  `QualifiesForEvidenceInformedRegrade` uses that function, such an answer no longer qualifies through
+  that path for the advisory evidence-informed re-grade either. With the charge supported, a member is
+  lifted as before.
+- **The synthesis is told the verdicts on its charges (B3).** When an assessor charged sentences, the
+  final-synthesis totals block adds *"Sentences you charged as false in this run: k — upheld a, cleared
+  b, undecided c."* (the block now prints for charges alone), and each answer's block adds *"Sentences you
+  charged as false: k — upheld by the claim verifier (refuted) a, cleared (supported) b, undecided c."*,
+  counting only that assessor's own charges. Instruction 6 ends: *"A charged sentence the verifier
+  refuted is one where the verifier agreed with you: never write that nothing was refuted when one
+  was."* This changes the synthesis input, so a harness-52 and a harness-53 synthesis are not
+  like-for-like.
+
+#### Report (all runs)
+
+- **The synthesis footer (B2).** In a panel run, *contested accuracy deduction(s)* counts the answers
+  where **either** member carries `ContestedAccuracyDeduction` (member B's flags as the per-answer
+  *Integrity Flags (member B)* line reads them). A new part, *"<n> charged sentence(s) upheld by the claim
+  verifier"*, is added when above zero, and it alone also makes the sentence print.
+- **The per-answer verification line (B4).** When no ordinary claim of the answer was checked but
+  charged sentences or assessor statements were, the *Claim Verification* line counts those instead:
+  *"1 charged sentence checked — supported"*, or *"2 charged sentences checked — supported 1, refuted 1,
+  indeterminate 0; 1 assessor statement checked — refuted"* (`BenchmarkReportBuilder.ChargesOnlyVerificationText`).
+- B1's exclusion also applies to the report's *Verification-cleared Accuracy deductions* and the panel
+  sensitivity clause.
+
+B1, B2 and B4 are computed when the report is rendered, so a stored run re-rendered from harness-53
+code shows them. A battery analysis computes its `sensitivity.panelVerificationCleared` when it is
+analyzed: one computed before needs **Recompute analysis** to apply B1. B3 reaches only syntheses written
+from harness 53 on.
+
+#### Small defects (B5)
+
+- **First run dates.** `BenchmarkReportFacts` and `BenchmarkBatteryReportFacts` set `FirstRunUtc` to the
+  earliest `StartedAtUtc` and `LastRunUtc` to the latest `CompletedAtUtc ?? StartedAtUtc`, so *Compared
+  models* prints each subject's real first start. Stored documents are immutable and keep their values.
+- **The battery pass badge.** When every plotted entry of a Model Comparison figure is a battery result,
+  the runs badge (`figure-chrome.ts`, `runsBadge`) counts battery passes — runs divided by suites, rounded
+  down, at least 1: *"1 battery pass each"*, *"3 battery passes each"* or *"1–3 battery passes each"*.
+  Chart chrome only; no figure changes.
+- **The battery Download Center subtitle** read *Battery run #N* twice; it reads *Battery run #N ·
+  <battery> · <model>*.
+
+#### Document homes, no version effect
+
+Every AI-written document has one home, decided by whether it has peers
+([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 1a; the decision and its rejected
+alternatives are [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 7.2, decision D8):
+
+- **A run's and a battery run's own documents** are written in their report's **AI Reports** tab and
+  automatically at the end of the run or battery run, and listed in their own Download Center. They are
+  now **three**: the **Internal Improvement Brief** is the third completion document beside the
+  Executive Summary and the Report for AI Researchers and Developers, and the automatic job writes every
+  missing one. A run or battery run that already has some gets the rest from its **AI Reports** tab.
+- **Comparison documents** — one subject, at least one peer — are written on the Model Comparison
+  wizard's step 3 and listed on step 4 and in the launcher's **Comparison reports**. Step 3 needs two
+  entries that are not Excluded; its summary reads *"Write AI reports that compare one model with the
+  others in this comparison."*, and with one comparable entry its reason reads *"A comparison report
+  compares one model with at least one other. Add another model on step 1, or write a run's or battery
+  run's own reports in the AI Reports tab of its report."* The server refuses a peerless preview and
+  start, and a second document of one type about one subject in one comparison (409); step 3 shows such
+  a document unchecked and disabled. Step 4 lists only the comparison's Report Pack documents — no run
+  report rows — and preselects the documents of the last job of the session.
+- **The run and battery Download Centers** list their own origin only and point to the comparison
+  documents about their subject with **Open comparison documents**. The battery Download Center's
+  **Include member runs**, checked whenever it opens, lists every member run's report, tool-call log and
+  diagnostics beside the battery's own documents.
+- **File names** of comparison documents name their peers (`battery-run-9_vs-battery-run-10_…`) or carry
+  the comparison key (`vs-4-models-3f9a0c21_`), so two comparisons never share a name.
+
+The details are in [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 1a, 5, 8, 9, 11, 12
+and 14, and [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) §§ 4.3, 4.7 and 7.2.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 52 → 53, so a harness-53 run differs from
+a harness-52 one on that key: B3 changes what the synthesis is given. A battery run started under
+harness 52 refuses to launch members under 53 (`HarnessVersionRefusal`).
+
 ---
 
 ## 3. Assessor Strategy
@@ -7438,7 +7550,7 @@ release, while a family name lasts.
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
-| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen on the Model Comparison wizard's Reports step, in the launcher's optional **Report Writer** field for a run's own two documents, and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Report for AI Researchers and Developers long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); the two can have different writers. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
+| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen on the Model Comparison wizard's Reports step, in the launcher's optional **Report Writer** field for a run's own three documents, and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Report for AI Researchers and Developers long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); each document can have a different writer. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
 
 All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
 Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
@@ -8432,9 +8544,9 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
   > There is deliberately **no accept-all endpoint**. § 7 rung 1 of `server_benchmark_to_chat_transfer` requires human authorship of curated knowledge, and `BenchmarkRubricGapDetector`'s own documentation says a gap is *"surfaced for a human to fold into the rubric — never applied automatically"*. One endpoint, one draft, one click, one item-revision bump. Editing before accepting strengthens the authorship claim rather than weakening it.
 
 #### Report Packs and Documents
-- `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and writer prompts for a report pack, without a model call (body as for the start). Returns the subject, the lettered peers, the estimated tokens and cost per document, the same-provider warning and any refusal.
-- `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for an unknown entry or an Excluded subject; 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
-- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary and Report for AI Researchers and Developers) with the writer in the body, `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`, which is recorded on the run as its report writer; `audiences` names the documents to write, and null or empty writes every missing one. Returns 202 with the run's Pending status and the documents the job will write. 400 when the run has no final synthesis, an audience is not a run-completion document, or the writer is refused (unusable, the model under test, the endpoint policy); 404 for an unknown run; 409 when a requested document is already written (or, with none requested, both are), when a job for the run is Pending or Writing, or, with a `SameProviderWarningDto` of role `reportWriter`, for a writer of the candidate's provider without `acknowledgeSameProvider`; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
+- `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and writer prompts for a report pack, without a model call (body as for the start). Returns the subject, the lettered peers, the estimated tokens and cost per document, the same-provider warning, any refusal and `writtenDocuments` — the Report Pack documents already stored for this comparison and subject, the newest per audience. A subject with no peer is answered with the peerless refusal and no estimate.
+- `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, batteryRunIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for battery results mixed with runs or groups; 400 for an unknown entry or an Excluded subject; 400 for a subject with no peer (*"A comparison report compares one model with at least one other. …"*); 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 409 `{ error }` when a requested document is already written for this comparison and subject (*"The <document name> about <subject> is already written for this comparison. Delete it in step 4 to write it again."*); 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary, Report for AI Researchers and Developers and Internal Improvement Brief) with the writer in the body, `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`, which is recorded on the run as its report writer; `audiences` names the documents to write, and null or empty writes every missing one. Returns 202 with the run's Pending status and the documents the job will write. 400 when the run has no final synthesis, an audience is not a run-completion document, or the writer is refused (unusable, the model under test, the endpoint policy); 404 for an unknown run; 409 when a requested document is already written (or, with none requested, every one is), when a job for the run is Pending or Writing, or, with a `SameProviderWarningDto` of role `reportWriter`, for a writer of the candidate's provider without `acknowledgeSameProvider`; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
 - `GET /api/admin/benchmark/runs/{runId}/report-documents/job`: The run's current or last run-completion job: phase (Queued, Preparing, Writing, Finished), queue position and blocking job, writer, per-document times, tokens and cost, the log, the persisted status and message, and the server's time. 204 when this process knows no job for the run (none since a restart, or a finished job older than 6 hours); 404 for an unknown run.
 - `POST /api/admin/benchmark/runs/{runId}/report-documents/cancel`: Cancel the run's job, queued or writing; documents already written are kept and the run's status becomes Canceled. 202 with the job view; 409 when nothing is in progress; 404 for an unknown run.
 - `POST /api/admin/benchmark/runs/{runId}/report-documents/estimate`: Per-document and total cost estimates for writing the run's documents with a writer (body `{ writerModelConfigurationId, audiences? }`), with its refusal or same-provider warning. No model call.

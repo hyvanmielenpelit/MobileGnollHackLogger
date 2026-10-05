@@ -1,12 +1,13 @@
 # Report Packs — AI-Written Documents about One Model
 
 A **report pack** is a set of up to three documents about one model of a Model Comparison, written in
-the context of the other models compared with it. The documents are for three different readers: the
-model's provider or a manager, AI researchers and model developers, and the Overseer team itself.
+the context of the other models compared with it — at least one other, since a pack compares models
+(§ 1a). The documents are for three different readers: the model's provider or a manager, AI researchers
+and model developers, and the Overseer team itself.
 
-The same machinery also writes a run's own **run-completion documents**: the Executive Summary and the
-Report for AI Researchers and Developers about one run on its own, with no peers, written once after the
-run is scored by the report writer the run names (§ 11).
+The same machinery also writes a run's own **run-completion documents**: the Executive Summary, the
+Report for AI Researchers and Developers and the Internal Improvement Brief about one run on its own,
+with no peers, written once after the run is scored by the report writer the run names (§ 11).
 
 A **battery result** — one model's composite over the suites of a battery — can be a subject too: of a
 pack from a comparison of battery results, and of its own **battery-completion documents**, written once
@@ -52,8 +53,9 @@ and a separate **report
 writer** model, and chooses which documents to write. The other entries of the comparison are the
 subject's **peers**, lettered A, B, C… in quality-rank order.
 
-Any entry that is not **Excluded** can be the subject. A **Degraded** entry is allowed: its degraded axis
-is omitted from ranking, and the fact sheet marks the affected facts unavailable with the reason.
+Any entry that is not **Excluded** can be the subject, as long as at least one other entry is not
+Excluded either: a subject with no peer is refused (§ 1a). A **Degraded** entry is allowed: its degraded
+axis is omitted from ranking, and the fact sheet marks the affected facts unavailable with the reason.
 
 | Document | Reader | Disclosure | Skeleton |
 |---|---|---|---|
@@ -88,8 +90,16 @@ Researchers and Developers**. Its stored type is still `BenchmarkReportAudience.
 a document stored under the earlier name *Technical Report* is relabeled on display
 (`BenchmarkReportRenderService.CurrentTitle`); its file names use the label `Researcher_Report` (§ 9).
 
+**The Internal Improvement Brief is also a completion document.** From 2026-10-06 it is the third
+run-completion document of a run (§ 11) and the third battery-completion document of a battery run
+(§ 14), written in the stand-alone form beside the other two. Its `modelResult` slot asks how the
+subject performed, *"against its peers when it has them"*, so one prompt serves both forms; the
+renderer golden files `internal_standalone.md` (a run subject) and `internal_battery_standalone.md` (a
+battery subject) pin the stand-alone brief.
+
 **The stand-alone (peerless) form.** A comparison with only the subject — every run-completion document
-(§ 11) and every battery-completion document (§ 14) — has no peers. The fact sheet then marks every fact that compares the subject with peers
+(§ 11) and every battery-completion document (§ 14) — has no peers. The Report Pack no longer writes
+this form (§ 1a); Report Pack documents stored before 2026-10-06 may still have it. The fact sheet then marks every fact that compares the subject with peers
 unavailable with the reason *"A stand-alone run report has no peers."*
 (`BenchmarkReportFacts.StandaloneReason`); the writer prompt says there are no peers, that `{{peer:X}}`
 tokens are unavailable and that the subject is never compared with other models; and a question needs a
@@ -136,6 +146,45 @@ no such block.
 `corpus`. They are provisional, un-triaged inputs written by an AI from computed figures, never
 findings: each goes through the triage, evidence bar and tool-layer diagnostics of the
 `server_benchmark_to_chat_transfer` skill before anything is changed.
+
+---
+
+## 1a. Document Homes
+
+**One rule: a document has one home, decided by whether it has peers** (2026-10-06; the decision and
+the alternatives it rejected are `ai-benchmark-multi-suite.md` § 7.2, decision D8).
+
+| Kind | Home: written in | Listed in | Never listed in |
+|---|---|---|---|
+| A run's own documents (no peers) | Run report → **AI Reports** tab, and automatically at the end of the run (§ 11) | The run's Download Center | Model Comparison |
+| A battery run's own documents (no peers) | Battery Run Report → **AI Reports** tab, and automatically at stage 3 of the battery progress dialog (§ 14) | The battery run's Download Center | Model Comparison |
+| Comparison documents (one subject, at least one peer) | Model Comparison → step 3 (§ 12) | Step 4 (this comparison), and the launcher's **Comparison reports** (all comparisons) | A run's or battery run's Download Center. These show a pointer instead (§ 8) |
+
+What keeps each document in its home:
+
+- **A comparison report needs a peer.** `BenchmarkReportPackPreparation.HasPeers(comparison, subject)` is
+  true when another entry of the comparison is not Excluded and has a different key, the entries the fact
+  sheet takes as peers. The Report Pack's preview and start refuse a subject without one with
+  `BenchmarkReportPackPreparation.PeerlessReportRefusal`: *"A comparison report compares one model with at
+  least one other. To write a run's or a battery run's own reports, use the AI Reports tab of its
+  report."* (§ 9). The rule is checked by the Report Pack endpoints only, never inside `CompareAsync` or
+  `PrepareAsync`, because the run- and battery-completion paths prepare a one-entry comparison. The
+  wizard's step 3 is unavailable until the comparison holds two entries that are not Excluded (§ 12).
+- **One comparison document per comparison, subject and document type** (§ 5): step 3 shows a document
+  already written as unchecked and disabled, and the start refuses a duplicate with 409. Nothing is
+  overwritten or duplicated silently; to write one again, delete it on step 4.
+- **The run and battery Download Centers list their own documents only**, by `Origin`, and point to the
+  comparison documents about their subject with **Open comparison documents** (§ 8).
+- **The Internal Improvement Brief is a completion document** (§ 1), so a run's or battery run's brief
+  has a home without a one-entry comparison.
+- **Comparison file names carry the comparison** (§ 8), and a completion document has no `vs-` part, so
+  the two kinds never share a file name.
+
+**What stays as it was.** `ReportPack` (1) keeps meaning a document of a Report Pack job; no `Origin` was
+added. Report Pack documents stored before this rule — peerless ones included — are not re-homed: the
+launcher's **Comparison reports** still lists them and deletes them. A group can still be the subject of
+a comparison document *with* peers; a group's stand-alone documents have no home any more, which was
+accepted on 2026-10-06.
 
 ---
 
@@ -370,8 +419,8 @@ per document keeps the cost small. The same recommendation is in `ai-benchmark.m
 models and effort*, the *How the graders work* guide, the Reports step's writer info tip and the
 report-writer info tip of the run report's **AI Reports** tab.
 
-**Per document.** The two documents a run or a pack writes most often ask different things of the
-writer, and each can be written by a different model:
+**Per document.** The documents ask different things of the writer, and each can be written by a
+different model:
 
 - **Executive Summary** — short (about 2,400 output tokens) and plain-language, for decision-makers;
   clear, careful wording matters more than depth. A strong writing model — Claude Opus or GPT Sol — at
@@ -380,11 +429,14 @@ writer, and each can be written by a different model:
   must keep every figure exact and follow a strict schema. The strongest scoring-tier reasoning model you
   trust with numbers — Claude Opus or GPT Sol — at medium effort, high if its documents often need the
   repair turn. It costs roughly three to four times the summary.
-- **Both** — prefer a writer from another provider than the model under test (a same-provider writer is
-  allowed after a warning), and, where the roster allows, one that shares a family with neither panel
-  member either; avoid the economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT Astra).
-  For a run, two documents with two writers are two rounds: write one, then choose another writer for the
-  other.
+- **Internal Improvement Brief** — for the Overseer team; it weighs the whole fact sheet, rubrics and
+  grader notes included, and says what to improve in the chat, the benchmark and the model. The
+  strongest scoring-tier model — Claude Opus or GPT Sol — at medium effort.
+- **Every document** — prefer a writer from another provider than the model under test (a same-provider
+  writer is allowed after a warning), and, where the roster allows, one that shares a family with neither
+  panel member either; avoid the economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT
+  Astra). For a run or a battery run, documents with different writers are separate rounds: write one,
+  then choose another writer for the next.
 
 **Usage and guards.** Each writer call is recorded in `SystemAiUsageLog` with `RoleContext = 8`
 (Report Pack), run-completion documents included. While a job runs, the writer configuration cannot be
@@ -426,6 +478,15 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
   changing *Prices* in the wizard keeps the same documents listed. A run-completion document carries its
   one run's key. An index on `(ComparisonKey, Origin, CreatedAtUtc)` serves the list.
 
+**One Report Pack document per `(ComparisonKey, SubjectKey, Audience)`.** From 2026-10-06 a comparison
+holds at most one document of each type about each subject (§ 1a). The start endpoint enforces it, not a
+database constraint: it hashes the **request's** sources with `BenchmarkReportComparisonKey.From`, exactly
+as the stored key was hashed (Excluded entries included, because the request carries them), looks for a
+`ReportPack` row with that key, the subject's key and a requested audience, and refuses 409 when one
+exists (§ 9). The preview reports the same rows as `writtenDocuments`, the newest per audience. Rows
+stored before the rule may hold two documents of one type for one comparison and subject; the check then
+reports the newest. Completion documents are not counted: their `Origin` differs.
+
 The child table **`BenchmarkReportDocumentRuns (DocumentId, RunId)`** stores each subject run's
 **scoring fingerprint at generation**: `FinalScore`, `QualityIndex`, `SpeedIndex`,
 `ScoringMethodVersion`, `RerunCompletedAtUtc`, and the first 16 hex characters of SHA-256 over
@@ -440,7 +501,8 @@ was re-scored, re-run or deleted. `runChangedSinceGeneration` and `missingRunIds
 only, and so does the list's `runId` filter (§ 9): it matches every document with a subject row for the
 run — a group's or a battery result's documents whose subject includes it among others too — and never
 one where the run is only a peer. A run's own documents are those whose subject key **is** the run,
-`run:<id>`, which is what the run's Download Center lists (`subject=run:<id>`, § 8).
+`run:<id>`, with `Origin = RunCompletion`, which is what the run's Download Center lists
+(`subject=run:<id>&origin=runCompletion`, § 8).
 
 **Rows written before these columns existed.** At startup, `BenchmarkReportDocumentBackfill` gives every
 row with no `ComparisonKey` one derived from its stored `ComparisonRequestJson`, in batches of 200,
@@ -657,7 +719,7 @@ from now on.
   withheld"* in an Anonymized one — and *Pricing basis*. The Markdown front matter lists *Compared with*
   and *Pricing basis* in place of *Peers*. A stand-alone document's cover is unchanged (§ 8).
 - **File names (R7)**: `vs-<N>-models_` after `run-<id>_`, or first for a group subject, when the
-  document has peers (§ 8).
+  document has peers (§ 8; since 2026-10-06 the comparison part names the peers or the comparison key).
 - **Fact sheet in Markdown only (R8)**: the PDF and Word copies of the Internal Improvement Brief end
   section 6 with *"The fact sheet is in the Markdown copy of this document."*
   (`BenchmarkReportRenderOptions.IncludeFactSheet = false` for native renders); the Markdown copy keeps
@@ -879,7 +941,8 @@ says where chart images are stored (§ 13).
 One panel, `app-download-center-panel` (`download-center/download-center-panel.component.*`), packages
 documents and run files for download. It is shown in two places: as a dialog —
 `app-benchmark-download-center`, a thin wrapper around the panel, reached from the run report dialog's
-**Downloads** button and from the Model Comparison launcher's **Open Download Center** (§ 12) — and,
+**Downloads** button, the Battery Run Report's **Downloads** (§ 14), the **Open Download Center** of
+either report's **AI Reports** tab and the Model Comparison launcher's **Open Download Center** (§ 12) — and,
 placed directly, as step 4 of the Model Comparison wizard, *Documents*, where it also manages the
 comparison's charts (§ 13).
 
@@ -890,26 +953,83 @@ comparison's charts (§ 13).
 | **Custom** | Any selection | Per document | Per document | Any, Word included |
 
 The summary line, the ZIP's `MANIFEST.md` and its file name call them *Internal package* and *External package*.
-Opened on a run, the dialog lists the run's files and every document whose subject **is** the run
-(`report-documents?subject=run:<id>`, § 9): its run-completion documents (§ 11) and any Report Pack
-document written about the run alone, under both packages; while the run-completion documents are still
-being written, a notice says so and the list reloads when they are done (§ 11). A document whose subject
-is a group or a battery result that includes the run is not listed there: a group's Report Pack
-documents are reached from the group's analysis and from the comparison launcher, and a battery
-result's from the battery run. **A battery member** gets an info line above the list, *"This run is a
-member of battery run #<id>. Its AI-written documents are in the battery run's downloads."*, with a
-`.btn-ghost` **Open battery run downloads** that switches the same Download Center to the battery run's
-context (§ 14).
+Each home lists its own documents (§ 1a). Opened on a run, the dialog lists the run's files and the
+run's own run-completion documents (§ 11), `report-documents?subject=run:<id>&origin=runCompletion`
+(§ 9), under both packages; while they are still being written, a notice says so and the list reloads
+when they are done (§ 11). A Report Pack document about the run is not listed there, nor is a document
+whose subject is a group or a battery result that includes the run: a group's Report Pack documents are
+reached from the comparison launcher, and a battery result's from the battery run. **A battery member**
+gets an info line above the list, *"This run is a member of battery run #<id>. Its AI-written documents
+are in the battery run's downloads."*, with a `.btn-ghost` **Open battery run downloads** that switches
+the same Download Center to the battery run's context (§ 14).
+
+**The comparison pointer.** In a run or a battery context the panel makes one more request,
+`subject=<run:<id> | battery:<id>>&origin=reportPack`, and counts the comparison documents about the
+subject. When there are any, an info line sits above the list — *"<N> comparison documents compare this
+<run | battery run> with other models. They are kept with their comparisons."*, or *"1 comparison
+document compares this <run | battery run> with other models. It is kept with its comparison."* — with a
+`.btn-ghost` **Open comparison documents**, built like **Open battery run downloads**, which switches the
+same dialog to a library context of `subject` scope with nothing preselected. No count, and a failed
+count request, show nothing. A battery member with comparison documents shows both pointers.
 
 Opened on a list of documents (`DownloadCenterDocumentsContext`, by id) or on a library
 (`DownloadCenterLibraryContext`), the panel may take a `title` and a `subtitle` in place of its own. A
-library context lists with one request: `scope` is `{ kind: 'comparison', entryKeys }` (this
-comparison's Report Pack documents, `comparison=<entry keys>&origin=reportPack`, § 9) or `{ kind: 'all' }`
-(every Report Pack document, `origin=reportPack&take=500`), with the reports of their subjects' runs, and
-`preselect` is `'all'` (every row starts as the package chooses it) or `'none'` (nothing starts chosen).
-The launcher opens it on `all` with nothing preselected and the title *Comparison reports*; the wizard's
-step 4 shows `comparison` with every row preselected and the title *Documents of this comparison*.
-Packages, disclosure levels, naming, formats and the ZIP are the same in every context.
+library context lists **only Report Pack documents**, with one request, and never a run report of a
+subject run. Its `scope` is one of:
+
+- `{ kind: 'comparison', entryKeys }` — this comparison's Report Pack documents,
+  `comparison=<entry keys>&origin=reportPack` (§ 9);
+- `{ kind: 'all' }` — every Report Pack document, `origin=reportPack&take=500`;
+- `{ kind: 'subject', subjectKey, label }` (`DownloadCenterSubjectScope`) — every comparison document
+  about one run or battery run, whichever comparison wrote it, `subject=<key>&origin=reportPack`. The
+  dialog titles it *Comparison documents*, with the subtitle *About <label>* (*About run #42 · <suite> ·
+  <model>*, *About battery run #9 · <battery> · <model>*); with none it says *"No comparison documents
+  have been written about it."*
+
+`preselect` (`DownloadCenterPreselect`) is `'all'` (every row starts as the package chooses it),
+`'none'` (nothing starts chosen) or `{ ids }` (a row starts chosen, as the package chooses it, only when
+its document id is listed), in `replaceRows` and `addRows` alike. The launcher opens `all` with nothing
+preselected and the title *Comparison reports*; the pointer opens `subject` with nothing preselected; the
+wizard's step 4 shows `comparison` with the documents of the last job that finished in this wizard
+session preselected, else every row (§ 12). Packages, disclosure levels, naming, formats and the ZIP are
+the same in every context.
+
+**Include member runs** (2026-10-06). A battery context (§ 14) lists the battery's Markdown analysis
+report and its battery-completion documents, `subject=battery:<id>&origin=batteryCompletion`, and offers
+in the list header, beside the selection line, a checkbox **Include member runs** with a click-mode info
+tip: *"Lists every member run's report, tool-call log and diagnostics beside the battery's own
+documents, so the whole battery downloads at once."*
+
+- **Its default.** It is checked every time a battery context opens, and never remembered; unchecked, it
+  holds for that opening only.
+- **The members.** On opening, the panel asks for the battery run (`GET …/batteries/runs/{id}`) and takes
+  its members that are not superseded and whose run is not Deleted, ordered by suite index, then round.
+  A member that is not usable is listed too, each of its rows noted *"Not used in the battery's
+  statistics."*, because a failed member's files are what an analysis of the failure needs. While the
+  members are being listed the panel shows *"Listing the member runs…"* and **Download** is
+  unavailable.
+- **The rows.** Each member gets the rows a run's own Download Center lists, built by the same function:
+  *Run report* (PDF, Word, Markdown, HTML), *Tool-call log* (PDF, Word, Markdown) and *Run diagnostics*
+  (PDF, Word, Text), keyed `report:<runId>`, `log:<runId>` and `diag:<runId>`. A row's suite is the
+  member's suite, its subject the battery's model, and its detail line *"<suite> · round <r> · run
+  #<id>"*. The *Suite* and *Document* filters and the card list's paging apply to them as to any row.
+- **Packages.** The rows are added like any run file, so the Internal package selects them, the External
+  package lists them internal-only and unselectable, and Custom applies its remembered per-category
+  choices.
+- **Diagnostics.** The *Run diagnostics* rows are listed only when the context carries
+  `memberDiagnosticsText`, a callback that builds a member's diagnostics text from its run detail exactly
+  as that run's own Download Center captures it (`BenchmarkComponent.runDiagnosticsTextFor`). The
+  Overseer shell supplies it to every battery Download Center it opens: the Battery Run Report's
+  **Downloads**, its **AI Reports** tab and **Open battery run downloads**. At preparation, each selected
+  member's run detail is fetched and its text captured once per download; nothing is fetched for a row
+  that is not selected. Without the callback a member gets the report and tool-call log rows only.
+- **Unchecking** removes the member rows and their choices; checking again re-adds them, preset again,
+  from the members already listed. A failed member request shows *"The member runs could not be listed;
+  the battery's own documents are."*; unchecking and checking again retries it.
+
+A large battery's member rows add up: each tool-call log can run to several megabytes, and the
+preparation overlay counts *Preparing k of n*. Unchecking the option, or narrowing by the *Suite* or
+*Document* filter, keeps a download quick.
 
 **The documents list** shows each document as a full-width card (the `frontend_ui_controls` skill
 § 8h). The list's header holds the *Documents* heading, an (i) button **About document options** that
@@ -981,9 +1101,21 @@ with reduced motion the ring stands still.
 diagnostics), gets an `_INTERNAL` file-name suffix. A document whose subject is one run (`run:<digits>`,
 every run-completion document) is named from the run number first, with a `run-<digits>_` prefix, in its
 PDF, Word and Download Center names alike — `run-73_…_full_named_INTERNAL.pdf`. A document with peers
-adds `vs-<N>-models_`, N being its peer count, after the run prefix, or first for a group subject —
-`run-68_vs-4-models_…_summary_named.pdf`. The client's `reportDocumentFileStem` and the server's
-`BenchmarkPdfFileNames.ForReportDocument` build the same name. A group subject has no run prefix. The run report and tool-call log are fetched from the
+adds a **comparison part** after the run prefix, or first for a group subject, so documents of two
+comparisons never share a name (from 2026-10-06):
+
+- **1 to 3 peers whose entry keys all parse:** `vs-` and one token per peer in letter order (letter
+  length, then ordinal), joined by `-`, then `_` — a token being `run-<id>`, `group-<id>` or
+  `battery-run-<id>`. `battery-run-9_vs-battery-run-10_…`, `run-92_vs-run-94-run-95_…`. This form needs
+  no comparison key.
+- **Otherwise:** `vs-<N>-models-<first 8 characters of ComparisonKey>_`, N being the peer count —
+  `run-68_vs-4-models-3f9a0c21_…_summary_named.pdf` — or `vs-<N>-models_` for a legacy row stored without
+  a comparison key.
+- **No peers:** no comparison part, so a run's or battery run's own documents are named as before.
+
+The peers are read from the stored fact sheet's `peers` array (each `letter` and `entryKey`) on the
+server and from the list DTO's `peerLetters` in the client. The client's `reportDocumentFileStem` and the
+server's `BenchmarkPdfFileNames.ForReportDocument` build the same name. A group subject has no run prefix. The run report and tool-call log are fetched from the
 existing run endpoints and keep the server's file name; their PDFs and Word files are named by the server,
 with `_INTERNAL.pdf` and `_INTERNAL.docx`. Run diagnostics are a point-in-time capture, taken **once per
 download**: the `.txt`, the `.pdf` and the `.docx` of one download hold the same text and the same capture
@@ -1132,6 +1264,11 @@ All endpoints require the `AdminOnly` policy and sit under `api/admin/benchmark`
 
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and prompts without a model call —
   subject, peers, estimated tokens and cost per document, the same-provider warning and any refusal.
+  A subject with no peer answers 200 with the subject's fields, `refusal` set to
+  `PeerlessReportRefusal` (§ 1a) and no estimates. Otherwise the preview also carries
+  `writtenDocuments`: the Report Pack documents already stored for this comparison and subject (§ 5),
+  the newest per audience, in audience order, each `{ audience, documentId, createdAtUtc,
+  writerDisplayName }` (`BenchmarkReportPackWrittenDocumentDto`).
 - `POST /api/admin/benchmark/report-packs`: Start a job. Body
   `{ runIds, groupIds, batteryRunIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`,
   with audiences as numbers (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal
@@ -1146,25 +1283,34 @@ The start's refusals, in the order they are checked:
 1. Battery results mixed with runs or groups — 400, *"A comparison holds either battery results or runs
    and analysis groups."* The preview refuses the mix the same way.
 2. An unknown entry, or an Excluded subject — 400.
-3. A writer that is invalid, disabled, keyless, not of the Benchmark role, or refused by the endpoint
+3. A subject with no peer (`HasPeers`, § 1a) — 400, *"A comparison report compares one model with at
+   least one other. To write a run's or a battery run's own reports, use the AI Reports tab of its
+   report."*
+4. A writer that is invalid, disabled, keyless, not of the Benchmark role, or refused by the endpoint
    policy — 400.
-4. A writer that is the subject's own model — 400.
-5. No audience — 400.
-6. The spend cap — 429.
-7. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
-8. A job already running, or a run-completion or battery-completion job waiting for the slot — 409,
-   with that job.
+5. A writer that is the subject's own model — 400.
+6. No audience — 400.
+7. A requested document already written for this comparison and subject (§ 5) — 409 `{ error }`,
+   *"The <document name> about <subject label> is already written for this comparison. Delete it in step
+   4 to write it again."*
+8. The spend cap — 429.
+9. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
+10. A job already running, or a run-completion or battery-completion job waiting for the slot — 409,
+    with that job.
 
 - `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing
   run-completion documents now (§ 11). Body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`:
   `audiences` names the documents to write (1 Executive Summary, 2 Report for AI Researchers and
-  Developers); null or empty writes every missing one. The writer is recorded on the run as its report
+  Developers, 3 Internal Improvement Brief); null or empty writes every missing one. The writer is recorded on the run as its report
   writer, replacing an earlier one. Returns 202 `{ runId, status, audiences }` with the status Pending
   and the documents the job will write. Refusals, in order: no body — 400; an unknown run — 404; a run
   that has not finished (Completed, CompletedWithErrors or CompletedWithLimits) with a final synthesis —
   400; a job for the run Pending or Writing — 409; a requested audience that is not a run-completion
-  document — 400; a requested document already written — 409 (*"The <name> is already written. Delete it
-  first to write it again."*), or, with none requested, both written — 409; a writer that is unusable or
+  document — 400 (`InvalidAudienceMessage`, *"Only the Executive Summary, the Report for AI Researchers
+  and Developers and the Internal Improvement Brief are written for a run."*); a requested document
+  already written — 409 (*"The <name> is already written. Delete it first to write it again."*), or, with
+  none requested, every one written — 409 (`AllWrittenMessage`, *"This run already has every AI-written
+  report. Delete one first to write it again."*); a writer that is unusable or
   the model under test — 400; a writer of the candidate's provider without `acknowledgeSameProvider` —
   409 with a `SameProviderWarningDto` of role `reportWriter`; a writer refused by the endpoint policy —
   400; the spend cap — 429.
@@ -1197,8 +1343,11 @@ response shapes of the run endpoints above (§ 14):
   the writer in the body, which becomes the battery run's writer. 202 with the battery run's Pending
   status (its id in `runId`) and the documents to write. Refusals, in order: no body — 400; an unknown
   battery run — 404; a battery run that has not finished, or whose latest analysis is missing, stale or
-  incomplete — 400; a job for it Pending or Writing — 409; an audience other than the two — 400; a
-  requested document already written, or with none requested both written — 409; a writer that is
+  incomplete — 400; a job for it Pending or Writing — 409; an audience other than the three — 400
+  (*"Only the Executive Summary, the Report for AI Researchers and Developers and the Internal
+  Improvement Brief are written for a battery run."*); a requested document already written, or with
+  none requested every one written — 409 (`AllWrittenMessage`, *"This battery run already has every
+  AI-written report. Delete one first to write it again."*); a writer that is
   unusable or the model under test — 400; a writer of the candidate's provider without
   `acknowledgeSameProvider` — 409 with the warning; a writer refused by the endpoint policy — 400; the
   spend cap — 429.
@@ -1222,7 +1371,8 @@ response shapes of the run endpoints above (§ 14):
   `chartFigureKeys` and `chartSettingsHash`. Every filter is optional:
   - `runId` matches a run of the **subject** only, never a peer's run (§ 5): every document with a
     subject row for the run, a group's or a battery result's included. For the documents about the run
-    itself use `subject=run:<id>` (below), as the run's Download Center does (§ 8);
+    itself use `subject=run:<id>` (below), as the run's Download Center does with
+    `origin=runCompletion` (§ 8);
   - `comparison=run:1,run:2,group:4` (or `battery:7,battery:9`) takes the comparison's entry keys, in
     any order, and matches the documents whose `ComparisonKey` they hash to; any other form answers 400
     *The comparison must be a comma-separated list of run:&lt;id&gt; and group:&lt;id&gt; keys, or of
@@ -1232,9 +1382,10 @@ response shapes of the run endpoints above (§ 14):
     and any other value is a 400;
   - `subject=` takes **one** entry key (`run:<id>`, `group:<id>` or `battery:<id>`, a positive id,
     exactly as written) and matches it exactly against each document's subject key; any other form is a
-    400. The Download Center lists both of its own contexts this way: a run's documents with
-    `subject=run:<id>`, and a battery run's, its battery-completion and Report Pack documents alike,
-    with `subject=battery:<id>`;
+    400. `subject` and `origin` combine. The Download Center lists each home's own documents this way
+    (§ 1a, § 8): a run's with `subject=run:<id>&origin=runCompletion`, a battery run's with
+    `subject=battery:<id>&origin=batteryCompletion`, and the comparison documents about either — the
+    pointer's count and the `subject` library scope — with `origin=reportPack`;
   - `take` defaults to 200 and is capped at 500.
 - `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`:
@@ -1242,19 +1393,19 @@ response shapes of the run endpoints above (§ 14):
   refused combination.
 - `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter&inline=`: The same
   document as a PDF (`application/pdf`), named
-  `[run-<id>_][vs-<N>-models_]<title>_<disclosure>_<peers>[_INTERNAL].pdf` (the prefixes for a `run:<id>`
-  subject and for a document with peers, § 8; a `battery:<id>` subject takes `battery-run-<id>_` in place
-  of `run-<id>_`, § 14), with the document's charts of the requested naming drawn
+  `[run-<id>_][vs-<comparison>_]<title>_<disclosure>_<peers>[_INTERNAL].pdf` (the prefix for a `run:<id>`
+  subject and the comparison part for a document with peers, § 8; a `battery:<id>` subject takes
+  `battery-run-<id>_` in place of `run-<id>_`, § 14), with the document's charts of the requested naming drawn
   in it (§ 13); the same refusals as `render`, 400 for another `paper`, 413 over the size limit. A Report
   for AI Researchers and Developers is named
-  `[run-<id>_][vs-<N>-models_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
+  `[run-<id>_][vs-<comparison>_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
   whether the stored title ends in the current name or the legacy *Technical Report*. With
   `inline=true` the response carries `Content-Disposition: inline` with the same file name, so a
   browser tab shows the PDF rather than saving it; the PDF viewer's *Open in new tab* uses it (§ 11).
 - `GET /api/admin/benchmark/report-documents/{id}/render/docx?disclosure=&peers=&paper=a4|letter`: The
   same document as Word
   (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`), named
-  `[run-<id>_][vs-<N>-models_]<title>_<disclosure>_<peers>[_INTERNAL].docx` (with `_Researcher_Report` as
+  `[run-<id>_][vs-<comparison>_]<title>_<disclosure>_<peers>[_INTERNAL].docx` (with `_Researcher_Report` as
   for the PDF), with its charts drawn as for the PDF and the PDF endpoint's refusals.
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade, and its
   chart folder is removed (a folder that cannot be removed is logged and never fails the delete).
@@ -1294,7 +1445,8 @@ response shapes of the run endpoints above (§ 14):
 - It runs no significance test and states none.
 - It never reads the live suite: question and rubric text come from the subject's answer rows.
 - It never re-writes a stored document. A changed run is flagged, not re-generated; generate a new pack
-  if the old one is out of date. A run's run-completion documents are written again only after they are
+  if the old one is out of date — after deleting the old document of that type, since a comparison holds
+  one per subject and type (§ 5). A run's run-completion documents are written again only after they are
   deleted (§ 11). A document's charts can be replaced or removed at any time (§ 13), which changes its
   PDF and Word copies but not the stored row, and involves no model call.
 
@@ -1303,8 +1455,9 @@ response shapes of the run endpoints above (§ 14):
 ## 11. Run-Completion Documents
 
 A run can name a **report writer** when it is launched. Once the run is scored, that writer writes the
-run's **Executive Summary** and **Report for AI Researchers and Developers** once, in the stand-alone form
-(§ 1), and stores them as ordinary `BenchmarkReportDocument` rows with `Origin = RunCompletion` and the
+run's **Executive Summary**, **Report for AI Researchers and Developers** and **Internal Improvement
+Brief** once, in the stand-alone form (§ 1), and stores them as ordinary `BenchmarkReportDocument` rows
+with `Origin = RunCompletion` and the
 subject key `run:<id>`. From then on they behave like any other document: every download renders the
 stored row, with no model call.
 
@@ -1351,11 +1504,15 @@ The column is an `int`, so `Canceled` needed no migration.
 returns at once, so the next run of a series is never held up by the writer. It writes only when all of
 these hold: the run's status is exactly **Completed**; it names a report writer; its final synthesis
 exists; it has no run-completion document yet; and its documents are not already Pending or Writing.
-`RerunFinalSynthesisAsync` never calls it.
+`RerunFinalSynthesisAsync` never calls it. Because of the last-but-one condition, a run that already has
+some run-completion documents — a run written before the Internal Improvement Brief became the third,
+for instance — never has its missing one written automatically; its **AI Reports** tab offers it.
 
-**The job.** One job has one writer and writes the requested documents the run is missing, in list order
-(the Executive Summary first); an automatic job requests both. Two documents with two writers are two
-jobs, one after the other. `BenchmarkRunReportDocumentService` keeps a per-run, in-memory registry of
+**The job.** One job has one writer and writes the requested documents the run is missing, in
+`BenchmarkRunReportDocumentService.Audiences` order — the Executive Summary, the Report for AI
+Researchers and Developers, the Internal Improvement Brief; an automatic job requests every missing one
+(`audiences: null`), so it writes all three. Documents with different writers are separate jobs, one
+after the other. `BenchmarkRunReportDocumentService` keeps a per-run, in-memory registry of
 jobs, and its **phases** — *Queued*, *Preparing*, *Writing*, *Finished* — are what the job endpoint
 (§ 9) reports:
 
@@ -1383,8 +1540,10 @@ message remain.
 **Canceling.** `POST …/report-documents/cancel` (§ 9) stops the job in either phase. A queued job leaves
 the queue and the run becomes **Canceled** with *"Canceled before the writing began."* A job that is
 writing stops at once: the document in hand is discarded, the documents already written are kept, and
-the message names them (*"Canceled while writing. The Executive Summary was written and is kept."*, or
-*"… Nothing was written."*). Tokens already used are still charged. A canceled job is always Canceled,
+the message names them (*"Canceled while writing. The Executive Summary was written and is kept."*,
+*"… The Executive Summary and the Report for AI Researchers and Developers were written and are kept."*,
+with three as *"The A, the B and the C were written and are kept."*, or *"… Nothing was written."*).
+Tokens already used are still charged. A canceled job is always Canceled,
 never Failed.
 
 **Restart.** No job survives a restart, and the in-memory job views go with it: after a restart only the
@@ -1399,7 +1558,7 @@ from before this feature, or a run whose job failed or was canceled — with the
 it records on the run. The run report dialog's **AI Reports** tab (`app-run-ai-reports`) is where an
 administrator does it:
 
-- **The documents.** Both are listed, written or not: a written one with *Written* or *Written with
+- **The documents.** All three are listed, written or not: a written one with *Written* or *Written with
   warnings*, a line of meta — writer, date, duration, cost and *same provider, acknowledged* when the
   document records the acknowledgment — the *Run changed since this document was written* tag when
   flagged, **View** and a **Delete** icon button; a missing one marked *Not written*. A status line above
@@ -1408,10 +1567,11 @@ administrator does it:
   automatic job's included. A *Downloads* notice with **Open Download Center** opens the Download Center
   on the run, and focus returns to the button when it closes.
 - **The write panel**, while a finished run lacks a document: one checkbox per missing document (the
-  button reads **Write Report** for one and **Write Reports** for two; a written one is named as already
-  written), the report writer picker with an (i) button that opens the per-document advice (§ 4) as a
-  modal *Choosing a report writer* dialog, and a live cost estimate from the estimate endpoint, shown as
-  an *Estimated cost* panel with the total and, for two documents, the cost of each. The picker starts on the run's own writer, else on the launcher's
+  button reads **Write Report** for one and **Write Reports** for two or more; a written one is named as
+  already written), the report writer picker with an (i) button that opens the per-document advice (§ 4)
+  — each of the three documents, then *Every document* — as a modal *Choosing a report writer* dialog,
+  and a live cost estimate from the estimate endpoint, shown as an *Estimated cost* panel with the total
+  and, for two or more documents, the cost of each. The picker starts on the run's own writer, else on the launcher's
   *Report Writer* when it needs neither a refusal nor a warning for this run. A refusal (the model under
   test, an unusable configuration, a run without a final synthesis) shows in red and disables the button;
   a same-provider writer shows an amber warning and, on **Write Reports**, a *Same-Provider Report
@@ -1433,7 +1593,7 @@ administrator does it:
 - **The PDF viewer** (`app-pdf-viewer-dialog`): **View** opens the stored document in a full-screen
   in-app viewer, rendered by pdf.js from the server's PDF with peers named, at the fullest disclosure the
   document allows, and the others offered as *Summary* / *Detailed* / *Full* tabs (*Summary* / *Full*
-  for the Executive Summary). An (i) button after the tabs opens a modal that explains what each offered
+  for the Executive Summary; the Internal Improvement Brief opens at *Full*, its only level). An (i) button after the tabs opens a modal that explains what each offered
   level contains in that document — Summary and Full for the Executive Summary; Summary, Detailed and
   Full for the Report for AI Researchers and Developers (`report-disclosure-guide.ts`, whose
   per-document texts the Download Center's *Disclosure* column also shows, one section per document).
@@ -1446,13 +1606,14 @@ administrator does it:
 **stage 4**, *Writing reports*: the dialog's labels read *Stage n of 4*, the stage is current while the
 Completed run's documents are Pending or Writing (and for up to 30 s while they are still NotRequested),
 the status line follows the job's phase (*"Stage 4 of 4 — Writing reports: waiting for the report writer
-(1 job ahead)"*) and then appends *"Reports written: 2 documents, 1m 12s."*, and the completion chime
+(1 job ahead)"*) and then appends *"Reports written: 3 documents, 1m 48s."*, and the completion chime
 waits for the stage to end. The run itself ends Completed when scoring ends. The full description —
 roster row, stat cell, cost panel rows, diagnostics block — is `ai-benchmark.md` § 1, *Run Progress
 Dialog*.
 
 **In the Download Center.** Opened on a run, the dialog asks for the run's report job
-(`GET …/runs/{runId}/report-documents/job`) beside the run's own documents (`subject=run:<id>`, § 8).
+(`GET …/runs/{runId}/report-documents/job`) beside the run's own documents
+(`subject=run:<id>&origin=runCompletion`, § 8).
 While the job's phase is not *Finished* it shows, above the table, *"The AI-written reports of this run
 are being written (<phase>). They appear here when they are done."* — the phase reads *waiting for the
 report writer*, *preparing the fact sheet*, *writing* or *finishing* — and asks again every 5 s
@@ -1478,10 +1639,14 @@ wrote the deleted document, so a rewrite starts from a deliberate choice.
 ## 12. The Comparison Wizard's Reports and Documents Steps, and the Comparison Reports Launcher
 
 The Model Comparison wizard has four steps: *1. Sources*, *2. Charts & table*, *3. Reports* (*"Write AI
-reports on one model of this comparison"*) and *4. Documents* (*"View, chart, download and delete this
-comparison's documents"*). Steps 3 and 4 are reachable once a comparison exists; step 3 also needs an
-entry that is not Excluded, and otherwise is `aria-disabled` with a visually hidden reason, and **Next**
-skips it. Next runs 2 → 3 → 4, and closes the wizard on step 4. Step 2's former **Reports** button and
+reports that compare one model with the others in this comparison."*) and *4. Documents* (*"View, chart,
+download and delete this comparison's documents"*). Steps 3 and 4 are reachable once a comparison
+exists; step 3 also needs **two** entries that are not Excluded (`hasComparisonPeers`), because a
+comparison report needs a subject and a peer (§ 1a). Otherwise it is `aria-disabled` with a visually
+hidden reason — with one comparable entry *"A comparison report compares one model with at least one
+other. Add another model on step 1, or write a run's or battery run's own reports in the AI Reports tab
+of its report."*, with none *"Every model in this comparison was measured differently, so none of them
+can be the subject of a report."* — and **Next** skips it. Next runs 2 → 3 → 4, and closes the wizard on step 4. Step 2's former **Reports** button and
 the Report Pack dialog it opened are gone; **About** and **Recompute** stay on step 2.
 
 Steps 3 and 4 are mounted on their first visit and afterwards hidden, never destroyed, when another step
@@ -1499,6 +1664,11 @@ Left and Right on it); the width is kept under `sidebarWidth` in
 `localStorage['overseer.benchmark.reportPack']`. Below 60rem the two stack, the sidebar first. Each
 column scrolls on its own.
 
+Under the step heading a lead paragraph says what the step writes and where the other documents live:
+*"These reports compare the chosen model with every other model of this comparison and are kept with the
+comparison: step 4 lists them, and so does Comparison reports on the Model Comparison tab. A run's or
+battery run's own reports are written in the AI Reports tab of its report."*
+
 - **Sidebar**, *New report pack*: *Subject*; *Documents* (the three checkboxes); *Charts in PDF and
   Word*, the chart picker (§ 13) with, on screen, the print advisory when step 2's theme would print
   badly and, while the `report-charts-location-missing` alert is present, *"Chart storage is not
@@ -1507,6 +1677,15 @@ column scrolls on its own.
   Reports** tab, with an Internal Brief entry) and the *How the graders work* link; the refusal or the
   amber same-provider warning; the *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI
   Reports tab); **Generate**.
+- **Documents already written.** The preview's `writtenDocuments` (§ 9) are kept per subject. A
+  document type already written for the chosen subject in this comparison is shown unchecked and
+  disabled, with the hint *"Written <yyyy-MM-dd HH:mm> UTC by <writer>. Delete it in step 4 to write it
+  again."*; a checked type that turns out to be written is unchecked. When every type is written,
+  **Generate** is `aria-disabled` with the reason *"Every document about this subject is already written
+  for this comparison. Delete one in step 4 to write it again."* A 409 from the start — a document
+  written in the meantime (§ 9) — shows its `error` as any other start error. A preview refused for a
+  subject with no peer, which the step's own gate normally prevents, blocks **Generate** with *"This
+  subject has no other model to be compared with in this comparison."*
 - **Same-provider writer**: Generate opens a nested *Same-Provider Report Writer* confirmation, **Write
   Anyway**, on every write, and only then sends `acknowledgeSameProvider: true`. Nothing is remembered.
 - **Main area**, *Report pack progress*: a status line that changes with the job's phase; while a job
@@ -1527,9 +1706,15 @@ ones included, because the Report Pack request sends every entry's run and group
 hashes those.
 
 **Step 4, Documents** is the Download Center panel (§ 8) placed directly in the wizard, on a library
-context of this comparison's Report Pack documents (`comparison=<entry keys>&origin=reportPack`, § 9),
-titled *Documents of this comparison*, with **every document preselected**. Run-completion documents stay
-in their run's report. A document belongs to a comparison when the comparison has the same set of
+context of this comparison's Report Pack documents (`comparison=<entry keys>&origin=reportPack`, § 9) and
+nothing else: no run report of a subject run. **Preselection:** the wizard records the document ids of
+the last step 3 job that finished in this wizard session (its `jobFinished` output's
+`documents[].documentId`); while they belong to the comparison on step 1 — the same entry set — step 4
+starts with only those chosen (`preselect: { ids }`), otherwise with every document chosen, and the
+context is rebuilt when the ids change. Above the panel, the step prints the note *"Run reports, and
+each run's or battery run's own AI reports, are in that report's Downloads."*
+(`COMPARISON_DOCUMENTS_NOTE`), which the context also carries as its subtitle; the panel placed directly
+prints no context title or subtitle, since only the dialog wrapper does. Run-completion and battery-completion documents stay in their own report (§ 1a). A document belongs to a comparison when the comparison has the same set of
 entries (§ 5), so changing *Prices* keeps the list, and adding or removing a model empties it. The wizard
 lends the panel its chart actions (§ 13): the *Charts* option and filter, **Update charts…** and each
 card's **More actions**. The list reloads when a job finishes and when a document is charted.
@@ -1727,8 +1912,8 @@ A **battery result** — a battery run's persisted composite over the suites of 
 from code, words come from the writer, rendering involves no AI*. Its subject key is `battery:<id>`. It
 is the subject of a Report Pack written from a comparison of battery results (the wizard's step 3), whose
 peers are the comparison's other battery results, and of the battery run's own **battery-completion
-documents**. Why batteries have AI-written documents at all, and why the members write none, are
-`ai-benchmark-multi-suite.md` § 7.2 (decisions D2 and D3).
+documents**. Why batteries have AI-written documents at all, why the members write none, and why each
+kind of document has one home are `ai-benchmark-multi-suite.md` § 7.2 (decisions D2, D3 and D8).
 
 **The fact sheet** is `BenchmarkBatteryReportFacts.Build`, a `BenchmarkReportFactSheet` with
 `SubjectKind = "Battery"`. Every analysis figure is read from the battery's persisted
@@ -1807,7 +1992,10 @@ right after the battery run's automatic analysis succeeds — at the end of its 
 repair of a member run or a Continue finishes it (`ai-benchmark-multi-suite.md` §§ 3.4, 3.5) — and
 after a manual **Recompute analysis**, and returns at once. It writes when all of
 these hold: the battery run has finished; its latest analysis is complete and not stale; it names a
-writer; it has no battery-completion document yet; and no job for it is Pending or Writing. Each document
+writer; it has no battery-completion document yet; and no job for it is Pending or Writing. The
+automatic job writes every missing document — the Executive Summary, the Report for AI Researchers and
+Developers and the Internal Improvement Brief (`BenchmarkBatteryReportDocumentService.Audiences`, which
+is the run service's list); a battery run that already has some gets the missing ones only on request. Each document
 is a one-entry comparison of the battery result, stored with `Origin = BatteryCompletion` (3) and the
 subject key `battery:<id>`; the writer call goes through `WriteBatteryCompletionDocumentsAsync` and the
 Report Pack's own path — parsing, validation, one repair turn, drops, storage.
@@ -1821,13 +2009,20 @@ deletes its battery-completion documents with their chart files (`SettleAfterDel
 document returns the battery run to NotRequested unless a job is in progress.
 
 **Writing on request.** The endpoints are in § 9. The Battery Run Report's **AI Reports** tab
-(`app-battery-ai-reports`) is the counterpart of a run's: both documents listed, **View** in the PDF
+(`app-battery-ai-reports`) is the counterpart of a run's: all three documents listed, **View** in the PDF
 viewer, **Delete** behind a confirmation, *Write missing reports* with the writer picker (starting on the
-battery run's own writer), the cost estimate, the same-provider confirmation and **Show Progress**. The
-Download Center, opened on a battery run (its `battery` context), lists the battery's Markdown analysis
-report and every document whose subject is `battery:<id>` — battery-completion and Report Pack alike,
-through `subject=` — with no member-run files, and shows the *being written* notice while the battery
-run's job runs, asking every 5 s. It is the **only** Download Center that lists them: a member run's
-Download Center lists that run's own documents (`subject=run:<id>`) and, above them, the pointer *"This
-run is a member of battery run #<id>. Its AI-written documents are in the battery run's downloads."*
-with **Open battery run downloads**, which switches the same dialog to this `battery` context (§ 8).
+battery run's own writer), the cost estimate, the same-provider confirmation and **Show Progress**.
+
+**The battery Download Center.** Opened on a battery run (its `battery` context, from the Battery Run
+Report's **Downloads** or its **AI Reports** tab), it lists the battery's Markdown analysis report and
+the battery run's own battery-completion documents, `subject=battery:<id>&origin=batteryCompletion` (§ 9),
+and shows the *being written* notice while the battery run's job runs, asking every 5 s. The comparison
+documents about the battery result are not listed: they are counted, and the pointer's **Open comparison
+documents** opens them (§ 8). With **Include member runs**, checked whenever the dialog opens, it also
+lists every current member run's report, tool-call log and diagnostics, so one Internal download holds
+the whole battery (§ 8). The dialog's subtitle reads *Battery run #N · <battery> · <model>*: the
+context's label is *<battery> · <model>*, and the dialog adds the id. It is the **only** Download Center
+that lists the battery's own documents: a member run's Download Center lists that run's own documents
+(`subject=run:<id>&origin=runCompletion`) and, above them, the pointer *"This run is a member of battery
+run #<id>. Its AI-written documents are in the battery run's downloads."* with **Open battery run
+downloads**, which switches the same dialog to this `battery` context (§ 8).

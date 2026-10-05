@@ -2858,6 +2858,19 @@ export interface BenchmarkReportPackPreviewDto {
   sameProviderWarning: string | null;
   /** Why the pack cannot be generated as requested, or null when it can. */
   refusal: string | null;
+  /**
+   * The newest document already written for this comparison and subject, per audience; such an
+   * audience cannot be started again. Absent from a server that predates it.
+   */
+  writtenDocuments?: BenchmarkReportPackWrittenDocumentDto[];
+}
+
+/** A Report Pack document already stored for the previewed comparison and subject. */
+export interface BenchmarkReportPackWrittenDocumentDto {
+  audience: BenchmarkReportAudience;
+  documentId: number;
+  createdAtUtc: string;
+  writerDisplayName: string | null;
 }
 
 export interface BenchmarkReportPackStartResponse {

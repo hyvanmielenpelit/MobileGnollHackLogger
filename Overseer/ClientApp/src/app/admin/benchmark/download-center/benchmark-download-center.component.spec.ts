@@ -6,10 +6,13 @@ import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@a
 import { unzipSync } from 'fflate';
 
 import {
+  BenchmarkBatteryMemberDto,
+  BenchmarkBatteryRunDto,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPeerNaming,
+  BenchmarkRunDetailDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto,
   BenchmarkRunReportJobPhase
@@ -19,6 +22,7 @@ import {
   DOWNLOAD_CENTER_REPORT_JOB_POLL_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
   DOWNLOAD_PACKAGES,
+  DownloadCenterBatteryContext,
   DownloadCenterContext,
   DownloadCenterRunContext,
   DownloadFormat,
@@ -58,8 +62,14 @@ const ALLOWED_URLS = [
   /^\/api\/admin\/benchmark\/runs\/\d+\/report\/(pdf|docx)$/,
   /^\/api\/admin\/benchmark\/runs\/\d+\/tool-call-log$/,
   /^\/api\/admin\/benchmark\/runs\/\d+\/tool-call-log\/(pdf|docx)$/,
-  /^\/api\/admin\/benchmark\/runs\/\d+\/diagnostics\/(pdf|docx)$/
+  /^\/api\/admin\/benchmark\/runs\/\d+\/diagnostics\/(pdf|docx)$/,
+  /^\/api\/admin\/benchmark\/runs\/\d+$/,
+  /^\/api\/admin\/benchmark\/batteries\/runs\/\d+$/,
+  /^\/api\/admin\/benchmark\/batteries\/runs\/\d+\/report$/
 ];
+
+const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
+const BATTERY_REPORT_SERVER_NAME = 'Core_Battery_battery-run-7_20261002_090000.md';
 
 /** The requests that are not a GET: the diagnostics PDF and Word document, which carry the captured text. */
 const POST_URL = /\/runs\/\d+\/diagnostics\/(pdf|docx)$/;
@@ -195,20 +205,75 @@ describe('BenchmarkDownloadCenterComponent', () => {
     }
   }
 
+  /** The one pending document list request of the given origin. */
+  function expectList(origin: string): TestRequest {
+    return httpMock.expectOne(request => request.url === DOCUMENTS_URL && request.params.get('origin') === origin);
+  }
+
   function openRun(
     documents: BenchmarkReportDocumentListItemDto[] = [doc(1, ExecutiveSummary), doc(2, TechnicalReport), doc(3, InternalBrief)],
     context: DownloadCenterContext = runContext,
-    job: BenchmarkRunReportJobDto | null = null
+    job: BenchmarkRunReportJobDto | null = null,
+    comparison: BenchmarkReportDocumentListItemDto[] = []
   ): void {
     wrapper.open(context);
-    const list = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
+    const list = expectList('runCompletion');
     expect(list.request.method).toBe('GET');
-    // Only the run's own documents: a battery's or a group's documents that name the run are not asked for.
+    // Only the run's own documents: a battery's or a group's documents that name the run, and the
+    // comparison documents about it, are not listed.
     expect(list.request.params.get('subject')).toBe('run:42');
     expect(list.request.params.has('runId')).toBe(false);
     requested.push(list.request.url);
     list.flush(documents);
+    const count = expectList('reportPack');
+    expect(count.request.params.get('subject')).toBe('run:42');
+    requested.push(count.request.url);
+    count.flush(comparison);
     flushJob(job);
+    render();
+  }
+
+  const BATTERY_JOB_URL = '/api/admin/benchmark/batteries/runs/7/report-documents/job';
+  const batteryContext: DownloadCenterBatteryContext = { kind: 'battery', batteryRunId: 7, label: 'Core Battery · GPT Model X' };
+
+  /** A current, usable member of battery run 7 in Board Suite, round 1, unless the overrides say otherwise. */
+  function member(runId: number, overrides: Partial<BenchmarkBatteryMemberDto> = {}): BenchmarkBatteryMemberDto {
+    return {
+      memberId: runId, suiteIndex: 0, round: 1, runId, runStatus: 'Completed', origin: 'Launched',
+      superseded: false, usable: true, addedAtUtc: '2026-09-21T15:59:00Z',
+      runStartedAtUtc: '2026-09-21T16:00:00Z', runCompletedAtUtc: '2026-09-21T17:05:44Z',
+      answeredQuestionCount: 16, totalQuestionCount: 16,
+      ...overrides
+    };
+  }
+
+  /**
+   * Opens the battery context and answers its own document list, its comparison count, its job
+   * request (none) and its member list.
+   */
+  function openBattery(
+    members: BenchmarkBatteryMemberDto[],
+    context: DownloadCenterBatteryContext = batteryContext,
+    documents: BenchmarkReportDocumentListItemDto[] = []
+  ): void {
+    wrapper.open(context);
+    const list = expectList('batteryCompletion');
+    expect(list.request.params.get('subject')).toBe('battery:7');
+    requested.push(list.request.url);
+    list.flush(documents);
+    const count = expectList('reportPack');
+    requested.push(count.request.url);
+    count.flush([]);
+    httpMock.expectOne(BATTERY_JOB_URL).flush(null, { status: 204, statusText: 'No Content' });
+    const battery = httpMock.expectOne('/api/admin/benchmark/batteries/runs/7');
+    requested.push(battery.request.url);
+    battery.flush({
+      id: 7,
+      batteryName: 'Core Battery',
+      testedModelLabel: 'GPT Model X',
+      suites: [{ index: 0, suiteId: 1, suiteName: 'Board Suite' }],
+      members
+    } as unknown as BenchmarkBatteryRunDto);
     render();
   }
 
@@ -269,7 +334,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         ? options.renderBody(Number(renderMatch[1]), disclosure, peers)
         : `# Document ${renderMatch[1]} (${disclosure}, ${peers})\n\nCost $4 per question.\n`;
       request.flush(body);
-    } else if (/runs\/\d+\/report$/.test(url)) {
+    } else if (/^\/api\/admin\/benchmark\/runs\/\d+\/report$/.test(url)) {
       if (options.reportStatus && options.reportStatus !== 200) {
         request.flush('Not found', { status: options.reportStatus, statusText: 'Not Found' });
       } else {
@@ -277,6 +342,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
       }
     } else if (/tool-call-log$/.test(url)) {
       request.flush('# Tool calls\n', { headers: { 'Content-Disposition': `attachment; filename="${LOG_SERVER_NAME}"` } });
+    } else if (/batteries\/runs\/\d+\/report$/.test(url)) {
+      request.flush('# Battery run #7\n', { headers: { 'Content-Disposition': `attachment; filename="${BATTERY_REPORT_SERVER_NAME}"` } });
+    } else if (/^\/api\/admin\/benchmark\/runs\/\d+$/.test(url)) {
+      request.flush({ id: Number(url.slice(url.lastIndexOf('/') + 1)), suiteName: 'Board Suite' } as BenchmarkRunDetailDto);
     } else {
       unexpected.push(`${method} ${url}`);
       request.flush(null, { status: 500, statusText: 'Unexpected' });
@@ -1320,6 +1389,26 @@ describe('BenchmarkDownloadCenterComponent', () => {
       }
     });
 
+    it('names a comparison document after its peers, or its peer count and comparison key, as the server does', () => {
+      const subject = 'GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark';
+      const summary = (overrides: Partial<BenchmarkReportDocumentListItemDto>) =>
+        reportDocumentFileStem(doc(1, ExecutiveSummary, { title: `${subject} — Executive Summary`, ...overrides }), 'x');
+      const tail = 'gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary';
+
+      expect(`${summary({ subjectKey: 'battery:9', peerCount: 1, peerLetters: { 'battery:10': 'A' }, comparisonKey: '0123456789abcdef' })}_summary_anonymized.pdf`)
+        .toBe(`battery-run-9_vs-battery-run-10_${tail}_summary_anonymized.pdf`);
+      expect(`${summary({ subjectKey: 'run:92', peerCount: 2, peerLetters: { 'run:95': 'B', 'run:94': 'A' }, comparisonKey: '0123456789abcdef' })}_full_named_INTERNAL.pdf`)
+        .toBe(`run-92_vs-run-94-run-95_${tail}_full_named_INTERNAL.pdf`);
+      expect(summary({
+        subjectKey: 'group:5',
+        peerCount: 4,
+        peerLetters: { 'run:1': 'A', 'run:2': 'B', 'run:3': 'C', 'run:4': 'D' },
+        comparisonKey: '0123456789abcdef'
+      })).toBe(`vs-4-models-01234567_${tail}`);
+      // A document stored before comparison keys keeps the earlier form.
+      expect(summary({ subjectKey: 'run:12', peerCount: 4, peerLetters: {}, comparisonKey: null })).toBe(`run-12_vs-4-models_${tail}`);
+    });
+
     it('never doubles _INTERNAL on a server name that already carries it', () => {
       expect(internalServerName('Suite_Model_run42_tool_calls_INTERNAL.pdf', 'pdf')).toBe('Suite_Model_run42_tool_calls_INTERNAL.pdf');
       expect(internalServerName('Suite_Model_20260921_160000.md', 'html')).toBe('Suite_Model_20260921_160000_INTERNAL.html');
@@ -1615,7 +1704,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
     it('shows nothing when the job request fails', () => {
       wrapper.open(runContext);
-      httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents').flush([doc(1, ExecutiveSummary)]);
+      expectList('runCompletion').flush([doc(1, ExecutiveSummary)]);
+      expectList('reportPack').flush([]);
       httpMock.expectOne(JOB_URL).flush({ error: 'Not found' }, { status: 404, statusText: 'Not Found' });
       render();
 
@@ -1646,7 +1736,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       // Finished: the documents are listed again, and the notice goes.
       tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
       flushJob(job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
-      const reload = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
+      const reload = expectList('runCompletion');
       expect(reload.request.params.get('subject')).toBe('run:42');
       expect(reload.request.params.has('runId')).toBe(false);
       reload.flush([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
@@ -1685,23 +1775,21 @@ describe('BenchmarkDownloadCenterComponent', () => {
       render();
     }
 
-    it('lists the chosen documents and their runs’ reports, omitting a deleted run with a notice', () => {
+    it('lists the chosen documents alone, with a notice for one no longer available', () => {
       openDocuments({
         1: doc(1, ExecutiveSummary, { subjectRunIds: [42, 43], missingRunIds: [43], runChangedSinceGeneration: true }),
         2: doc(2, TechnicalReport, { subjectRunIds: [42, 43], missingRunIds: [43] }),
         9: null
       });
 
-      expect(component.rows.map(r => r.key)).toEqual(['doc:1', 'doc:2', 'report:42']);
-      expect(component.rows.some(r => r.kind === 'diagnostics' || r.kind === 'toolCallLog')).toBe(false);
-      expect(row('report:42').formats).toEqual(['pdf', 'docx', 'md', 'html']);
+      expect(component.rows.map(r => r.key)).toEqual(['doc:1', 'doc:2']);
+      expect(component.rows.every(r => r.kind === 'pack')).toBe(true);
       const notices = Array.from(host().querySelectorAll('.dc-notice')).map(n => n.textContent!.trim());
-      expect(notices).toContain('Run #43 no longer exists, so its run report is not listed.');
-      expect(notices).toContain('Report document #9 is no longer available.');
+      expect(notices).toEqual(['Report document #9 is no longer available.']);
       expect(rowElement('doc:1').querySelector('.gh-tag-changed')).not.toBeNull();
     });
 
-    it('makes no request but the allowed endpoints, and dates a run report from its server name', async () => {
+    it('makes no request but the allowed endpoints', async () => {
       openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, TechnicalReport) });
 
       await runDownload();
@@ -1709,21 +1797,6 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(requested.every(url => ALLOWED_URLS.some(pattern => pattern.test(url)))).toBe(true);
       const zip = await savedZip();
       expect(zip.name).toBe('gpt-model-x_internal-package_20260928_101502.zip');
-      const started = new Date('2026-09-21T16:00:00Z').getTime();
-      expect(zip.times.get('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.md')?.getTime()).toBe(started);
-      expect(zip.times.get(REPORT_PDF_NAME)?.getTime()).toBe(started);
-      expect(zip.times.get(REPORT_DOCX_NAME)?.getTime()).toBe(started);
-    });
-
-    it('fails a deleted run’s report gracefully', async () => {
-      openDocuments({ 1: doc(1, ExecutiveSummary) });
-      choose('custom', { 'doc:1': { formats: ['md'] }, 'report:42': { formats: ['md'] } });
-
-      await runDownload({ reportStatus: 404 });
-
-      const zip = await savedZip();
-      expect(Object.keys(zip.files).sort()).toEqual(['MANIFEST.md', 'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.md']);
-      expect(component.failures[0].reason).toBe('the run no longer exists');
     });
 
     it('titles itself Downloads with the document count, unless the context names a title and subtitle', () => {
@@ -1732,7 +1805,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, TechnicalReport) });
       expect(heading()).toBe('Downloads');
-      expect(subtitle()).toBe('2 report documents and the reports of their runs');
+      expect(subtitle()).toBe('2 report documents');
 
       wrapper.open({
         kind: 'documents',
@@ -1745,7 +1818,125 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(heading()).toBe('Comparison reports');
       expect(subtitle()).toBe('1 document of the comparison of 3 models');
       // The rows and packages are those of any document context.
-      expect(component.rows.map(r => r.key)).toEqual(['doc:1', 'report:42']);
+      expect(component.rows.map(r => r.key)).toEqual(['doc:1']);
+    });
+  });
+
+  describe('library context', () => {
+    const heading = (): string => (host().querySelector('.dialog-title-group h3')?.textContent ?? '').trim();
+    const subtitle = (): string => (host().querySelector('.dialog-title-group .dialog-subtitle')?.textContent ?? '').trim();
+
+    it('titles each scope, and lists only its Report Pack documents', () => {
+      wrapper.open({ kind: 'library', scope: { kind: 'comparison', entryKeys: ['run:42', 'run:43'] }, preselect: 'all' });
+      expectList('reportPack').flush([doc(1, ExecutiveSummary, { subjectRunIds: [42] })]);
+      render();
+      expect(heading()).toBe('Report documents');
+      expect(subtitle()).toBe('The report documents of this comparison');
+      expect(component.rows.map(r => r.key)).toEqual(['doc:1']);
+
+      wrapper.open({ kind: 'library', scope: { kind: 'all' }, preselect: 'none' });
+      expectList('reportPack').flush([]);
+      render();
+      expect(heading()).toBe('Report documents');
+      expect(subtitle()).toBe('Every report document written from a model comparison');
+
+      wrapper.open({ kind: 'library', scope: { kind: 'subject', subjectKey: 'battery:7', label: 'battery run #7 · Core Battery · GPT Model X' }, preselect: 'none' });
+      const list = expectList('reportPack');
+      expect(list.request.params.get('subject')).toBe('battery:7');
+      list.flush([]);
+      render();
+      expect(heading()).toBe('Comparison documents');
+      expect(subtitle()).toBe('About battery run #7 · Core Battery · GPT Model X');
+    });
+
+    it('switches from a run to the comparison documents about it on Open comparison documents', () => {
+      openRun(undefined, undefined, undefined, [doc(5, ExecutiveSummary), doc(6, TechnicalReport)]);
+      expect(component.rows.some(r => r.key === 'doc:5')).toBe(false);
+
+      host().querySelector<HTMLButtonElement>('.dc-comparison-pointer .dc-open-comparison-documents')!.click();
+      const list = expectList('reportPack');
+      expect(list.request.params.get('subject')).toBe('run:42');
+      expect(list.request.params.has('comparison')).toBe(false);
+      list.flush([doc(5, ExecutiveSummary), doc(6, TechnicalReport)]);
+      render();
+
+      expect(wrapper.dialog!.nativeElement.open).toBe(true);
+      expect(heading()).toBe('Comparison documents');
+      expect(subtitle()).toBe('About run #42 · Board Suite · GPT Model X');
+      expect(document.activeElement).toBe(wrapper.heading!.nativeElement);
+      expect(component.rows.map(r => r.key)).toEqual(['doc:5', 'doc:6']);
+      expect(component.selectedCount).toBe(0);
+      // A library lists no run files and polls no job.
+      httpMock.expectNone(JOB_URL);
+    });
+  });
+
+  describe('battery context', () => {
+    it('lists every member run\'s files with Include member runs, and downloads them all in one Internal ZIP', async () => {
+      const capture = vi.fn((run: BenchmarkRunDetailDto) => `=== BENCHMARK RUN DIAGNOSTICS run ${run.id} ===\n`);
+      openBattery([member(101)], { ...batteryContext, memberDiagnosticsText: capture });
+
+      expect(component.rows.map(r => r.key)).toEqual(['battery-report:7', 'report:101', 'log:101', 'diag:101']);
+      expect(component.rows.every(r => component.isIncluded(r))).toBe(true);
+
+      await runDownload();
+
+      expect(requested.every(url => ALLOWED_URLS.some(pattern => pattern.test(url)))).toBe(true);
+      expect(requested).toContain('/api/admin/benchmark/runs/101');
+      expect(capture).toHaveBeenCalledTimes(1);
+      const zip = await savedZip();
+      expect(zip.name).toBe('core-battery-gpt-model-x_internal-package_20260928_101502.zip');
+      expect(Object.keys(zip.files).sort()).toEqual([
+        'Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.md',
+        DIAG_DOCX_NAME,
+        DIAG_PDF_NAME,
+        LOG_DOCX_NAME,
+        LOG_PDF_NAME,
+        REPORT_DOCX_NAME,
+        REPORT_PDF_NAME,
+        'Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md',
+        'Core_Battery_battery-run-7_20261002_090000_INTERNAL.md',
+        'MANIFEST.md',
+        'board-suite_gpt-model-x_run101_diagnostics_INTERNAL.txt'
+      ].sort());
+      expect(zip.files['board-suite_gpt-model-x_run101_diagnostics_INTERNAL.txt']).toBe('=== BENCHMARK RUN DIAGNOSTICS run 101 ===\n');
+      // The diagnostics PDF and Word document render the same capture.
+      const diagnostics = binaryRequests.filter(r => /runs\/101\/diagnostics\/(pdf|docx)$/.test(r.url));
+      expect(diagnostics.length).toBe(2);
+      expect(diagnostics.every(r => r.method === 'POST')).toBe(true);
+      // A member's run files are dated from the battery run's member list.
+      const completed = new Date('2026-09-21T17:05:44Z').getTime();
+      expect(zip.times.get(REPORT_PDF_NAME)?.getTime()).toBe(completed);
+    });
+
+    it('dates a member run file from its server name when the member list has no time for it', async () => {
+      openBattery([member(101, { runStartedAtUtc: null, runCompletedAtUtc: null })]);
+      choose('custom', { 'report:101': { formats: ['md', 'pdf', 'docx'] } });
+
+      await runDownload();
+
+      const zip = await savedZip();
+      const started = new Date('2026-09-21T16:00:00Z').getTime();
+      expect(zip.times.get('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.md')?.getTime()).toBe(started);
+      expect(zip.times.get(REPORT_PDF_NAME)?.getTime()).toBe(started);
+      expect(zip.times.get(REPORT_DOCX_NAME)?.getTime()).toBe(started);
+    });
+
+    it('fails a member run deleted since it was listed gracefully, and downloads the rest', async () => {
+      openBattery([member(101)]);
+      choose('custom', { 'report:101': { formats: ['md'] }, 'log:101': { formats: ['md'] } });
+
+      await runDownload({ reportStatus: 404 });
+
+      const zip = await savedZip();
+      expect(Object.keys(zip.files).sort()).toEqual(['Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md', 'MANIFEST.md']);
+      expect(component.failures[0].reason).toBe('the run no longer exists');
+    });
+
+    it('lists no member diagnostics without the host\'s callback', () => {
+      openBattery([member(101)]);
+
+      expect(component.rows.map(r => r.key)).toEqual(['battery-report:7', 'report:101', 'log:101']);
     });
   });
 

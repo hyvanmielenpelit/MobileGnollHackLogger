@@ -62,6 +62,8 @@ export interface ModelComparisonEntry {
   readonly provider?: string;
   /** R - the number of runs behind the entry. R = 1 draws hollow marks and carries no cost SD. */
   readonly runCount: number;
+  /** A battery result's suites; absent on a run or group entry. The runs badge counts battery passes by it. */
+  readonly suiteCount?: number;
 
   /** Intelligence Index point estimate, 0-100. */
   readonly intelligenceIndex: number;

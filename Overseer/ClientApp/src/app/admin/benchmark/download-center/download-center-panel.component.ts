@@ -19,12 +19,14 @@ import { catchError, map, switchMap, takeUntil } from 'rxjs/operators';
 
 import {
   AdminBenchmarkService,
+  BenchmarkBatteryRunDto,
   BenchmarkPdfPaper,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
   BenchmarkReportPeerNaming,
+  BenchmarkRunDetailDto,
   BenchmarkRunReportJobDto,
   BenchmarkRunReportJobPhase,
   BenchmarkTextFile,
@@ -86,7 +88,10 @@ export interface DownloadCenterRunInfo {
   batteryRunId?: number | null;
 }
 
-/** Opened from a run report: the run's files and every document whose subject is the run. */
+/**
+ * Opened from a run report: the run's files and its run-completion documents (subject `run:<id>`).
+ * Comparison documents about the run are counted and pointed to, not listed.
+ */
 export interface DownloadCenterRunContext {
   kind: 'run';
   run: DownloadCenterRunInfo;
@@ -94,7 +99,7 @@ export interface DownloadCenterRunContext {
   diagnosticsText: () => string;
 }
 
-/** Opened on chosen documents: those documents and the reports of their subjects' runs. */
+/** Opened on chosen documents: those documents. */
 export interface DownloadCenterDocumentsContext {
   kind: 'documents';
   documentIds: number[];
@@ -104,15 +109,28 @@ export interface DownloadCenterDocumentsContext {
   subtitle?: string;
 }
 
+/** Every comparison document about one run (`run:<id>`) or battery run (`battery:<id>`), whichever comparison wrote it. */
+export interface DownloadCenterSubjectScope {
+  readonly kind: 'subject';
+  readonly subjectKey: string;
+  /** What the subtitle names the subject by. */
+  readonly label: string;
+}
+
+/** Which Report Pack documents a library context lists: one comparison's, every one, or those about one subject. */
+export type DownloadCenterLibraryScope = ReportDocumentLibraryScope | DownloadCenterSubjectScope;
+
 /**
- * Every Report Pack document of a comparison, or of every comparison, by one list request, and the
- * reports of their subjects' runs.
+ * Which listed rows start chosen: `all`, every row as the package chooses it; `none`, nothing; `ids`,
+ * only the documents with those ids, as the package chooses them.
  */
+export type DownloadCenterPreselect = 'all' | 'none' | { readonly ids: readonly number[] };
+
+/** The Report Pack documents of the scope, by one list request. */
 export interface DownloadCenterLibraryContext {
   kind: 'library';
-  scope: ReportDocumentLibraryScope;
-  /** `all`: every row starts as the package chooses it; `none`: nothing starts chosen. */
-  preselect: 'all' | 'none';
+  scope: DownloadCenterLibraryScope;
+  preselect: DownloadCenterPreselect;
   /** The dialog title in place of *Report documents*. */
   title?: string;
   /** The subtitle in place of the scope line. */
@@ -120,15 +138,21 @@ export interface DownloadCenterLibraryContext {
 }
 
 /**
- * Opened from a battery run report: the battery's analysis report and every document whose subject
- * is the battery run (`battery:<id>`), battery-completion and Report Pack alike. No member run's
- * files are listed.
+ * Opened from a battery run report: the battery's analysis report and its battery-completion
+ * documents (subject `battery:<id>`) and, while **Include member runs** is checked, every current
+ * member run's report, tool-call log and diagnostics. Comparison documents about the battery run are
+ * counted and pointed to, not listed.
  */
 export interface DownloadCenterBatteryContext {
   kind: 'battery';
   batteryRunId: number;
   /** What the subtitle names the battery run by: its battery and model. */
   label: string;
+  /**
+   * A member run's diagnostics text, captured from its run detail when the download is prepared.
+   * Without it no member run's diagnostics are listed.
+   */
+  memberDiagnosticsText?: (run: BenchmarkRunDetailDto) => string;
 }
 
 export type DownloadCenterContext =
@@ -388,6 +412,13 @@ export const DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS = 200;
 /** The footer's status line after Cancel stopped a download in preparation. */
 export const DOWNLOAD_CANCELED_MESSAGE = 'Download canceled. Nothing was saved.';
 
+/** The notice above the list when a battery run's member runs could not be listed. */
+export const MEMBER_RUNS_FAILED_NOTICE = 'The member runs could not be listed; the battery\'s own documents are.';
+
+/** The click-mode explanation of a battery context's **Include member runs**. */
+export const INCLUDE_MEMBER_RUNS_TIP =
+  'Lists every member run\'s report, tool-call log and diagnostics beside the battery\'s own documents, so the whole battery downloads at once.';
+
 export type DownloadSortId =
   | 'created-desc' | 'created-asc' | 'type' | 'title' | 'subject' | 'suite' | 'writer' | 'cost-desc' | 'changed-first';
 
@@ -478,12 +509,13 @@ let nextInstanceId = 0;
  * every opening, and by the Model Comparison wizard's step 4, which binds `context` and lends
  * `chartActions`: a Charts option and facet, **Update charts…** and per-card **Remove charts**.
  *
- * It makes no request but the document list or detail that fills the list, the render endpoints
- * (Markdown, PDF and Word), the run report and tool-call log endpoints with their PDFs and Word
- * documents, the battery analysis report, the run and battery report writing jobs, the diagnostics
- * PDF and Word endpoints, which render the captured text and store nothing, a document's delete and
- * its charts' delete: nothing here can start generation. Chart
- * uploads go through the host's `chartActions.publish`.
+ * It makes no request but the document list or detail that fills the list, the count of the
+ * comparison documents about a run or battery run, the battery run detail that lists its member
+ * runs, the render endpoints (Markdown, PDF and Word), the run report and tool-call log endpoints
+ * with their PDFs and Word documents, the battery analysis report, the run and battery report
+ * writing jobs, a member run's detail for its diagnostics, the diagnostics PDF and Word endpoints,
+ * which render the captured text and store nothing, a document's delete and its charts' delete:
+ * nothing here can start generation. Chart uploads go through the host's `chartActions.publish`.
  *
  * Its nested dialogs stop their own close and cancel events, so a dialog around the panel never
  * sees them. Every element id derives from `idPrefix`.
@@ -516,6 +548,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   @Output() readonly documentsChanged = new EventEmitter<void>();
   /** Open battery run downloads was pressed: the id of the battery run the listed run is a member of. */
   @Output() readonly openBatteryDownloads = new EventEmitter<number>();
+  /** Open comparison documents was pressed: the library context of the comparison documents about the run or battery run. */
+  @Output() readonly openComparisonDocuments = new EventEmitter<DownloadCenterLibraryContext>();
 
   @ViewChild('downloadButton') downloadButton?: ElementRef<HTMLButtonElement>;
   @ViewChild(PdfViewerDialogComponent) pdfViewer?: PdfViewerDialogComponent;
@@ -530,6 +564,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   readonly optionsHelp = DOWNLOAD_OPTIONS_HELP;
   readonly sorts = DOWNLOAD_SORTS;
   readonly cardBatch = DOWNLOAD_CENTER_CARD_BATCH;
+  readonly includeMemberRunsTip = INCLUDE_MEMBER_RUNS_TIP;
   readonly formatUtc = formatUtc;
 
   packageId: DownloadPackageId = 'internal';
@@ -538,7 +573,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   /** Every row, in source order; the list renders `view`. */
   rows: DownloadRow[] = [];
   loadingDocuments = false;
-  /** Notices above the list: runs that no longer exist, documents that could not be loaded. */
+  /** Notices above the list: documents that are no longer available or could not be loaded. */
   notices: string[] = [];
   /** A download or a chart update is in preparation. */
   preparing = false;
@@ -551,6 +586,16 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   /** The phase of the run's report writing job while it is not finished; null when there is none to wait for. */
   reportJobPhase: BenchmarkRunReportJobPhase | null = null;
+
+  /** In a run or battery context, how many comparison documents are about its subject; 0 until counted, or when the count failed. */
+  comparisonDocumentCount = 0;
+
+  /** In a battery context, **Include member runs**: checked whenever a battery context opens, and not remembered. */
+  includeMemberRuns = true;
+  /** The battery run's member runs are being listed. */
+  loadingMembers = false;
+  /** Why the member runs are not listed, or null. */
+  memberNotice: string | null = null;
 
   /**
    * Sort and filter state. The source list stays in load order: the download plan, the manifest
@@ -690,6 +735,10 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   private reportJobSub: Subscription | null = null;
   private listSub: Subscription | null = null;
   private deleteSub: Subscription | null = null;
+  private countSub: Subscription | null = null;
+  private memberSub: Subscription | null = null;
+  /** The member run rows of the battery context, built once they are listed; null until then. */
+  private memberRows: DownloadRow[] | null = null;
   /** Where focus returns when a nested dialog closes. */
   private returnFocus: HTMLElement | null = null;
   /** After a delete: the key of the row to focus, or null for the Documents heading. */
@@ -724,6 +773,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
     this.deleteSub?.unsubscribe();
+    this.countSub?.unsubscribe();
+    this.memberSub?.unsubscribe();
   }
 
   // -------------------------------------------------------------------------------------------
@@ -746,8 +797,15 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.chartStorageMessage = null;
     this.chartSkips = [];
     this.chartFailures = [];
+    this.comparisonDocumentCount = 0;
+    this.includeMemberRuns = true;
+    this.loadingMembers = false;
+    this.memberNotice = null;
+    this.memberRows = null;
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
+    this.countSub?.unsubscribe();
+    this.memberSub?.unsubscribe();
     this.list.reset();
     const stored = readStoredSettings();
     this.packageId = stored?.package ?? 'internal';
@@ -755,14 +813,17 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
     switch (context.kind) {
       case 'run':
-        this.addRows(runFileRows(context.run));
+        this.addRows(runFileRows(context.run, true));
         this.loadRunDocuments(context.run.id, this.generation);
         this.pollRunReportJob(context.run.id, this.generation, 0);
+        this.countComparisonDocuments(`run:${context.run.id}`, this.generation);
         break;
       case 'battery':
         this.addRows([batteryReportRow(context)]);
         this.loadBatteryDocuments(context.batteryRunId, this.generation);
         this.pollBatteryReportJob(context.batteryRunId, this.generation, 0);
+        this.countComparisonDocuments(`battery:${context.batteryRunId}`, this.generation);
+        this.loadMemberRuns(context, this.generation);
         break;
       case 'documents':
         this.loadChosenDocuments(context.documentIds, this.generation);
@@ -782,13 +843,16 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     }
   }
 
-  /** Drops everything in flight: a list, the job poll, a download and its requests. The rows stay. */
+  /** Drops everything in flight: a list, a count, the member list, the job poll, a download and its requests. The rows stay. */
   deactivate(): void {
     this.generation++;
     this.abandonDownload();
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
+    this.countSub?.unsubscribe();
+    this.memberSub?.unsubscribe();
     this.loadingDocuments = false;
+    this.loadingMembers = false;
     this.preparing = false;
     this.progress = null;
     this.cdr.markForCheck();
@@ -846,6 +910,71 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     if (batteryRunId !== null) {
       this.openBatteryDownloads.emit(batteryRunId);
     }
+  }
+
+  /**
+   * In a run or battery context with comparison documents about its subject, the pointer's text;
+   * else null. Those documents are kept with their comparisons and are not listed here.
+   */
+  get comparisonPointerText(): string | null {
+    const kind = this.loaded?.kind;
+    const count = this.comparisonDocumentCount;
+    if (count <= 0 || (kind !== 'run' && kind !== 'battery')) {
+      return null;
+    }
+    const subject = kind === 'battery' ? 'battery run' : 'run';
+    return count === 1
+      ? `1 comparison document compares this ${subject} with other models. It is kept with its comparison.`
+      : `${count} comparison documents compare this ${subject} with other models. They are kept with their comparisons.`;
+  }
+
+  /** Open comparison documents: asks the host to show the comparison documents about the run or battery run. */
+  requestComparisonDocuments(): void {
+    const context = this.loaded;
+    if (context?.kind === 'run') {
+      const run = context.run;
+      this.openComparisonDocuments.emit(subjectLibraryContext(`run:${run.id}`, `run #${run.id} · ${run.suiteName} · ${run.modelLabel}`));
+    } else if (context?.kind === 'battery') {
+      const id = context.batteryRunId;
+      this.openComparisonDocuments.emit(subjectLibraryContext(
+        `battery:${id}`, context.label ? `battery run #${id} · ${context.label}` : `battery run #${id}`));
+    }
+  }
+
+  /** In a battery context, whether the list header offers **Include member runs**. */
+  get offersMemberRuns(): boolean {
+    return this.loaded?.kind === 'battery';
+  }
+
+  /**
+   * **Include member runs**: checked, it lists every current member run's files, listing the members
+   * first if they are not yet listed, or again after a failure; unchecked, it removes those rows and
+   * their choices. Rows added again are preset again.
+   */
+  toggleIncludeMemberRuns(event: Event): void {
+    const context = this.loaded;
+    const input = event.target as HTMLInputElement;
+    if (context?.kind !== 'battery' || this.preparing) {
+      input.checked = this.includeMemberRuns;
+      return;
+    }
+    this.includeMemberRuns = input.checked;
+    this.memberNotice = null;
+    if (this.includeMemberRuns) {
+      if (this.memberRows) {
+        this.addRows(this.memberRows);
+      } else if (!this.loadingMembers) {
+        this.loadMemberRuns(context, this.generation);
+      }
+    } else {
+      const keys = new Set((this.memberRows ?? []).map(row => row.key));
+      this.rows = this.rows.filter(row => !keys.has(row.key));
+      for (const key of keys) {
+        this.states.delete(key);
+      }
+    }
+    this.list.invalidate();
+    this.cdr.markForCheck();
   }
 
   // -------------------------------------------------------------------------------------------
@@ -952,7 +1081,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   /**
    * The card's meta line, in order: when it was written, and then for a report document its
-   * subject, suite and writer; for a run file its detail (suite and model, or the subject run).
+   * subject, suite and writer; for a run file its detail (suite and model, or a battery member's
+   * suite, round and run).
    */
   cardMeta(row: DownloadRow): { kind: string; cssClass: string; text: string }[] {
     const parts: { kind: string; cssClass: string; text: string }[] = [];
@@ -1072,9 +1202,11 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   get emptyText(): string {
     const context = this.loaded;
     if (context?.kind === 'library') {
-      return context.scope.kind === 'comparison'
-        ? 'No reports have been written for this comparison yet.'
-        : 'No comparison reports yet.';
+      switch (context.scope.kind) {
+        case 'comparison': return 'No reports have been written for this comparison yet.';
+        case 'subject': return 'No comparison documents have been written about it.';
+        default: return 'No comparison reports yet.';
+      }
     }
     return 'Nothing is available to download.';
   }
@@ -1277,7 +1409,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   }
 
   get canDownload(): boolean {
-    return !this.preparing && !this.loadingDocuments && this.plannedFiles.length > 0;
+    return !this.preparing && !this.loadingDocuments && !this.loadingMembers && this.plannedFiles.length > 0;
   }
 
   /**
@@ -1917,10 +2049,13 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   // Internals
   // -------------------------------------------------------------------------------------------
 
-  /** Every document about the run itself (`run:<id>`), newest first; no battery's or group's documents that include it. */
+  /**
+   * The run's own run-completion documents (`run:<id>`), newest first: no comparison document about
+   * it, and no battery's or group's document that includes it.
+   */
   private loadRunDocuments(runId: number, generation: number): void {
     this.loadingDocuments = true;
-    this.listSub = this.benchmarkService.listReportDocuments({ subject: `run:${runId}` }).subscribe({
+    this.listSub = this.benchmarkService.listReportDocuments({ subject: `run:${runId}`, origin: 'runCompletion' }).subscribe({
       next: documents => {
         if (generation !== this.generation) {
           return;
@@ -1940,10 +2075,10 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     });
   }
 
-  /** Every document about the battery run itself, newest first; no member run's files. */
+  /** The battery run's own battery-completion documents (`battery:<id>`), newest first; no comparison document about it. */
   private loadBatteryDocuments(batteryRunId: number, generation: number): void {
     this.loadingDocuments = true;
-    this.listSub = this.benchmarkService.listReportDocuments({ subject: `battery:${batteryRunId}` }).subscribe({
+    this.listSub = this.benchmarkService.listReportDocuments({ subject: `battery:${batteryRunId}`, origin: 'batteryCompletion' }).subscribe({
       next: documents => {
         if (generation !== this.generation) {
           return;
@@ -1959,6 +2094,57 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         this.notices = [...this.notices,
           'The report documents of this battery run could not be loaded; the analysis report is still listed.'];
         this.loadingDocuments = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** Counts the comparison (Report Pack) documents about the subject, for the pointer; a failed count shows nothing. */
+  private countComparisonDocuments(subjectKey: string, generation: number): void {
+    this.countSub = this.benchmarkService.listReportDocuments({ subject: subjectKey, origin: 'reportPack' }).subscribe({
+      next: documents => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.comparisonDocumentCount = (documents ?? []).length;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.comparisonDocumentCount = 0;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /**
+   * Lists the battery run's current member runs and, while **Include member runs** is checked, adds
+   * their rows. A failure while it is checked shows a notice; checking it again retries.
+   */
+  private loadMemberRuns(context: DownloadCenterBatteryContext, generation: number): void {
+    this.memberSub?.unsubscribe();
+    this.loadingMembers = true;
+    this.memberSub = this.benchmarkService.getBatteryRun(context.batteryRunId).subscribe({
+      next: battery => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.loadingMembers = false;
+        this.memberRows = memberRunRows(battery, context);
+        if (this.includeMemberRuns) {
+          this.addRows(this.memberRows);
+          this.list.invalidate();
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.loadingMembers = false;
+        this.memberNotice = this.includeMemberRuns ? MEMBER_RUNS_FAILED_NOTICE : null;
         this.cdr.markForCheck();
       }
     });
@@ -2059,39 +2245,34 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
             notices.push(`Report document #${unique[index]} is no longer available.`);
           }
         });
-        const listed = documentRows(documents);
-        this.notices = [...this.notices, ...notices, ...listed.notices];
-        this.addRows(listed.rows);
+        this.notices = [...this.notices, ...notices];
+        this.addRows(documents.map(packRow));
         this.loadingDocuments = false;
         this.cdr.markForCheck();
       });
   }
 
-  /** One list request for the scope's Report Pack documents, newest first, and their runs' reports. */
+  /** One list request for the scope's Report Pack documents, newest first; only those documents are listed. */
   private loadLibrary(context: DownloadCenterLibraryContext, generation: number, keepChoices: boolean): void {
     this.loadingDocuments = true;
     this.listSub?.unsubscribe();
     const scope = context.scope;
     const query = scope.kind === 'comparison'
       ? { comparison: scope.entryKeys, origin: 'reportPack' as const }
-      : { origin: 'reportPack' as const, take: REPORT_LIBRARY_ALL_TAKE };
+      : scope.kind === 'subject'
+        ? { subject: scope.subjectKey, origin: 'reportPack' as const }
+        : { origin: 'reportPack' as const, take: REPORT_LIBRARY_ALL_TAKE };
     this.listSub = this.benchmarkService.listReportDocuments(query).subscribe({
       next: documents => {
         if (generation !== this.generation) {
           return;
         }
-        const listed = documentRows(sortDocuments(documents ?? []));
+        const rows = sortDocuments(documents ?? []).map(packRow);
         if (keepChoices) {
-          this.replaceRows(listed.rows, context.preselect);
-          this.notices = listed.notices;
+          this.replaceRows(rows, context.preselect);
+          this.notices = [];
         } else {
-          this.notices = [...this.notices, ...listed.notices];
-          this.addRows(listed.rows);
-          if (context.preselect === 'none') {
-            for (const row of listed.rows) {
-              this.stateOf(row).selected = false;
-            }
-          }
+          this.addRows(rows, context.preselect);
         }
         this.loadingDocuments = false;
         this.cdr.markForCheck();
@@ -2108,19 +2289,21 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.cdr.markForCheck();
   }
 
-  private addRows(rows: DownloadRow[]): void {
+  /** Adds the rows not yet listed, each chosen as the package and its remembered choice say, then as `preselect` says. */
+  private addRows(rows: DownloadRow[], preselect: DownloadCenterPreselect = 'all'): void {
     const stored = readStoredSettings();
     for (const row of rows) {
       if (this.rows.some(existing => existing.key === row.key)) {
         continue;
       }
       this.rows = [...this.rows, row];
-      this.states.set(row.key, this.rememberedState(row, this.packageId, this.presetState(row, this.packageId), stored));
+      const state = this.rememberedState(row, this.packageId, this.presetState(row, this.packageId), stored);
+      this.states.set(row.key, { ...state, selected: startsSelected(row, state.selected, preselect) });
     }
   }
 
-  /** The listed rows in place of the current ones; a row still listed keeps its choices. */
-  private replaceRows(rows: DownloadRow[], preselect: 'all' | 'none'): void {
+  /** The listed rows in place of the current ones; a row still listed keeps its choices, a new one starts as `preselect` says. */
+  private replaceRows(rows: DownloadRow[], preselect: DownloadCenterPreselect): void {
     const stored = readStoredSettings();
     const listed = new Set(rows.map(row => row.key));
     for (const key of [...this.states.keys()]) {
@@ -2131,7 +2314,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     for (const row of rows) {
       if (!this.states.has(row.key)) {
         const state = this.rememberedState(row, this.packageId, this.presetState(row, this.packageId), stored);
-        this.states.set(row.key, preselect === 'none' ? { ...state, selected: false } : state);
+        this.states.set(row.key, { ...state, selected: startsSelected(row, state.selected, preselect) });
       }
     }
     this.rows = rows;
@@ -2289,14 +2472,28 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         return { ...await this.untilCanceled(this.benchmarkService.getRunReportText(row.runId!)), capturedAt: null };
       case 'toolCallLog':
         return { ...await this.untilCanceled(this.benchmarkService.getToolCallLogText(row.runId!)), capturedAt: null };
-      case 'diagnostics':
-        if (context.kind !== 'run') {
-          throw new Error('Diagnostics exist only for a run.');
-        }
-        return { text: context.diagnosticsText(), fileName: null, capturedAt: downloadCenterIo.now() };
+      case 'diagnostics': {
+        const text = await this.diagnosticsText(row, context);
+        return { text, fileName: null, capturedAt: downloadCenterIo.now() };
+      }
       case 'batteryReport':
         return { ...await this.untilCanceled(this.batteryReportText(row.batteryRunId!)), capturedAt: null };
     }
+  }
+
+  /**
+   * A diagnostics row's text: the run context's capture, or a battery member's, captured from the
+   * member run's detail through the battery context's `memberDiagnosticsText`.
+   */
+  private async diagnosticsText(row: DownloadRow, context: DownloadCenterContext): Promise<string> {
+    if (context.kind === 'run') {
+      return context.diagnosticsText();
+    }
+    if (context.kind === 'battery' && context.memberDiagnosticsText) {
+      const run = await this.untilCanceled(this.benchmarkService.getRun(row.runId!));
+      return context.memberDiagnosticsText(run);
+    }
+    throw new Error('Diagnostics exist only for a run.');
   }
 
   /** The battery run's analysis report as Markdown, named as the server's `Content-Disposition` names it. */
@@ -2382,10 +2579,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       mtime = utcDate(doc.createdAtUtc) ?? packagedAt;
       createdAtUtc = isoSeconds(mtime);
     } else if (row.kind === 'diagnostics') {
-      const run = (context as DownloadCenterRunContext).run;
       name = (format === 'pdf' || format === 'docx') && source.fileName
         ? internalServerName(source.fileName, format)
-        : `${safeFileName(run.suiteName)}_${safeFileName(run.modelLabel)}_run${run.id}_diagnostics_INTERNAL.${format}`;
+        : `${safeFileName(row.suite)}_${safeFileName(row.subject)}_run${row.runId}_diagnostics_INTERNAL.${format}`;
       mtime = source.capturedAt ?? packagedAt;
       createdAtUtc = isoSeconds(mtime);
     } else if (row.kind === 'batteryReport') {
@@ -2450,7 +2646,8 @@ const RUN_FILE_DESCRIPTIONS: Record<Exclude<DownloadRowKind, 'pack'>, string> = 
 
 export const ROW_NOTES = {
   toolCallLog: 'Can run to several megabytes; its PDF and Word files can be hundreds of pages.',
-  diagnostics: 'Captured when the download is prepared, not stored.'
+  diagnostics: 'Captured when the download is prepared, not stored.',
+  unusableMember: 'Not used in the battery\'s statistics.'
 } as const;
 
 /** The package's formats that the row offers; every format the row offers where none of them is. */
@@ -2459,29 +2656,83 @@ function presetFormats(row: DownloadRow, pkg: 'internal' | 'provider'): Download
   return formats.length > 0 ? formats : [...row.formats];
 }
 
-function runFileRows(run: DownloadCenterRunInfo): DownloadRow[] {
-  const detail = `${run.suiteName} · ${run.modelLabel}`;
+/**
+ * A run's report, tool-call log and, when a diagnostics source exists, diagnostics. A battery member
+ * passes its own detail line, and its `memberNote` leads every row's note.
+ */
+function runFileRows(
+  run: DownloadCenterRunInfo,
+  withDiagnostics: boolean,
+  detail = `${run.suiteName} · ${run.modelLabel}`,
+  memberNote: string | null = null
+): DownloadRow[] {
+  const note = (own: string | null): string | null => [memberNote, own].filter(part => !!part).join(' ') || null;
   const base = {
     runId: run.id, doc: null, runChanged: false, allowedDisclosures: [],
     subject: run.modelLabel, suite: run.suiteName, createdAtUtc: run.completedAtUtc ?? run.startedAtUtc
   };
-  return [
+  const rows: DownloadRow[] = [
     {
       ...base, key: `report:${run.id}`, kind: 'runReport', category: 'runReport', documentType: 'Run report',
-      label: `Run report, run #${run.id}`, detail, note: null,
+      label: `Run report, run #${run.id}`, detail, note: note(null),
       formats: ['pdf', 'docx', 'md', 'html'], internalReason: INTERNAL_REASONS.runReport
     },
     {
       ...base, key: `log:${run.id}`, kind: 'toolCallLog', category: 'toolCallLog', documentType: 'Tool-call log',
-      label: `Tool-call log, run #${run.id}`, detail, note: ROW_NOTES.toolCallLog,
+      label: `Tool-call log, run #${run.id}`, detail, note: note(ROW_NOTES.toolCallLog),
       formats: ['pdf', 'docx', 'md'], internalReason: INTERNAL_REASONS.toolCallLog
-    },
-    {
-      ...base, key: `diag:${run.id}`, kind: 'diagnostics', category: 'diagnostics', documentType: 'Run diagnostics',
-      label: `Run diagnostics, run #${run.id}`, detail, note: ROW_NOTES.diagnostics,
-      formats: ['pdf', 'docx', 'txt'], internalReason: INTERNAL_REASONS.diagnostics
     }
   ];
+  if (withDiagnostics) {
+    rows.push({
+      ...base, key: `diag:${run.id}`, kind: 'diagnostics', category: 'diagnostics', documentType: 'Run diagnostics',
+      label: `Run diagnostics, run #${run.id}`, detail, note: note(ROW_NOTES.diagnostics),
+      formats: ['pdf', 'docx', 'txt'], internalReason: INTERNAL_REASONS.diagnostics
+    });
+  }
+  return rows;
+}
+
+/**
+ * Every current member run's files, as a run's own Download Center lists them: members neither
+ * superseded nor deleted, by suite and then round. An unusable member is listed with a note, its files
+ * being what an analysis of its failure needs. Diagnostics are listed only when the context can
+ * capture them.
+ */
+function memberRunRows(battery: BenchmarkBatteryRunDto, context: DownloadCenterBatteryContext): DownloadRow[] {
+  const model = battery.testedModelLabel || context.label;
+  const withDiagnostics = !!context.memberDiagnosticsText;
+  return (battery.members ?? [])
+    .filter(member => !member.superseded && member.runStatus !== 'Deleted')
+    .sort((a, b) => a.suiteIndex - b.suiteIndex || a.round - b.round)
+    .flatMap(member => {
+      const suite = battery.suites?.find(s => s.index === member.suiteIndex)?.suiteName ?? '';
+      const run: DownloadCenterRunInfo = {
+        id: member.runId,
+        suiteName: suite,
+        modelLabel: model,
+        startedAtUtc: member.runStartedAtUtc ?? '',
+        completedAtUtc: member.runCompletedAtUtc ?? null
+      };
+      const detail = [suite, `round ${member.round}`, `run #${member.runId}`].filter(part => !!part).join(' · ');
+      return runFileRows(run, withDiagnostics, detail, member.usable ? null : ROW_NOTES.unusableMember);
+    });
+}
+
+/** The library context of the comparison documents about one run or battery run, with nothing preselected. */
+function subjectLibraryContext(subjectKey: string, label: string): DownloadCenterLibraryContext {
+  return { kind: 'library', scope: { kind: 'subject', subjectKey, label }, preselect: 'none' };
+}
+
+/** Whether a newly listed row starts chosen: as the package chose it, unless `preselect` says none or lists other documents. */
+function startsSelected(row: DownloadRow, chosen: boolean, preselect: DownloadCenterPreselect): boolean {
+  if (preselect === 'none') {
+    return false;
+  }
+  if (preselect === 'all') {
+    return chosen;
+  }
+  return chosen && row.doc !== null && preselect.ids.includes(row.doc.id);
 }
 
 /** The battery analysis report's name when the server gives none. */
@@ -2511,43 +2762,6 @@ function batteryReportRow(context: DownloadCenterBatteryContext): DownloadRow {
     documentType: 'Battery analysis report',
     createdAtUtc: null
   };
-}
-
-function subjectRunReportRow(runId: number, subjectLabel: string, suiteName: string): DownloadRow {
-  return {
-    key: `report:${runId}`,
-    kind: 'runReport',
-    category: 'runReport',
-    label: `Run report, run #${runId}`,
-    detail: subjectLabel ? `A subject run of ${subjectLabel}` : 'A subject run',
-    note: null,
-    runId,
-    doc: null,
-    runChanged: false,
-    allowedDisclosures: [],
-    formats: ['pdf', 'docx', 'md', 'html'],
-    internalReason: INTERNAL_REASONS.runReport,
-    subject: subjectLabel,
-    suite: suiteName,
-    documentType: 'Run report',
-    createdAtUtc: null
-  };
-}
-
-/** The pack rows of the documents, then a run report row per subject run that still exists, and a notice per one that does not. */
-function documentRows(documents: readonly BenchmarkReportDocumentListItemDto[]): { rows: DownloadRow[]; notices: string[] } {
-  const missing = new Set(documents.flatMap(doc => doc.missingRunIds ?? []));
-  const runIds = Array.from(new Set(documents.flatMap(doc => doc.subjectRunIds ?? []))).sort((a, b) => a - b);
-  const notices = Array.from(missing).sort((a, b) => a - b)
-    .map(runId => `Run #${runId} no longer exists, so its run report is not listed.`);
-  const rows = documents.map(packRow);
-  for (const runId of runIds) {
-    if (!missing.has(runId)) {
-      const owner = documents.find(doc => doc.subjectRunIds.includes(runId));
-      rows.push(subjectRunReportRow(runId, owner?.subjectLabel ?? '', owner?.suiteName ?? ''));
-    }
-  }
-  return { rows, notices };
 }
 
 /** The levels a document renders at when the server sends none: its audience's own set. */
@@ -2646,21 +2860,57 @@ const RUN_SUBJECT_KEY = /^run:([0-9]+)$/;
 /** A battery run's subject key, `battery:<digits>`. */
 const BATTERY_SUBJECT_KEY = /^battery:([0-9]+)$/;
 
+/** A peer's entry key, `run:<digits>`, `group:<digits>` or `battery:<digits>`, as a file name can spell it. */
+const PEER_ENTRY_KEY = /^(run|group|battery):([0-9]+)$/;
+
+/** The most peers a file name spells out one by one. */
+const NAMED_PEERS_MAX = 3;
+
+/** A peer's file-name token: `run-<id>`, `group-<id>` or `battery-run-<id>`; null for a key it cannot spell. */
+function peerToken(entryKey: string): string | null {
+  const match = PEER_ENTRY_KEY.exec(entryKey);
+  if (!match) {
+    return null;
+  }
+  return `${match[1] === 'battery' ? 'battery-run' : match[1]}-${match[2]}`;
+}
+
+/**
+ * The comparison part of a report document's file name: empty without peers; `vs-` and the peers'
+ * tokens in letter order, joined by `-`, for one to three peers whose keys are all readable;
+ * otherwise `vs-<N>-models-` and the first 8 characters of the comparison key, or `vs-<N>-models`
+ * for a document stored without one. Always followed by `_` when not empty.
+ */
+function comparisonFilePart(doc: BenchmarkReportDocumentListItemDto): string {
+  const peers = doc.peerCount ?? 0;
+  if (peers <= 0) {
+    return '';
+  }
+  const tokens = Object.entries(doc.peerLetters ?? {})
+    .sort(([, a], [, b]) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0))
+    .map(([entryKey]) => peerToken(entryKey));
+  if (peers <= NAMED_PEERS_MAX && tokens.length === peers && tokens.every(token => token !== null)) {
+    return `vs-${tokens.join('-')}_`;
+  }
+  const comparisonKey = doc.comparisonKey;
+  return comparisonKey ? `vs-${peers}-models-${comparisonKey.slice(0, 8)}_` : `vs-${peers}-models_`;
+}
+
 /**
  * A report document's file-name stem. A Report for AI Researchers and Developers is named by its
  * title without the audience suffix, then `_Researcher_Report`; every other document by its title.
  * A document about one run (subject `run:<digits>`) is prefixed `run-<digits>_`, one about a battery
- * run (`battery:<digits>`) `battery-run-<digits>_`, and a document compared with peers
- * `vs-<peer count>-models_` after that (first, for a group subject), as the server's
- * `BenchmarkPdfFileNames.ForReportDocument` names its PDF and Word files.
+ * run (`battery:<digits>`) `battery-run-<digits>_`, and a document compared with peers by its
+ * comparison part after that (first, for a group subject): `vs-run-92_`, `vs-run-94-run-95_`,
+ * `vs-4-models-1a2b3c4d_`. It is the name the server's `BenchmarkPdfFileNames.ForReportDocument`
+ * gives the PDF and Word files.
  */
 export function reportDocumentFileStem(doc: BenchmarkReportDocumentListItemDto, fallbackTitle: string): string {
   const title = doc.title || fallbackTitle;
   const run = RUN_SUBJECT_KEY.exec(doc.subjectKey ?? '');
   const battery = BATTERY_SUBJECT_KEY.exec(doc.subjectKey ?? '');
-  const peers = doc.peerCount ?? 0;
   const prefix = (run ? `run-${run[1]}_` : battery ? `battery-run-${battery[1]}_` : '')
-    + (peers > 0 ? `vs-${peers}-models_` : '');
+    + comparisonFilePart(doc);
   if (doc.audience !== BenchmarkReportAudience.TechnicalReport) {
     return `${prefix}${safeFileName(title)}`;
   }
@@ -2702,14 +2952,18 @@ function isoSeconds(date: Date): string {
 }
 
 /**
- * A run file's time: the run's completion, else its start, in run context. Elsewhere the run itself
- * is not fetched, so the start time is read from the report's server file name
- * (`…_yyyyMMdd_HHmmss.md`, or `…_yyyyMMdd_HHmmss_INTERNAL.pdf`, UTC), and null makes the caller use
- * the packaging time.
+ * A run file's time: the run's completion, else its start, in run context; a battery member's, from
+ * the battery run's member list, in battery context. Without either, the start time is read from the
+ * report's server file name (`…_yyyyMMdd_HHmmss.md`, or `…_yyyyMMdd_HHmmss_INTERNAL.pdf`, UTC), and
+ * null makes the caller use the packaging time.
  */
 function runFileTime(row: DownloadRow, context: DownloadCenterContext, serverName: string | null): Date | null {
   if (context.kind === 'run' && context.run.id === row.runId) {
     return utcDate(context.run.completedAtUtc) ?? utcDate(context.run.startedAtUtc);
+  }
+  const listed = context.kind === 'battery' && row.runId !== null ? utcDate(row.createdAtUtc) : null;
+  if (listed) {
+    return listed;
   }
   const match = /_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:_INTERNAL)?\.[A-Za-z0-9]+$/.exec(serverName ?? '');
   if (!match) {

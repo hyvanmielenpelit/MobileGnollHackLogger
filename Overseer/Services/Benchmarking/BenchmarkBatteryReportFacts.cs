@@ -1170,7 +1170,9 @@ public static class BenchmarkBatteryReportFacts
                 extra.Unavailable("errors.critical", "The battery analysis holds no item rows.");
             }
 
-            var dates = runs.Select(r => r.CompletedAtUtc ?? r.StartedAtUtc).ToList();
+            // The first run is dated by its start, the last by its completion.
+            var starts = runs.Select(r => r.StartedAtUtc).ToList();
+            var ends = runs.Select(r => r.CompletedAtUtc ?? r.StartedAtUtc).ToList();
 
             return new BenchmarkReportEntryFigures
             {
@@ -1189,8 +1191,8 @@ public static class BenchmarkBatteryReportFacts
                 CostDegraded = entry.CostDegraded,
                 RunCount = entry.RunCount,
                 HarnessVersion = BenchmarkReportFacts.EntryHarnessVersion(runs),
-                FirstRunUtc = dates.Count > 0 ? dates.Min() : null,
-                LastRunUtc = dates.Count > 0 ? dates.Max() : null,
+                FirstRunUtc = starts.Count > 0 ? starts.Min() : null,
+                LastRunUtc = ends.Count > 0 ? ends.Max() : null,
                 Extra = extra.Sorted()
             };
         }

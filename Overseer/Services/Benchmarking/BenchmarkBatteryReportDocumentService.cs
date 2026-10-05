@@ -14,9 +14,9 @@ using Overseer.Models;
 using Overseer.Services;
 
 /// <summary>
-/// Writes a battery run's two AI-written battery-completion documents, the Executive Summary and the
-/// Report for AI Researchers and Developers, once, after the battery finishes and its analysis is
-/// complete, with the report writer the battery run names.
+/// Writes a battery run's three AI-written battery-completion documents, the Executive Summary, the
+/// Report for AI Researchers and Developers and the Internal Improvement Brief, once, after the
+/// battery finishes and its analysis is complete, with the report writer the battery run names.
 ///
 /// <para>Each document is an immutable <see cref="BenchmarkReportDocument"/> row with
 /// <see cref="BenchmarkReportDocumentOrigin.BatteryCompletion"/> and subject <c>battery:&lt;id&gt;</c>:

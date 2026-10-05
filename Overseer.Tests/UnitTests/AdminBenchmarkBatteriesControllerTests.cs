@@ -915,7 +915,7 @@ public class AdminBenchmarkBatteriesControllerTests
 
         await BatteryReportHarness.WaitUntilAsync(() => h.Writer.JobCalls == 1 && !h.Service.IsActive(h.BatteryRunId));
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
-        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+        Assert.Equal(3, (await h.DocumentsAsync()).Count);
     }
 
     private static async Task SetAddedAtAsync(Fixture fixture, BenchmarkRun run, DateTime addedAtUtc, bool superseded = false)

@@ -506,6 +506,14 @@
   margin-inline-start: auto;
 }
 
+/* A battery context's Include member runs and its (i), at the end of the selection line. */
+.dc-include-members {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
 /* The cards: one per document, laid out by the list's own width. */
 .dc-card-list {
   display: grid;
