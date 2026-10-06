@@ -230,6 +230,7 @@ public class AgentLoopRunner
             TimeSpan permitTimeout = request.PermitWaitTimeout ?? TimeSpan.FromSeconds(_configuration.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120));
 
             string? loggedTier = null;
+            string? chatStreamUrl = TryGetChatStreamUrl(aiProvider, request);
 
             await foreach (var evt in ExecuteApiWithRetriesAsync(
                 async ct =>
@@ -249,7 +250,11 @@ public class AgentLoopRunner
                 request.ShowDebugLog,
                 cancellationToken,
                 aiProvider,
-                request.ServiceTier))
+                request.ServiceTier,
+                request.ApiKeyAlert,
+                request.ApiKey,
+                request.ModelId,
+                chatStreamUrl))
             {
                 if (evt.Type == "service_tier")
                 {
@@ -689,7 +694,11 @@ public class AgentLoopRunner
         bool showDebugLog,
         [EnumeratorCancellation] CancellationToken cancellationToken,
         IAiProvider aiProvider,
-        string? requestedServiceTier)
+        string? requestedServiceTier,
+        ApiKeyAlerts.ApiKeyAlertContext? alertContext,
+        string? apiKey,
+        string modelId,
+        string? requestUri)
     {
         int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
         int attempt = 0;
@@ -832,7 +841,16 @@ public class AgentLoopRunner
 
                             if (evt.Type == "error" && !hasYieldedChunks)
                             {
-                                bool isRetryable = ProviderErrorRetryPolicy.IsRetryable(evt.Data);
+                                string? streamErrorText = evt.Detail ?? evt.Data;
+                                var streamKeyFailure = ApiKeyAlerts.ApiKeyFailureClassifier.Classify(providerName, null, streamErrorText);
+                                if (streamKeyFailure != null)
+                                {
+                                    await RecordAndReportKeyFailureAsync(
+                                        streamKeyFailure.Value, providerName, systemModelId, alertContext, apiKey, modelId, requestUri,
+                                        null, null, streamErrorText, response.Headers, sw.ElapsedMilliseconds, attempt + 1, requestedServiceTier);
+                                }
+
+                                bool isRetryable = streamKeyFailure == null && ProviderErrorRetryPolicy.IsRetryable(evt.Data);
 
                                 if (isRetryable && attempt < retryDelays.Length)
                                 {
@@ -959,6 +977,32 @@ public class AgentLoopRunner
                         yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
                     }
 
+                    // Before the 429 branch: OpenAI reports an empty balance as 429 insufficient_quota,
+                    // and neither an empty balance nor a rejected key clears by retrying.
+                    var keyFailure = ApiKeyAlerts.ApiKeyFailureClassifier.Classify(providerName, (int)response.StatusCode, errorBody);
+                    if (keyFailure != null)
+                    {
+                        await RecordAndReportKeyFailureAsync(
+                            keyFailure.Value, providerName, systemModelId, alertContext, apiKey, modelId, requestUri,
+                            (int)response.StatusCode, response.ReasonPhrase, errorBody, response.Headers,
+                            sw.ElapsedMilliseconds, attempt + 1, requestedServiceTier);
+
+                        if (keyFailure == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance && systemModelId.HasValue)
+                        {
+                            yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
+                        }
+                        else
+                        {
+                            yield return new ChatEvent
+                            {
+                                Type = "error",
+                                Data = $"API Error: {(int)response.StatusCode} - {errorBody}",
+                                Detail = boundedErrorBody
+                            };
+                        }
+                        yield break;
+                    }
+
                     if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
                     {
                         int maxRetries = _configuration.GetValue<int>("AiRateLimitSettings:Max429RetriesPerCall", 4);
@@ -1012,17 +1056,6 @@ public class AgentLoopRunner
                             yield break;
                         }
                     }
-                    else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired || errorBody.Contains("402") || errorBody.Contains("insufficient_quota"))
-                    {
-                        if (systemModelId.HasValue)
-                        {
-                            using var errScope = _scopeFactory.CreateScope();
-                            var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                            await errService.RecordErrorAsync(systemModelId.Value, $"Budget Exhausted: {errorBody}");
-                        }
-                        yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
-                        yield break;
-                    }
                     else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable || response.StatusCode == System.Net.HttpStatusCode.BadGateway || response.StatusCode == System.Net.HttpStatusCode.InternalServerError)
                     {
                         if (attempt < retryDelays.Length)
@@ -1067,6 +1100,68 @@ public class AgentLoopRunner
             {
                 permit?.Dispose();
             }
+        }
+    }
+
+    /// <summary>The URL the request factory posts to, or null if it cannot be built; the request reports that failure itself.</summary>
+    private static string? TryGetChatStreamUrl(IAiProvider aiProvider, AgentRunRequest request)
+    {
+        try
+        {
+            return aiProvider.GetChatStreamUrl(request.ModelId, request.ApiKey ?? "", request.Endpoint);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Records a key failure against the System AI Config and, for a user-facing run on an operator
+    /// key, queues the alert email. Never throws into the chat.
+    /// </summary>
+    private async Task RecordAndReportKeyFailureAsync(
+        ApiKeyAlerts.ApiKeyFailureKind kind,
+        string providerName,
+        long? systemModelId,
+        ApiKeyAlerts.ApiKeyAlertContext? alertContext,
+        string? apiKey,
+        string modelId,
+        string? requestUri,
+        int? httpStatus,
+        string? httpReason,
+        string? body,
+        IEnumerable<KeyValuePair<string, IEnumerable<string>>>? responseHeaders,
+        long elapsedMs,
+        int attempt,
+        string? serviceTier)
+    {
+        if (!systemModelId.HasValue) return;
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+
+            string message = ApiKeyValidator.ExtractProviderError(body, apiKey ?? string.Empty) ?? "(no message)";
+            string status = httpStatus.HasValue ? "HTTP " + httpStatus.Value : "stream error";
+            var errService = scope.ServiceProvider.GetService<SystemAiConfigService>();
+            if (errService != null)
+            {
+                await errService.RecordErrorAsync(systemModelId.Value, $"{kind}: {status} {message}");
+            }
+
+            if (alertContext != null && !string.IsNullOrEmpty(apiKey))
+            {
+                var alertService = scope.ServiceProvider.GetService<ApiKeyAlerts.ApiKeyAlertService>();
+                alertService?.TryReport(ApiKeyAlerts.ApiKeyFailureReport.Create(
+                    kind, providerName, systemModelId.Value, apiKey, alertContext, DateTime.UtcNow,
+                    httpStatus, httpReason, body, requestUri, responseHeaders, elapsedMs, attempt, modelId, serviceTier,
+                    alertService.Options.MaxResponseBodyChars));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to record or report the {Kind} failure of System AI Config {ConfigId}.", kind, systemModelId);
         }
     }
 

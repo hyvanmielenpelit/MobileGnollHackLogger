@@ -334,6 +334,9 @@ builder.Services.AddSignalR(options =>
 });
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddTransient<EmailSender>();
+builder.Services.AddSingleton<Overseer.Services.ApiKeyAlerts.ApiKeyAlertOptions>();
+builder.Services.AddSingleton<Overseer.Services.ApiKeyAlerts.ApiKeyAlertService>();
+builder.Services.AddHostedService<Overseer.Services.ApiKeyAlerts.ApiKeyAlertDispatcher>();
 
 // Tool Services
 builder.Services.AddSingleton<Overseer.Services.Agents.SubAgentCatalogService>();

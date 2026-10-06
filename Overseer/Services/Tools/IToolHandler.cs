@@ -89,6 +89,12 @@ namespace Overseer.Services.Tools
         /// </summary>
         public bool DisableProviderPromptCache { get; set; } = false;
 
+        /// <summary>
+        /// The user-facing context for API key failure alerts, or null when this turn must not
+        /// report one (a benchmark). Inherited by every sub-agent context.
+        /// </summary>
+        public ApiKeyAlerts.ApiKeyAlertContext? ApiKeyAlert { get; set; }
+
         public ToolExecutionContext CloneFor(string toolCallId)
         {
             return new ToolExecutionContext
@@ -116,7 +122,8 @@ namespace Overseer.Services.Tools
                 ActiveSystemModelId = this.ActiveSystemModelId,
                 ParallelExecutionMode = this.ParallelExecutionMode,
                 BlockExternalEgress = this.BlockExternalEgress,
-                DisableProviderPromptCache = this.DisableProviderPromptCache
+                DisableProviderPromptCache = this.DisableProviderPromptCache,
+                ApiKeyAlert = this.ApiKeyAlert
             };
         }
     }

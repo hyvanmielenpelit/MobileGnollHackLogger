@@ -433,11 +433,12 @@ public class ChatService
         // block below and used again when the assistant message is persisted.
         int? contextWindowTokens = null;
         int? contextInputLimitTokens = null;
+        string? userName = null;
 
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var userName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(dbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
+            userName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(dbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
             _showDebugLog = _configuration.ShouldShowDebugLog(userName);
             var settings = await dbContext.UserAiSettings.FindAsync(userId);
             if (settings != null)
@@ -1343,7 +1344,10 @@ public class ChatService
             MaxParallelSubAgents = _configuration.GetValue<int>("SubAgentSettings:MaxParallelSubAgents", 3)
         };
 
-        var execContext = new ToolExecutionContext { 
+        var apiKeyAlertContext = new Overseer.Services.ApiKeyAlerts.ApiKeyAlertContext(
+            Overseer.Services.ApiKeyAlerts.ApiKeyUsage.Chat, sessionRef, userId, userName);
+
+        var execContext = new ToolExecutionContext {
             SessionId = sessionRef,
             UserId = userId,
             IsGameOn = isGameOn, 
@@ -1363,6 +1367,7 @@ public class ChatService
                mode exists to close. */
             BlockExternalEgress = confidentialPolicy?.DisableToolEgress ?? false,
             DisableProviderPromptCache = confidentialPolicy?.DisablePromptCache == true,
+            ApiKeyAlert = apiKeyAlertContext,
             EventSink = async (evt) => {
                 evt.SessionId = wireRef;
                 _ongoingChatManager.ProcessEvent(sessionRef, evt);
@@ -1441,6 +1446,7 @@ public class ChatService
             ToolExecutionContext = execContext,
             DlpVault = dlpVault,
             SystemModelId = systemModelId,
+            ApiKeyAlert = apiKeyAlertContext,
             ShowDebugLog = _showDebugLog,
             AiProvider = aiProvider,
             Budget = runBudget
@@ -2616,9 +2622,11 @@ public class ChatService
                 if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Starting POST request to {safeUri}..." }, CancellationToken.None);
 
                 int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
+                int titleAttempt = 0;
 
                 for (int i = 0; i <= retryDelays.Length; i++)
                 {
+                    titleAttempt = i + 1;
                     try
                     {
                         var reqClone = new HttpRequestMessage(HttpMethod.Post, titleUrl)
@@ -2726,6 +2734,37 @@ public class ChatService
                 {
                     var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
                     if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] API Error: {errorStr}" }, CancellationToken.None);
+
+                    /* Only an operator key funds a title model with usedSystemModelId set; a user's
+                       own key is not the operator's to top up, so it never reports. */
+                    if (usedSystemModelId != null)
+                    {
+                        var keyFailure = Overseer.Services.ApiKeyAlerts.ApiKeyFailureClassifier.Classify(provider, (int)response.StatusCode, errorStr);
+                        if (keyFailure != null)
+                        {
+                            try
+                            {
+                                var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                                string providerMessage = ApiKeyValidator.ExtractProviderError(errorStr, apiKey) ?? "(no message)";
+                                await systemAiConfigService.RecordErrorAsync(usedSystemModelId.Value,
+                                    $"{keyFailure.Value}: HTTP {(int)response.StatusCode} {providerMessage} (title generation)");
+
+                                var alertService = startScope.ServiceProvider.GetService<Overseer.Services.ApiKeyAlerts.ApiKeyAlertService>();
+                                alertService?.TryReport(Overseer.Services.ApiKeyAlerts.ApiKeyFailureReport.Create(
+                                    keyFailure.Value, provider, usedSystemModelId.Value, apiKey,
+                                    new Overseer.Services.ApiKeyAlerts.ApiKeyAlertContext(
+                                        Overseer.Services.ApiKeyAlerts.ApiKeyUsage.TitleGeneration, sessionRef, userId, titleUserName),
+                                    DateTime.UtcNow, (int)response.StatusCode, response.ReasonPhrase, errorStr, titleUrl, response.Headers,
+                                    sw.ElapsedMilliseconds, titleAttempt, modelId, serviceTier,
+                                    alertService.Options.MaxResponseBodyChars));
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogError(ex, "Failed to record or report the {Kind} failure of title model System AI Config {ConfigId}.",
+                                    keyFailure.Value, usedSystemModelId.Value);
+                            }
+                        }
+                    }
                 }
             }
             finally

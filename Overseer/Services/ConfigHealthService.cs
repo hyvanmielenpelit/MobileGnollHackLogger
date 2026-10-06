@@ -70,6 +70,32 @@ public class ConfigHealthService
             });
         }
 
+        /* API key failure alerts send email. Enabled is read the way ApiKeyAlertOptions reads it,
+           so only an explicit false silences these warnings. */
+        var apiKeyAlertOptions = new ApiKeyAlerts.ApiKeyAlertOptions(_configuration);
+        if (apiKeyAlertOptions.Enabled)
+        {
+            if (string.IsNullOrWhiteSpace(_configuration["ConnectionStrings:EmailConnection"]))
+            {
+                alerts.Add(new SystemAlert
+                {
+                    Id = "api-key-alert-email-missing",
+                    Type = "warning",
+                    Message = "API key failure alerts are enabled but no email connection is configured; set ConnectionStrings:EmailConnection in User Secrets."
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(apiKeyAlertOptions.RecipientEmail))
+            {
+                alerts.Add(new SystemAlert
+                {
+                    Id = "api-key-alert-recipient-missing",
+                    Type = "warning",
+                    Message = "API key failure alerts are enabled but no recipient is configured; set ApiKeyAlerts:RecipientEmail."
+                });
+            }
+        }
+
         /* The content keyring. A missing or malformed ring must surface here, at startup, and
            not as an exception on a user's first confidential turn -- which is the worst
            possible moment to discover it, and would look like a bug in the chat rather than a

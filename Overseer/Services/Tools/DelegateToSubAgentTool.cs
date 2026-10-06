@@ -346,6 +346,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 EnableGameActions = false,
                 ToolExecutionContext = subAgentExecContext,
                 SystemModelId = resolved.SystemModelId,
+                ApiKeyAlert = context.ApiKeyAlert?.ForSubAgent(subAgentDef.Name),
                 AgentName = subAgentDef.Name,
                 AgentDepth = context.AgentDepth + 1,
                 MaxAgentDepth = context.MaxAgentDepth,

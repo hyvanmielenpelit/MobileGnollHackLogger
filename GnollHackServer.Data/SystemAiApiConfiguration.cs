@@ -170,9 +170,6 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     public DateTime? LastDailyReset { get; set; }
     public DateTime? LastMonthlyReset { get; set; }
 
-    public DateTime? LastBudgetNotificationSentUtc { get; set; }
-    public bool IsBudgetExhausted { get; set; }
-
     public ICollection<UserSystemAiApiConfiguration>? UserAssignments { get; set; }
     public ICollection<GroupSystemAiApiConfiguration>? GroupAssignments { get; set; }
 }

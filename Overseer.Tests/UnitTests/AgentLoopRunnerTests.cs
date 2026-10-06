@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,6 +8,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.ApiKeyAlerts;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
 using Xunit;
@@ -917,5 +919,197 @@ public class AgentLoopRunnerTests
         Assert.Equal("iteration_limit", result.TerminationReason);
         Assert.Single(provider.RequestHistories);
         Assert.DoesNotContain(provider.RequestHistories[0], m => IsForcedFinalInstruction(m));
+    }
+
+    private const long AlertTestConfigId = 41;
+    private static readonly string AlertTestApiKey = "test-key-" + "0123456789abcdefWXYZ";
+
+    /// <summary>Answers every request with one fixed status and body, counting the calls.</summary>
+    private class StatusHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly System.Net.HttpStatusCode _status;
+        private readonly string _body;
+
+        public StatusHttpMessageHandler(System.Net.HttpStatusCode status, string body)
+        {
+            _status = status;
+            _body = body;
+        }
+
+        public int CallCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(new HttpResponseMessage(_status) { Content = new StringContent(_body) });
+        }
+    }
+
+    private class FixedHttpClientFactory : IHttpClientFactory
+    {
+        private readonly HttpMessageHandler _handler;
+
+        public FixedHttpClientFactory(HttpMessageHandler handler) => _handler = handler;
+
+        public HttpClient CreateClient(string name) => new HttpClient(_handler, disposeHandler: false);
+    }
+
+    /// <summary>The mock under a real provider name, which the key-failure classifier keys on.</summary>
+    private class NamedMockAiProvider : MockAiProvider, IAiProvider
+    {
+        private readonly string _name;
+
+        public NamedMockAiProvider(string name) => _name = name;
+
+        public new string ProviderName => _name;
+    }
+
+    private static ApiKeyAlertContext ChatAlertContext() =>
+        new(ApiKeyUsage.Chat, Overseer.Services.Privacy.SessionRef.Persistent(7), "user-1", "TestUser");
+
+    private static async Task<(List<ChatEvent> Events, List<ApiKeyFailureReport> Reports, int Calls, int ErrorLogs)> RunAgainstStatusAsync(
+        System.Net.HttpStatusCode status, string body, long? systemModelId, ApiKeyAlertContext? alertContext)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        string dbName = Guid.NewGuid().ToString();
+        services.AddDbContext<ApplicationDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddScoped<SystemAiConfigService>();
+        services.AddSingleton(new ApiKeyAlertOptions { Enabled = true, RecipientEmail = "alerts@example.test" });
+        services.AddSingleton<ApiKeyAlertService>();
+        var sp = services.BuildServiceProvider();
+
+        using (var seedScope = sp.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+            {
+                Id = AlertTestConfigId,
+                DisplayName = "Alert Test Model",
+                Provider = "OpenAI",
+                ModelId = "mock-model",
+                IsEnabled = true
+            });
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["AiRateLimitSettings:Max429RetriesPerCall"] = "0" })
+            .Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler>();
+        var handler = new StatusHttpMessageHandler(status, body);
+        var provider = new NamedMockAiProvider("OpenAI");
+
+        var runner = new AgentLoopRunner(
+            new IAiProvider[] { provider },
+            new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance),
+            new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config),
+            new FixedHttpClientFactory(handler),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "OpenAI",
+            ModelId = "mock-model",
+            ApiKey = AlertTestApiKey,
+            SystemModelId = systemModelId,
+            ApiKeyAlert = alertContext,
+            SeedHistory = new List<object> { new { role = "user", content = "Hello" } },
+            AiProvider = provider
+        };
+
+        var events = new List<ChatEvent>();
+        await foreach (var evt in runner.RunAsync(request, null, new AgentRunResult(), TestContext.Current.CancellationToken))
+        {
+            events.Add(evt);
+        }
+
+        var reports = new List<ApiKeyFailureReport>();
+        var alertService = sp.GetRequiredService<ApiKeyAlertService>();
+        while (alertService.Reader.TryRead(out var report)) reports.Add(report);
+
+        int errorLogs;
+        using (var checkScope = sp.CreateScope())
+        {
+            errorLogs = await checkScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .SystemAiErrorLogs.CountAsync(TestContext.Current.CancellationToken);
+        }
+
+        return (events, reports, handler.CallCount, errorLogs);
+    }
+
+    private const string OpenAiInvalidKeyBody =
+        "{\"error\":{\"message\":\"Incorrect API key provided.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}";
+
+    private const string OpenAiInsufficientQuotaBody =
+        "{\"error\":{\"message\":\"You exceeded your current quota, please check your plan and billing details.\",\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\"}}";
+
+    private const string OpenAiRateLimitBody =
+        "{\"error\":{\"message\":\"Rate limit reached for requests.\",\"type\":\"requests\",\"code\":\"rate_limit_exceeded\"}}";
+
+    [Fact]
+    public async Task RunAsync_RejectedSystemKey_OnUserTurn_QueuesOneReport()
+    {
+        var (events, reports, calls, errorLogs) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.Unauthorized, OpenAiInvalidKeyBody, AlertTestConfigId, ChatAlertContext());
+
+        var report = Assert.Single(reports);
+        Assert.Equal(ApiKeyFailureKind.KeyRejected, report.Kind);
+        Assert.Equal(AlertTestConfigId, report.SystemAiApiConfigurationId);
+        Assert.Equal(ApiKeyUsage.Chat, report.Context.Usage);
+        Assert.Equal(1, calls);
+        Assert.Equal(1, errorLogs);
+        Assert.Contains(events, e => e.Type == "error" && e.Data != null && e.Data.StartsWith("API Error: 401"));
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectedSystemKey_WithoutAlertContext_QueuesNoReport()
+    {
+        // The benchmark shape: a System AI Config run that no user's chat turn started.
+        var (_, reports, _, errorLogs) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.Unauthorized, OpenAiInvalidKeyBody, AlertTestConfigId, alertContext: null);
+
+        Assert.Empty(reports);
+        Assert.Equal(1, errorLogs);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectedUserOwnKey_QueuesNoReport()
+    {
+        var (_, reports, _, errorLogs) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.Unauthorized, OpenAiInvalidKeyBody, systemModelId: null, ChatAlertContext());
+
+        Assert.Empty(reports);
+        Assert.Equal(0, errorLogs);
+    }
+
+    [Fact]
+    public async Task RunAsync_OpenAi429InsufficientQuota_FailsAtOnceWithBalanceError()
+    {
+        var (events, reports, calls, _) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.TooManyRequests, OpenAiInsufficientQuotaBody, AlertTestConfigId, ChatAlertContext());
+
+        Assert.Equal(1, calls);
+        Assert.Contains(events, e => e.Type == "error" && e.Data == "The system provider budget has been exhausted. Please contact the administrator.");
+        var report = Assert.Single(reports);
+        Assert.Equal(ApiKeyFailureKind.InsufficientBalance, report.Kind);
+    }
+
+    [Fact]
+    public async Task RunAsync_OpenAi429RateLimit_QueuesNoReport()
+    {
+        var (events, reports, _, _) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.TooManyRequests, OpenAiRateLimitBody, AlertTestConfigId, ChatAlertContext());
+
+        Assert.Empty(reports);
+        Assert.Contains(events, e => e.Type == "error" && e.Data != null && e.Data.StartsWith("429 Rate Limited"));
     }
 }

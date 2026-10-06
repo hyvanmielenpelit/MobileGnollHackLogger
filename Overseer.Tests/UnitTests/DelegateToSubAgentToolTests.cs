@@ -492,6 +492,62 @@ public class DelegateToSubAgentToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_SubAgentRequest_CarriesSubAgentApiKeyAlertContext()
+    {
+        var alertService = new Overseer.Services.ApiKeyAlerts.ApiKeyAlertService(
+            new Overseer.Services.ApiKeyAlerts.ApiKeyAlertOptions { Enabled = true, RecipientEmail = "alerts@example.test" },
+            NullLogger<Overseer.Services.ApiKeyAlerts.ApiKeyAlertService>.Instance);
+        var (tool, db, provider, _) = CreateTestSetup(alertService: alertService);
+        // A rejected-key stream error is the observable point where the sub-agent request's context is read.
+        provider.StreamErrorBeforeChunks = "[invalid_api_key] Incorrect API key provided.";
+
+        var keyBytes = new byte[32];
+        keyBytes[0] = 42;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { { "AesEncryptionKey", Convert.ToBase64String(keyBytes) } }).Build();
+        var crypto = new CryptoService(config);
+        var (sysKey, sysNonce, sysTag) = crypto.Encrypt("test-key-" + "0123456789abcdefWXYZ", "SYSTEM_API_KEY");
+
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = 211,
+            DisplayName = "System Model",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6-system-custom",
+            IsEnabled = true,
+            IsSystemWide = true,
+            ModelRole = 3,
+            EncryptedApiKey = sysKey,
+            ApiKeyNonce = sysNonce,
+            ApiKeyTag = sysTag
+        });
+        db.ChatSession.Add(new ChatSession { Id = 84, AspNetUserId = "user84", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var session = Overseer.Services.Privacy.SessionRef.Persistent(84);
+        var context = new ToolExecutionContext
+        {
+            SessionId = session,
+            ActiveSystemModelId = 211,
+            AgentDepth = 0,
+            MaxAgentDepth = 1,
+            EnableSubAgents = true,
+            ApiKeyAlert = new Overseer.Services.ApiKeyAlerts.ApiKeyAlertContext(
+                Overseer.Services.ApiKeyAlerts.ApiKeyUsage.Chat, session, "user84", "User84")
+        };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(alertService.Reader.TryRead(out var report));
+        Assert.Equal(Overseer.Services.ApiKeyAlerts.ApiKeyUsage.SubAgent, report!.Context.Usage);
+        Assert.Equal("wiki_researcher", report.Context.AgentName);
+        Assert.Equal("user84", report.Context.UserId);
+        Assert.Equal(211, report.SystemAiApiConfigurationId);
+        Assert.Equal(Overseer.Services.ApiKeyAlerts.ApiKeyFailureKind.KeyRejected, report.Kind);
+        Assert.Equal(Overseer.Services.ApiKeyAlerts.ApiKeyUsage.Chat, context.ApiKeyAlert.Usage);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ExcludesTitleOnlySystemModels()
     {
         var (tool, db, provider, _) = CreateTestSetup();
@@ -804,7 +860,8 @@ public class DelegateToSubAgentToolTests
         string providerName = "OpenAI",
         Dictionary<string, string?>? customConfig = null,
         ModelMetadataService? mockMetadata = null,
-        SubAgentCatalogService? mockCatalog = null)
+        SubAgentCatalogService? mockCatalog = null,
+        Overseer.Services.ApiKeyAlerts.ApiKeyAlertService? alertService = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -863,6 +920,10 @@ public class DelegateToSubAgentToolTests
         services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
         services.AddSingleton<Overseer.Services.Privacy.ConfidentialityPostureService>();
         services.AddSingleton<AgentLoopRunner>();
+        if (alertService != null)
+        {
+            services.AddSingleton(alertService);
+        }
 
         var sp = services.BuildServiceProvider();
 
@@ -890,6 +951,9 @@ public class DelegateToSubAgentToolTests
         public List<object>? LastMessageHistory { get; private set; }
         public bool? LastDisablePromptCache { get; private set; }
         public bool EmitToolCallOnFirstIteration { get; set; } = false;
+
+        /// <summary>When set, every stream yields only this provider error event.</summary>
+        public string? StreamErrorBeforeChunks { get; set; }
         private int _streamCallCount = 0;
 
         public void AppendAssistantToolCallsToHistory(List<object> messageHistory, string iterationText, List<JsonElement> toolCalls, List<JsonElement>? providerHistoryItems = null)
@@ -929,6 +993,11 @@ public class DelegateToSubAgentToolTests
         public async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
             int call = System.Threading.Interlocked.Increment(ref _streamCallCount);
+            if (StreamErrorBeforeChunks != null)
+            {
+                yield return new ChatEvent { Type = "error", Data = StreamErrorBeforeChunks };
+                yield break;
+            }
             yield return new ChatEvent { Type = "debug", Data = "subagent-debug-line" };
             yield return new ChatEvent { Type = "chunk", Data = "subagent-chunk-prose" };
 

@@ -54,6 +54,9 @@ public class AgentRunRequest
     public bool EnableGameActions { get; set; }
     public ToolExecutionContext ToolExecutionContext { get; set; } = new();
     public long? SystemModelId { get; set; }
+
+    /// <summary>Present only for runs started by a user's chat turn; enables API key failure alerts.</summary>
+    public ApiKeyAlerts.ApiKeyAlertContext? ApiKeyAlert { get; set; }
     public string? AgentName { get; set; }
     public string? ParentToolCallId { get; set; }
     public int Depth { get; set; }

@@ -23,11 +23,6 @@ public class SystemAiConfigService
             return (null, "System AI Configuration is disabled or not found.");
         }
 
-        if (config.IsBudgetExhausted)
-        {
-            return (null, "The budget for this model has been exhausted.");
-        }
-
         var now = DateTime.UtcNow;
 
         // Check if config limits need reset
@@ -267,13 +262,6 @@ public class SystemAiConfigService
             ErrorMessage = errorMessage.Length <= MaxErrorMessageLength ? errorMessage : errorMessage[..MaxErrorMessageLength]
         };
         _dbContext.SystemAiErrorLogs.Add(log);
-
-        // Parse for budget exhaustion (402 or 429 quota) - simplistic check
-        if (errorMessage.Contains("402") || errorMessage.Contains("insufficient_quota") || errorMessage.Contains("budget"))
-        {
-            config.IsBudgetExhausted = true;
-            config.LastBudgetNotificationSentUtc = DateTime.UtcNow; // This would hook into email sending later
-        }
 
         await _dbContext.SaveChangesAsync();
     }
