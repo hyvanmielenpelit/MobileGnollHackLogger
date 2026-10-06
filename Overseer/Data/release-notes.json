@@ -1,5 +1,124 @@
 [
   {
+    "version": "1.2.0",
+    "date": "2026-10-06T16:41:08Z",
+    "summary": "A major release that sharpens the Overseer's game advice and makes API keys safer to manage: keys are now verified before they are saved, administrators can share default keys and are warned by email when a key fails, and confidential chats behave exactly as their settings say. The AI Intelligence Benchmark grows into a full evaluation suite with multi-suite batteries, statistical model comparisons, exportable charts and AI-written PDF and Word reports.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added support for five new models: Claude 5.5 Opus, Claude 5.5 Sonnet, GPT-6 Sol, GPT-6 Luna and GPT-6.1 Sol."
+      },
+      {
+        "type": "feature",
+        "text": "The Overseer can now read the game's own performance test reports to help explain stutter or low frame rates, and can compare two reports, for example from before and after an app update."
+      },
+      {
+        "type": "feature",
+        "text": "API keys are now tested with their provider before they are saved. A rejected key is refused with the provider's own error message, a key whose account is out of credit or rate-limited is saved with a warning, and each saved key shows a Verified or Not verified badge with a Verify Again button."
+      },
+      {
+        "type": "feature",
+        "text": "Administrators can store a verified default API key for each provider on a new API Keys tab and let system AI configurations use it, so replacing one key updates every configuration that relies on it."
+      },
+      {
+        "type": "feature",
+        "text": "Administrators are now emailed when an operator API key runs out of credit or is rejected as invalid, expired or revoked during a chat, with at most one alert per key every few hours."
+      },
+      {
+        "type": "feature",
+        "text": "Added benchmark batteries: a named, weighted set of question suites that runs one model across every suite and produces a single Overall Intelligence Index, with live progress, cost tracking, a leaderboard and a battery report."
+      },
+      {
+        "type": "feature",
+        "text": "Model Comparison gains paired statistical tests that show whether one model really outperforms another on the same questions, measure by measure."
+      },
+      {
+        "type": "feature",
+        "text": "Benchmark answers can now be graded by two assessors from different AI providers working together, reducing the bias of a grader scoring its own provider's models, with a new guide explaining how the graders work."
+      },
+      {
+        "type": "feature",
+        "text": "A chosen AI model can now write an Executive Summary, a Technical Report and an Improvement Brief for a benchmark run, a battery or a model comparison, complete with charts, downloadable as typeset PDF or Word documents, with a cost estimate shown before writing and disclosure levels that make copies safe to share."
+      },
+      {
+        "type": "feature",
+        "text": "Benchmark charts and the comparison table can be downloaded or copied as styled PNG or WebP images with a choice of size, theme, font, number format and logo, and the table can also be exported as Excel, CSV, TSV, Markdown, JSON or HTML."
+      },
+      {
+        "type": "feature",
+        "text": "Added a Download Center that gathers everything a benchmark run, battery or comparison produced in one place, with search, filters and an in-page PDF viewer."
+      },
+      {
+        "type": "improvement",
+        "text": "In spoiler-free mode, Elbereth is now treated as a spoiler until your character has learned of it, and asking about a spoiler by name no longer unlocks it; the Overseer instead explains how to turn spoiler-free mode off."
+      },
+      {
+        "type": "improvement",
+        "text": "The Overseer now describes where things are relative to your character, such as \"three squares north and two east\", instead of giving map coordinates."
+      },
+      {
+        "type": "improvement",
+        "text": "The Overseer now adapts its control instructions to your device: with a keyboard it names commands and your own key bindings, and on touch-only devices it refers to on-screen commands instead of keys."
+      },
+      {
+        "type": "improvement",
+        "text": "The NetHack wiki used by the Overseer now contains only the English articles about NetHack itself, with better converted tables and maps, and long wiki articles now open with a list of their sections instead of being cut off without notice."
+      },
+      {
+        "type": "improvement",
+        "text": "Game source code that is never actually used is now clearly marked, so the Overseer no longer bases answers on it."
+      },
+      {
+        "type": "improvement",
+        "text": "Redesigned the Add Model dialog into clear sections with a collapsible Advanced area, and introduced a new keyboard-accessible model picker in the chat and on the Models page."
+      },
+      {
+        "type": "improvement",
+        "text": "Deleting a confidential chat that is destroyed immediately now says so clearly instead of implying it goes to Trash, and chat search reports how many confidential chats it skipped."
+      },
+      {
+        "type": "improvement",
+        "text": "A system AI configuration can no longer be deleted while a benchmark or job is using it, and its usage logs, error logs and benchmark history are now kept after deletion."
+      },
+      {
+        "type": "improvement",
+        "text": "Finished benchmark runs now keep their own copy of the questions, the game board and the model settings they used, so editing or deleting a suite or configuration no longer changes old results."
+      },
+      {
+        "type": "improvement",
+        "text": "Redesigned the Model Comparison wizard and the benchmark run report, with provider colors, thinking levels and a trade-off frontier on charts, report tabs, shareable key-figure images, and Run History shown as searchable, filterable cards."
+      },
+      {
+        "type": "improvement",
+        "text": "Benchmark grading is more accurate: critical errors are confirmed before they cap a score, an honest \"I don't know\" is no longer scored below a wrong answer, and true statements are no longer penalized by the claim checker."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed item and artifact lookups: artifacts such as The Holy Grail are now found by name, and item stats are found from partial or loosely typed names such as \"experience\" for the ioun stone of experience."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed the Overseer sometimes ending a turn without an answer after many lookups; it now answers from what it has found."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed a model being permanently blocked as \"budget exhausted\" after any error that merely mentioned a budget; out-of-credit and rejected keys are now recognized correctly and not retried."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed dates on the Settings page showing in the wrong time zone."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed benchmark cost per question being overstated, an incorrect question-count badge, and re-running a single answer overwriting the run's recorded prompt and end time."
+      },
+      {
+        "type": "security",
+        "text": "Confidential chats now behave exactly as their storage setting says: no prompt-caching instructions are sent to AI providers, new confidential chats never store a readable title, the ineffective \"Never stored\" option was removed in favor of Incognito, and you are no longer asked to confirm a model an administrator has already verified."
+      }
+    ]
+  },
+  {
     "version": "1.1.1",
     "date": "2026-09-19T17:48:56Z",
     "summary": "A follow-up release that makes the Overseer's game research faster and more reliable: the source code and wiki tools now steer the AI to the right answer in fewer steps, and several lookups that silently failed now work. The AI Intelligence Benchmark gains question suites built around a real game snapshot, together with YAML import and export, a guided suite wizard and more rigorous grading.",
