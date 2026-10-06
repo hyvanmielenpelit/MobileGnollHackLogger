@@ -643,8 +643,7 @@ public sealed record BenchmarkGroupUsageStatistics
 /// <see cref="Divergent"/> asserts that rather than assuming it.</para>
 ///
 /// <para>This exists because attributing any dimensional result to a model requires knowing what
-/// the model was told to do — a concise instruction caps Completeness by design — and a report that
-/// omits the configuration cannot support that check.</para>
+/// the model was told to do, and a report that omits the configuration cannot support that check.</para>
 /// </summary>
 public sealed record BenchmarkGroupPromptUnderTest
 {

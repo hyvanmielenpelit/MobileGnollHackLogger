@@ -33,7 +33,7 @@ import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-mu
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
-import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { rememberedPdfPaper } from '../download-center/download-center-panel.component';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
 import { REPORT_PACK_WRITER_ADVICE, REPORT_WRITER_ADVICE_LEAD } from '../run-ai-reports/report-writer-advice';
@@ -110,6 +110,15 @@ export interface ReportPackEstimateView {
   readonly total: string | null;
   /** One entry per document, only when there are two or more. */
   readonly parts: readonly { name: string; cost: string }[];
+}
+
+/** One document type in the Preview layout popover; `reason` holds the item back. */
+export interface LayoutPreviewItem {
+  readonly audience: BenchmarkReportAudience;
+  readonly label: string;
+  /** `5 charts`, `1 chart`: the chosen figures the comparison can draw. */
+  readonly detail: string;
+  readonly reason: string | null;
 }
 
 /** The charts cell of a document's progress row: its words, which are the retry button's after a failure. */
@@ -320,6 +329,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   @ViewChild('sameProviderDialog') sameProviderDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('generateButton') generateButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild('previewTrigger') previewTrigger?: ElementRef<HTMLButtonElement>;
+  @ViewChild('previewMenu') previewMenu?: ElementRef<HTMLElement>;
   /** The layout preview's viewer. */
   @ViewChild(PdfViewerDialogComponent) layoutViewer?: PdfViewerDialogComponent;
 
@@ -459,6 +470,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private writersLoaded = false;
   private writerOptionsSource: SystemAiConfigDto[] | null = null;
   private writerOptionsCache: ModelPickerOption<SystemAiConfigDto>[] = [];
+  private letterPairsPreview: BenchmarkReportPackPreviewDto | null | undefined = undefined;
+  private letterPairsScope: ReportDocumentScopeMode | null = null;
+  private letterPairsCache: readonly { readonly letter: string; readonly label: string }[] | null = null;
 
   /** The last preview answered for the current scope and models; its estimate is current while nothing is pending. */
   preview: BenchmarkReportPackPreviewDto | null = null;
@@ -475,6 +489,12 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   /** Which figures the last layout preview could not draw. */
   layoutPreviewNote = '';
   private layoutPreviewReturnFocus: HTMLElement | null = null;
+  /** Whether the Preview layout popover is open, for its trigger's aria-expanded and chevron. */
+  previewMenuOpen = false;
+  private previewItemsSelection: ReportChartSelection | null = null;
+  private previewItemsAvailable: readonly string[] | null = null;
+  private previewItemsAudiences: BenchmarkReportAudience[] | null = null;
+  private previewItemsCache: readonly LayoutPreviewItem[] = [];
 
   starting = false;
   startError: string | null = null;
@@ -779,17 +799,21 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       + `with the highest Intelligence Index of the ${this.modelOptions.length} are chosen first.`;
   }
 
-  /** `A = GPT-6.1 Sol (medium), B = …`, once the preview has lettered the covered models. */
-  get coveredLetters(): string | null {
-    if (this.scopeMode !== 'comparison') {
-      return null;
-    }
+  /** Each covered model's letter and label, once the preview has lettered them; null under One model at a time. */
+  get coveredLetterPairs(): readonly { readonly letter: string; readonly label: string }[] | null {
     const preview = this.listPreview;
-    const lettered = (preview?.coveredModels ?? []).filter(model => !!model.letter);
-    if (lettered.length === 0) {
-      return null;
+    if (preview === this.letterPairsPreview && this.scopeMode === this.letterPairsScope) {
+      return this.letterPairsCache;
     }
-    return lettered.map(model => `${model.letter} = ${model.label}`).join(', ');
+    this.letterPairsPreview = preview;
+    this.letterPairsScope = this.scopeMode;
+    const lettered = this.scopeMode === 'comparison'
+      ? (preview?.coveredModels ?? []).filter(model => !!model.letter)
+      : [];
+    this.letterPairsCache = lettered.length === 0
+      ? null
+      : lettered.map(model => ({ letter: model.letter as string, label: model.label }));
+    return this.letterPairsCache;
   }
 
   /** The preview answered for the current scope and models, or null while it is awaited. */
@@ -918,8 +942,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.chartAudience ?? this.checkedAudiences[0] ?? REPORT_PACK_AUDIENCES[0].audience;
   }
 
-  /** Why Preview layout cannot run, or null. */
-  get layoutPreviewBlockedReason(): string | null {
+  /** Why Preview layout cannot run for any document type, or null. */
+  get layoutPreviewGlobalReason(): string | null {
     if (!this.documentChartsComposer) {
       return 'The charts cannot be drawn here.';
     }
@@ -935,24 +959,88 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (this.scopeMode === 'model' && this.subjectKeys.length === 0) {
       return 'Choose a model.';
     }
-    const audience = this.chartPreviewAudience;
-    const figures = (this.chartSelection[audience] ?? []).filter(key => this.chartsAvailable.includes(key));
-    if (figures.length === 0) {
-      return `No chart is chosen for the ${audienceLabel(audience)}.`;
-    }
     return null;
   }
 
-  /** Preview layout: the viewer opens at once, and composes and fetches the PDF as it loads. */
-  previewLayout(button: HTMLElement): void {
-    const compose = this.documentChartsComposer;
-    const request = this.buildRequest({ preview: true, layout: true });
-    if (this.layoutPreviewBlockedReason !== null || !compose || !request) {
+  /** Why one document type's layout cannot be previewed, or null. */
+  layoutPreviewAudienceReason(audience: BenchmarkReportAudience): string | null {
+    return this.previewFigureCount(audience) === 0 ? `No chart is chosen for the ${audienceLabel(audience)}.` : null;
+  }
+
+  private previewFigureCount(audience: BenchmarkReportAudience): number {
+    return (this.chartSelection[audience] ?? []).filter(key => this.chartsAvailable.includes(key)).length;
+  }
+
+  /** The Preview layout popover's items: every document type, in tab order, checked under Documents or not. */
+  get layoutPreviewItems(): readonly LayoutPreviewItem[] {
+    if (this.previewItemsSelection !== this.chartSelection || this.previewItemsAvailable !== this.chartsAvailable
+      || this.previewItemsAudiences !== this.checkedAudiences) {
+      this.previewItemsSelection = this.chartSelection;
+      this.previewItemsAvailable = this.chartsAvailable;
+      this.previewItemsAudiences = this.checkedAudiences;
+      this.previewItemsCache = REPORT_PACK_AUDIENCES.map(option => {
+        const count = this.previewFigureCount(option.audience);
+        return {
+          audience: option.audience,
+          label: audienceLabel(option.audience),
+          detail: plural(count, 'chart', 'charts'),
+          reason: this.layoutPreviewAudienceReason(option.audience)
+        };
+      });
+    }
+    return this.previewItemsCache;
+  }
+
+  /** The popover's toggle event: aria-expanded, and focus into the popover or back to the trigger. */
+  onPreviewMenuToggle(event: Event): void {
+    const open = (event as ToggleEvent).newState === 'open';
+    this.previewMenuOpen = open;
+    const popover = this.previewMenu?.nativeElement;
+    if (open) {
+      refreshAnchorPositioning();
+      const current = popover?.querySelector<HTMLElement>(
+        `.gh-action-popover-item[data-audience="${this.chartPreviewAudience}"]:not([aria-disabled="true"])`);
+      (current ?? popover?.querySelector<HTMLElement>('.gh-action-popover-item:not([aria-disabled="true"])'))?.focus();
+    } else {
+      const active = document.activeElement;
+      if (!active || active === document.body || !!popover?.contains(active)) {
+        this.previewTrigger?.nativeElement.focus();
+      }
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** Escape closes the popover only; the wizard's dialog stays open. */
+  onPreviewMenuKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') {
       return;
     }
-    const audience = this.chartPreviewAudience;
+    event.preventDefault();
+    event.stopPropagation();
+    this.hidePreviewMenu();
+    this.previewTrigger?.nativeElement.focus();
+  }
+
+  private hidePreviewMenu(): void {
+    try {
+      this.previewMenu?.nativeElement.hidePopover();
+    } catch {
+      // Already hidden.
+    }
+    this.previewMenuOpen = false;
+    this.cdr.markForCheck();
+  }
+
+  /** Preview layout of one document type: the viewer opens at once, and composes and fetches the PDF as it loads. */
+  previewLayout(audience: BenchmarkReportAudience): void {
+    const compose = this.documentChartsComposer;
+    const request = this.buildRequest({ preview: true, layout: true });
+    if (this.layoutPreviewGlobalReason !== null || this.layoutPreviewAudienceReason(audience) !== null || !compose || !request) {
+      return;
+    }
+    this.hidePreviewMenu();
     this.layoutPreviewNote = '';
-    this.layoutPreviewReturnFocus = button;
+    this.layoutPreviewReturnFocus = this.previewTrigger?.nativeElement ?? null;
     const generation = this.generation;
     this.layoutViewer?.open(layoutPreviewViewerRequest(this.benchmarkService, compose, {
       request,

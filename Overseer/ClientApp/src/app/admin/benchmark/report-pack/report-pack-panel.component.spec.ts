@@ -506,7 +506,13 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-letters')).toBeNull();
     const request = answerPreview();
     expect(request.request.body.coveredEntryKeys).toEqual(OFFERED);
-    expect(text('.rp-letters')).toBe('Letters in the anonymized copies: A = Gemini Flash, B = GPT Sol group, C = Claude Opus');
+    expect(q('.rp-letters')!.getAttribute('role')).toBe('group');
+    expect(q('.rp-letters')!.getAttribute('aria-labelledby')).toBe('rp-letters-title');
+    expect(text('#rp-letters-title')).toBe('Letters in the anonymized copies');
+    const texts = (selector: string): string[] =>
+      Array.from(host.querySelectorAll(selector)).map(element => (element.textContent ?? '').replace(/\s+/g, ' ').trim());
+    expect(texts('.rp-letters-list dt')).toEqual(['Letter A', 'Letter B', 'Letter C']);
+    expect(texts('.rp-letters-list dd')).toEqual(['Gemini Flash', 'GPT Sol group', 'Claude Opus']);
     fixture.destroy();
   }));
 
@@ -780,7 +786,7 @@ describe('ReportPackPanelComponent', () => {
     expect(row.querySelector('.cds-writer')!.textContent!.trim()).toBe('by Claude Opus writer (Anthropic; medium)');
 
     // A finished chart set lists the documents again, for its count.
-    fixture.componentRef.setInput('chartStatus', { 41: { state: 'done', count: 3 } });
+    fixture.componentRef.setInput('chartStatus', { 41: { state: 'done', count: 3, images: 6 } });
     fixture.detectChanges();
     http.expectOne(r => r.url === DOCUMENTS_URL);
     fixture.destroy();
@@ -1521,7 +1527,7 @@ describe('ReportPackPanelComponent', () => {
     component.chartRetryRequested.subscribe(doc => retries.push(doc));
     const statuses: Record<number, ReportChartRowStatus> = {
       31: { state: 'attaching' },
-      32: { state: 'done', count: 3 },
+      32: { state: 'done', count: 3, images: 6 },
       33: { state: 'failed', message: 'Disk full.' }
     };
     fixture.componentRef.setInput('chartStatus', statuses);
@@ -1740,7 +1746,23 @@ describe('ReportPackPanelComponent', () => {
       fixture.componentRef.setInput('chartLayout', DEFAULT_CHART_LAYOUT_SETTINGS);
     });
 
-    const previewButton = (): HTMLButtonElement => q<HTMLButtonElement>('.rp-preview-layout')!;
+    const previewTrigger = (): HTMLButtonElement => q<HTMLButtonElement>('.rp-preview-layout')!;
+    const previewMenu = (): HTMLElement => q('#rp-preview-menu')!;
+    const previewItem = (audience: BenchmarkReportAudience): HTMLButtonElement =>
+      q<HTMLButtonElement>(`#rp-preview-menu .gh-action-popover-item[data-audience="${audience}"]`)!;
+    const menuOpen = (): boolean => previewMenu().matches(':popover-open');
+    const openPreviewMenu = async (): Promise<void> => {
+      previewTrigger().click();
+      await until(() => menuOpen());
+      // The toggle event is queued after the popover opens.
+      await new Promise(resolve => setTimeout(resolve));
+      fixture.detectChanges();
+    };
+    const usablePanel = (compose: DocumentChartsComposer = vi.fn() as unknown as DocumentChartsComposer): void => {
+      fixture.componentRef.setInput('documentChartsComposer', compose);
+      fixture.componentRef.setInput('comparisonId', 12);
+      openPanel();
+    };
 
     it('passes the layout to the picker and its changes to the host', fakeAsync(() => {
       openPanel();
@@ -1754,16 +1776,23 @@ describe('ReportPackPanelComponent', () => {
       fixture.destroy();
     }));
 
-    it('offers Preview layout in the Layout disclosure, aria-disabled with its reason while it cannot run', fakeAsync(() => {
+    it('offers Preview layout beside Generate, aria-disabled with its reason while no document can be previewed', fakeAsync(() => {
       openPanel();
       answerPreview(comparisonPreview({ comparisonId: null }));
 
-      const button = previewButton();
-      expect(button.closest('details.rcp-layout')).not.toBeNull();
-      expect(button.classList).toContain('btn-ghost');
-      expect(button.querySelector('svg.btn-icon')).not.toBeNull();
-      expect(button.textContent!.replace(/\s+/g, ' ').trim()).toBe('Preview layout of the Executive Summary');
+      const button = previewTrigger();
+      expect(button.tagName).toBe('BUTTON');
+      expect(button.classList).toContain('btn-gh');
+      expect(button.closest('.rp-actions-row')).not.toBeNull();
+      expect(button.closest('app-report-chart-picker')).toBeNull();
+      expect(button.closest('.rp-actions-row')!.querySelector('.rp-generate')).not.toBeNull();
+      // Generate stays last in the row.
+      expect(button.compareDocumentPosition(generateButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(button.querySelectorAll('svg.btn-icon').length).toBe(2);
+      expect(button.textContent!.replace(/\s+/g, ' ').trim()).toBe('Preview layout');
       expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.hasAttribute('popovertarget')).toBe(false);
+      expect(button.hasAttribute('aria-expanded')).toBe(false);
       expect(text(`#${button.getAttribute('aria-describedby')}`)).toBe('The charts cannot be drawn here.');
 
       fixture.componentRef.setInput('documentChartsComposer', vi.fn());
@@ -1778,21 +1807,75 @@ describe('ReportPackPanelComponent', () => {
       fixture.componentRef.setInput('comparisonId', 12);
       fixture.detectChanges();
       expect(button.hasAttribute('aria-disabled')).toBe(false);
+      expect(button.getAttribute('popovertarget')).toBe('rp-preview-menu');
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+      expect(q('#rp-preview-layout-reason')).toBeNull();
       fixture.destroy();
     }));
 
-    it('composes the covered models\' figures through the host and opens the layout preview PDF', async () => {
+    it('lists every document type with its chart count, and holds back one without a chosen chart', async () => {
+      fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [InternalBrief]: [] } as ReportChartSelection);
+      const open = vi.fn();
+      usablePanel();
+      vi.spyOn(component.layoutViewer!, 'open').mockImplementation(open);
+
+      const menu = previewMenu();
+      expect(menu.getAttribute('popover')).toBe('auto');
+      expect(menu.getAttribute('role')).toBe('group');
+      expect(menu.getAttribute('aria-label')).toBe('Preview the chart layout of a document');
+      const labels = Array.from(menu.querySelectorAll('.gh-action-popover-item > span:first-child'))
+        .map(span => (span.textContent ?? '').replace(/\s+/g, ' ').trim());
+      expect(labels).toEqual([
+        'Executive Summary · 2 charts',
+        `Report for AI Researchers and Developers · ${REPORT_CHART_FIGURES.length} charts`,
+        `${component.audienceLabel(InternalBrief)} · 0 charts`
+      ]);
+
+      const held = previewItem(InternalBrief);
+      expect(held.getAttribute('aria-disabled')).toBe('true');
+      expect(held.querySelector('.gh-action-popover-item-reason')!.textContent!.trim())
+        .toBe(`No chart is chosen for the ${component.audienceLabel(InternalBrief)}.`);
+      expect(previewItem(ExecutiveSummary).hasAttribute('aria-disabled')).toBe(false);
+
+      await openPreviewMenu();
+      held.click();
+      expect(open).not.toHaveBeenCalled();
+      expect(menuOpen()).toBe(true);
+    });
+
+    it('opens its popover with focus on the current document type, and Escape closes only the popover', async () => {
+      usablePanel();
+      const outside = vi.fn();
+      host.parentElement!.addEventListener('keydown', outside);
+
+      await openPreviewMenu();
+      expect(previewTrigger().getAttribute('aria-expanded')).toBe('true');
+      expect(document.activeElement).toBe(previewItem(component.chartPreviewAudience));
+
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      previewItem(component.chartPreviewAudience).dispatchEvent(escape);
+      await new Promise(resolve => setTimeout(resolve));
+      fixture.detectChanges();
+
+      expect(escape.defaultPrevented).toBe(true);
+      expect(outside).not.toHaveBeenCalled();
+      expect(menuOpen()).toBe(false);
+      expect(previewTrigger().getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(previewTrigger());
+      host.parentElement!.removeEventListener('keydown', outside);
+    });
+
+    it('composes the covered models\' figures through the host and opens the layout preview PDF of the type chosen', async () => {
       const compose = vi.fn().mockResolvedValue(COMPOSED);
-      fixture.componentRef.setInput('documentChartsComposer', compose as unknown as DocumentChartsComposer);
-      fixture.componentRef.setInput('comparisonId', 12);
-      openPanel();
+      usablePanel(compose as unknown as DocumentChartsComposer);
       chooseModels(['run:1', 'group:4']);
       const open = vi.spyOn(component.layoutViewer!, 'open').mockReturnValue(undefined);
 
-      q<HTMLButtonElement>(`#rp-charts-tab-${TechnicalReport}`)!.click();
+      await openPreviewMenu();
+      previewItem(TechnicalReport).click();
       fixture.detectChanges();
-      previewButton().click();
       expect(open).toHaveBeenCalledTimes(1);
+      expect(menuOpen()).toBe(false);
       const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
       expect(request.title).toBe('Layout preview — Report for AI Researchers and Developers');
 
@@ -1819,6 +1902,10 @@ describe('ReportPackPanelComponent', () => {
       fixture.detectChanges();
       expect(Array.from(bytes!)).toEqual([37, 80, 68, 70]);
       expect(text('.rp-layout-preview-note')).toBe('Not drawn: Intelligence against cost (it does not fit)');
+
+      // The viewer closed: focus returns to Preview layout.
+      component.onLayoutViewerClosed();
+      expect(document.activeElement).toBe(previewTrigger());
     });
   });
 

@@ -66,9 +66,9 @@ On the Pareto frontier (no other model is at least as good on both measures and 
 
 The graders agreed on most answers.
 
-Of the 1 pair of models, 0 have overlapping 95 % intervals.
+The two models' 95 % intervals do not overlap.
 
-Orion Max, the highest Intelligence Index, was compared with each other model on the questions both answered (a single test); 1 of 1 comparison establishes which scored higher.
+Orion Max, the highest Intelligence Index, was compared with each other model on the questions both answered (a single test); the comparison establishes which scored higher.
 
 ## About this benchmark
 

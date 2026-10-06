@@ -56,8 +56,18 @@
               <span>{{ note }}</span>
             </p>
           }
-          @if (coveredLetters; as letters) {
-            <p class="form-hint rp-letters">Letters in the anonymized copies: {{ letters }}</p>
+          @if (coveredLetterPairs; as pairs) {
+            <div class="rp-letters" role="group" [attr.aria-labelledby]="idPrefix + '-letters-title'">
+              <p class="rp-letters-title" [id]="idPrefix + '-letters-title'">Letters in the anonymized copies</p>
+              <dl class="rp-letters-list">
+                @for (pair of pairs; track pair.letter) {
+                  <div class="rp-letter-pair">
+                    <dt class="rp-letter"><span class="visually-hidden">Letter </span>{{ pair.letter }}</dt>
+                    <dd class="rp-letter-model">{{ pair.label }}</dd>
+                  </div>
+                }
+              </dl>
+            </div>
           }
         } @else {
           <p class="rp-note rp-no-models">Every entry of this comparison is Excluded, so no document can be written.</p>
@@ -78,21 +88,7 @@
                                [available]="chartsAvailable" [layout]="chartLayout" [scope]="chartScope"
                                (selectionChange)="onChartSelectionChange($event)"
                                (layoutChange)="onChartLayoutChange($event)"
-                               (activeAudienceChange)="onChartAudienceChange($event)">
-        <div rcp-layout-actions class="rp-layout-actions">
-          <button #previewLayoutButton type="button" class="btn-ghost rp-preview-layout"
-                  [attr.aria-disabled]="layoutPreviewBlockedReason ? 'true' : null"
-                  [attr.aria-describedby]="layoutPreviewBlockedReason ? idPrefix + '-preview-layout-reason' : null"
-                  (click)="previewLayout(previewLayoutButton)">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-            Preview layout<span class="visually-hidden"> of the {{ audienceLabel(chartPreviewAudience) }}</span>
-          </button>
-          @if (layoutPreviewBlockedReason; as reason) {
-            <p class="rp-note rp-preview-layout-reason" [id]="idPrefix + '-preview-layout-reason'">{{ reason }}</p>
-          }
-          <p class="rp-note rp-layout-preview-note" role="status">{{ layoutPreviewNote }}</p>
-        </div>
-      </app-report-chart-picker>
+                               (activeAudienceChange)="onChartAudienceChange($event)"></app-report-chart-picker>
       @if (chartAdvisory) {
         <div class="alert alert-warning rp-chart-advisory" role="note">
           <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -204,7 +200,37 @@
       </div>
     }
 
-    <div class="rp-generate-row">
+    <!-- Preview layout, then Generate, the commit. While a global reason stands the trigger opens nothing. -->
+    <div class="rp-actions-row">
+      <button #previewTrigger type="button" class="btn-gh rp-preview-layout" [id]="idPrefix + '-preview-trigger'"
+              [attr.popovertarget]="layoutPreviewGlobalReason ? null : idPrefix + '-preview-menu'"
+              [attr.aria-expanded]="layoutPreviewGlobalReason ? null : previewMenuOpen"
+              [attr.aria-disabled]="layoutPreviewGlobalReason ? 'true' : null"
+              [attr.aria-describedby]="layoutPreviewGlobalReason ? idPrefix + '-preview-layout-reason' : null"
+              [attr.style]="'anchor-name: --' + idPrefix + '-preview'">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        Preview layout
+        @if (previewMenuOpen) {
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
+        } @else {
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        }
+      </button>
+      <!-- Right after its trigger, so Tab moves from the trigger into the items and on. -->
+      <div #previewMenu popover="auto" class="gh-action-popover rp-preview-menu" [id]="idPrefix + '-preview-menu'"
+           role="group" aria-label="Preview the chart layout of a document"
+           [attr.style]="'position-anchor: --' + idPrefix + '-preview'"
+           (toggle)="onPreviewMenuToggle($event)" (keydown)="onPreviewMenuKeydown($event)">
+        @for (item of layoutPreviewItems; track item.audience) {
+          <button type="button" class="gh-action-popover-item" [attr.data-audience]="item.audience"
+                  [attr.aria-disabled]="item.reason ? 'true' : null" (click)="previewLayout(item.audience)">
+            <span>{{ item.label }} · {{ item.detail }}</span>
+            @if (item.reason) {
+              <span class="gh-action-popover-item-reason">{{ item.reason }}</span>
+            }
+          </button>
+        }
+      </div>
       <button #generateButton type="button" class="btn-gh rp-generate"
               [disabled]="generateBlockedReason !== null && !generateAriaDisabled"
               [attr.aria-disabled]="generateAriaDisabled ? 'true' : null"
@@ -214,10 +240,14 @@
         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
         Generate
       </button>
-      @if (generateBlockedReason !== null) {
-        <p class="rp-note" [id]="idPrefix + '-generate-blocked'">{{ generateBlockedReason }}</p>
-      }
     </div>
+    @if (layoutPreviewGlobalReason; as reason) {
+      <p class="rp-note rp-preview-layout-reason" [id]="idPrefix + '-preview-layout-reason'">{{ reason }}</p>
+    }
+    <p class="rp-note rp-layout-preview-note" role="status">{{ layoutPreviewNote }}</p>
+    @if (generateBlockedReason !== null) {
+      <p class="rp-note" [id]="idPrefix + '-generate-blocked'">{{ generateBlockedReason }}</p>
+    }
 
     @if (startError) {
       <p class="gh-field-error rp-start-error" role="alert">

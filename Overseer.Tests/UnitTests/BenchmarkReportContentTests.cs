@@ -228,6 +228,20 @@ public class BenchmarkReportContentTests
         Assert.Equal(expected, BenchmarkReportContent.RationaleOf(verification));
     }
 
+    [Theory]
+    [InlineData(null, "The verifier gave no ruling on this item.")]
+    [InlineData("dothrow.c:412", "The verifier gave no ruling on this item. (dothrow.c:412)")]
+    public void TheRationale_OfAnItemTheVerifierLeftOut_SaysItGaveNoRuling(string? citation, string expected)
+    {
+        var verification = new BenchmarkClaimVerification(
+            0, "A claim.", BenchmarkClaimVerdict.Indeterminate, citation, BenchmarkClaimVerificationParser.AbsentFromResponseBasis);
+
+        string? rationale = BenchmarkReportContent.RationaleOf(verification);
+
+        Assert.Equal(expected, rationale);
+        Assert.DoesNotContain("Harness:", rationale);
+    }
+
     [Fact]
     public void AnExcerpt_EndsAtTheLastSentenceEndBeforeTheLimit()
     {

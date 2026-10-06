@@ -420,6 +420,15 @@ public static partial class BenchmarkReportPackRenderer
         if (overlaps.Count == 0) return;
 
         int overlapping = overlaps.Count(BenchmarkReportPackPrompt.IsTrue);
+        if (overlaps.Count == 1)
+        {
+            Line(sb, overlapping == 1
+                ? "The two models' 95 % intervals overlap; the intervals alone do not establish which scored higher."
+                : "The two models' 95 % intervals do not overlap.");
+            Line(sb);
+            return;
+        }
+
         Line(sb, "Of the " + Inv(overlaps.Count) + (overlaps.Count == 1 ? " pair" : " pairs") + " of models, " + Inv(overlapping)
             + (overlapping == 1 ? " has" : " have") + " overlapping 95 % intervals"
             + (overlapping > 0 ? "; the intervals alone do not establish the order within such a pair." : "."));
@@ -450,9 +459,10 @@ public static partial class BenchmarkReportPackRenderer
             string adjustment = intelligence.FamilySize > 1
                 ? "Holm-adjusted across " + Inv(intelligence.FamilySize) + " tests"
                 : intelligence.FamilySize == 1 ? "a single test" : "no test could be made";
-            Line(sb, who + " on the questions both answered (" + adjustment + "); "
-                + Inv(established) + " of " + Inv(intelligence.Pairs.Count) + (intelligence.Pairs.Count == 1 ? " comparison establishes" : " comparisons establish")
-                + " which scored higher.");
+            string result = intelligence.Pairs.Count == 1
+                ? (established == 1 ? "the comparison establishes" : "the comparison does not establish")
+                : Inv(established) + " of " + Inv(intelligence.Pairs.Count) + " comparisons establish";
+            Line(sb, who + " on the questions both answered (" + adjustment + "); " + result + " which scored higher.");
             Line(sb);
         }
     }
@@ -701,6 +711,7 @@ public static partial class BenchmarkReportPackRenderer
         Heading(sb, heading);
         Line(sb, "| Q | Topic | Band | " + string.Join(" | ", models.Select(m => m.Letter)) + " | Spread |");
         Line(sb, "|---|---|---|" + string.Concat(models.Select(_ => "---|")) + "---|");
+        bool topicMissing = false;
         foreach (var q in ctx.Sheet.Questions.OrderBy(q => q.Number))
         {
             var cells = models.Select(m =>
@@ -713,13 +724,26 @@ public static partial class BenchmarkReportPackRenderer
             string spread = q.PeerMin.HasValue && q.PeerMax.HasValue && q.PeerCount >= 2
                 ? BenchmarkReportFormat.WholeDifference(q.PeerMax.Value, q.PeerMin.Value).TrimStart('+')
                 : NoValue;
-            Line(sb, "| " + ctx.QuestionLabel(q.Number) + " | " + Cell(Topic(ctx, q.Number) ?? NoValue) + " | " + Cell(q.Band)
+            string? topic = Topic(ctx, q.Number);
+            topicMissing |= topic == null;
+            Line(sb, "| " + ctx.QuestionLabel(q.Number) + " | " + Cell(topic ?? NoValue) + " | " + Cell(q.Band)
                 + " | " + string.Join(" | ", cells) + " | " + spread + " |");
         }
         Line(sb);
-        Line(sb, "*Each model's column is headed by its letter in the models table. CE marks a critical error; Spread is the highest score minus the lowest; " + NoValue + " marks a question the model was not asked or not scored on.*");
+        Line(sb, "*" + MatrixColumnsSentence(ctx, models) + " CE marks a critical error; Spread is the highest score minus the lowest. "
+            + NoValue + " under a model marks a question it was not asked or not scored on."
+            + (topicMissing ? " " + NoValue + " under Topic marks a question not given in detail." : string.Empty) + "*");
         Line(sb);
     }
+
+    /// <summary>
+    /// The matrix legend's first sentence: each column letter with its model's name in a named copy,
+    /// <c>Columns: A = …, B = ….</c>; a pointer to the models table in an anonymized one.
+    /// </summary>
+    private static string MatrixColumnsSentence(Context ctx, IReadOnlyList<BenchmarkReportPeer> models)
+        => ctx.Anonymized || models.Count == 0
+            ? "Each model's column is headed by its letter in the models table."
+            : "Columns: " + string.Join(", ", models.Select(m => m.Letter + " = " + ProseName(ctx, m))) + ".";
 
     /// <summary>Each model's panel figures: agreement, disagreements, each member's index alone and the reference reader's.</summary>
     private static void GraderTable(StringBuilder sb, Context ctx)
@@ -882,7 +906,7 @@ public static partial class BenchmarkReportPackRenderer
         if (IsBatteryComparison(ctx))
         {
             Line(sb, "- Composite: each Overall Index weights the suites under the battery's scheme; another scheme gives another figure.");
-            Line(sb, "- Detail: the writer was given the full text of at most a few questions per suite, and the other questions as matrix rows.");
+            Line(sb, "- Detail: the writer was given the full text of " + DetailQuestionsText(ctx) + ", and the other questions as matrix rows.");
         }
         if (ComparisonWriterCaveat(ctx) is string caveat)
         {
@@ -891,6 +915,36 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         OptionalSlot(sb, ctx, BenchmarkReportSlots.Limitations);
+    }
+
+    /// <summary>
+    /// How many distinct questions the writer was given in full: <c>17 questions (8 of suite 1, 9 of suite 2)</c>,
+    /// each suite of the matrix in suite order; without the breakdown when the matrix has one suite, and
+    /// <c>at most a few questions per suite</c> when there are none.
+    /// </summary>
+    private static string DetailQuestionsText(Context ctx)
+    {
+        var numbers = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>())
+            .Select(q => q.Number)
+            .Distinct()
+            .ToList();
+        if (numbers.Count == 0) return "at most a few questions per suite";
+
+        string total = Inv(numbers.Count) + (numbers.Count == 1 ? " question" : " questions");
+        var suites = ctx.Sheet.Questions
+            .Where(q => q.Suite.HasValue)
+            .Select(q => q.Suite!.Value)
+            .Distinct()
+            .OrderBy(s => s)
+            .ToList();
+        if (suites.Count < 2) return total;
+
+        var suiteOf = ctx.Sheet.Questions
+            .Where(q => q.Suite.HasValue)
+            .GroupBy(q => q.Number)
+            .ToDictionary(g => g.Key, g => g.First().Suite!.Value);
+        var perSuite = suites.Select(s => Inv(numbers.Count(n => suiteOf.TryGetValue(n, out int suite) && suite == s)) + " of suite " + Inv(s));
+        return total + " (" + string.Join(", ", perSuite) + ")";
     }
 
     private static void ComparisonReproducibility(StringBuilder sb, Context ctx)

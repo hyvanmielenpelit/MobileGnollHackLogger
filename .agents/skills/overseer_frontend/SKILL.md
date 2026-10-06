@@ -1101,7 +1101,11 @@ To find specific popups, look in the corresponding component's `.html` template:
       `min` 1, the highest-Index option chosen at first. The choice is component state, reset when the
       comparison changes. Under it the `describedBy` line `modelsLine` (*Writes the comparison-wide
       documents.* / *Writes documents for 3 of 5 models — leaves out …* / the per-model documents of the
-      chosen models) and, once the preview has lettered them, *Letters in the anonymized copies: A = …*.
+      chosen models) and, once the preview has lettered them, under Whole comparison only, the letters
+      legend (`coveredLetterPairs`, memoized on the preview and the scope): a boxed `role="group"` named by
+      its title *Letters in the anonymized copies*, holding a `<dl>` grid of 13 rem columns whose `dt` is
+      the letter tile (*Letter A* to a screen reader) and `dd` the model's label. It is not in the
+      picker's `aria-describedby`.
     - **Documents of this comparison**: `app-comparison-documents-status`
       (`report-pack/comparison-documents-status.component.*`, view built by `comparisonDocumentsView`):
       whole comparison, three rows for the chosen set and a closed `details.gh-disclosure` *Other model
@@ -1117,16 +1121,9 @@ To find specific popups, look in the corresponding component's `.html` template:
       none. One polite live line. The list comes from the preview, requested 300 ms after the last
       change (`REPORT_PACK_PREVIEW_DEBOUNCE_MS`, `debounceTime` then `switchMap`, so an older answer is
       dropped), and the written documents' list entries from `listReportDocuments({ comparisonId })`.
-    - **Charts in PDF and Word**: `app-report-chart-picker` with `[layout]` and `[scope]`, its *Layout*
-      disclosure ending in **Preview layout** (`.btn-ghost`, *eye*; `aria-disabled` with its reason on a
-      visible line — the charts cannot be drawn here, chart storage is not configured, the comparison
-      has no number yet, too few models, no chart chosen for the shown document type). It opens the
-      nested viewer at once (`layoutPreviewViewerRequest`, `report-pack/report-chart-layout-preview.ts`),
-      titled *Layout preview — Executive Summary*, which composes the figures through the wizard's lent
-      `documentChartsComposer` and posts `report-packs/layout-preview` as multipart; figures that could
-      not be drawn are listed in a `role="status"` line (*Not drawn: …*); focus returns to the button.
-      Then the visible print advisory and, while the `report-charts-location-missing` alert is present,
-      the warning *Chart storage is not configured; documents will be written without charts.*
+    - **Charts in PDF and Word**: `app-report-chart-picker` with `[layout]` and `[scope]`, then the
+      visible print advisory and, while the `report-charts-location-missing` alert is present, the
+      warning *Chart storage is not configured; documents will be written without charts.*
     - The report writer (an `app-model-picker` with the dialog-mode *Choosing a report writer* tip from
       `run-ai-reports/report-writer-advice.ts`; a subject's own model, or a covered model's
       configuration, is refused), the refusal or the amber same-provider warning (*Writer from a chosen
@@ -1137,6 +1134,26 @@ To find specific popups, look in the corresponding component's `.html` template:
       reason is a visible note; it stays focusable and `aria-disabled` only when every listed document is
       written and none is checked (`REPORT_PACK_ALL_WRITTEN_REASON`), and one model at a time needs the
       same documents checked for every chosen model (`REPORT_PACK_UNEVEN_MODELS_REASON`).
+    - **Preview layout** and **Generate** share `.rp-actions-row`, a grid of
+      `repeat(auto-fit, minmax(min(100%, 16.5rem), 1fr))`: both gold `.btn-gh`, full width, Generate
+      last; they stack at the default 416 px sidebar and sit side by side from about 34 rem. **Preview
+      layout** (*eye*, then a *chevron* state glyph) is a `frontend_ui_controls` §4f trigger:
+      `popover="auto"` panel `.rp-preview-menu`, `role="group"`, *Preview the chart layout of a
+      document*, one `.gh-action-popover-item` per document type in tab order, checked under
+      *Documents* or not (`layoutPreviewItems`, memoized on the selection, the available figures and the
+      checked audiences), each *Executive Summary · 2 charts* and `aria-disabled` with *No chart is
+      chosen for the …* (`layoutPreviewAudienceReason`). On open (`onPreviewMenuToggle`,
+      `refreshAnchorPositioning()`), focus goes to the type the chart picker shows, else the first
+      available; Escape closes the popover only. A reason that applies to every type
+      (`layoutPreviewGlobalReason`: the charts cannot be drawn here, chart storage is not configured,
+      the comparison has no number yet, too few models) makes the trigger `aria-disabled` with no
+      `popovertarget`, its reason on a visible line under the row. Choosing a type
+      (`previewLayout(audience)`) closes the popover and opens the nested viewer at once
+      (`layoutPreviewViewerRequest`, `report-pack/report-chart-layout-preview.ts`), titled *Layout
+      preview — Executive Summary*, which composes the figures through the wizard's lent
+      `documentChartsComposer` and posts `report-packs/layout-preview` as multipart; figures that could
+      not be drawn are listed in a `role="status"` line (*Not drawn: …*, hidden while empty); focus
+      returns to the trigger when the viewer closes.
 
     A same-provider writer makes Generate ask
     the nested *Same-Provider Report Writer* confirmation (**Write Anyway**) on every write; nothing is
@@ -1144,7 +1161,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     the stat strip (which stays, with the cost and estimate, after it finishes; elapsed ticks every
     second on the server's clock from `serverTimeUtc`), one row per document (with a *Model* column for a
     per-model job) with its status chip,
-    live duration, centered model calls and a charts cell (*Charts: attaching…*, *Charts: 3*,
+    live duration, centered model calls and a charts cell (*Charts: attaching…*, *Charts: 3* — the
+    figures attached, `ReportChartRowStatus` `done.count`, while `done.images` counts both namings and
+    the diagnostics read *3 attached (6 images, named and anonymized)* where they differ —
     *Charts failed — retry* as a link-style button, *Charts: none*), a *Log and diagnostics*
     disclosure with icon-only **Copy diagnostics** and **Download diagnostics**
     (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`, LF, never the starting user), and,
@@ -1170,7 +1189,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     past the checkbox, below a 20 rem `rcp` container width) and each document type a
     closed *Layout* `details.gh-disclosure` — *Bar orientation*, *Side by side*, *Label size* (7–10 pt),
     *Maximum height* (40 / 50 / 60 % of the page), *Heading inside the chart*, *GnollBench logo*,
-    *Theme* — and a `rcp-layout-actions` content slot. A choice that does not fit stays offered with
+    *Theme* — 1 rem below the figures, with no projected content. A choice that does not fit stays offered with
     `aria-disabled` and *(does not fit)*; choosing it keeps the current value and a `role="status"` line
     says why, and the reasons are listed in the disclosure. It never touches storage: the wizard
     remembers the selection and the layout in `localStorage['overseer.benchmark.reportCharts']`
@@ -1181,13 +1200,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     no logo, *Light, for print*).
   - **Document charts** (`report-pack/report-charts.ts`): the figure keys and their placement labels per
     scope; **charts sized in points** — `documentChartLayout(widthPt, heightPt, labelPt)` (300 dpi,
-    `BASE_LABEL_PX` 11, `layoutWidth = widthPt × 11 / labelPt`) and `documentFigureLayout` (the A4 column,
+    `BASE_LABEL_PX` 11, `layoutWidth = widthPt × 11 / labelPt`); `documentTextStyle`, which sets the bar
+    and scatter families' axis text to `BASE_LABEL_PX` so the label size holds for both, keeping their
+    value labels, point labels and axis titles in proportion and the profile family and chrome as they
+    are; and `documentFigureLayout` (the A4 column,
     481.9 pt, `DOCUMENT_CHART_COLUMN_PT`; 16:10 full, 4:3 two thirds, square half, the profile one step
     taller, taller still where the chrome leaves the plot under 200 layout px); `DOCUMENT_MIN_CONTENT_WIDTH`
     260 (step 2's exports use 360), so *Half column* is refused from 9 pt (`documentChartRefusal`);
     `reportDocumentChartLayout` (the manifest `layout`: `widthShare`, `rowGroup` for consecutive half-width
     figures in one section, `maxHeightShare`); `chartSettingsHash` (SHA-256 over canonical JSON of the
-    figure style, `documentChartHashLayout` — the column, dpi, base label size, format and every document
+    figure style, `documentChartHashLayout` — the column, dpi, base label size, `textNormalization`, format and every document
     type's layout — Show, Highlight, order, measures, pricing basis and the comparison's `computedAtUtc`);
     and **`ReportChartPublisher`**, which composes and uploads one document at a time, named and (with
     peer letters) anonymized variants, `PUT …/report-documents/{id}/charts` for the whole set with its
@@ -1199,8 +1221,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     size, the orientation, the heading, the logo and the theme (*Light, for print*:
     `printFigureAppearance`) — with everything else from step 2's active settings; *As in step 2* takes
     step 2's orientation, its *Automatic* resolved at the document chart's own layout width
-    (`documentChartOrientation`). The caption is the figure's detail line plus *Drawn from the
-    comparison computed …*; the alt text is the title plus one clause per plotted model. The
+    (`documentChartOrientation`), and its text through `documentTextStyle` (`documentLook`). A document
+    chart has no footer unless the heading is *Title and badges*; step 2's exports keep theirs, which for
+    a battery comparison reads *BATTERY* and the battery's name (`FigureFooter.label`; the table's
+    provenance row `suiteLabel`). The caption is the figure's detail line, a measure note where the
+    document's tables give another measure (`documentChartMeasureNote`: the speed figures' time measure,
+    none for the Speed Index; the Cost panel's per-pass cost), and *Drawn from the comparison computed
+    …*; the alt text is the title plus one clause per plotted model. The bar panel pads its value-axis
+    end by the widest value label (`widestLabelPx`) and the longest whisker's share of the axis. The
     anonymized variant is `anonymizeComparisonForSubject` (`model-comparison/report-chart-anonymize.ts`):
     peers relabeled *Model A…* with the document's own letters, provider and model id removed (neutral
     gray), free text naming a peer rewritten or dropped, unlettered entries dropped, the subject

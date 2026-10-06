@@ -205,7 +205,7 @@ you already read the label, it is noise; drop it.
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step) | "Copies to the clipboard" — nothing is saved to disk |
-| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-ghost`, the *Layout* disclosure of step 3's chart picker; opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
+| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
 | more (three dots in a row) | **More actions** (icon-only, each Report Pack row of the Download Center in the Model Comparison wizard's Documents step; opens a §4f action popover with *Update charts* and *Remove charts*) | "More actions are behind this" — the row keeps its frequent actions as visible icon buttons and puts the rarer, worded ones in the popover |
 | external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
@@ -220,7 +220,7 @@ you already read the label, it is noise; drop it.
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
-| chevron | Show / Hide Model Reasoning | A **state** indicator: which way it points says whether the section is open |
+| chevron | Show / Hide Model Reasoning; the state glyph that ends a §4f trigger (**Re-run**, **Actions**, step 3's **Preview layout**) | A **state** indicator: which way it points says whether the section or popover is open |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*) | Decorative, `aria-hidden`, never a button: the field's label names it, and the glyph says only "type to find" |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}* |
 
@@ -430,6 +430,8 @@ score)** is a plain `.btn-ghost` with a new glyph,* flask*, since it is an exper
 repair (the `.btn-gh-trial` variant is gone). **Continue — <reason>** takes* play *in the battery and
 series progress dialogs; **Re-run under current instrument**, **Recompute analysis** and *Continue
 anyway (marks the group cross-condition)* are text-only.*
+
+*Changed 2026-10-06 (Model Comparison step 3): **Preview layout** left the chart picker's *Layout* disclosure for the sidebar's action row, beside **Generate**. Both are gold `.btn-gh`, Generate last; they stack at the default sidebar width and sit side by side from about 34 rem. Preview layout keeps* eye *and gains a* chevron *state glyph: it is a §4f trigger whose popover lists the three document types (*Executive Summary · 2 charts*), each `aria-disabled` with its reason when no chart is chosen for it.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -948,7 +950,7 @@ A labelled trigger that reveals a short list of **related actions** — the run 
 **Re-run** (panel `aria-label` *Re-run and repair*; *Re-run failed questions*, *Retry failed
 assessments*, *Retry claim verification*, *Re-run final synthesis*, *Re-score run*, in that order, each
 listed and gated by §4g) is the first. The Battery Run Report's **Actions** (*Recompute analysis* or
-*Compute analysis*, and *Show progress*) is another. The Download Center's per-row **More actions**
+*Compute analysis*, and *Show progress*) is another, and the Model Comparison wizard's step 3 **Preview layout** (a gold `.btn-gh` beside **Generate**; panel `aria-label` *Preview the chart layout of a document*; one item per document type, *Executive Summary · 2 charts*, focus on open going to the type the chart picker shows) a third. The Download Center's per-row **More actions**
 (*Update charts*, *Remove charts*; Report Pack rows, in the Model Comparison wizard's Documents step
 only) is the second: an icon-only `.action-btn` trigger named *More actions for <document>*, with a
 hint tooltip, whose panel's `aria-label` is *Chart actions for <document>*. It is a **popover-revealed button group,

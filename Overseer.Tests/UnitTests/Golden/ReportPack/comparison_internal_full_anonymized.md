@@ -119,7 +119,7 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 | Q5 | An item question about altars | Intermediate | 85 | 82 | 74 | 68 | 58 | 27 |
 | Q6 | An item question about shops | Intermediate | 95 | 88 | 80 | 78 | 60 | 35 |
 
-*Each model's column is headed by its letter in the models table. CE marks a critical error; Spread is the highest score minus the lowest; — marks a question the model was not asked or not scored on.*
+*Each model's column is headed by its letter in the models table. CE marks a critical error; Spread is the highest score minus the lowest. — under a model marks a question it was not asked or not scored on.*
 
 ### Question details
 

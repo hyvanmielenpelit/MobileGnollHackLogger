@@ -924,6 +924,22 @@ function labelFont(theme: ResolvedFigureTheme): { family?: string; weight?: numb
   return { ...familyKey(theme), ...weightKey(theme.fonts.labelWeight) };
 }
 
+let measureContext: CanvasRenderingContext2D | null | undefined;
+
+/** The widest of `texts`, in px, at `size` in the theme's label font; 0 where no canvas can measure. */
+export function widestLabelPx(texts: readonly string[], size: number, theme: ResolvedFigureTheme = DEFAULT_THEME): number {
+  if (texts.length === 0 || typeof document === 'undefined') {
+    return 0;
+  }
+  measureContext ??= document.createElement('canvas').getContext('2d');
+  const ctx = measureContext;
+  if (!ctx) {
+    return 0;
+  }
+  ctx.font = toFont({ size, ...labelFont(theme) }).string;
+  return Math.max(...texts.map((text) => ctx.measureText(text).width));
+}
+
 /** A legend's `labels.font` where the theme sets a family or weight; nothing otherwise. */
 function legendFont(theme: ResolvedFigureTheme): { font?: { family?: string; weight?: number } } {
   const font = labelFont(theme);
@@ -2505,6 +2521,26 @@ function buildPanel(
     return Math.abs(scale.getPixelForValue(value + errHigh) - scale.getPixelForValue(value));
   };
 
+  // Room past the value axis's end for the widest value label and the longest whisker before it,
+  // so a label near the axis maximum is not cut at the canvas edge. The whisker's pixels are known
+  // only at layout, so its share of the axis is applied to the canvas's extent there.
+  const labelExtent = !style.valueLabels
+    ? 0
+    : orientation === 'vertical'
+      ? style.valueLabelSizePx * 1.2
+      : widestLabelPx(values.filter((value): value is number => value !== null).map(format), style.valueLabelSizePx, theme);
+  const axisSpan = axisMax ?? 1.12 * Math.max(0, ...values.map((value, index) =>
+    value === null ? 0 : value + (style.intervals ? errHighs[index] ?? 0 : 0)));
+  const whiskerShare = !style.intervals || axisSpan <= 0
+    ? 0
+    : Math.max(0, ...errHighs.map((errHigh, index) => (values[index] === null || errHigh === undefined ? 0 : errHigh / axisSpan)));
+  const valueLabelPadding = (ctx: { chart: { width: number; height: number } }): { top: number } | { right: number } => {
+    const room = labelExtent === 0
+      ? 0
+      : Math.ceil(labelExtent + 4 + whiskerShare * (orientation === 'vertical' ? ctx.chart.height : ctx.chart.width));
+    return orientation === 'vertical' ? { top: room } : { right: room };
+  };
+
   // The Better badge says which end is better, so the value-axis title says it only while the
   // badge is hidden.
   const directionShown = !style.hiddenBadges.includes('direction');
@@ -2579,6 +2615,7 @@ function buildPanel(
     options: {
       ...baseOptions(reducedMotion),
       indexAxis: orientation === 'vertical' ? 'x' : 'y',
+      layout: { padding: valueLabelPadding },
       scales:
         orientation === 'vertical' ? { x: categoryScale, y: valueScale } : { x: valueScale, y: categoryScale },
       plugins: {

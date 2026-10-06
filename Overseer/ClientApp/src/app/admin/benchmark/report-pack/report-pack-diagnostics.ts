@@ -101,7 +101,9 @@ export function reportPackChartStatusWord(
   }
   switch (status.state) {
     case 'attaching': return 'attaching';
-    case 'done': return `${numberFormat.format(status.count)} attached`;
+    case 'done': return status.images === status.count
+      ? `${numberFormat.format(status.count)} attached`
+      : `${numberFormat.format(status.count)} attached (${numberFormat.format(status.images)} images, named and anonymized)`;
     case 'failed': return `failed: ${orNotRecorded(status.message)}`;
     default: return `none (${orNotRecorded(status.reason)})`;
   }

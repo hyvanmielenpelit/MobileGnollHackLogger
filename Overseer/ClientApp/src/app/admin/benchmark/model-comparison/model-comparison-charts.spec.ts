@@ -55,6 +55,7 @@ import {
   speedValue,
   suiteCostSdUsd,
   suiteCostUsd,
+  widestLabelPx,
 } from './model-comparison-charts';
 import type {
   BarOrientation,
@@ -2162,6 +2163,27 @@ describe('model-comparison-charts', () => {
         };
         expect(category.ticks?.font?.size).toBe(16);
         expect(category.title?.font?.size).toBe(20);
+      });
+
+      it('leaves room past the value axis for the widest value label, and none without value labels', () => {
+        const entries = [makeEntry({ key: 'high', intelligenceIndex: 92 }), makeEntry({ key: 'low', intelligenceIndex: 40 })];
+        const quality = (figureStyle: FigureStyle) =>
+          buildSmallMultiples(entries, smallMultiplesOptions({ orientation: 'horizontal', style: figureStyle })).quality;
+        const padding = (spec: ReturnType<typeof quality>): Record<string, number> => {
+          const scriptable = (spec.config.options as { layout?: { padding?: unknown } }).layout?.padding as
+            (ctx: { chart: { width: number; height: number } }) => Record<string, number>;
+          return scriptable({ chart: { width: 800, height: 500 } });
+        };
+
+        const labelled = quality(DEFAULT_FIGURE_STYLE);
+        const formatter = (labelled.config.options?.plugins?.datalabels as {
+          formatter: (value: unknown, ctx: { dataIndex: number }) => string;
+        }).formatter;
+        const widest = widestLabelPx([formatter(null, { dataIndex: 0 }), formatter(null, { dataIndex: 1 })],
+          DEFAULT_FIGURE_STYLE.bar.valueLabelSizePx);
+        expect(widest).toBeGreaterThan(0);
+        expect(padding(labelled)['right']).toBeGreaterThanOrEqual(widest);
+        expect(padding(quality(style({ valueLabels: false })))).toEqual({ right: 0 });
       });
 
       it('hides the whiskers, moves the labels to the bar ends and says so, but not where none would draw', () => {

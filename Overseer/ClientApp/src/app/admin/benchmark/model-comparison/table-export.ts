@@ -115,6 +115,8 @@ export interface ComparisonTableRow {
 
 /** Where these numbers came from, in the form every encoder writes it out. */
 export interface ComparisonTableProvenance {
+  /** The provenance row's name for `suite`: *Battery* for a battery comparison, *Suite* when absent. */
+  readonly suiteLabel?: string;
   readonly suite: string;
   readonly pricingBasis: string;
   /** Twelve hex characters of the baseline's must-match signature, or empty where none was reached. */
@@ -1220,7 +1222,7 @@ export async function toXlsx(model: ComparisonTableModel): Promise<Blob> {
 
   const provenance = model.provenance;
   const facts: [string, string][] = [
-    ['Suite', provenance.suite],
+    [provenance.suiteLabel ?? 'Suite', provenance.suite],
     ['Pricing basis', provenance.pricingBasis],
     ['Reference condition', provenance.conditionSignature || ABSENT_TEXT],
     ['Charted', provenance.plottedOfTotal],

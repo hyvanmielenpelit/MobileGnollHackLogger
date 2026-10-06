@@ -173,7 +173,7 @@ Short, accurate answers on simple questions (R2).
 - **Panel member A alone:** 81 / 100
 - **Panel member B alone:** 79 / 100
 - **Reference reader (advisory, third provider):** 90 / 100
-- **Reference reader's mean offset from the panel:** +16.8 points. It never scores; its neutrality between the two panel families is an assumption.
+- **Reference reader's mean offset from the panel:** +16.8 points. Its scores do not count toward the score; its neutrality between the two panel families is an assumption.
 - **Response-style conflict:** none
 
 *The graders' findings are listed at Detailed and Full disclosure only, since their wording may quote the benchmark's questions and answers.*

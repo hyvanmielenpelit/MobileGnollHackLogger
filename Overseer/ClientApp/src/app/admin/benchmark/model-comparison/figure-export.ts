@@ -374,8 +374,8 @@ const NOTE_SIZE = 12;
 const NOTE_RULE_WIDTH = 2;
 const NOTE_INDENT = 10;
 
-/** The footer's eyebrow label and the gap it leaves before the suite name and the right column. */
-const FOOTER_LABEL_TEXT = 'SUITE';
+/** The footer's eyebrow label where the footer names none, and the gap it leaves before the name and the right column. */
+const FOOTER_DEFAULT_LABEL = 'Suite';
 const FOOTER_LABEL_GAP = 8;
 const FOOTER_LABEL_LETTER_SPACING = 1;
 const FOOTER_MIN_GAP = 16;
@@ -1375,7 +1375,7 @@ function measureFooter(
   if (suite === '' && computedText === '') {
     return { labelText: '', suiteText: '', computedText: '', twoLines: false, height: 0 };
   }
-  const labelText = suite === '' ? '' : FOOTER_LABEL_TEXT;
+  const labelText = suite === '' ? '' : (footer.label ?? FOOTER_DEFAULT_LABEL).toLocaleUpperCase('en-US');
   const lineHeight = sizes.footerLineHeight;
   if (!context) {
     return { labelText, suiteText: suite, computedText, twoLines: false, height: lineHeight };

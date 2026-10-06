@@ -135,7 +135,7 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>A finding's text in the findings table below Full disclosure is cut to this many characters.</summary>
     private const int FindingTextChars = 160;
 
-    private const string ReferenceReaderCaveat = "It never scores; its neutrality between the two panel families is an assumption.";
+    private const string ReferenceReaderCaveat = "Its scores do not count toward the score; its neutrality between the two panel families is an assumption.";
 
     private const string ProductName = "Overseer GnollHack Assistant Benchmark";
     private const string TokenPattern = @"\{\{([^{}]+)\}\}";

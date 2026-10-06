@@ -72,7 +72,7 @@ function input(overrides: Partial<ReportPackDiagnosticsInput> = {}): ReportPackD
     job: job(),
     subjectKey: 'run:1',
     chartSelection: DEFAULT_CHART_SELECTION,
-    chartStatus: { 21: { state: 'done', count: 4 }, 23: { state: 'failed', message: 'Disk full.' } },
+    chartStatus: { 21: { state: 'done', count: 4, images: 4 }, 23: { state: 'failed', message: 'Disk full.' } },
     chartStorageMissing: false,
     chartAdvisory: null,
     client: {
@@ -166,6 +166,9 @@ describe('report-pack-diagnostics', () => {
     const doc = job().documents[0];
     const base = { chartSelection: DEFAULT_CHART_SELECTION, chartStatus: {}, chartStorageMissing: false };
     expect(reportPackChartStatusWord(doc, { ...base, chartStatus: { 21: { state: 'attaching' } } })).toBe('attaching');
+    expect(reportPackChartStatusWord(doc, { ...base, chartStatus: { 21: { state: 'done', count: 3, images: 3 } } })).toBe('3 attached');
+    expect(reportPackChartStatusWord(doc, { ...base, chartStatus: { 21: { state: 'done', count: 3, images: 6 } } }))
+      .toBe('3 attached (6 images, named and anonymized)');
     expect(reportPackChartStatusWord(doc, { ...base, chartStatus: { 21: { state: 'skipped', reason: 'no peers' } } })).toBe('none (no peers)');
     expect(reportPackChartStatusWord(doc, { ...base, chartStorageMissing: true })).toBe('none (chart storage is not configured)');
     expect(reportPackChartStatusWord(doc, { ...base, chartSelection: { [ExecutiveSummary]: [] } }))

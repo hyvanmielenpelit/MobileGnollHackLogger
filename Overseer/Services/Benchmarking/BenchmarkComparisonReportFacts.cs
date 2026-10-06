@@ -621,31 +621,53 @@ public static class BenchmarkComparisonReportFacts
     }
 
     /// <summary>
-    /// <c>from 62 (Model D) to 85 (Model A), 23 points apart</c>: the lowest and highest value, worst
-    /// first; the value is the range. Unavailable with fewer than two values.
+    /// The spread fact: its value is the range, its display <see cref="SpreadDisplay"/>. Unavailable
+    /// with fewer than two values.
     /// </summary>
     private static void AddSpread(
         BenchmarkReportFacts.FactList facts, string key, IReadOnlyList<(string Letter, double? Value)> values,
         Func<double, string> format, bool higherIsBetter, string? unit)
     {
-        var present = values.Where(v => v.Value.HasValue).Select(v => (v.Letter, Value: v.Value!.Value)).ToList();
+        var present = values.Where(v => v.Value.HasValue).Select(v => v.Value!.Value).ToList();
         if (present.Count < 2)
         {
             facts.Unavailable(key, "Fewer than two models have this figure.");
             return;
         }
 
+        facts.Add(key, present.Max() - present.Min(), SpreadDisplay(values, format, higherIsBetter, unit)!);
+    }
+
+    /// <summary>
+    /// <c>from 62 (Model D) to 85 (Model A), 23 points apart</c>: the lowest and highest value, worst
+    /// first, <c>1 point apart</c> for a range of one; <c>97 for every model</c> when both display
+    /// alike. Null with fewer than two values.
+    /// </summary>
+    internal static string? SpreadDisplay(
+        IReadOnlyList<(string Letter, double? Value)> values, Func<double, string> format, bool higherIsBetter, string? unit)
+    {
+        var present = values.Where(v => v.Value.HasValue).Select(v => (v.Letter, Value: v.Value!.Value)).ToList();
+        if (present.Count < 2) return null;
+
         var low = present.OrderBy(v => v.Value).ThenBy(v => v.Letter.Length).ThenBy(v => v.Letter, StringComparer.Ordinal).First();
         var high = present.OrderByDescending(v => v.Value).ThenBy(v => v.Letter.Length).ThenBy(v => v.Letter, StringComparer.Ordinal).First();
         var (worst, best) = higherIsBetter ? (low, high) : (high, low);
-        double range = high.Value - low.Value;
 
-        string display = "from " + format(worst.Value) + " (Model " + worst.Letter + ") to " + format(best.Value) + " (Model " + best.Letter + ")";
-        if (unit != null)
+        string display;
+        if (string.Equals(format(worst.Value), format(best.Value), StringComparison.Ordinal))
         {
-            display += ", " + BenchmarkReportFormat.WholeDifference(high.Value, low.Value).TrimStart('+') + unit + " apart";
+            display = format(best.Value) + (present.Count == values.Count ? " for every model" : " for every model with this figure");
         }
-        facts.Add(key, range, display);
+        else
+        {
+            display = "from " + format(worst.Value) + " (Model " + worst.Letter + ") to " + format(best.Value) + " (Model " + best.Letter + ")";
+            if (unit != null)
+            {
+                string apart = BenchmarkReportFormat.WholeDifference(high.Value, low.Value).TrimStart('+');
+                display += ", " + apart + (apart == "1" ? unit.TrimEnd('s') : unit) + " apart";
+            }
+        }
+        return display;
     }
 
     private static void AddOverlapFacts(BenchmarkReportFacts.FactList facts, IReadOnlyList<(string Letter, BenchmarkModelComparisonEntryDto Entry)> models)

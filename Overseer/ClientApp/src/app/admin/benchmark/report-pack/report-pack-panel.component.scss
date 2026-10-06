@@ -137,9 +137,60 @@
   gap: 4px;
 }
 
-.rp-models-line,
-.rp-letters {
+.rp-models-line {
   margin: 0;
+}
+
+.rp-letters {
+  margin-block-start: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: var(--text-secondary);
+}
+
+.rp-letters-title {
+  margin: 0 0 6px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+}
+
+.rp-letters-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
+  gap: 4px 16px;
+}
+
+.rp-letter-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.rp-letter {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  color: var(--primary-color);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-letter-model {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  color: #d4d4d8;
 }
 
 .rp-models-cap {
@@ -150,17 +201,6 @@
   svg {
     flex: none;
     margin-top: 2px;
-  }
-}
-
-.rp-layout-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-
-  .rp-layout-preview-note:empty {
-    display: none;
   }
 }
 
@@ -184,11 +224,20 @@
   margin-top: 0;
 }
 
-.rp-generate-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
+/* Stacked at the default sidebar width; side by side from about 34rem. */
+.rp-actions-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16.5rem), 1fr));
+  gap: 8px 12px;
+
+  .btn-gh {
+    inline-size: 100%;
+    justify-content: center;
+  }
+}
+
+.rp-layout-preview-note:empty {
+  display: none;
 }
 
 /* --- The job --- */

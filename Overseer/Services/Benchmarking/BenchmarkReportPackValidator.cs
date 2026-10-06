@@ -133,7 +133,7 @@ public static class BenchmarkReportPackValidator
 
     // Comparison-scope slot caps.
     public const int OverviewMaxWords = 90;
-    public const int WhichModelMaxWords = 120;
+    public const int WhichModelMaxWords = 150;
     public const int TradeOffsMaxWords = 100;
     public const int ReliabilityMaxWords = 80;
     public const int ResultsMaxWords = 200;
@@ -232,7 +232,7 @@ public static class BenchmarkReportPackValidator
     public static readonly IReadOnlyList<string> HypeWords = new[]
     {
         "impressive", "remarkable", "outstanding", "stellar", "exceptional", "robust", "seamless", "leverage", "delve",
-        "game-changing", "cutting-edge"
+        "game-changing", "cutting-edge", "settled", "proven", "definitive", "definitively", "conclusive", "conclusively"
     };
 
     /// <summary>Adjectives rule 13 flags for the quality interval, matched as whole words, ignoring case.</summary>

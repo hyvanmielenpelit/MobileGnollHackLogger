@@ -153,7 +153,10 @@ no such block.
 **Leads** (Internal Brief only) are things worth checking, each tagged `harness`, `suite`, `chat` or
 `corpus`. They are provisional, un-triaged inputs written by an AI from computed figures, never
 findings: each goes through the triage, evidence bar and tool-layer diagnostics of the
-`server_benchmark_to_chat_transfer` skill before anything is changed.
+`server_benchmark_to_chat_transfer` skill before anything is changed. Each names the most specific
+target the data shows: the question and its topic, and what to look at there (the rubric point a
+grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed,
+or the kind of tool call the matrix shows), and never a file, setting or tool the data does not show.
 
 ---
 
@@ -642,6 +645,41 @@ numbered comparison prints its comparison (§ 15), and every per-model document 
 without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
 overlap)"*), whatever format it was written under.
 
+**Writer prompt revision (2026-10-06, no format version change)** comes from the review of the
+Comparison #2 report pack. It changes the writer prompt of every scope, and so reaches documents
+written from now on; every document records the hash of the prompt it was written with
+(`WriterPromptSha256`), which tells a document written before the revision from one written after.
+- **P1, response style**: the conflict states a condition, not a cause; the writer says that
+  completeness was graded under the concise style and never that the style caused the gap or a part of
+  it (*Response style (H4)* under format version 11, below).
+- **P2, what a cited question supports**: a question given with its excerpts and grader comments
+  supports a claim about what an answer said or left out; one seen only as a matrix row, or by its
+  scores, supports only a claim about its scores, critical errors, tool calls or time.
+- **P3, generalizing, ordering and suites**: a statement about several models must hold for each in
+  their excerpts and grader comments (one grader's charge is attributed to that grader); a model's
+  lowest or highest questions are taken in order without skipping one; a difference between suites or
+  difficulty bands is never explained by what a suite or question contains.
+- **P4, one run a side**: a paired-test speed or cost result carrying the single-run caveat is said to
+  rest on one run a side.
+- **P5, overclaiming words**: *settled*, *proven*, *definitive*, *definitively*, *conclusive* and
+  *conclusively* join the hype list of rule 17 (a warning that asks for a repair turn); READABILITY
+  reads *"No hype, filler or overclaiming words"*.
+- **P6, a default choice**: the Executive Summary's `whichModel` ends with one sentence naming a default
+  choice for a typical Overseer player and the case for another model, based only on established results
+  and the frontier facts; its cap is 150 words.
+- **P7, leads name a target**: each lead names the most specific target the data shows (§ 1, *Leads*).
+
+The same round changed the comparison renderer, which reaches stored documents on their next download:
+the matrix legend names each column's model in a named copy (*"Columns: A = …, B = …."*), says that *—*
+under a model marks a question it was not asked or not scored on and, when a topic is missing, that *—*
+under Topic marks a question not given in detail; a two-model comparison's interval and paired-test
+sentences speak of *"the two models"*; and a battery comparison's *Threats to validity* counts the
+questions the writer was given in full, per suite. The reference reader's caveat reads *"Its scores do
+not count toward the score; its neutrality between the two panel families is an assumption."*, and an
+item the claim verifier left out reads *"The verifier gave no ruling on this item."*. A spread whose
+range rounds to 1 reads *"1 point apart"*, and one whose two displayed values are equal *"97 for every
+model"*; that fact text reaches new documents only.
+
 **Format version 11** (the current per-model one, 2026-10-04, with harness 49 in `ai-benchmark.md`) comes from the
 battery run 4 analysis (runs 82 and 83). It changes no score or index of its own; stored documents
 re-render with the new renderer on their next download, and the prompt changes reach only documents
@@ -654,10 +692,15 @@ written from now on.
   `panel.referenceReaderIndex` (one decimal, *"86.9 / 100"*), `panel.referenceReaderOffset` and
   `panel.meanAbsDelta` are taken from it (`FactList.Replace`). An analysis stored before the block keeps
   the per-run means.
-- **Response style (H4)**: the writer is told that lower completeness under the response-style conflict
-  is partly the effect of *the production chat's concise response style — the default every Overseer
-  user receives, which the benchmark grades as it is* — and never to call it the benchmark's
-  instruction.
+- **Response style (H4)**: the response-style conflict states a condition, not a cause. The writer is
+  told that the model's completeness is its lowest dimension, well below its accuracy, under *the
+  production chat's concise response style — the default every Overseer user receives, which the
+  benchmark grades as it is*; to say, where completeness is discussed, that it was graded under that
+  style; and never to say that the style caused the gap or a part of it, never to present the gap as
+  the model's failing alone, and never to call the style the benchmark's instruction. In a comparison,
+  where the fact is true for several models it is said once for all of them and never used to explain
+  a difference in completeness between models. The one controlled pair (runs 11 and 12) did not show
+  the style lowering Completeness.
 - **Cost labels (H4)**: a battery's `cost.perQuestion` is *Candidate cost per question*, `cost.perRun`
   *Candidate cost per battery pass*, and `cost.totalRunPerRun` *Total cost per battery pass (every
   grading and synthesis role; report writer excluded)* (`BenchmarkReportPackRenderer.SpeedAndCostLabel`);
@@ -1869,7 +1912,9 @@ reports are written in the AI Reports tab of its report."*
     writes: *"Writes the comparison-wide documents."*, *"Writes documents for 3 of 5 models — leaves out
     Claude 5 Opus (high), Gemini 3.8 Pro (high)."* (naming only what is left out, with its source where
     two models share a name), or the per-model documents of the chosen models. Once the preview answers,
-    *Letters in the anonymized copies: A = …, B = …* follows.
+    under *Whole comparison* a legend follows: a boxed group titled *Letters in the anonymized copies*
+    whose `<dl>` pairs each letter (a small gold tile, read as *Letter A*) with the model's label, in a
+    grid of 13 rem columns. It is not added to the picker's description, which it would make long.
   - **Documents of this comparison** (`app-comparison-documents-status`): under *Whole comparison*,
     three rows, one per document type, for the chosen set — the comparison-wide documents while every
     model is chosen, else that subset's — and below them a closed *Other model sets (n)* disclosure with
@@ -1879,7 +1924,7 @@ reports are written in the AI Reports tab of its report."*
     12). Under *One model at a time*, one group per chosen model, one row per document type. Each row
     shows a *Written* / *Written with warnings* / *Not written* tag, *Comparison changed since written*
     when flagged, and for a written document *by <writer> (<provider>; <thinking level>)*, the time, the
-    duration, the cost and *Charts: 3* or *No charts*, with icon-only **View** (*eye*, the PDF viewer) and
+    duration, the cost and *Charts: 3* (figures) or *No charts*, with icon-only **View** (*eye*, the PDF viewer) and
     **Delete** (*trash*, `.action-btn-danger`, a nested confirmation). Its checkbox reads *Write* for a
     document not written and *Rewrite — replaces the current document* for a written one; not-written
     rows start checked, written ones unchecked. The other sets' rows have no checkbox. The list follows
@@ -1887,7 +1932,7 @@ reports are written in the AI Reports tab of its report."*
     older choice dropped.
   - **Charts in PDF and Word**: the chart picker with its per-figure width select (no visible caption;
     beside each figure, and under its title below a 20 rem picker width) and its *Layout* disclosure
-    (§ 13), whose **Preview layout** (`.btn-ghost`, *eye*) opens the layout preview (below); on screen,
+    (§ 13), 1 rem below the figures; on screen,
     the print advisory when a document type's theme *As in step 2* would print badly and, while the
     `report-charts-location-missing` alert is present, *"Chart storage is not configured; documents will
     be written without charts."*
@@ -1898,6 +1943,9 @@ reports are written in the AI Reports tab of its report."*
   - The *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI Reports tab), summing the
     checked rows, with an amber warning when a checked document's prompt would fill 70 % or more of the
     writer's context window (refused from 90 %, § 15).
+  - **Preview layout** and **Generate**, two gold `.btn-gh` buttons in one action row at the bottom of
+    the sidebar, Generate last. At the default sidebar width they stack, Preview layout above Generate,
+    both full width; from a sidebar about 34 rem wide they sit side by side.
   - **Generate** (*zap*), which sends `scope`, `coveredEntryKeys` (whole comparison) or `subjectKeys`
     (the chosen models with a checked row), the checked document types and `replaceDocumentIds` (the
     checked written rows). It is unavailable, with its reason under it, while a job runs, with fewer than
@@ -1908,12 +1956,17 @@ reports are written in the AI Reports tab of its report."*
     `aria-disabled` with *"Every document listed is already written. Check Rewrite on one to replace it,
     or delete it."* A 409 from the start — a document written in the meantime (§ 9) — shows its `error`
     as any other start error.
-- **Preview layout** composes the selected figures of the document type the chart picker shows, as the
-  documents would carry them, and opens the server's layout preview PDF (§ 15) in `app-pdf-viewer-dialog`,
-  titled *Layout preview — Executive Summary*, on the remembered paper; per-model, it previews the first
-  chosen model. A figure that cannot be drawn is listed under the button (*Not drawn: …*). It is
-  `aria-disabled` with its reason when the charts cannot be drawn, chart storage is not configured, the
-  comparison has no number yet, too few models are chosen or no chart is chosen for that document type.
+- **Preview layout** (*eye*, and a *chevron* that points up while open) opens a popover of the three
+  document types (`frontend_ui_controls` § 4f), each *Executive Summary · 2 charts*, offered whether or
+  not it is checked under *Documents*. Focus moves to the type the chart picker shows, or the first one
+  available; Escape closes the popover only, and focus returns to the trigger. Choosing a type composes
+  its selected figures as the documents would carry them and opens the server's layout preview PDF
+  (§ 15) in `app-pdf-viewer-dialog`, titled *Layout preview — Executive Summary*, on the remembered
+  paper; per-model, it previews the first chosen model. When the viewer closes, focus returns to Preview
+  layout. A figure that cannot be drawn is listed under the action row (*Not drawn: …*). A type with no
+  chosen chart is `aria-disabled` in the popover with *"No chart is chosen for the …"*. The trigger
+  itself is `aria-disabled`, opens nothing and shows its reason under the row when the charts cannot be
+  drawn, chart storage is not configured, the comparison has no number yet or too few models are chosen.
 - **Same-provider writer**: Generate opens a nested *Same-Provider Report Writer* confirmation, **Write
   Anyway**, on every write, and only then sends `acknowledgeSameProvider: true`. Nothing is remembered.
 - **Main area**, *Report pack progress*: a status line that changes with the job's phase; while a job
@@ -1921,7 +1974,8 @@ reports are written in the AI Reports tab of its report."*
   writer, model calls, tokens, cost, estimate) that stays after the job finishes; one row per document
   (preceded by a *Model* column in a per-model job) with its status chip, a live duration, its model calls
   and a charts cell — *Charts: attaching…*,
-  *Charts: 3*, *Charts failed — retry* (a button that tries again) or *Charts: none*; and *Log and
+  *Charts: 3* (the figures attached; the diagnostics add *(6 images, named and anonymized)* where the
+  two counts differ), *Charts failed — retry* (a button that tries again) or *Charts: none*; and *Log and
   diagnostics*, a disclosure with the job log and icon-only **Copy diagnostics** and **Download
   diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`, LF line endings, never naming
   the user who started the job). Elapsed time ticks every second on the server's clock
@@ -2046,7 +2100,7 @@ document type a closed ***Layout*** disclosure under its figure list:
 
 A width or label size that would not fit (below) stays offered, `aria-disabled` and marked *(does not
 fit)*, its reason listed in the disclosure; choosing it keeps the current value and says why. The
-disclosure ends with **Preview layout** (§ 12).
+disclosure sits 1 rem below the figures; **Preview layout** is beside **Generate** (§ 12).
 
 The defaults are the Executive Summary's Intelligence and Intelligence against cost; all seven for the
 Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the Internal Improvement
@@ -2082,17 +2136,37 @@ textScale   = (pxWidth / layoutWidth) / min(pxWidth / 960, pxHeight / 540)
 - **Theme, heading and logo** are baked into the PNG. *Light, for print* replaces step 2's theme,
   background, text, heading and border colors and nothing else; *None* leaves the title, the badges and
   the detail line to the caption. Everything else is **step 2's active setting, used as is**: font,
-  weights, colors, the per-family styles, Show, Highlight, the model order and the measures.
+  weights, colors, the per-family styles, Show, Highlight, the model order and the measures, except
+  the text sizes below.
+- **The label size holds for every family** (`documentTextStyle`). The bar and scatter families' axis
+  text is set to `BASE_LABEL_PX`, so it prints at the document type's *Label size*; their value labels,
+  point labels and axis titles keep step 2's proportion to the axis text (rounded to 0.1 px). A bar
+  style of axis 15, value 20 and title 16 px draws 11, 14.7 and 11.7. The profile family and the chrome
+  are unchanged.
+- **The footer.** A document chart carries no footer of its own unless the document type's *Heading
+  inside the chart* is *Title and badges*: the document names the suite and the computation time
+  itself. Where it is drawn, and in step 2's own exports, a battery comparison's footer reads *BATTERY*
+  and the battery's name instead of *Suite not set*.
+- **Value labels** past the value axis's end get room of their own: the bar panel pads the plot by the
+  widest label, measured in its font, plus the longest whisker's share of the axis, so a label near the
+  maximum is not cut.
 - Documents print on white paper, so when a document type's theme is *As in step 2* and step 2 uses the
   dark theme, or a transparent background with light text, an **on-screen advisory** says so, beside
   the picker on step 3 and in the Update charts dialog; it changes nothing.
 
-Each chart carries a title (the figure's), a caption (its detail line, then *"Drawn from the comparison
-computed {time}."*) and alternative text (the title, then one clause per plotted model with its value and
-interval). `chartSettingsHash` is the SHA-256 of the canonical JSON of the figure style, the layout (the
-column width, 300 dpi, `BASE_LABEL_PX`, PNG, and every document type's layout settings), Show,
-Highlight, the order, the measures, the pricing basis and the comparison's `computedAtUtc`; it is stored
-with the charts, so step 4 can tell charts drawn with the settings on screen from older ones.
+Each chart carries a title (the figure's), a caption (its detail line; a note on the measure where the
+document's tables give another, then *"Drawn from the comparison computed {time}."*) and alternative
+text (the title, then one clause per plotted model with its value and interval). The measure note is on
+the figures that plot speed (Speed, Intelligence against speed, Speed against cost): *"Times are the
+mean model time per question; the document's tables give the median."*, or the same with the total
+time or the time to first token, and none under the Speed Index; and on the Cost panel: *"Costs are per
+battery pass (per suite run for a suite); the document's tables give the cost per question."*
+`chartSettingsHash` is the SHA-256 of the canonical JSON of the figure style, the layout (the
+column width, 300 dpi, `BASE_LABEL_PX`, `textNormalization: 1`, PNG, and every document type's layout
+settings), Show, Highlight, the order, the measures, the pricing basis and the comparison's
+`computedAtUtc`; it is stored with the charts, so step 4 can tell charts drawn with the settings on
+screen from older ones. `textNormalization` makes charts drawn before the text normalization read as
+differing from step 2, which offers **Update charts**.
 
 **The chart layout.** Width, rows and height are applied by the server at render time, from the layout
 the publisher sends with the charts (`reportDocumentChartLayout`): each figure's `widthShare` (1, 2/3 or
@@ -2443,7 +2517,12 @@ other models without naming them.
   computed leaves its reason in `pairedTestsUnavailableReason`.
 - **The per-question matrix**: every question any covered model was asked (a battery question matched
   across models by its suite-qualified reference, any other by question and item revision), each with
-  every model's score, critical error, refuted answer sentences, tool calls and model time.
+  every model's score, critical error, refuted answer sentences, tool calls and model time. The rendered
+  matrix heads each model's column with its letter. Its legend opens, in a named copy, with *"Columns:
+  A = GPT-5.6 Luna (max), B = GPT-6.1 Sol (medium)."* and, in an anonymized one, with *"Each model's
+  column is headed by its letter in the models table."*; it then says that *—* under a model marks a
+  question it was not asked or not scored on and, when any topic is missing, that *—* under Topic marks
+  a question not given in detail.
 - **Excerpts** share one total budget, `AnswerExcerptChars` × the number of questions, allotted in this
   order: questions where any model made a critical error or had a refuted answer sentence; then those
   whose scores span at least 20 points, widest first; then those every model scored below 50 (a shared
@@ -2469,7 +2548,8 @@ topics. The prompt's SHA-256 covers it.
 - **Tokens.** `{{model:X}}` for a covered model and `{{key}}` for a fact; there is no `{{subject}}` and
   no `{{peer:X}}`. The validator accepts `{{model:X}}` for every letter of the sheet and the `model.<L>.*`
   and `pair.<L>.<M>.*` keys, and rejects any other letter.
-- **Slots** (word caps): Executive Summary `overview` (90), `whichModel` (120), `tradeOffs` (100) and
+- **Slots** (word caps): Executive Summary `overview` (90), `whichModel` (150, ending with a default
+  choice for a typical Overseer player), `tradeOffs` (100) and
   `reliability` (80); Report for AI Researchers and Developers `abstract` (150), `results` (200),
   `dimensionProfiles` (150), `frontier` (120), `questionPatterns` (250), `graderReliability` (120) and
   `limitations` (120); Internal Improvement Brief `sharedGaps` (250), `modelGaps` (200) and

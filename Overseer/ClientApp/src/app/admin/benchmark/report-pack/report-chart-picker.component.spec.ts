@@ -1,4 +1,3 @@
-import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
@@ -13,19 +12,6 @@ import {
   ReportChartSelection,
   documentChartRefusal
 } from './report-charts';
-
-/** A host projecting a layout action into the picker, as step 3 projects Preview layout. */
-@Component({
-  selector: 'app-rcp-projection-host',
-  standalone: true,
-  imports: [ReportChartPickerComponent],
-  template: `<app-report-chart-picker [layout]="layout">
-    <button rcp-layout-actions type="button" class="rcp-test-action">Preview layout</button>
-  </app-report-chart-picker>`
-})
-class ProjectionHostComponent {
-  layout: ReportChartLayoutSettings = DEFAULT_CHART_LAYOUT_SETTINGS;
-}
 
 const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
 const ALL_KEYS = REPORT_CHART_FIGURES.map(figure => figure.key);
@@ -518,12 +504,11 @@ describe('ReportChartPickerComponent', () => {
     });
   });
 
-  it('projects content marked rcp-layout-actions at the end of the Layout disclosure', async () => {
-    const hostFixture = TestBed.createComponent(ProjectionHostComponent);
-    hostFixture.detectChanges();
-    const element = hostFixture.nativeElement as HTMLElement;
-    const action = element.querySelector('details.rcp-layout .rcp-layout-actions .rcp-test-action');
-    expect(action?.textContent?.trim()).toBe('Preview layout');
-    hostFixture.destroy();
+  it('keeps 1 rem above the Layout disclosure', () => {
+    fixture.componentRef.setInput('layout', DEFAULT_CHART_LAYOUT_SETTINGS);
+    fixture.detectChanges();
+    const details = q('details.rcp-layout')!;
+    expect(getComputedStyle(details).marginBlockStart).toBe('16px');
+    expect(details.querySelector('.rcp-layout-actions')).toBeNull();
   });
 });

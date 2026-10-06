@@ -80,6 +80,26 @@ public class BenchmarkComparisonReportFactsTests
         Assert.False(BenchmarkReportPackPromptIsTrue(Fact(sheet, "pair.A.E.intervalOverlap")));
     }
 
+    [Fact]
+    public void ASpreadOfOne_ReadsOnePointApart()
+    {
+        var values = new List<(string Letter, double? Value)> { ("A", 85.2), ("B", 83.8) };
+
+        Assert.Equal("from 84 (Model B) to 85 (Model A), 1 point apart",
+            BenchmarkComparisonReportFacts.SpreadDisplay(values, BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points"));
+    }
+
+    [Fact]
+    public void ASpreadWhoseValuesDisplayAlike_ReadsForEveryModel()
+    {
+        var values = new List<(string Letter, double? Value)> { ("A", 97.2), ("B", 96.8), ("C", 97.0) };
+
+        Assert.Equal("97 for every model",
+            BenchmarkComparisonReportFacts.SpreadDisplay(values, BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points"));
+        Assert.Equal("97 for every model with this figure",
+            BenchmarkComparisonReportFacts.SpreadDisplay(values.Append(("D", (double?)null)).ToList(), BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points"));
+    }
+
     private static bool BenchmarkReportPackPromptIsTrue(BenchmarkReportFact fact) => BenchmarkReportPackPrompt.IsTrue(fact);
 
     [Fact]

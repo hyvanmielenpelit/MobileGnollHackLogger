@@ -98,7 +98,9 @@ import {
   speedValue,
   suiteCostSdUsd
 } from './model-comparison-charts';
+import { MEASURE_NAMES } from './measure-format';
 import type { NumberSamples } from './measure-format';
+
 import { MAX_COMPARISON_SOURCES } from './comparison-source-picker.component';
 import {
   BenchmarkModelComparisonDto,
@@ -209,6 +211,7 @@ import {
   documentChartRefusal,
   documentChartWidth,
   documentFigureLayout,
+  documentTextStyle,
   normalizeChartSelection,
   printFigureAppearance,
   readStoredChartSettings,
@@ -2445,7 +2448,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (result.storageNotConfigured) {
       this.setChartStatus(documentId, { state: 'failed', message: result.storageNotConfigured });
     } else if (published) {
-      this.setChartStatus(documentId, { state: 'done', count: published.chartCount });
+      this.setChartStatus(documentId, { state: 'done', count: published.figureCount, images: published.chartCount });
     } else if (failed) {
       this.setChartStatus(documentId, { state: 'failed', message: failed.message });
     } else if (result.skipped.includes(documentId)) {
@@ -2631,9 +2634,35 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       widthPx: layout.pixelWidth,
       heightPx: layout.pixelHeight,
       title: card.title,
-      caption: [card.chrome.detail, `Drawn from the comparison computed ${computed}.`].filter(part => part).join(' '),
+      caption: [card.chrome.detail, this.documentChartMeasureNote(key), `Drawn from the comparison computed ${computed}.`]
+        .filter(part => part).join(' '),
       altText: this.documentChartAltText(key, card.title, built.figures)
     };
+  }
+
+  /**
+   * A document chart caption's note on the measure it plots, where the document's own tables give
+   * another: the speed figures' time measure (none for the Speed Index), and the cost panel's cost
+   * per pass. Empty for every other figure.
+   */
+  private documentChartMeasureNote(key: ReportChartFigureKey): string {
+    if (key === 'p1b-speed' || key === 's1-quality-speed' || key === 's3-speed-cost') {
+      switch (this.speedMeasure) {
+        case 'meanModelTime':
+          return 'Times are the mean model time per question; the document\'s tables give the median.';
+        case 'totalModelTime':
+        case 'ttftP50': {
+          const name = MEASURE_NAMES[this.speedMeasure];
+          return `Times are the ${name.charAt(0).toLocaleLowerCase('en-US')}${name.slice(1)}; the document's tables give the median.`;
+        }
+        default:
+          return '';
+      }
+    }
+    if (key === 'p1c-cost') {
+      return 'Costs are per battery pass (per suite run for a suite); the document\'s tables give the cost per question.';
+    }
+    return '';
   }
 
   /**
@@ -2689,13 +2718,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return documentFigureLayout(key, width, labelPt, DOCUMENT_CHART_COLUMN_PT, chromeHeight + DOCUMENT_MIN_PLOT_HEIGHT);
   }
 
-  /** The style and theme a document type's charts are drawn in: step 2's, or *Light, for print*. */
+  /**
+   * The style and theme a document type's charts are drawn in: step 2's, or *Light, for print*, with
+   * the bar and scatter text normalized so the layout's label size holds for both (`documentTextStyle`).
+   */
   private documentLook(layout: ReportChartDocumentLayout): { style: FigureStyle; theme: ResolvedFigureTheme } {
+    const style = documentTextStyle(this.figureStyle);
     if (layout.theme === 'asInStep2') {
-      return { style: this.figureStyle, theme: this.figureTheme };
+      return { style, theme: this.figureTheme };
     }
     const appearance = printFigureAppearance(this.figureStyle.appearance);
-    return { style: { ...this.figureStyle, appearance }, theme: resolveFigureTheme(appearance) };
+    return { style: { ...style, appearance }, theme: resolveFigureTheme(appearance) };
   }
 
   /** Step 2's logo variant at its height, loaded now if step 2 does not show it. Null where it fails to load. */
@@ -2713,8 +2746,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * A document chart's chrome: step 2's for the card, in the document's theme and with its logo
    * choice, and the heading the layout asks for. *None* leaves the title, the badges, the Better badge
-   * and the detail line to the document's caption; *Title* keeps the title alone. It is laid out
-   * against the document charts' narrower content column, {@link DOCUMENT_MIN_CONTENT_WIDTH}.
+   * and the detail line to the document's caption; *Title* keeps the title alone. Only *Title and
+   * badges* keeps the footer: the document itself names the suite and the computation time. It is
+   * laid out against the document charts' narrower content column, {@link DOCUMENT_MIN_CONTENT_WIDTH}.
    */
   private documentChrome(
     card: ComparisonFigureCard,
@@ -2735,7 +2769,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       highlight: base.chrome.highlight,
       notes: base.chrome.notes
     };
-    return { ...base, chrome, theme, logo };
+    return { ...base, chrome, footer: { suite: '', computedAt: '' }, theme, logo };
   }
 
   /** The figure set a document chart is drawn from, and the set-level notes its chrome carries. */
@@ -3562,8 +3596,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   get tableProvenance(): ComparisonTableProvenance {
     const dto = this.comparison;
+    const battery = !dto?.baselineSuiteName && !!dto?.baselineBatteryName;
     return {
-      suite: dto?.baselineSuiteName || 'Suite not set',
+      ...(battery ? { suiteLabel: 'Battery' } : {}),
+      suite: dto?.baselineSuiteName || dto?.baselineBatteryName || 'Suite not set',
       pricingBasis: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
       conditionSignature: (dto?.baselineSignature ?? '').trim().slice(0, 12),
       computedAt: dto?.computedAtUtc ? parseServerUtcDate(dto.computedAtUtc).toLocaleString() : 'unknown time',
@@ -3578,13 +3614,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The figure footer: the suite and the computation time, in the composer's own two-sided layout,
-   * under each figure whose family has the footer on.
+   * The figure footer: the suite (the battery, for a battery comparison) and the computation time, in
+   * the composer's own two-sided layout, under each figure whose family has the footer on.
    */
   get figureFooter(): FigureFooter {
     const dto = this.comparison;
+    const battery = !dto?.baselineSuiteName && !!dto?.baselineBatteryName;
     return {
-      suite: dto?.baselineSuiteName || 'Suite not set',
+      ...(battery ? { label: 'Battery' } : {}),
+      suite: dto?.baselineSuiteName || dto?.baselineBatteryName || 'Suite not set',
       computedAt: formatComputedAt(dto?.computedAtUtc ?? '')
     };
   }

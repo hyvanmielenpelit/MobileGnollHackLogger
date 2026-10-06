@@ -1363,7 +1363,7 @@ public class BenchmarkReportDocumentListItemDto
     /// </summary>
     public bool PeersChangedSinceGeneration { get; set; }
 
-    /// <summary>The chart figures the document's chart manifest holds.</summary>
+    /// <summary>Images in the document's chart manifest, both namings counted; <see cref="ChartFigureKeys"/> lists its figures.</summary>
     public int ChartCount { get; set; }
 
     /// <summary>The figure keys of the document's charts, in manifest order.</summary>

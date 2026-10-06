@@ -181,7 +181,7 @@
 }
 
 .rcp-layout {
-  margin-top: 4px;
+  margin-block-start: 1rem;
 }
 
 .rcp-layout-body {
@@ -216,8 +216,4 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.rcp-layout-actions:empty {
-  display: none;
 }

@@ -18,7 +18,7 @@ SLOTS (the keys of "sections"; each one is required and holds Markdown paragraph
 FIELDS AND LISTS:
 - headline: the comparison's result in one sentence, at most 35 words.
 - questionTopics: one entry for every question listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it. When the data gives QUESTION TOPICS instead, they are already written for this comparison: use them and leave "questionTopics" empty.
-- leads: at most eight things worth checking, each with "triage" set to one of: "chat" (the Overseer chat prompt or tools), "harness" (the benchmark harness or grading), "suite" (a question or its rubric), "corpus" (missing or stale wiki, source or knowledge-base content), "model" (one model's own failing). Lead with the action, then the evidence. A lead is provisional and un-triaged, never a finding: phrase each as something to check. A "chat", "corpus" or "suite" lead rests on questions several models missed.
+- leads: at most eight things worth checking, each with "triage" set to one of: "chat" (the Overseer chat prompt or tools), "harness" (the benchmark harness or grading), "suite" (a question or its rubric), "corpus" (missing or stale wiki, source or knowledge-base content), "model" (one model's own failing). Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. A "chat", "corpus" or "suite" lead rests on questions several models missed.
 - strengths, weaknesses, recommendations and questionNotes: leave them out.
 
 NUMBERS AND NAMES:
@@ -37,6 +37,7 @@ EVIDENCE:
 - An evidence id is a fact key from FACTS or a question reference as the QUESTION MATRIX shows it. Use only ids that exist in the data. This document has no finding rows.
 - Every lead cites at least one evidence id in "evidence".
 - "questions" lists the question numbers an item is about, as integers from the QUESTION MATRIX.
+- Cite a question only for what the data shows about it. A question listed under QUESTIONS, with its excerpts and grader comments, supports a claim about what an answer said or left out. A question you see only as a QUESTION MATRIX row supports only a claim about its scores, critical errors, tool calls or time.
 
 WEIGHING THE EVIDENCE:
 - The paired tests compare two models on the questions both answered. Each measure is a family of tests, and each family is Holm-adjusted across the tests it actually makes: the reference family tests {{model:A}} against each other model, and the all-pairs family, where present, tests every pair.
@@ -44,11 +45,15 @@ WEIGHING THE EVIDENCE:
 - Where no family establishes a pair's order and the two models' intervals overlap (the pair's intervalOverlap fact is true), say that the intervals overlap and that the order between them is not established. Where the intervals do not overlap, say only that.
 - A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, where their intervals overlap, must say in the same sentence that the intervals overlap or that the order is not established, or state the paired result its facts establish.
 - A pair's speed and cost ratios compare the two models' own time and spend on the same questions; they rest on the same families and adjustment.
+- A speed or cost result that a paired test establishes holds on these questions after the adjustment. Where the paired tests carry a single-run caveat, say that the result rests on one run a side.
 - Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.
 - Use the QUESTION MATRIX to tell the models from the system. Where most models answered a question well and one missed it, that is evidence about that model. Where every model, or nearly every model, missed it, suspect the chat, its tools, the corpus or the rubric first.
+- A statement that several models did, or left out, the same thing must hold for each of them in their excerpts and grader comments. Where only one grader charged it, attribute it to that grader.
+- When you name a model's lowest or highest scoring questions, take them from its QUESTION MATRIX cells in order, without skipping one in between.
+- A difference between suites, or between difficulty bands, compares different questions. Never explain it by what a suite or a question contains, for example that it uses the game snapshot; say only where the model scored lower.
 - A claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Attribute it ('the claim verifier judged …'), never state it as a fact about the game, and never list refuted claims in the abstract or the headline.
 - Each claim ruling names what was checked. A ruling on an answer sentence tests the answer; a ruling on a grader's statement tests the grader.
-- When a model's response-style conflict fact is true, its lower completeness is partly the effect of the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Say so wherever that model's completeness is discussed, and never call it the benchmark's instruction or attribute it to a grader.
+- When a model's response-style conflict fact is true, its completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Where that model's completeness is discussed, say that it was graded under that style. Never say that the style caused the gap or a part of it: no run of this comparison compares response styles. Never present the gap as that model's failing alone either. Where the fact is true for several models, say it once for all of them, and never use it to explain a difference in completeness between models. Never call the style the benchmark's instruction or attribute it to a grader.
 - Mention a degraded state wherever a comparison depends on it.
 - Never re-grade an answer with your own judgment, and never invent a cause the data does not show.
 
@@ -67,7 +72,7 @@ READABILITY:
 - Use the active voice.
 - Prefer a count from the facts to vague words such as many or several.
 - Name the category of a finding, for example tool use or reading the game state, rather than writing "issues across many topics".
-- No hype or filler words: impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge.
+- No hype, filler or overclaiming words: impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge, settled, proven, definitive, definitively, conclusive, conclusively.
 - Lead with the action, then the evidence.
 
 OUTPUT:
@@ -609,11 +614,11 @@ spread.speed = from 20.0 s (Model E) to 8.0 s (Model D)
 suite.name = GnollHack Core Suite
 
 RESPONSE STYLE
-{{model.A.style.responseStyleConflict}} is not true: that model's completeness is not affected by a response-style conflict.
-{{model.B.style.responseStyleConflict}} is not true: that model's completeness is not affected by a response-style conflict.
-{{model.C.style.responseStyleConflict}} is not true: that model's completeness is not affected by a response-style conflict.
-{{model.D.style.responseStyleConflict}} is not true: that model's completeness is not affected by a response-style conflict.
-{{model.E.style.responseStyleConflict}} is not true: that model's completeness is not affected by a response-style conflict.
+{{model.A.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
+{{model.B.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
+{{model.C.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
+{{model.D.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
+{{model.E.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
 
 QUESTION MATRIX (each model's cell: score, CE for a critical error, refuted answer sentences, tool calls, model time; n/a where it was not scored)
 [Q1] band: Intermediate | A: 92, 0 calls, 10.0 s | B: 85, 0 calls, 10.0 s | C: 70, 0 calls, 10.0 s | D: 75, 0 calls, 10.0 s | E: 50, 0 calls, 10.0 s | spread 42

@@ -1382,12 +1382,13 @@ public class BenchmarkReportPackRendererTests
 
         Assert.Contains("- **Panel member B alone:** 79 / 100\n"
             + "- **Reference reader (advisory, third provider):** 90 / 100\n"
-            + "- **Reference reader's mean offset from the panel:** +16.8 points. It never scores; its neutrality between the two panel families is an assumption.\n"
+            + "- **Reference reader's mean offset from the panel:** +16.8 points. Its scores do not count toward the score; its neutrality between the two panel families is an assumption.\n"
             + "- **Response-style conflict:** none\n", text);
+        Assert.DoesNotContain("It never scores", text);
 
         string older = BenchmarkReportPackRenderer.Render(StoredV2Document(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
         Assert.DoesNotContain("Reference reader (advisory", older);
-        Assert.DoesNotContain("It never scores", older);
+        Assert.DoesNotContain("Its scores do not count toward the score", older);
         Assert.Contains("- **Response-style conflict:** none\n", older);
     }
 
@@ -2516,6 +2517,139 @@ public class BenchmarkReportPackRendererTests
             BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, BenchmarkReportChartPlacement.CostKey, BenchmarkReportScope.Comparison));
         Assert.Equal(BenchmarkReportChartAnchor.CostResults,
             BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, BenchmarkReportChartPlacement.CostKey));
+    }
+
+    /// <summary>A comparison document over <paramref name="keys"/> of the fixture comparison.</summary>
+    private static BenchmarkReportDocument ComparisonDocumentOver(BenchmarkReportAudience audience, IReadOnlyList<string> keys)
+    {
+        var built = ComparisonFacts(keys);
+        var document = ComparisonDocument(audience, subset: true);
+        document.CoveredEntryKeysJson = BenchmarkReportJson.Serialize(built.CoveredEntryKeys.ToList());
+        document.CoveredSetKey = built.CoveredSetKey;
+        document.FactsJson = BenchmarkReportJson.Serialize(built.Sheet!);
+        document.ContentJson = BenchmarkReportJson.Serialize(built.Content);
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(ComparisonWriter(audience, built.Sheet!));
+        return document;
+    }
+
+    private static string RenderDocument(BenchmarkReportDocument document, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
+        => BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+    /// <summary>The technical report with a topic for every question of the matrix, or for every question but Q2.</summary>
+    private static BenchmarkReportDocument TechnicalWithTopics(bool everyQuestion)
+    {
+        var document = ComparisonDocument(BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        writer.QuestionTopics = sheet.Questions
+            .Where(q => everyQuestion || q.Number != 2)
+            .Select(q => new BenchmarkReportQuestionTopic { Question = q.Number, Topic = "A question about topic " + q.Number.ToString(CultureInfo.InvariantCulture) })
+            .ToList();
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+        return document;
+    }
+
+    [Fact]
+    public void TheMatrixLegend_NamesEachColumnInANamedCopy_AndPointsToTheModelsTableInAnAnonymizedOne()
+    {
+        var document = TechnicalWithTopics(everyQuestion: true);
+
+        string named = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("| Q | Topic | Band | A | B | C | D | E | Spread |\n", named);
+        Assert.Contains("*Columns: A = Orion Max, B = Vega Pro, C = Lyra Mini, D = Nova Lite, E = Zeta Prime. "
+            + "CE marks a critical error; Spread is the highest score minus the lowest. "
+            + "— under a model marks a question it was not asked or not scored on.*\n", named);
+        Assert.DoesNotContain("Each model's column is headed by its letter", named);
+
+        string anonymized = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        Assert.Contains("| Q | Topic | Band | A | B | C | D | E | Spread |\n", anonymized);
+        Assert.Contains("*Each model's column is headed by its letter in the models table. "
+            + "CE marks a critical error; Spread is the highest score minus the lowest. "
+            + "— under a model marks a question it was not asked or not scored on.*\n", anonymized);
+        Assert.DoesNotContain("Columns: A =", anonymized);
+    }
+
+    [Fact]
+    public void TheMatrixLegend_ExplainsAMissingTopic_OnlyWhenATopicIsMissing()
+    {
+        const string topicSentence = "— under Topic marks a question not given in detail.";
+
+        string every = RenderDocument(TechnicalWithTopics(everyQuestion: true), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.DoesNotContain(topicSentence, every);
+
+        string missing = RenderDocument(TechnicalWithTopics(everyQuestion: false), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("| Q2 | — | ", missing);
+        Assert.Contains("— under a model marks a question it was not asked or not scored on. " + topicSentence + "*\n", missing);
+    }
+
+    [Fact]
+    public void ATwoModelComparison_SaysWhetherTheTwoIntervalsOverlap_AndWhetherTheComparisonEstablishesTheOrder()
+    {
+        // Orion Max (82 to 88) and Vega Pro (77 to 83) overlap; Orion Max and Zeta Prime (50 to 60) do not.
+        string overlapping = RenderDocument(ComparisonDocumentOver(BenchmarkReportAudience.ExecutiveSummary, new[] { "run:31", "run:32" }),
+            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("The two models' 95 % intervals overlap; the intervals alone do not establish which scored higher.\n", overlapping);
+        Assert.DoesNotContain("Of the 1 pair", overlapping);
+
+        var document = ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary, subset: true);
+        string apart = RenderDocument(document, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("The two models' 95 % intervals do not overlap.\n", apart);
+        Assert.DoesNotContain("Of the 1 pair", apart);
+
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        var measures = (sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>())
+            .Select(f => f.Measures.FirstOrDefault(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure))
+            .Where(m => m != null)
+            .ToList();
+        Assert.NotEmpty(measures);
+        foreach (var measure in measures)
+        {
+            var pair = Assert.Single(measure!.Pairs);
+            Assert.Contains(pair.Established && pair.Favors != "None"
+                ? "; the comparison establishes which scored higher.\n"
+                : "; the comparison does not establish which scored higher.\n", apart);
+        }
+        Assert.DoesNotContain(" of 1 comparison", apart);
+
+        string five = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("Of the 10 pairs of models, ", five);
+        Assert.Contains(" comparisons establish which scored higher.\n", five);
+        Assert.DoesNotContain("The two models' 95 % intervals", five);
+    }
+
+    [Fact]
+    public void ABatteryComparison_CountsTheQuestionsTheWriterWasGivenInFull_PerSuite()
+    {
+        var document = ComparisonDocument(BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        foreach (var q in sheet.Questions)
+        {
+            q.Suite = q.Number <= 3 ? 1 : 2;
+            q.Reference = "S" + q.Suite.Value.ToString(CultureInfo.InvariantCulture) + "-Q" + q.Number.ToString(CultureInfo.InvariantCulture);
+        }
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(document.ContentJson);
+        content.Questions = new[] { 1, 3, 5, 3 }
+            .Select(n => new BenchmarkReportContentQuestion { Number = n, QuestionText = "Question " + n.ToString(CultureInfo.InvariantCulture) + "?" })
+            .ToList();
+        document.ContentJson = BenchmarkReportJson.Serialize(content);
+
+        string text = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("- Detail: the writer was given the full text of 3 questions (2 of suite 1, 1 of suite 2), and the other questions as matrix rows.\n", text);
+
+        content.Questions = new List<BenchmarkReportContentQuestion> { new() { Number = 4, QuestionText = "Question 4?" } };
+        document.ContentJson = BenchmarkReportJson.Serialize(content);
+        string one = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("- Detail: the writer was given the full text of 1 question (0 of suite 1, 1 of suite 2), and the other questions as matrix rows.\n", one);
+
+        content.Questions = new List<BenchmarkReportContentQuestion>();
+        document.ContentJson = BenchmarkReportJson.Serialize(content);
+        string none = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.Contains("- Detail: the writer was given the full text of at most a few questions per suite, and the other questions as matrix rows.\n", none);
+
+        string single = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.DoesNotContain("- Detail: ", single);
     }
 
     [Fact]

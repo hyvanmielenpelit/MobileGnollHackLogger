@@ -68,8 +68,8 @@ export interface FigureChrome {
   readonly notes: readonly FigureNote[];
 }
 
-/** The export's last line: suite on the left, computation time on the right. */
-export interface FigureFooter { readonly suite: string; readonly computedAt: string; }
+/** The export's last line: suite on the left, computation time on the right. `label` is the eyebrow before the name, *Suite* by default. */
+export interface FigureFooter { readonly label?: string; readonly suite: string; readonly computedAt: string; }
 
 /** Clockwise rotation, in degrees, that turns the marker's up-right arrow toward the better side. */
 export function figureDirectionRotation(direction: FigureDirection): number {

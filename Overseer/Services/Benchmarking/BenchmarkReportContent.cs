@@ -21,6 +21,9 @@ public static class BenchmarkReportContent
     /// <summary>What an excerpt cut before a table ends with.</summary>
     public const string TableFollows = "… (a table follows in the answer)";
 
+    /// <summary>The rationale of a claim the verifier's response left out.</summary>
+    public const string NoRulingRationale = "The verifier gave no ruling on this item.";
+
     // A claim ruling's role, from the stored verification's BenchmarkClaimRoles. The answer's own
     // text: an unverified claim, a sentence a grader accused (accusedQuote) and the quote a critical
     // error rests on. The grader's text: a sentence of its own evidence (assessorStatement) and the
@@ -565,11 +568,18 @@ public static class BenchmarkReportContent
             .ToList();
     }
 
-    /// <summary>The basis and, when it says something the basis does not, the citation in parentheses.</summary>
+    /// <summary>
+    /// The basis and, when it says something the basis does not, the citation in parentheses. The
+    /// harness's note for an item the verifier left out reads as <see cref="NoRulingRationale"/>.
+    /// </summary>
     internal static string? RationaleOf(BenchmarkClaimVerification v)
     {
         string? basis = NullIfBlank(v.Basis)?.Trim();
         string? citation = NullIfBlank(v.Citation)?.Trim();
+        if (string.Equals(basis, BenchmarkClaimVerificationParser.AbsentFromResponseBasis, StringComparison.Ordinal))
+        {
+            basis = NoRulingRationale;
+        }
         if (basis != null && citation != null && !string.Equals(basis, citation, StringComparison.Ordinal))
         {
             return basis + " (" + citation + ")";

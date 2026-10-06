@@ -1535,6 +1535,8 @@ public class BenchmarkReportPackValidatorTests
     [InlineData("It used cutting-edge reasoning on the board.", "cutting-edge")]
     [InlineData("Its Game-Changing tool use stood out.", "Game-Changing")]
     [InlineData("It did not delve into the board state.", "delve")]
+    [InlineData("Speed and cost are settled on these questions.", "settled")]
+    [InlineData("The order is definitively proven.", "definitively")]
     public void Rule17_HypeWords(string text, string word)
     {
         var note = Assert.Single(ValidateMeaning(text));
@@ -2090,6 +2092,30 @@ public class BenchmarkReportPackComparisonValidatorTests
         Assert.DoesNotContain(Validate(BenchmarkReportAudience.ExecutiveSummary, output), n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule);
         output.Sections[BenchmarkReportSlots.Overview] = "{{model:A}} scored higher than {{model:E}} on the questions.";
         Assert.DoesNotContain(Validate(BenchmarkReportAudience.ExecutiveSummary, output), n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule);
+    }
+
+    [Fact]
+    public void TheWhichModelSlot_HoldsAHundredAndFiftyWords_AndIsCutPastThem()
+    {
+        const string slot = BenchmarkReportSlots.WhichModel;
+        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(BenchmarkReportAudience.ExecutiveSummary, slot, comparisonScope: true));
+
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("choice", 140));
+        Assert.Empty(Validate(BenchmarkReportAudience.ExecutiveSummary, output));
+
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("choice", 160));
+        var note = Assert.Single(Validate(BenchmarkReportAudience.ExecutiveSummary, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("sections." + slot, note.Location);
+        Assert.Contains("150", note.Message);
+
+        // Without a repair, the paragraphs past the cap are dropped.
+        output.Sections[slot] = "A first paragraph about the choice.\n\n" + string.Join(" ", Enumerable.Repeat("choice", 150));
+        var (sheet, content) = Data();
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(BenchmarkReportAudience.ExecutiveSummary, output, sheet, content);
+        Assert.Equal("A first paragraph about the choice.", cleaned.Output.Sections[slot]);
+        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p2]");
     }
 
     [Fact]

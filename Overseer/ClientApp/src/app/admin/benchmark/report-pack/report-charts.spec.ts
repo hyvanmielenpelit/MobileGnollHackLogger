@@ -12,7 +12,7 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { FIGURE_EXPORT_MIN_CONTENT_WIDTH, layoutBoxFor, resolveFigureLayout } from '../model-comparison/figure-export';
 import { P1_STACK_BREAKPOINT_PX } from '../model-comparison/model-comparison-charts';
-import { DEFAULT_FIGURE_STYLE } from '../model-comparison/figure-style';
+import { DEFAULT_FIGURE_STYLE, FigureStyle } from '../model-comparison/figure-style';
 import {
   BASE_LABEL_PX,
   CHART_STORAGE_NOT_CONFIGURED,
@@ -46,6 +46,7 @@ import {
   documentChartWidth,
   documentFigureLayout,
   documentLabelSizeRefusal,
+  documentTextStyle,
   isReportChartFigureKey,
   normalizeChartSelection,
   normalizeDocumentChartLayout,
@@ -445,7 +446,7 @@ describe('report-charts', () => {
 
     it('hashes to 64 lowercase hex characters, pinned, whatever the key order', async () => {
       const hash = await chartSettingsHash(settings());
-      expect(hash).toBe('6774cb59c28516afa477b7ec1f09bbfd505841e7223ff6be309b9cac9fc6fa82');
+      expect(hash).toBe('a96a276f21ec376190ea617df68188050f980844ef78d378278b853efe41f46c');
       const reordered = await chartSettingsHash(settings({ figureStyle: { font: 'Lato', theme: 'dark' } }));
       expect(reordered).toBe(hash);
     });
@@ -460,7 +461,7 @@ describe('report-charts', () => {
 
     it('hashes the composition constants and every document type\'s layout', async () => {
       expect(documentChartHashLayout(DEFAULT_CHART_LAYOUT_SETTINGS)).toEqual({
-        columnPt: 481.9, dpi: 300, baseLabelPx: 11, format: 'png', documents: DEFAULT_CHART_LAYOUT_SETTINGS
+        columnPt: 481.9, dpi: 300, baseLabelPx: 11, textNormalization: 1, format: 'png', documents: DEFAULT_CHART_LAYOUT_SETTINGS
       });
       const base = await chartSettingsHash(settings());
       const changed = (patch: Partial<ReportChartDocumentLayout>): ReportChartSettingsInput => settings({
@@ -476,6 +477,38 @@ describe('report-charts', () => {
       }
       // A missing document type hashes as its defaults.
       expect(await chartSettingsHash(settings({ layout: documentChartHashLayout({}) }))).toBe(base);
+    });
+
+    it('moves with the document text normalization, so charts drawn before it read as differing from step 2', async () => {
+      const { textNormalization, ...before } = documentChartHashLayout(DEFAULT_CHART_LAYOUT_SETTINGS) as Record<string, unknown>;
+      expect(textNormalization).toBe(1);
+      expect(await chartSettingsHash(settings({ layout: before }))).not.toBe(await chartSettingsHash(settings()));
+    });
+  });
+
+  describe('documentTextStyle', () => {
+    const styled = (bar: Partial<FigureStyle['bar']>, scatter: Partial<FigureStyle['scatter']> = {}): FigureStyle => ({
+      ...DEFAULT_FIGURE_STYLE,
+      bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar },
+      scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter }
+    });
+
+    it('prints the bar axis text at the base label size, the value labels and axis titles in proportion', () => {
+      const bar = documentTextStyle(styled({ axisTextSizePx: 15, valueLabelSizePx: 20, axisTitleSizePx: 16 })).bar;
+      expect([bar.axisTextSizePx, bar.valueLabelSizePx, bar.axisTitleSizePx]).toEqual([11, 14.7, 11.7]);
+    });
+
+    it('prints the scatter axis text at the base label size too', () => {
+      const scatter = documentTextStyle(styled({}, { axisTextSizePx: 10 })).scatter;
+      expect(scatter.axisTextSizePx).toBe(11);
+      expect(scatter.labelTextSizePx).toBe(Math.round(DEFAULT_FIGURE_STYLE.scatter.labelTextSizePx * 1.1 * 10) / 10);
+    });
+
+    it('leaves the default style, the profile family and the chrome unchanged', () => {
+      expect(documentTextStyle(DEFAULT_FIGURE_STYLE)).toEqual(DEFAULT_FIGURE_STYLE);
+      const changed = documentTextStyle(styled({ axisTextSizePx: 15 }));
+      expect(changed.profile).toBe(DEFAULT_FIGURE_STYLE.profile);
+      expect(changed.appearance).toBe(DEFAULT_FIGURE_STYLE.appearance);
     });
   });
 
@@ -614,7 +647,7 @@ describe('report-charts', () => {
         pngBase64: 'AQID'
       });
       expect(result).toEqual({
-        published: [{ documentId: 11, chartCount: 4 }, { documentId: 12, chartCount: 1 }],
+        published: [{ documentId: 11, chartCount: 4, figureCount: 2 }, { documentId: 12, chartCount: 1, figureCount: 1 }],
         failed: [],
         skipped: [],
         canceled: false,
@@ -647,7 +680,7 @@ describe('report-charts', () => {
 
       expect(puts.map(put => put.id)).toEqual([11]);
       expect(result.canceled).toBe(true);
-      expect(result.published).toEqual([{ documentId: 11, chartCount: 2 }]);
+      expect(result.published).toEqual([{ documentId: 11, chartCount: 2, figureCount: 1 }]);
       expect(publisher.running).toBe(false);
     });
 
@@ -662,7 +695,7 @@ describe('report-charts', () => {
       expect(puts.map(put => put.id)).toEqual([11]);
       expect(puts[0].charts.map(chart => chart.figureKey)).toEqual(['p1a-quality']);
       expect(progress.some(p => p.step.includes('Could not draw Speed (named)') && p.step.includes('cannot draw p1b-speed'))).toBe(true);
-      expect(result.published).toEqual([{ documentId: 11, chartCount: 1 }]);
+      expect(result.published).toEqual([{ documentId: 11, chartCount: 1, figureCount: 1 }]);
       expect(result.failed.length).toBe(1);
       expect(result.failed[0].documentId).toBe(12);
       expect(result.failed[0].message).toContain('No chart could be drawn');
@@ -678,8 +711,25 @@ describe('report-charts', () => {
 
       expect(puts.map(put => put.id)).toEqual([11, 12]);
       expect(result.failed).toEqual([{ documentId: 11, message: 'Disk full.' }]);
-      expect(result.published).toEqual([{ documentId: 12, chartCount: 2 }]);
+      expect(result.published).toEqual([{ documentId: 12, chartCount: 2, figureCount: 1 }]);
       expect(result.storageNotConfigured).toBeNull();
+    });
+
+    it('counts figures from the distinct uploaded keys when the summary lists none', async () => {
+      const publisher = new ReportChartPublisher(service);
+      const result = await publisher.publish([target(11, ExecutiveSummary)],
+        { [ExecutiveSummary]: ['p1a-quality', 'p1b-speed', 'p1c-cost'] }, compose, HASH);
+
+      expect(result.published).toEqual([{ documentId: 11, chartCount: 6, figureCount: 3 }]);
+    });
+
+    it('counts figures from the summary\'s figure keys when it lists them', async () => {
+      putResponse = (id, charts) => of({ documentId: id, chartCount: charts.length, figureKeys: ['p1a-quality', 'p1b-speed'], settingsHash: HASH });
+      const publisher = new ReportChartPublisher(service);
+      const result = await publisher.publish([target(11, ExecutiveSummary)],
+        { [ExecutiveSummary]: ['p1a-quality', 'p1b-speed', 'p1c-cost'] }, compose, HASH);
+
+      expect(result.published).toEqual([{ documentId: 11, chartCount: 6, figureCount: 2 }]);
     });
 
     it('stops the whole publish on a 400 saying chart storage is not configured, and reports it once', async () => {

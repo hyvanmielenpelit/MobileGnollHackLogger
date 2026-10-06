@@ -259,7 +259,7 @@ public class BenchmarkReportPackPromptTests
             Assert.DoesNotContain("concise-answer instruction", text);
             Assert.DoesNotContain("the instruction's effect", text);
         }
-        Assert.Contains("{{style.responseStyleConflict}} is true: the production chat's concise response style conflicts with the completeness the rubrics ask for, so lower completeness is partly the style's effect.", prompt.UserMessage);
+        Assert.Contains("{{style.responseStyleConflict}} is true: completeness is the lowest dimension, well below accuracy, under the production chat's concise response style. This states a condition, not a cause.", prompt.UserMessage);
     }
 
     [Fact]
@@ -267,7 +267,130 @@ public class BenchmarkReportPackPromptTests
     {
         string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
 
-        Assert.Contains("- When the response-style conflict fact is true, lower completeness is partly the effect of the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is — not only of the model. Say so wherever completeness is discussed, and never call it the benchmark's instruction.", system);
+        Assert.Contains("- When the response-style conflict fact is true, {{subject}}'s completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Where completeness is discussed, say that it was graded under that style. Never say that the style caused the gap or a part of it: the run does not compare response styles. Never present the gap as the model's failing alone either. Never call the style the benchmark's instruction.", system);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheResponseStyle_IsAConditionNeverACause_InBothPrompts(BenchmarkReportAudience audience)
+    {
+        var prompt = Build(audience);
+        var comparison = ComparisonPrompt(audience);
+
+        foreach (string text in new[] { prompt.SystemPrompt, prompt.UserMessage, comparison.SystemPrompt, comparison.UserMessage })
+        {
+            Assert.DoesNotContain("partly the", text);
+            Assert.DoesNotContain("style's effect", text);
+        }
+
+        Assert.Contains("- When a model's response-style conflict fact is true, its completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. "
+            + "Where that model's completeness is discussed, say that it was graded under that style. "
+            + "Never say that the style caused the gap or a part of it: no run of this comparison compares response styles. "
+            + "Never present the gap as that model's failing alone either. "
+            + "Where the fact is true for several models, say it once for all of them, and never use it to explain a difference in completeness between models. "
+            + "Never call the style the benchmark's instruction or attribute it to a grader.", comparison.SystemPrompt);
+    }
+
+    [Fact]
+    public void TheComparisonResponseStyleLines_StateAConditionNotACause()
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        sheet.Facts.RemoveAll(f => f.Key.Contains("responseStyleConflict", StringComparison.OrdinalIgnoreCase));
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "model.A.style.responseStyleConflict", Value = System.Text.Json.Nodes.JsonValue.Create(true), Display = "yes" });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "model.B.style.responseStyleConflict", Value = System.Text.Json.Nodes.JsonValue.Create(false), Display = "no" });
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, built.Content!, null).UserMessage;
+
+        Assert.Contains("RESPONSE STYLE\n"
+            + "{{model.A.style.responseStyleConflict}} is true: that model's completeness is its lowest dimension, well below its accuracy, under the production chat's concise response style. This states a condition, not a cause.\n"
+            + "{{model.B.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.\n", message);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void BothPrompts_LimitWhatACitedQuestionSupports_AndHowQuestionsAndSuitesAreCompared(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+        string comparison = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(audience);
+
+        Assert.Contains("- Cite a question only for what the data shows about it. A question given with its excerpts and grader comments supports a claim about what an answer said or left out; "
+            + "a question shown only by its scores supports only a claim about its score, critical error, tool calls or time.", system);
+        Assert.Contains("- Cite a question only for what the data shows about it. A question listed under QUESTIONS, with its excerpts and grader comments, supports a claim about what an answer said or left out. "
+            + "A question you see only as a QUESTION MATRIX row supports only a claim about its scores, critical errors, tool calls or time.", comparison);
+
+        const string suites = "- A difference between suites, or between difficulty bands, compares different questions. Never explain it by what a suite or a question contains, "
+            + "for example that it uses the game snapshot; say only where the model scored lower.";
+        Assert.Contains(suites, system);
+        Assert.Contains(suites, comparison);
+        Assert.Contains("- When you name the subject's lowest or highest scoring questions, take them from its QUESTIONS in order, without skipping one in between.", system);
+        Assert.Contains("- When you name a model's lowest or highest scoring questions, take them from its QUESTION MATRIX cells in order, without skipping one in between.", comparison);
+        Assert.Contains("- A statement that several models did, or left out, the same thing must hold for each of them in their excerpts and grader comments. "
+            + "Where only one grader charged it, attribute it to that grader.", comparison);
+        Assert.DoesNotContain("A statement that several models did", system);
+
+        // Each rule sits in its own block.
+        int evidence = comparison.IndexOf("\nEVIDENCE:\n", StringComparison.Ordinal);
+        int weighing = comparison.IndexOf("\nWEIGHING THE EVIDENCE:\n", StringComparison.Ordinal);
+        Assert.True(evidence >= 0 && weighing > evidence);
+        Assert.InRange(comparison.IndexOf("- Cite a question only for", StringComparison.Ordinal), evidence, weighing);
+        Assert.True(comparison.IndexOf(suites, StringComparison.Ordinal) > weighing);
+        Assert.True(system.IndexOf(suites, StringComparison.Ordinal) > system.IndexOf("\nWEIGHING THE EVIDENCE:\n", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheComparisonPrompt_SaysAPairedSpeedOrCostResultMayRestOnOneRunASide(BenchmarkReportAudience audience)
+    {
+        string comparison = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(audience);
+
+        Assert.Contains("- A speed or cost result that a paired test establishes holds on these questions after the adjustment. "
+            + "Where the paired tests carry a single-run caveat, say that the result rests on one run a side.", comparison);
+    }
+
+    [Fact]
+    public void TheComparisonWhichModelSlot_EndsWithADefaultChoice()
+    {
+        string system = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.ExecutiveSummary);
+        string slot = system.Split('\n').Single(l => l.StartsWith("- " + BenchmarkReportSlots.WhichModel + ":", StringComparison.Ordinal));
+
+        Assert.Contains("At most 150 words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. "
+            + "Where the order of the leading models is not established, say so and name what would decide between them. "
+            + "End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. "
+            + "Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.", slot);
+    }
+
+    [Fact]
+    public void LeadsInBothPrompts_NameTheMostSpecificTargetTheDataShows()
+    {
+        const string target = "Name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, "
+            + "the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. "
+            + "Never name a file, setting or tool the data does not show.";
+
+        string comparison = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.InternalBrief);
+        string comparisonLeads = comparison.Split('\n').Single(l => l.StartsWith("- leads:", StringComparison.Ordinal));
+        Assert.Contains("Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: "
+            + "phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, "
+            + "the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. "
+            + "Never name a file, setting or tool the data does not show.", comparisonLeads);
+        Assert.DoesNotContain("phrase each as something to check.", comparisonLeads);
+
+        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
+        string leads = system.Split('\n').Single(l => l.StartsWith("- leads:", StringComparison.Ordinal));
+        Assert.Contains("phrase each as something to check, not as a conclusion. " + target + " Where the subject has peers,", leads);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheReadabilityLine_NamesOverclaimingWords_InBothPrompts(BenchmarkReportAudience audience)
+    {
+        foreach (string system in new[] { Build(audience).SystemPrompt, BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(audience) })
+        {
+            string line = system.Split('\n').Single(l => l.StartsWith("- No hype", StringComparison.Ordinal));
+            Assert.Equal("- No hype, filler or overclaiming words: " + string.Join(", ", BenchmarkReportPackValidator.HypeWords) + ".", line);
+            Assert.Contains("settled", line);
+            Assert.Contains("conclusively", line);
+        }
     }
 
     [Fact]

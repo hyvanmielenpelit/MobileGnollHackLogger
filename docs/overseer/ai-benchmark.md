@@ -3431,7 +3431,8 @@ Escape is refused, as during an export. The launcher's *How the comparison works
 **Step 3, Reports.** The form sits in the resizable sidebar as before, with a new fieldset, *Charts in
 PDF and Word*, between *Documents* and *Report writer*. The main area follows the job: one row per
 document with its status, a live duration on the server's clock, its model calls and its charts
-(*Charts: attaching…*, *Charts: 3*, *Charts failed — retry*, *Charts: none*); the stat strip, which stays
+(*Charts: attaching…*, *Charts: 3*, which counts figures, not the images drawn for them in both namings,
+*Charts failed — retry*, *Charts: none*); the stat strip, which stays
 with the cost and the estimate after the job finishes; a summary with **See the documents** (to step 4)
 and **Dismiss**; and *Log and diagnostics*, with icon-only **Copy diagnostics** and **Download
 diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`).
@@ -8812,7 +8813,7 @@ Harness Version 12 surfaces three concrete analytical signals to guide chat syst
    - *Knowledge Base Under-use*: Highlights questions where the model made zero `get_knowledge_article` calls despite available documentation.
    - *Limit*: `ToolCallSummary` records aggregate tool counts, not execution traces. Whether wiki tools were attempted before source tools is not derivable.
 2. **Response-Style Conflict Detection**:
-   When `verboseMode: false`, the model is instructed to answer in 2–5 sentences. If Completeness is the lowest scoring dimension by $\ge 13$ points below Accuracy, the harness flags a response-style conflict. This alerts operators that low Completeness may stem from prompt obedience rather than model inability. Running the suite under `verboseMode: true` isolates the model capability.
+   When `verboseMode: false`, the model is instructed to answer in 2–5 sentences. If Completeness is the lowest scoring dimension by $\ge 13$ points below Accuracy, the harness flags a response-style conflict. This alerts operators that low Completeness may stem from prompt obedience rather than model inability. Running the suite under `verboseMode: true` is the test that separates the two. One such pair has been run (runs 11 and 12, 2026-09-04 and 2026-09-05): Completeness did not move measurably (83.0 → 83.8), so the flag marks a gap measured under the concise style, not a cause.
 3. **Knowledge Base Gaps from Refuted Claims**:
    Claims refuted by the claim verifier (`src/...` or wiki citations) are aggregated across runs and projected in the Suite Health panel. These represent verified misconceptions held by frontier models, providing authoritative candidate topics for new knowledge base articles.
 

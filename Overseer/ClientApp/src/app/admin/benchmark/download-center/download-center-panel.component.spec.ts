@@ -1364,7 +1364,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(q('.dc-preparing')).not.toBeNull();
       expect(text('.dc-preparing-step')).toBe('Drawing Intelligence for Executive Summary: Gemini Flash');
 
-      finish(publishResult({ published: [{ documentId: 11, chartCount: 2 }] }));
+      finish(publishResult({ published: [{ documentId: 11, chartCount: 2, figureCount: 1 }] }));
       await applying;
       fixture.detectChanges();
       expectList().flush([doc(11, ExecutiveSummary, { chartFigureKeys: ['p1a-quality'], chartCount: 2, chartSettingsHash: HASH })]);

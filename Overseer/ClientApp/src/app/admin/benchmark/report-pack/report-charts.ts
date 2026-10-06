@@ -10,7 +10,7 @@ import {
   ReportDocumentChartLayoutFigure,
   ReportDocumentChartUpload
 } from '../../../services/admin-benchmark.service';
-import type { FigureAppearanceStyle } from '../model-comparison/figure-style';
+import type { FigureAppearanceStyle, FigureStyle } from '../model-comparison/figure-style';
 
 /*
  * The charts a Report Pack document carries into its PDF and Word copies: which figures, where each
@@ -146,6 +146,33 @@ export const DOCUMENT_CHART_DPI = 300;
 
 /** The bar value labels' size in layout px, which the label size in points is mapped onto. */
 export const BASE_LABEL_PX = 11;
+
+const roundTenth = (value: number): number => Math.round(value * 10) / 10;
+
+/**
+ * The style a document chart draws with: the bar and scatter families' axis text at
+ * {@link BASE_LABEL_PX}, so the document type's label size holds for both, and their value labels,
+ * point labels and axis titles kept in proportion to it. The profile family and the chrome are unchanged.
+ */
+export function documentTextStyle(style: FigureStyle): FigureStyle {
+  const bar = BASE_LABEL_PX / style.bar.axisTextSizePx;
+  const scatter = BASE_LABEL_PX / style.scatter.axisTextSizePx;
+  return {
+    ...style,
+    bar: {
+      ...style.bar,
+      axisTextSizePx: roundTenth(style.bar.axisTextSizePx * bar),
+      valueLabelSizePx: roundTenth(style.bar.valueLabelSizePx * bar),
+      axisTitleSizePx: roundTenth(style.bar.axisTitleSizePx * bar)
+    },
+    scatter: {
+      ...style.scatter,
+      axisTextSizePx: roundTenth(style.scatter.axisTextSizePx * scatter),
+      labelTextSizePx: roundTenth(style.scatter.labelTextSizePx * scatter),
+      axisTitleSizePx: roundTenth(style.scatter.axisTitleSizePx * scatter)
+    }
+  };
+}
 
 /** The text column of a document page, in points. */
 export const DOCUMENT_TEXT_COLUMN_PT: { readonly a4: 481.9; readonly letter: 498.6 } = Object.freeze({ a4: 481.9, letter: 498.6 } as const);
@@ -550,6 +577,7 @@ export function documentChartHashLayout(layout: ReportChartLayoutSettings): unkn
     columnPt: DOCUMENT_CHART_COLUMN_PT,
     dpi: DOCUMENT_CHART_DPI,
     baseLabelPx: BASE_LABEL_PX,
+    textNormalization: 1,
     format: 'png',
     documents: normalizeChartLayoutSettings(layout)
   };
@@ -678,7 +706,8 @@ export function reportChartTargetFor(doc: BenchmarkReportDocumentListItemDto, la
 export interface ReportChartPublishProgress { readonly done: number; readonly total: number; readonly step: string; readonly documentId: number | null; }
 
 export interface ReportChartPublishResult {
-  readonly published: readonly { readonly documentId: number; readonly chartCount: number }[];
+  /** `chartCount` is the images attached, both namings counted; `figureCount` the figures they draw. */
+  readonly published: readonly { readonly documentId: number; readonly chartCount: number; readonly figureCount: number }[];
   readonly failed: readonly { readonly documentId: number; readonly message: string }[];
   /** Targets whose selection for their audience was empty; nothing was uploaded for them. */
   readonly skipped: readonly number[];
@@ -690,7 +719,8 @@ export interface ReportChartPublishResult {
 /** Per-document chart state shown in the Reports panel's progress list. */
 export type ReportChartRowStatus =
   | { readonly state: 'attaching' }
-  | { readonly state: 'done'; readonly count: number }
+  /** `count` is the figures attached; `images` the uploaded images in both namings. */
+  | { readonly state: 'done'; readonly count: number; readonly images: number }
   | { readonly state: 'failed'; readonly message: string }
   | { readonly state: 'skipped'; readonly reason: string };
 
@@ -776,7 +806,7 @@ export class ReportChartPublisher {
     this.cancelRequested = false;
 
     const normalized = normalizeChartSelection(selection);
-    const published: { documentId: number; chartCount: number }[] = [];
+    const published: { documentId: number; chartCount: number; figureCount: number }[] = [];
     const failed: { documentId: number; message: string }[] = [];
     const skipped: number[] = [];
     let storageNotConfigured: string | null = null;
@@ -851,7 +881,10 @@ export class ReportChartPublisher {
         try {
           const summary = await firstValueFrom(this.service.putReportDocumentCharts(target.documentId, uploads, placement));
           done++;
-          published.push({ documentId: target.documentId, chartCount: summary?.chartCount ?? uploads.length });
+          const figureCount = summary?.figureKeys && summary.figureKeys.length > 0
+            ? summary.figureKeys.length
+            : new Set(uploads.map(upload => upload.figureKey)).size;
+          published.push({ documentId: target.documentId, chartCount: summary?.chartCount ?? uploads.length, figureCount });
         } catch (error) {
           done++;
           const message = errorText(error);

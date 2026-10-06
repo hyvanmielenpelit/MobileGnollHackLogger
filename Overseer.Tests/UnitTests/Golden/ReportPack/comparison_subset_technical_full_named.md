@@ -124,7 +124,7 @@ Most models scored low on Q3, which points to the question or the chat first.
 | Q5 | An item question about altars | Intermediate | 85 | 58 | 27 |
 | Q6 | An item question about shops | Intermediate | 95 | 60 | 35 |
 
-*Each model's column is headed by its letter in the models table. CE marks a critical error; Spread is the highest score minus the lowest; — marks a question the model was not asked or not scored on.*
+*Columns: A = Orion Max, B = Zeta Prime. CE marks a critical error; Spread is the highest score minus the lowest. — under a model marks a question it was not asked or not scored on.*
 
 ## Grader reliability
 

@@ -113,7 +113,7 @@ public static partial class BenchmarkReportPackPrompt
         BenchmarkReportSlots.Overview =>
             $"At most {Cap(audience, slot)} words in one paragraph: the comparison in brief, what was measured, which models lead on intelligence, speed and cost, and how far those positions are established.",
         BenchmarkReportSlots.WhichModel =>
-            $"At most {Cap(audience, slot)} words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. Where the order of the leading models is not established, say so and name what would decide between them.",
+            $"At most {Cap(audience, slot)} words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. Where the order of the leading models is not established, say so and name what would decide between them. End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.",
         BenchmarkReportSlots.TradeOffs =>
             $"At most {Cap(audience, slot)} words: the trade-offs between intelligence, speed and cost, drawing on the frontier facts. Do not restate the table's figures one by one.",
         BenchmarkReportSlots.Reliability =>
@@ -163,7 +163,7 @@ public static partial class BenchmarkReportPackPrompt
 
         if (spec.UsesLeads)
         {
-            Line(sb, $"- leads: at most {Words(spec.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"chat\" (the Overseer chat prompt or tools), \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"corpus\" (missing or stale wiki, source or knowledge-base content), \"model\" (one model's own failing). Lead with the action, then the evidence. A lead is provisional and un-triaged, never a finding: phrase each as something to check. A \"chat\", \"corpus\" or \"suite\" lead rests on questions several models missed.");
+            Line(sb, $"- leads: at most {Words(spec.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"chat\" (the Overseer chat prompt or tools), \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"corpus\" (missing or stale wiki, source or knowledge-base content), \"model\" (one model's own failing). Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. A \"chat\", \"corpus\" or \"suite\" lead rests on questions several models missed.");
         }
 
         Line(sb, "- strengths, weaknesses, recommendations and questionNotes: leave them out.");
@@ -194,6 +194,7 @@ public static partial class BenchmarkReportPackPrompt
             ? "- Every lead cites at least one evidence id in \"evidence\"."
             : "- Every point of the \"models\" list cites at least one evidence id in \"evidence\".");
         Line(sb, "- \"questions\" lists the question numbers an item is about, as integers from the QUESTION MATRIX.");
+        Line(sb, "- Cite a question only for what the data shows about it. A question listed under QUESTIONS, with its excerpts and grader comments, supports a claim about what an answer said or left out. A question you see only as a QUESTION MATRIX row supports only a claim about its scores, critical errors, tool calls or time.");
         Line(sb);
     }
 
@@ -205,11 +206,15 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Where no family establishes a pair's order and the two models' intervals overlap (the pair's intervalOverlap fact is true), say that the intervals overlap and that the order between them is not established. Where the intervals do not overlap, say only that.");
         Line(sb, "- A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, where their intervals overlap, must say in the same sentence that the intervals overlap or that the order is not established, or state the paired result its facts establish.");
         Line(sb, "- A pair's speed and cost ratios compare the two models' own time and spend on the same questions; they rest on the same families and adjustment.");
+        Line(sb, "- A speed or cost result that a paired test establishes holds on these questions after the adjustment. Where the paired tests carry a single-run caveat, say that the result rests on one run a side.");
         Line(sb, "- Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.");
         Line(sb, "- Use the QUESTION MATRIX to tell the models from the system. Where most models answered a question well and one missed it, that is evidence about that model. Where every model, or nearly every model, missed it, suspect the chat, its tools, the corpus or the rubric first.");
+        Line(sb, "- A statement that several models did, or left out, the same thing must hold for each of them in their excerpts and grader comments. Where only one grader charged it, attribute it to that grader.");
+        Line(sb, "- When you name a model's lowest or highest scoring questions, take them from its QUESTION MATRIX cells in order, without skipping one in between.");
+        Line(sb, "- A difference between suites, or between difficulty bands, compares different questions. Never explain it by what a suite or a question contains, for example that it uses the game snapshot; say only where the model scored lower.");
         Line(sb, "- A claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Attribute it ('the claim verifier judged …'), never state it as a fact about the game, and never list refuted claims in the abstract or the headline.");
         Line(sb, "- Each claim ruling names what was checked. A ruling on an answer sentence tests the answer; a ruling on a grader's statement tests the grader.");
-        Line(sb, "- When a model's response-style conflict fact is true, its lower completeness is partly the effect of the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Say so wherever that model's completeness is discussed, and never call it the benchmark's instruction or attribute it to a grader.");
+        Line(sb, "- When a model's response-style conflict fact is true, its completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Where that model's completeness is discussed, say that it was graded under that style. Never say that the style caused the gap or a part of it: no run of this comparison compares response styles. Never present the gap as that model's failing alone either. Where the fact is true for several models, say it once for all of them, and never use it to explain a difference in completeness between models. Never call the style the benchmark's instruction or attribute it to a grader.");
         Line(sb, "- Mention a degraded state wherever a comparison depends on it.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
         Line(sb);
@@ -336,8 +341,8 @@ public static partial class BenchmarkReportPackPrompt
             foreach (var fact in styleFacts)
             {
                 Line(sb, IsTrue(fact)
-                    ? $"{{{{{fact.Key}}}}} is true: the production chat's concise response style conflicts with the completeness the rubrics ask for, so that model's lower completeness is partly the style's effect."
-                    : $"{{{{{fact.Key}}}}} is not true: that model's completeness is not affected by a response-style conflict.");
+                    ? $"{{{{{fact.Key}}}}} is true: that model's completeness is its lowest dimension, well below its accuracy, under the production chat's concise response style. This states a condition, not a cause."
+                    : $"{{{{{fact.Key}}}}} is not true: that model's completeness is not its lowest dimension by that margin.");
             }
             Line(sb);
         }

@@ -266,9 +266,9 @@ public static class BenchmarkGroupReportBuilder
     /// What the candidate was told to do.
     ///
     /// <para>Without this a reader cannot perform the attribution check every dimensional finding
-    /// depends on: a concise response instruction caps Completeness by design, so a low Completeness
-    /// under one is prompt adherence rather than a model weakness. The prompt SHA in the table above
-    /// proves the members agree; it does not say what they agreed on.</para>
+    /// depends on: a dimension is read against the instruction the candidate answered under (a concise
+    /// style and a Completeness rubric that asks for more) before it is attributed to the model. The
+    /// prompt SHA in the table above proves the members agree; it does not say what they agreed on.</para>
     /// </summary>
     private static void AppendPromptUnderTest(
         StringBuilder sb, int section, BenchmarkGroupStatisticsResult result)

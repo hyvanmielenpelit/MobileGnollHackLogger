@@ -173,6 +173,25 @@ describe('figure-export', () => {
     expect(composited).not.toContain('condition');
   });
 
+  it('labels the footer with the label it carries, SUITE without one', () => {
+    const drawnWith = (footer: Partial<FigureFooter>): string => {
+      const texts: string[] = [];
+      const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      const spy = vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
+        texts.push(String(args[0]));
+        return (realFillText as any).apply(this, args);
+      });
+      composeFigureImage(request({ footer: figureFooter(footer) }));
+      spy.mockRestore();
+      return texts.join('');
+    };
+
+    const battery = drawnWith({ label: 'Battery', suite: 'Battery 9' });
+    expect(battery).toContain('BATTERY');
+    expect(battery).not.toContain('SUITE');
+    expect(drawnWith({})).toContain('SUITE');
+  });
+
   /** A header of title and badges only, with nothing drawn below the plot. */
   function headerOnlyChrome(): Partial<FigureChrome> {
     return { detail: '', key: [], highlight: '', notes: [] };

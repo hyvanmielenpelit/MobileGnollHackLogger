@@ -303,7 +303,7 @@ public static partial class BenchmarkReportPackPrompt
 
         if (spec.UsesLeads)
         {
-            Line(sb, $"- leads: at most {Words(BenchmarkReportPackValidator.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion. Where the subject has peers, a \"chat\", \"corpus\" or \"suite\" lead rests on questions the peers missed as well, as WEIGHING THE EVIDENCE describes.");
+            Line(sb, $"- leads: at most {Words(BenchmarkReportPackValidator.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion. Name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. Where the subject has peers, a \"chat\", \"corpus\" or \"suite\" lead rests on questions the peers missed as well, as WEIGHING THE EVIDENCE describes.");
         }
 
         Line(sb);
@@ -342,6 +342,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- A strength never cites a weakness row, and a weakness never cites a strength row.");
         Line(sb, "- A finding that rests only on Conflicting rows must say in its text that the graders disagree.");
         Line(sb, "- Row ids belong in \"evidence\"; in the prose, describe the finding instead of naming its row.");
+        Line(sb, "- Cite a question only for what the data shows about it. A question given with its excerpts and grader comments supports a claim about what an answer said or left out; a question shown only by its scores supports only a claim about its score, critical error, tool calls or time.");
         Line(sb);
     }
 
@@ -356,11 +357,13 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- A claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Attribute it ('the claim verifier judged …'), never state it as a fact about the game, and never list refuted claims in the abstract or the one-sentence result.");
         Line(sb, "- Each claim ruling names what was checked. A ruling on an answer sentence tests the answer; a ruling on a grader's statement tests the grader, so a refuted grader's statement means the claim verifier judged the grader wrong, not the answer.");
         Line(sb, "- Never describe a claim the claim verifier supported as a mistake, even where the rubric leaves it out.");
-        Line(sb, "- When the response-style conflict fact is true, lower completeness is partly the effect of the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is — not only of the model. Say so wherever completeness is discussed, and never call it the benchmark's instruction.");
+        Line(sb, "- When the response-style conflict fact is true, {{subject}}'s completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Where completeness is discussed, say that it was graded under that style. Never say that the style caused the gap or a part of it: the run does not compare response styles. Never present the gap as the model's failing alone either. Never call the style the benchmark's instruction.");
         Line(sb, "- The response-style note is Overseer's own observation. Never attribute it to a grader.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
         Line(sb, $"- Each question in QUESTIONS with peers carries \"peers: min …, max …, N of M scored clearly higher\": the lowest and highest peer score on that question, and how many of the M peers that answered it scored more than {Words((int)BenchmarkReportFacts.PeerAboveMarginPoints)} points above {{{{subject}}}}.");
         Line(sb, "- Use the peers to tell the model from the system. Where most peers answered a question well and {{subject}} missed it, that is evidence about the subject model, not about the chat, its tools, the corpus or the rubric. Where every model missed it, suspect the chat, its tools, the corpus or the rubric first.");
+        Line(sb, "- When you name the subject's lowest or highest scoring questions, take them from its QUESTIONS in order, without skipping one in between.");
+        Line(sb, "- A difference between suites, or between difficulty bands, compares different questions. Never explain it by what a suite or a question contains, for example that it uses the game snapshot; say only where the model scored lower.");
         Line(sb, "- The comparison runs no significance test across the models. Where the subject's and a peer's quality intervals overlap and that peer's pairedExcludesZero fact is not true, say that the intervals overlap and that the order between them is not established; where the intervals do not overlap, say only that.");
         Line(sb, "- Where a peer's pairedExcludesZero fact is true, say that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero, not adjusted for comparing several models. Never say for that pair that the order is not established, even where the intervals overlap.");
         Line(sb, "- Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.");
@@ -392,7 +395,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Use the active voice.");
         Line(sb, "- Prefer a count from the facts to vague words such as many or several.");
         Line(sb, "- Name the category of a finding, for example tool use or reading the game state, rather than writing \"issues across many topics\".");
-        Line(sb, $"- No hype or filler words: {string.Join(", ", BenchmarkReportPackValidator.HypeWords)}.");
+        Line(sb, $"- No hype, filler or overclaiming words: {string.Join(", ", BenchmarkReportPackValidator.HypeWords)}.");
         if (spec.Audience == BenchmarkReportAudience.InternalBrief)
         {
             Line(sb, "- Lead with the action, then the evidence.");
@@ -552,8 +555,8 @@ public static partial class BenchmarkReportPackPrompt
             foreach (var fact in styleFacts)
             {
                 Line(sb, IsTrue(fact)
-                    ? $"{{{{{fact.Key}}}}} is true: the production chat's concise response style conflicts with the completeness the rubrics ask for, so lower completeness is partly the style's effect."
-                    : $"{{{{{fact.Key}}}}} is not true: completeness is not affected by a response-style conflict.");
+                    ? $"{{{{{fact.Key}}}}} is true: completeness is the lowest dimension, well below accuracy, under the production chat's concise response style. This states a condition, not a cause."
+                    : $"{{{{{fact.Key}}}}} is not true: completeness is not the lowest dimension by that margin.");
             }
             Line(sb);
         }

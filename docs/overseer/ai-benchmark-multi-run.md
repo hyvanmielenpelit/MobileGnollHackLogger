@@ -465,7 +465,8 @@ A practical order:
    affects, and a Tier B group can have both intact. At Tier C, do not read the aggregates at all —
    read the comparison.
 2. **Read the Chat Prompt Under Test block, before any dimensional figure.** It is in the manifest,
-   and it is what separates prompt adherence from a model weakness. A group whose configuration was
+   and it shows what the candidate was told to do, which any attribution of a dimension to the model
+   must check first. A group whose configuration was
    not recorded cannot support an attribution at all, and the block says so instead of printing
    defaults. It also states whether wiki context was pre-injected — live chat always does, the
    benchmark never does, so every retrieval and routing figure is measured under a condition

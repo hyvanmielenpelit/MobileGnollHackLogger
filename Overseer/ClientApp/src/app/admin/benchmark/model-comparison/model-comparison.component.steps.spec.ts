@@ -19,6 +19,7 @@ import {
   ReportChartDocumentLayout,
   ReportChartPublishResult,
   ReportChartPublisher,
+  documentTextStyle,
   printFigureAppearance
 } from '../report-pack/report-charts';
 import { resolveFigureTheme } from './figure-theme';
@@ -332,7 +333,7 @@ describe('ModelComparisonComponent', () => {
     });
 
     it('charts a written document with the selection for its type, and reports the result to step 3', async () => {
-      const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ published: [{ documentId: 41, chartCount: 4 }] }));
+      const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ published: [{ documentId: 41, chartCount: 4, figureCount: 2 }] }));
       render(buildDto(comparableSet(3)), 3);
       const token = component.documentsReloadToken;
 
@@ -357,9 +358,9 @@ describe('ModelComparisonComponent', () => {
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       // The layout the server places the charts by goes with them.
       expect(vi.mocked(publish).mock.lastCall![5]).toEqual(DEFAULT_CHART_LAYOUT_SETTINGS);
-      expect(component.chartStatus[41]).toEqual({ state: 'done', count: 4 });
+      expect(component.chartStatus[41]).toEqual({ state: 'done', count: 2, images: 4 });
       fixture.detectChanges();
-      expect(reportPanel()!.chartStatus[41]).toEqual({ state: 'done', count: 4 });
+      expect(reportPanel()!.chartStatus[41]).toEqual({ state: 'done', count: 2, images: 4 });
       expect(component.documentsReloadToken).toBe(token + 1);
     });
 
@@ -587,7 +588,7 @@ describe('ModelComparisonComponent', () => {
 
         const step2 = internals.documentLook({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, theme: 'asInStep2' });
         expect(step2.theme).toBe(component.figureTheme);
-        expect(step2.style).toBe(component.figureStyle);
+        expect(step2.style).toEqual(documentTextStyle(component.figureStyle));
       });
 
       it('leaves the heading to the caption, or keeps the title alone, or all of it, as the layout says', () => {
@@ -595,7 +596,7 @@ describe('ModelComparisonComponent', () => {
         const card = component.scatterCards[0];
         const internals = component as unknown as {
           documentChrome(card: unknown, notes: unknown[], layout: ReportChartDocumentLayout, theme: ResolvedFigureTheme, logo: null):
-            { chrome: FigureChrome; theme: ResolvedFigureTheme; logo: unknown };
+            { chrome: FigureChrome; footer: { suite: string; computedAt: string }; theme: ResolvedFigureTheme; logo: unknown };
         };
         const theme = resolveFigureTheme(printFigureAppearance(component.figureStyle.appearance));
         const chromeFor = (heading: ReportChartDocumentLayout['heading']) =>
@@ -609,17 +610,33 @@ describe('ModelComparisonComponent', () => {
         expect(none.chrome.key).toEqual(card.chrome.key);
         expect(none.theme).toBe(theme);
         expect(none.logo).toBeNull();
+        // The document names the suite and the time; the chart carries no footer of its own.
+        expect(none.footer).toEqual({ suite: '', computedAt: '' });
 
         const title = chromeFor('title');
         expect(title.chrome.title).toBe(card.chrome.title);
         expect(title.chrome.badges).toEqual([]);
+        expect(title.footer).toEqual({ suite: '', computedAt: '' });
 
         const all = chromeFor('titleAndBadges');
         expect(all.chrome.title).toBe(card.chrome.title);
         expect(all.chrome.badges).toEqual(card.chrome.badges);
         expect(all.chrome.direction).toEqual(card.chrome.direction);
+        expect(all.footer.suite).not.toBe('');
+        expect(all.footer.computedAt).not.toBe('');
       });
 
+      it('notes the measure a speed or cost chart plots where the document\'s tables give another', async () => {
+        render(buildDto(namedSet()), 2);
+        expect(component.speedMeasure).toBe('meanModelTime');
+
+        const speed = await component.composeReportChart('p1b-speed', { kind: 'named' });
+        const intelligence = await component.composeReportChart('p1a-quality', { kind: 'named' });
+
+        expect(speed.caption).toContain('Times are the mean model time per question; the document\'s tables give the median. Drawn from');
+        expect(intelligence.caption).not.toContain('Times are');
+        expect(intelligence.caption).not.toContain('Costs are');
+      });
       it('draws a comparison-scope document\'s named chart over its covered entries only', async () => {
         render(buildDto(namedSet()), 2);
 
@@ -863,7 +880,7 @@ describe('ModelComparisonComponent', () => {
       });
 
       it('charts a written comparison-scope document over its covered entries', async () => {
-        const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ published: [{ documentId: 51, chartCount: 2 }] }));
+        const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ published: [{ documentId: 51, chartCount: 2, figureCount: 1 }] }));
         render(buildDto(comparableSet(3)), 3);
         http.expectOne(IDENTIFY_URL).flush(identity());
 

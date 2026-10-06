@@ -64,9 +64,8 @@ export interface ReportChartLayoutRefusal {
  * Given a `layout`, each figure also gets its width, and each document type a *Layout* disclosure
  * with the orientation, side by side, label size, maximum height, heading, logo and theme of its
  * charts. A combination the composer would refuse is offered `aria-disabled`, its reason listed in
- * the disclosure; choosing it keeps the current value and says why. Content marked
- * `rcp-layout-actions` is projected at the end of the disclosure. The host owns the selection, the
- * layout and their storage.
+ * the disclosure; choosing it keeps the current value and says why. The host owns the selection, the layout and
+ * their storage.
  */
 @Component({
   selector: 'app-report-chart-picker',

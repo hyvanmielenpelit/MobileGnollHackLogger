@@ -616,6 +616,16 @@ describe('table-export', () => {
     expect(row[columnAt('label')].type).toBe(String);
   });
 
+  it('names the provenance row Battery for a battery comparison, Suite otherwise', async () => {
+    const captured = captureXlsx();
+    const firstFact = (): unknown[] => captured.sheets[1].data[1].map((cell: { value: unknown }) => cell.value);
+
+    await toXlsx(model());
+    expect(firstFact()).toEqual(['Suite', 'GnollHack Player Assistance Benchmark Suite']);
+    await toXlsx(model([buildEntry()], { suiteLabel: 'Battery', suite: 'Battery 9' }));
+    expect(firstFact()).toEqual(['Battery', 'Battery 9']);
+  });
+
   // -------------------------------------------------------------------------------------------
   // The image
   // -------------------------------------------------------------------------------------------

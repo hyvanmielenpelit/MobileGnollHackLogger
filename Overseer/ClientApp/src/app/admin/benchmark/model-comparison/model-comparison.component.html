@@ -30,7 +30,7 @@
       }
       <p class="dialog-subtitle">
         @if (comparison) {
-          {{ comparison.baselineSuiteName || 'Suite not set' }} &middot;
+          {{ comparison.baselineSuiteName || comparison.baselineBatteryName || 'Suite not set' }} &middot;
           {{ comparison.pricingBasisLabel || comparison.pricingBasis }} &middot;
           {{ comparison.comparableCount }} of {{ comparison.entries.length }} entries charted
         } @else {

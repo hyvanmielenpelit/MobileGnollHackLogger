@@ -161,7 +161,7 @@ Short, accurate answers on simple questions such as S1-Q1.
 - **Panel member A alone:** 81 / 100
 - **Panel member B alone:** 79 / 100
 - **Reference reader (advisory, third provider):** 90 / 100
-- **Reference reader's mean offset from the panel:** +16.8 points. It never scores; its neutrality between the two panel families is an assumption.
+- **Reference reader's mean offset from the panel:** +16.8 points. Its scores do not count toward the score; its neutrality between the two panel families is an assumption.
 - **Response-style conflict:** none
 
 A battery report lists no synthesis findings; each member run's report has its own.
