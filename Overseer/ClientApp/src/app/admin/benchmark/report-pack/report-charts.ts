@@ -229,8 +229,8 @@ export const REPORT_CHART_WIDTHS: readonly {
   readonly value: ReportChartWidth; readonly label: string; readonly share: number; readonly phrase: string;
 }[] = [
   { value: 'full', label: 'Full column', share: 1, phrase: 'A full-column chart' },
-  { value: 'twoThirds', label: 'Two thirds', share: 2 / 3, phrase: 'A two-thirds-width chart' },
-  { value: 'half', label: 'Half', share: 1 / 2, phrase: 'A half-width chart' }
+  { value: 'twoThirds', label: 'Two-thirds column', share: 2 / 3, phrase: 'A two-thirds-width chart' },
+  { value: 'half', label: 'Half column', share: 1 / 2, phrase: 'A half-width chart' }
 ];
 
 export const REPORT_CHART_LABEL_SIZES_PT: readonly number[] = [7, 7.5, 8, 8.5, 9, 10];

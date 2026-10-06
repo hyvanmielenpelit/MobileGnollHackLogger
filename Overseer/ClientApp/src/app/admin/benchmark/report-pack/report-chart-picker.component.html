@@ -68,18 +68,15 @@
             @if (layout) {
               <!-- A refused width stays offered, aria-disabled, its reason in the Layout disclosure;
                    choosing it keeps the current width and says why. -->
-              <span class="rcp-width">
-                <label class="rcp-width-label" [for]="widthId(column, row)">Width</label>
-                <select class="gh-input rcp-width-select" [id]="widthId(column, row)" [attr.data-figure]="row.key"
-                        [attr.aria-label]="widthName(column, row)"
-                        [attr.aria-describedby]="widthDescribedBy(column, row)"
-                        (change)="onWidthChange($event, column, row)">
-                  @for (option of widthOptions; track option.value) {
-                    <option [value]="option.value" [selected]="widthOf(column, row) === option.value"
-                            [attr.aria-disabled]="widthRefusal(column, option.value) ? 'true' : null">{{ option.label }}{{ widthRefusal(column, option.value) ? ' (does not fit)' : '' }}</option>
-                  }
-                </select>
-              </span>
+              <select class="gh-input rcp-width-select" [id]="widthId(column, row)" [attr.data-figure]="row.key"
+                      [attr.aria-label]="widthName(column, row)"
+                      [attr.aria-describedby]="widthDescribedBy(column, row)"
+                      (change)="onWidthChange($event, column, row)">
+                @for (option of widthOptions; track option.value) {
+                  <option [value]="option.value" [selected]="widthOf(column, row) === option.value"
+                          [attr.aria-disabled]="widthRefusal(column, option.value) ? 'true' : null">{{ option.label }}{{ widthRefusal(column, option.value) ? ' (does not fit)' : '' }}</option>
+                }
+              </select>
               @if (refusedChoiceText(widthId(column, row)); as refused) {
                 <p class="rcp-reason rcp-refused" role="status" [id]="widthId(column, row) + '-refused'">{{ refused }}</p>
               }

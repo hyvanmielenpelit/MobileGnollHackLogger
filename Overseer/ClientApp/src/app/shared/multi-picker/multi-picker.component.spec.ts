@@ -139,6 +139,23 @@ describe('MultiPickerComponent', () => {
       expect(new Set(options().map(o => o.id)).size).toBe(5);
     });
 
+    it('wraps a long single-selection summary in a narrow host instead of clipping it', () => {
+      const label = 'Claude Opus Extended Thinking Preview 2026';
+      update({ options: [{ key: 'long', label }, ...OPTIONS], selected: ['long'] });
+      picker().style.inlineSize = '200px';
+
+      const line = summary();
+      expect(line.textContent!.trim()).toBe(label);
+      expect(line.scrollWidth).toBeLessThanOrEqual(line.clientWidth + 1);
+      const style = getComputedStyle(line);
+      const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
+      expect(line.getBoundingClientRect().height).toBeGreaterThan(lineHeight);
+      const chevron = trigger().querySelector('.chevron')!.getBoundingClientRect();
+      const box = trigger().getBoundingClientRect();
+      expect(chevron.right).toBeLessThanOrEqual(box.right);
+      expect(chevron.left).toBeGreaterThanOrEqual(box.left);
+    });
+
     it('shows selection with an aria-hidden check glyph', () => {
       update({ selected: ['b'] });
       openByClick();

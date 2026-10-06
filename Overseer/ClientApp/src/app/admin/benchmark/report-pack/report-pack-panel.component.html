@@ -30,7 +30,10 @@
                   [attr.aria-controls]="idPrefix + '-scope-panel'"
                   [attr.aria-selected]="scopeMode === option.value"
                   [attr.tabindex]="scopeMode === option.value ? 0 : -1"
-                  (keydown)="onScopeKeydown($event, i)" (click)="selectScope(option.value)">{{ option.label }}</button>
+                  (keydown)="onScopeKeydown($event, i)" (click)="selectScope(option.value)"><span class="rp-scope-tab-label">{{ option.label }}</span>
+            @if (option.note) {
+              <span class="visually-hidden">, </span><span class="rp-scope-tab-note">{{ option.note }}</span>
+            }</button>
         }
       </div>
       <app-info-tip [tipId]="idPrefix + '-scope-tip'" subject="One model at a time">{{ modelScopeTip }}</app-info-tip>

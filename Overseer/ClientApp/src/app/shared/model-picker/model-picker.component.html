@@ -23,16 +23,18 @@
         [attr.aria-labelledby]="triggerLabelledBy"
         [attr.aria-describedby]="describedBy"
         (click)="toggle()" (keydown)="onTriggerKeydown($event)">
-  @if (selectedModel; as model) {
-    @if (selectedTag; as tag) {
-      <span class="model-option-tag">{{ tag }}</span>
+  <span class="selector-trigger-content">
+    @if (selectedModel; as model) {
+      @if (selectedTag; as tag) {
+        <span class="model-option-tag">{{ tag }}</span>
+      }
+      <span class="model-name">{{ modelName(model) }}</span>
+      <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"
+                               [narrowHidesBadges]="narrowHidesBadges"></app-model-option-badges>
+    } @else {
+      <span class="model-name text-muted">{{ noneLabel ?? placeholder }}</span>
     }
-    <span class="model-name">{{ modelName(model) }}</span>
-    <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"
-                             [narrowHidesBadges]="narrowHidesBadges"></app-model-option-badges>
-  } @else {
-    <span class="model-name text-muted">{{ noneLabel ?? placeholder }}</span>
-  }
+  </span>
   <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
 </button>
 

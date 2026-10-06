@@ -1087,7 +1087,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     sidebar (20–32rem, at most 40 % of the body, width kept as `sidebarWidth` in
     `localStorage['overseer.benchmark.reportPack']`; stacked below 60rem) holds the form, in order:
     - **Document scope**: a `.gh-tabs-segmented` pair (`role="tablist"` *Document scope*, arrow keys wrap,
-      Home / End) *Whole comparison (recommended)* / *One model at a time*, remembered as
+      Home / End) *Whole comparison* (a smaller second line, *Recommended*, `.rp-scope-tab-note`) /
+      *One model at a time*; each segment wraps its label (`text-wrap: balance`) rather than clipping
+      it in a narrow sidebar. Remembered as
       `documentScope` in the same storage record, with an `app-info-tip` in its default hover mode
       (`REPORT_PACK_MODEL_SCOPE_TIP`). Its tab panel holds the next two blocks.
     - **Models**: `app-model-multi-picker` (`frontend_ui_controls` §4e-3), labelled *Models*,
@@ -1163,7 +1165,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     selectable with `aria-disabled` checkboxes and its reason; a figure the comparison cannot draw
     stays listed the same way (*needs three or more models*). The section under each figure follows
     `scope` (`'model'` or `'comparison'`, `REPORT_CHART_PLACEMENTS`). With `[layout]` bound (step 3 only),
-    each figure gets a *Width* select (*Full column* / *Two thirds* / *Half*) and each document type a
+    each figure gets a width select (*Full column* / *Two-thirds column* / *Half column*, no visible
+    caption, its `aria-label` *Width of … in the …*; beside the figure, and under its title, indented
+    past the checkbox, below a 20 rem `rcp` container width) and each document type a
     closed *Layout* `details.gh-disclosure` — *Bar orientation*, *Side by side*, *Label size* (7–10 pt),
     *Maximum height* (40 / 50 / 60 % of the page), *Heading inside the chart*, *GnollBench logo*,
     *Theme* — and a `rcp-layout-actions` content slot. A choice that does not fit stays offered with
@@ -1180,7 +1184,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     `BASE_LABEL_PX` 11, `layoutWidth = widthPt × 11 / labelPt`) and `documentFigureLayout` (the A4 column,
     481.9 pt, `DOCUMENT_CHART_COLUMN_PT`; 16:10 full, 4:3 two thirds, square half, the profile one step
     taller, taller still where the chrome leaves the plot under 200 layout px); `DOCUMENT_MIN_CONTENT_WIDTH`
-    260 (step 2's exports use 360), so *Half* is refused from 9 pt (`documentChartRefusal`);
+    260 (step 2's exports use 360), so *Half column* is refused from 9 pt (`documentChartRefusal`);
     `reportDocumentChartLayout` (the manifest `layout`: `widthShare`, `rowGroup` for consecutive half-width
     figures in one section, `maxHeightShare`); `chartSettingsHash` (SHA-256 over canonical JSON of the
     figure style, `documentChartHashLayout` — the column, dpi, base label size, format and every document

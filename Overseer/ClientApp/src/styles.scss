@@ -4267,6 +4267,7 @@ progress.job-progress {
   min-height: 38px;
   width: 100%;
   justify-content: flex-start;
+  text-align: start;
 
   &:hover {
     border-color: var(--primary-color);
@@ -4287,6 +4288,17 @@ progress.job-progress {
     stroke: var(--primary-color);
     flex-shrink: 0;
   }
+}
+
+/* The tag, name and badges: one row that wraps, spaced only by gap, so a wrapped badge starts
+   flush with the name. The chevron stays outside it, at the end. */
+.selector-trigger-content {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
 }
 
 .selector-dropdown {
@@ -4362,15 +4374,13 @@ progress.job-progress {
   white-space: nowrap;
 }
 
-/* In the trigger, the model name shares the row with the thinking/reasoning/provider
-   badges and the chevron. A narrow grid column (the benchmark launcher's groups) must not let
-   a long name push those out — truncate the name instead. The dropdown's own .model-name
-   above keeps wrapping off (white-space: nowrap) since the dropdown is free to grow via
-   its own width: max-content; max-width: 480px. */
+/* In a trigger the name is shown whole: in app-model-picker the badges wrap under it, in
+   app-multi-picker the summary wraps, and a name wider than the trigger wraps inside itself. The
+   dropdown's options keep one line each (max-width: 480px). */
 .selector-trigger .model-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-inline-size: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .reasoning-badge {
@@ -4467,7 +4477,8 @@ progress.job-progress {
     }
 
     .chevron { margin-left: 0; stroke: var(--gh-gold); }
-    .model-name { overflow: visible; }
+    .selector-trigger-content { flex-wrap: nowrap; gap: 4px; }
+    .model-name { overflow: visible; white-space: nowrap; }
   }
 
   .selector-dropdown {

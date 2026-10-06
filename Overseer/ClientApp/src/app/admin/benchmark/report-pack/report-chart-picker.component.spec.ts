@@ -390,12 +390,40 @@ describe('ReportChartPickerComponent', () => {
       const half = option(intelligence, 'half');
       expect(half.disabled).toBe(false);
       expect(half.getAttribute('aria-disabled')).toBe('true');
-      expect(text(half)).toBe('Half (does not fit)');
+      expect(text(half)).toBe('Half column (does not fit)');
       expect(option(intelligence, 'twoThirds').hasAttribute('aria-disabled')).toBe(false);
 
       const reasonId = `rcp-${ExecutiveSummary}-width-half-reason`;
       expect(intelligence.getAttribute('aria-describedby')).toBe(reasonId);
-      expect(text(q(`#${reasonId}`))).toBe(`Half: ${documentChartRefusal('half', 9)}`);
+      expect(text(q(`#${reasonId}`))).toBe(`Half column: ${documentChartRefusal('half', 9)}`);
+    });
+
+    it('sets each width select beside its figure in a wide picker and under the figure title in a narrow one', () => {
+      const rows = Array.from(host.querySelectorAll<HTMLElement>('.rcp-row'));
+      expect(rows.length).toBe(7);
+      expect(q('.rcp-width-label')).toBeNull();
+
+      host.style.inlineSize = '24rem';
+      for (const row of rows) {
+        const select = row.querySelector<HTMLSelectElement>('.rcp-width-select')!;
+        const title = row.querySelector<HTMLElement>('.rcp-figure-title')!;
+        expect(getComputedStyle(select).fontSize, row.dataset['figure']).toBe(getComputedStyle(title).fontSize);
+        const box = select.getBoundingClientRect();
+        const cellBox = row.querySelector<HTMLElement>('.rcp-cell')!.getBoundingClientRect();
+        const middle = (box.top + box.bottom) / 2;
+        expect(Math.abs(box.right - row.getBoundingClientRect().right), row.dataset['figure']).toBeLessThanOrEqual(1);
+        expect(middle, row.dataset['figure']).toBeGreaterThanOrEqual(cellBox.top);
+        expect(middle, row.dataset['figure']).toBeLessThanOrEqual(cellBox.bottom);
+      }
+
+      host.style.inlineSize = '17rem';
+      for (const row of rows) {
+        const box = row.querySelector<HTMLSelectElement>('.rcp-width-select')!.getBoundingClientRect();
+        const cellBox = row.querySelector<HTMLElement>('.rcp-cell')!.getBoundingClientRect();
+        const title = row.querySelector<HTMLElement>('.rcp-figure-title')!.getBoundingClientRect();
+        expect(box.top, row.dataset['figure']).toBeGreaterThanOrEqual(cellBox.bottom);
+        expect(Math.abs(box.left - title.left), row.dataset['figure']).toBeLessThanOrEqual(1);
+      }
     });
 
     it('keeps the width and says why when a refused width is chosen, and emits a width that fits', () => {

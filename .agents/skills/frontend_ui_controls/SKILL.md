@@ -831,6 +831,11 @@ selected option, so the handler must be idempotent.
   *parallel execution*), and no `title` (§4.2): the parallel badge's explanation is visually hidden
   text. Consecutive options sharing a `group` are a `role="group"` named by its
   `.model-group-title` heading.
+- **The trigger never truncates.** Its tag, name and badges are one `.selector-trigger-content` row
+  that wraps, spaced only by `gap`, so in a narrow host the badges start a second line flush with the
+  full model name, and a name wider than the trigger wraps inside itself. The chevron sits outside
+  that row, at the end, vertically centered. The `compact` variant stays on one line
+  (`flex-wrap: nowrap`, a `nowrap` name). The dropdown's options keep one line each.
 - **Marker classes** on the host (`class="tested-model-selector"`) are merged with
   `custom-model-selector`; specs query the trigger as `.<marker> .selector-trigger`. A host
   stylesheet can size the host element, but a rule reaching into `.selector-trigger` or
@@ -850,7 +855,8 @@ multi-select in `app/shared/multi-picker/` (`multi-picker.component.*`, option t
 `aria-multiselectable="true"`: a `<button aria-haspopup="listbox" aria-expanded>` whose text summarizes the
 selection opens a popup `role="listbox"`, which takes focus and tracks the active option with
 `aria-activedescendant`; every option carries `aria-selected`, and a check glyph (`aria-hidden`) shows
-selection, so color is never the only carrier. It reuses §4e's trigger and dropdown look.
+selection, so color is never the only carrier. It reuses §4e's trigger and dropdown look. The
+trigger's summary wraps rather than truncating, by the shared `.selector-trigger .model-name` rule.
 
 **Facet or picker?** `app-filter-facet` (§8h) **filters a list it sits over**: its choice narrows what is
 shown and changes nothing else. `app-multi-picker` **chooses what an action acts on**: the selection is

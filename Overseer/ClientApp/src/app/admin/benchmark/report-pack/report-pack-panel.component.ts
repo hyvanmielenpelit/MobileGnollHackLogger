@@ -135,9 +135,11 @@ export interface ReportPackDocumentRow {
   readonly charts: ReportPackChartCell;
 }
 
-/** The two document scopes, as the segmented tab row offers them. */
-export const REPORT_PACK_SCOPE_OPTIONS: readonly { readonly value: ReportDocumentScopeMode; readonly label: string }[] = [
-  { value: 'comparison', label: 'Whole comparison (recommended)' },
+/** The two document scopes, as the segmented tab row offers them; `note` is a second, smaller line. */
+export const REPORT_PACK_SCOPE_OPTIONS: readonly {
+  readonly value: ReportDocumentScopeMode; readonly label: string; readonly note?: string;
+}[] = [
+  { value: 'comparison', label: 'Whole comparison', note: 'Recommended' },
   { value: 'model', label: 'One model at a time' }
 ];
 

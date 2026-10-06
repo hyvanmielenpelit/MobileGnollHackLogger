@@ -93,6 +93,31 @@
   }
 }
 
+/* A segment wraps its label, and its note under it, rather than clipping either. The grid stretches
+   both segments to one height; the lines stay together in the middle of it. */
+.rp-scope-tabs .rp-scope-tab {
+  flex-wrap: wrap;
+  align-content: center;
+  column-gap: 6px;
+  row-gap: 0;
+  padding-block: 5px;
+  white-space: normal;
+  overflow: visible;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.rp-scope-tab-label {
+  text-wrap: balance;
+}
+
+.rp-scope-tab-note {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, currentColor 72%, transparent);
+}
+
 .rp-scope-panel {
   display: flex;
   flex-direction: column;

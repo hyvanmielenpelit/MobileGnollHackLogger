@@ -37,6 +37,8 @@ const MODELS: TestModel[] = [
       <span id="pickerAHint">Hint A</span>
       <app-model-picker class="picker-b" label="Model B" emptyHint="Nothing to choose from."
                         [options]="optionsB" [selectedKey]="null"></app-model-picker>
+      <app-model-picker class="picker-c" variant="compact" label="Model C" [options]="optionsA"
+                        [selectedKey]="1"></app-model-picker>
       <button type="button" class="outside">Outside</button>
     </div>
   `
@@ -155,6 +157,59 @@ describe('ModelPickerComponent', () => {
     it('merges the host marker classes with custom-model-selector', () => {
       expect(pickerA().classList).toContain('custom-model-selector');
       expect(pickerA().classList).toContain('marker');
+    });
+  });
+
+  describe('trigger layout', () => {
+    const LONG_NAME = 'Claude Opus Extended Thinking Preview 2026';
+    const BADGES = '.thinking-badge, .reasoning-badge, .provider-badge, .price-badge, .parallel-badge';
+
+    it('shows a long name whole in a narrow host, its badges wrapping under it flush with the name', () => {
+      update({
+        optionsA: toModelPickerOptions([{ id: 7, displayName: LONG_NAME, provider: 'Anthropic', thinkingLevel: 'high',
+          effectiveInputPricePerMillion: 5, effectiveOutputPricePerMillion: 25 }]),
+        selectedA: 7
+      });
+      pickerA().style.inlineSize = '220px';
+
+      const button = trigger();
+      const content = button.querySelector<HTMLElement>('.selector-trigger-content')!;
+      const name = content.querySelector<HTMLElement>('.model-name')!;
+      expect(name.textContent!.trim()).toBe(LONG_NAME);
+      expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
+      expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth + 1);
+      const box = button.getBoundingClientRect();
+      const nameBox = name.getBoundingClientRect();
+      expect(nameBox.left).toBeGreaterThanOrEqual(box.left);
+      expect(nameBox.right).toBeLessThanOrEqual(box.right);
+      expect(nameBox.top).toBeGreaterThanOrEqual(box.top);
+      expect(nameBox.bottom).toBeLessThanOrEqual(box.bottom);
+
+      const chevron = button.querySelector('.chevron')!;
+      expect(content.contains(chevron)).toBe(false);
+      expect(chevron.parentElement).toBe(button);
+
+      const badges = Array.from(content.querySelectorAll<HTMLElement>(BADGES));
+      expect(badges.length).toBeGreaterThanOrEqual(3);
+      const wrapped = badges.find(badge => badge.getBoundingClientRect().top > nameBox.top + 1);
+      expect(wrapped).toBeDefined();
+      expect(Math.abs(wrapped!.getBoundingClientRect().left - nameBox.left)).toBeLessThanOrEqual(1);
+    });
+
+    it('keeps the compact variant on one line', () => {
+      const picker = el.querySelector<HTMLElement>('.picker-c')!;
+      expect(picker.classList).toContain('compact');
+      const button = trigger(picker);
+      const content = button.querySelector<HTMLElement>('.selector-trigger-content')!;
+      expect(getComputedStyle(content).flexWrap).toBe('nowrap');
+      expect(content.querySelectorAll(BADGES).length).toBeGreaterThan(0);
+
+      const style = getComputedStyle(button);
+      const fontSize = parseFloat(style.fontSize);
+      const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.2;
+      const chrome = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+        + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+      expect(button.getBoundingClientRect().height).toBeLessThan(chrome + 2 * lineHeight);
     });
   });
 

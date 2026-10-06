@@ -419,7 +419,7 @@ describe('ReportPackPanelComponent', () => {
     expect(tablist.classList).toContain('gh-tabs-segmented');
     expect(tablist.getAttribute('aria-label')).toBe('Document scope');
     const tabs = Array.from(tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-    expect(tabs.map(tab => tab.textContent!.trim())).toEqual(['Whole comparison (recommended)', 'One model at a time']);
+    expect(tabs.map(tab => tab.textContent!.trim())).toEqual(['Whole comparison, Recommended', 'One model at a time']);
     expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false']);
     expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1']);
     const panel = q('#rp-scope-panel')!;
@@ -446,6 +446,27 @@ describe('ReportPackPanelComponent', () => {
     expect(second.request.body.coveredEntryKeys).toBeUndefined();
     fixture.destroy();
   }));
+
+  it('wraps the scope tabs\' labels in a narrow sidebar instead of clipping them', () => {
+    openPanel();
+    // Narrower than the real minimum (a 320px track less the stable scrollbar gutter).
+    q('.rp-new')!.style.inlineSize = '288px';
+
+    const tabs = Array.from(host.querySelectorAll<HTMLButtonElement>('.rp-scope-tab'));
+    expect(tabs.length).toBe(2);
+    for (const tab of tabs) {
+      expect(tab.scrollWidth, tab.id).toBeLessThanOrEqual(tab.clientWidth);
+      const box = tab.getBoundingClientRect();
+      const label = tab.querySelector<HTMLElement>('.rp-scope-tab-label')!.getBoundingClientRect();
+      expect(label.left, tab.id).toBeGreaterThanOrEqual(box.left);
+      expect(label.right, tab.id).toBeLessThanOrEqual(box.right);
+      expect(label.top, tab.id).toBeGreaterThanOrEqual(box.top);
+      expect(label.bottom, tab.id).toBeLessThanOrEqual(box.bottom);
+    }
+    const label = tabs[0].querySelector<HTMLElement>('.rp-scope-tab-label')!.getBoundingClientRect();
+    const note = tabs[0].querySelector<HTMLElement>('.rp-scope-tab-note')!.getBoundingClientRect();
+    expect(note.top).toBeGreaterThanOrEqual(label.bottom - 0.5);
+  });
 
   it('opens on the remembered scope', () => {
     localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ documentScope: 'model' }));

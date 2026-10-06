@@ -1855,8 +1855,8 @@ lists them, and so does Comparison reports on the Model Comparison tab. A run's 
 reports are written in the AI Reports tab of its report."*
 
 - **Sidebar**, *New report pack*, in order:
-  - **Document scope**: a `.gh-tabs-segmented` pair, *Whole comparison (recommended)* and *One model at
-    a time*, remembered as `documentScope` in `localStorage['overseer.benchmark.reportPack']`, with an info
+  - **Document scope**: a `.gh-tabs-segmented` pair, *Whole comparison* (with the visible note
+    *Recommended*) and *One model at a time*, remembered as `documentScope` in `localStorage['overseer.benchmark.reportPack']`, with an info
     tip: *"Per-model documents restate the comparison from one model's side. Use them only when one
     model's document must be shared on its own."*
   - **Models**: `app-model-multi-picker` (`frontend_ui_controls` § 4e-3) over the comparison's entries
@@ -1885,7 +1885,8 @@ reports are written in the AI Reports tab of its report."*
     rows start checked, written ones unchecked. The other sets' rows have no checkbox. The list follows
     the preview, asked 300 ms after the last change of scope, models, checks or writer, an answer for an
     older choice dropped.
-  - **Charts in PDF and Word**: the chart picker with its per-figure *Width* and its *Layout* disclosure
+  - **Charts in PDF and Word**: the chart picker with its per-figure width select (no visible caption;
+    beside each figure, and under its title below a 20 rem picker width) and its *Layout* disclosure
     (§ 13), whose **Preview layout** (`.btn-ghost`, *eye*) opens the layout preview (below); on screen,
     the print advisory when a document type's theme *As in step 2* would print badly and, while the
     `report-charts-location-missing` alert is present, *"Chart storage is not configured; documents will
@@ -2030,13 +2031,13 @@ documents of one type) there is no tab row, only that document's list. A documen
 written, and a figure the comparison cannot draw, stay listed with `aria-disabled` checkboxes and their
 reason (*Not checked under Documents*, *needs three or more models*).
 
-On step 3 each figure also has a **Width** (*Full column*, *Two thirds*, *Half*), and each document type a
-closed ***Layout*** disclosure under its figure list:
+On step 3 each figure also has a **Width** (*Full column*, *Two-thirds column*, *Half column*), and each
+document type a closed ***Layout*** disclosure under its figure list:
 
 | Setting | Values | Default |
 |---|---|---|
 | Bar orientation | *As in step 2* / *Vertical* / *Horizontal* | *As in step 2* |
-| Side by side | consecutive *Half* figures in one section form a row of two | on |
+| Side by side | consecutive *Half column* figures in one section form a row of two | on |
 | Label size | 7, 7.5, 8, 8.5, 9, 10 pt | 8 pt |
 | Maximum height | 40 / 50 / 60 % of the page | 60 % |
 | Heading inside the chart | *None — the caption names it* / *Title* / *Title and badges* | None |
@@ -2072,8 +2073,8 @@ textScale   = (pxWidth / layoutWidth) / min(pxWidth / 960, pxHeight / 540)
   and scatters, one step taller for the profile; a figure grows taller where its heading, key and notes
   would leave the plot less than 200 layout px.
 - **The minimum width.** A document chart is laid out with a minimum content width of **260** layout px
-  (`DOCUMENT_MIN_CONTENT_WIDTH`, 300 with the padding), not the 360 of step 2's exports, so a *Half*
-  chart fits at 7 to 8.5 pt and is refused at 9 pt and above; *Two thirds* and *Full column* fit every
+  (`DOCUMENT_MIN_CONTENT_WIDTH`, 300 with the padding), not the 360 of step 2's exports, so a *Half column*
+  chart fits at 7 to 8.5 pt and is refused at 9 pt and above; *Two-thirds column* and *Full column* fit every
   size. A refused width is composed at full column.
 - **Orientation**: *As in step 2* takes step 2's choice, whose *Automatic* is resolved at the document
   chart's own layout width (a full-column chart at 8 pt gets horizontal bars, being below the 720 px
@@ -2326,7 +2327,7 @@ downloads**, which switches the same dialog to this `battery` context (§ 8).
 
 A Model Comparison has an identity of its own, **Comparison #N**, and its documents can describe its
 models **as equals** rather than one model against its peers. Step 3 of the wizard writes these
-**comparison-wide documents** by default (*Whole comparison (recommended)*); the per-model documents of
+**comparison-wide documents** by default (*Whole comparison*, noted *Recommended*); the per-model documents of
 §§ 1–14 are the secondary choice, *One model at a time* (§ 12).
 
 Implementation:
