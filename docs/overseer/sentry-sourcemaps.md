@@ -133,7 +133,35 @@ cd ../..
 
 ---
 
-## 6. Why `sentry-cli` Instead of the esbuild Plugin
+## 6. Expected "No Sourcemap Found" Warnings
+
+The upload report lists a few scripts as `no sourcemap found`, each followed by `warning: could not determine a source map reference`. Four are expected; investigated on 2026-10-06 for release 1.2.0 (`@angular/build` 22.2, Rolldown 1.2.8):
+
+| Script | Why it has no map |
+|--------|-------------------|
+| `js/handoff-redirect.js` | Static asset copied unbundled from `ClientApp/public/`. |
+| `workers/benchmark-poll-ticker.js` | Static asset copied unbundled from `ClientApp/public/`. |
+| `pdfjs/pdf.worker.min.mjs` | Asset copied from `node_modules/pdfjs-dist/build/` (see the `assets` list in `angular.json`); the package ships it minified, without a map. |
+| One small `chunk-*.js` (in 1.2.0, `chunk-DfxHXQD0.js`) | Re-export stub for `fflate`; explained below. |
+
+None of these is a failed build or a failed upload, and none needs fixing.
+
+### The `fflate` re-export stub
+
+The admin benchmark pages load the `fflate` zip library lazily from two places: `figure-export.ts` calls `import('fflate')`, and `table-export.ts` calls `import('write-excel-file/browser')`, which depends on `fflate`. The build then produces two chunks:
+
+1. **A shared chunk with the `fflate` code.** Because two lazy imports need it, esbuild moves `fflate` into one shared chunk. Its map lists one source, `node_modules/fflate/esm/browser.js`, and is uploaded normally.
+2. **A stub for `import('fflate')`.** That dynamic import still needs a file to load, so esbuild writes a stub that only imports from the shared chunk and re-exports under `fflate`'s public names. In 1.2.0 it is 1,570 bytes: one `import {…}`, one `export {…}`, and the Sentry Debug ID snippet.
+
+Angular's application builder then re-bundles all chunks in its chunk optimizer (`@angular/build/src/builders/application/chunk-optimizer.js`), which uses Rolldown unless `NG_BUILD_CHUNKS_ROLLDOWN=false`. **Rolldown returns no source map for a chunk that contains nothing but re-exports**, and the optimizer writes a `.map` file only when Rolldown returns one. This was reproduced outside the project with a minimal Rolldown build: every chunk got a map except the pure re-export stub.
+
+The missing map costs nothing. The stub runs no code that can throw, and an error inside `fflate` has stack frames in the shared chunk, which Sentry maps normally.
+
+**To recognize the stub in a later release** (its hash changes with every build): it is a `chunk-*.js` of a few kilobytes at most, and its content is nothing but an `import` from another chunk and an `export {…}` list of `fflate` names (`zipSync`, `unzipSync`, `gzip`, …). Any **other** chunk without a map, or a large one, is not explained by this section and should be investigated.
+
+---
+
+## 7. Why `sentry-cli` Instead of the esbuild Plugin
 
 Angular 19+ uses the esbuild-based `@angular/build:application` builder. The `@sentry/esbuild-plugin` has known integration issues with Angular's application builder — it often runs before the build finishes or fails to locate output files correctly. Sentry's maintainers recommend using `sentry-cli` as the most reliable method for Angular applications using the esbuild-based builder.
 
