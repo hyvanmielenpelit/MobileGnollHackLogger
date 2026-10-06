@@ -1,25 +1,3 @@
-<!-- Each badge carries a visually-hidden prefix: a bare MAX or PRO means nothing read aloud. -->
-<ng-template #badges let-m>
-  @if (m.thinkingLevel) {
-    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(m.thinkingLevel) }}</span>
-  }
-  @if (showReasoningBadge(m.reasoningMode)) {
-    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ m.reasoningMode }}</span>
-  }
-  @if (m.provider) {
-    <app-provider-badge [provider]="m.provider"></app-provider-badge>
-  }
-  @if (showPrice && m.effectiveInputPricePerMillion != null) {
-    <span class="price-badge"><span class="visually-hidden">price </span>{{ formatPrice(m) }}</span>
-  }
-  @if (showParallel && m.parallelExecutionMode === 0) {
-    <span class="parallel-badge badge-sequential"><span class="visually-hidden">parallel execution </span>Sequential<span class="visually-hidden">, disabled for this key</span></span>
-  }
-  @if (showParallel && m.parallelExecutionMode === 1) {
-    <span class="parallel-badge badge-on-request"><span class="visually-hidden">parallel execution </span>On request<span class="visually-hidden"> for this key</span></span>
-  }
-</ng-template>
-
 <ng-template #optionRow let-item>
   <div class="model-option" role="option" [id]="optionId(item.index)"
        [attr.aria-selected]="isSelected(item.option.key)"
@@ -29,7 +7,8 @@
       <span class="model-option-tag">{{ item.option.tag }}</span>
     }
     <span class="model-name">{{ modelName(item.option.model) }}</span>
-    <ng-container [ngTemplateOutlet]="badges" [ngTemplateOutletContext]="{ $implicit: item.option.model }"></ng-container>
+    <app-model-option-badges [model]="item.option.model" [showPrice]="showPrice" [showParallel]="showParallel"
+                             [narrowHidesBadges]="narrowHidesBadges"></app-model-option-badges>
   </div>
 </ng-template>
 
@@ -49,7 +28,8 @@
       <span class="model-option-tag">{{ tag }}</span>
     }
     <span class="model-name">{{ modelName(model) }}</span>
-    <ng-container [ngTemplateOutlet]="badges" [ngTemplateOutletContext]="{ $implicit: model }"></ng-container>
+    <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"
+                             [narrowHidesBadges]="narrowHidesBadges"></app-model-option-badges>
   } @else {
     <span class="model-name text-muted">{{ noneLabel ?? placeholder }}</span>
   }

@@ -10,6 +10,24 @@
   <div class="dialog-header mc-wizard-header">
     <div class="dialog-title-group">
       <h3 #wizardHeading id="mc-wizard-title" tabindex="-1">Cross-model comparison</h3>
+      <!-- The numbered comparison, once identify has answered; without an answer the header has no number. -->
+      @if (comparison && currentComparison; as current) {
+        <div class="mc-identity">
+          <span class="mc-identity-name" id="mc-identity-name">Comparison #{{ current.id }} — {{ current.name }}</span>
+          <button #renameTrigger type="button" class="action-btn mc-identity-rename" id="mc-rename-comparison"
+                  [attr.aria-label]="'Rename comparison #' + current.id"
+                  [attr.interestfor]="'mc-rename-comparison-tip'"
+                  [attr.style]="'anchor-name: --mc-rename-comparison-tip'"
+                  (click)="openRenameComparison(renameTrigger)">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 20h9"></path>
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+            </svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" id="mc-rename-comparison-tip"
+               [attr.style]="'position-anchor: --mc-rename-comparison-tip'">Rename comparison</div>
+        </div>
+      }
       <p class="dialog-subtitle">
         @if (comparison) {
           {{ comparison.baselineSuiteName || 'Suite not set' }} &middot;
@@ -1641,7 +1659,10 @@
       <div class="mc-step mc-step--reports" role="tabpanel" tabindex="0"
            id="mc-step-panel-3" aria-labelledby="mc-step-tab-3" [hidden]="step !== 3">
         <app-report-pack-panel [context]="reportPackContext"
+                               [comparisonId]="currentComparison?.id ?? null"
                                [chartSelection]="chartSelection"
+                               [chartLayout]="chartLayout"
+                               [documentChartsComposer]="documentChartsComposer"
                                [chartsAvailable]="chartsAvailable"
                                [chartAdvisory]="chartAdvisory"
                                [chartStorageMissing]="chartStorageMissing"
@@ -1650,7 +1671,9 @@
                                (documentWritten)="onReportDocumentWritten($event)"
                                (jobFinished)="onReportJobFinished($event)"
                                (documentsRequested)="onReportDocumentsRequested()"
+                               (documentsChanged)="onReportDocumentsChanged()"
                                (chartSelectionChange)="onChartSelectionChange($event)"
+                               (chartLayoutChange)="onChartLayoutChange($event)"
                                (chartRetryRequested)="onChartRetryRequested($event)"></app-report-pack-panel>
       </div>
     }
@@ -1938,6 +1961,12 @@
       <button type="button" class="btn-gh btn-gh-cancel" (click)="aboutDialog.close()">Close</button>
     </div>
   </dialog>
+
+  <!-- Rename comparison: nested in the wizard's dialog, and rendered only while it is open. -->
+  @if (renameOpen) {
+    <app-comparison-rename-dialog idPrefix="mc-rename" (renamed)="onComparisonRenamed($event)"
+                                  (closed)="onRenameClosed()"></app-comparison-rename-dialog>
+  }
 
   <!-- The export outcome, as a toast. Always in the DOM, so its live region exists before it first speaks. -->
   <app-toast [notice]="exportNotice" (dismissed)="clearExportNotice()"></app-toast>

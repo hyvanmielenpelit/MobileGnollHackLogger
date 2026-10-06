@@ -1,5 +1,6 @@
-import { BenchmarkReportAudience, BenchmarkReportDisclosure } from '../../../services/admin-benchmark.service';
+import { BenchmarkReportAudience, BenchmarkReportDisclosure, BenchmarkReportScope } from '../../../services/admin-benchmark.service';
 import {
+  REPORT_DOCUMENT_SCOPES,
   REPORT_PACK_AUDIENCES,
   audienceLabel,
   audienceShortLabel,
@@ -10,6 +11,9 @@ import {
   formatElapsed,
   formatUtc,
   peerCountLabel,
+  reportDocumentScope,
+  reportKindSlug,
+  reportScopeLabel,
   statusLabel
 } from './report-document-format';
 
@@ -37,6 +41,25 @@ describe('report-document-format', () => {
     }
     expect(audienceShortLabel(BenchmarkReportAudience.TechnicalReport)).toBe('Researchers');
     expect(audienceShortLabel(99 as BenchmarkReportAudience)).toBe('Document');
+  });
+
+  it('spells each document kind once in a file name, as the server does', () => {
+    expect(reportKindSlug(BenchmarkReportAudience.ExecutiveSummary)).toBe('executive-summary');
+    expect(reportKindSlug(BenchmarkReportAudience.TechnicalReport)).toBe('researcher-report');
+    expect(reportKindSlug(BenchmarkReportAudience.InternalBrief)).toBe('internal-brief');
+    expect(reportKindSlug(99 as BenchmarkReportAudience)).toBe('99');
+  });
+
+  it('tells a document of the whole comparison, a model subset and one model apart, and labels each', () => {
+    expect(reportDocumentScope({ scope: BenchmarkReportScope.Comparison, coversAllEntries: true })).toBe('comparison');
+    expect(reportDocumentScope({ scope: BenchmarkReportScope.Comparison, coversAllEntries: false })).toBe('subset');
+    expect(reportDocumentScope({ scope: BenchmarkReportScope.Model, coversAllEntries: false })).toBe('model');
+    // A document listed before scopes existed is one model's.
+    expect(reportDocumentScope({})).toBe('model');
+
+    expect(REPORT_DOCUMENT_SCOPES.map(scope => scope.label)).toEqual(['Whole comparison', 'Model subset', 'One model']);
+    expect(reportScopeLabel('subset')).toBe('Model subset');
+    expect(reportScopeLabel('other')).toBe('other');
   });
 
   it('names each disclosure level', () => {

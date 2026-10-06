@@ -71,12 +71,30 @@ public static class BenchmarkPdfFileNames
     /// <c>[run-&lt;id&gt;_]&lt;title without its "— &lt;audience name&gt;" ending&gt;_Researcher_Report_…</c>, the
     /// ending being either the current name or the legacy <c>Technical Report</c>; with no title, the
     /// subject label takes the title's place.</para>
+    ///
+    /// <para>A Report Pack document of a numbered comparison is named by <see cref="ComparisonStem"/>
+    /// instead: <c>comparison-12_gpt-5.6-luna-max_executive-summary_full_named_INTERNAL.pdf</c>.</para>
     /// </summary>
     public static string ForReportDocument(
         BenchmarkReportDocument document, BenchmarkReportRenderOptions options, string extension = "pdf")
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(options);
+
+        string disclosure = options.Disclosure switch
+        {
+            BenchmarkReportDisclosure.Detailed => "detailed",
+            BenchmarkReportDisclosure.Full => "full",
+            _ => "summary"
+        };
+        string peers = options.PeerNaming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
+        string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
+
+        if (document.Origin == BenchmarkReportDocumentOrigin.ReportPack
+            && BenchmarkPdfDocumentInfo.ComparisonOf(document) is { } comparison)
+        {
+            return ComparisonStem(document, comparison, options.PeerNaming) + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+        }
 
         string title = string.IsNullOrEmpty(document.Title)
             ? BenchmarkReportRenderService.AudienceName(document.Audience) + ": " + document.SubjectLabel
@@ -87,14 +105,6 @@ public static class BenchmarkPdfFileNames
             title = string.IsNullOrEmpty(document.Title) ? document.SubjectLabel : WithoutAudienceEnding(document.Title);
             label = "_" + ResearcherReportLabel;
         }
-        string disclosure = options.Disclosure switch
-        {
-            BenchmarkReportDisclosure.Detailed => "detailed",
-            BenchmarkReportDisclosure.Full => "full",
-            _ => "summary"
-        };
-        string peers = options.PeerNaming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
-        string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
 
         var runSubject = RunSubject.Match(document.SubjectKey ?? string.Empty);
         var batterySubject = BatterySubject.Match(document.SubjectKey ?? string.Empty);
@@ -105,6 +115,93 @@ public static class BenchmarkPdfFileNames
 
         return runPrefix + comparisonPrefix + SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
     }
+
+    /// <summary>The longest comparison-name or covered-models slug a comparison file name carries.</summary>
+    public const int MaxNameSlugLength = 40;
+
+    /// <summary>The most covered models a subset's file name names one by one.</summary>
+    private const int MaxNamedCoveredModels = 3;
+
+    /// <summary>
+    /// A Report Pack document's stem within its numbered comparison: for model scope
+    /// <c>comparison-12_&lt;subject slug&gt;_&lt;kind&gt;</c>; for a document covering every entry
+    /// <c>comparison-12_&lt;name slug&gt;_&lt;kind&gt;</c>; for a subset
+    /// <c>comparison-12_subset-&lt;covered slug&gt;_&lt;kind&gt;</c>, the covered slug being up to
+    /// <see cref="MaxNamedCoveredModels"/> models' slugs joined by <c>-vs-</c> and cut as
+    /// <see cref="NameSlug"/> cuts (without a dangling <c>-vs</c>), else <c>3-of-10-models-&lt;first 6 hex of the covered-set key&gt;</c>.
+    /// An anonymized copy names no model the comparison name or the covered set would reveal: a
+    /// whole-comparison stem leaves the name out and a subset is counted. The kind is <see cref="KindSlug"/>.
+    /// </summary>
+    public static string ComparisonStem(BenchmarkReportDocument document, BenchmarkPdfComparison comparison, BenchmarkReportPeerNaming naming)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(comparison);
+
+        string prefix = "comparison-" + comparison.Id.ToString(CultureInfo.InvariantCulture);
+        string kind = KindSlug(document.Audience);
+        bool named = naming == BenchmarkReportPeerNaming.Named;
+
+        string? middle;
+        if (document.Scope != BenchmarkReportScope.Comparison)
+        {
+            middle = SafeFileName(document.SubjectLabel);
+        }
+        else
+        {
+            var facts = BenchmarkReportRenderService.ReadFacts(document.FactsJson);
+            middle = facts.CoversAllEntries
+                ? (named && !string.IsNullOrWhiteSpace(comparison.Name) ? NameSlug(comparison.Name) : null)
+                : "subset-" + CoveredSlug(document, comparison, facts, named);
+        }
+
+        return middle == null ? prefix + "_" + kind : prefix + "_" + middle + "_" + kind;
+    }
+
+    /// <summary>A subset's covered models: their slugs joined by <c>-vs-</c>, or their count with the covered-set key's first 6 hex.</summary>
+    private static string CoveredSlug(
+        BenchmarkReportDocument document, BenchmarkPdfComparison comparison, BenchmarkReportRenderService.StoredFacts facts, bool named)
+    {
+        var covered = BenchmarkReportRenderService.CoveredModels(
+            BenchmarkReportScope.Comparison, document.SubjectKey, document.SubjectLabel, document.CoveredEntryKeysJson, facts);
+
+        // A model without a label in the sheet carries its entry key as its label and is counted instead.
+        if (named && covered.Count is > 0 and <= MaxNamedCoveredModels
+            && covered.All(m => !string.Equals(m.Label, m.EntryKey, StringComparison.Ordinal)))
+        {
+            string joined = CutAtHyphen(string.Join("-vs-", covered.Select(m => SafeFileName(m.Label))), MaxNameSlugLength);
+            return joined.EndsWith("-vs", StringComparison.Ordinal) ? joined[..^"-vs".Length] : joined;
+        }
+
+        int? total = facts.ComparisonEntryCount ?? comparison.EntryCount;
+        string count = covered.Count.ToString(CultureInfo.InvariantCulture)
+            + (total is int of ? "-of-" + of.ToString(CultureInfo.InvariantCulture) : string.Empty) + "-models";
+        string? setKey = document.CoveredSetKey;
+        return setKey is { Length: >= 6 } ? count + "-" + setKey[..6].ToLowerInvariant() : count;
+    }
+
+    /// <summary>A comparison's name in a file name: <see cref="SafeFileName"/>, cut at the last hyphen at or before <see cref="MaxNameSlugLength"/> characters.</summary>
+    public static string NameSlug(string? name) => CutAtHyphen(SafeFileName(name), MaxNameSlugLength);
+
+    /// <summary>
+    /// <paramref name="slug"/> when it fits in <paramref name="max"/> characters, else its part before the last
+    /// hyphen that keeps it within them (hard cut where there is none), trailing separators trimmed.
+    /// </summary>
+    private static string CutAtHyphen(string slug, int max)
+    {
+        if (slug.Length <= max) return slug;
+        int hyphen = slug.LastIndexOf('-', max);
+        string cut = (hyphen > 0 ? slug[..hyphen] : slug[..max]).TrimEnd('-', '.', '_');
+        return cut.Length == 0 ? slug[..max] : cut;
+    }
+
+    /// <summary>A Report Pack document kind in a file name: <c>executive-summary</c>, <c>researcher-report</c> or <c>internal-brief</c>.</summary>
+    public static string KindSlug(BenchmarkReportAudience audience) => audience switch
+    {
+        BenchmarkReportAudience.ExecutiveSummary => "executive-summary",
+        BenchmarkReportAudience.TechnicalReport => "researcher-report",
+        BenchmarkReportAudience.InternalBrief => "internal-brief",
+        _ => SafeFileName(audience.ToString())
+    };
 
     /// <summary>The most peers a file name lists one by one.</summary>
     private const int MaxNamedPeers = 3;

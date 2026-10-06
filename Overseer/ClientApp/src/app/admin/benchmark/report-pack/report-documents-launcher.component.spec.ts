@@ -109,6 +109,21 @@ describe('ReportDocumentsLauncherComponent', () => {
     expect(changed.textContent).toContain('2 changed since written');
   });
 
+  it('counts comparisons by number, and a document without one by the number its comparison key has elsewhere', () => {
+    render([
+      doc(11, { comparisonId: 12, comparisonKey: 'cmp-1' }),
+      // Written before comparisons were numbered: the same comparison as #12, by its key.
+      doc(12, { comparisonId: null, comparisonKey: 'cmp-1' }),
+      doc(13, { comparisonId: 14, comparisonKey: 'cmp-2' }),
+      // Numbered for #14 under another key: still #14.
+      doc(14, { comparisonId: 14, comparisonKey: 'cmp-9' }),
+      doc(15, { comparisonId: null, comparisonKey: 'cmp-3' }),
+      doc(16, { comparisonId: null, comparisonKey: null, subjectKey: 'run:9' })
+    ]);
+
+    expect(text('.rdl-launcher-summary')).toBe('6 report documents from 4 comparisons · the latest written 2026-09-26 16:00 UTC');
+  });
+
   it('puts the explanation behind a click-mode info tip', () => {
     render([doc(11)]);
 

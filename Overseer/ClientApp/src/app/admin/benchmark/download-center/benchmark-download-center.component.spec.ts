@@ -11,7 +11,9 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
+  BenchmarkReportDocumentOrigin,
   BenchmarkReportPeerNaming,
+  BenchmarkReportScope,
   BenchmarkRunDetailDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto,
@@ -1868,6 +1870,137 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.selectedCount).toBe(0);
       // A library lists no run files and polls no job.
       httpMock.expectNone(JOB_URL);
+    });
+
+    const X_VS_Y = 'GPT Model X vs GPT Model Y';
+
+    /** One model's document of Comparison #12, *GPT Model X vs GPT Model Y*, about GPT Model X unless the overrides say otherwise. */
+    function numbered(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
+      return doc(id, audience, {
+        origin: BenchmarkReportDocumentOrigin.ReportPack,
+        comparisonId: 12,
+        comparisonName: X_VS_Y,
+        comparisonEntryCount: 2,
+        scope: BenchmarkReportScope.Model,
+        coveredModels: [{ entryKey: 'run:42', label: 'GPT Model X', provider: 'OpenAI', letter: null }],
+        ...overrides
+      });
+    }
+
+    /** One model's document about GPT Model Y (run 43). */
+    function aboutY(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
+      return numbered(id, audience, {
+        subjectKey: 'run:43',
+        subjectLabel: 'GPT Model Y',
+        subjectRunIds: [43],
+        title: `Executive Summary: GPT Model Y ${id}`,
+        coveredModels: [{ entryKey: 'run:43', label: 'GPT Model Y', provider: 'OpenAI', letter: null }],
+        ...overrides
+      });
+    }
+
+    /** The document of Comparison #12 covering both of its models. */
+    function wholeComparison(id: number, audience: BenchmarkReportAudience): BenchmarkReportDocumentListItemDto {
+      return numbered(id, audience, {
+        scope: BenchmarkReportScope.Comparison,
+        coversAllEntries: true,
+        subjectKey: 'comparison:12',
+        subjectLabel: X_VS_Y,
+        coveredSetKey: `ab12cd${'0'.repeat(58)}`,
+        coveredModels: [
+          { entryKey: 'run:42', label: 'GPT Model X', provider: 'OpenAI', letter: 'A' },
+          { entryKey: 'run:43', label: 'GPT Model Y', provider: 'OpenAI', letter: 'B' }
+        ]
+      });
+    }
+
+    /** Opens every comparison document with nothing preselected, as the launcher does. */
+    function openLibrary(documents: BenchmarkReportDocumentListItemDto[]): void {
+      wrapper.open({ kind: 'library', scope: { kind: 'all' }, preselect: 'none' });
+      const list = expectList('reportPack');
+      requested.push(list.request.url);
+      list.flush(documents);
+      render();
+    }
+
+    /** The manifest block of the file whose name contains `part`. */
+    function manifestBlock(manifest: string, part: string): string {
+      return manifest.split('\n## ').find(block => block.split('\n')[0].includes(part))!;
+    }
+
+    it('names the ZIP of one comparison\'s documents after its number and name, and lists the comparison and models in the manifest', async () => {
+      openLibrary([numbered(1, ExecutiveSummary), aboutY(2, ExecutiveSummary), wholeComparison(3, TechnicalReport)]);
+      choose('internal', { 'doc:1': { formats: ['md'] }, 'doc:2': { formats: ['md'] }, 'doc:3': { formats: ['md'] } });
+
+      await runDownload();
+
+      const zip = await savedZip();
+      expect(zip.name).toBe('comparison-12_gpt-model-x-vs-gpt-model-y_internal-package_20260928_101502.zip');
+      expect(Object.keys(zip.files).sort()).toEqual([
+        'MANIFEST.md',
+        'comparison-12_gpt-model-x-vs-gpt-model-y_researcher-report_full_named_INTERNAL.md',
+        'comparison-12_gpt-model-x_executive-summary_full_named_INTERNAL.md',
+        'comparison-12_gpt-model-y_executive-summary_full_named_INTERNAL.md'
+      ]);
+      const manifest = zip.files['MANIFEST.md'];
+      expect(manifest).toContain('- **Files:** 3\n- **Comparison:** Comparison #12 — GPT Model X vs GPT Model Y\n');
+      expect(manifestBlock(manifest, 'gpt-model-y_executive-summary'))
+        .toContain('- **Audience:** Executive Summary\n- **Comparison:** Comparison #12 — GPT Model X vs GPT Model Y\n- **Model:** GPT Model Y\n');
+      expect(manifestBlock(manifest, 'researcher-report'))
+        .toContain('- **Comparison:** Comparison #12 — GPT Model X vs GPT Model Y\n- **Models:** all 2\n');
+    });
+
+    it('names an anonymized package of one comparison by its number alone, and its manifest names neither the comparison nor a peer', async () => {
+      openLibrary([numbered(1, ExecutiveSummary), wholeComparison(3, TechnicalReport)]);
+      choose('provider', { 'doc:1': { formats: ['md'] }, 'doc:3': { formats: ['md'] } });
+      expect(component.stateOf(row('doc:1')).naming).toBe(Anonymized);
+
+      await runDownload();
+
+      const zip = await savedZip();
+      expect(zip.name).toBe('comparison-12_external-package_20260928_101502.zip');
+      expect(Object.keys(zip.files).sort()).toEqual([
+        'MANIFEST.md',
+        'comparison-12_gpt-model-x_executive-summary_summary_anonymized.md',
+        'comparison-12_researcher-report_summary_anonymized.md'
+      ]);
+      const manifest = zip.files['MANIFEST.md'];
+      expect(manifest).toContain('- **Files:** 2\n- **Comparison:** Comparison #12\n');
+      expect(manifest).not.toContain(X_VS_Y);
+      expect(manifest).not.toContain('GPT Model Y');
+      // The subject of one model's document is named in both namings.
+      expect(manifestBlock(manifest, 'gpt-model-x_executive-summary')).toContain('- **Comparison:** Comparison #12\n- **Model:** GPT Model X\n');
+      expect(manifestBlock(manifest, 'researcher-report')).toContain('- **Comparison:** Comparison #12\n- **Models:** all 2\n');
+    });
+
+    it('names the ZIP of several comparisons\' documents comparison-reports, listing every comparison in the manifest', async () => {
+      openLibrary([numbered(1, ExecutiveSummary), numbered(4, ExecutiveSummary, { comparisonId: 14, comparisonName: 'Second comparison' })]);
+      choose('internal', { 'doc:1': { formats: ['md'] }, 'doc:4': { formats: ['md'] } });
+
+      await runDownload();
+
+      const zip = await savedZip();
+      expect(zip.name).toBe('comparison-reports_internal-package_20260928_101502.zip');
+      expect(zip.files['MANIFEST.md'])
+        .toContain('- **Comparisons:** Comparison #12 — GPT Model X vs GPT Model Y; Comparison #14 — Second comparison\n');
+    });
+
+    it('names a package of one model\'s documents after that model, never after a newer document left out of it', async () => {
+      openLibrary([
+        doc(1, ExecutiveSummary),
+        doc(2, TechnicalReport),
+        doc(5, ExecutiveSummary, { subjectKey: 'run:43', subjectLabel: 'GPT Model Y', title: 'Executive Summary: GPT Model Y', createdAtUtc: '2026-09-25T09:30:12Z' })
+      ]);
+      expect(component.rows[0].key).toBe('doc:5');
+      choose('internal', { 'doc:1': { formats: ['md'] }, 'doc:2': { formats: ['md'] } });
+
+      await runDownload();
+
+      const zip = await savedZip();
+      expect(zip.name).toBe('gpt-model-x_internal-package_20260928_101502.zip');
+      const manifest = zip.files['MANIFEST.md'];
+      expect(manifest).not.toContain('**Comparison:** Comparison');
+      expect(manifestBlock(manifest, 'executive-summary-gpt-model-x')).toContain('- **Comparison:** —\n- **Model:** GPT Model X\n');
     });
   });
 

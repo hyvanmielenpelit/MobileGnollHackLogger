@@ -1,0 +1,10 @@
+:host {
+  display: contents;
+}
+
+@media (max-width: 992px) {
+  :host(.narrow-hides-badges) app-provider-badge,
+  :host(.narrow-hides-badges) .parallel-badge {
+    display: none;
+  }
+}

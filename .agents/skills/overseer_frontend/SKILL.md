@@ -316,8 +316,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     (`localStorage['overseer.benchmark.modelComparison.launcher']`, try/catch); its step list names
     the wizard's four steps. Below it, `.mc-launcher-library` holds **Comparison reports**:
     `app-report-documents-launcher` (`report-pack/report-documents-launcher.component.*`,
-    `idPrefix="mcl"`), a summary (*N report documents from M comparisons · the latest written …*, or
-    *No reports yet…*), an *N changed since written* `gh-tag gh-tag-changed` when subjects' or peers'
+    `idPrefix="mcl"`), a summary (*N report documents from M comparisons · the latest written …*, the
+    comparisons counted by `comparisonId`, a document without one by the number another document of its
+    comparison key carries, else by that key; or *No reports yet…*), an *N changed since written* `gh-tag gh-tag-changed` when subjects' or peers'
     runs changed, a click-mode info tip, and one `.btn-ghost` **Open Download Center**
     (*file-with-arrow*), `aria-disabled` while there is nothing to open, the summary line being its
     reason. It opens its own `app-benchmark-download-center` with a `library` context of every Report
@@ -701,23 +702,34 @@ To find specific popups, look in the corresponding component's `.html` template:
     `battery-run-<id>_report.md` as fallback name — and every document whose subject is
     `battery:<id>`, battery-completion and Report Pack alike, via `listReportDocuments({ subject })`, with
     the *being written* notice and a 5-s poll of the battery run's report job; **no member-run rows**),
-    `documents` (chosen ids) and `library` (`scope` — `{ kind: 'comparison', entryKeys }` or
-    `{ kind: 'all' }` — and `preselect: 'all' | 'none'`, listed with one request, `origin=reportPack`). **The documents list** is a card list (`frontend_ui_controls`
+    `documents` (chosen ids) and `library` (`scope` — `{ kind: 'comparison', comparisonId, name,
+    entryKeys }`, `{ kind: 'subject', subjectKey, label }` or `{ kind: 'all' }` — and `preselect`, listed
+    with `origin=reportPack`; a numbered comparison is listed by `comparisonId` plus, by its entry keys,
+    the documents that carry no number, merged once each; a context differing only in the comparison's
+    name keeps the rows and choices). **The documents list** is a card list (`frontend_ui_controls`
     §8h). Its search, **Sort by**, facets, chips, status line and Load more come from the shared
     `CardListState` (`shared/data-table/card-list-state.ts`), behind a private `list` getter that
     builds it on first use, after the `idPrefix` input is bound; the panel's public members (`searchText`, `sortId`,
     `facets`, `activeChips`, `showMore`…) and exported constants are one-line delegates and aliases
     over it (`DownloadFacet` = `CardListFacet`, `DownloadFilterChip` = `CardListChip`), and the
-    selection, its bar and every focus move stay in the panel. Its header is the *Documents* heading, a dialog-mode `app-info-tip` **About document options**
+    selection, its bar and every focus move stay in the panel. Its header is the *Documents* heading
+    (`documentsHeading`: *Documents of Comparison #12 — <name>* while one numbered comparison's documents
+    are listed), a dialog-mode `app-info-tip` **About document options**
     (sections *Sharing*, *Disclosure* — the guides per document type and their notes — *Peer names*,
     *Formats* and, with chart actions, *Charts*; text in `DOWNLOAD_OPTIONS_HELP`) and the polite status
     line *Showing 10 of 23 documents* (*· filtered from N* while a filter is active). The filter bar
-    holds a search (title, detail, subject, suite and writer, debounced 200 ms; Escape with text clears
-    it without closing the dialog around it), **Sort by** (a native select of named orders:
-    *Newest first*, *Oldest first*, *Document type*, *Title*, *Subject*, *Suite*, *Writer*, *Writing
-    cost, highest first*, *Changed since written first*; remembered per browser under
+    holds a search (*Search title, comparison, model, suite or writer*: the title, detail, subject, covered
+    models, *Comparison #12* / *#12* and its name, suite and writer, debounced 200 ms; Escape with text
+    clears it without closing the dialog around it), **Sort by** (a native select of named orders:
+    *Newest first*, *Oldest first*, *Document type*, *Title (A–Z)*, *Model (A–Z)* — by the first covered
+    model, its stored id still `subject` — *Suite (A–Z)*, *Writer (A–Z)*, *Writing cost, highest first*,
+    *Changed since written first*; remembered per browser under
     `overseer.benchmark.downloadCenter.view`, apart from the download settings), the `app-filter-facet`
-    facets *Document*, *Subject*, *Suite*, *Written by*, *Changes*, *Charts* (only with chart actions)
+    facets *Document*, *Scope* (*Whole comparison*, *Model subset*, *One model*, from
+    `reportDocumentScope`), *Comparison* (*#12 — <name>*, highest number first; never while one
+    comparison's documents are listed, as on step 4), *Model* (from the list DTO's `coveredModels`: a
+    comparison-wide or subset document counts under each covered model, a per-model one under its
+    subject), *Suite*, *Written by*, *Changes*, *Charts* (only with chart actions)
     and *Created* (single mode: last 24 hours, 7 days, 30 days) — each listed only while its rows hold
     two values or it has a selection, each option counting the rows the other filters leave — the
     removable active-filter chips with **Clear all** (which keeps *Show selected only*), and the
@@ -726,7 +738,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     Sharing facet, and no select-all checkbox. Each card is an `<article>` in a `ul[role=list]`: the
     *Include …* checkbox top left, a kicker (document type, *Shareable* / *Internal only* with its
     reason tip, *Run changed…* / *Comparison changed* tags), the `<h5>` title as the checkbox's
-    `<label>`, a meta line (date, then subject, suite and writer, or a run file's suite and model), the
+    `<label>`, a meta line (`cardMeta`: for a document of a numbered comparison first *Comparison #12*,
+    its name and, for a subset, *2 of 5 models*; then the date, the subject for a per-model document
+    only, the suite and the writer; or a run file's suite and model), the
     icon-only actions top right in a `role="group"`, and under a hairline the options with visible
     labels (*Disclosure*, *Peer names*, the *Formats* fieldset, *Charts*); a chosen card takes the
     package cards' gold border and tint. The list shows 10 cards and **Show N more** / **Show all M**
@@ -758,9 +772,19 @@ To find specific popups, look in the corresponding component's `.html` template:
     `battery` context;
     per-document disclosure (*Summary* / *Detailed* / *Full*, from each row's server-supplied
     `allowedDisclosures`: the Executive Summary offers *Summary* / *Full*) and peer naming (*Named* /
-    *Anonymized*); `_INTERNAL` file-name suffixes, and a `run-<id>_` prefix for a document whose subject
-    is one run (`reportDocumentFileStem`, matching the server's PDF and Word names); several files as one
-    ZIP with a `MANIFEST.md`. Its
+    *Anonymized*); `_INTERNAL` file-name suffixes; `reportDocumentFileStem(doc, title, naming)`, matching
+    the server's PDF and Word names (`BenchmarkPdfFileNames`): a Report Pack document of a numbered
+    comparison by `comparisonFilePart` — `comparison-12_<model slug>_<kind>` per model,
+    `comparison-12_<name slug ≤ 40>_<kind>` comparison-wide (`comparison-12_<kind>` anonymized),
+    `comparison-12_subset-<up to three model slugs joined by -vs->_<kind>` for a subset, or
+    `subset-2-of-5-models-<6 hex>` (always when anonymized), the kind `executive-summary`,
+    `researcher-report` or `internal-brief` (`reportKindSlug`) — and any other document by its title with a
+    `run-<id>_` or `battery-run-<id>_` prefix and a `vs-` part; several files as one ZIP named by
+    `downloadZipStem` from the **chosen** rows (one comparison: `comparison-12_<name slug>`, its name only
+    when every chosen document of it is named; several: `comparison-reports`; a run or battery context:
+    its model or label) with a `MANIFEST.md` whose header lists *Comparison(s)* (`manifestComparisons`)
+    and each file's *Comparison* and *Model* or *Models* (*all 5*, a subset's names, or letters when
+    anonymized). Its
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
     ones. Every row offers **PDF** first, then **Word** (both rendered server-side, see
     `ai-benchmark-report-pack.md` § 8); the External preset is PDF only and Internal PDF, Word and
@@ -993,8 +1017,9 @@ To find specific popups, look in the corresponding component's `.html` template:
 
 - **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
   Cross-model comparison)** — four steps: *1. Sources · 2. Charts & table · 3. Reports · 4.
-  Documents* (`COMPARISON_WIZARD_STEPS`; step 3's summary *Write AI reports on one model of this
-  comparison*, step 4's *View, chart, download and delete this comparison's documents*). Steps 2 and
+  Documents* (`COMPARISON_WIZARD_STEPS`; step 3's summary *Write AI reports that compare the models of
+  this comparison.*, step 4's *View, chart, download and delete this comparison's
+  documents.*). Steps 2 and
   4 are reachable as soon as a comparison exists, step 2 even over one no chart can draw; step 3
   also needs an entry that is not Excluded, and is otherwise `aria-disabled` with a visually hidden
   reason, and **Next** skips it. Next runs 2 → 3 → 4, and on step 4 it closes the wizard. Step 1 uses `[hidden]` and step 2 `@if`; steps
@@ -1004,6 +1029,20 @@ To find specific popups, look in the corresponding component's `.html` template:
   step 4, go back to step 2 to change them, then **Update charts…** on step 4 and view again. While
   charts are being published the wizard's own close controls are disabled and the benchmark
   component's Escape guard refuses Escape, as during an export.
+  - **The numbered comparison.** After a successful Compare, and whenever the entry set changes (a
+    recompute of the same set asks nothing), the wizard calls `identifyComparison`
+    (`POST model-comparisons/identify`); an answer for an older set, or a failure, is dropped, and the
+    header then simply has no number. `currentComparison` (`{ id, name, entryKeys }`, one object per
+    identity) feeds step 3's `comparisonId` and step 4's library scope. The header shows
+    `.mc-identity`: *Comparison #12 — <name>* and an icon-only **Rename comparison** (`.action-btn`,
+    *edit-3*, `aria-label` *Rename comparison #12*, an `interestfor` tooltip), which renders and opens the
+    nested `app-comparison-rename-dialog` (`model-comparison/comparison-rename-dialog.component.*`,
+    `mc-rename` ids; it stops its own close, cancel and click events): a *Name* field, `maxlength` 160,
+    with the hint naming the default name, a **Reset to default** `.btn-link` (fills in the default name,
+    which Save sends as a reset), **Cancel** and **Save** (`aria-disabled` and `aria-busy` while saving;
+    a refusal shows as a `role="alert"` field error). The dialog leaves the DOM once closed, and focus
+    returns to the button. `documentMatchesComparison` compares by number where both the document and
+    the comparison have one, else by entry set.
   - **Battery results** are the third source kind. A battery comparison's `subjectKind` is
     `Batteries`: `sourceLabel` and `table-export.ts` read *Battery run N*, the cost axis titles say *per
     battery pass*, the launcher's *Last comparison* names the baseline battery, `reportPackContext`
@@ -1046,18 +1085,63 @@ To find specific popups, look in the corresponding component's `.html` template:
     former Report Pack dialog's body; step 2's **Reports** button and the dialog are gone), headed by
     `h4.gh-section-title` *Reports*, in `app-run-report-frame`'s `layout="sidebar"`: a resizable
     sidebar (20–32rem, at most 40 % of the body, width kept as `sidebarWidth` in
-    `localStorage['overseer.benchmark.reportPack']`; stacked below 60rem) holds the form — the subject
-    (any entry that is not Excluded), the *Documents* checkboxes, the *Charts in PDF and Word*
-    fieldset (`app-report-chart-picker`, then the visible print advisory and, while the
-    `report-charts-location-missing` alert is present, the warning *Chart storage is not configured;
-    documents will be written without charts.*), the report writer (an `app-model-picker` with the
-    dialog-mode *Choosing a report writer* tip from `run-ai-reports/report-writer-advice.ts`; the
-    subject's own model is refused), the refusal or the amber same-provider warning, the
-    `.gh-estimate-panel` estimate and **Generate** (*zap*). A same-provider writer makes Generate ask
+    `localStorage['overseer.benchmark.reportPack']`; stacked below 60rem) holds the form, in order:
+    - **Document scope**: a `.gh-tabs-segmented` pair (`role="tablist"` *Document scope*, arrow keys wrap,
+      Home / End) *Whole comparison (recommended)* / *One model at a time*, remembered as
+      `documentScope` in the same storage record, with an `app-info-tip` in its default hover mode
+      (`REPORT_PACK_MODEL_SCOPE_TIP`). Its tab panel holds the next two blocks.
+    - **Models**: `app-model-multi-picker` (`frontend_ui_controls` §4e-3), labelled *Models*,
+      `chips="none"`, no price or parallel badge, over `comparisonModelOptions(entries)`
+      (`report-pack/comparison-model-options.ts`: one option per entry that is not Excluded, keyed by
+      entry key, labeled *GPT-5.6 Luna (max)*, the source as `detail` only where two options would look
+      identical). Whole comparison: `min` 2, `max` 12 (`MIN_` / `MAX_COMPARISON_DOCUMENT_ENTRIES`), every
+      option chosen at first, or the 12 of highest Index with a note saying why. One model at a time:
+      `min` 1, the highest-Index option chosen at first. The choice is component state, reset when the
+      comparison changes. Under it the `describedBy` line `modelsLine` (*Writes the comparison-wide
+      documents.* / *Writes documents for 3 of 5 models — leaves out …* / the per-model documents of the
+      chosen models) and, once the preview has lettered them, *Letters in the anonymized copies: A = …*.
+    - **Documents of this comparison**: `app-comparison-documents-status`
+      (`report-pack/comparison-documents-status.component.*`, view built by `comparisonDocumentsView`):
+      whole comparison, three rows for the chosen set and a closed `details.gh-disclosure` *Other model
+      sets (n)* (each set's label, rows, and a **Choose these models** `.btn-link`, `aria-disabled` with
+      its reason when a model of it is Excluded now or it is outside 2 to 12); one model at a time, a
+      group per chosen model. Each row: the document name, a `.gh-tag` *Written* / *Written with
+      warnings* / *Not written*, *Comparison changed since written* (`.gh-tag-changed`), and for a
+      written row *by <writer> (<provider>; <thinking level>)*, `<time>`, duration, cost and charts
+      count, with icon-only **View** (*eye*, the nested `app-pdf-viewer-dialog`) and **Delete** (*trash*,
+      `.action-btn-danger`, a nested *Delete Document* confirmation; `aria-disabled` while a job runs).
+      Its checkbox reads *Write* (checked by default) or *Rewrite — replaces the current document*
+      (unchecked by default), with the row named in visually hidden text; the other sets' rows have
+      none. One polite live line. The list comes from the preview, requested 300 ms after the last
+      change (`REPORT_PACK_PREVIEW_DEBOUNCE_MS`, `debounceTime` then `switchMap`, so an older answer is
+      dropped), and the written documents' list entries from `listReportDocuments({ comparisonId })`.
+    - **Charts in PDF and Word**: `app-report-chart-picker` with `[layout]` and `[scope]`, its *Layout*
+      disclosure ending in **Preview layout** (`.btn-ghost`, *eye*; `aria-disabled` with its reason on a
+      visible line — the charts cannot be drawn here, chart storage is not configured, the comparison
+      has no number yet, too few models, no chart chosen for the shown document type). It opens the
+      nested viewer at once (`layoutPreviewViewerRequest`, `report-pack/report-chart-layout-preview.ts`),
+      titled *Layout preview — Executive Summary*, which composes the figures through the wizard's lent
+      `documentChartsComposer` and posts `report-packs/layout-preview` as multipart; figures that could
+      not be drawn are listed in a `role="status"` line (*Not drawn: …*); focus returns to the button.
+      Then the visible print advisory and, while the `report-charts-location-missing` alert is present,
+      the warning *Chart storage is not configured; documents will be written without charts.*
+    - The report writer (an `app-model-picker` with the dialog-mode *Choosing a report writer* tip from
+      `run-ai-reports/report-writer-advice.ts`; a subject's own model, or a covered model's
+      configuration, is refused), the refusal or the amber same-provider warning (*Writer from a chosen
+      model's provider*), the `.gh-estimate-panel` estimate (the checked rows summed, per row and model
+      when several) with an amber warning from 70 % of the writer's context window
+      (`REPORT_PACK_CONTEXT_WARNING_SHARE`), and **Generate** (*zap*), sending `scope`,
+      `coveredEntryKeys` or `subjectKeys`, the checked audiences and `replaceDocumentIds`. Its blocked
+      reason is a visible note; it stays focusable and `aria-disabled` only when every listed document is
+      written and none is checked (`REPORT_PACK_ALL_WRITTEN_REASON`), and one model at a time needs the
+      same documents checked for every chosen model (`REPORT_PACK_UNEVEN_MODELS_REASON`).
+
+    A same-provider writer makes Generate ask
     the nested *Same-Provider Report Writer* confirmation (**Write Anyway**) on every write; nothing is
     remembered. The main area, *Report pack progress*, holds the job: the stage rail while it runs,
     the stat strip (which stays, with the cost and estimate, after it finishes; elapsed ticks every
-    second on the server's clock from `serverTimeUtc`), one row per document with its status chip,
+    second on the server's clock from `serverTimeUtc`), one row per document (with a *Model* column for a
+    per-model job) with its status chip,
     live duration, centered model calls and a charts cell (*Charts: attaching…*, *Charts: 3*,
     *Charts failed — retry* as a link-style button, *Charts: none*), a *Log and diagnostics*
     disclosure with icon-only **Copy diagnostics** and **Download diagnostics**
@@ -1066,7 +1150,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     continues while the step is hidden and stops when the wizard is destroyed.
     `ReportPackContext.entryKeys` is every entry key of the comparison, Excluded ones included, since
     the server keys a document by the request's run and group ids. See
-    `docs/overseer/ai-benchmark-report-pack.md` § 12.
+    `docs/overseer/ai-benchmark-report-pack.md` §§ 12 and 15.
   - **`app-report-chart-picker`** (`report-pack/report-chart-picker.component.*`): a group captioned
     *Charts in PDF and Word* holding a `.gh-tabs-segmented` tab row (`frontend_ui_controls` §5) of the
     document types — short labels *Executive* / *Researchers* / *Internal*, each with a count badge of
@@ -1077,35 +1161,62 @@ To find specific popups, look in the corresponding component's `.html` template:
     row, only its panel as a `role="group"`. A `:host` inline-size container stacks each segment's
     label above its badge below 22 rem. A document type not checked under *Documents* stays
     selectable with `aria-disabled` checkboxes and its reason; a figure the comparison cannot draw
-    stays listed the same way (*needs three or more models*). It never touches storage: the wizard remembers the selection in
-    `localStorage['overseer.benchmark.reportCharts']` (version 1), defaulting to Intelligence and
-    Intelligence against cost for the Executive Summary, all seven for the researcher report, and
-    Intelligence, Speed and Cost for the Internal Improvement Brief.
-  - **Document charts** (`report-pack/report-charts.ts`): the figure keys and their placement labels,
-    `DOCUMENT_CHART_LAYOUT` (1800 px wide; 1800×1125 for bars and scatters, 1800×1350 for the
-    profile; text scale 175 %; PNG), `chartSettingsHash` (SHA-256 over canonical JSON of the figure
-    style, layout, Show, Highlight, order, measures, pricing basis and the comparison's
-    `computedAtUtc`) and **`ReportChartPublisher`**, which composes and uploads one document at a time,
-    named and (with peer letters) anonymized variants, `PUT …/report-documents/{id}/charts` for the
-    whole set, records per-document failures, can be canceled after the document in flight, and stops
+    stays listed the same way (*needs three or more models*). The section under each figure follows
+    `scope` (`'model'` or `'comparison'`, `REPORT_CHART_PLACEMENTS`). With `[layout]` bound (step 3 only),
+    each figure gets a *Width* select (*Full column* / *Two thirds* / *Half*) and each document type a
+    closed *Layout* `details.gh-disclosure` — *Bar orientation*, *Side by side*, *Label size* (7–10 pt),
+    *Maximum height* (40 / 50 / 60 % of the page), *Heading inside the chart*, *GnollBench logo*,
+    *Theme* — and a `rcp-layout-actions` content slot. A choice that does not fit stays offered with
+    `aria-disabled` and *(does not fit)*; choosing it keeps the current value and a `role="status"` line
+    says why, and the reasons are listed in the disclosure. It never touches storage: the wizard
+    remembers the selection and the layout in `localStorage['overseer.benchmark.reportCharts']`
+    (**version 2**, `{ selection, layout }`; version 1 keeps its selection with the default layout),
+    defaulting to Intelligence and Intelligence against cost for the Executive Summary, all seven for
+    the researcher report, and Intelligence, Speed and Cost for the Internal Improvement Brief, and to
+    `DEFAULT_DOCUMENT_CHART_LAYOUT` (*As in step 2*, full column, side by side, 8 pt, 60 %, no heading,
+    no logo, *Light, for print*).
+  - **Document charts** (`report-pack/report-charts.ts`): the figure keys and their placement labels per
+    scope; **charts sized in points** — `documentChartLayout(widthPt, heightPt, labelPt)` (300 dpi,
+    `BASE_LABEL_PX` 11, `layoutWidth = widthPt × 11 / labelPt`) and `documentFigureLayout` (the A4 column,
+    481.9 pt, `DOCUMENT_CHART_COLUMN_PT`; 16:10 full, 4:3 two thirds, square half, the profile one step
+    taller, taller still where the chrome leaves the plot under 200 layout px); `DOCUMENT_MIN_CONTENT_WIDTH`
+    260 (step 2's exports use 360), so *Half* is refused from 9 pt (`documentChartRefusal`);
+    `reportDocumentChartLayout` (the manifest `layout`: `widthShare`, `rowGroup` for consecutive half-width
+    figures in one section, `maxHeightShare`); `chartSettingsHash` (SHA-256 over canonical JSON of the
+    figure style, `documentChartHashLayout` — the column, dpi, base label size, format and every document
+    type's layout — Show, Highlight, order, measures, pricing basis and the comparison's `computedAtUtc`);
+    and **`ReportChartPublisher`**, which composes and uploads one document at a time, named and (with
+    peer letters) anonymized variants, `PUT …/report-documents/{id}/charts` for the whole set with its
+    layout, records per-document failures, can be canceled after the document in flight, and stops
     once on *Chart storage is not configured*. The wizard owns one publisher and queues step 3's and
     step 4's publishes through it. **`composeReportChart(key, variant)`** on the wizard composes one
     figure off-screen through the same export pipeline as step 2 (`resolveFigureLayout`,
-    `composeFigure`, `encodeFigureImage`) at the document layout, with everything else from step 2's
-    active settings; *Automatic* bar orientation is resolved from the document layout's width
+    `composeFigure`, `encodeFigureImage`) for the document type's layout — its width at 300 dpi, the label
+    size, the orientation, the heading, the logo and the theme (*Light, for print*:
+    `printFigureAppearance`) — with everything else from step 2's active settings; *As in step 2* takes
+    step 2's orientation, its *Automatic* resolved at the document chart's own layout width
     (`documentChartOrientation`). The caption is the figure's detail line plus *Drawn from the
     comparison computed …*; the alt text is the title plus one clause per plotted model. The
     anonymized variant is `anonymizeComparisonForSubject` (`model-comparison/report-chart-anonymize.ts`):
     peers relabeled *Model A…* with the document's own letters, provider and model id removed (neutral
     gray), free text naming a peer rewritten or dropped, unlettered entries dropped, the subject
-    unchanged and highlighted. `chartAdvisory` warns, without changing anything, when step 2 uses the
-    dark theme or a transparent background with light text. A document written while the wizard is
-    open is charted as soon as its row reaches Completed, with step 3's selection.
+    unchanged and highlighted. A comparison-scope document's figures plot its covered entries only: the
+    named variant is step 2's chart restricted to them (`restrictComparisonToEntries`, Highlight kept
+    where it falls among them), the anonymized one `anonymizeComparisonForAll` (every covered entry
+    lettered, every other removed). `composeDocumentCharts` (lent to step 3 as `documentChartsComposer`)
+    composes a document type's chosen figures with the layout the server would place them by, for the
+    layout preview. `chartAdvisory` warns, without changing anything, when a document type's theme is
+    *As in step 2* and step 2 uses the dark theme or a transparent background with light text. A
+    document written while the wizard is open is charted as soon as its row reaches Completed, with step
+    3's selection and layout.
   - **Step 4, Documents** is `app-download-center-panel` placed directly (`idPrefix="mc-dc"`) with a
-    `library` context of this comparison's documents (`preselect: 'all'`, title *Documents of this
-    comparison*), a `reloadToken` bumped when a job finishes or a document is charted, and the
-    wizard's `DownloadCenterChartActions` (see the Download Center entry above), which add the
-    *Charts* option and facet, **Update charts…** and the per-card **More actions**.
+    `library` context of this comparison's documents (`scope: { kind: 'comparison', comparisonId, name,
+    entryKeys }`; the documents of the last step 3 job that finished for this entry set preselected,
+    else every row; title *Documents of this comparison*, which only the dialog wrapper would print —
+    the panel's own heading reads *Documents of Comparison #12 — <name>* and it offers no *Comparison*
+    facet), a `reloadToken` bumped when a job finishes, a document is charted or step 3 deletes one
+    (`documentsChanged`), and the wizard's `DownloadCenterChartActions` (see the Download Center entry
+    above), which add the *Charts* option and facet, **Update charts…** and the per-card **More actions**.
   - **`app-paired-tests-view`** (`model-comparison/paired-tests-view.component.*`, `mc-paired-` ids):
     step 2's **Paired tests** view, mounted on its first showing and then kept (`pairedViewMounted`),
     fed the comparison, the pricing basis, step 2's Highlight keys and whether it is shown. With fewer

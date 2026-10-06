@@ -40,12 +40,14 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
     /// stored comparison key; <paramref name="origin"/> is <c>reportPack</c>, <c>runCompletion</c> or
     /// <c>batteryCompletion</c>; <paramref name="subject"/> is one entry key (<c>run:1</c>,
     /// <c>group:4</c> or <c>battery:7</c>), matched exactly against each document's subject key;
-    /// <paramref name="runId"/> matches a run of the subject, never of a peer.
+    /// <paramref name="runId"/> matches a run of the subject, never of a peer; <paramref name="comparisonId"/>
+    /// is a numbered comparison, matched against each document's comparison id.
     /// </summary>
     [HttpGet("report-documents")]
     public async Task<IActionResult> List(
         [FromQuery] long? suiteId, [FromQuery] long? runId, [FromQuery] int? take, CancellationToken ct,
-        [FromQuery] string? comparison = null, [FromQuery] string? origin = null, [FromQuery] string? subject = null)
+        [FromQuery] string? comparison = null, [FromQuery] string? origin = null, [FromQuery] string? subject = null,
+        [FromQuery] int? comparisonId = null)
     {
         string? subjectKey = null;
         if (subject != null)
@@ -78,6 +80,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             SuiteId = suiteId,
             RunId = runId,
             ComparisonKey = comparisonKey,
+            ComparisonId = comparisonId,
             Origin = originFilter,
             Take = take
         }, subjectKey, ct));
@@ -153,7 +156,8 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         }
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, pdfPaper);
-        byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct, charts), ct);
+        var layout = _renderService.ReadRenderLayout(id);
+        byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct, charts, layout), ct);
         string name = BenchmarkPdfFileNames.ForReportDocument(document!, options!);
 
         if (inline)
@@ -192,7 +196,8 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         }
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, wordPaper);
-        byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct, charts), ct);
+        var layout = _renderService.ReadRenderLayout(id);
+        byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct, charts, layout), ct);
 
         return File(docx, BenchmarkWordRenderer.ContentType, BenchmarkPdfFileNames.ForReportDocument(document!, options!, "docx"));
     }
@@ -203,8 +208,9 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
     /// <summary>
     /// Replaces the document's whole chart set with the uploaded PNGs, named and anonymized variants of
-    /// each figure. 200 with the stored set's summary; 400 for a document without peers, for chart
-    /// storage that is not configured and for any chart refused; 404 for an unknown document.
+    /// each figure, and the figures' layout (<c>layout</c>; a body without one stores none). 200 with the
+    /// stored set's summary; 400 for a document without peers, for chart storage that is not configured,
+    /// for any chart refused and for an invalid layout; 404 for an unknown document.
     /// </summary>
     [HttpPut("report-documents/{id:long}/charts")]
     [RequestSizeLimit(40_000_000)]

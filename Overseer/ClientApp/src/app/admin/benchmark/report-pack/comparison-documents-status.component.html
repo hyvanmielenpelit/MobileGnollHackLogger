@@ -1,0 +1,166 @@
+<!--
+  STEP 3: DOCUMENTS OF THIS COMPARISON
+
+  One row per document the chosen models can have, written or not. A row's checkbox says what the
+  next job does with it: Write, or Rewrite (which replaces the current document). View and Delete are
+  icon-only; Delete asks first. The confirmation and the PDF viewer are nested in the wizard's dialog
+  and stop their own close and cancel events.
+-->
+<ng-template #rowTemplate let-row>
+  @let rid = rowId(row);
+  <li class="cds-row" [attr.data-audience]="row.audience" [attr.data-row]="row.key"
+      [attr.data-document-id]="row.document?.documentId ?? null">
+    <div class="cds-row-head">
+      <span class="cds-doc-name">{{ row.name }}</span>
+      <span class="gh-tag cds-status"
+            [class.is-warning]="row.document?.status === 'CompletedWithWarnings'"
+            [class.is-missing]="!row.document">{{ statusText(row) }}</span>
+      @if (comparisonChanged(row.listItem)) {
+        <span class="gh-tag gh-tag-changed cds-changed">Comparison changed since written</span>
+      }
+    </div>
+    @if (row.document; as doc) {
+      <p class="cds-meta">
+        <span class="cds-writer">{{ writerPhrase(doc) }}</span>
+        <span class="cds-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+        <time class="cds-time" [attr.datetime]="doc.createdAtUtc">{{ formatUtc(doc.createdAtUtc) }}</time>
+        @for (part of metaParts(row); track $index) {
+          <span class="cds-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+          <span class="cds-meta-part">{{ part }}</span>
+        }
+      </p>
+    }
+    @if (row.checkable || row.document) {
+      <div class="cds-row-foot">
+        @if (row.checkable) {
+          <label class="checkbox-label cds-check">
+            <input type="checkbox" [id]="rid + '-check'" [checked]="row.checked" [disabled]="busy"
+                   (change)="onCheck(row, $event)">
+            <span>{{ checkLabel(row) }}<span class="visually-hidden">: {{ rowName(row) }}</span></span>
+          </label>
+        }
+        @if (row.document) {
+          <div class="cds-actions" role="group" [attr.aria-label]="'Actions for ' + rowName(row)">
+            <button #viewButton type="button" class="action-btn cds-view-btn" [id]="rid + '-view'"
+                    [attr.aria-label]="'View ' + rowName(row)"
+                    [attr.interestfor]="rid + '-view-tip'"
+                    [attr.style]="'anchor-name: --' + rid + '-view-tip'"
+                    (click)="viewDocument(row, viewButton)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="rid + '-view-tip'"
+                 [attr.style]="'position-anchor: --' + rid + '-view-tip'">View</div>
+            <button #deleteButton type="button" class="action-btn action-btn-danger cds-delete-btn" [id]="rid + '-delete'"
+                    [attr.aria-label]="'Delete ' + rowName(row)"
+                    [attr.aria-disabled]="busy ? 'true' : null"
+                    [attr.interestfor]="rid + '-delete-tip'"
+                    [attr.style]="'anchor-name: --' + rid + '-delete-tip'"
+                    (click)="requestDelete(row, deleteButton)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="rid + '-delete-tip'"
+                 [attr.style]="'position-anchor: --' + rid + '-delete-tip'">{{ busy ? busyReason : 'Delete' }}</div>
+          </div>
+        }
+      </div>
+    }
+  </li>
+</ng-template>
+
+<section class="cds" [attr.aria-labelledby]="headingId" [attr.aria-busy]="view?.state === 'loading' ? 'true' : null">
+  <h6 class="cds-heading" [id]="headingId" tabindex="-1">Documents of this comparison</h6>
+  <p class="cds-live visually-hidden" role="status" aria-live="polite">{{ statusMessage }}</p>
+
+  @switch (view?.state ?? 'loading') {
+    @case ('error') {
+      <p class="gh-field-error cds-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ view?.message || 'The documents of this comparison could not be listed.' }}</span>
+      </p>
+    }
+    @case ('loading') {
+      <p class="cds-note cds-loading">Looking up the documents already written…</p>
+    }
+    @default {
+      @for (group of view!.groups; track group.key) {
+        @if (group.heading !== null) {
+          <p class="cds-group-title" [id]="groupHeadingId(group)">{{ group.heading }}</p>
+          <ul class="cds-list" [attr.aria-labelledby]="groupHeadingId(group)">
+            @for (row of group.rows; track row.key) {
+              <ng-container [ngTemplateOutlet]="rowTemplate" [ngTemplateOutletContext]="{ $implicit: row }"></ng-container>
+            }
+          </ul>
+        } @else {
+          <ul class="cds-list" [attr.aria-labelledby]="headingId">
+            @for (row of group.rows; track row.key) {
+              <ng-container [ngTemplateOutlet]="rowTemplate" [ngTemplateOutletContext]="{ $implicit: row }"></ng-container>
+            }
+          </ul>
+        }
+      }
+
+      @if (otherSetCount > 0) {
+        <details class="gh-disclosure cds-other-sets">
+          <summary>Other model sets ({{ otherSetCount }})</summary>
+          <div class="gh-disclosure-body">
+            @for (set of view!.otherSets; track set.key) {
+              <div class="cds-set" [attr.data-set]="set.key">
+                <div class="cds-set-head">
+                  <p class="cds-group-title cds-set-title" [id]="setHeadingId(set)">{{ set.label }}</p>
+                  <button type="button" class="btn-link cds-choose-set"
+                          [attr.aria-disabled]="set.chooseRefusal ? 'true' : null"
+                          [attr.aria-describedby]="set.chooseRefusal ? setHeadingId(set) + '-refusal' : null"
+                          (click)="chooseSet(set)">Choose these models<span class="visually-hidden">: {{ set.label }}</span></button>
+                </div>
+                @if (set.chooseRefusal) {
+                  <p class="cds-note cds-set-refusal" [id]="setHeadingId(set) + '-refusal'">{{ set.chooseRefusal }}</p>
+                }
+                <ul class="cds-list" [attr.aria-labelledby]="setHeadingId(set)">
+                  @for (row of set.rows; track row.key) {
+                    <ng-container [ngTemplateOutlet]="rowTemplate" [ngTemplateOutletContext]="{ $implicit: row }"></ng-container>
+                  }
+                </ul>
+              </div>
+            }
+          </div>
+        </details>
+      }
+    }
+  }
+</section>
+
+<!-- DELETE CONFIRMATION -->
+<dialog #deleteDialog class="gh-dialog cds-delete-dialog" [attr.aria-labelledby]="idPrefix + '-delete-title'"
+        (cancel)="onDeleteDialogEvent($event)" (close)="onDeleteDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <h3 [id]="idPrefix + '-delete-title'">Delete Document</h3>
+    </div>
+    <div class="dialog-body">
+      @if (deleteTarget?.document; as target) {
+        <p class="cds-delete-text">
+          Delete <strong>{{ deleteTarget!.listItem?.title || (deleteTarget!.name + ' — ' + deleteTarget!.subjectLabel) }}</strong>,
+          written {{ formatUtc(target.createdAtUtc) }} {{ writerPhrase(target) }}? This cannot be undone. The runs are not affected.
+        </p>
+      }
+      @if (deleteError) {
+        <p class="gh-field-error cds-delete-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ deleteError }}</span>
+        </p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cds-delete-cancel" (click)="cancelDelete()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete cds-delete-confirm" [disabled]="deleting" (click)="confirmDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Delete Document
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- The PDF viewer's own dialog: its events stop at this wrapper. -->
+<div class="cds-nested" (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
+  <app-pdf-viewer-dialog (closed)="onViewerClosed()"></app-pdf-viewer-dialog>
+</div>

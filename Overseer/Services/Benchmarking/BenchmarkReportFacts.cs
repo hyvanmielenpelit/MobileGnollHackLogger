@@ -1872,6 +1872,76 @@ public static class BenchmarkReportFacts
     internal static int RankOf(double value, IReadOnlyList<double> values, bool higherIsBetter)
         => 1 + values.Count(v => higherIsBetter ? v > value : v < value);
 
+    /// <summary>One entry's place in a ranking by score whose 95 % intervals may overlap.</summary>
+    /// <param name="Rank">The rank of the entry's group: one more than the entries ranked above the group.</param>
+    /// <param name="Joint">The group holds more than this entry.</param>
+    /// <param name="GroupSize">The entries sharing the rank, this one included.</param>
+    public sealed record JointRank(int Rank, bool Joint, int GroupSize);
+
+    /// <summary>
+    /// Each entry's joint rank, highest score first. Joint means a transitive chain of neighbors in
+    /// score order (ties broken by key, ordinal): an entry joins the group of the entry just above it
+    /// when their intervals overlap (bounds touching counts) or their scores are equal, so A–B and B–C
+    /// overlapping make A, B and C one group even when A and C do not overlap. An entry without both
+    /// bounds overlaps only an equal score. Keys must be distinct.
+    /// </summary>
+    public static IReadOnlyDictionary<string, JointRank> JointRanks(
+        IReadOnlyList<(string Key, double Score, double? Lower, double? Upper)> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        if (entries.Select(e => e.Key).Distinct(StringComparer.Ordinal).Count() != entries.Count)
+        {
+            throw new ArgumentException("Every entry needs its own key.", nameof(entries));
+        }
+
+        var sorted = entries
+            .OrderByDescending(e => e.Score)
+            .ThenBy(e => e.Key, StringComparer.Ordinal)
+            .ToList();
+
+        var groups = new List<List<(string Key, double Score, double? Lower, double? Upper)>>();
+        foreach (var entry in sorted)
+        {
+            var last = groups.Count == 0 ? null : groups[^1];
+            if (last != null && Overlaps(last[^1], entry))
+            {
+                last.Add(entry);
+            }
+            else
+            {
+                groups.Add(new List<(string Key, double Score, double? Lower, double? Upper)> { entry });
+            }
+        }
+
+        var ranks = new Dictionary<string, JointRank>(StringComparer.Ordinal);
+        int above = 0;
+        foreach (var group in groups)
+        {
+            foreach (var entry in group)
+            {
+                ranks[entry.Key] = new JointRank(above + 1, group.Count > 1, group.Count);
+            }
+            above += group.Count;
+        }
+        return ranks;
+
+        static bool Overlaps((string Key, double Score, double? Lower, double? Upper) a, (string Key, double Score, double? Lower, double? Upper) b)
+            => a.Score.Equals(b.Score)
+               || (a.Lower is double aLower && a.Upper is double aUpper && b.Lower is double bLower && b.Upper is double bUpper
+                   && aLower <= bUpper && bLower <= aUpper);
+    }
+
+    /// <summary>
+    /// A rank as documents print it: <c>joint 1st of 2 (intervals overlap)</c> for a joint rank, else
+    /// <c>2nd of 3</c>; <paramref name="of"/> is the count of ranked entries.
+    /// </summary>
+    public static string JointRankText(JointRank rank, int of)
+    {
+        ArgumentNullException.ThrowIfNull(rank);
+        string text = BenchmarkReportFormat.Rank(rank.Rank, of);
+        return rank.Joint ? "joint " + text + " (intervals overlap)" : text;
+    }
+
     internal static double Median(IReadOnlyList<double> values)
     {
         var sorted = values.OrderBy(v => v).ToList();

@@ -46,6 +46,17 @@ public static class BenchmarkReportPackParser
         BenchmarkReportSlots.OverseerChat,
         BenchmarkReportSlots.BenchmarkSystem,
         BenchmarkReportSlots.ModelResult,
+        BenchmarkReportSlots.Overview,
+        BenchmarkReportSlots.WhichModel,
+        BenchmarkReportSlots.TradeOffs,
+        BenchmarkReportSlots.Reliability,
+        BenchmarkReportSlots.Results,
+        BenchmarkReportSlots.DimensionProfiles,
+        BenchmarkReportSlots.Frontier,
+        BenchmarkReportSlots.QuestionPatterns,
+        BenchmarkReportSlots.GraderReliability,
+        BenchmarkReportSlots.SharedGaps,
+        BenchmarkReportSlots.ModelGaps,
     };
 
     /// <summary>Never throws: every failure is a result with <see cref="BenchmarkReportParseResult.Error"/> set.</summary>
@@ -148,6 +159,20 @@ public static class BenchmarkReportPackParser
             },
             t => new BenchmarkReportLead { Text = t });
 
+        // A comparison-scope document's points per model; absent on a per-model document.
+        if (TryGet(root, "models", out var models) && models.ValueKind == JsonValueKind.Array)
+        {
+            output.Models = ReadList(
+                root,
+                "models",
+                e => new BenchmarkReportModelPoints
+                {
+                    Model = TryGet(e, "model", out var letter) ? ModelLetter(ReadString(letter)) : string.Empty,
+                    Points = ReadList(e, "points", p => ReadItem(p, new BenchmarkReportWriterItem()), t => new BenchmarkReportWriterItem { Text = t })
+                },
+                t => new BenchmarkReportModelPoints { Model = ModelLetter(t) });
+        }
+
         return output;
     }
 
@@ -199,6 +224,16 @@ public static class BenchmarkReportPackParser
 
         value = default;
         return false;
+    }
+
+    /// <summary><c>A</c> from <c>A</c>, <c>a</c>, <c>Model A</c> or <c>{{model:A}}</c>; anything else upper-cased.</summary>
+    private static string ModelLetter(string text)
+    {
+        string s = text.Trim();
+        if (s.StartsWith("{{", StringComparison.Ordinal) && s.EndsWith("}}", StringComparison.Ordinal)) s = s[2..^2].Trim();
+        if (s.StartsWith("model:", StringComparison.OrdinalIgnoreCase)) s = s["model:".Length..].Trim();
+        else if (s.StartsWith("model ", StringComparison.OrdinalIgnoreCase)) s = s["model ".Length..].Trim();
+        return s.ToUpperInvariant();
     }
 
     private static string NormalizeSlot(string key)

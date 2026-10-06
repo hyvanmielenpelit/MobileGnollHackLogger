@@ -80,32 +80,63 @@
   font-size: var(--text-secondary);
 }
 
-/* The documents as cards of name and description, one checkbox each. */
-.rp-documents-choice {
+/* The document scope: the segmented pair, with the info tip of the second after it. */
+.rp-scope {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
+  min-inline-size: 0;
+
+  .rp-scope-tabs {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+  }
 }
 
-.rp-audience {
-  gap: 10px;
-}
-
-.rp-audience-text {
+.rp-scope-panel {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 12px;
   min-inline-size: 0;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
 }
 
-.rp-audience-name {
-  font-weight: 600;
-  color: #e4e4e7;
+.rp-models-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.rp-audience-desc {
-  font-size: var(--text-secondary);
-  color: #a1a1aa;
+.rp-models-line,
+.rp-letters {
+  margin: 0;
+}
+
+.rp-models-cap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+
+  svg {
+    flex: none;
+    margin-top: 2px;
+  }
+}
+
+.rp-layout-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+
+  .rp-layout-preview-note:empty {
+    display: none;
+  }
 }
 
 .rp-charts-choice {
@@ -119,7 +150,8 @@
   }
 }
 
-.rp-same-provider {
+.rp-same-provider,
+.rp-context-warning {
   margin-bottom: 0;
 }
 
@@ -198,6 +230,11 @@
   column-gap: 12px;
   overflow-x: auto;
   font-size: var(--text-secondary);
+
+  /* A per-model job names each row's model first. */
+  &.has-model {
+    grid-template-columns: minmax(8rem, 1.6fr) minmax(10rem, 2fr) minmax(8rem, 1.4fr) minmax(4.5rem, auto) minmax(4.5rem, auto) minmax(7rem, 1.2fr);
+  }
 }
 
 .rp-doc-progress-head,
@@ -228,7 +265,8 @@
   color: #d4d4d8;
 }
 
-.rp-doc-name {
+.rp-doc-name,
+.rp-doc-model {
   font-weight: 500;
   color: #e4e4e7;
 }

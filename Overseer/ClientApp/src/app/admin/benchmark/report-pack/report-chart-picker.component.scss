@@ -139,3 +139,80 @@
 .rcp-row.is-unavailable .rcp-figure-title {
   color: #71717a;
 }
+
+/* With a layout, each row ends in its width, which wraps below the checkbox where the row is narrow. */
+.rcp-row:has(.rcp-width) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 12px;
+
+  .rcp-cell {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
+  }
+
+  .rcp-refused {
+    flex-basis: 100%;
+    margin: 0;
+  }
+}
+
+.rcp-width {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.rcp-width-label {
+  color: #a1a1aa;
+}
+
+.rcp-width-select {
+  inline-size: auto;
+  min-inline-size: 8.5rem;
+}
+
+.rcp-layout {
+  margin-top: 4px;
+}
+
+.rcp-layout-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label {
+    color: #e4e4e7;
+    font-weight: 500;
+  }
+
+  .rcp-refused {
+    margin: 0;
+  }
+}
+
+.rcp-toggle {
+  gap: 8px;
+}
+
+.rcp-refusals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rcp-layout-actions:empty {
+  display: none;
+}

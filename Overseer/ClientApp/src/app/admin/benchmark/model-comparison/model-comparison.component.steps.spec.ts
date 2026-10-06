@@ -5,13 +5,25 @@ import { BenchmarkModelComparisonEntryDto } from './model-comparison.models';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { BehaviorSubject } from 'rxjs';
 import { SystemAlert } from '../../../services/admin-alert.service';
-import { BenchmarkReportAudience, BenchmarkReportDocumentListItemDto } from '../../../services/admin-benchmark.service';
 import {
+  BenchmarkComparisonDto,
+  BenchmarkReportAudience,
+  BenchmarkReportDocumentListItemDto,
+  BenchmarkReportScope
+} from '../../../services/admin-benchmark.service';
+import {
+  DEFAULT_CHART_LAYOUT_SETTINGS,
   DEFAULT_CHART_SELECTION,
+  DEFAULT_DOCUMENT_CHART_LAYOUT,
   REPORT_CHART_STORAGE_KEY,
+  ReportChartDocumentLayout,
   ReportChartPublishResult,
-  ReportChartPublisher
+  ReportChartPublisher,
+  printFigureAppearance
 } from '../report-pack/report-charts';
+import { resolveFigureTheme } from './figure-theme';
+import type { ResolvedFigureTheme } from './figure-theme';
+import type { FigureChrome } from './figure-chrome';
 import { DownloadCenterPanelComponent } from '../download-center/download-center-panel.component';
 import {
   ReportPackPanelStubComponent, buildEntry, buildExcludedEntry, buildDto, render, comparableSet, textOf,
@@ -267,7 +279,14 @@ describe('ModelComparisonComponent', () => {
       expect(panel.context).toBe(context);
       expect(panel.chartSelection).toEqual(DEFAULT_CHART_SELECTION);
       expect(panel.chartsAvailable).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 'p2-profile', 's1-quality-speed', 's2-quality-cost', 's3-speed-cost']);
-      // The default theme is dark, which prints badly: the advisory says so.
+      // The documents draw Light, for print by default, so step 2's dark default theme never reaches them.
+      expect(panel.chartAdvisory).toBeNull();
+      // A document type whose charts take step 2's theme prints the dark one badly: the advisory says so.
+      component.onChartLayoutChange({
+        ...DEFAULT_CHART_LAYOUT_SETTINGS,
+        [BenchmarkReportAudience.InternalBrief]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, theme: 'asInStep2' }
+      });
+      fixture.detectChanges();
       expect(panel.chartAdvisory).toContain('dark theme');
       expect(panel.chartStorageMissing).toBe(false);
 
@@ -278,6 +297,12 @@ describe('ModelComparisonComponent', () => {
     it('says the chart advisory only for a dark theme, or light text on a transparent background', () => {
       render(buildDto(comparableSet(3)), 2);
       const appearance = component.figureStyle.appearance;
+      expect(component.chartAdvisory, 'Light, for print: step 2\'s theme does not reach the documents').toBeNull();
+      component.onChartLayoutChange({
+        ...DEFAULT_CHART_LAYOUT_SETTINGS,
+        [BenchmarkReportAudience.ExecutiveSummary]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, theme: 'asInStep2' }
+      });
+      expect(component.chartAdvisory).toContain('dark theme');
 
       component.onFigureStyleChange({ ...component.figureStyle, appearance: { ...appearance, theme: 'light' } });
       expect(component.chartAdvisory).toBeNull();
@@ -330,6 +355,8 @@ describe('ModelComparisonComponent', () => {
       expect(selection).toEqual(DEFAULT_CHART_SELECTION);
       expect(typeof composer).toBe('function');
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
+      // The layout the server places the charts by goes with them.
+      expect(vi.mocked(publish).mock.lastCall![5]).toEqual(DEFAULT_CHART_LAYOUT_SETTINGS);
       expect(component.chartStatus[41]).toEqual({ state: 'done', count: 4 });
       fixture.detectChanges();
       expect(reportPanel()!.chartStatus[41]).toEqual({ state: 'done', count: 4 });
@@ -453,7 +480,8 @@ describe('ModelComparisonComponent', () => {
         component.applyContainerWidth(2000);
         expect(component.orientation).toBe('vertical');
 
-        // 1800 px at 175 % text composes about 549 layout px wide: below the 720 px breakpoint.
+        // As in step 2, under step 2's Automatic: a full column at 8 pt labels composes about 663 layout
+        // px wide, below the 720 px breakpoint.
         expect(component.documentChartOrientation('p1a-quality')).toBe('horizontal');
 
         component.onFigureStyleChange({ ...component.figureStyle, bar: { ...component.figureStyle.bar, orientation: 'vertical' } });
@@ -461,13 +489,30 @@ describe('ModelComparisonComponent', () => {
         expect(component.orientation).toBe('vertical');
       });
 
+      it('takes the document type\'s own orientation over step 2\'s, and resolves Automatic at its label size', () => {
+        render(buildDto(namedSet()), 2);
+        const { ExecutiveSummary, TechnicalReport } = BenchmarkReportAudience;
+        component.onChartLayoutChange({
+          ...DEFAULT_CHART_LAYOUT_SETTINGS,
+          [ExecutiveSummary]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, orientation: 'vertical' },
+          // 481.9 pt × 11 / 7 pt = 757 layout px: at or above the breakpoint.
+          [TechnicalReport]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7 }
+        });
+
+        expect(component.figureStyle.bar.orientation).toBe('auto');
+        expect(component.documentChartOrientation('p1a-quality', ExecutiveSummary)).toBe('vertical');
+        expect(component.documentChartOrientation('p1a-quality', TechnicalReport)).toBe('vertical');
+        expect(component.documentChartOrientation('p1a-quality', BenchmarkReportAudience.InternalBrief)).toBe('horizontal');
+      });
+
       it('composes a named chart at the document size with its caption and alt text', async () => {
         render(buildDto(namedSet()), 2);
 
         const chart = await component.composeReportChart('p1a-quality', { kind: 'named' });
 
-        expect(chart.widthPx).toBe(1800);
-        expect(chart.heightPx).toBe(1125);
+        // A full A4 column at 300 dpi, 16:10.
+        expect(chart.widthPx).toBe(2008);
+        expect(chart.heightPx).toBe(1255);
         expect(chart.png.type).toBe('image/png');
         expect(chart.png.size).toBeGreaterThan(0);
         expect(chart.caption).toContain('Drawn from the comparison computed 2026-09-07 12:00 UTC.');
@@ -483,7 +528,7 @@ describe('ModelComparisonComponent', () => {
           kind: 'anonymized', subjectKey: 'run:1', letters: { 'run:2': 'A', 'run:3': 'B' }
         });
 
-        expect(chart.widthPx).toBe(1800);
+        expect(chart.widthPx).toBe(2008);
         expect(chart.altText).toContain('Gemini Orchard (medium)');
         expect(chart.altText).toContain('Model A (medium)');
         expect(chart.altText).toContain('Model B (medium)');
@@ -497,6 +542,356 @@ describe('ModelComparisonComponent', () => {
         render(buildDto(namedSet().slice(0, 2)), 2);
 
         await expect(component.composeReportChart('p2-profile', { kind: 'named' })).rejects.toThrowError(/too few models/);
+      });
+
+      it('composes a figure at its document type\'s width', async () => {
+        render(buildDto(namedSet()), 2);
+        const { ExecutiveSummary } = BenchmarkReportAudience;
+        component.onChartLayoutChange({
+          ...DEFAULT_CHART_LAYOUT_SETTINGS,
+          [ExecutiveSummary]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { 'p1a-quality': 'twoThirds' } }
+        });
+
+        const chart = await component.composeReportChart('p1a-quality', { kind: 'named' }, ExecutiveSummary);
+
+        // Two thirds of the A4 column, 321.3 pt, at 300 dpi; 4:3 at least, taller where the chrome needs it.
+        expect(chart.widthPx).toBe(1339);
+        expect(chart.heightPx).toBeGreaterThanOrEqual(1004);
+      });
+
+      it('composes a half-width figure at 8 pt, never refused for its height', async () => {
+        render(buildDto(namedSet()), 2);
+        const { InternalBrief } = BenchmarkReportAudience;
+        component.onChartLayoutChange({
+          ...DEFAULT_CHART_LAYOUT_SETTINGS,
+          [InternalBrief]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, heading: 'titleAndBadges', widths: { 'p1a-quality': 'half', 's1-quality-speed': 'half' } }
+        });
+
+        for (const key of ['p1a-quality', 's1-quality-speed'] as const) {
+          const chart = await component.composeReportChart(key, { kind: 'named' }, InternalBrief);
+          // Half the A4 column, 241.0 pt, at 300 dpi; square at least.
+          expect(chart.widthPx, key).toBe(1004);
+          expect(chart.heightPx, key).toBeGreaterThanOrEqual(1004);
+        }
+      });
+
+      it('draws Light, for print in the light theme, and step 2\'s theme As in step 2', () => {
+        render(buildDto(namedSet()), 2);
+        const internals = component as unknown as {
+          documentLook(layout: ReportChartDocumentLayout): { theme: ResolvedFigureTheme; style: { appearance: unknown } };
+        };
+
+        const print = internals.documentLook(DEFAULT_DOCUMENT_CHART_LAYOUT);
+        expect(print.style.appearance).toEqual(printFigureAppearance(component.figureStyle.appearance));
+        expect(print.theme).toEqual(resolveFigureTheme(printFigureAppearance(component.figureStyle.appearance)));
+
+        const step2 = internals.documentLook({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, theme: 'asInStep2' });
+        expect(step2.theme).toBe(component.figureTheme);
+        expect(step2.style).toBe(component.figureStyle);
+      });
+
+      it('leaves the heading to the caption, or keeps the title alone, or all of it, as the layout says', () => {
+        render(buildDto(namedSet()), 2);
+        const card = component.scatterCards[0];
+        const internals = component as unknown as {
+          documentChrome(card: unknown, notes: unknown[], layout: ReportChartDocumentLayout, theme: ResolvedFigureTheme, logo: null):
+            { chrome: FigureChrome; theme: ResolvedFigureTheme; logo: unknown };
+        };
+        const theme = resolveFigureTheme(printFigureAppearance(component.figureStyle.appearance));
+        const chromeFor = (heading: ReportChartDocumentLayout['heading']) =>
+          internals.documentChrome(card, [], { ...DEFAULT_DOCUMENT_CHART_LAYOUT, heading }, theme, null);
+
+        const none = chromeFor('none');
+        expect(none.chrome.title).toBe('');
+        expect(none.chrome.badges).toEqual([]);
+        expect(none.chrome.direction).toBeUndefined();
+        expect(none.chrome.detail).toBe('');
+        expect(none.chrome.key).toEqual(card.chrome.key);
+        expect(none.theme).toBe(theme);
+        expect(none.logo).toBeNull();
+
+        const title = chromeFor('title');
+        expect(title.chrome.title).toBe(card.chrome.title);
+        expect(title.chrome.badges).toEqual([]);
+
+        const all = chromeFor('titleAndBadges');
+        expect(all.chrome.title).toBe(card.chrome.title);
+        expect(all.chrome.badges).toEqual(card.chrome.badges);
+        expect(all.chrome.direction).toEqual(card.chrome.direction);
+      });
+
+      it('draws a comparison-scope document\'s named chart over its covered entries only', async () => {
+        render(buildDto(namedSet()), 2);
+
+        const chart = await component.composeReportChart('p1a-quality', { kind: 'named', coveredKeys: ['run:1', 'run:2'] });
+
+        expect(chart.altText).toContain('Gemini Orchard (medium)');
+        expect(chart.altText).toContain('Claude Harbor (medium)');
+        expect(chart.altText).not.toContain('GPT Lantern');
+        expect(chart.caption).not.toContain('GPT Lantern');
+      });
+
+      it('letters every covered entry of a comparison-scope document\'s anonymized chart, and drops the rest', async () => {
+        render(buildDto(namedSet()), 2);
+
+        const chart = await component.composeReportChart('p1a-quality', {
+          kind: 'anonymized', subjectKey: 'comparison:12', letters: { 'run:1': 'A', 'run:3': 'B' }, coveredKeys: ['run:1', 'run:3']
+        });
+
+        expect(chart.altText).toContain('Model A (medium)');
+        expect(chart.altText).toContain('Model B (medium)');
+        for (const name of ['Gemini Orchard', 'Claude Harbor', 'GPT Lantern', 'gemini-orchard', 'claude-harbor', 'gpt-lantern']) {
+          expect(chart.altText, name).not.toContain(name);
+          expect(chart.caption, name).not.toContain(name);
+        }
+      });
+    });
+
+    describe('comparison identity', () => {
+      const IDENTIFY_URL = '/api/admin/benchmark/model-comparisons/identify';
+
+      function identity(overrides: Partial<BenchmarkComparisonDto> = {}): BenchmarkComparisonDto {
+        return {
+          id: 12,
+          name: 'Model 1 vs Model 2 vs Model 3',
+          customName: null,
+          defaultName: 'Model 1 vs Model 2 vs Model 3',
+          entryCount: 3,
+          subjectKind: 'Runs',
+          entryKeys: ['run:1', 'run:2', 'run:3'],
+          createdAtUtc: '2026-10-06T10:00:00Z',
+          renamedAtUtc: null,
+          ...overrides
+        };
+      }
+
+      function identityLine(): HTMLElement | null {
+        return (fixture.nativeElement as HTMLElement).querySelector('.mc-wizard-header .mc-identity');
+      }
+
+      function renameButton(): HTMLButtonElement {
+        return (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('#mc-rename-comparison')!;
+      }
+
+      it('numbers the comparison after Compare and shows Comparison #12 — name with Rename comparison', () => {
+        render(buildDto(comparableSet(3)), 2);
+
+        const request = http.expectOne(IDENTIFY_URL);
+        expect(request.request.method).toBe('POST');
+        expect(request.request.body).toEqual({ runIds: [1, 2, 3], groupIds: [], batteryRunIds: [] });
+        expect(identityLine()).toBeNull();
+        request.flush(identity());
+        fixture.detectChanges();
+
+        expect(identityLine()!.querySelector('.mc-identity-name')!.textContent!.trim()).toBe('Comparison #12 — Model 1 vs Model 2 vs Model 3');
+        const button = renameButton();
+        expect(button.classList).toContain('action-btn');
+        expect(button.getAttribute('aria-label')).toBe('Rename comparison #12');
+        expect(button.getAttribute('title')).toBeNull();
+        const tipId = button.getAttribute('interestfor')!;
+        const tip = (fixture.nativeElement as HTMLElement).querySelector(`#${tipId}`)!;
+        expect(tip.getAttribute('popover')).toBe('hint');
+        expect(tip.textContent!.trim()).toBe('Rename comparison');
+        expect(button.getAttribute('style')).toContain(`anchor-name: --${tipId}`);
+        expect(component.currentComparison).toEqual({ id: 12, name: 'Model 1 vs Model 2 vs Model 3', entryKeys: ['run:1', 'run:2', 'run:3'] });
+      });
+
+      it('asks again only for another entry set, and drops an answer for an older one', () => {
+        const group = buildEntry({ key: 'group:4', sourceKind: 'Group', sourceId: 4, runIds: [7, 8], label: 'Group 4' });
+        render(buildDto(comparableSet(3)), 2);
+        const first = http.expectOne(IDENTIFY_URL);
+        first.flush(identity());
+
+        // A recompute of the same entries (another pricing basis) keeps the identity.
+        render(buildDto(comparableSet(3), { pricingBasis: 'AsRun' }), 2);
+        http.expectNone(IDENTIFY_URL);
+        expect(component.currentComparison?.id).toBe(12);
+
+        render(buildDto([...comparableSet(2), group]), 2);
+        const second = http.expectOne(IDENTIFY_URL);
+        expect(second.request.body).toEqual({ runIds: [1, 2], groupIds: [4], batteryRunIds: [] });
+        expect(component.currentComparison, 'no number while the new set is being identified').toBeNull();
+        expect(identityLine()).toBeNull();
+
+        render(buildDto(comparableSet(3)), 2);
+        const third = http.expectOne(IDENTIFY_URL);
+        expect(second.cancelled, 'the request for the older set is dropped').toBe(true);
+        third.flush(identity());
+        expect(component.currentComparison?.id).toBe(12);
+      });
+
+      it('never blocks the wizard when identify fails: the header omits the number', () => {
+        render(buildDto(comparableSet(3)), 2);
+        http.expectOne(IDENTIFY_URL).flush({ error: 'No.' }, { status: 500, statusText: 'Server Error' });
+        fixture.detectChanges();
+
+        expect(identityLine()).toBeNull();
+        expect(component.comparisonIdentity).toBeNull();
+        expect(component.isStepReachable(3)).toBe(true);
+        component.goToStep(3);
+        expect(component.step).toBe(3);
+      });
+
+      it('renames the comparison in the nested dialog, and the header and steps 3 and 4 take the new name', async () => {
+        render(buildDto(comparableSet(3)), 2);
+        http.expectOne(IDENTIFY_URL).flush(identity());
+        fixture.detectChanges();
+
+        expect((fixture.nativeElement as HTMLElement).querySelector('dialog.mc-rename-dialog')).toBeNull();
+        renameButton().click();
+        fixture.detectChanges();
+        const dialog = (fixture.nativeElement as HTMLElement).querySelector<HTMLDialogElement>('dialog.mc-rename-dialog')!;
+        expect(dialog.open).toBe(true);
+        const input = dialog.querySelector<HTMLInputElement>('#mc-rename-name')!;
+        expect(input.value).toBe('Model 1 vs Model 2 vs Model 3');
+        input.value = 'Flagships, October';
+        input.dispatchEvent(new Event('input'));
+        dialog.querySelector<HTMLButtonElement>('.mc-rename-save')!.click();
+        fixture.detectChanges();
+
+        const patch = http.expectOne('/api/admin/benchmark/model-comparisons/12');
+        expect(patch.request.method).toBe('PATCH');
+        expect(patch.request.body).toEqual({ name: 'Flagships, October' });
+        patch.flush(identity({ name: 'Flagships, October', customName: 'Flagships, October', renamedAtUtc: '2026-10-06T11:00:00Z' }));
+        fixture.detectChanges();
+
+        expect(dialog.open).toBe(false);
+        expect(identityLine()!.textContent).toContain('Comparison #12 — Flagships, October');
+        expect(component.currentComparison).toEqual({ id: 12, name: 'Flagships, October', entryKeys: ['run:1', 'run:2', 'run:3'] });
+        // The close event is queued after close(): focus returns to Rename comparison once it fires.
+        await until(() => document.activeElement === renameButton());
+        expect(document.activeElement).toBe(renameButton());
+        // Rendered only while open: once closed, the wizard holds no rename dialog.
+        fixture.detectChanges();
+        expect((fixture.nativeElement as HTMLElement).querySelector('dialog.mc-rename-dialog')).toBeNull();
+      });
+
+      it('lists step 4 by the comparison\'s number, and by its entries for documents written before, under its number and name', () => {
+        render(buildDto(comparableSet(3)), 2);
+        http.expectOne(IDENTIFY_URL).flush(identity());
+        component.goToStep(4);
+        fixture.detectChanges();
+
+        const entryKeys = component.comparison!.entries.map(entry => entry.key);
+        const lists = http.match(r => r.method === 'GET' && r.url === '/api/admin/benchmark/report-documents');
+        expect(lists.length).toBe(2);
+        const byNumber = lists.find(list => list.request.params.get('comparisonId') === '12')!;
+        const byEntries = lists.find(list => list.request.params.has('comparison'))!;
+        expect(byNumber.request.params.get('origin')).toBe('reportPack');
+        expect(byEntries.request.params.get('comparison')).toBe(entryKeys.join(','));
+        byNumber.flush([reportDocument(21, { comparisonId: 12, comparisonName: 'Model 1 vs Model 2 vs Model 3' })]);
+        byEntries.flush([reportDocument(21, { comparisonId: 12 }), reportDocument(22, { comparisonId: null })]);
+        fixture.detectChanges();
+
+        const panel = documentsPanel()!;
+        expect(panel.context).toEqual(expect.objectContaining({
+          kind: 'library',
+          scope: { kind: 'comparison', comparisonId: 12, name: 'Model 1 vs Model 2 vs Model 3', entryKeys }
+        }));
+        expect(panel.rows.map(row => row.key).sort()).toEqual(['doc:21', 'doc:22']);
+        const heading = (): string =>
+          ((fixture.nativeElement as HTMLElement).querySelector('#mc-step-panel-4 #mc-dc-documents-title')?.textContent ?? '').trim();
+        expect(heading()).toBe('Documents of Comparison #12 — Model 1 vs Model 2 vs Model 3');
+        expect(panel.facets.map(facet => facet.column)).not.toContain('comparison');
+
+        // A rename changes the heading; step 4 keeps its rows and lists nothing again.
+        renameButton().click();
+        fixture.detectChanges();
+        const dialog = (fixture.nativeElement as HTMLElement).querySelector<HTMLDialogElement>('dialog.mc-rename-dialog')!;
+        const input = dialog.querySelector<HTMLInputElement>('#mc-rename-name')!;
+        input.value = 'Flagships, October';
+        input.dispatchEvent(new Event('input'));
+        dialog.querySelector<HTMLButtonElement>('.mc-rename-save')!.click();
+        fixture.detectChanges();
+        http.expectOne('/api/admin/benchmark/model-comparisons/12')
+          .flush(identity({ name: 'Flagships, October', customName: 'Flagships, October', renamedAtUtc: '2026-10-06T11:00:00Z' }));
+        fixture.detectChanges();
+
+        http.expectNone(r => r.url === '/api/admin/benchmark/report-documents');
+        expect(heading()).toBe('Documents of Comparison #12 — Flagships, October');
+        expect(documentsPanel()).toBe(panel);
+        expect(panel.rows.map(row => row.key).sort()).toEqual(['doc:21', 'doc:22']);
+      });
+
+      it('feeds step 3 the number, the chart layout and the composer, and follows its layout and deletes', async () => {
+        render(buildDto(comparableSet(3)), 3);
+        const panel = reportPanel()!;
+        expect(panel.comparisonId).toBeNull();
+        http.expectOne(IDENTIFY_URL).flush(identity());
+        fixture.detectChanges();
+        expect(panel.comparisonId).toBe(12);
+        expect(panel.chartLayout).toBe(component.chartLayout);
+
+        // The layout step 3 changes is the wizard's, stored with the selection.
+        const layout = {
+          ...DEFAULT_CHART_LAYOUT_SETTINGS,
+          [BenchmarkReportAudience.ExecutiveSummary]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 9 }
+        };
+        panel.chartLayoutChange.emit(layout);
+        fixture.detectChanges();
+        expect(component.chartLayout).toBe(layout);
+        expect(panel.chartLayout).toBe(layout);
+        expect(JSON.parse(localStorage.getItem(REPORT_CHART_STORAGE_KEY)!).layout[BenchmarkReportAudience.ExecutiveSummary].labelPt).toBe(9);
+
+        // Preview layout composes through the wizard's own composeDocumentCharts.
+        const compose = vi.spyOn(component, 'composeDocumentCharts').mockResolvedValue({ charts: [], failed: [], layout: { version: 1, figures: [], maxHeightShare: 0.6 } });
+        const composer = panel.documentChartsComposer as (audience: BenchmarkReportAudience, variant: unknown, scope: unknown) => Promise<unknown>;
+        await composer(BenchmarkReportAudience.TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
+        expect(compose).toHaveBeenCalledWith(BenchmarkReportAudience.TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
+
+        // A delete on step 3 makes step 4 list afresh.
+        const token = component.documentsReloadToken;
+        panel.documentsChanged.emit();
+        expect(component.documentsReloadToken).toBe(token + 1);
+      });
+
+      it('matches a document to the comparison by its number, and a legacy one by its entries', () => {
+        render(buildDto(comparableSet(3)), 2);
+        http.expectOne(IDENTIFY_URL).flush(identity());
+        const actions = component.documentChartActions!;
+
+        expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonId: 12 }))).toBe(true);
+        // Numbered for another comparison: no match, though its entries would match.
+        expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonId: 13 }))).toBe(false);
+        // A comparison-scope document of this comparison.
+        expect(actions.comparisonKeyMatches(reportDocument(1, {
+          comparisonId: 12, scope: BenchmarkReportScope.Comparison, subjectKey: 'comparison:12', peerLetters: { 'run:1': 'A', 'run:2': 'B', 'run:3': 'C' }
+        }))).toBe(true);
+        // A legacy document without a number: by its entry set, as before.
+        expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonId: null }))).toBe(true);
+        expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonId: null, comparisonEntryCount: 4 }))).toBe(false);
+      });
+
+      it('charts a written comparison-scope document over its covered entries', async () => {
+        const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ published: [{ documentId: 51, chartCount: 2 }] }));
+        render(buildDto(comparableSet(3)), 3);
+        http.expectOne(IDENTIFY_URL).flush(identity());
+
+        reportPanel()!.documentWritten.emit({
+          audience: BenchmarkReportAudience.ExecutiveSummary, status: 'Completed', documentId: 51, errorMessage: null, modelCalls: 1
+        });
+        http.expectOne('/api/admin/benchmark/report-documents/51').flush(reportDocument(51, {
+          comparisonId: 12,
+          scope: BenchmarkReportScope.Comparison,
+          subjectKey: 'comparison:12/0123456789abcdef',
+          peerCount: 0,
+          peerLetters: { 'run:1': 'A', 'run:3': 'B' },
+          coveredModels: [
+            { entryKey: 'run:1', label: 'Model 1', provider: 'Google' },
+            { entryKey: 'run:3', label: 'Model 3', provider: 'Google' }
+          ]
+        }));
+        await until(() => component.chartStatus[51]?.state === 'done');
+
+        const [targets] = vi.mocked(publish).mock.lastCall!;
+        expect(targets).toEqual([{
+          documentId: 51,
+          audience: BenchmarkReportAudience.ExecutiveSummary,
+          subjectKey: 'comparison:12/0123456789abcdef',
+          peerLetters: { 'run:1': 'A', 'run:3': 'B' },
+          label: 'Executive Summary 51',
+          coveredKeys: ['run:1', 'run:3']
+        }]);
       });
     });
   });

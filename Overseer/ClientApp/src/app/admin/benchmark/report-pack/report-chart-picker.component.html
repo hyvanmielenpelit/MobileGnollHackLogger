@@ -65,9 +65,106 @@
                 }
               </span>
             </label>
+            @if (layout) {
+              <!-- A refused width stays offered, aria-disabled, its reason in the Layout disclosure;
+                   choosing it keeps the current width and says why. -->
+              <span class="rcp-width">
+                <label class="rcp-width-label" [for]="widthId(column, row)">Width</label>
+                <select class="gh-input rcp-width-select" [id]="widthId(column, row)" [attr.data-figure]="row.key"
+                        [attr.aria-label]="widthName(column, row)"
+                        [attr.aria-describedby]="widthDescribedBy(column, row)"
+                        (change)="onWidthChange($event, column, row)">
+                  @for (option of widthOptions; track option.value) {
+                    <option [value]="option.value" [selected]="widthOf(column, row) === option.value"
+                            [attr.aria-disabled]="widthRefusal(column, option.value) ? 'true' : null">{{ option.label }}{{ widthRefusal(column, option.value) ? ' (does not fit)' : '' }}</option>
+                  }
+                </select>
+              </span>
+              @if (refusedChoiceText(widthId(column, row)); as refused) {
+                <p class="rcp-reason rcp-refused" role="status" [id]="widthId(column, row) + '-refused'">{{ refused }}</p>
+              }
+            }
           </li>
         }
       </ul>
+      @if (layout) {
+        <details class="gh-disclosure rcp-layout" [attr.data-audience]="column.audience">
+          <summary>Layout<span class="visually-hidden"> of the charts in the {{ column.label }}</span></summary>
+          <div class="gh-disclosure-body rcp-layout-body">
+            <div class="rcp-field">
+              <label [for]="layoutFieldId(column, 'orientation')">Bar orientation</label>
+              <select class="gh-input" [id]="layoutFieldId(column, 'orientation')"
+                      (change)="onLayoutSelect($event, column, 'orientation')">
+                @for (option of orientationOptions; track option.value) {
+                  <option [value]="option.value" [selected]="layoutOf(column).orientation === option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+            <label class="checkbox-label align-start rcp-toggle">
+              <input type="checkbox" [id]="layoutFieldId(column, 'sideBySide')"
+                     [checked]="layoutOf(column).sideBySide" (change)="onLayoutToggle($event, column, 'sideBySide')">
+              <span>Side by side: consecutive half-width charts in one section form a row of two</span>
+            </label>
+            <div class="rcp-field">
+              <label [for]="layoutFieldId(column, 'label')">Label size</label>
+              <select class="gh-input" [id]="layoutFieldId(column, 'label')"
+                      [attr.aria-describedby]="labelDescribedBy(column)"
+                      (change)="onLabelSizeChange($event, column)">
+                @for (size of labelSizes; track size) {
+                  <option [value]="size" [selected]="layoutOf(column).labelPt === size"
+                          [attr.aria-disabled]="labelSizeRefusal(column, size) ? 'true' : null">{{ formatPoints(size) }} pt{{ labelSizeRefusal(column, size) ? ' (does not fit)' : '' }}</option>
+                }
+              </select>
+              @if (refusedChoiceText(layoutFieldId(column, 'label')); as refused) {
+                <p class="rcp-reason rcp-refused" role="status" [id]="layoutFieldId(column, 'label') + '-refused'">{{ refused }}</p>
+              }
+            </div>
+            <div class="rcp-field">
+              <label [for]="layoutFieldId(column, 'maxHeight')">Maximum height</label>
+              <select class="gh-input" [id]="layoutFieldId(column, 'maxHeight')"
+                      (change)="onLayoutSelect($event, column, 'maxHeightPercent')">
+                @for (percent of maxHeightPercents; track percent) {
+                  <option [value]="percent" [selected]="layoutOf(column).maxHeightPercent === percent">{{ percent }}% of the page</option>
+                }
+              </select>
+            </div>
+            <div class="rcp-field">
+              <label [for]="layoutFieldId(column, 'heading')">Heading inside the chart</label>
+              <select class="gh-input" [id]="layoutFieldId(column, 'heading')"
+                      (change)="onLayoutSelect($event, column, 'heading')">
+                @for (option of headingOptions; track option.value) {
+                  <option [value]="option.value" [selected]="layoutOf(column).heading === option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+            <label class="checkbox-label rcp-toggle">
+              <input type="checkbox" [id]="layoutFieldId(column, 'logo')"
+                     [checked]="layoutOf(column).logo" (change)="onLayoutToggle($event, column, 'logo')">
+              <span>GnollBench logo</span>
+            </label>
+            <div class="rcp-field">
+              <label [for]="layoutFieldId(column, 'theme')">Theme</label>
+              <select class="gh-input" [id]="layoutFieldId(column, 'theme')"
+                      (change)="onLayoutSelect($event, column, 'theme')">
+                @for (option of themeOptions; track option.value) {
+                  <option [value]="option.value" [selected]="layoutOf(column).theme === option.value">{{ option.label }}</option>
+                }
+              </select>
+            </div>
+            @let refusals = layoutRefusals(column);
+            @if (refusals.length > 0) {
+              <ul class="rcp-refusals" role="list" aria-label="Choices that do not fit">
+                @for (refusal of refusals; track refusal.id) {
+                  <li class="rcp-reason" [id]="refusal.id">{{ refusal.text }}</li>
+                }
+              </ul>
+            }
+            <div class="rcp-layout-actions">
+              <ng-content select="[rcp-layout-actions]"></ng-content>
+            </div>
+          </div>
+        </details>
+      }
     </div>
   }
 </div>

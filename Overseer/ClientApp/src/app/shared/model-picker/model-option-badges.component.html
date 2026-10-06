@@ -1,0 +1,19 @@
+<!-- Each badge carries a visually-hidden prefix: a bare MAX or PRO means nothing read aloud. -->
+@if (model.thinkingLevel) {
+  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+}
+@if (showReasoningBadge(model.reasoningMode)) {
+  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ model.reasoningMode }}</span>
+}
+@if (model.provider) {
+  <app-provider-badge [provider]="model.provider"></app-provider-badge>
+}
+@if (showPrice && model.effectiveInputPricePerMillion != null) {
+  <span class="price-badge"><span class="visually-hidden">price </span>{{ formatPrice(model) }}</span>
+}
+@if (showParallel && model.parallelExecutionMode === 0) {
+  <span class="parallel-badge badge-sequential"><span class="visually-hidden">parallel execution </span>Sequential<span class="visually-hidden">, disabled for this key</span></span>
+}
+@if (showParallel && model.parallelExecutionMode === 1) {
+  <span class="parallel-badge badge-on-request"><span class="visually-hidden">parallel execution </span>On request<span class="visually-hidden"> for this key</span></span>
+}

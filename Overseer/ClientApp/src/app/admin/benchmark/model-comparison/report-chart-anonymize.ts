@@ -48,8 +48,51 @@ export function anonymizeComparisonForSubject(
   subjectKey: string,
   letters: Readonly<Record<string, string>>
 ): BenchmarkModelComparisonDto {
+  return anonymizeComparison(dto, subjectKey, letters);
+}
+
+/**
+ * The comparison as an anonymized comparison-scope document draws it: every entry the document
+ * covers is *Model X* by `letters` (entry key → letter, the covered set's letters), drawn in the
+ * neutral gray, and every other entry is removed. No entry keeps its name, provider or model id, and
+ * free text naming any of them is rewritten as in {@link anonymizeComparisonForSubject}. Pure; the
+ * input is never modified.
+ */
+export function anonymizeComparisonForAll(
+  dto: BenchmarkModelComparisonDto,
+  letters: Readonly<Record<string, string>>
+): BenchmarkModelComparisonDto {
+  return anonymizeComparison(dto, null, letters);
+}
+
+/**
+ * A copy holding only the entries `keys` names, with the baseline keys and the counts recomputed and
+ * the judge-family diagnostics, which name every model, dropped. Names are kept. Pure.
+ */
+export function restrictComparisonToEntries(
+  dto: BenchmarkModelComparisonDto,
+  keys: readonly string[]
+): BenchmarkModelComparisonDto {
+  const kept = new Set(keys);
+  const entries = dto.entries.filter(entry => kept.has(entry.key));
+  const excludedCount = entries.filter(entry => entry.excluded).length;
+  return {
+    ...dto,
+    entries,
+    baselineEntryKeys: dto.baselineEntryKeys.filter(key => kept.has(key)),
+    excludedCount,
+    comparableCount: entries.length - excludedCount,
+    panelDiagnostics: null
+  };
+}
+
+function anonymizeComparison(
+  dto: BenchmarkModelComparisonDto,
+  subjectKey: string | null,
+  letters: Readonly<Record<string, string>>
+): BenchmarkModelComparisonDto {
   const copy = JSON.parse(JSON.stringify(dto)) as BenchmarkModelComparisonDto;
-  const subject = copy.entries.find(entry => entry.key === subjectKey) ?? null;
+  const subject = subjectKey === null ? null : copy.entries.find(entry => entry.key === subjectKey) ?? null;
   const subjectProvider = (subject?.provider ?? '').trim().toLowerCase();
 
   const names = new Map<string, string>();

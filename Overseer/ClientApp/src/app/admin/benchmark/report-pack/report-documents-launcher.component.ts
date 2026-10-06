@@ -109,9 +109,25 @@ export class ReportDocumentsLauncherComponent implements OnInit, OnChanges, OnDe
     return this.documents.filter(doc => doc.runChangedSinceGeneration || doc.peersChangedSinceGeneration).length;
   }
 
-  /** The comparisons the documents were written for. */
+  /**
+   * The comparisons the documents were written for: by comparison number; a document without one
+   * (written before comparisons were numbered) by the number another document of its comparison key
+   * carries, else by that key, else by its subject.
+   */
   get comparisonCount(): number {
-    return new Set(this.documents.map(doc => doc.comparisonKey ?? `subject:${doc.subjectKey}`)).size;
+    const numberOfKey = new Map<string, number>();
+    for (const doc of this.documents) {
+      if (doc.comparisonId !== null && doc.comparisonId !== undefined && doc.comparisonKey) {
+        numberOfKey.set(doc.comparisonKey, doc.comparisonId);
+      }
+    }
+    return new Set(this.documents.map(doc => {
+      const id = doc.comparisonId ?? (doc.comparisonKey ? numberOfKey.get(doc.comparisonKey) : undefined);
+      if (id !== null && id !== undefined) {
+        return `id:${id}`;
+      }
+      return doc.comparisonKey ? `key:${doc.comparisonKey}` : `subject:${doc.subjectKey}`;
+    })).size;
   }
 
   /** `5 report documents from 2 comparisons · the latest written 2026-09-21 16:00 UTC`. */

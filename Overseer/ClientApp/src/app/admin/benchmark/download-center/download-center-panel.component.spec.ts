@@ -11,10 +11,12 @@ import {
   BenchmarkBatteryMemberDto,
   BenchmarkBatteryRunDto,
   BenchmarkReportAudience,
+  BenchmarkReportCoveredModelDto,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
   BenchmarkReportPeerNaming,
+  BenchmarkReportScope,
   BenchmarkRunDetailDto,
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportJobDto,
@@ -26,6 +28,7 @@ import { REPORT_CHART_STORAGE_KEY, ReportChartPublishResult, ReportChartSelectio
 import { ReportChartPickerComponent } from '../report-pack/report-chart-picker.component';
 import {
   CHART_SKIP_REASONS,
+  COMPARISON_NAME_SLUG_MAX,
   DOWNLOAD_CENTER_REPORT_JOB_POLL_MS,
   DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
@@ -33,6 +36,7 @@ import {
   DOWNLOAD_SORTS,
   DownloadCenterBatteryContext,
   DownloadCenterChartActions,
+  DownloadChoice,
   DownloadCenterContext,
   DownloadCenterLibraryContext,
   DownloadCenterPanelComponent,
@@ -40,7 +44,10 @@ import {
   INCLUDE_MEMBER_RUNS_TIP,
   MEMBER_RUNS_FAILED_NOTICE,
   ROW_NOTES,
+  comparisonNameSlug,
   downloadCenterIo,
+  downloadZipStem,
+  manifestComparisons,
   reportDocumentFileStem
 } from './download-center-panel.component';
 
@@ -95,6 +102,49 @@ function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<B
     peerLetters: { 'run:2': 'A', 'group:4': 'B' },
     ...overrides
   };
+}
+
+/** Models of Comparison #12, as a comparison-scope document lists them, with their letters. */
+const LUNA: BenchmarkReportCoveredModelDto = { entryKey: 'run:1', label: 'GPT-5.6 Luna', provider: 'OpenAI', letter: 'A' };
+const GROK: BenchmarkReportCoveredModelDto = { entryKey: 'run:2', label: 'Grok 5', provider: 'xAI', letter: 'B' };
+const MISTRAL: BenchmarkReportCoveredModelDto = { entryKey: 'group:4', label: 'Mistral Large 4', provider: 'Mistral', letter: 'C' };
+const QWEN: BenchmarkReportCoveredModelDto = { entryKey: 'run:5', label: 'Qwen 4', provider: 'Alibaba', letter: 'D' };
+/** A covered-set key whose first 6 hex are `3f9a0c`, as the server's file-name fixtures have it. */
+const SET_KEY = `3f9a0c${'0'.repeat(58)}`;
+
+/** A document of Comparison #12, *Five-model comparison* (five entries): one model's, unless the overrides say otherwise. */
+function numberedDoc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
+  return doc(id, audience, {
+    comparisonId: 12,
+    comparisonName: 'Five-model comparison',
+    comparisonEntryCount: 5,
+    scope: BenchmarkReportScope.Model,
+    coversAllEntries: false,
+    coveredSetKey: null,
+    coveredModels: [{ entryKey: 'run:1', label: 'Gemini Flash', provider: 'Google', letter: null }],
+    ...overrides
+  });
+}
+
+/** A comparison-scope document of Comparison #12 covering `models`: the whole comparison, or a subset of it. */
+function coveringDoc(
+  id: number,
+  audience: BenchmarkReportAudience,
+  wholeComparison: boolean,
+  models: BenchmarkReportCoveredModelDto[],
+  overrides: Partial<BenchmarkReportDocumentListItemDto> = {}
+): BenchmarkReportDocumentListItemDto {
+  return numberedDoc(id, audience, {
+    scope: BenchmarkReportScope.Comparison,
+    coversAllEntries: wholeComparison,
+    subjectKey: wholeComparison ? 'comparison:12' : 'comparison:12/9999999999999999',
+    subjectLabel: 'Five-model comparison',
+    coveredSetKey: SET_KEY,
+    coveredModels: models,
+    peerCount: 0,
+    peerLetters: Object.fromEntries(models.map(model => [model.entryKey, model.letter ?? ''])),
+    ...overrides
+  });
 }
 
 function publishResult(overrides: Partial<ReportChartPublishResult> = {}): ReportChartPublishResult {
@@ -521,7 +571,7 @@ describe('DownloadCenterPanelComponent', () => {
     it('filters by facets: values of one facet OR together, facets AND, and each count reflects the other filters', () => {
       render(twoSuites());
 
-      expect(facetLabels()).toEqual(['Document', 'Subject', 'Suite', 'Written by', 'Created']);
+      expect(facetLabels()).toEqual(['Document', 'Model', 'Suite', 'Written by', 'Created']);
       // Every row is unchanged, so Changes has one value and is not offered.
       expect(byId('mc-dc-facet-changes-trigger')).toBeNull();
       expect(facetOptions('document').map(option => option.label))
@@ -533,10 +583,10 @@ describe('DownloadCenterPanelComponent', () => {
       fixture.detectChanges();
       expect(panel().facets).toBe(facetsBefore);
 
-      pickFacet('subject', 'Claude Harbor');
-      pickFacet('subject', 'Gemini Flash');
+      pickFacet('model', 'Claude Harbor');
+      pickFacet('model', 'Gemini Flash');
       expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11']);
-      expect(text('#mc-dc-facet-subject-trigger')).toBe('Subject 2 selected');
+      expect(text('#mc-dc-facet-model-trigger')).toBe('Model 2 selected');
       expect(panel().facets).not.toBe(facetsBefore);
 
       pickFacet('document', 'Executive Summary');
@@ -645,7 +695,8 @@ describe('DownloadCenterPanelComponent', () => {
         ...Array.from({ length: 24 }, (_, i) => doc(200 + i, ExecutiveSummary, { createdAtUtc: `2026-09-10T${String(i).padStart(2, '0')}:00:00Z` })),
         doc(301, TechnicalReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
       ];
-      render(more);
+      // A context that lists other documents loads afresh; an equal one keeps the loaded list.
+      render(more, library('none'));
       expect(rowKeys().length).toBe(10);
       const showAll = q<HTMLButtonElement>('.dc-show-all')!;
       expect(showAll.textContent!.trim()).toBe('Show all 25');
@@ -857,6 +908,331 @@ describe('DownloadCenterPanelComponent', () => {
         .toBe('vs-4-models_executive-summary-gemini-flash');
       expect(stem({ peerCount: 0, peerLetters: {} }))
         .toBe('run-1_executive-summary-gemini-flash');
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Numbered comparisons
+  // -------------------------------------------------------------------------------------------
+
+  describe('numbered comparisons', () => {
+    const { Named, Anonymized } = BenchmarkReportPeerNaming;
+
+    function comparisonContext(name: string | null = 'Five-model comparison'): DownloadCenterContext {
+      return { kind: 'library', scope: { kind: 'comparison', comparisonId: 12, name, entryKeys: ENTRY_KEYS }, preselect: 'all' };
+    }
+
+    /** The two list requests of a numbered comparison: by its number, and by its entry keys. */
+    function expectComparisonLists(): { byNumber: TestRequest; byEntries: TestRequest } {
+      const byNumber = http.expectOne(r => r.url === DOCUMENTS_URL && r.params.get('comparisonId') === '12');
+      const byEntries = http.expectOne(r => r.url === DOCUMENTS_URL && r.params.has('comparison'));
+      return { byNumber, byEntries };
+    }
+
+    /** Four documents: Comparison #12 whole and a subset of it, one model's of Comparison #14, and one without a number. */
+    function fourDocuments(): BenchmarkReportDocumentListItemDto[] {
+      return [
+        coveringDoc(31, ExecutiveSummary, true, [LUNA, GROK, MISTRAL]),
+        coveringDoc(32, TechnicalReport, false, [LUNA, GROK]),
+        numberedDoc(33, ExecutiveSummary, {
+          comparisonId: 14,
+          comparisonName: 'Second comparison',
+          subjectLabel: 'GPT-5.6 Luna',
+          coveredModels: [{ entryKey: 'run:1', label: 'GPT-5.6 Luna', provider: 'OpenAI', letter: null }]
+        }),
+        doc(34, InternalBrief)
+      ];
+    }
+
+    it('lists a numbered comparison by its number, and the documents written before numbering by its entry keys', () => {
+      hostComponent.context = comparisonContext();
+      fixture.detectChanges();
+      const { byNumber, byEntries } = expectComparisonLists();
+      expect(byNumber.request.params.get('origin')).toBe('reportPack');
+      expect(byNumber.request.params.has('comparison')).toBe(false);
+      expect(byEntries.request.params.get('comparison')).toBe('run:1,run:2,group:4');
+      expect(byEntries.request.params.get('origin')).toBe('reportPack');
+      expect(byEntries.request.params.has('comparisonId')).toBe(false);
+      byNumber.flush([numberedDoc(11, ExecutiveSummary), numberedDoc(12, TechnicalReport)]);
+      // By its entry keys: a numbered document again, one without a number, and one of another comparison.
+      byEntries.flush([numberedDoc(11, ExecutiveSummary), doc(13, InternalBrief), numberedDoc(14, ExecutiveSummary, { comparisonId: 14 })]);
+      fixture.detectChanges();
+
+      expect(panel().rows.map(r => r.key)).toEqual(['doc:13', 'doc:12', 'doc:11']);
+    });
+
+    it('lists the numbered documents alone when the list by entry keys fails', () => {
+      hostComponent.context = comparisonContext();
+      fixture.detectChanges();
+      const { byNumber, byEntries } = expectComparisonLists();
+      byEntries.flush({ error: 'No.' }, { status: 500, statusText: 'Server Error' });
+      byNumber.flush([numberedDoc(11, ExecutiveSummary)]);
+      fixture.detectChanges();
+
+      expect(panel().rows.map(r => r.key)).toEqual(['doc:11']);
+      expect(el.querySelectorAll('.dc-notice').length).toBe(0);
+    });
+
+    it('heads the list with the comparison\'s number and name, and keeps its rows and choices when only the name changes', () => {
+      hostComponent.context = comparisonContext();
+      fixture.detectChanges();
+      const { byNumber, byEntries } = expectComparisonLists();
+      byNumber.flush([numberedDoc(11, ExecutiveSummary), numberedDoc(12, TechnicalReport)]);
+      byEntries.flush([]);
+      fixture.detectChanges();
+
+      const heading = byId('mc-dc-documents-title')!;
+      expect(heading.tagName).toBe('H4');
+      expect(flat(heading)).toBe('Documents of Comparison #12 — Five-model comparison');
+      check('doc:11');
+      const included = (key: string): boolean => panel().isIncluded(panel().rows.find(r => r.key === key)!);
+      expect(included('doc:11')).toBe(false);
+
+      hostComponent.context = comparisonContext('Flagships, October');
+      fixture.detectChanges();
+      http.expectNone(r => r.url === DOCUMENTS_URL);
+      expect(flat(byId('mc-dc-documents-title'))).toBe('Documents of Comparison #12 — Flagships, October');
+      expect(included('doc:11')).toBe(false);
+      expect(included('doc:12')).toBe(true);
+
+      hostComponent.context = comparisonContext(null);
+      fixture.detectChanges();
+      http.expectNone(r => r.url === DOCUMENTS_URL);
+      expect(flat(byId('mc-dc-documents-title'))).toBe('Documents of Comparison #12');
+    });
+
+    it('reads Documents for a comparison not yet numbered, and for every other list', () => {
+      render([doc(11, ExecutiveSummary)]);
+      expect(flat(byId('mc-dc-documents-title'))).toBe('Documents');
+
+      hostComponent.context = library('none', 'all');
+      fixture.detectChanges();
+      expectList().flush([doc(11, ExecutiveSummary)]);
+      fixture.detectChanges();
+      expect(flat(byId('mc-dc-documents-title'))).toBe('Documents');
+    });
+
+    it('filters by Scope, by Comparison, and by Model, where a comparison document counts under each model it covers', () => {
+      render(fourDocuments(), library('none', 'all'));
+
+      expect(facetLabels()).toEqual(['Document', 'Scope', 'Comparison', 'Model', 'Created']);
+      expect(facetOptions('scope').map(option => option.label))
+        .toEqual(['Whole comparison, 1 document', 'Model subset, 1 document', 'One model, 2 documents']);
+      expect(facetOptions('comparison').map(option => option.label))
+        .toEqual(['#14 — Second comparison, 1 document', '#12 — Five-model comparison, 2 documents']);
+      expect(facetOptions('model').map(option => option.label)).toEqual([
+        'Gemini Flash, 1 document',
+        'GPT-5.6 Luna, 3 documents',
+        'Grok 5, 2 documents',
+        'Mistral Large 4, 1 document'
+      ]);
+
+      pickFacet('model', 'Grok 5');
+      expect(rowKeys()).toEqual(['doc:32', 'doc:31']);
+      expect(text('#mc-dc-facet-model-trigger')).toBe('Model 1 selected');
+      pickFacet('scope', 'Model subset');
+      expect(rowKeys()).toEqual(['doc:32']);
+      expect(chipNames()).toContain('Remove filter Scope: Model subset');
+
+      panel().clearFilters();
+      fixture.detectChanges();
+      pickFacet('comparison', '#14 — Second comparison');
+      expect(rowKeys()).toEqual(['doc:33']);
+      expect(chipNames()).toContain('Remove filter Comparison: #14 — Second comparison');
+    });
+
+    it('lists the Comparison facet only with documents of two comparisons, and never while one comparison\'s are listed', () => {
+      render([numberedDoc(31, ExecutiveSummary), numberedDoc(32, TechnicalReport)], library('none', 'all'));
+      expect(facetLabels()).not.toContain('Comparison');
+
+      // A comparison's list, even holding documents of another number, offers no Comparison facet.
+      hostComponent.context = library();
+      fixture.detectChanges();
+      expectList().flush([numberedDoc(31, ExecutiveSummary), numberedDoc(32, ExecutiveSummary, { comparisonId: 14 }), doc(33, TechnicalReport)]);
+      fixture.detectChanges();
+      expect(facetLabels()).not.toContain('Comparison');
+      expect(byId('mc-dc-facet-comparison-trigger')).toBeNull();
+    });
+
+    it('opens each card\'s meta line with the comparison, and a subset\'s with how many of its models it covers', () => {
+      render(fourDocuments(), library('none', 'all'));
+
+      const meta = (key: string): string => text(`article[data-row-key="${key}"] .dc-card-meta`);
+      expect(meta('doc:31')).toBe('Comparison #12·, Five-model comparison·, 2026-09-21 16:00 UTC·, Board Suite·, by Claude Opus writer');
+      expect(meta('doc:32'))
+        .toBe('Comparison #12·, Five-model comparison·, 2 of 5 models·, 2026-09-22 16:00 UTC·, Board Suite·, by Claude Opus writer');
+      expect(meta('doc:33'))
+        .toBe('Comparison #14·, Second comparison·, 2026-09-23 16:00 UTC·, GPT-5.6 Luna·, Board Suite·, by Claude Opus writer');
+      expect(meta('doc:34')).toBe('2026-09-24 16:00 UTC·, Gemini Flash·, Board Suite·, by Claude Opus writer');
+      expect(flat(rowEl('doc:32').querySelector('.dc-card-covered'))).toBe('2 of 5 models');
+      expect(flat(rowEl('doc:31').querySelector('.dc-card-comparison'))).toBe('Comparison #12');
+    });
+
+    it('searches the comparison\'s number and name and the models a document covers', async () => {
+      useSearchClock();
+      render(fourDocuments(), library('none', 'all'));
+      const input = byId<HTMLInputElement>('mc-dc-search')!;
+      expect(input.placeholder).toBe('Search title, comparison, model, suite or writer');
+
+      typeInto(input, '#14');
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:33']);
+
+      typeInto(input, 'mistral');
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:31']);
+
+      typeInto(input, 'second comparison');
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:33']);
+    });
+
+    // --- File names (D6), the server's BenchmarkReportCoverAndFileNameTests one for one ---
+
+    it('names one model\'s document after the comparison number and the model, in both namings', () => {
+      const perModel = (audience: BenchmarkReportAudience, subjectLabel = 'GPT-5.6 Luna'): BenchmarkReportDocumentListItemDto =>
+        numberedDoc(1, audience, { subjectLabel, coveredModels: [{ entryKey: 'run:1', label: subjectLabel, provider: 'OpenAI', letter: null }] });
+
+      expect(`${reportDocumentFileStem(perModel(ExecutiveSummary), 'x', Named)}_summary_named.pdf`)
+        .toBe('comparison-12_gpt-5.6-luna_executive-summary_summary_named.pdf');
+      expect(`${reportDocumentFileStem(perModel(TechnicalReport), 'x', Named)}_full_named_INTERNAL.pdf`)
+        .toBe('comparison-12_gpt-5.6-luna_researcher-report_full_named_INTERNAL.pdf');
+      expect(`${reportDocumentFileStem(perModel(TechnicalReport), 'x', Anonymized)}_detailed_anonymized.pdf`)
+        .toBe('comparison-12_gpt-5.6-luna_researcher-report_detailed_anonymized.pdf');
+      expect(`${reportDocumentFileStem(perModel(InternalBrief), 'x', Anonymized)}_full_anonymized_INTERNAL.docx`)
+        .toBe('comparison-12_gpt-5.6-luna_internal-brief_full_anonymized_INTERNAL.docx');
+
+      // Named unless told otherwise; the comparison's number alone is needed.
+      expect(reportDocumentFileStem(perModel(ExecutiveSummary, 'GPT-5.6 Luna (max)'), 'x'))
+        .toBe('comparison-12_gpt-5.6-luna-max_executive-summary');
+      expect(reportDocumentFileStem(numberedDoc(1, ExecutiveSummary, { subjectLabel: 'GPT-5.6 Luna (max)', comparisonName: null }), 'x'))
+        .toBe('comparison-12_gpt-5.6-luna-max_executive-summary');
+    });
+
+    it('names a document of the whole comparison after its name, and an anonymized copy after its number alone', () => {
+      const whole = coveringDoc(1, ExecutiveSummary, true, [LUNA, GROK, MISTRAL, QWEN], {
+        comparisonName: 'GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)'
+      });
+
+      expect(`${reportDocumentFileStem(whole, 'x', Named)}_summary_named.pdf`)
+        .toBe('comparison-12_gpt-5.6-luna-max-vs-gpt-6.1-sol-medium_executive-summary_summary_named.pdf');
+      expect(`${reportDocumentFileStem(whole, 'x', Anonymized)}_summary_anonymized.pdf`)
+        .toBe('comparison-12_executive-summary_summary_anonymized.pdf');
+      // A name the list does not send leaves it out in both namings.
+      expect(reportDocumentFileStem({ ...whole, comparisonName: null }, 'x', Named)).toBe('comparison-12_executive-summary');
+    });
+
+    it('names a subset of up to three models after them, and a larger or anonymized one by its count', () => {
+      const two = coveringDoc(1, ExecutiveSummary, false, [LUNA, GROK]);
+      expect(`${reportDocumentFileStem(two, 'x', Named)}_summary_named.pdf`)
+        .toBe('comparison-12_subset-gpt-5.6-luna-vs-grok-5_executive-summary_summary_named.pdf');
+      expect(`${reportDocumentFileStem(two, 'x', Anonymized)}_summary_anonymized.pdf`)
+        .toBe('comparison-12_subset-2-of-5-models-3f9a0c_executive-summary_summary_anonymized.pdf');
+
+      const four = coveringDoc(1, InternalBrief, false, [LUNA, GROK, MISTRAL, QWEN]);
+      expect(`${reportDocumentFileStem(four, 'x', Named)}_full_named_INTERNAL.pdf`)
+        .toBe('comparison-12_subset-4-of-5-models-3f9a0c_internal-brief_full_named_INTERNAL.pdf');
+
+      // A covered model the list knows only by its entry key is counted, as the server counts it.
+      const unlabeled = coveringDoc(1, ExecutiveSummary, false, [LUNA, { entryKey: 'run:9', label: 'run:9', provider: null, letter: 'B' }]);
+      expect(reportDocumentFileStem(unlabeled, 'x', Named)).toBe('comparison-12_subset-2-of-5-models-3f9a0c_executive-summary');
+
+      // The count of models not Excluded when the document was written wins over the request's entry count.
+      const afterExclusion = { ...four, comparisonModelCount: 4 };
+      expect(reportDocumentFileStem(afterExclusion, 'x', Named)).toBe('comparison-12_subset-4-of-4-models-3f9a0c_internal-brief');
+    });
+
+    it('cuts a long covered slug at a hyphen within forty characters, without a dangling -vs', () => {
+      const three = coveringDoc(1, ExecutiveSummary, false, [
+        { entryKey: 'run:12', label: 'Claude 5.5 Opus Extended Thinking', provider: 'Anthropic', letter: 'A' },
+        { entryKey: 'run:14', label: 'Gemini 3.8 Pro Deep Think', provider: 'Google', letter: 'B' },
+        { entryKey: 'run:13', label: 'GPT-6.1 Sol Medium Reasoning', provider: 'OpenAI', letter: 'C' }
+      ]);
+
+      expect(`${reportDocumentFileStem(three, 'x', Named)}_summary_named.pdf`)
+        .toBe('comparison-12_subset-claude-5.5-opus-extended-thinking_executive-summary_summary_named.pdf');
+    });
+
+    it('slugs a comparison name as safeFileName, cut at the last hyphen within forty characters', () => {
+      const cases: [string, string][] = [
+        ['GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)', 'gpt-5.6-luna-max-vs-gpt-6.1-sol-medium'],
+        ['10 models · Core knowledge battery revision three', '10-models-core-knowledge-battery'],
+        ['a'.repeat(50), 'a'.repeat(40)]
+      ];
+      for (const [name, slug] of cases) {
+        expect(comparisonNameSlug(name), name).toBe(slug);
+        expect(comparisonNameSlug(name).length).toBeLessThanOrEqual(COMPARISON_NAME_SLUG_MAX);
+      }
+    });
+
+    it('keeps the earlier names for a document without a number, and for a run\'s or battery run\'s own documents', () => {
+      const legacy = doc(1, ExecutiveSummary, { peerCount: 2, peerLetters: { 'run:2': 'A', 'group:4': 'B' } });
+      expect(reportDocumentFileStem(legacy, 'x')).toBe('run-1_vs-run-2-group-4_executive-summary-gemini-flash');
+
+      const run = doc(1, ExecutiveSummary, {
+        origin: BenchmarkReportDocumentOrigin.RunCompletion, comparisonId: 12, comparisonName: 'Five-model comparison', peerCount: 0, peerLetters: {}
+      });
+      expect(reportDocumentFileStem(run, 'x', Named)).toBe('run-1_executive-summary-gemini-flash');
+
+      const battery = doc(1, ExecutiveSummary, {
+        origin: BenchmarkReportDocumentOrigin.BatteryCompletion, subjectKey: 'battery:9', comparisonId: 12, peerCount: 0, peerLetters: {}
+      });
+      expect(reportDocumentFileStem(battery, 'x', Anonymized)).toBe('battery-run-9_executive-summary-gemini-flash');
+    });
+
+    // --- The ZIP and the manifest, from the chosen rows ---
+
+    it('names a ZIP from the chosen rows: one comparison, several, and documents without a number', () => {
+      const lunaVsSol = 'GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)';
+      render([
+        numberedDoc(31, ExecutiveSummary, { subjectLabel: 'GPT-5.6 Luna', comparisonName: lunaVsSol }),
+        numberedDoc(32, TechnicalReport, { subjectLabel: 'GPT-6.1 Sol', comparisonName: lunaVsSol }),
+        numberedDoc(33, ExecutiveSummary, { comparisonId: 14, comparisonName: 'Second comparison' }),
+        doc(34, ExecutiveSummary, { subjectLabel: 'Claude Harbor' }),
+        doc(35, TechnicalReport, { subjectLabel: 'Claude Harbor' }),
+        doc(36, ExecutiveSummary)
+      ], library('none', 'all'));
+      const context = hostComponent.context!;
+      const chosen = (picks: [number, BenchmarkReportPeerNaming][]): DownloadChoice[] =>
+        picks.map(([id, naming]) => ({ row: panel().rows.find(r => r.key === `doc:${id}`)!, state: { naming } }));
+
+      expect(downloadZipStem(context, chosen([[31, Named], [32, Named]]))).toBe('comparison-12_gpt-5.6-luna-max-vs-gpt-6.1-sol-medium');
+      // The newest listed row (doc:36, Gemini Flash) never names a package it is not in.
+      expect(downloadZipStem(context, chosen([[32, Named]]))).toBe('comparison-12_gpt-5.6-luna-max-vs-gpt-6.1-sol-medium');
+      expect(downloadZipStem(context, chosen([[34, Named], [35, Named]]))).toBe('claude-harbor');
+      // Any anonymized copy leaves the comparison's name out.
+      expect(downloadZipStem(context, chosen([[31, Named], [32, Anonymized]]))).toBe('comparison-12');
+      expect(downloadZipStem(context, chosen([[31, Named], [33, Named]]))).toBe('comparison-reports');
+      expect(downloadZipStem(context, chosen([[31, Named], [34, Named]]))).toBe('comparison-reports');
+      expect(downloadZipStem(context, chosen([[34, Named], [36, Named]]))).toBe('comparison-reports');
+
+      // A run or battery context keeps its model or label, whatever is chosen.
+      const run: DownloadCenterContext = {
+        kind: 'run',
+        run: { id: 42, suiteName: 'Board Suite', modelLabel: 'GPT Model X', startedAtUtc: '2026-09-21T16:00:00Z', completedAtUtc: null },
+        diagnosticsText: () => ''
+      };
+      expect(downloadZipStem(run, [])).toBe('gpt-model-x');
+      expect(downloadZipStem({ kind: 'battery', batteryRunId: 7, label: 'Core Battery · GPT Model X' }, chosen([[31, Named]])))
+        .toBe('core-battery-gpt-model-x');
+      expect(downloadZipStem({ kind: 'battery', batteryRunId: 7, label: '' }, [])).toBe('battery-run-7');
+    });
+
+    it('lists the manifest\'s comparisons by number, each named only while every chosen document of it is named', () => {
+      render([
+        numberedDoc(31, ExecutiveSummary),
+        numberedDoc(32, TechnicalReport),
+        numberedDoc(33, ExecutiveSummary, { comparisonId: 14, comparisonName: 'Second comparison' }),
+        doc(34, ExecutiveSummary)
+      ], library('none', 'all'));
+      const choice = (id: number, naming: BenchmarkReportPeerNaming): DownloadChoice =>
+        ({ row: panel().rows.find(r => r.key === `doc:${id}`)!, state: { naming } });
+
+      expect(manifestComparisons([choice(33, Named), choice(31, Named), choice(32, Named), choice(34, Named)]))
+        .toEqual(['Comparison #12 — Five-model comparison', 'Comparison #14 — Second comparison']);
+      expect(manifestComparisons([choice(31, Named), choice(32, Anonymized), choice(33, Named)]))
+        .toEqual(['Comparison #12', 'Comparison #14 — Second comparison']);
+      expect(manifestComparisons([choice(34, Named)])).toEqual([]);
     });
   });
 

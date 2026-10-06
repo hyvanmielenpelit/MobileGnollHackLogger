@@ -290,6 +290,9 @@
 
 .dc-documents-title {
   margin: 0;
+  /* A comparison's name can be long: it wraps between words, and inside one only where it must. */
+  min-width: 0;
+  overflow-wrap: break-word;
 
   &:focus {
     outline: none;

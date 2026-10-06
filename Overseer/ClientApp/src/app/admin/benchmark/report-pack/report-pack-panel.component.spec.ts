@@ -5,59 +5,84 @@ import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@a
 
 import {
   BenchmarkReportAudience,
+  BenchmarkReportDocumentListItemDto,
+  BenchmarkReportPackAudienceEstimateDto,
   BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportPackJobDto,
-  BenchmarkReportPackPreviewDto
+  BenchmarkReportPackPreviewDto,
+  BenchmarkReportPackWrittenDocumentDto,
+  BenchmarkReportScope
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
+import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-multi-picker.component';
+import type { PdfViewerRequest } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import type { BenchmarkModelComparisonEntryDto } from '../model-comparison/model-comparison.models';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
+import { ComparisonDocumentsStatusComponent } from './comparison-documents-status.component';
+import type { ComposedDocumentCharts, DocumentChartsComposer } from './report-chart-layout-preview';
 import { ReportChartPickerComponent } from './report-chart-picker.component';
-import { DEFAULT_CHART_SELECTION, REPORT_CHART_FIGURES, ReportChartRowStatus, ReportChartSelection } from './report-charts';
+import {
+  DEFAULT_CHART_LAYOUT_SETTINGS,
+  DEFAULT_CHART_SELECTION,
+  REPORT_CHART_FIGURES,
+  ReportChartLayoutSettings,
+  ReportChartRowStatus,
+  ReportChartSelection
+} from './report-charts';
 import { reportPackIo } from './report-pack-diagnostics';
 import {
   REPORT_PACK_ALL_WRITTEN_REASON,
+  REPORT_PACK_MODEL_SCOPE_TIP,
   REPORT_PACK_PEERLESS_REFUSAL,
   REPORT_PACK_POLL_MS,
   REPORT_PACK_PREVIEW_DEBOUNCE_MS,
   REPORT_PACK_STORAGE_KEY,
+  REPORT_PACK_UNEVEN_MODELS_REASON,
   ReportPackContext,
   ReportPackPanelComponent
 } from './report-pack-panel.component';
 
 const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const ALL_AUDIENCES = [ExecutiveSummary, TechnicalReport, InternalBrief];
 
 const SYSTEM_CONFIGS_URL = '/api/admin/systemconfigs';
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
 const ACTIVE_JOB_URL = '/api/admin/benchmark/report-packs/jobs/active';
 const PREVIEW_URL = '/api/admin/benchmark/report-packs/preview';
 const START_URL = '/api/admin/benchmark/report-packs';
+const LAYOUT_PREVIEW_URL = '/api/admin/benchmark/report-packs/layout-preview';
 const jobUrl = (id: string): string => `/api/admin/benchmark/report-packs/jobs/${id}`;
 
-function entry(key: string, label: string, overrides: Partial<BenchmarkModelComparisonEntryDto> = {}): BenchmarkModelComparisonEntryDto {
+function entry(key: string, label: string, index: number | null, overrides: Partial<BenchmarkModelComparisonEntryDto> = {}): BenchmarkModelComparisonEntryDto {
   const [kind, id] = key.split(':');
   return {
     key,
-    sourceKind: kind === 'group' ? 'Group' : 'Run',
+    sourceKind: kind === 'group' ? 'Group' : kind === 'battery' ? 'Battery' : 'Run',
     sourceId: Number(id),
     label,
     provider: 'Google',
+    modelId: label.toLowerCase().replace(/\s+/g, '-'),
     modelDisplayName: label,
+    thinkingLevel: 'medium',
+    reasoningMode: null,
     state: 'Comparable',
     comparable: true,
     excluded: false,
     speedDegraded: false,
     costDegraded: false,
+    quality: (index === null ? null : { pointEstimate: index }) as BenchmarkModelComparisonEntryDto['quality'],
     ...overrides
   } as BenchmarkModelComparisonEntryDto;
 }
 
 const ENTRIES: BenchmarkModelComparisonEntryDto[] = [
-  entry('run:1', 'Gemini Flash'),
-  entry('run:2', 'Claude Opus', { provider: 'Anthropic', state: 'Degraded', comparable: false, speedDegraded: true }),
-  entry('run:3', 'Old GPT', { provider: 'OpenAI', state: 'Excluded', comparable: false, excluded: true }),
-  entry('group:4', 'GPT Sol group', { provider: 'OpenAI' })
+  entry('run:1', 'Gemini Flash', 70),
+  entry('run:2', 'Claude Opus', 60, { provider: 'Anthropic', state: 'Degraded', comparable: false, speedDegraded: true }),
+  entry('run:3', 'Old GPT', 40, { provider: 'OpenAI', state: 'Excluded', comparable: false, excluded: true }),
+  entry('group:4', 'GPT Sol group', 65, { provider: 'OpenAI' })
 ];
+
+const OFFERED = ['run:1', 'run:2', 'group:4'];
 
 const CONTEXT: ReportPackContext = {
   runIds: [1, 2, 3],
@@ -91,21 +116,74 @@ const CONFIGS: SystemAiConfigDto[] = [
   config(10, 'Disabled writer', 'OpenAI', { isEnabled: false })
 ];
 
-function previewDto(overrides: Partial<BenchmarkReportPackPreviewDto> = {}): BenchmarkReportPackPreviewDto {
+function estimate(audience: BenchmarkReportAudience, cost: number | null, subjectKey = 'comparison:12', share = 0.1): BenchmarkReportPackAudienceEstimateDto {
+  return { audience, promptChars: 20000, estimatedInputTokens: 6000, estimatedOutputTokens: 1500, estimatedCostUsd: cost, subjectKey, contextWindowShare: share };
+}
+
+const COMPARISON_ESTIMATES = [estimate(ExecutiveSummary, 0.05), estimate(TechnicalReport, 0.07), estimate(InternalBrief, 0.09)];
+
+function writtenDoc(audience: BenchmarkReportAudience, documentId: number, subjectKey = 'comparison:12'): BenchmarkReportPackWrittenDocumentDto {
   return {
-    subjectKey: 'run:1',
-    subjectLabel: 'Gemini Flash',
+    audience,
+    documentId,
+    createdAtUtc: '2026-10-05T14:30:00Z',
+    writerDisplayName: 'Claude Opus writer',
+    writerProvider: 'Anthropic',
+    writerModelId: 'model-7',
+    writerThinkingLevel: 'medium',
+    subjectKey,
+    status: 'Completed',
+    durationMs: 65000,
+    costUsd: 0.04
+  };
+}
+
+/** A comparison-scope preview over every model. */
+function comparisonPreview(overrides: Partial<BenchmarkReportPackPreviewDto> = {}): BenchmarkReportPackPreviewDto {
+  return {
+    subjectKey: 'comparison:12',
+    subjectLabel: 'Comparison #12',
     subjectState: 'Comparable',
     suiteName: 'Board Suite',
-    peers: [{ letter: 'A', entryKey: 'run:2', label: 'Claude Opus', provider: 'Anthropic', state: 'Degraded' }],
-    estimates: [
-      { audience: ExecutiveSummary, promptChars: 20000, estimatedInputTokens: 6000, estimatedOutputTokens: 1500, estimatedCostUsd: 0.05 },
-      { audience: TechnicalReport, promptChars: 30000, estimatedInputTokens: 9000, estimatedOutputTokens: 3000, estimatedCostUsd: 0.07 }
-    ],
-    estimatedTotalCostUsd: 0.12,
+    peers: [],
+    estimates: COMPARISON_ESTIMATES,
+    estimatedTotalCostUsd: 0.21,
     writerDisplayName: 'Claude Opus writer',
     sameProviderWarning: null,
     refusal: null,
+    scope: BenchmarkReportScope.Comparison,
+    comparisonId: 12,
+    comparisonName: 'Gemini Flash vs Claude Opus vs GPT Sol group',
+    comparisonEntryCount: 3,
+    coversAllEntries: true,
+    coveredSetKey: 'set-all',
+    coveredModels: [
+      { entryKey: 'run:1', label: 'Gemini Flash', provider: 'Google', letter: 'A' },
+      { entryKey: 'group:4', label: 'GPT Sol group', provider: 'OpenAI', letter: 'B' },
+      { entryKey: 'run:2', label: 'Claude Opus', provider: 'Anthropic', letter: 'C' }
+    ],
+    writtenDocuments: [],
+    otherModelSets: [],
+    subjectDocuments: [],
+    writerContextWindowTokens: 200000,
+    ...overrides
+  };
+}
+
+/** A per-model preview for the given subjects, Gemini Flash first. */
+function modelPreview(subjects: string[] = ['run:1'], overrides: Partial<BenchmarkReportPackPreviewDto> = {}): BenchmarkReportPackPreviewDto {
+  return {
+    ...comparisonPreview(),
+    subjectKey: subjects[0],
+    subjectLabel: 'Gemini Flash',
+    peers: [{ letter: 'A', entryKey: 'run:2', label: 'Claude Opus', provider: 'Anthropic', state: 'Degraded' }],
+    scope: BenchmarkReportScope.Model,
+    coversAllEntries: false,
+    coveredSetKey: null,
+    coveredModels: subjects.map(key => ({ entryKey: key, label: key, provider: null })),
+    estimates: subjects.flatMap(key => [estimate(ExecutiveSummary, 0.05, key), estimate(TechnicalReport, 0.07, key), estimate(InternalBrief, 0.09, key)]),
+    writtenDocuments: [],
+    subjectDocuments: subjects.map(key => ({ subjectKey: key, subjectLabel: key, documents: [] })),
     ...overrides
   };
 }
@@ -178,6 +256,19 @@ describe('ReportPackPanelComponent', () => {
   const confirmDialog = (): HTMLDialogElement => q<HTMLDialogElement>('dialog.rp-same-provider-dialog')!;
   const cellText = (audience: BenchmarkReportAudience, selector: string): string =>
     text(`.rp-job-row[data-audience="${audience}"] ${selector}`);
+  const picker = (): ModelMultiPickerComponent =>
+    fixture.debugElement.query(By.directive(ModelMultiPickerComponent)).componentInstance as ModelMultiPickerComponent;
+  const status = (): ComparisonDocumentsStatusComponent =>
+    fixture.debugElement.query(By.directive(ComparisonDocumentsStatusComponent)).componentInstance as ComparisonDocumentsStatusComponent;
+  const docRow = (key: string): HTMLElement => q(`.cds-row[data-row="${key}"]`)!;
+  const docCheck = (key: string): HTMLInputElement => docRow(key).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+
+  /** Waits, on the real clock, until `condition` holds; at most about a second. */
+  async function until(condition: () => boolean): Promise<void> {
+    for (let i = 0; i < 100 && !condition(); i++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
 
   interface OpenOptions {
     configs?: SystemAiConfigDto[];
@@ -203,15 +294,31 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Chooses a writer and answers the estimate the debounce then requests. */
-  function chooseWriter(id: number, preview: BenchmarkReportPackPreviewDto = previewDto()): TestRequest {
-    component.selectWriter(id);
-    fixture.detectChanges();
+  /** Waits out the debounce and answers the preview it requests. */
+  function answerPreview(preview: BenchmarkReportPackPreviewDto = comparisonPreview()): TestRequest {
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     const request = http.expectOne(PREVIEW_URL);
     request.flush(preview);
     fixture.detectChanges();
     return request;
+  }
+
+  /** Chooses a writer and answers the preview the debounce then requests. */
+  function chooseWriter(id: number, preview: BenchmarkReportPackPreviewDto = comparisonPreview()): TestRequest {
+    component.selectWriter(id);
+    fixture.detectChanges();
+    return answerPreview(preview);
+  }
+
+  /** The picker's choice, as its selection event reports it. */
+  function chooseModels(keys: string[]): void {
+    picker().selectionChange.emit({ keys, models: [] });
+    fixture.detectChanges();
+  }
+
+  function selectScope(scope: 'comparison' | 'model'): void {
+    q<HTMLButtonElement>(`#rp-scope-${scope}`)!.click();
+    fixture.detectChanges();
   }
 
   /** Generates with writer 7 and answers the start and the first reading of the job. */
@@ -227,8 +334,9 @@ describe('ReportPackPanelComponent', () => {
   // Layout
   // -------------------------------------------------------------------------------------------
 
-  it('lays out the form in the sidebar and the progress in the main area, under the step heading', () => {
+  it('lays out the form in the sidebar and the progress in the main area, under the step heading', fakeAsync(() => {
     openPanel();
+    answerPreview();
 
     const frame = q('app-run-report-frame')!;
     expect(frame.classList).toContain('rrf-layout-sidebar');
@@ -237,8 +345,9 @@ describe('ReportPackPanelComponent', () => {
     expect(sidebar.getAttribute('aria-label')).toBe('New report pack');
     expect(main.getAttribute('aria-label')).toBe('Report pack progress');
 
-    // Subject, Documents, Charts, Report writer, the estimate, Generate: in that order.
-    const order = ['#rp-subject', '.rp-documents-choice', '.rp-charts-choice', '.rp-writer-selector', '#rp-estimate', '.rp-generate']
+    // Scope, Models, the documents, Charts, Report writer, the estimate, Generate: in that order.
+    const order = ['.rp-scope-tabs', '.rp-models-picker', 'app-comparison-documents-status', '.rp-charts-choice',
+      '.rp-writer-selector', '#rp-estimate', '.rp-generate']
       .map(selector => sidebar.querySelector(selector));
     expect(order.every(element => element !== null)).toBe(true);
     for (let i = 1; i < order.length; i++) {
@@ -248,38 +357,38 @@ describe('ReportPackPanelComponent', () => {
     const heading = q('h4.gh-section-title#rp-heading')!;
     expect(heading.textContent!.trim()).toBe('Reports');
     expect(component.headingId).toBe('rp-heading');
-    expect(text('.rp-subtitle')).toBe('Board Suite · 4 models · 3 possible subjects');
+    expect(text('.rp-subtitle')).toBe('Board Suite · 4 models · 1 Excluded');
     expect(text('.rp-lead')).toBe(
-      'These reports compare the chosen model with every other model of this comparison and are kept with the '
-      + 'comparison: step 4 lists them, and so does Comparison reports on the Model Comparison tab. A run\'s or '
-      + 'battery run\'s own reports are written in the AI Reports tab of its report.');
-    expect(q('.rp-subtitle')!.compareDocumentPosition(q('.rp-lead')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      'These reports are kept with the comparison: step 4 lists them, and so does Comparison reports on the Model '
+      + 'Comparison tab. A run\'s or battery run\'s own reports are written in the AI Reports tab of its report.');
     expect(main.querySelector('#rp-progress-heading')?.textContent?.trim()).toBe('Report pack progress');
 
-    // No dialog shell and no document library: the wizard is the dialog, and step 4 lists the documents.
+    // No subject select and no Documents checkboxes: the list of this comparison's documents replaces them.
+    expect(q('#rp-subject')).toBeNull();
+    expect(q('.rp-documents-choice')).toBeNull();
     expect(q('dialog.rp-dialog')).toBeNull();
-    expect(q('app-report-document-library')).toBeNull();
-    expect(q('.rp-open-downloads')).toBeNull();
+    // No written document, so nothing to list them by.
     http.expectNone(r => r.url === DOCUMENTS_URL);
-  });
+    fixture.destroy();
+  }));
 
   it('derives its ids from idPrefix', () => {
     fixture.componentRef.setInput('idPrefix', 'mcr');
     openPanel();
 
     expect(q('h4#mcr-heading')).not.toBeNull();
-    expect(q('#mcr-subject')).not.toBeNull();
+    expect(q('#mcr-scope-comparison')).not.toBeNull();
+    expect(q('#mcr-models-label')).not.toBeNull();
     expect(q('#mcr-estimate')).not.toBeNull();
-    expect(q('#rp-subject')).toBeNull();
+    expect(q('#mcr-docs-heading')).not.toBeNull();
+    expect(q('#rp-scope-comparison')).toBeNull();
     expect(generateButton().getAttribute('aria-describedby')).toBe('mcr-estimate mcr-generate-blocked');
   });
 
   it('restores the stored sidebar width and stores a new one beside the writer', fakeAsync(() => {
     localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8, sidebarWidth: 448 }));
     openPanel();
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectOne(PREVIEW_URL).flush(previewDto());
-    fixture.detectChanges();
+    answerPreview();
 
     const frame = fixture.debugElement.query(By.directive(RunReportFrameComponent)).componentInstance as RunReportFrameComponent;
     expect(frame.sidebarWidth).toBe(448);
@@ -299,55 +408,435 @@ describe('ReportPackPanelComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Defaults and the self-refusal
+  // The document scope
   // -------------------------------------------------------------------------------------------
 
-  it('offers the first non-Excluded entry, Excluded entries absent and Degraded ones marked', () => {
+  it('offers the two scopes as segmented tabs, Whole comparison first and chosen, with the tip on per-model documents', fakeAsync(() => {
     openPanel();
 
-    const select = q<HTMLSelectElement>('#rp-subject')!;
-    const options = Array.from(select.options).map(option => option.textContent!.trim());
-    expect(options).toEqual(['Gemini Flash', 'Claude Opus (speed degraded)', 'GPT Sol group']);
-    expect(select.value).toBe('run:1');
-    expect(component.subjectKey).toBe('run:1');
-  });
+    const tablist = q('.rp-scope-tabs')!;
+    expect(tablist.getAttribute('role')).toBe('tablist');
+    expect(tablist.classList).toContain('gh-tabs-segmented');
+    expect(tablist.getAttribute('aria-label')).toBe('Document scope');
+    const tabs = Array.from(tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs.map(tab => tab.textContent!.trim())).toEqual(['Whole comparison (recommended)', 'One model at a time']);
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false']);
+    expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1']);
+    const panel = q('#rp-scope-panel')!;
+    expect(panel.getAttribute('role')).toBe('tabpanel');
+    expect(panel.getAttribute('aria-labelledby')).toBe('rp-scope-comparison');
+    expect(tabs.every(tab => tab.getAttribute('aria-controls') === 'rp-scope-panel')).toBe(true);
+    expect(text('#rp-scope-tip')).toContain(REPORT_PACK_MODEL_SCOPE_TIP);
 
-  it('checks the Executive Summary and the Report for AI Researchers and Developers by default, not the Internal Brief', () => {
+    const first = answerPreview();
+    expect(first.request.body.scope).toBe(BenchmarkReportScope.Comparison);
+
+    // ArrowRight moves to One model at a time, focus following, and the choice is remembered.
+    tabs[0].focus();
+    tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    fixture.detectChanges();
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabs[1]);
+    expect(panel.getAttribute('aria-labelledby')).toBe('rp-scope-model');
+    expect(JSON.parse(localStorage.getItem(REPORT_PACK_STORAGE_KEY)!)).toEqual({ documentScope: 'model' });
+
+    const second = answerPreview(modelPreview());
+    expect(second.request.body.scope).toBe(BenchmarkReportScope.Model);
+    expect(second.request.body.subjectKeys).toEqual(['run:1']);
+    expect(second.request.body.coveredEntryKeys).toBeUndefined();
+    fixture.destroy();
+  }));
+
+  it('opens on the remembered scope', () => {
+    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ documentScope: 'model' }));
+    fixture = TestBed.createComponent(ReportPackPanelComponent);
+    component = fixture.componentInstance;
+    host = fixture.nativeElement as HTMLElement;
     openPanel();
 
-    const names = Array.from(host.querySelectorAll('.rp-audience-name')).map(name => (name.textContent ?? '').trim());
-    expect(names).toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
-
-    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.checked).toBe(true);
-    expect(q<HTMLInputElement>(`#rp-audience-${TechnicalReport}`)!.checked).toBe(true);
-    expect(q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.checked).toBe(false);
-    expect(component.selectedAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(component.scopeMode).toBe('model');
+    expect(q('#rp-scope-model')!.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('offers only enabled Benchmark-role configurations with a key as writers, and requires one', () => {
+  // -------------------------------------------------------------------------------------------
+  // The models
+  // -------------------------------------------------------------------------------------------
+
+  it('offers every entry that is not Excluded under Models, all chosen, and says it writes the comparison-wide documents', fakeAsync(() => {
+    openPanel();
+
+    const instance = picker();
+    expect(instance.options.map(option => option.key)).toEqual(OFFERED);
+    expect(instance.options.map(option => option.model.displayName)).toEqual(['Gemini Flash', 'Claude Opus', 'GPT Sol group']);
+    expect(instance.selectedKeys).toEqual(OFFERED);
+    expect(instance.min).toBe(2);
+    expect(instance.max).toBe(12);
+    expect(instance.chips).toBe('none');
+    expect(instance.showPrice).toBe(false);
+    expect(instance.showParallel).toBe(false);
+    expect(instance.labelledBy).toBe('rp-models-label');
+    expect(text('#rp-models-label')).toBe('Models');
+    expect(text('.rp-models-picker .selector-trigger')).toBe('All 3 models');
+    expect(text('#rp-models-line')).toBe('Writes the comparison-wide documents.');
+    expect(instance.describedBy).toBe('rp-models-line');
+    expect(q('.rp-models-cap')).toBeNull();
+
+    // The covered letters once the preview answers.
+    expect(q('.rp-letters')).toBeNull();
+    const request = answerPreview();
+    expect(request.request.body.coveredEntryKeys).toEqual(OFFERED);
+    expect(text('.rp-letters')).toBe('Letters in the anonymized copies: A = Gemini Flash, B = GPT Sol group, C = Claude Opus');
+    fixture.destroy();
+  }));
+
+  it('writes a model subset when not every model is chosen, naming only what it leaves out', fakeAsync(() => {
+    openPanel();
+    answerPreview();
+
+    // A real click on an option of the open list.
+    q<HTMLButtonElement>('.rp-models-picker .selector-trigger')!.click();
+    fixture.detectChanges();
+    const claude = Array.from(host.querySelectorAll<HTMLElement>('.rp-models-picker [role="option"]'))
+      .find(option => (option.textContent ?? '').includes('Claude Opus'))!;
+    claude.click();
+    fixture.detectChanges();
+
+    expect(component.chosenKeys).toEqual(['run:1', 'group:4']);
+    expect(text('.rp-models-picker .selector-trigger')).toBe('2 of 3 models');
+    expect(text('#rp-models-line')).toBe('Writes documents for 2 of 3 models — leaves out Claude Opus (medium).');
+    // The list waits for the subset's own documents.
+    expect(text('.cds-loading')).toBe('Looking up the documents already written…');
+
+    const request = answerPreview(comparisonPreview({ coversAllEntries: false, coveredSetKey: 'set-2', coveredModels: [] }));
+    expect(request.request.body.coveredEntryKeys).toEqual(['run:1', 'group:4']);
+    expect(host.querySelectorAll('.cds-row').length).toBe(3);
+    fixture.destroy();
+  }));
+
+  it('names the source after a model that appears twice', fakeAsync(() => {
+    openPanel({
+      context: {
+        ...CONTEXT,
+        runIds: [],
+        groupIds: [],
+        batteryRunIds: [9, 10, 11],
+        entries: [
+          entry('battery:9', 'GPT-5.6 Luna', 60, { thinkingLevel: 'max' }),
+          entry('battery:10', 'GPT-5.6 Luna', 62, { thinkingLevel: 'max' }),
+          entry('battery:11', 'Claude Opus', 58)
+        ],
+        entryKeys: ['battery:9', 'battery:10', 'battery:11']
+      }
+    });
+
+    expect(picker().options.map(option => option.detail)).toEqual(['Battery run #9', 'Battery run #10', undefined]);
+    chooseModels(['battery:9', 'battery:11']);
+    expect(text('#rp-models-line')).toBe('Writes documents for 2 of 3 models — leaves out GPT-5.6 Luna (max) from Battery run #10.');
+    fixture.destroy();
+  }));
+
+  it('starts with the 12 highest-Index models of more than 12, and says why', () => {
+    const entries = Array.from({ length: 14 }, (_, i) => entry(`run:${i + 1}`, `Model ${i + 1}`, 50 + i));
+    openPanel({
+      context: { ...CONTEXT, runIds: entries.map((_, i) => i + 1), groupIds: [], entries, entryKeys: entries.map(e => e.key) }
+    });
+
+    expect(component.chosenKeys.length).toBe(12);
+    expect(component.chosenKeys).not.toContain('run:1');
+    expect(component.chosenKeys).not.toContain('run:2');
+    expect(text('.rp-models-cap')).toBe(
+      'A document covers at most 12 models, so the 12 with the highest Intelligence Index of the 14 are chosen first.');
+    expect(text('#rp-models-line')).toBe('Writes documents for 12 of 14 models — leaves out Model 1 (medium), Model 2 (medium).');
+  });
+
+  it('starts One model at a time on the highest-Index model, and keeps each scope\'s choice until the comparison changes', fakeAsync(() => {
+    openPanel();
+    selectScope('model');
+
+    expect(component.chosenKeys).toEqual(['run:1']);
+    expect(picker().min).toBe(1);
+    expect(picker().max).toBeNull();
+    expect(text('#rp-models-line')).toBe('Writes the per-model documents of Gemini Flash (medium), compared with the other models.');
+    expect(q('.rp-letters')).toBeNull();
+
+    chooseModels(['run:2', 'group:4']);
+    expect(text('#rp-models-line')).toBe('Writes the per-model documents of 2 models, one set each, each compared with the other models.');
+    selectScope('comparison');
+    chooseModels(['run:1', 'run:2']);
+    selectScope('model');
+    expect(component.chosenKeys).toEqual(['run:2', 'group:4']);
+    selectScope('comparison');
+    expect(component.chosenKeys).toEqual(['run:1', 'run:2']);
+
+    // Another comparison resets both.
+    fixture.componentRef.setInput('context', { ...CONTEXT, entryKeys: ['run:1', 'run:2', 'run:3', 'group:4', 'run:5'] });
+    fixture.detectChanges();
+    answerActiveJob(null);
+    expect(component.chosenKeys).toEqual(OFFERED);
+    selectScope('model');
+    expect(component.chosenKeys).toEqual(['run:1']);
+    fixture.destroy();
+  }));
+
+  it('says when every entry is Excluded, and that nothing can be written', () => {
+    openPanel({ context: { ...CONTEXT, entries: [ENTRIES[2]], entryKeys: ['run:3'], runIds: [3], groupIds: [] } });
+
+    expect(q('app-model-multi-picker')).toBeNull();
+    expect(text('.rp-no-models')).toBe('Every entry of this comparison is Excluded, so no document can be written.');
+    expect(text('#rp-generate-blocked')).toBe('Every entry of this comparison is Excluded, so no document can be written.');
+    expect(generateButton().disabled).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Documents of this comparison
+  // -------------------------------------------------------------------------------------------
+
+  it('lists the chosen set\'s documents, a written one unchecked, and estimates again without it', fakeAsync(() => {
+    openPanel();
+    const first = chooseWriter(7, comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    expect(first.request.body.audiences).toEqual(ALL_AUDIENCES);
+
+    const executive = docRow(`comparison|${ExecutiveSummary}`);
+    expect(executive.querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
+    expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(false);
+    expect(docCheck(`comparison|${TechnicalReport}`).checked).toBe(true);
+    expect(docCheck(`comparison|${InternalBrief}`).checked).toBe(true);
+    expect(text('#rp-estimate')).toBe('Estimating…');
+
+    const second = answerPreview(comparisonPreview({
+      estimates: COMPARISON_ESTIMATES.slice(1),
+      writtenDocuments: [writtenDoc(ExecutiveSummary, 41)]
+    }));
+    expect(second.request.body.audiences).toEqual([TechnicalReport, InternalBrief]);
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.16');
+    expect(generateButton().disabled).toBe(false);
+
+    // The written document's flags and charts come from the comparison's list.
+    const list = http.expectOne(r => r.url === DOCUMENTS_URL);
+    expect(list.request.params.get('comparisonId')).toBe('12');
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+    fixture.destroy();
+  }));
+
+  it('rewrites a written document when Rewrite is checked, naming it to be replaced', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7, comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    answerPreview(comparisonPreview({ estimates: COMPARISON_ESTIMATES.slice(1), writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+
+    docCheck(`comparison|${ExecutiveSummary}`).click();
+    fixture.detectChanges();
+    const again = answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    expect(again.request.body.audiences).toEqual(ALL_AUDIENCES);
+    expect(again.request.body.replaceDocumentIds).toBeUndefined();
+
+    generateButton().click();
+    const start = http.expectOne(START_URL);
+    expect(start.request.body).toEqual({
+      runIds: [1, 2, 3],
+      groupIds: [4],
+      pricingBasis: 1,
+      subjectKey: '',
+      scope: BenchmarkReportScope.Comparison,
+      coveredEntryKeys: OFFERED,
+      audiences: ALL_AUDIENCES,
+      writerModelConfigurationId: 7,
+      acknowledgeSameProvider: false,
+      replaceDocumentIds: [41]
+    });
+    fixture.destroy();
+  }));
+
+  it('keeps Generate focusable and aria-disabled, with the reason, when every document is written and none is checked', fakeAsync(() => {
+    openPanel();
+    const all = [writtenDoc(ExecutiveSummary, 41), writtenDoc(TechnicalReport, 42), writtenDoc(InternalBrief, 43)];
+    chooseWriter(7, comparisonPreview({ writtenDocuments: all }));
+    answerPreview(comparisonPreview({ estimates: [], writtenDocuments: all }));
+
+    const button = generateButton();
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-describedby')).toBe('rp-estimate rp-generate-blocked');
+    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_ALL_WRITTEN_REASON);
+    button.click();
+    http.expectNone(START_URL);
+    fixture.destroy();
+  }));
+
+  it('lists each chosen model\'s documents One model at a time, and writes the checked ones', fakeAsync(() => {
+    openPanel();
+    selectScope('model');
+    chooseModels(['run:1', 'group:4']);
+    const preview = modelPreview(['run:1', 'group:4'], {
+      subjectDocuments: [
+        { subjectKey: 'run:1', subjectLabel: 'Gemini Flash', documents: [writtenDoc(InternalBrief, 51, 'run:1')] },
+        { subjectKey: 'group:4', subjectLabel: 'GPT Sol group', documents: [writtenDoc(InternalBrief, 52, 'group:4')] }
+      ]
+    });
+    const first = chooseWriter(7, preview);
+    expect(first.request.body.scope).toBe(BenchmarkReportScope.Model);
+    expect(first.request.body.subjectKeys).toEqual(['run:1', 'group:4']);
+    const second = answerPreview(preview);
+    expect(second.request.body.audiences).toEqual([ExecutiveSummary, TechnicalReport]);
+
+    expect(Array.from(host.querySelectorAll('.cds-group-title')).map(title => title.textContent!.trim()))
+      .toEqual(['Gemini Flash (medium)', 'GPT Sol group (medium)']);
+    expect(docCheck(`group:4|${InternalBrief}`).checked).toBe(false);
+    // Two models of two documents each: four parts.
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.24');
+    expect(host.querySelectorAll('#rp-estimate .gh-estimate-parts > div').length).toBe(4);
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('For 2 models, each against the others.');
+
+    generateButton().click();
+    const start = http.expectOne(START_URL);
+    expect(start.request.body).toEqual({
+      runIds: [1, 2, 3],
+      groupIds: [4],
+      pricingBasis: 1,
+      subjectKey: 'run:1',
+      scope: BenchmarkReportScope.Model,
+      subjectKeys: ['run:1', 'group:4'],
+      audiences: [ExecutiveSummary, TechnicalReport],
+      writerModelConfigurationId: 7,
+      acknowledgeSameProvider: false,
+      replaceDocumentIds: []
+    });
+    fixture.destroy();
+  }));
+
+  it('writes only the models with a checked document, and refuses different documents for different models', fakeAsync(() => {
+    openPanel();
+    selectScope('model');
+    chooseModels(['run:1', 'group:4']);
+    chooseWriter(7, modelPreview(['run:1', 'group:4']));
+
+    // Every document of GPT Sol group unchecked: the job is about Gemini Flash alone.
+    for (const audience of ALL_AUDIENCES) {
+      docCheck(`group:4|${audience}`).click();
+      fixture.detectChanges();
+    }
+    answerPreview(modelPreview(['run:1', 'group:4']));
+    expect(generateButton().disabled).toBe(false);
+
+    // One of them checked again: not the same documents as Gemini Flash's.
+    docCheck(`group:4|${ExecutiveSummary}`).click();
+    fixture.detectChanges();
+    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_UNEVEN_MODELS_REASON);
+    expect(generateButton().disabled).toBe(true);
+    answerPreview(modelPreview(['run:1', 'group:4']));
+    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_UNEVEN_MODELS_REASON);
+
+    docCheck(`group:4|${ExecutiveSummary}`).click();
+    fixture.detectChanges();
+    answerPreview(modelPreview(['run:1', 'group:4']));
+    generateButton().click();
+    expect(http.expectOne(START_URL).request.body.subjectKeys).toEqual(['run:1']);
+    fixture.destroy();
+  }));
+
+  it('shows the comparison\'s flags and chart counts for written documents, from the list by comparison number', fakeAsync(() => {
+    fixture.componentRef.setInput('comparisonId', 12);
+    openPanel();
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+
+    const list = http.expectOne(r => r.url === DOCUMENTS_URL);
+    expect(list.request.params.get('comparisonId')).toBe('12');
+    list.flush([{
+      id: 41,
+      title: 'Comparison #12 — Gemini Flash vs Claude Opus vs GPT Sol group: Executive Summary',
+      audience: ExecutiveSummary,
+      runChangedSinceGeneration: true,
+      chartFigureKeys: ['p1a-quality', 's2-quality-cost'],
+      allowedDisclosures: []
+    } as unknown as BenchmarkReportDocumentListItemDto]);
+    fixture.detectChanges();
+
+    const row = docRow(`comparison|${ExecutiveSummary}`);
+    expect(row.querySelector('.cds-changed')!.textContent!.trim()).toBe('Comparison changed since written');
+    expect(Array.from(row.querySelectorAll('.cds-meta-part')).map(part => part.textContent!.trim()))
+      .toEqual(['1 min 05 s', '$0.04', 'Charts: 2']);
+    expect(row.querySelector('.cds-writer')!.textContent!.trim()).toBe('by Claude Opus writer (Anthropic; medium)');
+
+    // A finished chart set lists the documents again, for its count.
+    fixture.componentRef.setInput('chartStatus', { 41: { state: 'done', count: 3 } });
+    fixture.detectChanges();
+    http.expectOne(r => r.url === DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('lists the documents again after a delete, and tells the host', fakeAsync(() => {
+    openPanel();
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(ExecutiveSummary, 41)] }));
+    let changes = 0;
+    component.documentsChanged.subscribe(() => changes++);
+
+    status().documentDeleted.emit(41);
+    expect(changes).toBe(1);
+    answerPreview(comparisonPreview());
+    expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(true);
+    fixture.destroy();
+  }));
+
+  it('lists other model sets and chooses one with Choose these models', fakeAsync(() => {
+    openPanel();
+    answerPreview(comparisonPreview({
+      otherModelSets: [{
+        coveredSetKey: 'set-2',
+        subjectKey: 'comparison:12/set-2',
+        coversAllEntries: false,
+        coveredModels: [
+          { entryKey: 'run:1', label: 'Gemini Flash', provider: 'Google', letter: 'A' },
+          { entryKey: 'run:2', label: 'Claude Opus', provider: 'Anthropic', letter: 'B' }
+        ],
+        documents: [writtenDoc(ExecutiveSummary, 61, 'comparison:12/set-2')]
+      }]
+    }));
+
+    expect(text('details.cds-other-sets > summary')).toBe('Other model sets (1)');
+    q<HTMLButtonElement>('.cds-choose-set')!.click();
+    fixture.detectChanges();
+    expect(component.chosenKeys).toEqual(['run:1', 'run:2']);
+    expect(text('#rp-models-line')).toBe('Writes documents for 2 of 3 models — leaves out GPT Sol group (medium).');
+    const request = answerPreview(comparisonPreview({ coversAllEntries: false }));
+    expect(request.request.body.coveredEntryKeys).toEqual(['run:1', 'run:2']);
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // Writers and refusals
+  // -------------------------------------------------------------------------------------------
+
+  it('offers only enabled Benchmark-role configurations with a key as writers, and requires one', fakeAsync(() => {
     openPanel({ configs: [...CONFIGS, config(11, 'Keyless writer', 'OpenAI', { hasApiKey: false })] });
 
     expect(component.writers.map(writer => writer.id)).toEqual([7, 8]);
     expect(component.writerId).toBeNull();
     expect(generateButton().disabled).toBe(true);
     expect(text('#rp-generate-blocked')).toBe('Choose a report writer.');
-    expect(http.match(PREVIEW_URL).length).toBe(0);
-  });
+
+    // The documents are listed without a writer; there is no estimate yet.
+    const request = answerPreview();
+    expect(request.request.body.writerModelConfigurationId).toBe(0);
+    expect(q('#rp-estimate')!.classList).toContain('is-empty');
+    expect(host.querySelectorAll('.cds-row').length).toBe(3);
+    fixture.destroy();
+  }));
 
   it('restores the remembered writer while it still qualifies', fakeAsync(() => {
     localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8 }));
     openPanel();
 
     expect(component.writerId).toBe(8);
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectOne(PREVIEW_URL).flush(previewDto());
+    expect(answerPreview().request.body.writerModelConfigurationId).toBe(8);
     fixture.destroy();
   }));
 
-  it('shows the self-refusal before Generate, and keeps Generate disabled while it stands', fakeAsync(() => {
+  it('shows a refusal before Generate, and keeps Generate disabled while it stands', fakeAsync(() => {
     openPanel();
-    const refusal = 'The model under report cannot write its own report. Choose a writer of another model.';
-    chooseWriter(7, previewDto({ refusal, estimates: [], estimatedTotalCostUsd: null }));
+    const refusal = 'The writer is one of the covered models. Choose a writer of another model.';
+    chooseWriter(7, comparisonPreview({ refusal, estimates: [], estimatedTotalCostUsd: null }));
 
     const line = q('.rp-refusal')!;
     expect(line.classList).toContain('gh-field-error');
@@ -356,7 +845,7 @@ describe('ReportPackPanelComponent', () => {
     expect(line.compareDocumentPosition(generateButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(q('.rp-writer-selector .selector-trigger')!.getAttribute('aria-describedby')).toContain('rp-writer-refusal');
     expect(generateButton().disabled).toBe(true);
-    expect(text('#rp-generate-blocked')).toBe('This writer is refused for this subject. Choose another writer.');
+    expect(text('#rp-generate-blocked')).toBe('The documents cannot be written as chosen; the reason is shown under the report writer.');
 
     generateButton().click();
     http.expectNone(START_URL);
@@ -365,108 +854,12 @@ describe('ReportPackPanelComponent', () => {
 
   it('shows the peerless refusal with its own reason under Generate', fakeAsync(() => {
     openPanel();
-    chooseWriter(7, previewDto({ refusal: REPORT_PACK_PEERLESS_REFUSAL, peers: [], estimates: [], estimatedTotalCostUsd: null }));
+    selectScope('model');
+    chooseWriter(7, modelPreview(['run:1'], { refusal: REPORT_PACK_PEERLESS_REFUSAL, peers: [], estimates: [], estimatedTotalCostUsd: null }));
 
     expect(text('.rp-refusal')).toBe(REPORT_PACK_PEERLESS_REFUSAL);
     expect(generateButton().disabled).toBe(true);
-    expect(text('#rp-generate-blocked')).toBe('This subject has no other model to be compared with in this comparison.');
-    fixture.destroy();
-  }));
-
-  // -------------------------------------------------------------------------------------------
-  // Documents already written for the comparison
-  // -------------------------------------------------------------------------------------------
-
-  /** A Report Pack document the preview lists as already written for the subject. */
-  function writtenDocument(audience: BenchmarkReportAudience, documentId: number, writerDisplayName: string | null = 'Claude Opus writer') {
-    return { audience, documentId, createdAtUtc: '2026-10-05T14:30:00Z', writerDisplayName };
-  }
-
-  it('shows a document already written for the subject unchecked and disabled, and estimates again without it', fakeAsync(() => {
-    openPanel();
-    const first = chooseWriter(7, previewDto({ writtenDocuments: [writtenDocument(ExecutiveSummary, 41)] }));
-    expect(first.request.body.audiences).toEqual([ExecutiveSummary, TechnicalReport]);
-
-    const executive = q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!;
-    expect(executive.checked).toBe(false);
-    expect(executive.disabled).toBe(true);
-    expect(executive.getAttribute('aria-describedby'))
-      .toBe(`rp-audience-${ExecutiveSummary}-desc rp-audience-${ExecutiveSummary}-written`);
-    expect(text(`#rp-audience-${ExecutiveSummary}-written`))
-      .toBe('Written 2026-10-05 14:30 UTC by Claude Opus writer. Delete it in step 4 to write it again.');
-    const technical = q<HTMLInputElement>(`#rp-audience-${TechnicalReport}`)!;
-    expect(technical.disabled).toBe(false);
-    expect(technical.checked).toBe(true);
-    expect(technical.getAttribute('aria-describedby')).toBe(`rp-audience-${TechnicalReport}-desc`);
-    expect(q(`#rp-audience-${TechnicalReport}-written`)).toBeNull();
-    expect(component.selectedAudiences).toEqual([TechnicalReport]);
-    expect(text('#rp-estimate')).toBe('Estimating…');
-
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    const second = http.expectOne(PREVIEW_URL);
-    expect(second.request.body.audiences).toEqual([TechnicalReport]);
-    second.flush(previewDto({
-      estimates: [previewDto().estimates[1]],
-      estimatedTotalCostUsd: 0.07,
-      writtenDocuments: [writtenDocument(ExecutiveSummary, 41)]
-    }));
-    fixture.detectChanges();
-    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.07');
-    expect(generateButton().disabled).toBe(false);
-    expect(generateButton().hasAttribute('aria-disabled')).toBe(false);
-
-    // A disabled document cannot be checked from code either.
-    component.setAudience(ExecutiveSummary, true);
-    expect(component.selectedAudiences).toEqual([TechnicalReport]);
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectNone(PREVIEW_URL);
-    fixture.destroy();
-  }));
-
-  it('keeps Generate focusable and aria-disabled, with the reason, when every document about the subject is written', fakeAsync(() => {
-    openPanel();
-    chooseWriter(7, previewDto({
-      writtenDocuments: [
-        writtenDocument(ExecutiveSummary, 41),
-        writtenDocument(TechnicalReport, 42),
-        writtenDocument(InternalBrief, 43, null)
-      ]
-    }));
-    // Nothing is left to estimate.
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectNone(PREVIEW_URL);
-
-    expect(component.selectedAudiences).toEqual([]);
-    for (const audience of [ExecutiveSummary, TechnicalReport, InternalBrief]) {
-      expect(q<HTMLInputElement>(`#rp-audience-${audience}`)!.disabled, `${audience}`).toBe(true);
-    }
-    expect(text(`#rp-audience-${InternalBrief}-written`))
-      .toBe('Written 2026-10-05 14:30 UTC by an unknown writer. Delete it in step 4 to write it again.');
-    const button = generateButton();
-    expect(button.disabled).toBe(false);
-    expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(button.getAttribute('aria-describedby')).toBe('rp-estimate rp-generate-blocked');
-    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_ALL_WRITTEN_REASON);
-    button.click();
-    fixture.detectChanges();
-    http.expectNone(START_URL);
-
-    // Another subject has nothing written; coming back finds the written documents again without asking.
-    const select = q<HTMLSelectElement>('#rp-subject')!;
-    select.value = 'group:4';
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.disabled).toBe(false);
-    expect(generateButton().hasAttribute('aria-disabled')).toBe(false);
-    expect(text('#rp-generate-blocked')).toBe('Choose at least one document.');
-
-    select.value = 'run:1';
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
-    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.disabled).toBe(true);
-    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_ALL_WRITTEN_REASON);
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectNone(PREVIEW_URL);
+    expect(text('#rp-generate-blocked')).toBe('A chosen model has no other model to be compared with in this comparison.');
     fixture.destroy();
   }));
 
@@ -474,7 +867,7 @@ describe('ReportPackPanelComponent', () => {
     openPanel();
     chooseWriter(7);
     generateButton().click();
-    const message = 'The Executive Summary about Gemini Flash is already written for this comparison. Delete it in step 4 to write it again.';
+    const message = 'The Executive Summary of these models is already written for this comparison. Delete it, or rewrite it to replace it.';
     http.expectOne(START_URL).flush({ error: message }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
 
@@ -493,34 +886,27 @@ describe('ReportPackPanelComponent', () => {
   it('keeps the form when the comparison is recomputed with the same entry keys', fakeAsync(() => {
     openPanel();
     chooseWriter(7);
-    const select = q<HTMLSelectElement>('#rp-subject')!;
-    select.value = 'group:4';
-    select.dispatchEvent(new Event('change'));
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectOne(PREVIEW_URL).flush(previewDto({ subjectKey: 'group:4' }));
+    chooseModels(['run:1', 'group:4']);
+    answerPreview();
 
     fixture.componentRef.setInput('context', { ...CONTEXT, pricingBasis: 'AsRun' });
     fixture.detectChanges();
 
     http.expectNone(ACTIVE_JOB_URL);
-    expect(component.subjectKey).toBe('group:4');
+    expect(component.chosenKeys).toEqual(['run:1', 'group:4']);
     expect(component.writerId).toBe(7);
-    // The pricing basis changed, so the estimate is asked again, with it.
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    const again = http.expectOne(PREVIEW_URL);
+    // The pricing basis changed, so the preview is asked again, with it.
+    const again = answerPreview();
     expect(again.request.body.pricingBasis).toBe(0);
-    expect(again.request.body.subjectKey).toBe('group:4');
-    again.flush(previewDto());
+    expect(again.request.body.coveredEntryKeys).toEqual(['run:1', 'group:4']);
     fixture.destroy();
   }));
 
   it('resets the form, and looks for a running job again, when the entry keys change', fakeAsync(() => {
     openPanel();
     chooseWriter(7);
-    q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.click();
-    fixture.detectChanges();
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectOne(PREVIEW_URL).flush(previewDto());
+    chooseModels(['run:1', 'group:4']);
+    answerPreview();
 
     fixture.componentRef.setInput('context', {
       ...CONTEXT,
@@ -531,8 +917,8 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
     answerActiveJob(jobDto({ id: 'job-7', subjectKey: 'run:2', subjectLabel: 'Claude Opus' }));
 
-    expect(component.subjectKey).toBe('run:2');
-    expect(component.selectedAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(component.chosenKeys).toEqual(['run:2', 'group:4']);
+    expect(component.writerId).toBeNull();
     expect(component.activeJobId).toBe('job-7');
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
     fixture.destroy();
@@ -542,7 +928,7 @@ describe('ReportPackPanelComponent', () => {
   // The estimate
   // -------------------------------------------------------------------------------------------
 
-  it('requests the estimate with the comparison request, the subject, the documents and the writer', fakeAsync(() => {
+  it('requests the preview with the comparison request, the scope, the models, the documents and the writer', fakeAsync(() => {
     openPanel();
     const request = chooseWriter(7);
 
@@ -551,8 +937,10 @@ describe('ReportPackPanelComponent', () => {
       runIds: [1, 2, 3],
       groupIds: [4],
       pricingBasis: 1,
-      subjectKey: 'run:1',
-      audiences: [ExecutiveSummary, TechnicalReport],
+      subjectKey: '',
+      scope: BenchmarkReportScope.Comparison,
+      coveredEntryKeys: OFFERED,
+      audiences: ALL_AUDIENCES,
       writerModelConfigurationId: 7,
       acknowledgeSameProvider: false
     });
@@ -561,20 +949,24 @@ describe('ReportPackPanelComponent', () => {
     expect(panel.classList).toContain('gh-estimate-panel');
     expect(panel.getAttribute('role')).toBe('status');
     expect(text('#rp-estimate .gh-estimate-label')).toBe('Estimated cost');
-    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.12');
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.21');
     const parts = Array.from(panel.querySelectorAll('.gh-estimate-parts > div'))
       .map(part => [part.querySelector('dt')!.textContent!.trim(), part.querySelector('dd')!.textContent!.trim()]);
-    expect(parts).toEqual([['Executive Summary', '$0.05'], ['Report for AI Researchers and Developers', '$0.07']]);
-    expect(text('#rp-estimate .gh-estimate-note')).toContain('For Gemini Flash against 1 peer.');
+    expect(parts).toEqual([
+      ['Executive Summary', '$0.05'],
+      ['Report for AI Researchers and Developers', '$0.07'],
+      ['Internal Improvement Brief', '$0.09']
+    ]);
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('For 3 models, compared as equals.');
     expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate');
     expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
 
-  it('offers battery results as subjects and sends their ids for a comparison of battery results', fakeAsync(() => {
+  it('covers battery results and sends their ids for a comparison of battery results', fakeAsync(() => {
     const batteryEntries = [
-      entry('battery:4', 'Gemini Flash', { sourceKind: 'Battery', sourceId: 4 }),
-      entry('battery:9', 'Claude Opus', { sourceKind: 'Battery', sourceId: 9, provider: 'Anthropic' })
+      entry('battery:4', 'Gemini Flash', 70, { sourceKind: 'Battery', sourceId: 4 }),
+      entry('battery:9', 'Claude Opus', 60, { sourceKind: 'Battery', sourceId: 9, provider: 'Anthropic' })
     ];
     openPanel({
       context: {
@@ -589,26 +981,17 @@ describe('ReportPackPanelComponent', () => {
       }
     });
 
-    const select = q<HTMLSelectElement>('#rp-subject')!;
-    expect(Array.from(select.options).map(option => option.value)).toEqual(['battery:4', 'battery:9']);
-    expect(component.subjectKey).toBe('battery:4');
-
-    const request = chooseWriter(7, previewDto({ subjectKey: 'battery:4' }));
-    expect(request.request.body).toEqual({
-      runIds: [],
-      groupIds: [],
-      batteryRunIds: [4, 9],
-      pricingBasis: 1,
-      subjectKey: 'battery:4',
-      audiences: [ExecutiveSummary, TechnicalReport],
-      writerModelConfigurationId: 7,
-      acknowledgeSameProvider: false
-    });
+    expect(picker().options.map(option => option.key)).toEqual(['battery:4', 'battery:9']);
+    const request = chooseWriter(7);
+    expect(request.request.body.batteryRunIds).toEqual([4, 9]);
+    expect(request.request.body.runIds).toEqual([]);
+    expect(request.request.body.coveredEntryKeys).toEqual(['battery:4', 'battery:9']);
     fixture.destroy();
   }));
 
   it('keeps the estimate panel in place while empty, and busy while estimating', fakeAsync(() => {
     openPanel();
+    answerPreview();
     const panel = q('#rp-estimate')!;
     expect(panel.getAttribute('role')).toBe('status');
     expect(panel.classList).toContain('is-empty');
@@ -619,52 +1002,60 @@ describe('ReportPackPanelComponent', () => {
     expect(panel.classList).toContain('is-muted');
     expect(text('#rp-estimate')).toBe('Estimating…');
     expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate rp-generate-blocked');
+    expect(text('#rp-generate-blocked')).toBe('Checking the writer and estimating the cost…');
 
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectOne(PREVIEW_URL).flush(previewDto({ estimates: [previewDto().estimates[0]], estimatedTotalCostUsd: 0.05 }));
-    fixture.detectChanges();
+    answerPreview();
     expect(panel.hasAttribute('aria-busy')).toBe(false);
-    expect(panel.querySelector('.gh-estimate-parts')).toBeNull();
+    expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
 
-  it('debounces the estimate and re-requests it when the documents, the subject or the writer change', fakeAsync(() => {
+  it('debounces the preview, and drops the answer for an older choice', fakeAsync(() => {
     openPanel();
     chooseWriter(7);
 
-    // Two quick changes make one request, with both applied.
-    (q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!).click();
+    // Two quick changes make one request.
+    docCheck(`comparison|${InternalBrief}`).click();
     fixture.detectChanges();
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS / 2);
-    const select = q<HTMLSelectElement>('#rp-subject')!;
-    select.value = 'run:2';
-    select.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+    chooseModels(['run:1', 'run:2']);
     expect(generateButton().disabled).toBe(true);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS - 1);
     http.expectNone(PREVIEW_URL);
     tick(1);
-    const second = http.expectOne(PREVIEW_URL);
-    expect(second.request.body.audiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
-    expect(second.request.body.subjectKey).toBe('run:2');
-    second.flush(previewDto({ subjectKey: 'run:2' }));
-    fixture.detectChanges();
+    const older = http.expectOne(PREVIEW_URL);
+    expect(older.request.body.coveredEntryKeys).toEqual(['run:1', 'run:2']);
 
+    // A newer choice drops the request in flight; its answer never lands.
     component.selectWriter(8);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    const third = http.expectOne(PREVIEW_URL);
-    expect(third.request.body.writerModelConfigurationId).toBe(8);
-    third.flush(previewDto());
+    const newer = http.expectOne(PREVIEW_URL);
+    expect(older.cancelled).toBe(true);
+    expect(newer.request.body.writerModelConfigurationId).toBe(8);
+    newer.flush(comparisonPreview({ coversAllEntries: false }));
+    fixture.detectChanges();
+    expect(host.querySelectorAll('.cds-row').length).toBe(3);
+    fixture.destroy();
+  }));
 
-    // No documents: no estimate and no Generate.
-    for (const audience of [ExecutiveSummary, TechnicalReport, InternalBrief]) {
-      (q<HTMLInputElement>(`#rp-audience-${audience}`)!).click();
-      fixture.detectChanges();
-    }
-    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
-    http.expectNone(PREVIEW_URL);
-    expect(generateButton().disabled).toBe(true);
-    expect(text('#rp-generate-blocked')).toBe('Choose at least one document.');
+  it('warns from 70 % of the writer\'s context window', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7, comparisonPreview({
+      estimates: [estimate(ExecutiveSummary, 0.05), estimate(TechnicalReport, 0.07, 'comparison:12', 0.78), estimate(InternalBrief, 0.09)]
+    }));
+
+    const warning = q('.rp-context-warning')!;
+    expect(warning.classList).toContain('alert-warning');
+    expect(warning.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      'The Report for AI Researchers and Developers\'s prompt would fill about 78 % of the writer\'s context window; '
+      + 'from 90 % it is refused. Fewer models, or a writer with a larger context window, leaves the writer more room.');
+    expect(generateButton().disabled).toBe(false);
+
+    // An unchecked document's prompt does not count.
+    docCheck(`comparison|${TechnicalReport}`).click();
+    fixture.detectChanges();
+    answerPreview(comparisonPreview({ estimates: [estimate(ExecutiveSummary, 0.05), estimate(InternalBrief, 0.09)] }));
+    expect(q('.rp-context-warning')).toBeNull();
     fixture.destroy();
   }));
 
@@ -674,14 +1065,13 @@ describe('ReportPackPanelComponent', () => {
 
   it('warns about a same-provider writer, and confirms on every Generate before sending the acknowledgment', fakeAsync(() => {
     openPanel();
-    const warning = 'The writer shares Anthropic with the subject; its documents may favor its own family.';
-    chooseWriter(7, previewDto({ sameProviderWarning: warning }));
+    const warning = 'The writer shares Anthropic with Claude Opus; its documents may favor its own family.';
+    chooseWriter(7, comparisonPreview({ sameProviderWarning: warning }));
 
     const alert = q('.rp-same-provider')!;
     expect(alert.classList).toContain('alert-warning');
     expect(alert.textContent).toContain(warning);
-    expect(q('#rp-acknowledge')).toBeNull();
-    expect(q('.rp-same-provider input[type="checkbox"]')).toBeNull();
+    expect(text('.rp-same-provider .alert-heading')).toBe('Writer from a chosen model\'s provider');
     expect(generateButton().disabled).toBe(false);
 
     // Cancel: nothing is sent, and focus returns to Generate.
@@ -725,10 +1115,10 @@ describe('ReportPackPanelComponent', () => {
     openPanel();
     chooseWriter(7);
     generateButton().click();
-    const message = 'The writer and the subject are both from Anthropic. Acknowledge the warning to continue.';
+    const message = 'The writer and Claude Opus are both from Anthropic. Acknowledge the warning to continue.';
     const first = http.expectOne(START_URL);
     expect(first.request.body.acknowledgeSameProvider).toBe(false);
-    first.flush({ sameProvider: true, provider: 'Anthropic', testedModelDisplayName: 'Gemini Flash', assessorModelDisplayName: 'Claude Opus writer', message }, { status: 409, statusText: 'Conflict' });
+    first.flush({ sameProvider: true, provider: 'Anthropic', testedModelDisplayName: 'Claude Opus', assessorModelDisplayName: 'Claude Opus writer', message }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
 
     expect(confirmDialog().open).toBe(true);
@@ -755,7 +1145,7 @@ describe('ReportPackPanelComponent', () => {
     host.addEventListener('cancel', () => heard.push('cancel'));
 
     const dialogs = Array.from(host.querySelectorAll('dialog'));
-    expect(dialogs.length).toBeGreaterThanOrEqual(2);
+    expect(dialogs.length).toBeGreaterThanOrEqual(3);
     for (const dialog of dialogs) {
       // A real close event does not bubble; a bubbling one proves the handlers stop it.
       dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
@@ -848,6 +1238,8 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 0 of 2 finished.');
     expect(q('.rp-job-log')).not.toBeNull();
     expect(generateButton().disabled).toBe(true);
+    // A running job's rows cannot be checked or deleted.
+    expect(docCheck(`comparison|${ExecutiveSummary}`).disabled).toBe(true);
 
     const stages = Array.from(host.querySelectorAll('.rp-job-rail .run-stage'));
     expect(q('.rp-job-rail')!.classList).toContain('run-stage-rail');
@@ -862,7 +1254,7 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-job-calls')).toBe('1');
     expect(text('.rp-job-tokens')).toBe('6,000 in · 0 out');
     expect(text('.rp-job-cost-label')).toBe('Cost so far');
-    expect(text('.rp-job-estimate')).toBe('about $0.12');
+    expect(text('.rp-job-estimate')).toBe('about $0.21');
 
     tick(REPORT_PACK_POLL_MS - 1);
     http.expectNone(jobUrl('job-1'));
@@ -900,12 +1292,15 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-job-stats')).not.toBeNull();
     expect(text('.rp-job-cost-label')).toBe('Cost');
     expect(text('.rp-job-cost')).toBe('$0.13');
-    expect(text('.rp-job-estimate')).toBe('about $0.12');
+    expect(text('.rp-job-estimate')).toBe('about $0.21');
     expect(q('.rp-job-summary-row')!.compareDocumentPosition(q('.rp-job-stats')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(q('.rp-cancel-job')).toBeNull();
     expect(finished.map(job => job.id)).toEqual(['job-1']);
     expect(busy).toEqual([true, false]);
     expect(component.jobRunning).toBe(false);
+    // The documents it wrote are listed again.
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectOne(PREVIEW_URL);
     tick(REPORT_PACK_POLL_MS * 3);
     http.expectNone(jobUrl('job-1'));
 
@@ -924,6 +1319,28 @@ describe('ReportPackPanelComponent', () => {
     fixture.destroy();
   }));
 
+  it('names each document\'s model in a per-model job of several models', fakeAsync(() => {
+    openPanel({
+      activeJob: jobDto({
+        id: 'job-5',
+        scope: BenchmarkReportScope.Model,
+        documents: [
+          { audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1, subjectKey: 'run:1', subjectLabel: 'Gemini Flash' },
+          { audience: ExecutiveSummary, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0, subjectKey: 'group:4', subjectLabel: 'GPT Sol group' }
+        ]
+      })
+    });
+
+    expect(text('.rp-job-status')).toBe('Writing 2 documents for 2 models: 0 of 2 finished.');
+    const rows = Array.from(host.querySelectorAll('.rp-job-row'));
+    expect(rows.map(row => row.getAttribute('data-subject'))).toEqual(['run:1', 'group:4']);
+    expect(rows.map(row => row.querySelector('.rp-doc-model')!.textContent!.replace(/\s+/g, ' ').trim()))
+      .toEqual(['Model: Gemini Flash', 'Model: GPT Sol group']);
+    expect(Array.from(host.querySelectorAll('.rp-job-rail .run-stage-name')).map(name => name.textContent!.trim()))
+      .toEqual(['Queued', 'Preparing', 'Executive Summary — Gemini Flash', 'Executive Summary — GPT Sol group', 'Done']);
+    fixture.destroy();
+  }));
+
   it('cancels the running job, then reads its final state at once', fakeAsync(() => {
     openPanel();
     startJob();
@@ -939,6 +1356,8 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Canceled.');
     expect(text('.rp-job-summary')).toBe('Canceled: 0 of 2 documents written, 30 s, Unknown');
     expect(q('.rp-cancel-job')).toBeNull();
+    // The rows are listed again before Generate can start another job.
+    answerPreview();
     expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
@@ -1019,13 +1438,14 @@ describe('ReportPackPanelComponent', () => {
     expect(component['tickSub']).toBeNull();
     tick(REPORT_PACK_POLL_MS * 10);
     http.expectNone(jobUrl('job-5'));
+    http.expectNone(PREVIEW_URL);
   }));
 
   // -------------------------------------------------------------------------------------------
   // The document progress list (v1 Task 1)
   // -------------------------------------------------------------------------------------------
 
-  it('lists each document with a chip, a live duration and centered model calls, under an aria-hidden header', fakeAsync(() => {
+  it('lists each document with its model, a chip, a live duration and centered model calls, under an aria-hidden header', fakeAsync(() => {
     openPanel({
       activeJob: jobDto({
         id: 'job-5',
@@ -1041,9 +1461,12 @@ describe('ReportPackPanelComponent', () => {
     expect(list.getAttribute('aria-label')).toBe('Progress of each document');
     const head = q('.rp-doc-progress-head')!;
     expect(head.getAttribute('aria-hidden')).toBe('true');
+    // A per-model job names its model first.
     expect(Array.from(head.children).map(cell => cell.textContent!.trim()))
-      .toEqual(['Document', 'Status', 'Duration', 'Model calls', 'Charts']);
+      .toEqual(['Model', 'Document', 'Status', 'Duration', 'Model calls', 'Charts']);
+    expect(q('.rp-doc-progress-grid')!.classList).toContain('has-model');
     expect(list.querySelectorAll('li.rp-job-row').length).toBe(2);
+    expect(cellText(ExecutiveSummary, '.rp-doc-model')).toBe('Model: Gemini Flash');
 
     const chip = q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .job-status-chip`)!;
     expect(chip.classList).toContain('status-generating');
@@ -1058,6 +1481,17 @@ describe('ReportPackPanelComponent', () => {
     tick(1000);
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 31 s');
+    fixture.destroy();
+  }));
+
+  it('names no model in a comparison-scope job\'s progress', fakeAsync(() => {
+    openPanel({ activeJob: jobDto({ id: 'job-5', scope: BenchmarkReportScope.Comparison, subjectKey: 'comparison:12', subjectLabel: 'Comparison #12' }) });
+
+    expect(Array.from(q('.rp-doc-progress-head')!.children).map(cell => cell.textContent!.trim()))
+      .toEqual(['Document', 'Status', 'Duration', 'Model calls', 'Charts']);
+    expect(q('.rp-doc-progress-grid')!.classList).not.toContain('has-model');
+    expect(q('.rp-doc-model')).toBeNull();
+    expect(text('.rp-job-status')).toBe('Writing 2 documents for Comparison #12: 0 of 2 finished.');
     fixture.destroy();
   }));
 
@@ -1080,7 +1514,7 @@ describe('ReportPackPanelComponent', () => {
     expect(cellText(ExecutiveSummary, '.rp-doc-charts')).toBe('Charts: attaching…');
     expect(cellText(TechnicalReport, '.rp-doc-charts')).toBe('Charts: 3');
     const retry = q<HTMLButtonElement>(`.rp-job-row[data-audience="${InternalBrief}"] .rp-chart-retry`)!;
-    expect(retry.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts failed — retry for the Internal Improvement Brief');
+    expect(retry.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts failed — retry for the Internal Improvement Brief of Gemini Flash');
     retry.click();
     expect(retries.map(doc => doc.documentId)).toEqual([33]);
 
@@ -1123,9 +1557,9 @@ describe('ReportPackPanelComponent', () => {
     expect(copied).toContain('Job id: job-5');
     expect(copied).not.toContain('user-secret-id');
     expect(copied).not.toContain('\r');
-    const status = q('.rp-copy-status')!;
-    expect(status.getAttribute('role')).toBe('status');
-    expect(status.textContent!.trim()).toBe('Copied');
+    const line = q('.rp-copy-status')!;
+    expect(line.getAttribute('role')).toBe('status');
+    expect(line.textContent!.trim()).toBe('Copied');
     expect(q('.rp-copy-error')).toBeNull();
     fixture.destroy();
   }));
@@ -1207,24 +1641,29 @@ describe('ReportPackPanelComponent', () => {
   // Charts in PDF and Word
   // -------------------------------------------------------------------------------------------
 
-  it('holds the chart picker between Documents and Report writer, its segments following the documents checked', () => {
+  it('holds the chart picker between the documents and Report writer, its segments following the documents checked', fakeAsync(() => {
     openPanel();
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(InternalBrief, 43)] }));
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(InternalBrief, 43)] }));
     const selections: ReportChartSelection[] = [];
     component.chartSelectionChange.subscribe(selection => selections.push(selection));
 
     const fieldset = q('fieldset.rp-charts-choice')!;
     expect(fieldset.querySelector('legend')!.textContent!.trim()).toBe('Charts in PDF and Word');
-    const picker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
-    expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
-    expect(picker.available).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
-    expect(picker.idPrefix).toBe('rp-charts');
+    const chartPicker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
+    expect(chartPicker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(chartPicker.available).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
+    expect(chartPicker.idPrefix).toBe('rp-charts');
+    expect(chartPicker.scope).toBe('comparison');
     q<HTMLButtonElement>(`#rp-charts-tab-${InternalBrief}`)!.click();
     fixture.detectChanges();
     expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
+    expect(text(`#rp-charts-${InternalBrief}-p1a-quality-placement`)).toBe('Models compared');
 
-    q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.click();
+    // Rewrite the brief: its charts can be chosen.
+    docCheck(`comparison|${InternalBrief}`).click();
     fixture.detectChanges();
-    expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
+    expect(chartPicker.enabledAudiences).toEqual(ALL_AUDIENCES);
     expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.hasAttribute('aria-disabled')).toBe(false);
 
     q<HTMLButtonElement>(`#rp-charts-tab-${ExecutiveSummary}`)!.click();
@@ -1233,9 +1672,14 @@ describe('ReportPackPanelComponent', () => {
     expect(selections.length).toBe(1);
     expect(selections[0][ExecutiveSummary]).toEqual(['p1a-quality', 'p1b-speed', 's2-quality-cost']);
 
+    // One model at a time shows the per-model sections.
+    selectScope('model');
+    expect(chartPicker.scope).toBe('model');
+
     expect(q('.rp-chart-advisory')).toBeNull();
     expect(q('.rp-chart-storage-missing')).toBeNull();
-  });
+    fixture.destroy();
+  }));
 
   it('shows the chart advisory and the missing chart storage as visible warnings', () => {
     fixture.componentRef.setInput('chartAdvisory', 'The charts use today\'s prices; the documents were written at run-time prices.');
@@ -1259,6 +1703,102 @@ describe('ReportPackPanelComponent', () => {
 
     expect(q(`#rp-charts-${TechnicalReport}-p2-profile`)!.getAttribute('aria-disabled')).toBe('true');
     expect(text('#rp-charts-row-p2-profile-reason')).toBe('needs three or more models');
+  });
+
+  describe('with a layout', () => {
+    const COMPOSED: ComposedDocumentCharts = {
+      charts: [{
+        key: 'p1a-quality',
+        chart: { png: new Blob(['png'], { type: 'image/png' }), widthPx: 2008, heightPx: 1255, title: 'Intelligence', caption: 'Drawn.', altText: 'Bars.' }
+      }],
+      failed: [{ key: 's2-quality-cost', message: 'it does not fit' }],
+      layout: { version: 1, figures: [{ key: 'p1a-quality', widthShare: 1, rowGroup: null }], maxHeightShare: 0.6 }
+    };
+
+    beforeEach(() => {
+      fixture.componentRef.setInput('chartLayout', DEFAULT_CHART_LAYOUT_SETTINGS);
+    });
+
+    const previewButton = (): HTMLButtonElement => q<HTMLButtonElement>('.rp-preview-layout')!;
+
+    it('passes the layout to the picker and its changes to the host', fakeAsync(() => {
+      openPanel();
+      const layouts: ReportChartLayoutSettings[] = [];
+      component.chartLayoutChange.subscribe(layout => layouts.push(layout));
+      const chartPicker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
+      expect(chartPicker.layout).not.toBeNull();
+
+      chartPicker.layoutChange.emit(DEFAULT_CHART_LAYOUT_SETTINGS);
+      expect(layouts).toEqual([DEFAULT_CHART_LAYOUT_SETTINGS]);
+      fixture.destroy();
+    }));
+
+    it('offers Preview layout in the Layout disclosure, aria-disabled with its reason while it cannot run', fakeAsync(() => {
+      openPanel();
+      answerPreview(comparisonPreview({ comparisonId: null }));
+
+      const button = previewButton();
+      expect(button.closest('details.rcp-layout')).not.toBeNull();
+      expect(button.classList).toContain('btn-ghost');
+      expect(button.querySelector('svg.btn-icon')).not.toBeNull();
+      expect(button.textContent!.replace(/\s+/g, ' ').trim()).toBe('Preview layout of the Executive Summary');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(text(`#${button.getAttribute('aria-describedby')}`)).toBe('The charts cannot be drawn here.');
+
+      fixture.componentRef.setInput('documentChartsComposer', vi.fn());
+      fixture.detectChanges();
+      expect(text('#rp-preview-layout-reason')).toBe('The comparison has no number yet, so its layout cannot be previewed.');
+
+      fixture.componentRef.setInput('chartStorageMissing', true);
+      fixture.detectChanges();
+      expect(text('#rp-preview-layout-reason')).toBe('Chart storage is not configured, so there are no charts to preview.');
+
+      fixture.componentRef.setInput('chartStorageMissing', false);
+      fixture.componentRef.setInput('comparisonId', 12);
+      fixture.detectChanges();
+      expect(button.hasAttribute('aria-disabled')).toBe(false);
+      fixture.destroy();
+    }));
+
+    it('composes the covered models\' figures through the host and opens the layout preview PDF', async () => {
+      const compose = vi.fn().mockResolvedValue(COMPOSED);
+      fixture.componentRef.setInput('documentChartsComposer', compose as unknown as DocumentChartsComposer);
+      fixture.componentRef.setInput('comparisonId', 12);
+      openPanel();
+      chooseModels(['run:1', 'group:4']);
+      const open = vi.spyOn(component.layoutViewer!, 'open').mockReturnValue(undefined);
+
+      q<HTMLButtonElement>(`#rp-charts-tab-${TechnicalReport}`)!.click();
+      fixture.detectChanges();
+      previewButton().click();
+      expect(open).toHaveBeenCalledTimes(1);
+      const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
+      expect(request.title).toBe('Layout preview — Report for AI Researchers and Developers');
+
+      // Composed and sent as the viewer loads it.
+      let bytes: Uint8Array | null = null;
+      request.load(null).subscribe(file => (bytes = file.bytes));
+      let post: TestRequest | null = null;
+      await until(() => {
+        post = http.match(LAYOUT_PREVIEW_URL)[0] ?? null;
+        return post !== null;
+      });
+      expect(compose).toHaveBeenCalledWith(TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'group:4'] }, 'comparison');
+      const sent = post! as TestRequest;
+      const body = JSON.parse((sent.request.body as FormData).get('request') as string);
+      expect(body.scope).toBe(BenchmarkReportScope.Comparison);
+      expect(body.coveredEntryKeys).toEqual(['run:1', 'group:4']);
+      expect(body.audience).toBe(TechnicalReport);
+      expect(body.audiences).toEqual([TechnicalReport]);
+      expect(body.naming).toBe('named');
+      expect(body.layout).toEqual(COMPOSED.layout);
+      expect((sent.request.body as FormData).getAll('files').length).toBe(1);
+      sent.flush(new Blob([new Uint8Array([37, 80, 68, 70])], { type: 'application/pdf' }));
+      await until(() => bytes !== null);
+      fixture.detectChanges();
+      expect(Array.from(bytes!)).toEqual([37, 80, 68, 70]);
+      expect(text('.rp-layout-preview-note')).toBe('Not drawn: Intelligence against cost (it does not fit)');
+    });
   });
 
   // -------------------------------------------------------------------------------------------

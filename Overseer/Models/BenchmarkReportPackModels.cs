@@ -88,6 +88,24 @@ public sealed record BenchmarkReportAudienceSpec(
     /// <summary>Slots of <see cref="RequiredSlots"/> that a document with peers requires and a stand-alone one never has.</summary>
     public IReadOnlyList<string> PeerOnlySlots { get; init; } = Array.Empty<string>();
 
+    /// <summary>
+    /// A comparison-scope document: every covered model is described as an equal, by its letter, and
+    /// there is no subject.
+    /// </summary>
+    public bool ComparisonScope { get; init; }
+
+    /// <summary>The strengths and weaknesses lists; a comparison-scope document has neither.</summary>
+    public bool UsesStrengthsAndWeaknesses { get; init; } = true;
+
+    /// <summary>The most points each model gets in the <c>models</c> list; 0 when the document has no such list.</summary>
+    public int MaxModelPoints { get; init; }
+
+    /// <summary>The leads the document holds where it uses them.</summary>
+    public int MaxLeads { get; init; } = 6;
+
+    /// <summary>The values a lead's <c>triage</c> may take.</summary>
+    public IReadOnlyList<string> LeadTriages { get; init; } = new[] { "harness", "suite", "chat", "corpus" };
+
     /// <summary>The slots a document requires: every slot with peers, the slots outside <see cref="PeerOnlySlots"/> without.</summary>
     public IReadOnlyList<string> SlotsFor(bool hasPeers)
         => hasPeers ? RequiredSlots : RequiredSlots.Where(s => !PeerOnlySlots.Contains(s, StringComparer.Ordinal)).ToList();
@@ -111,9 +129,29 @@ public static class BenchmarkReportSlots
     public const string BenchmarkSystem = "benchmarkSystem"; // ≤ 150 words
     public const string ModelResult = "modelResult";         // ≤ 150 words
 
+    // Comparison scope: Executive Summary
+    public const string Overview = "overview";               // The comparison in one paragraph
+    public const string WhichModel = "whichModel";           // Which model to use
+    public const string TradeOffs = "tradeOffs";             // Trade-offs
+    public const string Reliability = "reliability";         // How reliable this is
+
+    // Comparison scope: Report for AI Researchers and Developers (abstract and limitations as above)
+    public const string Results = "results";                     // after the results table and paired tests
+    public const string DimensionProfiles = "dimensionProfiles";
+    public const string Frontier = "frontier";                   // Speed and cost frontier
+    public const string QuestionPatterns = "questionPatterns";   // Cross-model question patterns
+    public const string GraderReliability = "graderReliability";
+
+    // Comparison scope: Internal Improvement Brief (benchmarkSystem as above)
+    public const string SharedGaps = "sharedGaps";
+    public const string ModelGaps = "modelGaps";
+
     public const string TargetModelDevelopers = "model_developers";
     public const string TargetOverseerChat = "overseer_chat";
     public const string TargetBenchmark = "benchmark";
+
+    /// <summary>A comparison-scope lead about one model rather than the system.</summary>
+    public const string LeadTriageModel = "model";
 
     public static readonly BenchmarkReportAudienceSpec ExecutiveSummary = new(
         BenchmarkReportAudience.ExecutiveSummary,
@@ -151,6 +189,55 @@ public static class BenchmarkReportSlots
         RequiresQuestionTopics: true,
         UsesLeads: true);
 
+    public static readonly BenchmarkReportAudienceSpec ComparisonExecutiveSummary = new(
+        BenchmarkReportAudience.ExecutiveSummary,
+        new[] { Overview, WhichModel, TradeOffs, Reliability },
+        MaxStrengths: 0,
+        MaxWeaknesses: 0,
+        UsesRecommendations: false,
+        RecommendationTargets: Array.Empty<string>(),
+        UsesQuestionNotes: false,
+        RequiresQuestionTopics: false,
+        UsesLeads: false)
+    {
+        ComparisonScope = true,
+        UsesStrengthsAndWeaknesses = false,
+        MaxModelPoints = 2
+    };
+
+    public static readonly BenchmarkReportAudienceSpec ComparisonTechnicalReport = new(
+        BenchmarkReportAudience.TechnicalReport,
+        new[] { Abstract, Results, DimensionProfiles, Frontier, QuestionPatterns, GraderReliability, Limitations },
+        MaxStrengths: 0,
+        MaxWeaknesses: 0,
+        UsesRecommendations: false,
+        RecommendationTargets: Array.Empty<string>(),
+        UsesQuestionNotes: false,
+        RequiresQuestionTopics: true,
+        UsesLeads: false)
+    {
+        ComparisonScope = true,
+        UsesStrengthsAndWeaknesses = false,
+        MaxModelPoints = 4
+    };
+
+    public static readonly BenchmarkReportAudienceSpec ComparisonInternalBrief = new(
+        BenchmarkReportAudience.InternalBrief,
+        new[] { SharedGaps, ModelGaps, BenchmarkSystem },
+        MaxStrengths: 0,
+        MaxWeaknesses: 0,
+        UsesRecommendations: false,
+        RecommendationTargets: Array.Empty<string>(),
+        UsesQuestionNotes: false,
+        RequiresQuestionTopics: true,
+        UsesLeads: true)
+    {
+        ComparisonScope = true,
+        UsesStrengthsAndWeaknesses = false,
+        MaxLeads = 8,
+        LeadTriages = new[] { "chat", "harness", "suite", "corpus", LeadTriageModel }
+    };
+
     public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => ExecutiveSummary,
@@ -158,6 +245,25 @@ public static class BenchmarkReportSlots
         BenchmarkReportAudience.InternalBrief => InternalBrief,
         _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
     };
+
+    /// <summary>The audience's slots for a per-model document or a comparison-scope document.</summary>
+    public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience, BenchmarkReportScope scope)
+        => scope != BenchmarkReportScope.Comparison
+            ? For(audience)
+            : audience switch
+            {
+                BenchmarkReportAudience.ExecutiveSummary => ComparisonExecutiveSummary,
+                BenchmarkReportAudience.TechnicalReport => ComparisonTechnicalReport,
+                BenchmarkReportAudience.InternalBrief => ComparisonInternalBrief,
+                _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
+            };
+
+    /// <summary>The audience's slots for the document the sheet describes.</summary>
+    public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        return For(audience, sheet.IsComparison ? BenchmarkReportScope.Comparison : BenchmarkReportScope.Model);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -297,9 +403,41 @@ public sealed class BenchmarkReportQuestion
 
     /// <summary>
     /// A battery question whose text, rubric, answer excerpt and grader comments the writer was given;
-    /// null on a run or group sheet, where every question is given in full.
+    /// null on a run or group sheet, where every question is given in full. On a comparison-scope
+    /// sheet, a question whose text and rubric the writer was given.
     /// </summary>
     public bool? Detailed { get; set; }
+
+    /// <summary>
+    /// A comparison-scope sheet's per-model cells of this question, by letter; null on a per-model
+    /// sheet. There the question's own figures are over the covered models: <see cref="Score"/> their
+    /// mean, <see cref="PeerMin"/> and <see cref="PeerMax"/> their lowest and highest score and
+    /// <see cref="PeerCount"/> the models that scored it.
+    /// </summary>
+    public List<BenchmarkReportQuestionModelScore>? Models { get; set; }
+
+    /// <summary>The letters whose answer excerpts the writer was given (comparison scope); null on a per-model sheet.</summary>
+    public List<string>? ExcerptLetters { get; set; }
+}
+
+/// <summary>One covered model's figures on one question of a comparison-scope sheet.</summary>
+public sealed class BenchmarkReportQuestionModelScore
+{
+    public string Letter { get; set; } = string.Empty;
+
+    /// <summary>The model's published quality on the item; a mean over its runs; null when unscored.</summary>
+    public double? Score { get; set; }
+
+    public bool CriticalError { get; set; }
+
+    /// <summary>Rounds with a critical error, for a battery result; null otherwise.</summary>
+    public int? CriticalErrorCount { get; set; }
+
+    public int RefutedClaims { get; set; }
+    public int? RefutedAnswerSentences { get; set; }
+    public double ToolCalls { get; set; }
+    public double? ModelTimeMs { get; set; }
+    public int RunCount { get; set; }
 }
 
 /// <summary>
@@ -423,6 +561,120 @@ public sealed class BenchmarkReportFactSheet
 
     /// <summary>The battery run a battery subject's sheet describes; null on a run or group sheet.</summary>
     public BenchmarkReportBatterySubject? Battery { get; set; }
+
+    /// <summary>The value of <see cref="Scope"/> on a comparison-scope sheet.</summary>
+    public const string ComparisonScopeValue = "Comparison";
+
+    /// <summary>
+    /// <see cref="ComparisonScopeValue"/> on a comparison-scope sheet, which describes every covered
+    /// model as an equal: <see cref="Peers"/> then holds every covered model with its letter and there
+    /// is no subject. Null on a per-model sheet.
+    /// </summary>
+    public string? Scope { get; set; }
+
+    /// <summary>The sheet is a comparison-scope sheet.</summary>
+    [JsonIgnore]
+    public bool IsComparison => string.Equals(Scope, ComparisonScopeValue, StringComparison.Ordinal);
+
+    /// <summary>
+    /// A comparison-scope sheet written over every entry of the comparison that was not Excluded at
+    /// the time; null on a per-model sheet.
+    /// </summary>
+    public bool? CoversAllEntries { get; set; }
+
+    /// <summary>The comparison's entries that were not Excluded when a comparison-scope sheet was written; null on a per-model sheet.</summary>
+    public int? ComparisonEntryCount { get; set; }
+
+    /// <summary>The covered models of a comparison-scope sheet, in letter order; null on a per-model sheet.</summary>
+    public List<BenchmarkReportComparisonModel>? Models { get; set; }
+
+    /// <summary>
+    /// A comparison-scope sheet's paired-test families over its covered models: against the reference
+    /// (the model lettered A), and over all pairs when there are few enough models; null on a per-model sheet.
+    /// </summary>
+    public List<BenchmarkReportPairedFamily>? PairedTests { get; set; }
+
+    /// <summary>Why a comparison-scope sheet has no paired tests; null when it has them, and on a per-model sheet.</summary>
+    public string? PairedTestsUnavailableReason { get; set; }
+}
+
+/// <summary>One covered model of a comparison-scope sheet.</summary>
+public sealed class BenchmarkReportComparisonModel
+{
+    /// <summary><c>A</c> for the highest Intelligence Index of the covered models, ties by entry key (ordinal).</summary>
+    public string Letter { get; set; } = string.Empty;
+
+    public string EntryKey { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+}
+
+/// <summary>One family of paired tests over a comparison-scope sheet's covered models.</summary>
+public sealed class BenchmarkReportPairedFamily
+{
+    /// <summary><c>Reference</c> (the model lettered A against each other model) or <c>AllPairs</c>.</summary>
+    public string Mode { get; set; } = string.Empty;
+
+    /// <summary>The reference model's letter in <c>Reference</c> mode.</summary>
+    public string? ReferenceLetter { get; set; }
+
+    /// <summary>Set when a model has a single run (for a battery result, one run per suite).</summary>
+    public string? SingleRunCaveat { get; set; }
+
+    /// <summary>Intelligence, then Speed and Cost, each its own family for the Holm adjustment.</summary>
+    public List<BenchmarkReportPairedMeasure> Measures { get; set; } = new();
+}
+
+/// <summary>One measure's tests within a paired family.</summary>
+public sealed class BenchmarkReportPairedMeasure
+{
+    /// <summary><c>Intelligence</c>, <c>Speed</c> or <c>Cost</c>.</summary>
+    public string Measure { get; set; } = string.Empty;
+
+    /// <summary>The tests made: pairs with a p-value.</summary>
+    public int FamilySize { get; set; }
+
+    /// <summary><c>None</c> or <c>Holm</c>.</summary>
+    public string Adjustment { get; set; } = string.Empty;
+
+    public string AdjustmentNote { get; set; } = string.Empty;
+
+    public string? NotTestedReason { get; set; }
+
+    /// <summary>In letter order of the first model, then of the second.</summary>
+    public List<BenchmarkReportPairedTest> Pairs { get; set; } = new();
+}
+
+/// <summary>
+/// One paired test, oriented by letter: the first model is the one with the earlier letter. A
+/// difference is first minus second; a ratio is first divided by second.
+/// </summary>
+public sealed class BenchmarkReportPairedTest
+{
+    public string FirstLetter { get; set; } = string.Empty;
+    public string SecondLetter { get; set; } = string.Empty;
+
+    /// <summary>Questions both models answered on the same item revision.</summary>
+    public int PairedItems { get; set; }
+
+    /// <summary><c>Difference</c> or <c>Ratio</c>.</summary>
+    public string EffectKind { get; set; } = string.Empty;
+
+    public double? Effect { get; set; }
+    public double? Lower { get; set; }
+    public double? Upper { get; set; }
+    public double? PValue { get; set; }
+
+    /// <summary>Holm-adjusted within the measure's family; equal to <see cref="PValue"/> in a family of one.</summary>
+    public double? AdjustedPValue { get; set; }
+
+    /// <summary>The adjusted p-value is below 0.05.</summary>
+    public bool Established { get; set; }
+
+    /// <summary><c>First</c>, <c>Second</c> or <c>None</c>: which model the established result favors.</summary>
+    public string Favors { get; set; } = string.Empty;
+
+    public string? NotTestedReason { get; set; }
 }
 
 /// <summary>The battery run behind a battery subject: its definition as run, and its suites in order.</summary>
@@ -533,13 +785,29 @@ public sealed class BenchmarkReportContentSnapshot
 {
     public int AnswerExcerptChars { get; set; }
 
-    /// <summary>One block per subject run, in run-id order.</summary>
+    /// <summary>
+    /// One block per subject run, in run-id order. On a comparison-scope document, one block per
+    /// covered model's run whose answers the writer was given as excerpts, in letter and run-id order,
+    /// holding only those answers.
+    /// </summary>
     public List<BenchmarkReportContentRun> Runs { get; set; } = new();
+
+    /// <summary>
+    /// A comparison-scope document's questions as asked, with their rubrics and no answer, by
+    /// number; null on a per-model document, whose runs carry them.
+    /// </summary>
+    public List<BenchmarkReportContentQuestion>? Questions { get; set; }
 }
 
 public sealed class BenchmarkReportContentRun
 {
     public long RunId { get; set; }
+
+    /// <summary>The covered model the run belongs to on a comparison-scope document; null on a per-model document.</summary>
+    public string? EntryKey { get; set; }
+
+    /// <summary>That model's letter on a comparison-scope document; null on a per-model document.</summary>
+    public string? Letter { get; set; }
 
     /// <summary>In order-index order.</summary>
     public List<BenchmarkReportContentQuestion> Questions { get; set; } = new();
@@ -640,6 +908,21 @@ public sealed class BenchmarkReportWriterOutput
 
     [JsonPropertyName("leads")]
     public List<BenchmarkReportLead> Leads { get; set; } = new();
+
+    /// <summary>A comparison-scope document's points about each covered model, by letter; null on a per-model document.</summary>
+    [JsonPropertyName("models")]
+    public List<BenchmarkReportModelPoints>? Models { get; set; }
+}
+
+/// <summary>The writer's points about one covered model of a comparison-scope document.</summary>
+public sealed class BenchmarkReportModelPoints
+{
+    /// <summary>The model's letter.</summary>
+    [JsonPropertyName("model")]
+    public string Model { get; set; } = string.Empty;
+
+    [JsonPropertyName("points")]
+    public List<BenchmarkReportWriterItem> Points { get; set; } = new();
 }
 
 public class BenchmarkReportWriterItem
@@ -689,7 +972,10 @@ public sealed class BenchmarkReportQuestionNote
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
 public sealed class BenchmarkReportValidationNote
 {
-    /// <summary>The D7 rule number, 1–19, or 20 for a battery prompt that left out question detail to stay within its budget.</summary>
+    /// <summary>
+    /// The D7 rule number, 1–19 and 21, or 20 for a battery prompt that left out question detail to
+    /// stay within its budget.
+    /// </summary>
     public int Rule { get; set; }
 
     /// <summary>Where: <c>headline</c>, <c>sections.abstract</c>, <c>weaknesses[1]</c>, ….</summary>
@@ -716,15 +1002,84 @@ public class BenchmarkReportPackRequest
 
     public BenchmarkModelComparisonPricingBasis PricingBasis { get; set; } = BenchmarkModelComparisonPricingBasis.Current;
 
-    /// <summary>The comparison entry key of the subject, <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> or <c>battery:&lt;id&gt;</c>.</summary>
+    /// <summary>
+    /// Model scope: the comparison entry key of the subject, <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c>
+    /// or <c>battery:&lt;id&gt;</c>; read when <see cref="SubjectKeys"/> is empty. Unused for comparison scope.
+    /// </summary>
     public string SubjectKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A per-model document set (<see cref="BenchmarkReportScope.Model"/>, the default, sent as 1) or a
+    /// comparison-scope document set over the covered models (<see cref="BenchmarkReportScope.Comparison"/>, 2).
+    /// </summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>
+    /// Model scope: the subjects, each written in turn with the requested documents; empty or absent
+    /// means <see cref="SubjectKey"/> alone.
+    /// </summary>
+    public List<string>? SubjectKeys { get; set; }
+
+    /// <summary>
+    /// Comparison scope: the covered entry keys; empty or absent means every entry of the comparison
+    /// that is not Excluded.
+    /// </summary>
+    public List<string>? CoveredEntryKeys { get; set; }
 
     public List<BenchmarkReportAudience> Audiences { get; set; } = new();
 
     public long WriterModelConfigurationId { get; set; }
 
-    /// <summary>The operator acknowledged that the writer shares the subject's provider.</summary>
+    /// <summary>The operator acknowledged that the writer shares the provider of the subject or of a covered model.</summary>
     public bool AcknowledgeSameProvider { get; set; }
+
+    /// <summary>
+    /// Report Pack documents this job replaces: each is deleted, with its charts, only once the new
+    /// document of its subject or covered set and audience is stored. A requested document already
+    /// written and not named here is refused with 409.
+    /// </summary>
+    public List<long>? ReplaceDocumentIds { get; set; }
+
+    /// <summary>The subjects of a model-scope request: <see cref="SubjectKeys"/>, else <see cref="SubjectKey"/>; distinct, in order.</summary>
+    public List<string> ModelSubjectKeys()
+    {
+        var keys = (SubjectKeys ?? new List<string>())
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Select(k => k.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (keys.Count == 0 && !string.IsNullOrWhiteSpace(SubjectKey)) keys.Add(SubjectKey.Trim());
+        return keys;
+    }
+}
+
+/// <summary>
+/// The <c>request</c> field of <c>POST report-packs/layout-preview</c>: a preview request, the one
+/// document to lay out, its paper and naming, the figures' layout and each chart's text. The chart
+/// images travel as the multipart files <c>&lt;figureKey&gt;.png</c>.
+/// </summary>
+public class BenchmarkReportLayoutPreviewRequest : BenchmarkReportPackRequest
+{
+    public BenchmarkReportAudience Audience { get; set; }
+
+    /// <summary><c>a4</c> or <c>letter</c>; empty means A4.</summary>
+    public string? Paper { get; set; }
+
+    /// <summary><c>named</c> or <c>anonymized</c>: the copy the charts were drawn for; empty means named.</summary>
+    public string? Naming { get; set; }
+
+    public BenchmarkReportChartLayout? Layout { get; set; }
+
+    public List<BenchmarkReportLayoutPreviewChart> Charts { get; set; } = new();
+}
+
+/// <summary>One chart of a layout preview, its image the multipart file named <c>&lt;figureKey&gt;.png</c>.</summary>
+public class BenchmarkReportLayoutPreviewChart
+{
+    public string FigureKey { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Caption { get; set; } = string.Empty;
+    public string AltText { get; set; } = string.Empty;
 }
 
 public class BenchmarkReportPackPeerDto
@@ -739,12 +1094,22 @@ public class BenchmarkReportPackPeerDto
 public class BenchmarkReportPackAudienceEstimateDto
 {
     public BenchmarkReportAudience Audience { get; set; }
+
+    /// <summary>The subject the estimate is for: a model's entry key, or the comparison-scope subject key.</summary>
+    public string? SubjectKey { get; set; }
+
     public int PromptChars { get; set; }
     public int EstimatedInputTokens { get; set; }
     public int EstimatedOutputTokens { get; set; }
 
     /// <summary>Null when the writer has no resolvable price.</summary>
     public double? EstimatedCostUsd { get; set; }
+
+    /// <summary>
+    /// The estimated input tokens as a share of the writer's context window, 0 to 1 and above; null
+    /// when the window is unknown. Above <c>0.9</c> the start is refused.
+    /// </summary>
+    public double? ContextWindowShare { get; set; }
 }
 
 public class BenchmarkReportPackPreviewDto
@@ -768,19 +1133,98 @@ public class BenchmarkReportPackPreviewDto
     public string? Refusal { get; set; }
 
     /// <summary>
-    /// The Report Pack documents already stored for this comparison and subject, the newest per
-    /// audience, in audience order. Start refuses to write one of these audiences again.
+    /// The Report Pack documents already stored for this comparison and its subject (model scope, the
+    /// first subject) or its covered set (comparison scope), the newest per audience, in audience
+    /// order. Start refuses to write one of these audiences again unless the request names the
+    /// document under <c>replaceDocumentIds</c>.
     /// </summary>
     public List<BenchmarkReportPackWrittenDocumentDto> WrittenDocuments { get; set; } = new();
+
+    /// <summary>The scope previewed, as requested.</summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>The numbered comparison, when it has been identified; null before.</summary>
+    public int? ComparisonId { get; set; }
+
+    /// <summary>The comparison's display name now; null without a numbered comparison.</summary>
+    public string? ComparisonName { get; set; }
+
+    /// <summary>The comparison's entries that are not Excluded: the M of "2 of 5 models".</summary>
+    public int ComparisonEntryCount { get; set; }
+
+    /// <summary>Comparison scope: the covered set is every entry that is not Excluded; false for model scope.</summary>
+    public bool CoversAllEntries { get; set; }
+
+    /// <summary>Comparison scope: the covered set's key (<see cref="BenchmarkReportDocument.CoveredSetKey"/>); null for model scope.</summary>
+    public string? CoveredSetKey { get; set; }
+
+    /// <summary>
+    /// Comparison scope: the covered models in letter order, each with its letter. Model scope: the
+    /// subjects in request order, without letters.
+    /// </summary>
+    public List<BenchmarkReportCoveredModelDto> CoveredModels { get; set; } = new();
+
+    /// <summary>
+    /// Comparison scope: the comparison-scope documents of every other covered set of this
+    /// comparison, one item per set, the newest document per audience; empty for model scope.
+    /// </summary>
+    public List<BenchmarkReportPackCoveredSetDto> OtherModelSets { get; set; } = new();
+
+    /// <summary>
+    /// The per-model Report Pack documents of this comparison: for each subject (model scope) or each
+    /// covered model (comparison scope), the newest per audience.
+    /// </summary>
+    public List<BenchmarkReportPackSubjectDocumentsDto> SubjectDocuments { get; set; } = new();
+
+    /// <summary>The writer configuration's context window in tokens; null when it is unknown.</summary>
+    public int? WriterContextWindowTokens { get; set; }
 }
 
-/// <summary>A Report Pack document already stored for the previewed comparison and subject.</summary>
+/// <summary>A Report Pack document already stored for the previewed comparison.</summary>
 public class BenchmarkReportPackWrittenDocumentDto
 {
     public BenchmarkReportAudience Audience { get; set; }
     public long DocumentId { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public string? WriterDisplayName { get; set; }
+
+    /// <summary>The document's subject key: an entry key, <c>comparison:&lt;id&gt;</c> or <c>comparison:&lt;id&gt;/&lt;16 hex&gt;</c>.</summary>
+    public string SubjectKey { get; set; } = string.Empty;
+
+    /// <summary><c>Completed</c> or <c>CompletedWithWarnings</c>.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public string? WriterProvider { get; set; }
+    public string? WriterModelId { get; set; }
+    public string? WriterThinkingLevel { get; set; }
+    public long DurationMs { get; set; }
+    public decimal? CostUsd { get; set; }
+}
+
+/// <summary>The comparison-scope documents of one covered set of a comparison.</summary>
+public class BenchmarkReportPackCoveredSetDto
+{
+    public string CoveredSetKey { get; set; } = string.Empty;
+    public string SubjectKey { get; set; } = string.Empty;
+
+    /// <summary>The set covered every entry that was not Excluded when its documents were written.</summary>
+    public bool CoversAllEntries { get; set; }
+
+    /// <summary>The covered models, labeled from the newest document's fact sheet.</summary>
+    public List<BenchmarkReportCoveredModelDto> CoveredModels { get; set; } = new();
+
+    /// <summary>The newest document per audience, in audience order.</summary>
+    public List<BenchmarkReportPackWrittenDocumentDto> Documents { get; set; } = new();
+}
+
+/// <summary>The per-model documents of one subject of a comparison.</summary>
+public class BenchmarkReportPackSubjectDocumentsDto
+{
+    public string SubjectKey { get; set; } = string.Empty;
+    public string SubjectLabel { get; set; } = string.Empty;
+
+    /// <summary>The newest document per audience, in audience order.</summary>
+    public List<BenchmarkReportPackWrittenDocumentDto> Documents { get; set; } = new();
 }
 
 public class BenchmarkReportPackStartResponse
@@ -791,6 +1235,12 @@ public class BenchmarkReportPackStartResponse
 public class BenchmarkReportPackDocumentProgressDto
 {
     public BenchmarkReportAudience Audience { get; set; }
+
+    /// <summary>The document's subject: a model's entry key, or the comparison-scope subject key; empty for a completion job's document.</summary>
+    public string SubjectKey { get; set; } = string.Empty;
+
+    /// <summary>The subject as the progress list names it: the model's label, or <c>Comparison #12</c>.</summary>
+    public string SubjectLabel { get; set; } = string.Empty;
 
     /// <summary><c>Pending</c>, <c>Writing</c>, <c>Repairing</c>, <c>Completed</c>, <c>CompletedWithWarnings</c>, <c>Failed</c>, <c>Canceled</c>.</summary>
     public string Status { get; set; } = string.Empty;
@@ -823,8 +1273,18 @@ public class BenchmarkReportPackJobDto
 {
     public string Id { get; set; } = string.Empty;
     public Guid PackId { get; set; }
+
+    /// <summary>The first subject's key; every document's own subject is on its progress row.</summary>
     public string SubjectKey { get; set; } = string.Empty;
+
     public string SubjectLabel { get; set; } = string.Empty;
+
+    /// <summary>Per-model documents (1) or comparison-scope documents (2).</summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>The numbered comparison the job writes for; null for a completion job.</summary>
+    public int? ComparisonId { get; set; }
+
     public long? SuiteId { get; set; }
     public string SuiteName { get; set; } = string.Empty;
     public long WriterConfigId { get; set; }
@@ -912,8 +1372,48 @@ public class BenchmarkReportDocumentListItemDto
     /// <summary>The chart manifest's settings hash; null when the document has no charts.</summary>
     public string? ChartSettingsHash { get; set; }
 
-    /// <summary>Peer entry key → the peer's letter, from the fact sheet.</summary>
+    /// <summary>
+    /// Peer entry key → the peer's letter, from the fact sheet. For a comparison-scope document, every
+    /// covered model's entry key → its letter.
+    /// </summary>
     public Dictionary<string, string> PeerLetters { get; set; } = new();
+
+    /// <summary>The numbered comparison (<c>Comparison #Id</c>); null for a document without one.</summary>
+    public int? ComparisonId { get; set; }
+
+    /// <summary>The comparison's display name, its rename or else its default name; null without a comparison.</summary>
+    public string? ComparisonName { get; set; }
+
+    /// <summary>A per-model document (1) or a comparison-scope document (2).</summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>A comparison-scope document written over every non-excluded entry; false for model scope.</summary>
+    public bool CoversAllEntries { get; set; }
+
+    /// <summary>The covered entry set's key (<see cref="BenchmarkReportDocument.CoveredSetKey"/>).</summary>
+    public string? CoveredSetKey { get; set; }
+
+    /// <summary>
+    /// Comparison scope: the comparison's entries that were not Excluded when the document was written,
+    /// the M of "2 of 5 models"; null for model scope.
+    /// </summary>
+    public int? ComparisonModelCount { get; set; }
+
+    /// <summary>The models the document covers: the subject for model scope, every covered entry for comparison scope.</summary>
+    public List<BenchmarkReportCoveredModelDto> CoveredModels { get; set; } = new();
+}
+
+/// <summary>One model (comparison entry) a document covers.</summary>
+public class BenchmarkReportCoveredModelDto
+{
+    /// <summary>A <c>run:</c>, <c>group:</c> or <c>battery:</c> entry key.</summary>
+    public string EntryKey { get; set; } = string.Empty;
+
+    public string Label { get; set; } = string.Empty;
+    public string? Provider { get; set; }
+
+    /// <summary>The model's letter on a comparison-scope document or preview; null for a per-model subject.</summary>
+    public string? Letter { get; set; }
 }
 
 /// <summary>What <c>GET report-documents</c> filters on; every field is optional.</summary>
@@ -926,6 +1426,9 @@ public sealed class BenchmarkReportDocumentListFilter
 
     /// <summary>A <see cref="BenchmarkReportDocument.ComparisonKey"/>.</summary>
     public string? ComparisonKey { get; init; }
+
+    /// <summary>A <see cref="BenchmarkReportDocument.ComparisonId"/>.</summary>
+    public int? ComparisonId { get; init; }
 
     public BenchmarkReportDocumentOrigin? Origin { get; init; }
 

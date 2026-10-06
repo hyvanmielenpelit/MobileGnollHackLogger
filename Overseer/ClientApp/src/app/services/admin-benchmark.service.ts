@@ -2823,8 +2823,37 @@ export interface BenchmarkReportPackRequest {
   subjectKey: string;
   audiences: BenchmarkReportAudience[];
   writerModelConfigurationId: number;
-  /** The operator acknowledged that the writer shares the subject's provider. */
+  /** The operator acknowledged that the writer shares the provider of the subject or of a covered model. */
   acknowledgeSameProvider: boolean;
+  /** Per-model documents (the default) or comparison-scope documents over the covered models. */
+  scope?: BenchmarkReportScope;
+  /** Per-model scope: the subjects, each written in turn; empty or absent means `subjectKey` alone. */
+  subjectKeys?: string[];
+  /** Comparison scope: the covered entry keys; empty or absent means every entry that is not Excluded. */
+  coveredEntryKeys?: string[];
+  /**
+   * Documents this job replaces, each deleted only once its replacement is stored. A requested
+   * document already written and not named here is refused with 409.
+   */
+  replaceDocumentIds?: number[];
+}
+
+/** `POST report-packs/layout-preview`: a preview request for one document type, with its paper and chart layout. */
+export interface BenchmarkReportPackLayoutPreviewRequest extends BenchmarkReportPackRequest {
+  audience: BenchmarkReportAudience;
+  paper: BenchmarkPdfPaper;
+  /** Which copy's charts are sent; the preview renders that copy. */
+  naming: BenchmarkReportPeerNamingParam;
+  layout: ReportDocumentChartLayout | null;
+}
+
+/** One chart image of a layout preview; sent as the multipart file `<figureKey>.png`. */
+export interface BenchmarkReportPackLayoutPreviewChart {
+  figureKey: string;
+  title: string;
+  caption: string;
+  altText: string;
+  png: Blob;
 }
 
 export interface BenchmarkReportPackPeerDto {
@@ -2842,6 +2871,10 @@ export interface BenchmarkReportPackAudienceEstimateDto {
   estimatedOutputTokens: number;
   /** Null when the writer has no resolvable price. */
   estimatedCostUsd: number | null;
+  /** The subject the estimate is for: a model's entry key or the comparison-scope subject key. */
+  subjectKey?: string | null;
+  /** Estimated input tokens as a share of the writer's context window; null when the window is unknown. Above 0.9 is refused. */
+  contextWindowShare?: number | null;
 }
 
 export interface BenchmarkReportPackPreviewDto {
@@ -2863,14 +2896,60 @@ export interface BenchmarkReportPackPreviewDto {
    * audience cannot be started again. Absent from a server that predates it.
    */
   writtenDocuments?: BenchmarkReportPackWrittenDocumentDto[];
+  /** The scope previewed, as requested. */
+  scope?: BenchmarkReportScope;
+  /** The numbered comparison, once identified; null before. */
+  comparisonId?: number | null;
+  comparisonName?: string | null;
+  /** The comparison's entries that are not Excluded: the M of "2 of 5 models". */
+  comparisonEntryCount?: number;
+  /** Comparison scope: the covered set is every entry that is not Excluded. */
+  coversAllEntries?: boolean;
+  /** Comparison scope: the covered set's key; null for per-model scope. */
+  coveredSetKey?: string | null;
+  /** Comparison scope: the covered models in letter order, with letters. Per-model scope: the subjects, without. */
+  coveredModels?: BenchmarkReportCoveredModelDto[];
+  /** Comparison scope: every other covered set of this comparison that has documents. */
+  otherModelSets?: BenchmarkReportPackCoveredSetDto[];
+  /** The per-model documents of this comparison, per subject (or per covered model). */
+  subjectDocuments?: BenchmarkReportPackSubjectDocumentsDto[];
+  /** The writer configuration's context window in tokens; null when unknown. */
+  writerContextWindowTokens?: number | null;
 }
 
-/** A Report Pack document already stored for the previewed comparison and subject. */
+/** A Report Pack document already stored for the previewed comparison. */
 export interface BenchmarkReportPackWrittenDocumentDto {
   audience: BenchmarkReportAudience;
   documentId: number;
   createdAtUtc: string;
   writerDisplayName: string | null;
+  /** An entry key, `comparison:<id>` or `comparison:<id>/<16 hex>`. */
+  subjectKey?: string;
+  /** `Completed` or `CompletedWithWarnings`. */
+  status?: string;
+  writerProvider?: string | null;
+  writerModelId?: string | null;
+  writerThinkingLevel?: string | null;
+  durationMs?: number;
+  costUsd?: number | null;
+}
+
+/** The comparison-scope documents of one covered set of a comparison. */
+export interface BenchmarkReportPackCoveredSetDto {
+  coveredSetKey: string;
+  subjectKey: string;
+  coversAllEntries: boolean;
+  coveredModels: BenchmarkReportCoveredModelDto[];
+  /** The newest document per audience, in audience order. */
+  documents: BenchmarkReportPackWrittenDocumentDto[];
+}
+
+/** The per-model documents of one subject of a comparison. */
+export interface BenchmarkReportPackSubjectDocumentsDto {
+  subjectKey: string;
+  subjectLabel: string;
+  /** The newest document per audience, in audience order. */
+  documents: BenchmarkReportPackWrittenDocumentDto[];
 }
 
 export interface BenchmarkReportPackStartResponse {
@@ -2892,6 +2971,9 @@ export interface BenchmarkReportPackDocumentProgressDto {
   outputTokens?: number;
   /** Null when the writer has no resolvable price. */
   costUsd?: number | null;
+  /** The subject the document is written for: a model's entry key or the comparison-scope subject key. */
+  subjectKey?: string;
+  subjectLabel?: string;
 }
 
 export interface BenchmarkReportPackJobLogEntryDto {
@@ -2922,6 +3004,8 @@ export interface BenchmarkReportPackJobDto {
   log: BenchmarkReportPackJobLogEntryDto[];
   /** The server's clock when it answered; absent from a server that predates it. */
   serverTimeUtc?: string;
+  scope?: BenchmarkReportScope;
+  comparisonId?: number | null;
 }
 
 /** A stored document in a list; never carries rendered text. */
@@ -2977,10 +3061,88 @@ export interface BenchmarkReportDocumentListItemDto {
   chartSettingsHash?: string | null;
   /** Each peer's entry key → the letter the anonymized copy names it by (`run:69` → `A`). */
   peerLetters?: Record<string, string>;
+  /** The numbered comparison (*Comparison #Id*); null for a document without one. */
+  comparisonId?: number | null;
+  /** The comparison's display name; null without a comparison. */
+  comparisonName?: string | null;
+  /** A per-model document or a comparison-scope one; absent reads as per-model. */
+  scope?: BenchmarkReportScope;
+  /** A comparison-scope document written over every non-excluded entry; false for per-model documents. */
+  coversAllEntries?: boolean;
+  /** The covered entry set's key. */
+  coveredSetKey?: string | null;
+  /** Comparison scope: the comparison's entries that were not Excluded when it was written, the M of "2 of 5 models". */
+  comparisonModelCount?: number | null;
+  /** The models the document covers: the subject for a per-model document, every covered entry otherwise. */
+  coveredModels?: BenchmarkReportCoveredModelDto[];
+}
+
+/** A per-model document (1) or a comparison-scope document (2), as the server sends it. */
+export enum BenchmarkReportScope {
+  Model = 1,
+  Comparison = 2,
+}
+
+/** One model (comparison entry) a document covers. */
+export interface BenchmarkReportCoveredModelDto {
+  /** A `run:`, `group:` or `battery:` entry key. */
+  entryKey: string;
+  label: string;
+  provider: string | null;
+  /** The model's letter in a comparison-scope document; null for a per-model document's subject. */
+  letter?: string | null;
+}
+
+/** A numbered comparison: one selection of runs, groups or battery runs. */
+export interface BenchmarkComparisonDto {
+  id: number;
+  /** The display name: the admin's rename, else the default name. */
+  name: string;
+  customName: string | null;
+  defaultName: string;
+  entryCount: number;
+  subjectKind: 'Runs' | 'Batteries';
+  entryKeys: string[];
+  createdAtUtc: string;
+  renamedAtUtc: string | null;
+}
+
+/** A comparison in `GET model-comparisons`, newest first. */
+export interface BenchmarkComparisonListItemDto {
+  id: number;
+  name: string;
+  customName: string | null;
+  defaultName: string;
+  entryCount: number;
+  subjectKind: 'Runs' | 'Batteries';
+  documentCount: number;
+  lastDocumentAtUtc: string | null;
+  createdAtUtc: string;
 }
 
 /** Which copy a chart image is for: the named copy or the anonymized one. */
 export type ReportDocumentChartNaming = 'named' | 'anonymized';
+
+/**
+ * How the server places a document's charts: each figure's share of the text column, the row a
+ * figure shares with the next one, and the tallest a figure may be as a share of the page. Stored in
+ * the chart manifest; a manifest without it renders every figure full width, one per row, at 60 %.
+ */
+export interface ReportDocumentChartLayout {
+  version: 1;
+  /** One entry per figure key; a figure without one is full width on its own row. */
+  figures: ReportDocumentChartLayoutFigure[];
+  /** 0.4, 0.5 or 0.6. */
+  maxHeightShare: number;
+}
+
+export interface ReportDocumentChartLayoutFigure {
+  key: string;
+  /** 1 (full column), 2/3 or 1/2. */
+  widthShare: number;
+  /** Consecutive figures with the same row group print side by side; null prints alone. */
+  rowGroup: number | null;
+}
 
 /** One chart image for a report document, as `PUT report-documents/{id}/charts` takes it. */
 export interface ReportDocumentChartUpload {
@@ -3038,6 +3200,8 @@ export interface BenchmarkReportDocumentQuery {
   origin?: BenchmarkReportDocumentOriginParam | null;
   /** Documents about exactly this subject: `run:<id>`, `group:<id>` or `battery:<id>`. */
   subject?: string | null;
+  /** Documents of this numbered comparison. */
+  comparisonId?: number | null;
 }
 
 /** The list endpoint's `origin` query value. */
@@ -3928,6 +4092,21 @@ export class AdminBenchmarkService {
     return this.http.post<BenchmarkReportPackStartResponse>('/api/admin/benchmark/report-packs', request);
   }
 
+  /**
+   * A PDF laid out like the requested document, with placeholder text for the writer's sections and
+   * the given charts placed by the given layout. Makes no model call and stores nothing.
+   */
+  reportPackLayoutPreview(request: BenchmarkReportPackLayoutPreviewRequest, charts: readonly BenchmarkReportPackLayoutPreviewChart[]):
+    Observable<Blob> {
+    const form = new FormData();
+    form.append('request', JSON.stringify({
+      ...request,
+      charts: charts.map(c => ({ figureKey: c.figureKey, title: c.title, caption: c.caption, altText: c.altText })),
+    }));
+    for (const chart of charts) form.append('files', chart.png, `${chart.figureKey}.png`);
+    return this.http.post('/api/admin/benchmark/report-packs/layout-preview', form, { responseType: 'blob' });
+  }
+
   getReportPackJob(jobId: string): Observable<BenchmarkReportPackJobDto> {
     return this.http.get<BenchmarkReportPackJobDto>(`/api/admin/benchmark/report-packs/jobs/${encodeURIComponent(jobId)}`);
   }
@@ -3951,7 +4130,28 @@ export class AdminBenchmarkService {
     if (query.comparison != null) params = params.set('comparison', query.comparison.join(','));
     if (query.origin != null) params = params.set('origin', query.origin);
     if (query.subject != null) params = params.set('subject', query.subject);
+    if (query.comparisonId != null) params = params.set('comparisonId', query.comparisonId);
     return this.http.get<BenchmarkReportDocumentListItemDto[]>('/api/admin/benchmark/report-documents', { params });
+  }
+
+  // Numbered comparisons. None of these can reach a model.
+  /** Numbers the selection as a comparison, or returns the one it already has. */
+  identifyComparison(selection: { runIds?: readonly number[]; groupIds?: readonly number[]; batteryRunIds?: readonly number[] }):
+    Observable<BenchmarkComparisonDto> {
+    return this.http.post<BenchmarkComparisonDto>('/api/admin/benchmark/model-comparisons/identify', {
+      runIds: selection.runIds ?? [],
+      groupIds: selection.groupIds ?? [],
+      batteryRunIds: selection.batteryRunIds ?? [],
+    });
+  }
+
+  /** Renames a comparison; a null or blank name restores its default name. */
+  renameComparison(id: number, name: string | null): Observable<BenchmarkComparisonDto> {
+    return this.http.patch<BenchmarkComparisonDto>(`/api/admin/benchmark/model-comparisons/${id}`, { name });
+  }
+
+  listComparisons(): Observable<BenchmarkComparisonListItemDto[]> {
+    return this.http.get<BenchmarkComparisonListItemDto[]>('/api/admin/benchmark/model-comparisons');
   }
 
   getReportDocument(id: number): Observable<BenchmarkReportDocumentDetailDto> {
@@ -3974,9 +4174,11 @@ export class AdminBenchmarkService {
     return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}`);
   }
 
-  /** Replaces a report document's whole chart set. */
-  putReportDocumentCharts(id: number, charts: ReportDocumentChartUpload[]): Observable<ReportDocumentChartsSummaryDto> {
-    return this.http.put<ReportDocumentChartsSummaryDto>(`/api/admin/benchmark/report-documents/${id}/charts`, { charts });
+  /** Replaces a report document's whole chart set, and the layout the server places it with. */
+  putReportDocumentCharts(id: number, charts: ReportDocumentChartUpload[], layout: ReportDocumentChartLayout | null = null):
+    Observable<ReportDocumentChartsSummaryDto> {
+    return this.http.put<ReportDocumentChartsSummaryDto>(`/api/admin/benchmark/report-documents/${id}/charts`,
+      layout ? { charts, layout } : { charts });
   }
 
   /** Removes every chart of a report document. */

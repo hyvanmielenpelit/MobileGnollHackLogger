@@ -4,8 +4,23 @@ import { BenchmarkReportAudience } from '../../../services/admin-benchmark.servi
 import { REPORT_PACK_AUDIENCES, audienceLabel, audienceShortLabel } from './report-document-format';
 import {
   REPORT_CHART_FIGURES,
+  REPORT_CHART_HEADINGS,
+  REPORT_CHART_LABEL_SIZES_PT,
+  REPORT_CHART_MAX_HEIGHT_PERCENTS,
+  REPORT_CHART_ORIENTATIONS,
+  REPORT_CHART_THEMES,
+  REPORT_CHART_WIDTHS,
+  ReportChartDocumentLayout,
   ReportChartFigureKey,
+  ReportChartLayoutSettings,
+  ReportChartScope,
   ReportChartSelection,
+  ReportChartWidth,
+  documentChartLayoutFor,
+  documentChartRefusal,
+  documentLabelSizeRefusal,
+  formatPoints,
+  normalizeChartLayoutSettings,
   normalizeChartSelection,
   reportChartPlacementLabel
 } from './report-charts';
@@ -25,12 +40,18 @@ export interface ReportChartPickerRow {
   readonly unavailableReason: string | null;
 }
 
-/** Why a column is unavailable: its document type is not checked under Documents. */
-export const REPORT_CHART_COLUMN_DISABLED_REASON = 'Not checked under Documents';
+/** Why a column is unavailable: its document type is not checked under Documents of this comparison. */
+export const REPORT_CHART_COLUMN_DISABLED_REASON = 'Not checked under Documents of this comparison';
 
 /** The reason a figure cannot be drawn, when the host gives none. */
 export function defaultChartUnavailableReason(key: string): string {
   return key === 'p2-profile' ? 'needs three or more models' : 'needs two or more models';
+}
+
+/** One refused choice of a layout field, and why. */
+export interface ReportChartLayoutRefusal {
+  readonly id: string;
+  readonly text: string;
 }
 
 /**
@@ -38,7 +59,14 @@ export function defaultChartUnavailableReason(key: string): string {
  * document types, each with its count, over the selected document's figures, one checkbox each with
  * the section it lands in. One document type shows its figures alone. A document type not being
  * written, and a figure the comparison cannot draw, stay listed with their checkboxes
- * `aria-disabled` and the reason shown. The host owns the selection and its storage.
+ * `aria-disabled` and the reason shown.
+ *
+ * Given a `layout`, each figure also gets its width, and each document type a *Layout* disclosure
+ * with the orientation, side by side, label size, maximum height, heading, logo and theme of its
+ * charts. A combination the composer would refuse is offered `aria-disabled`, its reason listed in
+ * the disclosure; choosing it keeps the current value and says why. Content marked
+ * `rcp-layout-actions` is projected at the end of the disclosure. The host owns the selection, the
+ * layout and their storage.
  */
 @Component({
   selector: 'app-report-chart-picker',
@@ -78,15 +106,47 @@ export class ReportChartPickerComponent {
   /** False keeps the caption for assistive technology only, where a legend around the picker already shows it. */
   @Input() captionVisible = true;
 
+  /**
+   * The layout shown, per document type; null shows no width and no *Layout* disclosure. The picker
+   * keeps its own copy until the host sets a new one.
+   */
+  @Input()
+  set layout(value: ReportChartLayoutSettings | null) {
+    this.currentLayout = value ? normalizeChartLayoutSettings(value) : null;
+  }
+  get layout(): ReportChartLayoutSettings | null {
+    return this.currentLayout;
+  }
+
+  /** Whose placements the figures show: a per-model document's, or a comparison-scope one's. */
+  @Input() scope: ReportChartScope = 'model';
+
   /** Every change, normalized. */
   @Output() readonly selectionChange = new EventEmitter<ReportChartSelection>();
 
+  /** Every layout change, normalized. */
+  @Output() readonly layoutChange = new EventEmitter<ReportChartLayoutSettings>();
+
+  /** The document type shown, whenever the admin chooses another. */
+  @Output() readonly activeAudienceChange = new EventEmitter<BenchmarkReportAudience>();
+
   readonly columnDisabledReason = REPORT_CHART_COLUMN_DISABLED_REASON;
+  readonly widthOptions = REPORT_CHART_WIDTHS;
+  readonly orientationOptions = REPORT_CHART_ORIENTATIONS;
+  readonly labelSizes = REPORT_CHART_LABEL_SIZES_PT;
+  readonly maxHeightPercents = REPORT_CHART_MAX_HEIGHT_PERCENTS;
+  readonly headingOptions = REPORT_CHART_HEADINGS;
+  readonly themeOptions = REPORT_CHART_THEMES;
 
   private current: ReportChartSelection = {};
 
+  private currentLayout: ReportChartLayoutSettings | null = null;
+
   /** The segment chosen; component state only, never stored. */
   private activeAudience: BenchmarkReportAudience | null = null;
+
+  /** Why the last attempt at a refused choice was kept back, by field id; cleared by the next change. */
+  private refusedChoice: { readonly fieldId: string; readonly text: string } | null = null;
 
   get columns(): ReportChartPickerColumn[] {
     return this.audiences.map(audience => ({
@@ -122,7 +182,12 @@ export class ReportChartPickerComponent {
   }
 
   selectAudience(audience: BenchmarkReportAudience): void {
+    if (audience === this.activeAudience) {
+      return;
+    }
+    this.refusedChoice = null;
     this.activeAudience = audience;
+    this.activeAudienceChange.emit(audience);
   }
 
   /** Arrow keys wrap, Home and End jump; focus follows the selection. */
@@ -170,11 +235,11 @@ export class ReportChartPickerComponent {
   tabStatus(column: ReportChartPickerColumn): string {
     return column.enabled
       ? `, ${this.selectedCount(column)} of ${this.drawableCount()} charts`
-      : ', not checked under Documents';
+      : ', not checked under Documents of this comparison';
   }
 
   placement(audience: BenchmarkReportAudience, key: ReportChartFigureKey): string {
-    return reportChartPlacementLabel(audience, key);
+    return reportChartPlacementLabel(audience, key, this.scope);
   }
 
   /** Checked when selected and drawable; a figure the comparison cannot draw reads unchecked. */
@@ -255,5 +320,139 @@ export class ReportChartPickerComponent {
   private commit(audience: BenchmarkReportAudience, keys: ReportChartFigureKey[]): void {
     this.current = normalizeChartSelection({ ...this.current, [audience]: keys });
     this.selectionChange.emit(this.current);
+  }
+
+  // --- Layout ---
+
+  layoutOf(column: ReportChartPickerColumn): ReportChartDocumentLayout {
+    return documentChartLayoutFor(this.currentLayout, column.audience);
+  }
+
+  widthOf(column: ReportChartPickerColumn, row: ReportChartPickerRow): ReportChartWidth {
+    return this.layoutOf(column).widths[row.key] ?? 'full';
+  }
+
+  /** Why `width` cannot be composed at the document's label size, or null. */
+  widthRefusal(column: ReportChartPickerColumn, width: ReportChartWidth): string | null {
+    return documentChartRefusal(width, this.layoutOf(column).labelPt);
+  }
+
+  /** Why `labelPt` cannot be chosen with the widths of the document's selected figures, or null. */
+  labelSizeRefusal(column: ReportChartPickerColumn, labelPt: number): string | null {
+    return documentLabelSizeRefusal(this.layoutOf(column), this.current[column.audience] ?? [], labelPt);
+  }
+
+  /** The refused choices of the document's layout, each with the id its field is described by. */
+  layoutRefusals(column: ReportChartPickerColumn): ReportChartLayoutRefusal[] {
+    const refusals: ReportChartLayoutRefusal[] = [];
+    for (const option of this.widthOptions) {
+      const text = this.widthRefusal(column, option.value);
+      if (text) {
+        refusals.push({ id: this.widthReasonId(column, option.value), text: `${option.label}: ${text}` });
+      }
+    }
+    const refusedSizes = this.labelSizes.filter(size => this.labelSizeRefusal(column, size) !== null);
+    if (refusedSizes.length > 0) {
+      const sizes = refusedSizes.map(size => formatPoints(size)).join(', ');
+      refusals.push({ id: this.labelReasonId(column), text: `${sizes} pt: ${this.labelSizeRefusal(column, refusedSizes[0])}` });
+    }
+    return refusals;
+  }
+
+  /** The kept-back choice's reason, when it was on this field. */
+  refusedChoiceText(fieldId: string): string | null {
+    return this.refusedChoice?.fieldId === fieldId ? this.refusedChoice.text : null;
+  }
+
+  widthId(column: ReportChartPickerColumn, row: ReportChartPickerRow): string {
+    return `${this.cellId(column, row)}-width`;
+  }
+
+  widthReasonId(column: ReportChartPickerColumn, width: ReportChartWidth): string {
+    return `${this.idPrefix}-${column.audience}-width-${width}-reason`;
+  }
+
+  labelReasonId(column: ReportChartPickerColumn): string {
+    return `${this.idPrefix}-${column.audience}-label-reason`;
+  }
+
+  layoutFieldId(column: ReportChartPickerColumn, field: string): string {
+    return `${this.idPrefix}-${column.audience}-${field}`;
+  }
+
+  /** `Width of Intelligence in the Executive Summary`. */
+  widthName(column: ReportChartPickerColumn, row: ReportChartPickerRow): string {
+    return `Width of ${row.title} in the ${column.label}`;
+  }
+
+  /** The refused widths' reasons, then a kept-back choice's. */
+  widthDescribedBy(column: ReportChartPickerColumn, row: ReportChartPickerRow): string | null {
+    const ids = this.widthOptions
+      .filter(option => this.widthRefusal(column, option.value) !== null)
+      .map(option => this.widthReasonId(column, option.value));
+    if (this.refusedChoiceText(this.widthId(column, row))) {
+      ids.push(`${this.widthId(column, row)}-refused`);
+    }
+    return ids.length > 0 ? ids.join(' ') : null;
+  }
+
+  labelDescribedBy(column: ReportChartPickerColumn): string | null {
+    const ids: string[] = [];
+    if (this.labelSizes.some(size => this.labelSizeRefusal(column, size) !== null)) {
+      ids.push(this.labelReasonId(column));
+    }
+    const fieldId = this.layoutFieldId(column, 'label');
+    if (this.refusedChoiceText(fieldId)) {
+      ids.push(`${fieldId}-refused`);
+    }
+    return ids.length > 0 ? ids.join(' ') : null;
+  }
+
+  formatPoints(points: number): string {
+    return formatPoints(points);
+  }
+
+  onWidthChange(event: Event, column: ReportChartPickerColumn, row: ReportChartPickerRow): void {
+    const select = event.target as HTMLSelectElement;
+    const width = select.value as ReportChartWidth;
+    const refusal = this.widthRefusal(column, width);
+    if (refusal) {
+      select.value = this.widthOf(column, row);
+      this.refusedChoice = { fieldId: this.widthId(column, row), text: refusal };
+      return;
+    }
+    const widths = { ...this.layoutOf(column).widths, [row.key]: width };
+    this.commitLayout(column, { widths });
+  }
+
+  onLabelSizeChange(event: Event, column: ReportChartPickerColumn): void {
+    const select = event.target as HTMLSelectElement;
+    const labelPt = Number(select.value);
+    const refusal = this.labelSizeRefusal(column, labelPt);
+    if (refusal) {
+      select.value = String(this.layoutOf(column).labelPt);
+      this.refusedChoice = { fieldId: this.layoutFieldId(column, 'label'), text: refusal };
+      return;
+    }
+    this.commitLayout(column, { labelPt });
+  }
+
+  /** A select whose every option can be chosen: orientation, maximum height, heading and theme. */
+  onLayoutSelect(event: Event, column: ReportChartPickerColumn, field: 'orientation' | 'maxHeightPercent' | 'heading' | 'theme'): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.commitLayout(column, { [field]: field === 'maxHeightPercent' ? Number(value) : value } as Partial<ReportChartDocumentLayout>);
+  }
+
+  onLayoutToggle(event: Event, column: ReportChartPickerColumn, field: 'sideBySide' | 'logo'): void {
+    this.commitLayout(column, { [field]: (event.target as HTMLInputElement).checked } as Partial<ReportChartDocumentLayout>);
+  }
+
+  private commitLayout(column: ReportChartPickerColumn, patch: Partial<ReportChartDocumentLayout>): void {
+    this.refusedChoice = null;
+    this.currentLayout = normalizeChartLayoutSettings({
+      ...(this.currentLayout ?? {}),
+      [column.audience]: { ...this.layoutOf(column), ...patch }
+    });
+    this.layoutChange.emit(this.currentLayout);
   }
 }

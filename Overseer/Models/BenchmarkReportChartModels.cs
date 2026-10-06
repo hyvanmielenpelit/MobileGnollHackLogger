@@ -1,9 +1,51 @@
 namespace Overseer.Models;
 
+using System.Text.Json.Serialization;
+
 /// <summary>The body of a PUT that replaces a report document's whole chart set.</summary>
 public class PutReportDocumentChartsRequest
 {
     public List<ReportDocumentChartUpload> Charts { get; set; } = new();
+
+    /// <summary>How the figures are placed; absent stores none, which renders every figure full width on its own row under the default height cap.</summary>
+    public BenchmarkReportChartLayout? Layout { get; set; }
+}
+
+/// <summary>
+/// How a document's figures are placed at render time: each figure's share of the text column's
+/// width and its row group, and the height cap. Consecutive figures of one row group print side by
+/// side, two to a row. Stored in the chart manifest as <c>layout</c>.
+/// </summary>
+public class BenchmarkReportChartLayout
+{
+    public const int CurrentVersion = 1;
+
+    /// <summary>The height cap without a layout: 60 % of the page's height between its margins.</summary>
+    public const double DefaultMaxHeightShare = 0.6;
+
+    public const double MinMaxHeightShare = 0.2;
+    public const double MaxMaxHeightShare = 0.9;
+
+    public int Version { get; set; } = CurrentVersion;
+
+    /// <summary>One entry per figure key; a figure without one is full width on its own row.</summary>
+    public List<BenchmarkReportChartLayoutFigure> Figures { get; set; } = new();
+
+    /// <summary>The largest share of the page's content height a figure's image may take; null for <see cref="DefaultMaxHeightShare"/>.</summary>
+    public double? MaxHeightShare { get; set; }
+}
+
+/// <summary>One figure's place in a <see cref="BenchmarkReportChartLayout"/>.</summary>
+public class BenchmarkReportChartLayoutFigure
+{
+    /// <summary>A figure key <c>BenchmarkReportChartPlacement</c> knows.</summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>The share of the text column's width the figure takes, above 0 and at most 1.</summary>
+    public double WidthShare { get; set; } = 1;
+
+    /// <summary>Consecutive figures with the same row group print side by side; null prints alone.</summary>
+    public int? RowGroup { get; set; }
 }
 
 /// <summary>One chart image as the Model Comparison wizard uploads it.</summary>
@@ -85,6 +127,10 @@ public class BenchmarkReportChartManifest
     public string SettingsHash { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
     public List<BenchmarkReportChartManifestEntry> Charts { get; set; } = new();
+
+    /// <summary>The figures' layout; absent in a manifest stored without one.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BenchmarkReportChartLayout? Layout { get; set; }
 }
 
 public class BenchmarkReportChartManifestEntry

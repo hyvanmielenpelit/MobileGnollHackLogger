@@ -260,6 +260,149 @@ public class BenchmarkReportChartsTests
         Assert.Equal(expectedLetters, bare.PeerLetters);
     }
 
+    [Fact]
+    public async Task AComparisonScopeDocument_TakesCharts_AndListsTheLetterOfEveryCoveredModel()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var charts = TestChartStores.InTempFolder();
+        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
+        long id = await AddAsync(db, BenchmarkReportPackFixture.ComparisonDocument(BenchmarkReportAudience.TechnicalReport, subset: true));
+
+        Assert.IsType<OkObjectResult>(await Controller(db, charts.Store).PutCharts(id, Request(
+            Upload("p1a-quality", BenchmarkReportChartStore.Named),
+            Upload("p1a-quality", BenchmarkReportChartStore.Anonymized)), ct));
+
+        var item = Assert.Single(await Service(db, charts.Store).ListAsync(
+            new BenchmarkReportDocumentListFilter { ComparisonId = BenchmarkReportPackFixture.ComparisonNumber }, ct));
+        Assert.Equal(BenchmarkReportScope.Comparison, item.Scope);
+        Assert.Equal(new Dictionary<string, string> { ["run:31"] = "A", ["run:35"] = "B" }, item.PeerLetters);
+        Assert.Equal(new[] { ("run:31", (string?)"A"), ("run:35", (string?)"B") }, item.CoveredModels.Select(m => (m.EntryKey, m.Letter)));
+        Assert.False(item.CoversAllEntries);
+        Assert.Equal(BenchmarkReportPackFixture.ComparisonName, item.ComparisonName);
+        Assert.Equal(2, item.ChartCount);
+    }
+
+    [Fact]
+    public async Task AComparisonScopeRender_PlacesItsChartsInThePdfAndWordCopies()
+    {
+        BenchmarkPdfTestSetup.Configure();
+        var ct = TestContext.Current.CancellationToken;
+        using var charts = TestChartStores.InTempFolder();
+        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
+        var controller = Controller(db, charts.Store);
+        long id = await AddAsync(db, BenchmarkReportPackFixture.ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary));
+
+        Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(
+            Upload("p1a-quality", BenchmarkReportChartStore.Anonymized, alt: "Anonymized chart p1a-quality"),
+            Upload("s2-quality-cost", BenchmarkReportChartStore.Anonymized, alt: "Anonymized chart s2-quality-cost")), ct));
+
+        var docx = Assert.IsType<FileContentResult>(await controller.RenderDocx(id, "full", "anonymized", null, ct));
+        Assert.Equal(new[] { "Anonymized chart p1a-quality", "Anonymized chart s2-quality-cost" }, FigureDescriptions(docx.FileContents));
+
+        var pdf = Assert.IsType<FileContentResult>(await controller.RenderPdf(id, "full", "anonymized", null, ct));
+        using var reader = PdfDocument.Open(pdf.FileContents);
+        Assert.Equal(reader.NumberOfPages + 2, reader.GetPages().Sum(p => p.GetImages().Count()));
+    }
+
+    // --- Layout ------------------------------------------------------------------------------------
+
+    private static BenchmarkReportChartLayout RowLayout(params string[] keys) => new()
+    {
+        Figures = keys.Select(k => new BenchmarkReportChartLayoutFigure { Key = k, WidthShare = 0.5, RowGroup = 1 }).ToList(),
+        MaxHeightShare = 0.5
+    };
+
+    [Fact]
+    public async Task PutCharts_RefusesAnInvalidLayout_WithTheStoresMessage_AndWritesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var charts = TestChartStores.InTempFolder();
+        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
+        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        var controller = Controller(db, charts.Store);
+
+        var layouts = new[]
+        {
+            new BenchmarkReportChartLayout { Figures = { new BenchmarkReportChartLayoutFigure { Key = "p1a-quality", WidthShare = 0 } } },
+            new BenchmarkReportChartLayout { Figures = { new BenchmarkReportChartLayoutFigure { Key = "p1a-quality", WidthShare = 1.5 } } },
+            new BenchmarkReportChartLayout { MaxHeightShare = 0.1 },
+            new BenchmarkReportChartLayout { MaxHeightShare = 0.95 },
+            new BenchmarkReportChartLayout { Version = 2 }
+        };
+        foreach (var layout in layouts)
+        {
+            string expected = Assert.Throws<ChartStoreException>(() => BenchmarkReportChartStore.ValidateLayout(layout)).Message;
+            var request = Request(Upload("p1a-quality", BenchmarkReportChartStore.Named));
+            request.Layout = layout;
+
+            var result = await controller.PutCharts(id, request, ct);
+
+            Assert.Equal(expected, ErrorOf(result));
+            Assert.False(Directory.Exists(DocumentFolder(charts, id)), "A chart folder was written for an invalid layout.");
+        }
+    }
+
+    [Fact]
+    public async Task PutCharts_StoresTheLayout_TheRendersPlaceByIt_AndAPutWithoutOneClearsIt()
+    {
+        BenchmarkPdfTestSetup.Configure();
+        var ct = TestContext.Current.CancellationToken;
+        using var charts = TestChartStores.InTempFolder();
+        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
+        var controller = Controller(db, charts.Store);
+        long id = await AddAsync(db, BenchmarkReportPackFixture.ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary));
+
+        var request = Request(
+            Upload("p1a-quality", BenchmarkReportChartStore.Anonymized, alt: "Anonymized chart p1a-quality"),
+            Upload("s2-quality-cost", BenchmarkReportChartStore.Anonymized, alt: "Anonymized chart s2-quality-cost"));
+        request.Layout = RowLayout("p1a-quality", "s2-quality-cost");
+        Assert.IsType<OkObjectResult>(await controller.PutCharts(id, request, ct));
+
+        var stored = charts.Store.ReadLayout(id);
+        Assert.NotNull(stored);
+        Assert.Equal(0.5, stored!.MaxHeightShare);
+        Assert.Equal(new[] { "p1a-quality", "s2-quality-cost" }, stored.Figures.Select(f => f.Key));
+
+        // Word: the two figures are one borderless table row; PDF: two images side by side on one page.
+        var docx = Assert.IsType<FileContentResult>(await controller.RenderDocx(id, "full", "anonymized", null, ct));
+        Assert.Equal(2, FigureRowCells(docx.FileContents));
+        var pdf = Assert.IsType<FileContentResult>(await controller.RenderPdf(id, "full", "anonymized", null, ct));
+        var images = PdfChartImages(pdf.FileContents);
+        Assert.Equal(2, images.Count);
+        Assert.Equal(images[0].Page, images[1].Page);
+        Assert.Equal(images[0].Top, images[1].Top, 1.0);
+
+        // The client sends a layout whenever it has one; a PUT without one stores none.
+        Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(
+            Upload("p1a-quality", BenchmarkReportChartStore.Anonymized),
+            Upload("s2-quality-cost", BenchmarkReportChartStore.Anonymized)), ct));
+        Assert.Null(charts.Store.ReadLayout(id));
+        var plain = Assert.IsType<FileContentResult>(await controller.RenderDocx(id, "full", "anonymized", null, ct));
+        Assert.Equal(0, FigureRowCells(plain.FileContents));
+    }
+
+    /// <summary>The cells of the Word document's figure row: a table holding pictures; 0 without one.</summary>
+    private static int FigureRowCells(byte[] docx)
+    {
+        using var package = WordprocessingDocument.Open(new MemoryStream(docx), false);
+        var table = package.MainDocumentPart!.Document!.Body!
+            .Elements<DocumentFormat.OpenXml.Wordprocessing.Table>()
+            .SingleOrDefault(t => t.Descendants<DocumentFormat.OpenXml.Wordprocessing.Drawing>().Any());
+        return table == null
+            ? 0
+            : table.Descendants<DocumentFormat.OpenXml.Wordprocessing.TableCell>().Count(c => c.Descendants<DocumentFormat.OpenXml.Wordprocessing.Drawing>().Any());
+    }
+
+    /// <summary>The chart images of a PDF, larger than the frame's logo and emblem, left to right.</summary>
+    private static List<(int Page, double Top, double Left)> PdfChartImages(byte[] pdf)
+    {
+        using var reader = PdfDocument.Open(pdf);
+        return reader.GetPages()
+            .SelectMany(p => p.GetImages().Where(i => i.BoundingBox.Width > 150).Select(i => (Page: p.Number, Top: i.BoundingBox.Top, Left: i.BoundingBox.Left)))
+            .OrderBy(i => i.Left)
+            .ToList();
+    }
+
     // --- Renders -----------------------------------------------------------------------------------
 
     [Fact]

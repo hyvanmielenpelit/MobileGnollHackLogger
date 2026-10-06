@@ -589,6 +589,56 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkBatterySuites");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkComparison", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ComparisonKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DefaultName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EntryKeysJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<DateTime?>("RenamedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SubjectKind")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComparisonKey")
+                        .IsUnique();
+
+                    b.ToTable("BenchmarkComparisons");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkGameSnapshot", b =>
                 {
                     b.Property<long>("Id")
@@ -794,6 +844,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("Audience")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ComparisonId")
+                        .HasColumnType("int");
+
                     b.Property<string>("ComparisonKey")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -809,6 +862,13 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<decimal?>("CostUsd")
                         .HasPrecision(18, 8)
                         .HasColumnType("decimal(18,8)");
+
+                    b.Property<string>("CoveredEntryKeysJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CoveredSetKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
@@ -845,6 +905,9 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<bool>("SameProviderAcknowledged")
                         .HasColumnType("bit");
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("int");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -925,6 +988,8 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("SuiteId", "CreatedAtUtc");
 
                     b.HasIndex("ComparisonKey", "Origin", "CreatedAtUtc");
+
+                    b.HasIndex("ComparisonId", "Scope", "CoveredSetKey", "Audience");
 
                     b.ToTable("BenchmarkReportDocuments");
                 });
@@ -4547,10 +4612,17 @@ namespace GnollHackServer.Data.Migrations
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocument", b =>
                 {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkComparison", "Comparison")
+                        .WithMany()
+                        .HasForeignKey("ComparisonId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("MobileGnollHackLogger.Data.SystemAiConfigurationSnapshot", "WriterModelSnapshot")
                         .WithMany()
                         .HasForeignKey("WriterModelSnapshotId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Comparison");
 
                     b.Navigation("WriterModelSnapshot");
                 });

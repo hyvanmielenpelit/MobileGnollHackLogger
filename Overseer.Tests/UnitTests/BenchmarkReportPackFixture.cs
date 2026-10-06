@@ -893,6 +893,228 @@ internal static class BenchmarkReportPackFixture
             Runs = runs.ToDictionary(r => r.Id)
         };
 
+    // ---------------------------------------------------------------------------------------------
+    // The comparison-scope fixture: five models of one suite, one run of six questions each
+    // ---------------------------------------------------------------------------------------------
+
+    public static readonly DateTime ComparisonComputedAt = new(2026, 9, 21, 8, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>The fixture comparison's number.</summary>
+    public const int ComparisonNumber = 12;
+
+    /// <summary>The fixture comparison's name.</summary>
+    public const string ComparisonName = "Spring model sweep";
+
+    /// <summary>
+    /// The five models in letter order of the whole comparison: run id, label, provider, Intelligence
+    /// Index with its interval, median answer time, cost per question, and the scores on Q1 to Q6. C and
+    /// D tie on the index, so the entry key orders them; A and B, and C and D, have overlapping intervals.
+    /// </summary>
+    public static readonly IReadOnlyList<(long RunId, string Label, string Provider, double Quality, double Lower, double Upper, double TimeMs, double Cost, int[] Scores)> ComparisonModels =
+        new (long, string, string, double, double, double, double, double, int[])[]
+        {
+            (31, "Orion Max", "Northwind", 85, 82, 88, 12000, 0.05, new[] { 92, 88, 30, 90, 85, 95 }),
+            (32, "Vega Pro", "Southstar", 80, 77, 83, 9000, 0.03, new[] { 85, 80, 70, 75, 82, 88 }),
+            (33, "Lyra Mini", "Eastgate", 70, 66, 74, 15000, 0.02, new[] { 70, 72, 28, 65, 74, 80 }),
+            (34, "Nova Lite", "Westlake", 70, 64, 76, 8000, 0.06, new[] { 75, 60, 32, 72, 68, 78 }),
+            (35, "Zeta Prime", "Midland", 55, 50, 60, 20000, 0.01, new[] { 50, 55, 25, 52, 58, 60 })
+        };
+
+    /// <summary>A two-model subset: the highest and the lowest Intelligence Index of the five.</summary>
+    public static readonly IReadOnlyList<string> SubsetKeys = new[] { "run:31", "run:35" };
+
+    public static string ModelIdOf(string label) => label.ToLowerInvariant().Replace(' ', '-');
+
+    /// <summary>The five models' comparison, computed at <see cref="ComparisonComputedAt"/> on the catalog basis.</summary>
+    public static BenchmarkModelComparisonDto FiveModelComparison()
+    {
+        var comparison = Comparison(ComparisonModels
+            .Select(m => Entry("run:" + m.RunId, new[] { m.RunId }, m.Label, m.Provider, m.Quality, m.Lower, m.Upper, m.TimeMs, m.Cost))
+            .ToArray());
+        comparison.ComputedAtUtc = ComparisonComputedAt;
+        return comparison;
+    }
+
+    /// <summary>The five models' runs: Lyra Mini made a critical error on Q3, and the verifier refuted a claim of Nova Lite's on Q3.</summary>
+    public static Dictionary<long, BenchmarkRun> FiveModelRuns()
+    {
+        var runs = new Dictionary<long, BenchmarkRun>();
+        foreach (var m in ComparisonModels)
+        {
+            var run = Run(m.RunId, m.Provider, ModelIdOf(m.Label),
+                m.Scores.Select((score, i) => new AnswerSpec(201 + i, i + 1, 1, score)).ToArray());
+            run.PurposeStatementUsed = PurposeStatement;
+            runs[m.RunId] = run;
+        }
+
+        var critical = runs[33].Answers.Single(a => a.OrderIndex == 3);
+        critical.CriticalError = true;
+        critical.CriticalErrorQuote = "Answer 203";
+        runs[34].Answers.Single(a => a.OrderIndex == 3).ClaimsRefutedCount = 1;
+        return runs;
+    }
+
+    /// <summary>The comparison-scope sheet and content over <paramref name="coveredKeys"/>, every model when null, with both paired families.</summary>
+    public static BenchmarkComparisonReportFactsResult ComparisonFacts(IReadOnlyList<string>? coveredKeys = null)
+    {
+        var comparison = FiveModelComparison();
+        var runs = FiveModelRuns();
+        var keys = coveredKeys ?? BenchmarkComparisonReportFacts.DefaultCoveredKeys(comparison);
+        var (reference, allPairs, unavailable) = BenchmarkComparisonReportFacts.PairedFromRuns(comparison, keys, runs);
+        var result = BenchmarkComparisonReportFacts.BuildFromRuns(comparison, keys, runs, 120, reference, allPairs, unavailable, ComparisonNumber);
+        Assert.True(result.Sheet != null, result.Refusal);
+        return result;
+    }
+
+    /// <summary>The fixture comparison's row, numbered <see cref="ComparisonNumber"/> and named <see cref="ComparisonName"/>.</summary>
+    public static BenchmarkComparison ComparisonRow() => new()
+    {
+        Id = ComparisonNumber,
+        ComparisonKey = BenchmarkReportComparisonKey.From(ComparisonModels.Select(m => m.RunId), Array.Empty<long>()),
+        EntryKeysJson = BenchmarkReportJson.Serialize(ComparisonModels.Select(m => "run:" + m.RunId).ToList()),
+        SubjectKind = BenchmarkComparisonSubjectKind.Runs,
+        EntryCount = ComparisonModels.Count,
+        DefaultName = "5 models · GnollHack Core Suite",
+        Name = ComparisonName,
+        CreatedAtUtc = ComparisonComputedAt
+    };
+
+    /// <summary>A stored comparison-scope document over every model of the fixture comparison, or over <see cref="SubsetKeys"/>.</summary>
+    public static BenchmarkReportDocument ComparisonDocument(BenchmarkReportAudience audience, bool subset = false)
+    {
+        var built = ComparisonFacts(subset ? SubsetKeys : null);
+        var sheet = built.Sheet!;
+        var comparison = ComparisonRow();
+        return new BenchmarkReportDocument
+        {
+            Id = 212,
+            PackId = new Guid("3f2b8c1e-0000-4000-8000-000000000212"),
+            Audience = audience,
+            Origin = BenchmarkReportDocumentOrigin.ReportPack,
+            Scope = BenchmarkReportScope.Comparison,
+            ComparisonId = comparison.Id,
+            Comparison = comparison,
+            CoveredEntryKeysJson = BenchmarkReportJson.Serialize(built.CoveredEntryKeys.ToList()),
+            CoveredSetKey = built.CoveredSetKey,
+            SubjectKey = sheet.SubjectKey,
+            SubjectLabel = sheet.SubjectLabel,
+            SubjectRunIdsJson = BenchmarkReportJson.Serialize(sheet.SubjectRunIds),
+            ComparisonRequestJson = "{\"runIds\":[31,32,33,34,35],\"groupIds\":[],\"pricingBasis\":1}",
+            ComparisonKey = comparison.ComparisonKey,
+            SuiteId = 5,
+            SuiteName = sheet.SuiteName,
+            WriterConfigId = 7,
+            WriterDisplayName = "Claude Opus 5.5",
+            WriterProvider = "Anthropic",
+            WriterModelId = "claude-opus-5-5",
+            WriterThinkingLevel = "medium",
+            ReportFormatVersion = BenchmarkReportPackRenderer.ComparisonReportFormatVersion,
+            WriterPromptSha256 = new string('b', 64),
+            AnswerExcerptChars = 120,
+            FactsJson = BenchmarkReportJson.Serialize(sheet),
+            ContentJson = BenchmarkReportJson.Serialize(built.Content),
+            WriterOutputJson = BenchmarkReportJson.Serialize(ComparisonWriter(audience, sheet)),
+            ValidationNotesJson = "[]",
+            Title = BenchmarkReportPackRenderer.BuildComparisonTitle(audience, sheet,
+                new Overseer.Services.Benchmarking.Pdf.BenchmarkPdfComparison(comparison.Id, comparison.DisplayName, comparison.EntryCount),
+                BenchmarkReportPeerNaming.Named),
+            Status = BenchmarkReportDocumentStatus.Completed,
+            CreatedAtUtc = CreatedAt,
+            CreatedByUserId = "user-1",
+            InputTokens = 30000,
+            OutputTokens = 6000,
+            DurationMs = 90000,
+            CostUsd = 0.42m,
+            PricingSource = "catalog",
+            Runs = new List<BenchmarkReportDocumentRun>()
+        };
+    }
+
+    private static readonly string[] TopicWords = { "gems", "prayer", "unicorns", "wands", "altars", "shops" };
+
+    /// <summary>
+    /// A comparison-scope writer output for the audience over <paramref name="sheet"/> that passes every
+    /// rule: each slot, one point per model where the document lists models, a topic for each question
+    /// whose text was given where topics are required, and a lead where the document has leads.
+    /// </summary>
+    public static BenchmarkReportWriterOutput ComparisonWriter(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
+    {
+        var letters = sheet.Peers.OrderBy(p => p.Letter.Length).ThenBy(p => p.Letter, StringComparer.Ordinal).Select(p => p.Letter).ToList();
+        string a = letters[0];
+        string b = letters[1];
+        string T(string inner) => "{{" + inner + "}}";
+
+        var texts = new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.Overview] = T("model:" + a) + " has the highest Intelligence Index of the " + T("comparison.models") + " models compared.",
+            [BenchmarkReportSlots.WhichModel] = "For the best answers, choose " + T("model:" + a) + " or " + T("model:" + b) + "; their intervals overlap, so the order between them is not established.",
+            [BenchmarkReportSlots.TradeOffs] = "The intelligence against cost frontier holds " + T("frontier.qualityCost") + ".",
+            [BenchmarkReportSlots.Reliability] = "The graders agreed on most answers.",
+            [BenchmarkReportSlots.Abstract] = "The models answered the same questions, and " + T("model:" + a) + " scored " + T("model." + a + ".quality.index") + ".",
+            [BenchmarkReportSlots.Results] = T("model:" + a) + " and " + T("model:" + b) + " share a rank because their intervals overlap.",
+            [BenchmarkReportSlots.DimensionProfiles] = "Accuracy ranges " + T("spread.dimension.accuracy") + ".",
+            [BenchmarkReportSlots.Frontier] = "The intelligence against speed frontier holds " + T("frontier.qualitySpeed") + ".",
+            [BenchmarkReportSlots.QuestionPatterns] = "Most models scored low on Q3, which points to the question or the chat first.",
+            [BenchmarkReportSlots.GraderReliability] = "Panel member A graded every answer.",
+            [BenchmarkReportSlots.Limitations] = "Every model rests on a single run, so no interval covers run-to-run variation.",
+            [BenchmarkReportSlots.SharedGaps] = "Q3 is a shared gap: most models scored low on it, so check the chat and the corpus first.",
+            [BenchmarkReportSlots.ModelGaps] = T("model:" + b) + " gave the weakest answer on Q3.",
+            [BenchmarkReportSlots.BenchmarkSystem] = "The rubric of Q3 may need a review, since most models scored low on it."
+        };
+
+        var spec = BenchmarkReportSlots.For(audience, BenchmarkReportScope.Comparison);
+        var output = new BenchmarkReportWriterOutput
+        {
+            Headline = T("model:" + a) + " and " + T("model:" + b) + " head the comparison; their intervals overlap, so the order between them is not established.",
+            Sections = spec.RequiredSlots.ToDictionary(s => s, s => texts[s])
+        };
+
+        if (spec.MaxModelPoints > 0)
+        {
+            output.Models = letters.Select(l => new BenchmarkReportModelPoints
+            {
+                Model = l,
+                Points = new List<BenchmarkReportWriterItem>
+                {
+                    new()
+                    {
+                        Text = T("model:" + l) + " scored " + T("model." + l + ".quality.index") + " on intelligence.",
+                        Questions = new List<int> { 1 },
+                        Evidence = new List<string> { "model." + l + ".quality.index", "Q1" }
+                    }
+                }
+            }).ToList();
+        }
+
+        if (spec.RequiresQuestionTopics)
+        {
+            output.QuestionTopics = sheet.Questions
+                .Where(q => q.Detailed == true)
+                .Select(q => new BenchmarkReportQuestionTopic { Question = q.Number, Topic = "An item question about " + TopicWords[(q.Number - 1) % TopicWords.Length] })
+                .ToList();
+        }
+
+        if (spec.UsesLeads)
+        {
+            output.Leads = new List<BenchmarkReportLead>
+            {
+                new()
+                {
+                    Triage = "chat",
+                    Text = "Check how the chat routes the question most models scored low on.",
+                    Questions = new List<int> { 3 },
+                    Evidence = new List<string> { "Q3", "questions.anyCriticalError" }
+                }
+            };
+        }
+
+        return output;
+    }
+
+    /// <summary>Every audience, disclosure and naming of a comparison-scope document, with its golden file name.</summary>
+    public static IEnumerable<object[]> ComparisonCombinations()
+        => AllowedCombinations().Select(c => new[] { c[0], c[1], c[2], "comparison_" + (string)c[3] });
+
     /// <summary>A synthesis JSON with one finding per tuple.</summary>
     public static string Synthesis(params (string Kind, string Category, int[] Questions, string Text)[] findings)
     {

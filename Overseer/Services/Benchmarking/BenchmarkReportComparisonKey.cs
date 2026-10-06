@@ -34,6 +34,43 @@ public static class BenchmarkReportComparisonKey
     }
 
     /// <summary>
+    /// The key of a document's covered entry set: <see cref="From"/> over the ids of
+    /// <paramref name="entryKeys"/>, so a set covering every entry of a comparison has the comparison's
+    /// own key. Throws <see cref="ArgumentException"/> where <see cref="TryFromEntryKeys"/> is false.
+    /// </summary>
+    public static string ForCoveredSet(IEnumerable<string> entryKeys)
+    {
+        ArgumentNullException.ThrowIfNull(entryKeys);
+
+        if (!TryFromEntryKeys(entryKeys, out var key))
+        {
+            throw new ArgumentException(
+                "A covered set is one or more run:, group: or battery: entry keys, never battery results beside runs or groups.",
+                nameof(entryKeys));
+        }
+        return key;
+    }
+
+    /// <summary>
+    /// The entry keys of the ids in canonical order: runs, then groups, then battery results, each
+    /// distinct and by ascending id.
+    /// </summary>
+    public static IReadOnlyList<string> CanonicalEntryKeys(
+        IEnumerable<long> runIds, IEnumerable<long> groupIds, IEnumerable<long>? batteryRunIds = null)
+    {
+        ArgumentNullException.ThrowIfNull(runIds);
+        ArgumentNullException.ThrowIfNull(groupIds);
+
+        static IEnumerable<string> Keys(IEnumerable<long> ids, string prefix)
+            => ids.Distinct().OrderBy(id => id).Select(id => prefix + id.ToString(CultureInfo.InvariantCulture));
+
+        return Keys(runIds, "run:")
+            .Concat(Keys(groupIds, "group:"))
+            .Concat(Keys(batteryRunIds ?? Enumerable.Empty<long>(), "battery:"))
+            .ToList();
+    }
+
+    /// <summary>
     /// The key of the entry keys <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> and
     /// <c>battery:&lt;id&gt;</c>. False, with an empty key, when any key has another form, the list is
     /// empty, or it mixes battery results with runs or groups, which no comparison holds.

@@ -8,7 +8,9 @@ import { of } from 'rxjs';
 import {
   AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY, RUN_REPORT_HEADER_STORAGE_KEY, RUN_REPORT_TAB_STORAGE_KEY
 } from './benchmark.component';
-import { AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto } from '../../services/admin-benchmark.service';
+import {
+  AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto, BenchmarkComparisonDto
+} from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY } from './run-report-frame/key-figures-image';
@@ -42,6 +44,19 @@ export const COMPARISON_SELECTION_KEY = 'overseer_admin_benchmark_comparison_sel
 
 /** The key the Model Comparison launcher remembers its "How the comparison works" disclosure under. */
 export const COMPARISON_LAUNCHER_KEY = 'overseer.benchmark.modelComparison.launcher';
+
+/** What the service mock's `identifyComparison` and `renameComparison` answer. */
+export const BENCHMARK_SPEC_COMPARISON: BenchmarkComparisonDto = {
+  id: 12,
+  name: 'Model 1 vs Model 2',
+  customName: null,
+  defaultName: 'Model 1 vs Model 2',
+  entryCount: 2,
+  subjectKind: 'Runs',
+  entryKeys: ['run:1', 'run:2'],
+  createdAtUtc: '2026-10-06T10:00:00Z',
+  renamedAtUtc: null
+};
 
 export function clearStoredState(): void {
   // All are real browser state, so without this a spec that starts a run, picks a comparison or
@@ -257,8 +272,14 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     getBatteryLeaderboard: vi.fn().mockName("AdminBenchmarkService.getBatteryLeaderboard"),
     previewBatteryReuse: vi.fn().mockName("AdminBenchmarkService.previewBatteryReuse"),
     attachBatteryMember: vi.fn().mockName("AdminBenchmarkService.attachBatteryMember"),
-    getBatteryAttachCandidates: vi.fn().mockName("AdminBenchmarkService.getBatteryAttachCandidates")
+    getBatteryAttachCandidates: vi.fn().mockName("AdminBenchmarkService.getBatteryAttachCandidates"),
+    identifyComparison: vi.fn().mockName("AdminBenchmarkService.identifyComparison"),
+    renameComparison: vi.fn().mockName("AdminBenchmarkService.renameComparison")
   } as unknown as MockedObject<AdminBenchmarkService>;
+
+  // The comparison wizard numbers every computed comparison, and its header can rename it.
+  benchmarkServiceMock.identifyComparison.mockReturnValue(of(BENCHMARK_SPEC_COMPARISON));
+  benchmarkServiceMock.renameComparison.mockReturnValue(of(BENCHMARK_SPEC_COMPARISON));
 
   // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Multi-Suite tab
   // and the Battery Progress dialog read the rest.

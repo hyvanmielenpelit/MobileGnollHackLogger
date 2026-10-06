@@ -75,6 +75,15 @@ public sealed class BenchmarkReportCleanResult
 /// fact token, in the same sentence, whose display starts with <c>0</c>: "no critical errors across
 /// {{errors.critical}}" reads "no critical errors across 0 of 18 answers". A warning.</item>
 /// </list>
+///
+/// <para>A comparison-scope sheet (<see cref="BenchmarkReportFactSheet.IsComparison"/>) is checked
+/// against its audience's comparison slots: its tokens are <c>{{model:X}}</c> for every covered
+/// model's letter and its fact keys, with no <c>{{subject}}</c> or <c>{{peer:X}}</c>; every covered
+/// model's name is a name of rule 10; rule 16 reads two <c>{{model:X}}</c> tokens and the pair's
+/// <c>pair.X.Y.intervalOverlap</c>, where a family's established result (<c>pair.X.Y.quality.reference</c>
+/// or <c>.allPairs</c>) may be stated instead; its <c>models</c> list gives each covered model at
+/// most the audience's points, each citing evidence; and rule 21, a warning, asks for an entry for
+/// every covered model. Topics already written for the job's covered set are not checked again.</para>
 /// </summary>
 public static class BenchmarkReportPackValidator
 {
@@ -122,6 +131,35 @@ public static class BenchmarkReportPackValidator
     /// <summary>Leads the Internal Improvement Brief holds.</summary>
     public const int MaxLeads = 6;
 
+    // Comparison-scope slot caps.
+    public const int OverviewMaxWords = 90;
+    public const int WhichModelMaxWords = 120;
+    public const int TradeOffsMaxWords = 100;
+    public const int ReliabilityMaxWords = 80;
+    public const int ResultsMaxWords = 200;
+    public const int DimensionProfilesMaxWords = 150;
+    public const int FrontierMaxWords = 120;
+    public const int QuestionPatternsMaxWords = 250;
+    public const int GraderReliabilityMaxWords = 120;
+    public const int SharedGapsMaxWords = 250;
+    public const int ModelGapsMaxWords = 200;
+
+    /// <summary>Each point of a comparison-scope Executive Summary's <c>models</c> list.</summary>
+    public const int ExecutiveModelPointMaxWords = 30;
+
+    /// <summary>Each point of a comparison-scope Report for AI Researchers and Developers' <c>models</c> list.</summary>
+    public const int TechnicalModelPointMaxWords = 40;
+
+    /// <summary>
+    /// The rule number of the check that a comparison-scope document's <c>models</c> list has an entry
+    /// for every covered model; a warning with nothing to drop.
+    /// </summary>
+    public const int ModelCoverageRule = 21;
+
+    /// <summary>The word cap of each point of the audience's comparison-scope <c>models</c> list.</summary>
+    public static int ModelPointMaxWords(BenchmarkReportAudience audience)
+        => audience == BenchmarkReportAudience.ExecutiveSummary ? ExecutiveModelPointMaxWords : TechnicalModelPointMaxWords;
+
     /// <summary>The rule number of the US English check, whose notes never drop an item.</summary>
     public const int UsSpellingRule = 12;
 
@@ -167,7 +205,7 @@ public static class BenchmarkReportPackValidator
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule
-            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule;
+            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule or ModelCoverageRule;
 
     /// <summary>
     /// Terms rule 18 flags in a <c>model_developers</c> recommendation, matched as whole words ignoring
@@ -308,6 +346,9 @@ public static class BenchmarkReportPackValidator
         Weakness,
         Recommendation,
         Lead,
+
+        /// <summary>One point about a model in a comparison-scope document's <c>models</c> list.</summary>
+        ModelPoint,
     }
 
     /// <summary>How many recommendations the audience's document holds.</summary>
@@ -322,8 +363,30 @@ public static class BenchmarkReportPackValidator
     public static bool RecommendationsRequireEvidence(BenchmarkReportAudience audience)
         => audience == BenchmarkReportAudience.TechnicalReport;
 
-    /// <summary>The word cap of a slot, or null when it has none.</summary>
-    public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot) => slot switch
+    /// <summary>The word cap of a slot of a per-model document, or null when it has none.</summary>
+    public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot) => SlotMaxWords(audience, slot, comparisonScope: false);
+
+    /// <summary>The word cap of a slot of a per-model or comparison-scope document, or null when it has none.</summary>
+    public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot, bool comparisonScope) => comparisonScope
+        ? slot switch
+        {
+            BenchmarkReportSlots.Overview => OverviewMaxWords,
+            BenchmarkReportSlots.WhichModel => WhichModelMaxWords,
+            BenchmarkReportSlots.TradeOffs => TradeOffsMaxWords,
+            BenchmarkReportSlots.Reliability => ReliabilityMaxWords,
+            BenchmarkReportSlots.Abstract => AbstractMaxWords,
+            BenchmarkReportSlots.Results => ResultsMaxWords,
+            BenchmarkReportSlots.DimensionProfiles => DimensionProfilesMaxWords,
+            BenchmarkReportSlots.Frontier => FrontierMaxWords,
+            BenchmarkReportSlots.QuestionPatterns => QuestionPatternsMaxWords,
+            BenchmarkReportSlots.GraderReliability => GraderReliabilityMaxWords,
+            BenchmarkReportSlots.Limitations => LimitationsMaxWords,
+            BenchmarkReportSlots.SharedGaps => SharedGapsMaxWords,
+            BenchmarkReportSlots.ModelGaps => ModelGapsMaxWords,
+            BenchmarkReportSlots.BenchmarkSystem => BenchmarkSystemMaxWords,
+            _ => (int?)null
+        }
+        : slot switch
     {
         BenchmarkReportSlots.Abstract => AbstractMaxWords,
         BenchmarkReportSlots.Meaning when audience == BenchmarkReportAudience.ExecutiveSummary => MeaningMaxWords,
@@ -342,12 +405,17 @@ public static class BenchmarkReportPackValidator
     // Validate
     // -----------------------------------------------------------------------------------------
 
-    /// <summary>Every issue, none dropped. An empty list means the output is valid.</summary>
+    /// <summary>
+    /// Every issue, none dropped. An empty list means the output is valid. A comparison-scope sheet
+    /// given <paramref name="sharedTopics"/>, the topics already written for its covered set, does not
+    /// check the writer's own topics.
+    /// </summary>
     public static IReadOnlyList<BenchmarkReportValidationNote> Validate(
         BenchmarkReportAudience audience,
         BenchmarkReportWriterOutput output,
         BenchmarkReportFactSheet sheet,
-        BenchmarkReportContentSnapshot content)
+        BenchmarkReportContentSnapshot content,
+        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics = null)
     {
         ArgumentNullException.ThrowIfNull(output);
         var ctx = new Context(audience, sheet, content);
@@ -370,11 +438,11 @@ public static class BenchmarkReportPackValidator
             for (int p = 0; p < paragraphs.Count; p++)
             {
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), notes);
-                CheckIntervalWidth(audience, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
+                CheckIntervalWidth(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
                 CheckAbstractVerifier(slot, paragraphs[p], ParagraphLocation(slot, p), notes);
             }
 
-            if (SlotMaxWords(audience, slot) is int cap && WordCount(text) > cap)
+            if (SlotMaxWords(audience, slot, ctx.Comparison) is int cap && WordCount(text) > cap)
             {
                 Issue(notes, 7, location, $"{SlotName(slot)} has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {cap.ToString(CultureInfo.InvariantCulture)}.");
             }
@@ -385,8 +453,25 @@ public static class BenchmarkReportPackValidator
             Issue(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key));
         }
 
-        CheckItems(ctx, "strengths", output.Strengths, ItemKind.Strength, spec.MaxStrengths, notes);
-        CheckItems(ctx, "weaknesses", output.Weaknesses, ItemKind.Weakness, spec.MaxWeaknesses, notes);
+        if (spec.UsesStrengthsAndWeaknesses)
+        {
+            CheckItems(ctx, "strengths", output.Strengths, ItemKind.Strength, spec.MaxStrengths, notes);
+            CheckItems(ctx, "weaknesses", output.Weaknesses, ItemKind.Weakness, spec.MaxWeaknesses, notes);
+        }
+        else
+        {
+            if (output.Strengths is { Count: > 0 }) Issue(notes, 1, "strengths", UnusedListMessage(spec, "strengths"));
+            if (output.Weaknesses is { Count: > 0 }) Issue(notes, 1, "weaknesses", UnusedListMessage(spec, "weaknesses"));
+        }
+
+        if (spec.MaxModelPoints > 0)
+        {
+            CheckModels(ctx, output.Models, notes);
+        }
+        else if (output.Models is { Count: > 0 })
+        {
+            Issue(notes, 1, "models", UnusedListMessage(spec, "models"));
+        }
 
         if (spec.UsesRecommendations)
         {
@@ -397,19 +482,22 @@ public static class BenchmarkReportPackValidator
             Issue(notes, 1, "recommendations", UnusedListMessage(spec, "recommendations"));
         }
 
-        var topics = output.QuestionTopics ?? new List<BenchmarkReportQuestionTopic>();
-        var topicSeen = new HashSet<int>();
-        for (int i = 0; i < topics.Count; i++)
+        if (!(ctx.Comparison && sharedTopics != null))
         {
-            var topic = topics[i] ?? new BenchmarkReportQuestionTopic();
-            string location = $"questionTopics[{i.ToString(CultureInfo.InvariantCulture)}]";
-            notes.AddRange(TopicIssues(ctx, topic, location));
-            if (!topicSeen.Add(topic.Question) && ctx.Questions.Contains(topic.Question))
+            var topics = output.QuestionTopics ?? new List<BenchmarkReportQuestionTopic>();
+            var topicSeen = new HashSet<int>();
+            for (int i = 0; i < topics.Count; i++)
             {
-                Issue(notes, 4, location, $"{ctx.Reference(topic.Question)} already has a topic in an earlier entry.");
+                var topic = topics[i] ?? new BenchmarkReportQuestionTopic();
+                string location = $"questionTopics[{i.ToString(CultureInfo.InvariantCulture)}]";
+                notes.AddRange(TopicIssues(ctx, topic, location));
+                if (!topicSeen.Add(topic.Question) && ctx.Questions.Contains(topic.Question))
+                {
+                    Issue(notes, 4, location, $"{ctx.Reference(topic.Question)} already has a topic in an earlier entry.");
+                }
             }
+            CheckTopicCoverage(ctx, topicSeen, notes, dropped: false);
         }
-        CheckTopicCoverage(ctx, topicSeen, notes, dropped: false);
 
         var questionNotes = output.QuestionNotes ?? new List<BenchmarkReportQuestionNote>();
         if (spec.UsesQuestionNotes)
@@ -436,7 +524,7 @@ public static class BenchmarkReportPackValidator
 
         if (spec.UsesLeads)
         {
-            CheckItems(ctx, "leads", output.Leads, ItemKind.Lead, MaxLeads, notes);
+            CheckItems(ctx, "leads", output.Leads, ItemKind.Lead, spec.MaxLeads, notes);
         }
         else if (output.Leads is { Count: > 0 })
         {
@@ -444,6 +532,67 @@ public static class BenchmarkReportPackValidator
         }
 
         return notes;
+    }
+
+    /// <summary>
+    /// A comparison-scope <c>models</c> list: each entry names a covered model's letter once and holds
+    /// at most the audience's points, each checked as an item that must cite evidence; every covered
+    /// model needs an entry (rule 21, a warning).
+    /// </summary>
+    private static void CheckModels(Context ctx, IReadOnlyList<BenchmarkReportModelPoints>? models, List<BenchmarkReportValidationNote> notes)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = models ?? Array.Empty<BenchmarkReportModelPoints>();
+        for (int i = 0; i < list.Count; i++)
+        {
+            var entry = list[i] ?? new BenchmarkReportModelPoints();
+            string location = ItemLocation("models", i);
+            notes.AddRange(ModelEntryIssues(ctx, entry, location, seen));
+            if (ctx.PeerLetters.Contains(entry.Model)) seen.Add(entry.Model);
+
+            var points = entry.Points ?? new List<BenchmarkReportWriterItem>();
+            for (int p = 0; p < points.Count; p++)
+            {
+                string pointLocation = location + ".points[" + p.ToString(CultureInfo.InvariantCulture) + "]";
+                notes.AddRange(ItemIssues(ctx, points[p], ItemKind.ModelPoint, pointLocation));
+                if (p >= ctx.Spec.MaxModelPoints)
+                {
+                    Issue(notes, 7, pointLocation, $"A model holds at most {ctx.Spec.MaxModelPoints.ToString(CultureInfo.InvariantCulture)} points.");
+                }
+            }
+        }
+        CheckModelCoverage(ctx, seen, notes);
+    }
+
+    /// <summary>Rule 1 on one <c>models</c> entry: a letter of the sheet, given once, with at least one point.</summary>
+    private static List<BenchmarkReportValidationNote> ModelEntryIssues(
+        Context ctx, BenchmarkReportModelPoints entry, string location, IReadOnlySet<string> seen)
+    {
+        var notes = new List<BenchmarkReportValidationNote>();
+        if (!ctx.PeerLetters.Contains(entry.Model ?? string.Empty))
+        {
+            Issue(notes, 1, location, $"\"model\" is \"{entry.Model}\"; it must be the letter of a model listed under MODELS: {string.Join(", ", ctx.OrderedLetters)}.");
+        }
+        else if (seen.Contains(entry.Model!))
+        {
+            Issue(notes, 1, location, $"Model {entry.Model} already has an entry earlier in the list.");
+        }
+        if (entry.Points == null || entry.Points.Count == 0)
+        {
+            Issue(notes, 1, location, "The entry has no points.");
+        }
+        return notes;
+    }
+
+    /// <summary>Rule 21: every covered model has its entry in the <c>models</c> list; a warning with nothing to drop.</summary>
+    private static void CheckModelCoverage(Context ctx, IReadOnlySet<string> covered, List<BenchmarkReportValidationNote> notes)
+    {
+        var missing = ctx.OrderedLetters.Where(l => !covered.Contains(l)).ToList();
+        if (missing.Count > 0)
+        {
+            Issue(notes, ModelCoverageRule, "models",
+                $"No entry for {string.Join(", ", missing.Select(l => "{{model:" + l + "}}"))}: every model listed under MODELS needs one.");
+        }
     }
 
     // -----------------------------------------------------------------------------------------
@@ -460,7 +609,8 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportAudience audience,
         BenchmarkReportWriterOutput output,
         BenchmarkReportFactSheet sheet,
-        BenchmarkReportContentSnapshot content)
+        BenchmarkReportContentSnapshot content,
+        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics = null)
     {
         ArgumentNullException.ThrowIfNull(output);
         var ctx = new Context(audience, sheet, content);
@@ -497,7 +647,7 @@ public static class BenchmarkReportPackValidator
             {
                 var issues = new List<BenchmarkReportValidationNote>();
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), issues);
-                CheckIntervalWidth(audience, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
+                CheckIntervalWidth(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
                 CheckAbstractVerifier(slot, paragraphs[p], ParagraphLocation(slot, p), issues);
                 if (issues.Any(Blocks))
                 {
@@ -510,7 +660,7 @@ public static class BenchmarkReportPackValidator
                 }
             }
 
-            if (SlotMaxWords(audience, slot) is int cap)
+            if (SlotMaxWords(audience, slot, ctx.Comparison) is int cap)
             {
                 while (kept.Count > 0 && WordCount(string.Join("\n\n", kept.Select(k => k.Text))) > cap)
                 {
@@ -537,8 +687,25 @@ public static class BenchmarkReportPackValidator
             Dropped(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key));
         }
 
-        copy.Strengths = CleanItems(ctx, "strengths", output.Strengths, ItemKind.Strength, spec.MaxStrengths, notes, CloneItem);
-        copy.Weaknesses = CleanItems(ctx, "weaknesses", output.Weaknesses, ItemKind.Weakness, spec.MaxWeaknesses, notes, CloneItem);
+        if (spec.UsesStrengthsAndWeaknesses)
+        {
+            copy.Strengths = CleanItems(ctx, "strengths", output.Strengths, ItemKind.Strength, spec.MaxStrengths, notes, CloneItem);
+            copy.Weaknesses = CleanItems(ctx, "weaknesses", output.Weaknesses, ItemKind.Weakness, spec.MaxWeaknesses, notes, CloneItem);
+        }
+        else
+        {
+            if (output.Strengths is { Count: > 0 }) Dropped(notes, 1, "strengths", UnusedListMessage(spec, "strengths"));
+            if (output.Weaknesses is { Count: > 0 }) Dropped(notes, 1, "weaknesses", UnusedListMessage(spec, "weaknesses"));
+        }
+
+        if (spec.MaxModelPoints > 0)
+        {
+            copy.Models = CleanModels(ctx, output.Models, notes);
+        }
+        else if (output.Models is { Count: > 0 })
+        {
+            Dropped(notes, 1, "models", UnusedListMessage(spec, "models"));
+        }
 
         if (spec.UsesRecommendations)
         {
@@ -549,29 +716,39 @@ public static class BenchmarkReportPackValidator
             Dropped(notes, 1, "recommendations", UnusedListMessage(spec, "recommendations"));
         }
 
-        var topicSeen = new HashSet<int>();
-        var topics = output.QuestionTopics ?? new List<BenchmarkReportQuestionTopic>();
-        for (int i = 0; i < topics.Count; i++)
+        if (ctx.Comparison && sharedTopics != null)
         {
-            var topic = topics[i] ?? new BenchmarkReportQuestionTopic();
-            string location = $"questionTopics[{i.ToString(CultureInfo.InvariantCulture)}]";
-            var issues = TopicIssues(ctx, topic, location);
-            if (!issues.Any(Blocks) && topicSeen.Contains(topic.Question))
-            {
-                issues.Add(Note(4, location, $"{ctx.Reference(topic.Question)} already has a topic in an earlier entry."));
-            }
-
-            if (issues.Any(Blocks))
-            {
-                notes.AddRange(MarkDropped(issues));
-                continue;
-            }
-
-            notes.AddRange(issues);
-            topicSeen.Add(topic.Question);
-            copy.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = topic.Question, Topic = topic.Topic });
+            // The covered set's topics were written once for the job; the writer's own are not kept.
+            copy.QuestionTopics = sharedTopics
+                .Select(t => new BenchmarkReportQuestionTopic { Question = t.Question, Topic = t.Topic })
+                .ToList();
         }
-        CheckTopicCoverage(ctx, topicSeen, notes, dropped: false);
+        else
+        {
+            var topicSeen = new HashSet<int>();
+            var topics = output.QuestionTopics ?? new List<BenchmarkReportQuestionTopic>();
+            for (int i = 0; i < topics.Count; i++)
+            {
+                var topic = topics[i] ?? new BenchmarkReportQuestionTopic();
+                string location = $"questionTopics[{i.ToString(CultureInfo.InvariantCulture)}]";
+                var issues = TopicIssues(ctx, topic, location);
+                if (!issues.Any(Blocks) && topicSeen.Contains(topic.Question))
+                {
+                    issues.Add(Note(4, location, $"{ctx.Reference(topic.Question)} already has a topic in an earlier entry."));
+                }
+
+                if (issues.Any(Blocks))
+                {
+                    notes.AddRange(MarkDropped(issues));
+                    continue;
+                }
+
+                notes.AddRange(issues);
+                topicSeen.Add(topic.Question);
+                copy.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = topic.Question, Topic = topic.Topic });
+            }
+            CheckTopicCoverage(ctx, topicSeen, notes, dropped: false);
+        }
 
         var questionNotes = output.QuestionNotes ?? new List<BenchmarkReportQuestionNote>();
         if (spec.UsesQuestionNotes)
@@ -606,7 +783,7 @@ public static class BenchmarkReportPackValidator
 
         if (spec.UsesLeads)
         {
-            copy.Leads = CleanItems(ctx, "leads", output.Leads, ItemKind.Lead, MaxLeads, notes, CloneLead);
+            copy.Leads = CleanItems(ctx, "leads", output.Leads, ItemKind.Lead, spec.MaxLeads, notes, CloneLead);
         }
         else if (output.Leads is { Count: > 0 })
         {
@@ -657,7 +834,9 @@ public static class BenchmarkReportPackValidator
             .ToList();
         if (badTokens.Count > 0)
         {
-            Issue(notes, 2, location, $"Unknown token{Plural(badTokens.Count)} {string.Join(", ", badTokens)}: use {{{{subject}}}}, {{{{peer:X}}}} with a letter from PEERS, or {{{{key}}}} with a fact key written exactly as listed, without spaces inside the braces.");
+            Issue(notes, 2, location, ctx.Comparison
+                ? $"Unknown token{Plural(badTokens.Count)} {string.Join(", ", badTokens)}: use {{{{model:X}}}} with a letter from MODELS, or {{{{key}}}} with a fact key written exactly as listed, without spaces inside the braces."
+                : $"Unknown token{Plural(badTokens.Count)} {string.Join(", ", badTokens)}: use {{{{subject}}}}, {{{{peer:X}}}} with a letter from PEERS, or {{{{key}}}} with a fact key written exactly as listed, without spaces inside the braces.");
         }
         if (stripped.Contains("{{", StringComparison.Ordinal) || stripped.Contains("}}", StringComparison.Ordinal))
         {
@@ -745,7 +924,9 @@ public static class BenchmarkReportPackValidator
         var names = ctx.FindPeerNames(stripped);
         if (names.Count > 0)
         {
-            Issue(notes, 10, location, $"Names another model or its provider ({string.Join(", ", names)}): refer to a peer only as {{{{peer:X}}}}.");
+            Issue(notes, 10, location, ctx.Comparison
+                ? $"Names a model or its provider ({string.Join(", ", names)}): refer to a model only as {{{{model:X}}}}."
+                : $"Names another model or its provider ({string.Join(", ", names)}): refer to a peer only as {{{{peer:X}}}}.");
         }
 
         // Rule 11: significance claims.
@@ -768,8 +949,19 @@ public static class BenchmarkReportPackValidator
             Issue(notes, UsSpellingRule, location, $"Uses the British spelling{Plural(british.Count)} \"{string.Join("\", \"", british)}\": write in US English (color, behavior, analyze, center, gray, labeled, canceled).");
         }
 
-        // Rule 16: an unhedged ranking against a peer whose interval overlaps the subject's.
-        var unhedged = UnhedgedOverlappingPeers(ctx, text);
+        // Rule 16: an unhedged ranking against a peer whose interval overlaps the subject's; on a
+        // comparison-scope sheet, of one model against another whose interval overlaps it.
+        if (ctx.Comparison)
+        {
+            foreach (var (first, second, established) in UnhedgedOverlappingPairs(ctx, text))
+            {
+                Issue(notes, OverlapHedgeRule, location, established
+                    ? $"Ranks {{{{model:{first}}}}} against {{{{model:{second}}}}}, whose 95 % intervals overlap, without the paired result: in the same sentence, say what the paired test established on the same questions and after which family's adjustment, or that the intervals overlap."
+                    : $"Ranks {{{{model:{first}}}}} against {{{{model:{second}}}}}, whose 95 % intervals overlap, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established.");
+            }
+        }
+
+        var unhedged = ctx.Comparison ? new List<string>() : UnhedgedOverlappingPeers(ctx, text);
         var unpaired = unhedged.Where(l => !ctx.PairedExcludesZero(l)).ToList();
         var paired = unhedged.Where(ctx.PairedExcludesZero).ToList();
         if (unpaired.Count > 0)
@@ -885,14 +1077,73 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// Rule 13: the Executive Summary's confidence slot states the interval's span as a figure and
-    /// does not call the interval narrow, wide, tight or broad. Other slots and audiences are not checked.
+    /// Rule 16 on a comparison-scope sheet: each pair of models, earlier letter first, that a sentence
+    /// ranks against each other with a word of <see cref="ComparativeWords"/> while their
+    /// <c>pair.X.Y.intervalOverlap</c> is true, and the sentence says neither <c>overlap</c> nor
+    /// <c>not established</c>. Where a family establishes the pair's quality order, saying
+    /// <c>paired</c>, or citing one of the pair's own facts, hedges it as well; <c>Established</c>
+    /// tells the two cases apart. Tokens are set aside before the text is split into sentences.
+    /// </summary>
+    private static List<(string First, string Second, bool Established)> UnhedgedOverlappingPairs(Context ctx, string text)
+    {
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text ?? string.Empty, m =>
+        {
+            tokens.Add(m.Groups[1].Value);
+            return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
+        });
+        var found = new List<(string First, string Second, bool Established)>();
+        if (tokens.Count == 0) return found;
+
+        foreach (string sentence in SentenceSplitRegex.Split(masked))
+        {
+            var inSentence = TokenPlaceholderRegex.Matches(sentence)
+                .Select(m => tokens[int.Parse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)])
+                .ToList();
+            var letters = inSentence
+                .Where(t => t.StartsWith("model:", StringComparison.Ordinal))
+                .Select(t => t["model:".Length..])
+                .Where(ctx.PeerLetters.Contains)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (letters.Count < 2) continue;
+
+            string plain = TokenPlaceholderRegex.Replace(sentence, " ");
+            if (!ComparativeRegex.IsMatch(plain) || OverlapHedgeRegex.IsMatch(plain)) continue;
+
+            for (int i = 0; i < letters.Count; i++)
+            {
+                for (int j = i + 1; j < letters.Count; j++)
+                {
+                    var (first, second) = ctx.LetterIndex(letters[i]) <= ctx.LetterIndex(letters[j])
+                        ? (letters[i], letters[j])
+                        : (letters[j], letters[i]);
+                    string prefix = BenchmarkComparisonReportFacts.PairPrefix(first, second);
+                    if (!ctx.FactIsTrue(prefix + "intervalOverlap")) continue;
+
+                    bool established = ctx.PairEstablished(prefix);
+                    bool statesPaired = PairedWordRegex.IsMatch(plain)
+                                        || inSentence.Any(t => t.StartsWith(prefix, StringComparison.Ordinal));
+                    if (established && statesPaired) continue;
+                    found.Add((first, second, established));
+                }
+            }
+        }
+
+        return found.Distinct().ToList();
+    }
+
+    /// <summary>
+    /// Rule 13: the Executive Summary's confidence slot (on a comparison-scope sheet, its reliability
+    /// slot) does not call the quality interval narrow, wide, tight or broad. Other slots and audiences
+    /// are not checked.
     /// </summary>
     private static void CheckIntervalWidth(
-        BenchmarkReportAudience audience, string slot, string text, string location, List<BenchmarkReportValidationNote> notes)
+        Context ctx, string slot, string text, string location, List<BenchmarkReportValidationNote> notes)
     {
-        if (audience != BenchmarkReportAudience.ExecutiveSummary
-            || !string.Equals(slot, BenchmarkReportSlots.Confidence, StringComparison.Ordinal))
+        string checkedSlot = ctx.Comparison ? BenchmarkReportSlots.Reliability : BenchmarkReportSlots.Confidence;
+        if (ctx.Spec.Audience != BenchmarkReportAudience.ExecutiveSummary
+            || !string.Equals(slot, checkedSlot, StringComparison.Ordinal))
         {
             return;
         }
@@ -984,6 +1235,64 @@ public static class BenchmarkReportPackValidator
         return kept;
     }
 
+    /// <summary>
+    /// The <c>models</c> list with each invalid entry and point removed, and points past the audience's
+    /// cap; an entry left without points is removed. A covered model without an entry is a rule 21 note.
+    /// </summary>
+    private static List<BenchmarkReportModelPoints> CleanModels(
+        Context ctx, IReadOnlyList<BenchmarkReportModelPoints>? models, List<BenchmarkReportValidationNote> notes)
+    {
+        var kept = new List<BenchmarkReportModelPoints>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = models ?? Array.Empty<BenchmarkReportModelPoints>();
+        for (int i = 0; i < list.Count; i++)
+        {
+            var entry = list[i] ?? new BenchmarkReportModelPoints();
+            string location = ItemLocation("models", i);
+            var entryIssues = ModelEntryIssues(ctx, entry, location, seen);
+            if (entryIssues.Any(Blocks))
+            {
+                notes.AddRange(MarkDropped(entryIssues));
+                continue;
+            }
+
+            var points = new List<BenchmarkReportWriterItem>();
+            var source = entry.Points ?? new List<BenchmarkReportWriterItem>();
+            for (int p = 0; p < source.Count; p++)
+            {
+                string pointLocation = location + ".points[" + p.ToString(CultureInfo.InvariantCulture) + "]";
+                var issues = ItemIssues(ctx, source[p], ItemKind.ModelPoint, pointLocation);
+                if (issues.Any(Blocks))
+                {
+                    notes.AddRange(MarkDropped(issues));
+                    continue;
+                }
+                if (points.Count >= ctx.Spec.MaxModelPoints)
+                {
+                    Dropped(notes, 7, pointLocation, $"Removed: a model holds at most {ctx.Spec.MaxModelPoints.ToString(CultureInfo.InvariantCulture)} points.");
+                    continue;
+                }
+                notes.AddRange(issues);
+                points.Add(CloneItem(source[p]));
+            }
+
+            if (points.Count == 0)
+            {
+                Dropped(notes, 1, location, "Every point of the entry was removed.");
+                continue;
+            }
+
+            seen.Add(entry.Model);
+            kept.Add(new BenchmarkReportModelPoints { Model = entry.Model, Points = points });
+        }
+
+        CheckModelCoverage(ctx, seen, notes);
+        return kept
+            .OrderBy(m => m.Model.Length)
+            .ThenBy(m => m.Model, StringComparer.Ordinal)
+            .ToList();
+    }
+
     private static List<BenchmarkReportValidationNote> ItemIssues(Context ctx, BenchmarkReportWriterItem? item, ItemKind kind, string location)
     {
         var notes = new List<BenchmarkReportValidationNote>();
@@ -1002,6 +1311,11 @@ public static class BenchmarkReportPackValidator
                 && WordCount(text) > ExecutiveItemMaxWords)
             {
                 Issue(notes, 7, location, $"The item has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {ExecutiveItemMaxWords.ToString(CultureInfo.InvariantCulture)}.");
+            }
+
+            if (kind == ItemKind.ModelPoint && WordCount(text) > ModelPointMaxWords(ctx.Spec.Audience))
+            {
+                Issue(notes, 7, location, $"The point has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {ModelPointMaxWords(ctx.Spec.Audience).ToString(CultureInfo.InvariantCulture)}.");
             }
         }
 
@@ -1030,9 +1344,9 @@ public static class BenchmarkReportPackValidator
         else if (kind == ItemKind.Lead)
         {
             string triage = (item as BenchmarkReportLead)?.Triage ?? string.Empty;
-            if (!LeadTriages.Contains(triage, StringComparer.Ordinal))
+            if (!ctx.Spec.LeadTriages.Contains(triage, StringComparer.Ordinal))
             {
-                Issue(notes, 1, location, $"\"triage\" is \"{triage}\"; it must be one of: {string.Join(", ", LeadTriages)}.");
+                Issue(notes, 1, location, $"\"triage\" is \"{triage}\"; it must be one of: {string.Join(", ", ctx.Spec.LeadTriages)}.");
             }
         }
 
@@ -1087,16 +1401,20 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, 5, location, ctx.Battery
                 ? $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key or S<suite>-Q<n> from the data."
-                : $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key, Q<n> or a finding row id from the data.");
+                : ctx.Comparison
+                    ? $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key or Q<n> from the data."
+                    : $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key, Q<n> or a finding row id from the data.");
         }
 
-        bool requiresEvidence = kind is ItemKind.Strength or ItemKind.Weakness or ItemKind.Lead
+        bool requiresEvidence = kind is ItemKind.Strength or ItemKind.Weakness or ItemKind.Lead or ItemKind.ModelPoint
             || (kind == ItemKind.Recommendation && RecommendationsRequireEvidence(ctx.Spec.Audience));
         if (requiresEvidence && evidence.Count == 0)
         {
             Issue(notes, 5, location, ctx.Battery
                 ? "Cites no evidence: give at least one fact key or S<suite>-Q<n>."
-                : "Cites no evidence: give at least one fact key, Q<n> or finding row id.");
+                : ctx.Comparison
+                    ? "Cites no evidence: give at least one fact key or Q<n>."
+                    : "Cites no evidence: give at least one fact key, Q<n> or finding row id.");
         }
 
         if (kind is ItemKind.Strength or ItemKind.Weakness)
@@ -1224,13 +1542,24 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.OverseerChat => "\"The Overseer chat and its tools\"",
         BenchmarkReportSlots.BenchmarkSystem => "\"The benchmarking system\"",
         BenchmarkReportSlots.ModelResult => "\"The model's result\"",
+        BenchmarkReportSlots.Overview => "\"The comparison in one paragraph\"",
+        BenchmarkReportSlots.WhichModel => "\"Which model to use\"",
+        BenchmarkReportSlots.TradeOffs => "\"Trade-offs\"",
+        BenchmarkReportSlots.Reliability => "\"How reliable this is\"",
+        BenchmarkReportSlots.Results => "The results paragraph",
+        BenchmarkReportSlots.DimensionProfiles => "\"Dimension profiles\"",
+        BenchmarkReportSlots.Frontier => "\"Speed and cost frontier\"",
+        BenchmarkReportSlots.QuestionPatterns => "\"Cross-model question patterns\"",
+        BenchmarkReportSlots.GraderReliability => "\"Grader reliability\"",
+        BenchmarkReportSlots.SharedGaps => "\"Shared gaps\"",
+        BenchmarkReportSlots.ModelGaps => "\"Model-specific gaps\"",
         _ => $"The \"{slot}\" slot"
     };
 
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but the warning rules 12 to 19 removes the offending item or paragraph.</summary>
+    /// <summary>Every rule but the warning rules 12 to 19 and 21 removes the offending item or paragraph.</summary>
     private static bool Blocks(BenchmarkReportValidationNote note) => !IsWarningRule(note.Rule);
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
@@ -1299,9 +1628,13 @@ public static class BenchmarkReportPackValidator
             ArgumentNullException.ThrowIfNull(sheet);
             ArgumentNullException.ThrowIfNull(content);
 
-            Spec = BenchmarkReportSlots.For(audience);
-            RequiredSlots = Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
+            Spec = BenchmarkReportSlots.For(audience, sheet);
+            Comparison = sheet.IsComparison;
+            RequiredSlots = Comparison ? Spec.RequiredSlots : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
+            _trueFacts = new HashSet<string>(
+                sheet.Facts.Where(BenchmarkReportPackPrompt.IsTrue).Select(f => f.Key), StringComparer.Ordinal);
+            OrderedLetters = BenchmarkReportPackPrompt.OrderedPeers(sheet.Peers).Select(p => p.Letter).ToList();
             _zeroDisplays = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var fact in sheet.Facts.Where(f => f.Available && (f.Display ?? string.Empty).TrimStart().StartsWith('0')))
             {
@@ -1312,7 +1645,7 @@ public static class BenchmarkReportPackValidator
             Questions = new HashSet<int>(OrderedQuestions);
             QuestionsNeedingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet);
             QuestionsNeedingTopic = BenchmarkReportPackPrompt.QuestionsNeedingTopic(sheet);
-            Battery = sheet.Battery != null;
+            Battery = sheet.Battery != null || (Comparison && sheet.Questions.Any(q => !string.IsNullOrWhiteSpace(q.Reference)));
             _referenceByNumber = new Dictionary<int, string>();
             _numberByReference = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var q in sheet.Questions.Where(q => !string.IsNullOrWhiteSpace(q.Reference)))
@@ -1339,7 +1672,10 @@ public static class BenchmarkReportPackValidator
                 Rows.TryAdd(row.Id, row);
             }
 
-            var subjectNames = new[] { sheet.SubjectLabel, sheet.SubjectDisplayName, sheet.SubjectModelId, sheet.SubjectProvider };
+            // A comparison-scope sheet has no subject: every covered model's name is a peer's.
+            var subjectNames = Comparison
+                ? Array.Empty<string>()
+                : new[] { sheet.SubjectLabel, sheet.SubjectDisplayName, sheet.SubjectModelId, sheet.SubjectProvider };
 
             var known = new List<string>(sheet.KnownNames ?? new List<string>());
             known.AddRange(subjectNames);
@@ -1365,6 +1701,12 @@ public static class BenchmarkReportPackValidator
             _peerNames = BuildNameRegex(peerNames, MinPeerNameLength);
 
             _shingles = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var q in content.Questions ?? new List<BenchmarkReportContentQuestion>())
+            {
+                string qn = Reference(q.Number);
+                AddShingles(q.QuestionText, $"the question text of {qn}");
+                AddShingles(q.ExpectedPoints, $"the rubric of {qn}");
+            }
             foreach (var run in content.Runs.OrderBy(r => r.RunId))
             {
                 foreach (var q in run.Questions)
@@ -1433,8 +1775,41 @@ public static class BenchmarkReportPackValidator
         public List<int> OrderedQuestions { get; }
         public Dictionary<string, BenchmarkReportFindingRow> Rows { get; }
 
+        /// <summary>The sheet is a comparison-scope sheet: models are <c>{{model:X}}</c>, and there is no subject.</summary>
+        public bool Comparison { get; }
+
+        /// <summary>The sheet's letters in letter order: shorter letters first, then ordinal.</summary>
+        public IReadOnlyList<string> OrderedLetters { get; }
+
+        private readonly HashSet<string> _trueFacts;
+
+        /// <summary>A letter's place in <see cref="OrderedLetters"/>; <see cref="int.MaxValue"/> for an unknown one.</summary>
+        public int LetterIndex(string letter)
+        {
+            for (int i = 0; i < OrderedLetters.Count; i++)
+            {
+                if (string.Equals(OrderedLetters[i], letter, StringComparison.Ordinal)) return i;
+            }
+            return int.MaxValue;
+        }
+
+        /// <summary>The fact is available and true (<see cref="BenchmarkReportPackPrompt.IsTrue"/>).</summary>
+        public bool FactIsTrue(string key) => _trueFacts.Contains(key);
+
+        /// <summary>A family of the paired tests establishes the pair's quality order: its <c>quality.reference</c> or <c>quality.allPairs</c> fact is true.</summary>
+        public bool PairEstablished(string pairPrefix)
+            => FactIsTrue(pairPrefix + "quality." + BenchmarkComparisonReportFacts.ReferenceFamilyName)
+               || FactIsTrue(pairPrefix + "quality." + BenchmarkComparisonReportFacts.AllPairsFamilyName);
+
         public bool IsValidToken(string inner)
         {
+            if (Comparison)
+            {
+                if (inner.StartsWith("model:", StringComparison.Ordinal)) return PeerLetters.Contains(inner.Substring("model:".Length));
+                if (inner == "subject" || inner.StartsWith("peer:", StringComparison.Ordinal)) return false;
+                return FactKeys.Contains(inner);
+            }
+
             if (inner == "subject") return true;
             if (inner.StartsWith("peer:", StringComparison.Ordinal)) return PeerLetters.Contains(inner.Substring("peer:".Length));
             return FactKeys.Contains(inner);

@@ -26,6 +26,7 @@ import {
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
   BenchmarkReportPeerNaming,
+  BenchmarkReportScope,
   BenchmarkRunDetailDto,
   BenchmarkRunReportJobDto,
   BenchmarkRunReportJobPhase,
@@ -43,11 +44,16 @@ import { CardListChip, CardListFacet, CardListNoun, CardListState } from '../../
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
 import {
+  REPORT_DOCUMENT_SCOPES,
   REPORT_LIBRARY_ALL_TAKE,
   REPORT_PACK_AUDIENCES,
   ReportDocumentLibraryScope,
+  ReportDocumentScopeValue,
   audienceLabel,
-  formatUtc
+  formatUtc,
+  reportDocumentScope,
+  reportKindSlug,
+  reportScopeLabel
 } from '../report-pack/report-document-format';
 import {
   ReportChartPublishProgress,
@@ -71,6 +77,7 @@ import {
   MANIFEST_FILE_NAME,
   ManifestFailure,
   ManifestFile,
+  ManifestModels,
   buildManifest,
   buildTextArchive,
   paperLabel,
@@ -222,7 +229,7 @@ export interface DownloadRow {
   formats: readonly DownloadFormat[];
   /** Why the row is internal only whatever is chosen, or null for a shareable pack document. */
   internalReason: string | null;
-  /** The model or group the row is about, for the card's meta line and the Subject facet. */
+  /** The model or group the row is about, for the card's meta line and, where it lists no covered models, the Model facet. */
   subject: string;
   /** The suite, for the card's meta line and the Suite facet; empty when unknown. */
   suite: string;
@@ -237,6 +244,12 @@ export interface DownloadRowState {
   disclosure: BenchmarkReportDisclosure;
   naming: BenchmarkReportPeerNaming;
   formats: DownloadFormat[];
+}
+
+/** A row chosen for a download, with the peer naming it is downloaded at: what the ZIP and its manifest are named from. */
+export interface DownloadChoice {
+  readonly row: DownloadRow;
+  readonly state: Pick<DownloadRowState, 'naming'>;
 }
 
 export interface DownloadPackage {
@@ -422,13 +435,16 @@ export const INCLUDE_MEMBER_RUNS_TIP =
 export type DownloadSortId =
   | 'created-desc' | 'created-asc' | 'type' | 'title' | 'subject' | 'suite' | 'writer' | 'cost-desc' | 'changed-first';
 
-/** The orders Sort by offers, first the default. Ties keep source order; missing keys sort last. */
+/**
+ * The orders Sort by offers, first the default. Ties keep source order; missing keys sort last.
+ * Model (A–Z) keeps the stored id `subject`.
+ */
 export const DOWNLOAD_SORTS: readonly { id: DownloadSortId; label: string; column: string; direction: SortDirection }[] = [
   { id: 'created-desc', label: 'Newest first', column: 'created', direction: 'desc' },
   { id: 'created-asc', label: 'Oldest first', column: 'created', direction: 'asc' },
   { id: 'type', label: 'Document type', column: 'type', direction: 'asc' },
   { id: 'title', label: 'Title (A–Z)', column: 'title', direction: 'asc' },
-  { id: 'subject', label: 'Subject (A–Z)', column: 'subject', direction: 'asc' },
+  { id: 'subject', label: 'Model (A–Z)', column: 'subject', direction: 'asc' },
   { id: 'suite', label: 'Suite (A–Z)', column: 'suite', direction: 'asc' },
   { id: 'writer', label: 'Writer (A–Z)', column: 'writer', direction: 'asc' },
   { id: 'cost-desc', label: 'Writing cost, highest first', column: 'cost', direction: 'desc' },
@@ -606,7 +622,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       created: row => utcDate(row.createdAtUtc)?.getTime() ?? null,
       type: row => DOCUMENT_TYPE_ORDER.indexOf(row.documentType),
       title: row => row.label,
-      subject: row => row.subject,
+      subject: row => modelValues(row)[0] ?? null,
       suite: row => row.suite || null,
       writer: row => row.doc?.writerDisplayName || null,
       cost: row => row.doc?.costUsd ?? null,
@@ -615,7 +631,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     {
       search: customFilter((row, value) => rowSearchText(row).includes(value.toLowerCase())),
       document: anyOfFilter(row => row.documentType),
-      subject: anyOfFilter(row => row.subject || null),
+      scope: anyOfFilter(row => scopeValue(row)),
+      comparison: anyOfFilter(row => comparisonValue(row)),
+      model: anyOfFilter(row => modelValues(row)),
       suite: anyOfFilter(row => row.suite || null),
       writer: anyOfFilter(row => writerValue(row)),
       changes: anyOfFilter(row => changeValues(row)),
@@ -643,7 +661,22 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         storageKey: DOWNLOAD_CENTER_VIEW_STORAGE_KEY,
         facets: [
           { column: 'document', label: 'Document', values: row => row.documentType || null, order: DOCUMENT_TYPE_ORDER },
-          { column: 'subject', label: 'Subject', values: row => row.subject || null },
+          {
+            column: 'scope',
+            label: 'Scope',
+            values: scopeValue,
+            order: REPORT_DOCUMENT_SCOPES.map(scope => scope.value),
+            labelOf: reportScopeLabel
+          },
+          {
+            column: 'comparison',
+            label: 'Comparison',
+            values: comparisonValue,
+            order: (a, b) => Number(b) - Number(a),
+            labelOf: value => this.comparisonFacetLabel(value),
+            enabled: () => this.listedComparisonScope === null
+          },
+          { column: 'model', label: 'Model', values: modelValues },
           { column: 'suite', label: 'Suite', values: row => row.suite || null },
           {
             column: 'writer',
@@ -753,7 +786,14 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       this.list.invalidate();
     }
     if (changes['context'] && this.context !== this.loaded) {
-      if (this.context) {
+      if (this.context && this.loaded && sameListing(this.context, this.loaded)) {
+        // Only how the list is named changed, as a renamed comparison: its rows and choices stay.
+        this.loaded = this.context;
+        this.cdr.markForCheck();
+        if (changes['reloadToken'] && !changes['reloadToken'].firstChange) {
+          this.refresh();
+        }
+      } else if (this.context) {
         this.load(this.context);
       } else {
         this.deactivate();
@@ -896,6 +936,31 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     return phase === null
       ? null
       : `The AI-written reports of ${subject} are being written (${reportJobPhaseText(phase)}). They appear here when they are done.`;
+  }
+
+  /** The comparison scope of a library context listing one comparison's documents; null in any other context. */
+  get listedComparisonScope(): Extract<ReportDocumentLibraryScope, { kind: 'comparison' }> | null {
+    const context = this.loaded;
+    return context?.kind === 'library' && context.scope.kind === 'comparison' ? context.scope : null;
+  }
+
+  /**
+   * The list's heading: *Documents of Comparison #12 — name* while it lists the documents of a numbered
+   * comparison (without the name while it is unknown), else *Documents*.
+   */
+  get documentsHeading(): string {
+    const id = this.listedComparisonScope?.comparisonId;
+    if (id === null || id === undefined) {
+      return 'Documents';
+    }
+    const name = this.listedComparisonScope?.name?.trim();
+    return name ? `Documents of Comparison #${id} — ${name}` : `Documents of Comparison #${id}`;
+  }
+
+  /** A Comparison facet value as the facet lists it: `#12 — name`, or `#12` while no listed document names it. */
+  private comparisonFacetLabel(value: string): string {
+    const name = this.rows.find(row => row.doc && String(row.doc.comparisonId) === value && row.doc.comparisonName)?.doc?.comparisonName;
+    return name ? `#${value} — ${name}` : `#${value}`;
   }
 
   /** In a run context, the battery run the run is a member of, whose downloads hold its AI-written documents; else null. */
@@ -1080,18 +1145,30 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   }
 
   /**
-   * The card's meta line, in order: when it was written, and then for a report document its
-   * subject, suite and writer; for a run file its detail (suite and model, or a battery member's
-   * suite, round and run).
+   * The card's meta line, in order: for a document of a numbered comparison first *Comparison #12*
+   * and its name, and for a model subset how many of its models it covers (*2 of 5 models*); then
+   * when it was written, and for a report document its model (one model's documents only), suite
+   * and writer; for a run file its detail (suite and model, or a battery member's suite, round and run).
    */
   cardMeta(row: DownloadRow): { kind: string; cssClass: string; text: string }[] {
     const parts: { kind: string; cssClass: string; text: string }[] = [];
+    const doc = row.kind === 'pack' ? row.doc : null;
+    const scope = scopeValue(row);
+    if (doc && doc.comparisonId !== null && doc.comparisonId !== undefined) {
+      parts.push({ kind: 'comparison', cssClass: 'dc-card-comparison', text: `Comparison #${doc.comparisonId}` });
+      if (doc.comparisonName) {
+        parts.push({ kind: 'comparison-name', cssClass: 'dc-card-comparison-name', text: doc.comparisonName });
+      }
+      if (scope === 'subset') {
+        parts.push({ kind: 'covered', cssClass: 'dc-card-covered', text: coveredCountText(doc) });
+      }
+    }
     const created = formatUtc(row.createdAtUtc);
     if (created) {
       parts.push({ kind: 'time', cssClass: 'dc-card-time', text: created });
     }
     if (row.kind === 'pack') {
-      if (row.subject) {
+      if (row.subject && scope === 'model') {
         parts.push({ kind: 'subject', cssClass: 'dc-subject', text: row.subject });
       }
       if (row.suite) {
@@ -1255,10 +1332,11 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   // --- Facets and chips ---
 
   /**
-   * The facets, in order: Document, Subject, Suite, Written by, Changes, Charts (with chart actions)
-   * and Created. A facet is listed while its rows hold two values or more, or while it has a
-   * selection. Each option counts the rows every other active filter lets through. Memoized, so
-   * the facet components get the same arrays until something they show changes.
+   * The facets, in order: Document, Scope, Comparison (never while one comparison's documents are
+   * listed), Model (a document counting under each model it covers), Suite, Written by, Changes,
+   * Charts (with chart actions) and Created. A facet is listed while its rows hold two values or
+   * more, or while it has a selection. Each option counts the rows every other active filter lets
+   * through. Memoized, so the facet components get the same arrays until something they show changes.
    */
   get facets(): DownloadFacet[] {
     return this.list.facets(this.rows);
@@ -1484,6 +1562,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         const manifest = await buildManifest({
           packageName,
           packagedAt,
+          comparisons: manifestComparisons(plan),
           files: manifestFiles,
           failures: failures as ManifestFailure[]
         });
@@ -1496,7 +1575,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
           this.releaseProgress(progress);
           return;
         }
-        downloadCenterIo.saveBlob(archive, this.zipFileName(context, packagedAt));
+        downloadCenterIo.saveBlob(archive, this.zipFileName(context, plan, packagedAt));
       }
     } catch (error) {
       if (abandoned()) {
@@ -2252,17 +2331,16 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       });
   }
 
-  /** One list request for the scope's Report Pack documents, newest first; only those documents are listed. */
+  /**
+   * The scope's Report Pack documents, newest first; only those documents are listed. One list
+   * request, except for a numbered comparison: its documents by its number, and beside them, by its
+   * entry keys, those written before comparisons were numbered (a failure of that second request
+   * lists the numbered documents alone).
+   */
   private loadLibrary(context: DownloadCenterLibraryContext, generation: number, keepChoices: boolean): void {
     this.loadingDocuments = true;
     this.listSub?.unsubscribe();
-    const scope = context.scope;
-    const query = scope.kind === 'comparison'
-      ? { comparison: scope.entryKeys, origin: 'reportPack' as const }
-      : scope.kind === 'subject'
-        ? { subject: scope.subjectKey, origin: 'reportPack' as const }
-        : { origin: 'reportPack' as const, take: REPORT_LIBRARY_ALL_TAKE };
-    this.listSub = this.benchmarkService.listReportDocuments(query).subscribe({
+    this.listSub = this.libraryDocuments(context.scope).subscribe({
       next: documents => {
         if (generation !== this.generation) {
           return;
@@ -2287,6 +2365,34 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       }
     });
     this.cdr.markForCheck();
+  }
+
+  /** The list request, or the pair of them, behind a library scope. */
+  private libraryDocuments(scope: DownloadCenterLibraryScope): Observable<BenchmarkReportDocumentListItemDto[]> {
+    const origin = 'reportPack' as const;
+    const service = this.benchmarkService;
+    switch (scope.kind) {
+      case 'comparison': {
+        const id = scope.comparisonId;
+        const entryKeys = scope.entryKeys;
+        const byEntries = (): Observable<BenchmarkReportDocumentListItemDto[]> =>
+          service.listReportDocuments({ comparison: entryKeys, origin });
+        if (id === null || id === undefined) {
+          return byEntries();
+        }
+        if (entryKeys.length === 0) {
+          return service.listReportDocuments({ comparisonId: id, origin });
+        }
+        return forkJoin([
+          service.listReportDocuments({ comparisonId: id, origin }),
+          byEntries().pipe(catchError(() => of<BenchmarkReportDocumentListItemDto[]>([])))
+        ]).pipe(map(([numbered, legacy]) => comparisonDocuments(numbered ?? [], legacy ?? [])));
+      }
+      case 'subject':
+        return service.listReportDocuments({ subject: scope.subjectKey, origin });
+      default:
+        return service.listReportDocuments({ origin, take: REPORT_LIBRARY_ALL_TAKE });
+    }
   }
 
   /** Adds the rows not yet listed, each chosen as the package and its remembered choice say, then as `preselect` says. */
@@ -2571,7 +2677,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
     if (row.kind === 'pack') {
       const doc = row.doc!;
-      name = `${reportDocumentFileStem(doc, row.label)}_${reportDisclosureParam(state.disclosure)}_${reportPeerNamingParam(state.naming)}`
+      name = `${reportDocumentFileStem(doc, row.label, state.naming)}_${reportDisclosureParam(state.disclosure)}_${reportPeerNamingParam(state.naming)}`
         + `${internal ? '_INTERNAL' : ''}.${format}`;
       if (format === 'html') {
         text = markdownToPrintableHtml(text, doc.title || row.label);
@@ -2611,6 +2717,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         description: row.kind === 'pack' ? audienceLabel(row.doc!.audience) : RUN_FILE_DESCRIPTIONS[row.kind],
         documentId: row.doc?.id ?? null,
         audience: row.doc ? audienceLabel(row.doc.audience) : null,
+        comparison: row.kind === 'pack' ? manifestComparisonText(row.doc!, state.naming) : null,
+        models: manifestModels(row, state.naming),
         disclosure: row.kind === 'pack' ? disclosureLabel(state.disclosure) : null,
         naming: row.kind === 'pack' ? (state.naming === BenchmarkReportPeerNaming.Named ? 'Named' : 'Anonymized') : null,
         rendererVersion: row.doc?.reportFormatVersion ?? null,
@@ -2622,14 +2730,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     return bytes ? { ...common, bytes } : { ...common, text };
   }
 
-  /** `<model>_<package>_<yyyyMMdd_HHmmss>.zip`. */
-  private zipFileName(context: DownloadCenterContext, packagedAt: Date): string {
-    const model = context.kind === 'run'
-      ? context.run.modelLabel
-      : context.kind === 'battery'
-        ? (context.label || `battery-run-${context.batteryRunId}`)
-        : (this.rows.find(row => row.doc)?.doc?.subjectLabel ?? 'reports');
-    return `${safeFileName(model)}_${safeFileName(this.currentPackage.fullName)}_${exportTimestamp(packagedAt)}.zip`;
+  /** `<what the chosen files are of>_<package>_<yyyyMMdd_HHmmss>.zip`; see {@link downloadZipStem}. */
+  private zipFileName(context: DownloadCenterContext, chosen: readonly DownloadChoice[], packagedAt: Date): string {
+    return `${downloadZipStem(context, chosen)}_${safeFileName(this.currentPackage.fullName)}_${exportTimestamp(packagedAt)}.zip`;
   }
 }
 
@@ -2722,6 +2825,59 @@ function memberRunRows(battery: BenchmarkBatteryRunDto, context: DownloadCenterB
 /** The library context of the comparison documents about one run or battery run, with nothing preselected. */
 function subjectLibraryContext(subjectKey: string, label: string): DownloadCenterLibraryContext {
   return { kind: 'library', scope: { kind: 'subject', subjectKey, label }, preselect: 'none' };
+}
+
+/**
+ * Whether two contexts list the same documents chosen the same way: two library contexts of one
+ * scope and preselection, whatever their titles or the comparison's name.
+ */
+function sameListing(a: DownloadCenterContext, b: DownloadCenterContext): boolean {
+  if (a.kind !== 'library' || b.kind !== 'library' || !samePreselect(a.preselect, b.preselect)) {
+    return false;
+  }
+  const x = a.scope;
+  const y = b.scope;
+  switch (x.kind) {
+    case 'comparison':
+      return y.kind === 'comparison' && (x.comparisonId ?? null) === (y.comparisonId ?? null)
+        && x.entryKeys.join(',') === y.entryKeys.join(',');
+    case 'subject':
+      return y.kind === 'subject' && x.subjectKey === y.subjectKey;
+    default:
+      return y.kind === 'all';
+  }
+}
+
+function samePreselect(a: DownloadCenterPreselect, b: DownloadCenterPreselect): boolean {
+  if (typeof a === 'string' || typeof b === 'string') {
+    return a === b;
+  }
+  return a.ids.join(',') === b.ids.join(',');
+}
+
+/**
+ * A numbered comparison's documents: those listed by its number, then those listed by its entry
+ * keys that carry no number (written before comparisons were numbered), each once, newest first.
+ */
+function comparisonDocuments(
+  numbered: readonly BenchmarkReportDocumentListItemDto[],
+  byEntries: readonly BenchmarkReportDocumentListItemDto[]
+): BenchmarkReportDocumentListItemDto[] {
+  const ids = new Set<number>();
+  const documents: BenchmarkReportDocumentListItemDto[] = [];
+  for (const doc of numbered) {
+    if (!ids.has(doc.id)) {
+      ids.add(doc.id);
+      documents.push(doc);
+    }
+  }
+  for (const doc of byEntries) {
+    if ((doc.comparisonId === null || doc.comparisonId === undefined) && !ids.has(doc.id)) {
+      ids.add(doc.id);
+      documents.push(doc);
+    }
+  }
+  return sortDocuments(documents);
 }
 
 /** Whether a newly listed row starts chosen: as the package chose it, unless `preselect` says none or lists other documents. */
@@ -2823,11 +2979,39 @@ function documentViewerSubtitle(doc: BenchmarkReportDocumentListItemDto): string
 // Search and facet values
 // ---------------------------------------------------------------------------------------------
 
-/** What the search matches against, lower-cased: the title, the detail, the subject, the suite and the writer. */
+/**
+ * What the search matches against, lower-cased: the title, the detail, the subject, the models, the
+ * comparison (`Comparison #12`, `#12` and its name), the suite and the writer.
+ */
 function rowSearchText(row: DownloadRow): string {
-  return [row.label, row.detail, row.subject, row.suite, row.doc?.writerDisplayName ?? '']
+  const id = row.doc?.comparisonId;
+  const comparison = id === null || id === undefined ? '' : `Comparison #${id} #${id} ${row.doc?.comparisonName ?? ''}`;
+  return [row.label, row.detail, row.subject, ...modelValues(row), comparison, row.suite, row.doc?.writerDisplayName ?? '']
     .join('\n')
     .toLowerCase();
+}
+
+/** The Scope facet's value of a Report Pack document: `comparison`, `subset` or `model`; null for every other row. */
+function scopeValue(row: DownloadRow): ReportDocumentScopeValue | null {
+  return row.kind === 'pack' && row.doc ? reportDocumentScope(row.doc) : null;
+}
+
+/** The Comparison facet's value: the document's comparison number, or null for a row without one. */
+function comparisonValue(row: DownloadRow): string | null {
+  const id = row.kind === 'pack' ? row.doc?.comparisonId : null;
+  return id === null || id === undefined ? null : String(id);
+}
+
+/**
+ * The Model facet's values: every model a document covers (each covered model of a comparison-scope
+ * document, the subject of a per-model one), each once; a row that lists none, its subject.
+ */
+function modelValues(row: DownloadRow): string[] {
+  const covered = (row.doc?.coveredModels ?? []).map(model => model.label).filter(label => !!label);
+  if (covered.length > 0) {
+    return [...new Set(covered)];
+  }
+  return row.subject ? [row.subject] : [];
 }
 
 /** The Written by facet's value: the writer's name, or `none` for a file no model wrote. */
@@ -2875,13 +3059,84 @@ function peerToken(entryKey: string): string | null {
   return `${match[1] === 'battery' ? 'battery-run' : match[1]}-${match[2]}`;
 }
 
+/** The longest comparison-name or covered-models slug a file name carries, as the server's `MaxNameSlugLength`. */
+export const COMPARISON_NAME_SLUG_MAX = 40;
+
+/** The most covered models a subset's file name names one by one. */
+const NAMED_COVERED_MAX = 3;
+
 /**
- * The comparison part of a report document's file name: empty without peers; `vs-` and the peers'
- * tokens in letter order, joined by `-`, for one to three peers whose keys are all readable;
- * otherwise `vs-<N>-models-` and the first 8 characters of the comparison key, or `vs-<N>-models`
- * for a document stored without one. Always followed by `_` when not empty.
+ * `slug` when it fits in `max` characters, else its part before the last hyphen that keeps it within
+ * them (a hard cut where there is none), trailing separators trimmed: the server's `CutAtHyphen`.
  */
-function comparisonFilePart(doc: BenchmarkReportDocumentListItemDto): string {
+function cutAtHyphen(slug: string, max: number): string {
+  if (slug.length <= max) {
+    return slug;
+  }
+  const hyphen = slug.lastIndexOf('-', max);
+  const cut = (hyphen > 0 ? slug.slice(0, hyphen) : slug.slice(0, max)).replace(/[-._]+$/, '');
+  return cut.length === 0 ? slug.slice(0, max) : cut;
+}
+
+/** A comparison's name in a file name: `safeFileName`, cut at the last hyphen at or before 40 characters. */
+export function comparisonNameSlug(name: string | null | undefined): string {
+  return cutAtHyphen(safeFileName(name ?? ''), COMPARISON_NAME_SLUG_MAX);
+}
+
+/** A subset's covered models: up to three models' slugs joined by `-vs-` in a named copy, else their count and the covered-set key's first 6 hex. */
+function coveredSlug(doc: BenchmarkReportDocumentListItemDto, named: boolean): string {
+  const covered = doc.coveredModels ?? [];
+  // A model without a label carries its entry key as its label and is counted instead.
+  if (named && covered.length > 0 && covered.length <= NAMED_COVERED_MAX && covered.every(model => model.label !== model.entryKey)) {
+    const joined = cutAtHyphen(covered.map(model => safeFileName(model.label)).join('-vs-'), COMPARISON_NAME_SLUG_MAX);
+    return joined.endsWith('-vs') ? joined.slice(0, -'-vs'.length) : joined;
+  }
+  const total = comparisonModelTotal(doc);
+  const count = `${covered.length}${typeof total === 'number' && total > 0 ? `-of-${total}` : ''}-models`;
+  const setKey = doc.coveredSetKey;
+  return setKey && setKey.length >= 6 ? `${count}-${setKey.slice(0, 6).toLowerCase()}` : count;
+}
+
+/**
+ * The stem of a Report Pack document of a numbered comparison, as the server's
+ * `BenchmarkPdfFileNames.ComparisonStem` builds it, or null for any other document (no comparison
+ * number, or a run's or battery run's own document):
+ * - one model's document: `comparison-12_<model slug>_<kind>`, in both namings, the subject always named;
+ * - a document of the whole comparison: `comparison-12_<name slug ≤ 40>_<kind>`, and
+ *   `comparison-12_<kind>` in an anonymized copy or while the name is unknown;
+ * - a model subset: `comparison-12_subset-<covered slug>_<kind>`, the covered slug naming up to three
+ *   models in a named copy and counting them otherwise (`2-of-5-models-3f9a0c`).
+ *
+ * The kind is `executive-summary`, `researcher-report` or `internal-brief`.
+ */
+export function comparisonFilePart(doc: BenchmarkReportDocumentListItemDto, naming: BenchmarkReportPeerNaming): string | null {
+  const id = doc.comparisonId;
+  const reportPack = doc.origin === undefined || doc.origin === BenchmarkReportDocumentOrigin.ReportPack;
+  if (id === null || id === undefined || !reportPack) {
+    return null;
+  }
+  const prefix = `comparison-${id}`;
+  const kind = reportKindSlug(doc.audience);
+  const named = naming === BenchmarkReportPeerNaming.Named;
+  let middle: string | null;
+  if (doc.scope !== BenchmarkReportScope.Comparison) {
+    middle = safeFileName(doc.subjectLabel ?? '');
+  } else if (doc.coversAllEntries) {
+    const name = doc.comparisonName?.trim();
+    middle = named && name ? comparisonNameSlug(name) : null;
+  } else {
+    middle = `subset-${coveredSlug(doc, named)}`;
+  }
+  return middle === null ? `${prefix}_${kind}` : `${prefix}_${middle}_${kind}`;
+}
+
+/**
+ * The peers part of a report document without a comparison number: empty without peers; `vs-` and
+ * the peers' tokens in letter order, joined by `-`, for one to three peers whose keys are all
+ * readable; otherwise `vs-<N>-models-` and the first 8 characters of the comparison key, or
+ * `vs-<N>-models` for a document stored without one. Always followed by `_` when not empty.
+ */
+function peersFilePart(doc: BenchmarkReportDocumentListItemDto): string {
   const peers = doc.peerCount ?? 0;
   if (peers <= 0) {
     return '';
@@ -2897,24 +3152,153 @@ function comparisonFilePart(doc: BenchmarkReportDocumentListItemDto): string {
 }
 
 /**
- * A report document's file-name stem. A Report for AI Researchers and Developers is named by its
- * title without the audience suffix, then `_Researcher_Report`; every other document by its title.
- * A document about one run (subject `run:<digits>`) is prefixed `run-<digits>_`, one about a battery
- * run (`battery:<digits>`) `battery-run-<digits>_`, and a document compared with peers by its
- * comparison part after that (first, for a group subject): `vs-run-92_`, `vs-run-94-run-95_`,
- * `vs-4-models-1a2b3c4d_`. It is the name the server's `BenchmarkPdfFileNames.ForReportDocument`
- * gives the PDF and Word files.
+ * A report document's file-name stem at a peer naming (named unless given): the name the server's
+ * `BenchmarkPdfFileNames.ForReportDocument` gives the PDF and Word files. A Report Pack document of
+ * a numbered comparison is named by {@link comparisonFilePart}. Any other keeps the earlier form: a
+ * Report for AI Researchers and Developers is named by its title without the audience suffix, then
+ * `_Researcher_Report`; every other document by its title. A document about one run (subject
+ * `run:<digits>`) is prefixed `run-<digits>_`, one about a battery run (`battery:<digits>`)
+ * `battery-run-<digits>_`, and a document compared with peers by its peers part after that (first,
+ * for a group subject): `vs-run-92_`, `vs-run-94-run-95_`, `vs-4-models-1a2b3c4d_`.
  */
-export function reportDocumentFileStem(doc: BenchmarkReportDocumentListItemDto, fallbackTitle: string): string {
+export function reportDocumentFileStem(
+  doc: BenchmarkReportDocumentListItemDto,
+  fallbackTitle: string,
+  naming: BenchmarkReportPeerNaming = BenchmarkReportPeerNaming.Named
+): string {
+  const numbered = comparisonFilePart(doc, naming);
+  if (numbered !== null) {
+    return numbered;
+  }
   const title = doc.title || fallbackTitle;
   const run = RUN_SUBJECT_KEY.exec(doc.subjectKey ?? '');
   const battery = BATTERY_SUBJECT_KEY.exec(doc.subjectKey ?? '');
   const prefix = (run ? `run-${run[1]}_` : battery ? `battery-run-${battery[1]}_` : '')
-    + comparisonFilePart(doc);
+    + peersFilePart(doc);
   if (doc.audience !== BenchmarkReportAudience.TechnicalReport) {
     return `${prefix}${safeFileName(title)}`;
   }
   return `${prefix}${safeFileName(title.replace(RESEARCHER_REPORT_TITLE_SUFFIX, ''))}_Researcher_Report`;
+}
+
+/** The M of "2 of 5 models": the non-excluded entries when the document was written, else the stored request's entries. */
+function comparisonModelTotal(doc: BenchmarkReportDocumentListItemDto): number | undefined {
+  return doc.comparisonModelCount ?? doc.comparisonEntryCount;
+}
+
+/** How many of its comparison's models a subset covers: `2 of 5 models`, or `2 models` when the comparison's size is unknown. */
+function coveredCountText(doc: BenchmarkReportDocumentListItemDto): string {
+  const covered = doc.coveredModels?.length ?? 0;
+  const total = comparisonModelTotal(doc);
+  return typeof total === 'number' && total >= covered && total > 0
+    ? `${covered} of ${total} ${total === 1 ? 'model' : 'models'}`
+    : `${covered} ${covered === 1 ? 'model' : 'models'}`;
+}
+
+/**
+ * The part of a ZIP's name before the package, from the chosen rows:
+ * - documents of one numbered comparison: `comparison-12_<name slug ≤ 40>`, or `comparison-12` when
+ *   any of them is chosen anonymized (an anonymized copy never names the comparison) or the name is
+ *   unknown;
+ * - documents of several comparisons, or of one beside documents without a number:
+ *   `comparison-reports`;
+ * - a run context: the one model the chosen rows are about, else the run's model; a battery
+ *   context: its label, else `battery-run-<id>`;
+ * - other documents without a number: the one subject they are about, else `comparison-reports`
+ *   for Report Pack documents and `reports` for any others.
+ */
+export function downloadZipStem(context: DownloadCenterContext, chosen: readonly DownloadChoice[]): string {
+  if (context.kind === 'run') {
+    const models = distinct(chosen.map(choice => choice.row.subject).filter(subject => !!subject));
+    return safeFileName(models.length === 1 ? models[0] : context.run.modelLabel);
+  }
+  if (context.kind === 'battery') {
+    return safeFileName(context.label || `battery-run-${context.batteryRunId}`);
+  }
+  const documents = chosen.filter(choice => choice.row.kind === 'pack' && choice.row.doc);
+  const numbered = documents.filter(choice => comparisonValue(choice.row) !== null);
+  const ids = distinct(numbered.map(choice => choice.row.doc!.comparisonId!));
+  if (ids.length > 1 || (ids.length === 1 && numbered.length < documents.length)) {
+    return 'comparison-reports';
+  }
+  if (ids.length === 1) {
+    const name = numbered.map(choice => choice.row.doc!.comparisonName?.trim()).find(value => !!value);
+    const named = numbered.every(choice => choice.state.naming === BenchmarkReportPeerNaming.Named);
+    return named && name ? `comparison-${ids[0]}_${comparisonNameSlug(name)}` : `comparison-${ids[0]}`;
+  }
+  const subjects = distinct(documents.map(choice => choice.row.doc!.subjectLabel).filter(subject => !!subject));
+  if (subjects.length === 1) {
+    return safeFileName(subjects[0]);
+  }
+  const reportPack = documents.length > 0 && documents.every(choice =>
+    choice.row.doc!.origin === undefined || choice.row.doc!.origin === BenchmarkReportDocumentOrigin.ReportPack);
+  return reportPack ? 'comparison-reports' : 'reports';
+}
+
+/**
+ * The manifest header's comparisons, by number: `Comparison #12 — name`, without the name when any
+ * chosen document of it is anonymized or the name is unknown.
+ */
+export function manifestComparisons(chosen: readonly DownloadChoice[]): string[] {
+  const byId = new Map<number, { name: string | null; named: boolean }>();
+  for (const choice of chosen) {
+    const doc = choice.row.kind === 'pack' ? choice.row.doc : null;
+    const id = doc?.comparisonId;
+    if (!doc || id === null || id === undefined) {
+      continue;
+    }
+    const entry = byId.get(id) ?? { name: null, named: true };
+    entry.name = entry.name ?? (doc.comparisonName?.trim() || null);
+    entry.named = entry.named && choice.state.naming === BenchmarkReportPeerNaming.Named;
+    byId.set(id, entry);
+  }
+  return [...byId.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([id, entry]) => (entry.named && entry.name ? `Comparison #${id} — ${entry.name}` : `Comparison #${id}`));
+}
+
+/** A file's comparison in the manifest: `Comparison #12 — name` in a named copy, `Comparison #12` in an anonymized one; null without a number. */
+function manifestComparisonText(doc: BenchmarkReportDocumentListItemDto, naming: BenchmarkReportPeerNaming): string | null {
+  const id = doc.comparisonId;
+  if (id === null || id === undefined) {
+    return null;
+  }
+  const name = doc.comparisonName?.trim();
+  return naming === BenchmarkReportPeerNaming.Named && name ? `Comparison #${id} — ${name}` : `Comparison #${id}`;
+}
+
+/**
+ * A file's models in the manifest. One model's document, and a run file: *Model* and its name (the
+ * subject is named in both namings). A document of the whole comparison: *Models: all N*. A subset:
+ * its models' names in a named copy, their letters (*Model A, Model B*) in an anonymized one, or
+ * their count where a letter is missing. The battery analysis report: none.
+ */
+function manifestModels(row: DownloadRow, naming: BenchmarkReportPeerNaming): ManifestModels | null {
+  if (row.kind === 'batteryReport') {
+    return null;
+  }
+  const doc = row.kind === 'pack' ? row.doc : null;
+  const scope = scopeValue(row);
+  if (!doc || scope === 'model') {
+    const model = doc ? (doc.coveredModels?.[0]?.label || doc.subjectLabel) : row.subject;
+    return model ? { label: 'Model', text: model } : null;
+  }
+  const covered = doc.coveredModels ?? [];
+  if (scope === 'comparison') {
+    const count = covered.length > 0 ? covered.length : (doc.comparisonEntryCount ?? 0);
+    return { label: 'Models', text: count > 0 ? `all ${count}` : 'all' };
+  }
+  if (naming === BenchmarkReportPeerNaming.Named && covered.length > 0) {
+    return { label: 'Models', text: covered.map(model => model.label).join(', ') };
+  }
+  if (covered.length > 0 && covered.every(model => !!model.letter)) {
+    return { label: 'Models', text: covered.map(model => `Model ${model.letter}`).join(', ') };
+  }
+  return { label: 'Models', text: coveredCountText(doc) };
+}
+
+function distinct<T>(values: readonly T[]): T[] {
+  return [...new Set(values)];
 }
 
 function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {

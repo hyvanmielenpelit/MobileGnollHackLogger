@@ -1,9 +1,11 @@
 <!--
   STEP 3 OF THE MODEL COMPARISON WIZARD: REPORTS
 
-  A resizable sidebar that starts a report pack, and a main area with the job's progress, one row
-  per document, and its log and diagnostics. The same-provider confirmation is nested in the
-  wizard's dialog and stops its own close and cancel events.
+  A resizable sidebar that starts a report pack (the document scope, the models, the documents of
+  this comparison with what the next job writes, the charts, the writer and the estimate), and a main
+  area with the job's progress, one row per document, and its log and diagnostics. The same-provider
+  confirmation and the layout preview are nested in the wizard's dialog and stop their own close and
+  cancel events.
 -->
 <app-run-report-frame layout="sidebar" sidebarLabel="New report pack" mainLabel="Report pack progress"
                       [sidebarWidth]="sidebarWidth" (sidebarWidthChange)="onSidebarWidthChange($event)"
@@ -20,47 +22,74 @@
   <div runReportSidebar class="rp-new">
     <h5 class="rp-subsection-title rp-new-heading" [id]="idPrefix + '-new-heading'">New report pack</h5>
 
-    <div class="form-group rp-field">
-      @if (subjects.length > 0) {
-        <label [for]="idPrefix + '-subject'">Subject</label>
-        <select [id]="idPrefix + '-subject'" class="gh-input rp-subject" [attr.aria-describedby]="idPrefix + '-subject-hint'"
-                [disabled]="jobInProgress" (change)="onSubjectChange($event)">
-          @for (subject of subjects; track subject.key) {
-            <option [value]="subject.key" [selected]="subject.key === subjectKey">{{ subject.label }}</option>
-          }
-        </select>
-        <span [id]="idPrefix + '-subject-hint'" class="form-hint">The run or analysis group the documents are about. The other entries of the comparison are its peers.</span>
-      } @else {
-        <p class="rp-note rp-no-subject">Subject: every entry of this comparison is Excluded, so none can be the subject.</p>
-      }
+    <div class="rp-scope">
+      <div class="gh-tabs gh-tabs-segmented rp-scope-tabs" role="tablist" aria-label="Document scope">
+        @for (option of scopeOptions; track option.value; let i = $index) {
+          <button type="button" role="tab" class="gh-tab rp-scope-tab"
+                  [id]="idPrefix + '-scope-' + option.value" [attr.data-scope]="option.value"
+                  [attr.aria-controls]="idPrefix + '-scope-panel'"
+                  [attr.aria-selected]="scopeMode === option.value"
+                  [attr.tabindex]="scopeMode === option.value ? 0 : -1"
+                  (keydown)="onScopeKeydown($event, i)" (click)="selectScope(option.value)">{{ option.label }}</button>
+        }
+      </div>
+      <app-info-tip [tipId]="idPrefix + '-scope-tip'" subject="One model at a time">{{ modelScopeTip }}</app-info-tip>
     </div>
 
-    <fieldset class="gh-fieldset rp-documents-choice" [disabled]="jobInProgress">
-      <legend>Documents</legend>
-      @for (option of audiences; track option.audience) {
-        <label class="checkbox-label align-start rp-audience">
-          <input type="checkbox" [id]="idPrefix + '-audience-' + option.audience"
-                 [checked]="isAudienceChecked(option.audience)"
-                 [disabled]="isAudienceWritten(option.audience)"
-                 [attr.aria-describedby]="audienceDescribedBy(option.audience)"
-                 (change)="onAudienceChange(option.audience, $event)">
-          <span class="rp-audience-text">
-            <span class="rp-audience-name">{{ option.label }}</span>
-            <span class="rp-audience-desc" [id]="idPrefix + '-audience-' + option.audience + '-desc'">{{ option.description }}</span>
-            @if (isAudienceWritten(option.audience)) {
-              <span class="form-hint rp-audience-written" [id]="idPrefix + '-audience-' + option.audience + '-written'">{{ writtenHint(option.audience) }}</span>
-            }
-          </span>
-        </label>
-      }
-    </fieldset>
+    <div class="rp-scope-panel" role="tabpanel" tabindex="0" [id]="idPrefix + '-scope-panel'"
+         [attr.aria-labelledby]="idPrefix + '-scope-' + scopeMode">
+      <div class="form-group rp-field rp-models-field">
+        <label class="rp-models-label" [id]="idPrefix + '-models-label'">Models</label>
+        @if (modelOptions.length > 0) {
+          <app-model-multi-picker class="rp-models-picker" chips="none" placeholder="Choose models"
+                                  [labelledBy]="idPrefix + '-models-label'" [describedBy]="idPrefix + '-models-line'"
+                                  [options]="modelOptions" [selectedKeys]="chosenKeys"
+                                  [min]="pickerMin" [max]="pickerMax"
+                                  (selectionChange)="onModelsChange($event.keys)"></app-model-multi-picker>
+          <p class="form-hint rp-models-line" [id]="idPrefix + '-models-line'">{{ modelsLine }}</p>
+          @if (modelsCapNote; as note) {
+            <p class="rp-note rp-models-cap">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span>{{ note }}</span>
+            </p>
+          }
+          @if (coveredLetters; as letters) {
+            <p class="form-hint rp-letters">Letters in the anonymized copies: {{ letters }}</p>
+          }
+        } @else {
+          <p class="rp-note rp-no-models">Every entry of this comparison is Excluded, so no document can be written.</p>
+        }
+      </div>
+
+      <app-comparison-documents-status class="rp-documents" [idPrefix]="idPrefix + '-docs'"
+                                       [view]="documentsView" [busy]="jobInProgress"
+                                       (checkChange)="onDocumentCheck($event)"
+                                       (chooseModels)="chooseModels($event)"
+                                       (documentDeleted)="onDocumentDeleted($event)"></app-comparison-documents-status>
+    </div>
 
     <fieldset class="gh-fieldset rp-charts-choice">
       <legend>Charts in PDF and Word</legend>
       <app-report-chart-picker [idPrefix]="idPrefix + '-charts'" caption="Charts in PDF and Word" [captionVisible]="false"
-                               [selection]="chartSelection" [enabledAudiences]="selectedAudiences"
-                               [available]="chartsAvailable"
-                               (selectionChange)="onChartSelectionChange($event)"></app-report-chart-picker>
+                               [selection]="chartSelection" [enabledAudiences]="checkedAudiences"
+                               [available]="chartsAvailable" [layout]="chartLayout" [scope]="chartScope"
+                               (selectionChange)="onChartSelectionChange($event)"
+                               (layoutChange)="onChartLayoutChange($event)"
+                               (activeAudienceChange)="onChartAudienceChange($event)">
+        <div rcp-layout-actions class="rp-layout-actions">
+          <button #previewLayoutButton type="button" class="btn-ghost rp-preview-layout"
+                  [attr.aria-disabled]="layoutPreviewBlockedReason ? 'true' : null"
+                  [attr.aria-describedby]="layoutPreviewBlockedReason ? idPrefix + '-preview-layout-reason' : null"
+                  (click)="previewLayout(previewLayoutButton)">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            Preview layout<span class="visually-hidden"> of the {{ audienceLabel(chartPreviewAudience) }}</span>
+          </button>
+          @if (layoutPreviewBlockedReason; as reason) {
+            <p class="rp-note rp-preview-layout-reason" [id]="idPrefix + '-preview-layout-reason'">{{ reason }}</p>
+          }
+          <p class="rp-note rp-layout-preview-note" role="status">{{ layoutPreviewNote }}</p>
+        </div>
+      </app-report-chart-picker>
       @if (chartAdvisory) {
         <div class="alert alert-warning rp-chart-advisory" role="note">
           <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -107,10 +136,10 @@
     </div>
 
     <!-- Visible text, not tips: a refusal holds Generate back; a warning makes it ask first. -->
-    @if (preview?.refusal) {
+    @if (refusal) {
       <p [id]="idPrefix + '-writer-refusal'" class="gh-field-error rp-refusal" role="alert">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        <span>{{ preview?.refusal }}</span>
+        <span>{{ refusal }}</span>
       </p>
     } @else if (sameProviderWarning) {
       <div class="alert alert-warning rp-same-provider" role="note">
@@ -120,7 +149,7 @@
           <line x1="12" y1="17" x2="12.01" y2="17"></line>
         </svg>
         <div class="alert-content">
-          <p class="alert-heading">Writer from the subject's provider</p>
+          <p class="alert-heading">Writer from a chosen model's provider</p>
           <div class="alert-body" [id]="idPrefix + '-same-provider-text'">{{ sameProviderWarning }} Generate asks you to confirm.</div>
         </div>
       </div>
@@ -163,7 +192,13 @@
       }
     </div>
     @if (previewError) {
-      <button type="button" class="btn-link rp-retry-estimate" (click)="retryPreview()">Retry the estimate</button>
+      <button type="button" class="btn-link rp-retry-estimate" (click)="retryPreview()">Try again<span class="visually-hidden">: look up the documents and the estimate</span></button>
+    }
+    @if (contextWindowWarning; as warning) {
+      <div class="alert alert-warning rp-context-warning" role="note">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <div class="alert-content"><div class="alert-body">{{ warning }}</div></div>
+      </div>
     }
 
     <div class="rp-generate-row">
@@ -199,7 +234,7 @@
     <p class="rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
 
     @if (!activeJobId) {
-      <p class="form-hint rp-idle-note">No report pack is being written. The documents written for this comparison are listed in step 4, Documents.</p>
+      <p class="form-hint rp-idle-note">No report pack is being written. The documents written for this comparison are listed under New report pack, and in step 4, Documents.</p>
     } @else {
       <section class="rp-job" [class.is-finished]="isJobFinished" [attr.aria-labelledby]="idPrefix + '-job-heading'">
         <h6 [id]="idPrefix + '-job-heading'" class="rp-job-title">{{ isJobFinished ? 'Last report pack' : 'Report pack in progress' }}</h6>
@@ -259,8 +294,11 @@
 
         @if (documentRows.length > 0) {
           <!-- The header row is for sight only: every cell of a row names its value itself. -->
-          <div class="rp-doc-progress-grid">
+          <div class="rp-doc-progress-grid" [class.has-model]="jobHasModelColumn">
             <div class="rp-doc-progress-head" aria-hidden="true">
+              @if (jobHasModelColumn) {
+                <span>Model</span>
+              }
               <span>Document</span>
               <span>Status</span>
               <span>Duration</span>
@@ -268,8 +306,11 @@
               <span>Charts</span>
             </div>
             <ol class="rp-doc-progress" aria-label="Progress of each document">
-              @for (row of documentRows; track row.audience) {
-                <li class="rp-job-row" [attr.data-audience]="row.audience">
+              @for (row of documentRows; track row.key) {
+                <li class="rp-job-row" [attr.data-audience]="row.audience" [attr.data-subject]="row.doc.subjectKey ?? null">
+                  @if (jobHasModelColumn) {
+                    <span class="rp-doc-model"><span class="visually-hidden">Model: </span>{{ row.subjectLabel }}</span>
+                  }
                   <span class="rp-doc-name">{{ row.name }}</span>
                   <span class="rp-doc-status">
                     <span class="visually-hidden">Status: </span>
@@ -282,7 +323,7 @@
                   <span class="rp-doc-calls rp-num"><span class="visually-hidden">Model calls: </span>{{ row.modelCalls }}</span>
                   <span class="rp-doc-charts">
                     @if (row.charts.retry) {
-                      <button type="button" class="btn-link rp-chart-retry" (click)="retryCharts(row)">{{ row.charts.text }}<span class="visually-hidden"> for the {{ row.name }}</span></button>
+                      <button type="button" class="btn-link rp-chart-retry" (click)="retryCharts(row)">{{ row.charts.text }}<span class="visually-hidden"> for the {{ row.name }}{{ jobHasModelColumn ? ' of ' + row.subjectLabel : '' }}</span></button>
                     } @else {
                       {{ row.charts.text }}
                     }
@@ -384,3 +425,8 @@
     </div>
   </div>
 </dialog>
+
+<!-- The layout preview's viewer: its events stop at this wrapper. -->
+<div class="rp-nested" (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
+  <app-pdf-viewer-dialog (closed)="onLayoutViewerClosed()"></app-pdf-viewer-dialog>
+</div>

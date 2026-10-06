@@ -55,6 +55,12 @@ export function uniqueFileNames(names: readonly string[]): string[] {
 /** The paper a PDF or Word document is laid out on. */
 export type ManifestPaper = 'a4' | 'letter';
 
+/** The models a file covers: *Model* and one name, or *Models* and a list (`GPT-5.6 Luna, Grok 5`) or a count (`all 5`). */
+export interface ManifestModels {
+  label: 'Model' | 'Models';
+  text: string;
+}
+
 /** One file as the manifest describes it. Null fields print as a dash. */
 export interface ManifestFile {
   name: string;
@@ -70,6 +76,10 @@ export interface ManifestFile {
   wordPaper: ManifestPaper | null;
   documentId: number | null;
   audience: string | null;
+  /** `Comparison #12 — name`, or `Comparison #12` in an anonymized copy; absent or null for a file of no numbered comparison. */
+  comparison?: string | null;
+  /** The models the file covers; absent or null prints *Model* with a dash. */
+  models?: ManifestModels | null;
   disclosure: string | null;
   naming: string | null;
   /** The renderer's `reportFormatVersion`. */
@@ -92,6 +102,8 @@ export interface ManifestInput {
   packageName: string;
   /** The packaging time: printed here and in the zip name, nowhere else. */
   packagedAt: Date;
+  /** The comparisons the files belong to, as `Comparison #12 — name`; the header omits the line when there are none. */
+  comparisons?: readonly string[];
   files: readonly ManifestFile[];
   /** Listed under *Not included*; omitted when empty. */
   failures?: readonly ManifestFailure[];
@@ -121,23 +133,29 @@ export async function sha256Hex(content: string | Uint8Array): Promise<string | 
 }
 
 /**
- * `MANIFEST.md`: when the package was made, then one block per file with its name, format, document
- * id, audience, disclosure, peer naming, renderer version, creation time, writer and SHA-256, and for
- * a PDF its conformance and paper, for a Word document its format and paper. The same input always
- * gives the same text.
+ * `MANIFEST.md`: when the package was made and the comparisons its files belong to, then one block
+ * per file with its name, format, document id, audience, comparison, model or models, disclosure,
+ * peer naming, renderer version, creation time, writer and SHA-256, and for a PDF its conformance
+ * and paper, for a Word document its format and paper. The same input always gives the same text.
  */
 export async function buildManifest(input: ManifestInput): Promise<string> {
   const hashes = await Promise.all(input.files.map(file => sha256Hex(file.content)));
   const anyMissing = hashes.some(hash => hash === null);
+  const comparisons = input.comparisons ?? [];
 
   const lines: string[] = [
     '# Download Manifest',
     '',
     `- **Package:** ${input.packageName}`,
     `- **Packaged:** ${isoSeconds(input.packagedAt)}`,
-    `- **Files:** ${input.files.length}`,
-    ''
+    `- **Files:** ${input.files.length}`
   ];
+  if (comparisons.length === 1) {
+    lines.push(`- **Comparison:** ${comparisons[0]}`);
+  } else if (comparisons.length > 1) {
+    lines.push(`- **Comparisons:** ${comparisons.join('; ')}`);
+  }
+  lines.push('');
   if (input.files.some(file => file.internalOnly)) {
     lines.push('Files whose names end in `_INTERNAL` are for the Overseer team only. Do not share them outside it.', '');
   }
@@ -161,6 +179,8 @@ export async function buildManifest(input: ManifestInput): Promise<string> {
     lines.push(
       `- **Document id:** ${dash(file.documentId)}`,
       `- **Audience:** ${dash(file.audience)}`,
+      `- **Comparison:** ${dash(file.comparison)}`,
+      `- **${file.models?.label ?? 'Model'}:** ${dash(file.models?.text)}`,
       `- **Disclosure:** ${dash(file.disclosure)}`,
       `- **Peers:** ${dash(file.naming)}`,
       `- **Renderer version:** ${dash(file.rendererVersion)}`,

@@ -2,6 +2,7 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Linq;
+using System.Text.Json.Nodes;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
@@ -13,6 +14,9 @@ using Xunit;
 /// name that keeps a comparison document apart from the run's own documents: the subject line, the
 /// Compared with and Pricing basis rows under either peer naming, and the <c>vs-</c> part of the
 /// file name that names the peers or counts them. A stand-alone document keeps its cover and name.
+/// A document of a numbered comparison opens its cover with a Comparison row, names the comparison in
+/// its subject line and running header, and is named <c>comparison-&lt;id&gt;_…</c>; an anonymized copy
+/// never prints the comparison's name.
 /// </summary>
 public class BenchmarkReportCoverAndFileNameTests
 {
@@ -303,5 +307,272 @@ public class BenchmarkReportCoverAndFileNameTests
         Assert.Equal(
             "run-12_" + SheetTitleBase + "-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // A numbered comparison: the cover, the subject line and the running header
+    // ---------------------------------------------------------------------------------------------
+
+    private const string ComparisonName = "GPT-5.6 Luna vs Grok 5 vs Mistral Large 4";
+
+    private static BenchmarkComparison Comparison(string name, int entryCount) => new()
+    {
+        Id = 12,
+        ComparisonKey = new string('c', 64),
+        EntryKeysJson = "[]",
+        SubjectKind = BenchmarkComparisonSubjectKind.Runs,
+        EntryCount = entryCount,
+        DefaultName = name,
+        CreatedAtUtc = BenchmarkReportPackFixture.CreatedAt
+    };
+
+    /// <summary>The fixture document of <paramref name="audience"/> as a per-model document of Comparison #12, its row loaded.</summary>
+    private static BenchmarkReportDocument InComparison(BenchmarkReportAudience audience, string name = ComparisonName, int entryCount = 3)
+    {
+        var document = BenchmarkReportPackFixture.Document(audience);
+        document.ComparisonId = 12;
+        document.Comparison = Comparison(name, entryCount);
+        document.CoveredEntryKeysJson = "[\"run:12\"]";
+        document.CoveredSetKey = new string('5', 64);
+        return document;
+    }
+
+    private static readonly (string Key, string Label, string Provider)[] FiveModels =
+    {
+        ("run:12", "GPT-5.6 Luna", "OpenAI"),
+        ("run:14", "Grok 5", "xAI"),
+        ("run:13", "Mistral Large 4", "Mistral"),
+        ("run:15", "Qwen 4", "Alibaba"),
+        ("run:16", "Llama 6", "Meta")
+    };
+
+    /// <summary>
+    /// A comparison-scope document of Comparison #12 (five models, "Five-model comparison") covering
+    /// <paramref name="covered"/>, its sheet carrying <c>coversAllEntries</c>, <c>comparisonEntryCount</c>
+    /// and a <c>models</c> array.
+    /// </summary>
+    private static BenchmarkReportDocument ComparisonScope(
+        BenchmarkReportAudience audience, bool coversAll, params (string Key, string Label, string Provider)[] covered)
+    {
+        var document = InComparison(audience, "Five-model comparison", 5);
+        document.Scope = BenchmarkReportScope.Comparison;
+        document.SubjectKey = coversAll ? "comparison:12" : "comparison:12/" + new string('9', 16);
+        document.CoveredEntryKeysJson = "[" + string.Join(",", covered.Select(c => "\"" + c.Key + "\"")) + "]";
+        document.CoveredSetKey = "3f9a0c" + new string('0', 58);
+
+        var facts = JsonNode.Parse(document.FactsJson)!.AsObject();
+        facts["coversAllEntries"] = coversAll;
+        facts["comparisonEntryCount"] = 5;
+        var models = new JsonArray();
+        foreach (var (key, label, provider) in covered)
+        {
+            models.Add(new JsonObject { ["entryKey"] = key, ["label"] = label, ["provider"] = provider });
+        }
+        facts["models"] = models;
+        document.FactsJson = facts.ToJsonString();
+        return document;
+    }
+
+    [Fact]
+    public void AComparisonDocumentsCover_OpensWithTheComparisonRow_AndNamesTheComparisonInItsHeader()
+    {
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(
+            InComparison(BenchmarkReportAudience.ExecutiveSummary), Options(BenchmarkReportPeerNaming.Named), BenchmarkPdfPaper.A4);
+
+        Assert.Equal(new[] { "Comparison" }.Concat(ComparisonLabels), info.Facts.Select(f => f.Label));
+        Assert.Equal("Comparison #12 — " + ComparisonName + " · 3 models · computed 2026-09-20", Fact(info, "Comparison"));
+        Assert.Equal("GnollHack Core Suite · run #12 · compared with 2 models · Comparison #12", info.SubjectLine);
+        Assert.Equal("Comparison #12 — " + ComparisonName, info.HeaderText);
+        Assert.Equal(info.HeaderText, info.RunningHeaderText);
+    }
+
+    [Fact]
+    public void AnAnonymizedCopy_NumbersTheComparison_WithoutItsName()
+    {
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(
+            InComparison(BenchmarkReportAudience.ExecutiveSummary), Options(BenchmarkReportPeerNaming.Anonymized), BenchmarkPdfPaper.A4);
+
+        Assert.Equal("Comparison #12 · 3 models · computed 2026-09-20", Fact(info, "Comparison"));
+        Assert.Equal("Comparison #12", info.HeaderText);
+        foreach (string name in new[] { "Grok", "Mistral" })
+        {
+            Assert.All(info.Facts, f => Assert.DoesNotContain(name, f.Value));
+            Assert.DoesNotContain(name, info.SubjectLine);
+            Assert.DoesNotContain(name, info.RunningHeaderText);
+        }
+    }
+
+    [Fact]
+    public void ARowWhoseComparisonIsNotLoaded_PrintsTheNumberAlone()
+    {
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        document.ComparisonId = 12;
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named), BenchmarkPdfPaper.A4);
+
+        Assert.Equal("Comparison #12 · computed 2026-09-20", Fact(info, "Comparison"));
+        Assert.Equal("Comparison #12", info.HeaderText);
+    }
+
+    [Fact]
+    public void ALegacyRowWithoutAComparison_HasNoComparisonRow_AndItsHeaderIsTheSubjectLine()
+    {
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(
+            BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary), Options(BenchmarkReportPeerNaming.Named), BenchmarkPdfPaper.A4);
+
+        Assert.DoesNotContain(info.Facts, f => f.Label == "Comparison");
+        Assert.Null(info.HeaderText);
+        Assert.Equal(info.SubjectLine, info.RunningHeaderText);
+        Assert.Equal("GnollHack Core Suite · run #12 · compared with 2 models", info.SubjectLine);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named, "Comparison #12 — Five-model comparison")]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Comparison #12")]
+    public void AComparisonWideCover_IsTheComparison(BenchmarkReportPeerNaming naming, string heading)
+    {
+        var document = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: true, FiveModels);
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(naming), BenchmarkPdfPaper.A4);
+
+        Assert.Equal(heading, info.SubjectLine);
+        Assert.Equal(heading, info.HeaderText);
+        Assert.Equal(heading + " · 5 models · computed 2026-09-20", Fact(info, "Comparison"));
+        Assert.Equal("Comparison", info.Facts[0].Label);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named, "Comparison #12 — Five-model comparison · 2 of 5 models: GPT-5.6 Luna and Grok 5")]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Comparison #12 · 2 of 5 models")]
+    public void ASubsetCover_CountsItsModels_AndNamesThemInANamedCopy(BenchmarkReportPeerNaming naming, string subjectLine)
+    {
+        var document = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: false, FiveModels[0], FiveModels[1]);
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(naming), BenchmarkPdfPaper.A4);
+
+        Assert.Equal(subjectLine, info.SubjectLine);
+        Assert.Equal(naming == BenchmarkReportPeerNaming.Named ? "Comparison #12 — Five-model comparison" : "Comparison #12", info.HeaderText);
+    }
+
+    [Fact]
+    public void Ellipsize_KeepsTextThatFits_AndCutsLongTextAtAWord()
+    {
+        Assert.Equal("Comparison #12", BenchmarkPdfDocumentInfo.Ellipsize("Comparison #12", 20));
+        string cut = BenchmarkPdfDocumentInfo.Ellipsize("Comparison #12 — GPT-5.6 Luna vs Grok 5 vs Mistral Large 4", 30);
+        Assert.True(cut.Length <= 30, cut);
+        Assert.EndsWith("…", cut, StringComparison.Ordinal);
+        Assert.Equal("Comparison #12 — GPT-5.6 Luna…", cut);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // A numbered comparison: the file name
+    // ---------------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named, "pdf",
+        "comparison-12_gpt-5.6-luna_executive-summary_summary_named.pdf")]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, "pdf",
+        "comparison-12_gpt-5.6-luna_researcher-report_full_named_INTERNAL.pdf")]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "pdf",
+        "comparison-12_gpt-5.6-luna_researcher-report_detailed_anonymized.pdf")]
+    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "docx",
+        "comparison-12_gpt-5.6-luna_internal-brief_full_anonymized_INTERNAL.docx")]
+    public void APerModelDocumentOfAComparison_IsNamedAfterTheComparisonAndTheModel(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string extension, string expected)
+    {
+        Assert.Equal(expected, BenchmarkPdfFileNames.ForReportDocument(InComparison(audience), Options(naming, disclosure), extension));
+    }
+
+    [Fact]
+    public void APerModelName_TakesTheModelSlugFromTheSubjectLabel_AndNeedsOnlyTheComparisonNumber()
+    {
+        var document = InComparison(BenchmarkReportAudience.ExecutiveSummary);
+        document.SubjectLabel = "GPT-5.6 Luna (max)";
+        var options = Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full);
+
+        Assert.Equal("comparison-12_gpt-5.6-luna-max_executive-summary_full_named_INTERNAL.pdf", BenchmarkPdfFileNames.ForReportDocument(document, options));
+
+        document.Comparison = null;
+        Assert.Equal("comparison-12_gpt-5.6-luna-max_executive-summary_full_named_INTERNAL.pdf", BenchmarkPdfFileNames.ForReportDocument(document, options));
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named, "comparison-12_gpt-5.6-luna-max-vs-gpt-6.1-sol-medium_executive-summary_summary_named.pdf")]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized, "comparison-12_executive-summary_summary_anonymized.pdf")]
+    public void AComparisonWideDocument_IsNamedAfterTheComparison_AndAnAnonymizedCopyLeavesTheNameOut(BenchmarkReportPeerNaming naming, string expected)
+    {
+        var document = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: true, FiveModels);
+        document.Comparison!.Name = "GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)";
+
+        Assert.Equal(expected, BenchmarkPdfFileNames.ForReportDocument(document, Options(naming)));
+    }
+
+    [Fact]
+    public void ASubsetOfUpToThreeModels_IsNamedAfterThem_AndALargerOrAnonymizedOneIsCounted()
+    {
+        var two = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: false, FiveModels[0], FiveModels[1]);
+        Assert.Equal("comparison-12_subset-gpt-5.6-luna-vs-grok-5_executive-summary_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(two, Options(BenchmarkReportPeerNaming.Named)));
+        Assert.Equal("comparison-12_subset-2-of-5-models-3f9a0c_executive-summary_summary_anonymized.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(two, Options(BenchmarkReportPeerNaming.Anonymized)));
+
+        var four = ComparisonScope(BenchmarkReportAudience.InternalBrief, coversAll: false, FiveModels[0], FiveModels[1], FiveModels[2], FiveModels[3]);
+        Assert.Equal("comparison-12_subset-4-of-5-models-3f9a0c_internal-brief_full_named_INTERNAL.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(four, Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full)));
+    }
+
+    [Fact]
+    public void ALongCoveredSlug_IsCutAtAHyphenWithinFortyCharacters()
+    {
+        var three = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: false,
+            ("run:12", "Claude 5.5 Opus Extended Thinking", "Anthropic"),
+            ("run:14", "Gemini 3.8 Pro Deep Think", "Google"),
+            ("run:13", "GPT-6.1 Sol Medium Reasoning", "OpenAI"));
+
+        Assert.Equal("comparison-12_subset-claude-5.5-opus-extended-thinking_executive-summary_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(three, Options(BenchmarkReportPeerNaming.Named)));
+    }
+
+    [Theory]
+    [InlineData("GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)", "gpt-5.6-luna-max-vs-gpt-6.1-sol-medium")]
+    [InlineData("10 models · Core knowledge battery revision three", "10-models-core-knowledge-battery")]
+    [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    public void TheNameSlug_IsTheSafeFileName_CutAtTheLastHyphenWithinFortyCharacters(string name, string slug)
+    {
+        Assert.Equal(slug, BenchmarkPdfFileNames.NameSlug(name));
+        Assert.True(BenchmarkPdfFileNames.NameSlug(name).Length <= BenchmarkPdfFileNames.MaxNameSlugLength);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, "executive-summary")]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, "researcher-report")]
+    [InlineData(BenchmarkReportAudience.InternalBrief, "internal-brief")]
+    public void TheKindSlugs_AreOneSpellingEach(BenchmarkReportAudience audience, string slug)
+    {
+        Assert.Equal(slug, BenchmarkPdfFileNames.KindSlug(audience));
+    }
+
+    [Fact]
+    public void RunAndBatteryCompletionDocuments_AndALegacyReportPackRow_KeepTodaysNames()
+    {
+        var options = Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full);
+
+        var run = BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary);
+        string runName = BenchmarkPdfFileNames.ForReportDocument(run, options);
+        run.ComparisonId = 12;
+        run.Comparison = Comparison(ComparisonName, 3);
+        Assert.Equal(runName, BenchmarkPdfFileNames.ForReportDocument(run, options));
+        Assert.StartsWith("run-12_", runName, StringComparison.Ordinal);
+
+        var battery = BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        string batteryName = BenchmarkPdfFileNames.ForReportDocument(battery, options);
+        battery.ComparisonId = 12;
+        Assert.Equal(batteryName, BenchmarkPdfFileNames.ForReportDocument(battery, options));
+        Assert.StartsWith("battery-run-9_", batteryName, StringComparison.Ordinal);
+
+        var legacy = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Null(legacy.ComparisonId);
+        Assert.Equal("run-12_vs-run-14-run-13_" + SheetTitleBase + "-executive-summary_full_named_INTERNAL.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(legacy, options));
     }
 }

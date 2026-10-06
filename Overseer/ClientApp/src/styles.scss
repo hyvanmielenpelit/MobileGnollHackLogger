@@ -4525,6 +4525,153 @@ progress.job-progress {
   }
 }
 
+/* Multi-select picker (app-multi-picker): the trigger and dropdown above, inside
+   .gh-multi-picker-field, plus a check column in each option, the All / None links, the chip row
+   of the selection and the forced-colors rules. The check glyph and aria-selected carry the
+   selection, so color never carries it alone. */
+.gh-multi-picker {
+  min-width: 0;
+
+  &.drops-up .selector-dropdown {
+    top: auto;
+    bottom: calc(100% + 4px);
+  }
+
+  .gh-multi-picker-option {
+    align-items: flex-start;
+  }
+
+  .gh-multi-picker-check {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    border: 1px solid #6b6b6b;
+    border-radius: 3px;
+    color: var(--primary-color);
+  }
+
+  .model-option[aria-selected="true"] .gh-multi-picker-check {
+    border-color: var(--primary-color);
+    background: rgba(212, 160, 23, 0.15);
+  }
+
+  .gh-multi-picker-option-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .gh-multi-picker-option-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .gh-multi-picker-detail {
+    font-size: 12px;
+    color: #a1a1aa;
+    white-space: nowrap;
+  }
+
+  .model-option[aria-disabled="true"] {
+    cursor: default;
+
+    .gh-multi-picker-option-line {
+      opacity: 0.55;
+    }
+  }
+
+  .gh-multi-picker-reason {
+    font-size: 12px;
+    color: #a1a1aa;
+  }
+
+  .gh-multi-picker-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin-top: 6px;
+  }
+
+  .gh-multi-picker-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .btn-link[aria-disabled="true"] {
+    color: #8a8a8a;
+    text-decoration: none;
+    cursor: default;
+  }
+
+  .gh-multi-picker-chips {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .gh-multi-picker-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-inline-size: 100%;
+    padding: 2px 4px 2px 8px;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+
+    .action-btn {
+      margin-left: 0;
+    }
+  }
+
+  .gh-multi-picker-chip-label {
+    min-inline-size: 0;
+    font-size: 12px;
+    color: #e6e6e6;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (forced-colors: active) {
+  .gh-multi-picker {
+    .gh-multi-picker-check,
+    .model-option[aria-selected="true"] .gh-multi-picker-check,
+    .gh-multi-picker-chip {
+      border-color: CanvasText;
+    }
+
+    .model-option[aria-selected="true"] {
+      border-left-color: Highlight;
+    }
+
+    .selector-dropdown:focus-visible .model-option.is-active {
+      outline-color: Highlight;
+    }
+
+    .model-option[aria-disabled="true"] .gh-multi-picker-option-line {
+      opacity: 1;
+      color: GrayText;
+    }
+
+    .btn-link[aria-disabled="true"] {
+      color: GrayText;
+    }
+  }
+}
+
 /* Benchmark question card (shared by Manage Questions and question generation) */
 .questions-list {
   display: flex;

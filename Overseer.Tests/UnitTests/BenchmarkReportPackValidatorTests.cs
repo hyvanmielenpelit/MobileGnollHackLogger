@@ -1955,3 +1955,192 @@ public class BenchmarkReportPackParserTests
             ReportPackWriterTestData.Content()));
     }
 }
+
+/// <summary>
+/// The validator on a comparison-scope sheet: <c>{{model:X}}</c> for the sheet's letters only, the
+/// <c>model.&lt;L&gt;.*</c> and <c>pair.&lt;L&gt;.&lt;M&gt;.*</c> keys, the <c>models</c> list, the names of
+/// every covered model, rule 16 across two models, and topics written once per job.
+/// </summary>
+public class BenchmarkReportPackComparisonValidatorTests
+{
+    public static TheoryData<BenchmarkReportAudience> Audiences => new()
+    {
+        BenchmarkReportAudience.ExecutiveSummary,
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief,
+    };
+
+    private static (BenchmarkReportFactSheet Sheet, BenchmarkReportContentSnapshot Content) Data(bool subset = false)
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts(subset ? BenchmarkReportPackFixture.SubsetKeys : null);
+        return (built.Sheet!, built.Content!);
+    }
+
+    private static IReadOnlyList<BenchmarkReportValidationNote> Validate(
+        BenchmarkReportAudience audience, BenchmarkReportWriterOutput output, bool subset = false,
+        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics = null)
+    {
+        var (sheet, content) = Data(subset);
+        return BenchmarkReportPackValidator.Validate(audience, output, sheet, content, sharedTopics);
+    }
+
+    private static BenchmarkReportWriterOutput Valid(BenchmarkReportAudience audience, bool subset = false)
+        => BenchmarkReportPackFixture.ComparisonWriter(audience, Data(subset).Sheet);
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheFixtureWriterOutput_IsValid(BenchmarkReportAudience audience)
+    {
+        Assert.Empty(Validate(audience, Valid(audience)));
+        Assert.Empty(Validate(audience, Valid(audience, subset: true), subset: true));
+    }
+
+    [Fact]
+    public void ModelTokens_AreValidForTheSheetsLetters_AndNoOther()
+    {
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary, subset: true);
+        output.Sections[BenchmarkReportSlots.Reliability] = "{{model:A}} and {{model:C}} were graded alike, and {{subject}} and {{peer:A}} are not tokens here.";
+
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output, subset: true);
+
+        var tokens = Assert.Single(notes, n => n.Rule == 2);
+        Assert.Contains("{{model:C}}", tokens.Message);
+        Assert.Contains("{{subject}}", tokens.Message);
+        Assert.Contains("{{peer:A}}", tokens.Message);
+        Assert.DoesNotContain("{{model:A}},", tokens.Message);
+        Assert.Contains("{{model:X}} with a letter from MODELS", tokens.Message);
+    }
+
+    [Fact]
+    public void ModelAndPairFactKeys_AreValidEvidence_AndUnknownOnesAreNot()
+    {
+        var output = Valid(BenchmarkReportAudience.TechnicalReport);
+        output.Models![0].Points[0].Evidence = new List<string> { "model.A.dimension.accuracy", "pair.A.E.quality.difference", "Q3" };
+        output.Models[1].Points[0].Evidence = new List<string> { "model.Q.quality.index" };
+
+        var notes = Validate(BenchmarkReportAudience.TechnicalReport, output);
+
+        var unknown = Assert.Single(notes);
+        Assert.Equal(5, unknown.Rule);
+        Assert.Equal("models[1].points[0]", unknown.Location);
+        Assert.Contains("model.Q.quality.index", unknown.Message);
+    }
+
+    [Fact]
+    public void TheModelsList_NamesEachSheetLetterOnce_AndEveryModelNeedsAnEntry()
+    {
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
+        output.Models![1].Model = "Z";
+        output.Models.RemoveAt(4);
+
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output);
+
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "models[1]" && n.Message.Contains("\"Z\""));
+        var coverage = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.ModelCoverageRule);
+        Assert.Contains("{{model:B}}", coverage.Message);
+        Assert.Contains("{{model:E}}", coverage.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(BenchmarkReportPackValidator.ModelCoverageRule));
+
+        var (sheet, content) = Data();
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(BenchmarkReportAudience.ExecutiveSummary, output, sheet, content);
+        Assert.False(cleaned.Fatal);
+        Assert.Equal(new[] { "A", "C", "D" }, cleaned.Output.Models!.Select(m => m.Model));
+        Assert.Contains(cleaned.Notes, n => n.Rule == 1 && n.Location == "models[1]" && n.Dropped);
+    }
+
+    [Fact]
+    public void APointWithoutEvidence_OrOverItsCap_IsAnIssue()
+    {
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
+        output.Models![0].Points[0].Evidence.Clear();
+        output.Models[1].Points.Add(new BenchmarkReportWriterItem { Text = "{{model:B}} was quick.", Evidence = new List<string> { "model.B.speed.rank" } });
+        output.Models[1].Points.Add(new BenchmarkReportWriterItem { Text = "{{model:B}} was cheap.", Evidence = new List<string> { "model.B.cost.rank" } });
+
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output);
+
+        Assert.Contains(notes, n => n.Rule == 5 && n.Location == "models[0].points[0]");
+        Assert.Contains(notes, n => n.Rule == 7 && n.Location == "models[1].points[2]");
+    }
+
+    [Fact]
+    public void ACoveredModelsName_IsRule10()
+    {
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
+        output.Sections[BenchmarkReportSlots.Overview] = "Orion Max answered most questions well.";
+
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output);
+
+        var names = Assert.Single(notes, n => n.Rule == 10);
+        Assert.Contains("Orion Max", names.Message);
+        Assert.Contains("{{model:X}}", names.Message);
+    }
+
+    [Fact]
+    public void RankingTwoModelsWithOverlappingIntervals_MustSaySo()
+    {
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
+        output.Sections[BenchmarkReportSlots.Overview] = "{{model:A}} scored higher than {{model:B}} on the questions.";
+
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output);
+        var hedge = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule);
+        Assert.Contains("{{model:A}} against {{model:B}}", hedge.Message);
+
+        // Saying so satisfies the rule, and a pair whose intervals do not overlap needs nothing.
+        output.Sections[BenchmarkReportSlots.Overview] = "{{model:A}} scored higher than {{model:B}}, but their intervals overlap.";
+        Assert.DoesNotContain(Validate(BenchmarkReportAudience.ExecutiveSummary, output), n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule);
+        output.Sections[BenchmarkReportSlots.Overview] = "{{model:A}} scored higher than {{model:E}} on the questions.";
+        Assert.DoesNotContain(Validate(BenchmarkReportAudience.ExecutiveSummary, output), n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule);
+    }
+
+    [Fact]
+    public void ListsTheComparisonDocumentsDoNotUse_AreRule1()
+    {
+        var output = Valid(BenchmarkReportAudience.InternalBrief);
+        output.Strengths.Add(new BenchmarkReportWriterItem { Text = "Strong.", Evidence = new List<string> { "Q1" } });
+        output.Models = new List<BenchmarkReportModelPoints> { new() { Model = "A", Points = { new() { Text = "Fine.", Evidence = { "Q1" } } } } };
+
+        var notes = Validate(BenchmarkReportAudience.InternalBrief, output);
+
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "strengths");
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "models");
+    }
+
+    [Fact]
+    public void AModelLead_IsATriageOfTheComparisonBrief()
+    {
+        var output = Valid(BenchmarkReportAudience.InternalBrief);
+        output.Leads[0].Triage = BenchmarkReportSlots.LeadTriageModel;
+
+        Assert.Empty(Validate(BenchmarkReportAudience.InternalBrief, output));
+    }
+
+    [Fact]
+    public void TopicsWrittenOncePerJob_AreNotCheckedAgain_AndReplaceTheWritersOwn()
+    {
+        var output = Valid(BenchmarkReportAudience.InternalBrief);
+        output.QuestionTopics = new List<BenchmarkReportQuestionTopic> { new() { Question = 99, Topic = "No such question" } };
+        var shared = new List<BenchmarkReportQuestionTopic> { new() { Question = 1, Topic = "Throwing gems" } };
+
+        Assert.Contains(Validate(BenchmarkReportAudience.InternalBrief, output), n => n.Location.StartsWith("questionTopics", StringComparison.Ordinal));
+        Assert.Empty(Validate(BenchmarkReportAudience.InternalBrief, output, sharedTopics: shared));
+
+        var (sheet, content) = Data();
+        output.Leads[0].Evidence = new List<string> { "nope" };
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(BenchmarkReportAudience.InternalBrief, output, sheet, content, shared);
+        Assert.Equal(new[] { (1, "Throwing gems") }, cleaned.Output.QuestionTopics.Select(t => (t.Question, t.Topic)));
+    }
+
+    [Fact]
+    public void TheParser_ReadsTheModelsList_AndItsLetters()
+    {
+        string json = "{\"headline\":\"h\",\"sections\":{\"Overview\":\"o\"},\"models\":[{\"model\":\"Model b\",\"points\":[{\"text\":\"t\",\"evidence\":[\"Q1\"]}]},{\"model\":\"{{model:C}}\",\"points\":[\"plain\"]}]}";
+
+        var parsed = BenchmarkReportPackParser.Parse(json);
+
+        Assert.True(parsed.Success);
+        Assert.Equal(new[] { "B", "C" }, parsed.Output!.Models!.Select(m => m.Model));
+        Assert.Equal("plain", parsed.Output.Models![1].Points[0].Text);
+        Assert.True(parsed.Output.Sections.ContainsKey(BenchmarkReportSlots.Overview));
+        Assert.Null(BenchmarkReportPackParser.Parse("{\"headline\":\"h\"}").Output!.Models);
+    }
+}

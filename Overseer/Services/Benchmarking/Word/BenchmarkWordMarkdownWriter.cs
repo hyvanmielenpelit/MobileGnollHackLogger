@@ -32,15 +32,18 @@ using WordStyles = Overseer.Services.Benchmarking.Word.BenchmarkWordStyles;
 /// WordprocessingML for the body of a benchmark Word document, block for block as
 /// <see cref="BenchmarkPdfMarkdownComposer"/> composes the PDF. Every block takes a named style from
 /// <see cref="BenchmarkWordStyles"/>; runs carry direct formatting only for what the Markdown itself
-/// marks (bold, italic, strike, underline, mark), and paragraphs only for an indent inside a list item
-/// and a table cell's alignment.
+/// marks (bold, italic, strike, underline, mark) and a wide table's smaller text size, and paragraphs
+/// only for an indent inside a list item, a table cell's alignment, and keeping a table row with the
+/// second line under it.
 ///
 /// <para>Raw HTML is never interpreted or imported: a tag prints as the literal text it is. Markdown
 /// images print as their alternative text in brackets, only absolute http, https and mailto links
 /// become hyperlinks, and a block type this class does not know prints its literal source text.</para>
 ///
 /// <para>The prepared document's figures (<see cref="BenchmarkPdfMarkdownComposer.Prepared.Figures"/>)
-/// become inline pictures with a caption; a figure marker without a chart prints nothing.</para>
+/// become inline pictures with a caption, each at its width share of the column, and a row of figures
+/// (<see cref="BenchmarkPdfMarkdownComposer.Prepared.FigureRows"/>) a borderless table of one row with
+/// a cell per figure; a figure marker without a chart prints nothing.</para>
 /// </summary>
 internal sealed class BenchmarkWordMarkdownWriter
 {
@@ -52,6 +55,9 @@ internal sealed class BenchmarkWordMarkdownWriter
 
     /// <summary>English Metric Units per twip.</summary>
     private const long EmuPerTwip = 635;
+
+    /// <summary>The left and right cell margin of <c>Normal Table</c>, in twips (5.4 pt).</summary>
+    private const int FigureRowCellMargin = 108;
 
     private readonly MainDocumentPart _part;
     private readonly BenchmarkPdfMarkdownComposer.Prepared _document;
@@ -154,6 +160,11 @@ internal sealed class BenchmarkWordMarkdownWriter
                     break;
                 case HeadingBlock heading:
                     target.Append(Heading(heading, scope));
+                    break;
+                case ParagraphBlock paragraph when _document.RowFollowers.Contains(paragraph):
+                    break;
+                case ParagraphBlock paragraph when _document.FigureRows.TryGetValue(paragraph, out var row):
+                    WriteFigureRow(target, row, scope);
                     break;
                 case ParagraphBlock paragraph when _document.Figures.TryGetValue(paragraph, out var figure):
                     WriteFigure(target, figure, scope);
@@ -279,11 +290,87 @@ internal sealed class BenchmarkWordMarkdownWriter
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// A figure: the chart as an inline picture in its own PNG image part, centered, as wide as the text
-    /// column unless its height reaches the cap, kept with the caption paragraph below it,
-    /// "<b>Figure N.</b> <i>Title</i> — caption" in the secondary size.
+    /// A figure: the chart as an inline picture in its own PNG image part, centered, as wide as its
+    /// width share of the text column unless its height reaches the cap, kept with the caption paragraph
+    /// below it, "<b>Figure N.</b> <i>Title</i> — caption" in the secondary size, which is indented to
+    /// the figure's width.
     /// </summary>
     private void WriteFigure(OpenXmlElement target, Figure figure, Scope scope)
+    {
+        int available = Math.Max(_textWidth / 4, _textWidth - scope.Offset);
+        int frame = Math.Max(1, (int)Math.Round(available * figure.WidthShare));
+        AppendFigure(target, figure, frame, IndentOf(scope), (available - frame) / 2);
+    }
+
+    /// <summary>
+    /// Two figures side by side: a borderless table of one row that is not split across pages, the
+    /// text column shared between its cells by the figures' width shares, each cell holding one figure
+    /// as wide as the cell less its margins.
+    /// </summary>
+    private void WriteFigureRow(OpenXmlElement target, IReadOnlyList<Figure> figures, Scope scope)
+    {
+        int offset = scope.Offset;
+        int width = Math.Max(_textWidth / 4, _textWidth - offset);
+        int[] grid = Scale(figures.Select(f => (float)f.WidthShare).ToArray(), width);
+
+        // Word merges two tables with nothing between them.
+        if (target.LastChild is Table)
+        {
+            target.Append(new Paragraph());
+        }
+
+        var properties = new TableProperties
+        {
+            TableWidth = new TableWidth { Width = width.ToString(CultureInfo.InvariantCulture), Type = TableWidthUnitValues.Dxa },
+            TableBorders = new TableBorders
+            {
+                TopBorder = new TopBorder { Val = BorderValues.None },
+                LeftBorder = new LeftBorder { Val = BorderValues.None },
+                BottomBorder = new BottomBorder { Val = BorderValues.None },
+                RightBorder = new RightBorder { Val = BorderValues.None },
+                InsideHorizontalBorder = new InsideHorizontalBorder { Val = BorderValues.None },
+                InsideVerticalBorder = new InsideVerticalBorder { Val = BorderValues.None }
+            },
+            TableLayout = new TableLayout { Type = TableLayoutValues.Fixed },
+            TableLook = new TableLook
+            {
+                Val = "0000",
+                FirstRow = false,
+                LastRow = false,
+                FirstColumn = false,
+                LastColumn = false,
+                NoHorizontalBand = true,
+                NoVerticalBand = true
+            }
+        };
+        if (offset > 0)
+        {
+            properties.TableIndentation = new TableIndentation { Width = offset, Type = TableWidthUnitValues.Dxa };
+        }
+
+        var table = new Table(properties, new TableGrid(grid.Select(w => new GridColumn { Width = w.ToString(CultureInfo.InvariantCulture) })));
+        var rowProperties = new TableRowProperties();
+        rowProperties.Append(new CantSplit());
+        var row = new TableRow(rowProperties);
+        for (int i = 0; i < figures.Count; i++)
+        {
+            var cell = new TableCell(new TableCellProperties
+            {
+                TableCellWidth = new TableCellWidth { Width = grid[i].ToString(CultureInfo.InvariantCulture), Type = TableWidthUnitValues.Dxa }
+            });
+            AppendFigure(cell, figures[i], Math.Max(1, grid[i] - 2 * FigureRowCellMargin), null, 0);
+            row.Append(cell);
+        }
+        table.Append(row);
+        target.Append(table);
+    }
+
+    /// <summary>
+    /// A figure's picture paragraph and caption paragraph: the picture at most <paramref name="frameWidth"/>
+    /// twips wide and the cap high, centered; the caption centered and indented <paramref name="side"/>
+    /// twips on each side.
+    /// </summary>
+    private void AppendFigure(OpenXmlElement target, Figure figure, int frameWidth, int? indent, int side)
     {
         var chart = figure.Chart;
         var image = _part.AddImagePart(ImagePartType.Png);
@@ -292,14 +379,13 @@ internal sealed class BenchmarkWordMarkdownWriter
             image.FeedData(stream);
         }
 
-        int available = Math.Max(_textWidth / 4, _textWidth - scope.Offset);
         var (width, height) = Composer.FigureSize(
-            chart.WidthPx, chart.HeightPx, (double)available * EmuPerTwip, (double)_maxFigureHeight * EmuPerTwip);
+            chart.WidthPx, chart.HeightPx, (double)frameWidth * EmuPerTwip, (double)_maxFigureHeight * EmuPerTwip);
 
         uint id = _nextDrawingId++;
         string name = "Figure " + figure.Number.ToString(CultureInfo.InvariantCulture);
 
-        var pictureProperties = Properties(null, IndentOf(scope), JustificationValues.Center);
+        var pictureProperties = Properties(null, indent, JustificationValues.Center);
         pictureProperties.KeepNext = new KeepNext();
         pictureProperties.SpacingBetweenLines = new SpacingBetweenLines
         {
@@ -313,7 +399,15 @@ internal sealed class BenchmarkWordMarkdownWriter
             new Run(Picture(_part.GetIdOfPart(image), id, name, Composer.AltTextOf(chart), (long)Math.Round(width), (long)Math.Round(height)))));
 
         var (label, title, caption) = Composer.CaptionParts(figure);
-        var captionProperties = Properties(null, IndentOf(scope), JustificationValues.Center);
+        var captionProperties = Properties(null, indent, JustificationValues.Center);
+        if (side > 0)
+        {
+            captionProperties.Indentation = new Indentation
+            {
+                Left = ((indent ?? 0) + side).ToString(CultureInfo.InvariantCulture),
+                Right = side.ToString(CultureInfo.InvariantCulture)
+            };
+        }
         captionProperties.KeepLines = new KeepLines();
         var captionParagraph = new Paragraph(captionProperties);
         captionParagraph.Append(CaptionRun(label, bold: true, italic: false));
@@ -451,7 +545,10 @@ internal sealed class BenchmarkWordMarkdownWriter
     /// <summary>
     /// A pipe table in <c>GnollBench Table</c>: the full text width with its grid in the PDF's column
     /// proportions, header rows repeated on every page, body rows kept whole, and the cells of a numeric
-    /// column or a column with a declared alignment justified to match.
+    /// column or a column with a declared alignment justified to match. The PDF's
+    /// <see cref="BenchmarkPdfMarkdownComposer.TableLayout"/> sets a smaller text size on every run, the
+    /// short headers with their legend in a <c>Source Line</c> paragraph below the table, and a column
+    /// moved onto a merged second row under each body row, kept with it and striped with it.
     /// </summary>
     private void WriteTable(OpenXmlElement target, MdTable table, Scope scope)
     {
@@ -468,11 +565,12 @@ internal sealed class BenchmarkWordMarkdownWriter
             (rows[r].IsHeader ? headerRows : bodyRows).Add(cellsByRow[r]);
         }
 
-        var (aligns, weights) = Composer.ColumnLayout(table, headerRows, bodyRows, columns, _document.Source);
+        var layout = Composer.TableLayout(table, headerRows, bodyRows, columns, _document.Source);
+        bool secondLines = layout.SecondLineColumn != null;
 
         int offset = scope.Offset;
         int width = Math.Max(_textWidth / 4, _textWidth - offset);
-        int[] grid = Scale(weights, width);
+        int[] grid = Scale(layout.Weights, width);
 
         // Word merges two tables with nothing between them.
         if (target.LastChild is Table)
@@ -480,6 +578,7 @@ internal sealed class BenchmarkWordMarkdownWriter
             target.Append(new Paragraph());
         }
 
+        // A table with second lines stripes each pair of rows itself, so the style's banding is off.
         var properties = new TableProperties
         {
             TableStyle = new TableStyle { Val = WordStyles.GnollBenchTable },
@@ -489,12 +588,12 @@ internal sealed class BenchmarkWordMarkdownWriter
             TableLayout = new TableLayout { Type = TableLayoutValues.Autofit },
             TableLook = new TableLook
             {
-                Val = "0420",
+                Val = secondLines ? "0620" : "0420",
                 FirstRow = true,
                 LastRow = false,
                 FirstColumn = false,
                 LastColumn = false,
-                NoHorizontalBand = false,
+                NoHorizontalBand = secondLines,
                 NoVerticalBand = true
             }
         };
@@ -507,15 +606,45 @@ internal sealed class BenchmarkWordMarkdownWriter
 
         foreach (var cells in headerRows)
         {
-            result.Append(Row(cells, columns, grid, aligns, header: true));
+            result.Append(Row(cells, columns, grid, layout, header: true, shade: null));
         }
-        foreach (var cells in bodyRows)
+
+        string secondLineLabel = layout.SecondLineColumn is int moved && headerRows.Count > 0 && Composer.CellAt(headerRows[0], moved) is { } movedHeader
+            ? Composer.CellText(movedHeader, _document.Source)
+            : string.Empty;
+        for (int r = 0; r < bodyRows.Count; r++)
         {
             _token.ThrowIfCancellationRequested();
-            result.Append(Row(cells, columns, grid, aligns, header: false));
+            string? shade = secondLines && r % 2 == 1 ? Palette.Zebra : null;
+            var row = Row(bodyRows[r], columns, grid, layout, header: false, shade);
+            result.Append(row);
+
+            if (layout.SecondLineColumn is int second)
+            {
+                foreach (var paragraph in row.Descendants<Paragraph>())
+                {
+                    (paragraph.ParagraphProperties ??= new ParagraphProperties()).KeepNext = new KeepNext();
+                }
+                result.Append(SecondLineRow(Composer.CellAt(bodyRows[r], second), secondLineLabel, grid, shade));
+            }
+        }
+
+        if (layout.FontSize != BenchmarkPdfStyle.TableCellSize)
+        {
+            foreach (var run in result.Descendants<Run>())
+            {
+                var runProperties = run.RunProperties ??= new RunProperties();
+                runProperties.FontSize = WordStyles.Size(layout.FontSize);
+                runProperties.FontSizeComplexScript = WordStyles.SizeCs(layout.FontSize);
+            }
         }
 
         target.Append(result);
+
+        if (layout.Legend is string legend)
+        {
+            target.Append(new Paragraph(Properties(WordStyles.SourceLine, IndentOf(scope)), new Run(TextOf(legend))));
+        }
     }
 
     /// <summary>The PDF's relative column widths scaled to <paramref name="width"/> twips, summing to it exactly.</summary>
@@ -527,31 +656,43 @@ internal sealed class BenchmarkWordMarkdownWriter
         return grid;
     }
 
-    private TableRow Row(List<MdTableCell> cells, int columns, int[] grid, CellAlign[] aligns, bool header)
+    /// <summary>
+    /// One row in the layout's grid: a cell of the second-line column is left out, a header the layout
+    /// prints short prints short, a short row gets empty cells, and <paramref name="shade"/> fills every cell.
+    /// </summary>
+    private TableRow Row(List<MdTableCell> cells, int columns, int[] grid, BenchmarkTableLayout layout, bool header, string? shade)
     {
         var properties = new TableRowProperties();
         properties.Append(header ? new TableHeader() : new CantSplit());
         var row = new TableRow(properties);
 
-        int column = 0;
+        int position = 0;
         foreach (var cell in cells)
         {
-            if (column >= columns) break;
-            int span = Math.Clamp(cell.ColumnSpan, 1, columns - column);
-            row.Append(Cell(cell, column, span, grid, aligns[column]));
-            column += span;
+            if (position >= columns) break;
+            int span = Math.Clamp(cell.ColumnSpan, 1, columns - position);
+            var (first, gridSpan) = layout.GridSpanOf(position, span);
+            if (gridSpan > 0)
+            {
+                string? shortHeader = header && span == 1 ? layout.HeaderTextOf(position) : null;
+                row.Append(Cell(cell, first, gridSpan, grid, layout.Aligns[position], shade, shortHeader));
+            }
+            position += span;
         }
 
         // A short row gets empty cells, so every row carries the full set of rules.
-        while (column < columns)
+        for (; position < columns; position++)
         {
-            row.Append(Cell(null, column, 1, grid, aligns[column]));
-            column++;
+            var (first, gridSpan) = layout.GridSpanOf(position, 1);
+            if (gridSpan > 0)
+            {
+                row.Append(Cell(null, first, 1, grid, layout.Aligns[position], shade));
+            }
         }
         return row;
     }
 
-    private TableCell Cell(MdTableCell? cell, int column, int span, int[] grid, CellAlign align)
+    private TableCell Cell(MdTableCell? cell, int column, int span, int[] grid, CellAlign align, string? shade = null, string? shortHeader = null)
     {
         var properties = new TableCellProperties
         {
@@ -565,6 +706,10 @@ internal sealed class BenchmarkWordMarkdownWriter
         {
             properties.GridSpan = new GridSpan { Val = span };
         }
+        if (shade != null)
+        {
+            properties.Shading = WordStyles.Fill(shade);
+        }
         var result = new TableCell(properties);
 
         JustificationValues? justification = align switch
@@ -574,7 +719,11 @@ internal sealed class BenchmarkWordMarkdownWriter
             _ => null
         };
 
-        if (cell != null && cell.Count == 1 && cell[0] is ParagraphBlock paragraph)
+        if (shortHeader != null)
+        {
+            result.Append(new Paragraph(Properties(null, null, justification), new Run(TextOf(shortHeader))));
+        }
+        else if (cell != null && cell.Count == 1 && cell[0] is ParagraphBlock paragraph)
         {
             result.Append(TextParagraph(paragraph.Inline, Scope.Body, justification));
         }
@@ -589,6 +738,51 @@ internal sealed class BenchmarkWordMarkdownWriter
             result.Append(new Paragraph(Properties(null, null, justification)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// The second row of a body row: one cell merged across the grid holding the moved column's cell
+    /// after its header in bold, as "Topic: …", kept whole and filled as its body row is.
+    /// </summary>
+    private TableRow SecondLineRow(MdTableCell? cell, string label, int[] grid, string? shade)
+    {
+        var properties = new TableRowProperties();
+        properties.Append(new CantSplit());
+        var row = new TableRow(properties);
+
+        var cellProperties = new TableCellProperties
+        {
+            TableCellWidth = new TableCellWidth
+            {
+                Width = grid.Sum().ToString(CultureInfo.InvariantCulture),
+                Type = TableWidthUnitValues.Dxa
+            }
+        };
+        if (grid.Length > 1)
+        {
+            cellProperties.GridSpan = new GridSpan { Val = grid.Length };
+        }
+        if (shade != null)
+        {
+            cellProperties.Shading = WordStyles.Fill(shade);
+        }
+
+        var paragraph = new Paragraph(Properties(null));
+        if (label.Length > 0)
+        {
+            AppendRun(paragraph, label + ": ", new InlineStyle(Bold: true, Italic: false, Strike: false, Underline: false, Marked: false));
+        }
+        if (cell != null && cell.Count == 1 && cell[0] is ParagraphBlock content)
+        {
+            Inlines(paragraph, content.Inline, default);
+        }
+        else if (cell != null)
+        {
+            AppendRun(paragraph, Composer.CellText(cell, _document.Source), default);
+        }
+
+        row.Append(new TableCell(cellProperties, paragraph));
+        return row;
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -1,10 +1,60 @@
-import { BenchmarkReportAudience, BenchmarkReportDisclosure } from '../../../services/admin-benchmark.service';
+import {
+  BenchmarkReportAudience,
+  BenchmarkReportDisclosure,
+  BenchmarkReportDocumentListItemDto,
+  BenchmarkReportScope
+} from '../../../services/admin-benchmark.service';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { safeFileName } from '../../../utils/download.util';
 
 /** Which documents a document list holds: those of one comparison, or every Report Pack document. */
 export type ReportDocumentLibraryScope =
-  | { readonly kind: 'comparison'; readonly entryKeys: readonly string[] }
+  | {
+      readonly kind: 'comparison';
+      /** The numbered comparison (*Comparison #12*) its documents are listed by; absent or null before it is numbered. */
+      readonly comparisonId?: number | null;
+      /** The comparison's display name, for the list's heading; absent or null when unknown. */
+      readonly name?: string | null;
+      /** The comparison's entry keys, which list the documents written before comparisons were numbered. */
+      readonly entryKeys: readonly string[];
+    }
   | { readonly kind: 'all' };
+
+/** What a Report Pack document covers: every model of its comparison, a subset of them, or one model. */
+export type ReportDocumentScopeValue = 'comparison' | 'subset' | 'model';
+
+/** The scopes in the order the Scope facet lists them, with their labels. */
+export const REPORT_DOCUMENT_SCOPES: readonly { readonly value: ReportDocumentScopeValue; readonly label: string }[] = [
+  { value: 'comparison', label: 'Whole comparison' },
+  { value: 'subset', label: 'Model subset' },
+  { value: 'model', label: 'One model' }
+];
+
+/** A document's scope: a comparison-scope document covers the whole comparison or a subset; any other covers one model. */
+export function reportDocumentScope(doc: Pick<BenchmarkReportDocumentListItemDto, 'scope' | 'coversAllEntries'>): ReportDocumentScopeValue {
+  if (doc.scope === BenchmarkReportScope.Comparison) {
+    return doc.coversAllEntries ? 'comparison' : 'subset';
+  }
+  return 'model';
+}
+
+/** `Whole comparison`, `Model subset` or `One model`; the value itself for an unknown one. */
+export function reportScopeLabel(value: string): string {
+  return REPORT_DOCUMENT_SCOPES.find(scope => scope.value === value)?.label ?? value;
+}
+
+/**
+ * A Report Pack document's kind in a file name, as the server's `BenchmarkPdfFileNames.KindSlug` spells
+ * it: `executive-summary`, `researcher-report` or `internal-brief`.
+ */
+export function reportKindSlug(audience: BenchmarkReportAudience): string {
+  switch (audience) {
+    case BenchmarkReportAudience.ExecutiveSummary: return 'executive-summary';
+    case BenchmarkReportAudience.TechnicalReport: return 'researcher-report';
+    case BenchmarkReportAudience.InternalBrief: return 'internal-brief';
+    default: return safeFileName(BenchmarkReportAudience[audience] ?? String(audience));
+  }
+}
 
 /** How many documents the `all` scope asks for: the list endpoint's maximum. */
 export const REPORT_LIBRARY_ALL_TAKE = 500;

@@ -1,0 +1,157 @@
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+
+import { ModelMultiPickerComponent, ModelMultiPickerSelection } from './model-multi-picker.component';
+import { ModelPickerComponent, ModelPickerKey, ModelPickerModel, ModelPickerOption } from './model-picker.component';
+
+interface TestModel extends ModelPickerModel {
+  id: number;
+}
+
+const ALPHA: TestModel = {
+  id: 1, displayName: 'Alpha', provider: 'OpenAI', thinkingLevel: 'high', reasoningMode: 'pro', parallelExecutionMode: 0,
+  effectiveInputPricePerMillion: 5, effectiveOutputPricePerMillion: 25
+};
+const BETA: TestModel = { id: 2, displayName: 'Beta', provider: 'Anthropic', parallelExecutionMode: 1 };
+
+const OPTIONS: ModelPickerOption<TestModel>[] = [
+  { key: 'run:1', model: ALPHA, detail: 'Run #1' },
+  { key: 'battery:10', model: ALPHA, detail: 'Battery run #10' },
+  { key: 'run:2', model: BETA }
+];
+
+/** Both pickers over the same models, each feeding its selection back. */
+@Component({
+  standalone: true,
+  imports: [ModelPickerComponent, ModelMultiPickerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="outer" (keydown)="outerKeys.push($any($event).key)">
+      <app-model-picker class="single" label="Single" [options]="singleOptions" [selectedKey]="null"></app-model-picker>
+      <app-model-multi-picker class="multi" label="Models" [options]="options" [selectedKeys]="selected"
+                              (selectionChange)="onChange($event)"></app-model-multi-picker>
+      <app-model-multi-picker class="multi-priced" label="Priced models" [options]="options" [selectedKeys]="[]"
+                              [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
+    </div>
+  `
+})
+class HostComponent {
+  private cdr = inject(ChangeDetectorRef);
+  singleOptions: ModelPickerOption<TestModel>[] = [{ key: 1, model: ALPHA }, { key: 2, model: BETA }];
+  options: ModelPickerOption<TestModel>[] = OPTIONS;
+  selected: ModelPickerKey[] = [];
+  changes: ModelMultiPickerSelection<TestModel>[] = [];
+  outerKeys: string[] = [];
+
+  onChange(selection: ModelMultiPickerSelection<TestModel>): void {
+    this.changes.push(selection);
+    this.selected = selection.keys;
+    this.cdr.markForCheck();
+  }
+
+  select(keys: ModelPickerKey[]): void {
+    this.selected = keys;
+    this.cdr.markForCheck();
+  }
+}
+
+describe('ModelMultiPickerComponent', () => {
+  let fixture: ComponentFixture<HostComponent>;
+  let host: HostComponent;
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [HostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(HostComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  const part = (selector: string) => el.querySelector<HTMLElement>(selector)!;
+  const trigger = (p: HTMLElement) => p.querySelector<HTMLButtonElement>('.selector-trigger')!;
+  const listbox = (p: HTMLElement) => p.querySelector<HTMLElement>('[role="listbox"]');
+  const options = (p: HTMLElement) => Array.from(p.querySelectorAll<HTMLElement>('[role="option"]'));
+
+  function open(p: HTMLElement): void {
+    trigger(p).click();
+    fixture.detectChanges();
+  }
+
+  function key(target: HTMLElement, keyName: string): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    fixture.detectChanges();
+    return event;
+  }
+
+  it('draws the same badges as the single picker for the same model', () => {
+    const single = part('.single');
+    const multi = part('.multi');
+    open(single);
+    const singleBadges = options(single)[0].querySelector('app-model-option-badges')!.innerHTML;
+    key(listbox(single)!, 'Escape');
+    open(multi);
+    const multiBadges = options(multi)[0].querySelector('app-model-option-badges')!;
+    expect(singleBadges).toContain('thinking-badge');
+    expect(multiBadges.innerHTML).toBe(singleBadges);
+    expect(multiBadges.textContent!.replace(/\s+/g, ' ')).toContain('thinking level High');
+    expect(multiBadges.querySelector('.provider-badge')!.textContent!.trim()).toBe('OpenAI');
+  });
+
+  it('shows no price or parallel badge by default, and both when enabled', () => {
+    const multi = part('.multi');
+    open(multi);
+    expect(multi.querySelector('.price-badge')).toBeNull();
+    expect(multi.querySelector('.parallel-badge')).toBeNull();
+
+    const priced = part('.multi-priced');
+    open(priced);
+    expect(options(priced)[0].querySelector('.price-badge')).not.toBeNull();
+    expect(options(priced)[0].querySelector('.parallel-badge.badge-sequential')).not.toBeNull();
+    expect(options(priced)[2].querySelector('.parallel-badge.badge-on-request')).not.toBeNull();
+  });
+
+  it('offers two options of the same model as two options, each with its detail', () => {
+    const multi = part('.multi');
+    open(multi);
+    const all = options(multi);
+    expect(all.length).toBe(3);
+    expect(all.map(o => o.querySelector('.model-name')!.textContent!.trim())).toEqual(['Alpha', 'Alpha', 'Beta']);
+    expect(all.map(o => o.querySelector('.gh-multi-picker-detail')?.textContent!.trim() ?? null))
+      .toEqual(['Run #1', 'Battery run #10', null]);
+  });
+
+  it('summarizes in models, with the model name when one is selected', () => {
+    const multi = part('.multi');
+    const summary = () => trigger(multi).querySelector('.gh-multi-picker-summary')!.textContent!.trim();
+    expect(summary()).toBe('Select models');
+    host.select(['run:2']);
+    fixture.detectChanges();
+    expect(summary()).toBe('Beta');
+    host.select(['run:1', 'run:2']);
+    fixture.detectChanges();
+    expect(summary()).toBe('2 of 3 models');
+  });
+
+  it('a keyboard toggle emits the keys and their models', () => {
+    const multi = part('.multi');
+    open(multi);
+    key(listbox(multi)!, 'ArrowDown');
+    key(listbox(multi)!, ' ');
+    expect(host.changes.length).toBe(1);
+    expect(host.changes[0].keys).toEqual(['battery:10']);
+    expect(host.changes[0].models).toEqual([ALPHA]);
+    expect(options(multi)[1].getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('Escape closes the list and keeps the key from the parent', () => {
+    const multi = part('.multi');
+    open(multi);
+    const event = key(listbox(multi)!, 'Escape');
+    expect(event.defaultPrevented).toBe(true);
+    expect(listbox(multi)).toBeNull();
+    expect(host.outerKeys).not.toContain('Escape');
+    expect(document.activeElement).toBe(trigger(multi));
+  });
+});

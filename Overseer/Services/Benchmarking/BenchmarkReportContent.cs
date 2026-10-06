@@ -152,6 +152,204 @@ public static class BenchmarkReportContent
         return snapshot;
     }
 
+    /// <summary>A question every covered model scored below this is a shared gap, third in the excerpt order.</summary>
+    public const double SharedLowScore = 50.0;
+
+    /// <summary>A question whose covered models' scores span at least this many points is second in the excerpt order.</summary>
+    public const double WideSpreadPoints = 20.0;
+
+    /// <summary>
+    /// One covered model's own content for a comparison-scope document: its per-model content
+    /// snapshot, numbered as its own sheet numbers its questions, and each of those numbers mapped to
+    /// the comparison's question number.
+    /// </summary>
+    public sealed record ComparisonEntry(
+        string Letter, string EntryKey, BenchmarkReportContentSnapshot Content, IReadOnlyDictionary<int, int> NumberMap);
+
+    /// <summary>
+    /// The content of a comparison-scope document, over <paramref name="questions"/> (the comparison's
+    /// questions with their per-model cells) and each covered model's own content:
+    /// <list type="bullet">
+    /// <item>every question as asked, with its rubric, once, from the first model in letter order that
+    /// has it (<see cref="BenchmarkReportContentSnapshot.Questions"/>);</item>
+    /// <item>answer excerpts under one total budget of <paramref name="answerExcerptChars"/> characters
+    /// per question, allotted question by question in <see cref="ExcerptPriority"/> order and, within a
+    /// question, to the models with a critical error or a refuted sentence first, then the lowest
+    /// scores; an excerpt that no longer fits is skipped. Each excerpt comes from the model's run whose
+    /// graders' mean score is closest to its score on the question, ties to the lower run id.</item>
+    /// </list>
+    /// </summary>
+    public static BenchmarkReportContentSnapshot BuildComparison(
+        IReadOnlyList<BenchmarkReportQuestion> questions, IReadOnlyList<ComparisonEntry> entries, int answerExcerptChars)
+    {
+        ArgumentNullException.ThrowIfNull(questions);
+        ArgumentNullException.ThrowIfNull(entries);
+
+        int chars = Math.Max(0, answerExcerptChars);
+        var ordered = entries.OrderBy(e => e.Letter.Length).ThenBy(e => e.Letter, StringComparer.Ordinal).ToList();
+        var snapshot = new BenchmarkReportContentSnapshot
+        {
+            AnswerExcerptChars = chars,
+            Questions = new List<BenchmarkReportContentQuestion>()
+        };
+
+        // The blocks of each entry by comparison number: (run id, the entry's question).
+        var blocks = ordered.ToDictionary(
+            e => e.Letter,
+            e => e.Content.Runs
+                .OrderBy(r => r.RunId)
+                .SelectMany(r => r.Questions.Select(q => (r.RunId, Question: q)))
+                .Where(b => e.NumberMap.ContainsKey(b.Question.Number))
+                .GroupBy(b => e.NumberMap[b.Question.Number])
+                .ToDictionary(g => g.Key, g => g.ToList()),
+            StringComparer.Ordinal);
+
+        foreach (var question in questions.OrderBy(q => q.Number))
+        {
+            var source = ordered
+                .Select(e => blocks[e.Letter].TryGetValue(question.Number, out var list) ? list[0].Question : null)
+                .FirstOrDefault(q => q != null);
+            if (source == null) continue;
+
+            snapshot.Questions.Add(new BenchmarkReportContentQuestion
+            {
+                Number = question.Number,
+                QuestionKey = source.QuestionKey,
+                ItemRevisionUsed = source.ItemRevisionUsed,
+                OrderIndex = source.OrderIndex,
+                Band = source.Band,
+                QuestionText = source.QuestionText,
+                ExpectedPoints = source.ExpectedPoints,
+                ExpectedPointsRecorded = source.ExpectedPointsRecorded
+            });
+        }
+
+        long budget = (long)chars * questions.Count;
+        var chosen = new List<(string Letter, string EntryKey, long RunId, BenchmarkReportContentQuestion Question)>();
+        foreach (var question in ExcerptPriority(questions))
+        {
+            var cells = (question.Models ?? new List<BenchmarkReportQuestionModelScore>())
+                .OrderBy(c => c.CriticalError || RefutedOf(c) > 0 ? 0 : 1)
+                .ThenBy(c => c.Score.HasValue ? 0 : 1)
+                .ThenBy(c => c.Score ?? 0)
+                .ThenBy(c => c.Letter.Length)
+                .ThenBy(c => c.Letter, StringComparer.Ordinal)
+                .ToList();
+
+            foreach (var cell in cells)
+            {
+                var entry = ordered.FirstOrDefault(e => string.Equals(e.Letter, cell.Letter, StringComparison.Ordinal));
+                if (entry == null || !blocks[entry.Letter].TryGetValue(question.Number, out var candidates)) continue;
+
+                var (runId, item) = Representative(candidates, cell.Score);
+                if (chars <= 0 || item.AnswerExcerpt.Length > budget) continue;
+
+                budget -= item.AnswerExcerpt.Length;
+                chosen.Add((entry.Letter, entry.EntryKey, runId, item));
+            }
+        }
+
+        foreach (var run in chosen
+            .GroupBy(c => (c.Letter, c.EntryKey, c.RunId))
+            .OrderBy(g => g.Key.Letter.Length)
+            .ThenBy(g => g.Key.Letter, StringComparer.Ordinal)
+            .ThenBy(g => g.Key.RunId))
+        {
+            var entry = ordered.First(e => string.Equals(e.Letter, run.Key.Letter, StringComparison.Ordinal));
+            snapshot.Runs.Add(new BenchmarkReportContentRun
+            {
+                RunId = run.Key.RunId,
+                EntryKey = run.Key.EntryKey,
+                Letter = run.Key.Letter,
+                Questions = run
+                    .Select(c => Renumbered(c.Question, entry.NumberMap[c.Question.Number]))
+                    .OrderBy(q => q.Number)
+                    .ToList()
+            });
+        }
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// The order a comparison-scope document allots its excerpt budget in: first the questions on which
+    /// any covered model made a critical error or had a refuted answer sentence, by number; then those
+    /// whose scores span at least <see cref="WideSpreadPoints"/> points, widest first; then those every
+    /// scored model scored below <see cref="SharedLowScore"/>, lowest best score first; then the rest,
+    /// widest spread first. Ties by number.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkReportQuestion> ExcerptPriority(IReadOnlyList<BenchmarkReportQuestion> questions)
+    {
+        ArgumentNullException.ThrowIfNull(questions);
+
+        static double Spread(BenchmarkReportQuestion q)
+        {
+            var scores = (q.Models ?? new List<BenchmarkReportQuestionModelScore>())
+                .Where(c => c.Score.HasValue).Select(c => c.Score!.Value).ToList();
+            return scores.Count < 2 ? 0 : scores.Max() - scores.Min();
+        }
+
+        static double? Best(BenchmarkReportQuestion q)
+        {
+            var scores = (q.Models ?? new List<BenchmarkReportQuestionModelScore>())
+                .Where(c => c.Score.HasValue).Select(c => c.Score!.Value).ToList();
+            return scores.Count == 0 ? null : scores.Max();
+        }
+
+        int Group(BenchmarkReportQuestion q)
+        {
+            var cells = q.Models ?? new List<BenchmarkReportQuestionModelScore>();
+            if (cells.Any(c => c.CriticalError || RefutedOf(c) > 0)) return 0;
+            if (Spread(q) >= WideSpreadPoints) return 1;
+            if (Best(q) is double best && best < SharedLowScore) return 2;
+            return 3;
+        }
+
+        return questions
+            .Select(q => (Question: q, Group: Group(q), Spread: Spread(q), Best: Best(q) ?? double.MaxValue))
+            .OrderBy(x => x.Group)
+            .ThenBy(x => x.Group is 1 or 3 ? -x.Spread : 0)
+            .ThenBy(x => x.Group == 2 ? x.Best : 0)
+            .ThenBy(x => x.Question.Number)
+            .Select(x => x.Question)
+            .ToList();
+    }
+
+    /// <summary>A model's refuted answer sentences on a question, else its refuted claims.</summary>
+    private static int RefutedOf(BenchmarkReportQuestionModelScore cell) => cell.RefutedAnswerSentences ?? cell.RefutedClaims;
+
+    /// <summary>The block whose graders' mean score is closest to <paramref name="score"/>; the first when unscored. Ties to the lower run id.</summary>
+    private static (long RunId, BenchmarkReportContentQuestion Question) Representative(
+        IReadOnlyList<(long RunId, BenchmarkReportContentQuestion Question)> candidates, double? score)
+    {
+        if (score is not double target || candidates.Count == 1) return candidates[0];
+
+        return candidates
+            .Select(c => (Block: c, Mean: c.Question.Graders.Where(g => g.Score.HasValue).Select(g => (double)g.Score!.Value).DefaultIfEmpty(double.NaN).Average()))
+            .OrderBy(x => double.IsNaN(x.Mean) ? double.MaxValue : Math.Abs(x.Mean - target))
+            .ThenBy(x => x.Block.RunId)
+            .First()
+            .Block;
+    }
+
+    /// <summary>A copy of <paramref name="question"/> under the comparison's question number.</summary>
+    private static BenchmarkReportContentQuestion Renumbered(BenchmarkReportContentQuestion question, int number) => new()
+    {
+        Number = number,
+        QuestionKey = question.QuestionKey,
+        ItemRevisionUsed = question.ItemRevisionUsed,
+        OrderIndex = question.OrderIndex,
+        Band = question.Band,
+        QuestionText = question.QuestionText,
+        ExpectedPoints = question.ExpectedPoints,
+        ExpectedPointsRecorded = question.ExpectedPointsRecorded,
+        AnswerExcerpt = question.AnswerExcerpt,
+        AnswerExcerptCut = question.AnswerExcerptCut,
+        AnswerText = question.AnswerText,
+        Graders = question.Graders,
+        ClaimRulings = question.ClaimRulings
+    };
+
     /// <summary>
     /// The whole text when it fits in <paramref name="maxChars"/>. Otherwise the text cut back to the
     /// last sentence end or line break at or before that position, or, when neither lies in the last

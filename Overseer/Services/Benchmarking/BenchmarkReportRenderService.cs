@@ -75,7 +75,7 @@ public class BenchmarkReportRenderService
 
     /// <summary>
     /// Newest first; filtered by suite, by a run the subject includes (peer runs never match), by a
-    /// comparison key, by origin, by subject key, or any combination.
+    /// comparison key or id, by origin, by subject key, or any combination.
     /// </summary>
     public async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(long? suiteId, long? runId, int? take, CancellationToken ct)
         => await ListAsync(new BenchmarkReportDocumentListFilter { SuiteId = suiteId, RunId = runId, Take = take }, ct);
@@ -96,12 +96,14 @@ public class BenchmarkReportRenderService
         long? suiteId = filter.SuiteId;
         long? runId = filter.RunId;
         string? comparisonKey = filter.ComparisonKey;
+        int? comparisonId = filter.ComparisonId;
         BenchmarkReportDocumentOrigin? origin = filter.Origin;
 
         var query = _db.BenchmarkReportDocuments.AsNoTracking().IgnoreAutoIncludes();
         if (suiteId != null) query = query.Where(d => d.SuiteId == suiteId);
         if (runId != null) query = query.Where(d => d.Runs.Any(r => r.RunId == runId && !r.IsPeer));
         if (comparisonKey != null) query = query.Where(d => d.ComparisonKey == comparisonKey);
+        if (comparisonId != null) query = query.Where(d => d.ComparisonId == comparisonId);
         if (origin != null) query = query.Where(d => d.Origin == origin);
         if (subjectKey != null) query = query.Where(d => d.SubjectKey == subjectKey);
 
@@ -115,11 +117,13 @@ public class BenchmarkReportRenderService
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd,
                 d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson,
+                d.Scope, d.ComparisonId, d.CoveredEntryKeysJson, d.CoveredSetKey,
                 Runs = d.Runs.Select(r => new { r.RunId, r.IsPeer, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256 }).ToList()
             })
             .ToListAsync(ct);
 
         var current = await CurrentFingerprintsAsync(rows.SelectMany(r => r.Runs.Select(x => x.RunId)).Distinct().ToList(), ct);
+        var comparisonNames = await ComparisonNamesAsync(rows.Select(r => r.ComparisonId), ct);
 
         return rows.Select(d =>
         {
@@ -137,9 +141,203 @@ public class BenchmarkReportRenderService
             item.PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current);
             item.MissingRunIds = missing;
             FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
+            FillScope(item, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.FactsJson);
             FillCharts(item);
             return item;
         }).ToList();
+    }
+
+    /// <summary>The display name of each existing comparison among <paramref name="ids"/>, read in one query.</summary>
+    private async Task<Dictionary<int, string>> ComparisonNamesAsync(IEnumerable<int?> ids, CancellationToken ct)
+    {
+        var wanted = ids.Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        if (wanted.Count == 0) return new Dictionary<int, string>();
+
+        var comparisons = await _db.BenchmarkComparisons
+            .AsNoTracking()
+            .Where(c => wanted.Contains(c.Id))
+            .Select(c => new { c.Id, c.Name, c.DefaultName })
+            .ToListAsync(ct);
+        return comparisons.ToDictionary(c => c.Id, c => c.Name ?? c.DefaultName);
+    }
+
+    private static string? DisplayNameOf(IReadOnlyDictionary<int, string> names, int? id)
+        => id is int value && names.TryGetValue(value, out var name) ? name : null;
+
+    /// <summary>
+    /// The document's scope, its numbered comparison and that comparison's display name now, its covered
+    /// set, whether it covers every entry (comparison scope only) and the models it covers.
+    /// </summary>
+    private static void FillScope(
+        BenchmarkReportDocumentListItemDto item, BenchmarkReportScope scope, int? comparisonId, string? comparisonName,
+        string? coveredEntryKeysJson, string? coveredSetKey, string? factsJson)
+    {
+        var facts = ReadFacts(factsJson);
+        item.Scope = scope;
+        item.ComparisonId = comparisonId;
+        item.ComparisonName = comparisonId == null ? null : comparisonName;
+        item.CoveredSetKey = coveredSetKey;
+        item.CoversAllEntries = scope == BenchmarkReportScope.Comparison && facts.CoversAllEntries;
+        item.ComparisonModelCount = scope == BenchmarkReportScope.Comparison ? facts.ComparisonEntryCount : null;
+        item.CoveredModels = CoveredModels(scope, item.SubjectKey, item.SubjectLabel, coveredEntryKeysJson, facts);
+    }
+
+    /// <summary>
+    /// The models a stored document covers. Model scope: its subject, with the stored subject label and
+    /// the fact sheet's subject provider. Comparison scope: each key of
+    /// <see cref="BenchmarkReportDocument.CoveredEntryKeysJson"/> in stored order, labeled through
+    /// <see cref="StoredFacts.EntryLabels"/>, the key itself where the sheet has no label for it, each
+    /// with its letter from <see cref="StoredFacts.PeerLetters"/>.
+    /// </summary>
+    public static List<BenchmarkReportCoveredModelDto> CoveredModels(
+        BenchmarkReportScope scope, string? subjectKey, string? subjectLabel, string? coveredEntryKeysJson, StoredFacts facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        if (scope != BenchmarkReportScope.Comparison)
+        {
+            return new List<BenchmarkReportCoveredModelDto>
+            {
+                new()
+                {
+                    EntryKey = subjectKey ?? string.Empty,
+                    Label = subjectLabel ?? string.Empty,
+                    Provider = string.IsNullOrWhiteSpace(facts.SubjectProvider) ? null : facts.SubjectProvider
+                }
+            };
+        }
+
+        return CoveredEntryKeys(coveredEntryKeysJson)
+            .Select(key => facts.EntryLabels.TryGetValue(key, out var known)
+                ? new BenchmarkReportCoveredModelDto { EntryKey = key, Label = known.Label, Provider = known.Provider }
+                : new BenchmarkReportCoveredModelDto { EntryKey = key, Label = key })
+            .Select(model =>
+            {
+                model.Letter = facts.PeerLetters.TryGetValue(model.EntryKey, out var letter) ? letter : null;
+                return model;
+            })
+            .ToList();
+    }
+
+    /// <summary>The entry keys of <see cref="BenchmarkReportDocument.CoveredEntryKeysJson"/>, in stored order; empty when absent or unreadable.</summary>
+    public static List<string> CoveredEntryKeys(string? coveredEntryKeysJson)
+    {
+        if (string.IsNullOrWhiteSpace(coveredEntryKeysJson)) return new List<string>();
+        try
+        {
+            return (BenchmarkReportJson.Deserialize<List<string>>(coveredEntryKeysJson) ?? new List<string>())
+                .Where(k => !string.IsNullOrWhiteSpace(k))
+                .ToList();
+        }
+        catch (Exception)
+        {
+            return new List<string>();
+        }
+    }
+
+    /// <summary>
+    /// What the list, the covers and the file names read from a stored fact sheet without
+    /// deserializing it whole.
+    /// </summary>
+    /// <param name="PeerCount">The length of the <c>peers</c> array.</param>
+    /// <param name="PeerLetters">Each peer's entry key mapped to its letter.</param>
+    /// <param name="SubjectProvider">The root <c>subjectProvider</c>.</param>
+    /// <param name="CoversAllEntries">The root <c>coversAllEntries</c> of a comparison-scope sheet; false when absent.</param>
+    /// <param name="ComparisonEntryCount">The root <c>comparisonEntryCount</c> of a comparison-scope sheet: the comparison's non-excluded entries when it was written; null when absent.</param>
+    /// <param name="EntryLabels">
+    /// Entry key → label and provider, from the objects of the <c>models</c> array and then of the
+    /// <c>peers</c> array that carry <c>entryKey</c> and <c>label</c>; the first object of a key wins.
+    /// </param>
+    public sealed record StoredFacts(
+        int PeerCount,
+        Dictionary<string, string> PeerLetters,
+        string? SubjectProvider,
+        bool CoversAllEntries,
+        int? ComparisonEntryCount,
+        Dictionary<string, (string Label, string? Provider)> EntryLabels)
+    {
+        public static StoredFacts Empty => new(
+            0, new Dictionary<string, string>(StringComparer.Ordinal), null, false, null,
+            new Dictionary<string, (string Label, string? Provider)>(StringComparer.Ordinal));
+    }
+
+    /// <summary>The <see cref="StoredFacts"/> of a fact sheet's JSON; <see cref="StoredFacts.Empty"/> when absent or unreadable.</summary>
+    public static StoredFacts ReadFacts(string? factsJson)
+    {
+        if (string.IsNullOrWhiteSpace(factsJson)) return StoredFacts.Empty;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(factsJson);
+            var root = doc.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return StoredFacts.Empty;
+
+            int peerCount = 0;
+            var letters = new Dictionary<string, string>(StringComparer.Ordinal);
+            var labels = new Dictionary<string, (string Label, string? Provider)>(StringComparer.Ordinal);
+            System.Text.Json.JsonElement? peers = null;
+            System.Text.Json.JsonElement? models = null;
+            bool coversAll = false;
+            int? entryCount = null;
+
+            foreach (var property in root.EnumerateObject())
+            {
+                var value = property.Value;
+                if (Named(property, "peers") && value.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    peers ??= value;
+                }
+                else if (Named(property, "models") && value.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    models ??= value;
+                }
+                else if (Named(property, "coversAllEntries"))
+                {
+                    coversAll = value.ValueKind == System.Text.Json.JsonValueKind.True;
+                }
+                else if (Named(property, "comparisonEntryCount") && value.ValueKind == System.Text.Json.JsonValueKind.Number
+                         && value.TryGetInt32(out int count))
+                {
+                    entryCount = count;
+                }
+            }
+
+            if (peers is { } peerArray)
+            {
+                peerCount = peerArray.GetArrayLength();
+                foreach (var peer in peerArray.EnumerateArray())
+                {
+                    string? entryKey = StringProperty(peer, "entryKey");
+                    string? letter = StringProperty(peer, "letter");
+                    if (!string.IsNullOrEmpty(entryKey) && !string.IsNullOrEmpty(letter))
+                    {
+                        letters.TryAdd(entryKey, letter);
+                    }
+                }
+            }
+
+            foreach (var array in new[] { models, peers })
+            {
+                if (array is not { } entries) continue;
+                foreach (var entry in entries.EnumerateArray())
+                {
+                    string? entryKey = StringProperty(entry, "entryKey");
+                    string? label = StringProperty(entry, "label");
+                    if (!string.IsNullOrEmpty(entryKey) && !string.IsNullOrEmpty(label))
+                    {
+                        string? provider = StringProperty(entry, "provider");
+                        labels.TryAdd(entryKey, (label, string.IsNullOrWhiteSpace(provider) ? null : provider));
+                    }
+                }
+            }
+
+            return new StoredFacts(peerCount, letters, StringProperty(root, "subjectProvider"), coversAll, entryCount, labels);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return StoredFacts.Empty;
+        }
+
+        static bool Named(System.Text.Json.JsonProperty property, string name)
+            => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>A stored run row: whose it is, and its fingerprint at generation.</summary>
@@ -267,6 +465,8 @@ public class BenchmarkReportRenderService
             d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
             d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
         FillComparison(dto, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
+        var comparisonNames = await ComparisonNamesAsync(new[] { d.ComparisonId }, ct);
+        FillScope(dto, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.FactsJson);
         FillCharts(dto);
         return dto;
     }
@@ -284,7 +484,9 @@ public class BenchmarkReportRenderService
 
     /// <summary>
     /// As <see cref="RenderAsync"/>, with the stored row the Markdown was rendered from, which the
-    /// PDF download takes its title block and metadata from.
+    /// PDF download takes its title block and metadata from. The row carries its
+    /// <see cref="BenchmarkReportDocument.Comparison"/>, so the Markdown, the cover, the running header
+    /// and the file name print the comparison's number and its name as it is now.
     /// </summary>
     public async Task<(string? Markdown, BenchmarkReportDocument? Document, bool NotFound, string? Refusal)> RenderWithDocumentAsync(
         long id, BenchmarkReportRenderOptions options, CancellationToken ct)
@@ -292,6 +494,7 @@ public class BenchmarkReportRenderService
         var d = await _db.BenchmarkReportDocuments
             .AsNoTracking()
             .IgnoreAutoIncludes()
+            .Include(x => x.Comparison)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
         if (d == null) return (null, null, true, null);
 
@@ -327,10 +530,12 @@ public class BenchmarkReportRenderService
     }
 
     /// <summary>
-    /// Replaces a document's whole chart set. NotFound for an unknown id; a refusal for a stand-alone
-    /// document, for chart storage that is not configured and for any upload
-    /// <see cref="BenchmarkReportChartStore.ValidateCharts"/> refuses. Every chart is checked before
-    /// anything is written.
+    /// Replaces a document's whole chart set and its layout; a request without a layout stores none.
+    /// NotFound for an unknown id; a refusal for a stand-alone document, for chart storage that is not
+    /// configured, for any upload <see cref="BenchmarkReportChartStore.ValidateCharts"/> refuses and for
+    /// a layout <see cref="BenchmarkReportChartStore.ValidateLayout"/> refuses. Everything is checked
+    /// before anything is written. A comparison-scope document always covers two or more models, so it
+    /// is never stand-alone.
     /// </summary>
     public async Task<(ReportDocumentChartsSummaryDto? Summary, bool NotFound, string? Refusal)> SetChartsAsync(
         long documentId, PutReportDocumentChartsRequest? request, CancellationToken ct)
@@ -339,17 +544,18 @@ public class BenchmarkReportRenderService
             .AsNoTracking()
             .IgnoreAutoIncludes()
             .Where(x => x.Id == documentId)
-            .Select(x => new { x.FactsJson })
+            .Select(x => new { x.FactsJson, x.Scope })
             .FirstOrDefaultAsync(ct);
         if (d == null) return (null, true, null);
 
-        if (PeersOf(d.FactsJson).Count == 0) return (null, false, StandaloneChartsRefusal);
+        if (d.Scope != BenchmarkReportScope.Comparison && PeersOf(d.FactsJson).Count == 0) return (null, false, StandaloneChartsRefusal);
         if (!_charts.IsConfigured) return (null, false, BenchmarkReportChartStore.NotConfiguredMessage);
 
         try
         {
             var validated = BenchmarkReportChartStore.ValidateCharts(request?.Charts);
-            return (await _charts.SetChartsAsync(documentId, validated, ct), false, null);
+            var layout = BenchmarkReportChartStore.ValidateLayout(request?.Layout);
+            return (await _charts.SetChartsAsync(documentId, validated, layout, ct), false, null);
         }
         catch (ChartStoreException ex)
         {
@@ -380,6 +586,9 @@ public class BenchmarkReportRenderService
             documentId,
             naming == BenchmarkReportPeerNaming.Anonymized ? BenchmarkReportChartStore.Anonymized : BenchmarkReportChartStore.Named,
             ct);
+
+    /// <summary>The layout a document's charts render with, from its chart manifest; null for the default layout.</summary>
+    public BenchmarkReportChartLayout? ReadRenderLayout(long documentId) => _charts.ReadLayout(documentId);
 
     /// <summary>
     /// Removes a stored document; false for an unknown id. Deleting a run's own run-completion

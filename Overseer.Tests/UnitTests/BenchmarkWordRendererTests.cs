@@ -510,6 +510,100 @@ public class BenchmarkWordRendererTests
         Assert.DoesNotContain("Figure 1.", TextOf(main.Document.Body!), StringComparison.Ordinal);
     }
 
+    // --- Figure layout -------------------------------------------------------------------------------
+
+    private const int A4TextWidth = 11906 - 2 * 1134;
+
+    private static BenchmarkReportChartLayout Layout(double? maxHeightShare, params (string Key, double Width, int? Row)[] figures) => new()
+    {
+        Figures = figures.Select(f => new BenchmarkReportChartLayoutFigure { Key = f.Key, WidthShare = f.Width, RowGroup = f.Row }).ToList(),
+        MaxHeightShare = maxHeightShare
+    };
+
+    [Fact]
+    public void TwoFiguresOfOneRowGroup_AreABorderlessTableOfTwoCells_EachWithItsPictureAndCaption()
+    {
+        var charts = TwoCharts();
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(
+            "## Results\n\nIntro text.\n\n[[figure:p1a-quality]]\n\n[[figure:s1-quality-speed]]\n\nEnd text.\n",
+            Info(), TestContext.Current.CancellationToken, charts,
+            Layout(null, ("p1a-quality", 0.5, 1), ("s1-quality-speed", 0.5, 1)));
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var body = package.MainDocumentPart!.Document!.Body!;
+
+        var table = Assert.Single(body.Elements<W.Table>(), t => t.Descendants<W.Drawing>().Any());
+        var borders = table.GetFirstChild<W.TableProperties>()!.TableBorders!;
+        Assert.All(
+            new W.BorderType?[] { borders.TopBorder, borders.LeftBorder, borders.BottomBorder, borders.RightBorder, borders.InsideHorizontalBorder, borders.InsideVerticalBorder },
+            b => Assert.Equal(W.BorderValues.None, b!.Val!.Value));
+        Assert.Equal(
+            new[] { A4TextWidth / 2, A4TextWidth - A4TextWidth / 2 },
+            table.GetFirstChild<W.TableGrid>()!.Elements<W.GridColumn>().Select(g => int.Parse(g.Width!.Value!, CultureInfo.InvariantCulture)));
+
+        var row = Assert.Single(table.Elements<W.TableRow>());
+        Assert.NotNull(row.TableRowProperties?.GetFirstChild<W.CantSplit>());
+        var cells = row.Elements<W.TableCell>().ToList();
+        Assert.Equal(2, cells.Count);
+        Assert.All(cells, c => Assert.Single(c.Descendants<W.Drawing>()));
+        Assert.Equal("Figure 1. Quality index — Higher is better.", TextOf(cells[0].Elements<W.Paragraph>().Last()));
+        Assert.Equal("Figure 2. Quality against speed — Up and left is better.", TextOf(cells[1].Elements<W.Paragraph>().Last()));
+
+        // Each picture is as wide as its cell less the Normal Table side margins (5.4 pt each).
+        var extent = cells[0].Descendants<DW.Extent>().Single();
+        Assert.Equal((A4TextWidth / 2 - 2 * 108) * 635L, extent.Cx!.Value);
+        Assert.Equal(new[] { "Figure 1", "Figure 2" },
+            body.Descendants<DW.DocProperties>().Where(p => p.Id!.Value >= BenchmarkWordMarkdownWriter.FirstFigureDrawingId).Select(p => p.Name!.Value));
+
+        // Without the layout the figures are paragraphs of the body, not a table.
+        byte[] stacked = BenchmarkWordRenderer.RenderMarkdown(
+            "## Results\n\nIntro text.\n\n[[figure:p1a-quality]]\n\n[[figure:s1-quality-speed]]\n\nEnd text.\n",
+            Info(), TestContext.Current.CancellationToken, charts);
+        using var plain = Open(stacked);
+        Assert.DoesNotContain(plain.MainDocumentPart!.Document!.Body!.Elements<W.Table>(), t => t.Descendants<W.Drawing>().Any());
+    }
+
+    [Fact]
+    public void AFigureOfHalfTheColumn_IsHalfAsWide_CenteredWithItsCaptionIndentedToIt()
+    {
+        var chart = TwoCharts()[0];
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(
+            "[[figure:p1a-quality]]\n", Info(), TestContext.Current.CancellationToken, new[] { chart },
+            Layout(null, ("p1a-quality", 0.5, null)));
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var paragraphs = package.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ToList();
+        var caption = paragraphs.Single(p => TextOf(p) == "Figure 1. Quality index — Higher is better.");
+        var picture = paragraphs[paragraphs.IndexOf(caption) - 1];
+
+        int frame = A4TextWidth / 2;
+        int side = (A4TextWidth - frame) / 2;
+        Assert.Equal(frame * 635L, picture.Descendants<DW.Extent>().Single().Cx!.Value);
+        Assert.Equal(W.JustificationValues.Center, picture.ParagraphProperties!.Justification!.Val!.Value);
+        Assert.Equal(side.ToString(CultureInfo.InvariantCulture), caption.ParagraphProperties!.Indentation!.Left!.Value);
+        Assert.Equal(side.ToString(CultureInfo.InvariantCulture), caption.ParagraphProperties.Indentation.Right!.Value);
+    }
+
+    [Fact]
+    public void ALayoutsMaximumHeightShare_ReplacesTheSixtyPercentCap()
+    {
+        var tall = Chart("p2-profile", 400, 2000, 40, "Profile", "", "A tall chart.");
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(
+            "[[figure:p2-profile]]\n", Info(), TestContext.Current.CancellationToken, new[] { tall },
+            new BenchmarkReportChartLayout { MaxHeightShare = 0.4 });
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var extent = package.MainDocumentPart!.Document!.Body!.Descendants<W.Drawing>()
+            .Select(d => d.Descendants<DW.Extent>().Single())
+            .Last();
+        long maxHeight = (long)Math.Round(Math.Round((16838 - 2 * 1020) * 0.4) * 635);
+        Assert.Equal(maxHeight, extent.Cy!.Value);
+        Assert.Equal((long)Math.Round(maxHeight / 5.0), extent.Cx!.Value);
+    }
+
     private static BenchmarkReportRenderChart[] TwoCharts() => new[]
     {
         Chart("p1a-quality", 800, 450, 10, "Quality index", "Higher is better.", "Bar chart of the quality index of three models."),
@@ -828,6 +922,49 @@ public class BenchmarkWordRendererTests
         const string stamp = "INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.";
         Assert.Equal(text.IndexOf(stamp, StringComparison.Ordinal), text.LastIndexOf(stamp, StringComparison.Ordinal));
         Assert.Contains(stamp, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RenderDocx_OfAComparisonDocument_PrintsTheComparisonOnTheCoverAndInTheHeader_AndIsNamedAfterIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
+        var comparison = new BenchmarkComparison
+        {
+            ComparisonKey = new string('c', 64),
+            EntryKeysJson = "[\"run:12\",\"run:13\",\"run:14\"]",
+            SubjectKind = BenchmarkComparisonSubjectKind.Runs,
+            EntryCount = 3,
+            DefaultName = string.Join(" vs ", Enumerable.Repeat("Averyverylongmodelname", 6)),
+            CreatedAtUtc = BenchmarkReportPackFixture.CreatedAt
+        };
+        db.BenchmarkComparisons.Add(comparison);
+        await db.SaveChangesAsync(ct);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        document.Id = 0;
+        document.ComparisonId = comparison.Id;
+        db.BenchmarkReportDocuments.Add(document);
+        await db.SaveChangesAsync(ct);
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
+        string number = "Comparison #" + comparison.Id.ToString(CultureInfo.InvariantCulture);
+
+        var full = Assert.IsType<FileContentResult>(await controller.RenderDocx(document.Id, "full", "named", null, CancellationToken.None));
+
+        Assert.Equal("comparison-" + comparison.Id.ToString(CultureInfo.InvariantCulture) + "_gpt-5.6-luna_researcher-report_full_named_INTERNAL.docx",
+            full.FileDownloadName);
+        AssertValid(full.FileContents);
+        using var package = Open(full.FileContents);
+
+        var firstFact = package.MainDocumentPart!.Document!.Body!.Elements<W.Table>().First().Elements<W.TableRow>().First()
+            .Elements<W.TableCell>().Select(TextOf).ToList();
+        Assert.Equal("Comparison", firstFact[0]);
+        Assert.Equal(number + " — " + comparison.DefaultName + " · 3 models · computed 2026-09-20", firstFact[1]);
+
+        string header = package.MainDocumentPart.HeaderParts.Select(h => TextOf(h.Header!)).Single(t => t.Contains("GnollBench ·", StringComparison.Ordinal));
+        Assert.Contains(number + " — Averyverylongmodelname", header, StringComparison.Ordinal);
+        Assert.EndsWith("…", header, StringComparison.Ordinal);
+        Assert.DoesNotContain(comparison.DefaultName, header, StringComparison.Ordinal);
     }
 
     // --- Helpers -----------------------------------------------------------------------------------

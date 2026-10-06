@@ -1022,4 +1022,160 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("{{subject}}", message);
         Assert.Contains("{{peer:X}}", message);
     }
+
+    // Comparison scope --------------------------------------------------------------------------
+
+    public static TheoryData<BenchmarkReportAudience, string> ComparisonPromptFiles => new()
+    {
+        { BenchmarkReportAudience.ExecutiveSummary, "prompt_exec_comparison.txt" },
+        { BenchmarkReportAudience.TechnicalReport, "prompt_technical_comparison.txt" },
+        { BenchmarkReportAudience.InternalBrief, "prompt_internal_comparison.txt" },
+    };
+
+    private static BenchmarkReportWriterPrompt ComparisonPrompt(BenchmarkReportAudience audience, bool subset = false,
+        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics = null)
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts(subset ? BenchmarkReportPackFixture.SubsetKeys : null);
+        return BenchmarkReportPackPrompt.Build(audience, built.Sheet!, built.Content!, sharedTopics);
+    }
+
+    /// <summary>
+    /// The comparison-scope writer prompt of the five-model fixture, system prompt and user message,
+    /// against a golden file; with <c>OVERSEER_UPDATE_GOLDENS=1</c> the file is written instead. The
+    /// stored prompt hash is the hash of the pinned system prompt.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ComparisonPromptFiles))]
+    public void TheComparisonPrompt_IsPinned(BenchmarkReportAudience audience, string file)
+    {
+        var prompt = ComparisonPrompt(audience);
+        string text = prompt.SystemPrompt + PromptSeparator + prompt.UserMessage;
+
+        if (BenchmarkReportPackFixture.UpdateGoldens)
+        {
+            BenchmarkReportPackFixture.WriteGolden(file, text);
+            return;
+        }
+
+        string golden = BenchmarkReportPackFixture.ReadGolden(file);
+        Assert.Equal(golden, text);
+
+        string system = golden[..golden.IndexOf(PromptSeparator, StringComparison.Ordinal)];
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(system))),
+            BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.Comparison));
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheComparisonSystemPrompt_IsItsOwn_AndItsHashIsTheScopes(BenchmarkReportAudience audience)
+    {
+        string system = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(audience);
+
+        Assert.Equal(system, ComparisonPrompt(audience).SystemPrompt);
+        Assert.NotEqual(BenchmarkReportPackPrompt.PromptSha256(audience), BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.Comparison));
+        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(audience), BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.Model));
+        Assert.Contains("{{model:X}}", system);
+        Assert.Contains("There is no {{subject}} and no {{peer:X}} token.", system);
+        foreach (string slot in BenchmarkReportSlots.For(audience, BenchmarkReportScope.Comparison).RequiredSlots)
+        {
+            Assert.Contains("\"" + slot + "\": \"Markdown paragraphs\"", system);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void AComparisonPrompt_NamesNoModel_WholeOrSubset(BenchmarkReportAudience audience)
+    {
+        foreach (bool subset in new[] { false, true })
+        {
+            var prompt = ComparisonPrompt(audience, subset);
+            string text = prompt.SystemPrompt + "\n" + prompt.UserMessage;
+            foreach (var model in BenchmarkReportPackFixture.ComparisonModels)
+            {
+                Assert.DoesNotContain(model.Label, text, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(BenchmarkReportPackFixture.ModelIdOf(model.Label), text, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(model.Provider, text, StringComparison.OrdinalIgnoreCase);
+            }
+            Assert.DoesNotContain("Gemini", text, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void AComparisonPrompt_LettersAModelNamedInAnExcerptOrNote_AndWithholdsItsProvider()
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts();
+        var run = built.Content!.Runs.First(r => r.Letter == "C");
+        var item = run.Questions[0];
+        item.AnswerExcerpt = "As orion max, made by Northwind, I compared myself with Vega Pro.";
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, built.Sheet!, built.Content!, null).UserMessage;
+
+        Assert.Contains("As Model A, made by " + BenchmarkReportPackPrompt.ProviderWithheld + ", I compared myself with Model B.", message);
+
+        // The sheet's own reasons name the models by letter: run 31 is Model A's.
+        Assert.Contains("run #31 of Model A", message);
+    }
+
+    [Fact]
+    public void AComparisonUserMessage_GivesItsBlocksInOrder_WithThePairedTestsInPlaceOfNoSignificance()
+    {
+        string message = ComparisonPrompt(BenchmarkReportAudience.TechnicalReport).UserMessage;
+
+        var blocks = new[]
+        {
+            "\nCOMPARISON\n", "\nMODELS (", "\nGRADERS (", "\nPAIRED TESTS (", "\nFACTS (", "\nQUESTION MATRIX (", "\nQUESTIONS (", "\nQUESTIONS NEEDING A TOPIC: "
+        };
+        var positions = blocks.Select(b => message.IndexOf(b, StringComparison.Ordinal)).ToList();
+        Assert.All(positions, p => Assert.True(p >= 0));
+        Assert.Equal(positions.OrderBy(p => p), positions);
+
+        Assert.DoesNotContain("NO SIGNIFICANCE TEST", message);
+        Assert.DoesNotContain("{{subject}}", message);
+        Assert.DoesNotContain("{{peer:", message);
+        Assert.Contains("- {{model:A}}: Comparable; 1 run; thinking level not set\n", message);
+        Assert.Contains("Family \"reference\": {{model:A}} against each other model.", message);
+        Assert.Contains("Family \"allPairs\": every pair of models.", message);
+        Assert.Contains("- {{model:A}} and {{model:E}}: pair.A.E.*\n", message);
+        Assert.Contains("[Q3] band: ", message);
+        Assert.Matches(@"C: \d+, CE, ", message);
+        Assert.Contains("Answer excerpt of {{model:C}} (run 33", message);
+        Assert.Contains("model.A.quality.index = 85 / 100\n", message);
+    }
+
+    [Fact]
+    public void TopicsAlreadyWritten_AreGiven_InPlaceOfTheTopicRequest()
+    {
+        var shared = new List<BenchmarkReportQuestionTopic> { new() { Question = 1, Topic = "Throwing gems" } };
+
+        string message = ComparisonPrompt(BenchmarkReportAudience.InternalBrief, sharedTopics: shared).UserMessage;
+
+        Assert.Contains("QUESTION TOPICS (already written for this comparison; use them, and leave \"questionTopics\" empty)\n- Q1: Throwing gems\n", message);
+        Assert.DoesNotContain("QUESTIONS NEEDING A TOPIC", message);
+        Assert.Contains("QUESTIONS NEEDING A TOPIC: Q1, Q2, Q3, Q4, Q5, Q6", ComparisonPrompt(BenchmarkReportAudience.InternalBrief).UserMessage);
+    }
+
+    [Fact]
+    public void ASubsetPrompt_LettersOnlyItsOwnModels()
+    {
+        string message = ComparisonPrompt(BenchmarkReportAudience.ExecutiveSummary, subset: true).UserMessage;
+
+        Assert.Contains("Models: 2\n", message);
+        Assert.Contains("{{model:B}}", message);
+        Assert.DoesNotContain("{{model:C}}", message);
+        Assert.DoesNotContain("model.C.", message);
+        Assert.DoesNotContain("Family \"allPairs\"", message);
+    }
+
+    [Fact]
+    public void TheComparisonRepairMessage_RemindsOfTheModelToken()
+    {
+        var issues = new List<BenchmarkReportValidationNote> { new() { Rule = 2, Location = "headline", Message = "Unknown token {{subject}}." } };
+
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: true);
+
+        Assert.Contains("- rule 2 at headline: Unknown token {{subject}}.", message);
+        Assert.Contains("{{model:X}}", message);
+        Assert.DoesNotContain("{{peer:X}}", message);
+        Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues), BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: false));
+    }
 }

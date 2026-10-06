@@ -32,7 +32,9 @@ using MdTableRow = Markdig.Extensions.Tables.TableRow;
 ///
 /// <para>A top-level paragraph whose whole text is a figure marker (<c>[[figure:&lt;key&gt;]]</c>)
 /// is drawn as a numbered figure when a chart for its key is supplied, and prints nothing
-/// otherwise. Any other <c>[[…]]</c> text prints literally.</para>
+/// otherwise. Any other <c>[[…]]</c> text prints literally. A chart layout
+/// (<see cref="BenchmarkReportChartLayout"/>) sets each figure's share of the column width, pairs
+/// consecutive figures of one row group side by side, and sets the height cap.</para>
 /// </summary>
 internal static class BenchmarkPdfMarkdownComposer
 {
@@ -65,15 +67,19 @@ internal static class BenchmarkPdfMarkdownComposer
     private static readonly Regex FigureMarker = new(
         @"^\[\[figure:([A-Za-z0-9][A-Za-z0-9_.\-]*)\]\]$", RegexOptions.CultureInvariant);
 
-    /// <summary>The largest share of the page's content height a figure's image may take.</summary>
-    internal const double FigureMaxHeightShare = 0.6;
+    /// <summary>The largest share of the page's content height a figure's image may take without a layout.</summary>
+    internal const double FigureMaxHeightShare = BenchmarkReportChartLayout.DefaultMaxHeightShare;
+
+    /// <summary>The space between the two figures of a row, in points.</summary>
+    internal const float FigureRowGap = 12f;
 
     // A lowercase letter or digit followed by an uppercase letter: where a zero-width space lets a
     // header such as ResultLengthChars wrap between its words.
     private static readonly Regex CamelCaseBreak = new(@"(\p{Ll}|\d)(\p{Lu})", RegexOptions.CultureInvariant);
 
     // Table column sizing, in estimated characters of the 9.5 pt cell text: the A4 text width
-    // (170 mm), a cell's horizontal padding, and an average glyph advance of a little over half an em.
+    // (170 mm), a cell's horizontal padding, and an average glyph advance of a little over half an em,
+    // which scales with the table text size.
     private const double TableWidthPoints = 482;
     private const double CellPaddingPoints = 8;
     private const double AverageCharacterPoints = 5.2;
@@ -81,6 +87,21 @@ internal static class BenchmarkPdfMarkdownComposer
     private const double SemiboldWidthScale = 1.08;
     private const int MaxColumnWordCharacters = 24;
     private const int MaxColumnTextCharacters = 60;
+
+    // A character's width in average glyph advances, each class at or above its widest Source Sans 3
+    // glyph: the narrow glyphs (i, l, t, r, f, punctuation, spaces), the round capitals, the widest
+    // glyphs (m, w, M, W, %, @, the em dash), a full-width CJK glyph, and 1 for every other character.
+    private const double NarrowCharacter = 0.65;
+    private const double RoundCapitalCharacter = 1.25;
+    private const double WideCharacter = 1.55;
+    private const double FullWidthCharacter = 1.85;
+    private const string NarrowCharacters = " \u00A0il!|'.,:;()[]{}-/\\ftrIj\u2018\u2019\u00B7";
+    private const string RoundCapitals = "BCDGHKNOPQRU&";
+    private const string WideCharacters = "mwMW%@—";
+
+    /// <summary>The smallest table text size a wide table steps down to, in points, half a point at a time.</summary>
+    internal const float MinTableCellSize = 8f;
+    private const float TableCellSizeStep = 0.5f;
 
     // A table of at most this many columns whose preferred widths fill less than this share of the
     // text width is set at those widths, against the left margin, instead of across the page.
@@ -118,10 +139,26 @@ internal static class BenchmarkPdfMarkdownComposer
 
         /// <summary>The drawn figures in order of appearance.</summary>
         public IReadOnlyList<Figure> OrderedFigures => Figures.Values.OrderBy(f => f.Number).ToList();
+
+        /// <summary>The first figure paragraph of each row of figures printed side by side, with the row's figures in order.</summary>
+        public IReadOnlyDictionary<ParagraphBlock, IReadOnlyList<Figure>> FigureRows { get; init; } = new Dictionary<ParagraphBlock, IReadOnlyList<Figure>>();
+
+        /// <summary>The figure paragraphs a row prints after its first, which print nothing on their own.</summary>
+        public IReadOnlySet<ParagraphBlock> RowFollowers { get; init; } = new HashSet<ParagraphBlock>();
     }
 
-    /// <summary>A chart drawn at a figure marker, numbered from 1 in order of appearance.</summary>
-    internal sealed record Figure(int Number, BenchmarkReportRenderChart Chart);
+    /// <summary>
+    /// A chart drawn at a figure marker, numbered from 1 in order of appearance, with its share of the
+    /// column width and its row group from the layout.
+    /// </summary>
+    internal sealed record Figure(int Number, BenchmarkReportRenderChart Chart, double WidthShare = 1, int? RowGroup = null);
+
+    /// <summary>The layout's height cap when it is within its bounds; <see cref="FigureMaxHeightShare"/> otherwise.</summary>
+    internal static double MaxHeightShareOf(BenchmarkReportChartLayout? layout)
+        => layout?.MaxHeightShare is double share
+           && share >= BenchmarkReportChartLayout.MinMaxHeightShare && share <= BenchmarkReportChartLayout.MaxMaxHeightShare
+            ? share
+            : FigureMaxHeightShare;
 
     /// <summary>
     /// The room a figure's image may take, in points: the text column's width and the height cap; and
@@ -136,9 +173,12 @@ internal static class BenchmarkPdfMarkdownComposer
 
     /// <summary>
     /// Parses <paramref name="markdown"/> and drops its first <c>#</c> heading when it repeats <paramref name="title"/>.
-    /// Each top-level figure marker whose key has a chart in <paramref name="charts"/> becomes a figure.
+    /// Each top-level figure marker whose key has a chart in <paramref name="charts"/> becomes a figure,
+    /// with its width share and row group from <paramref name="layout"/>; two figures of one row group
+    /// with nothing printed between them form a row.
     /// </summary>
-    public static Prepared Prepare(string markdown, string title, IReadOnlyList<BenchmarkReportRenderChart>? charts = null)
+    public static Prepared Prepare(
+        string markdown, string title, IReadOnlyList<BenchmarkReportRenderChart>? charts = null, BenchmarkReportChartLayout? layout = null)
     {
         string source = markdown ?? string.Empty;
         var document = Parse(source);
@@ -172,23 +212,69 @@ internal static class BenchmarkPdfMarkdownComposer
                 }
             }
 
+            var placements = new Dictionary<string, BenchmarkReportChartLayoutFigure>(StringComparer.Ordinal);
+            foreach (var placement in layout?.Figures ?? new List<BenchmarkReportChartLayoutFigure>())
+            {
+                if (placement != null && !string.IsNullOrEmpty(placement.Key)) placements.TryAdd(placement.Key, placement);
+            }
+
             foreach (var paragraph in blocks.OfType<ParagraphBlock>())
             {
                 if (FigureKeyOf(paragraph, source) is string key && byKey.TryGetValue(key, out var chart))
                 {
-                    figures[paragraph] = new Figure(figures.Count + 1, chart);
+                    placements.TryGetValue(key, out var placement);
+                    double share = placement != null && placement.WidthShare > 0 && placement.WidthShare <= 1 ? placement.WidthShare : 1;
+                    figures[paragraph] = new Figure(figures.Count + 1, chart, share, placement?.RowGroup);
                 }
             }
         }
 
+        var (rows, followers) = FigureRowsOf(blocks, figures, source);
         return new Prepared
         {
             Source = source,
             Blocks = blocks,
             SectionIds = sectionIds,
             Contents = contents,
-            Figures = figures
+            Figures = figures,
+            FigureRows = rows,
+            RowFollowers = followers
         };
+    }
+
+    /// <summary>
+    /// The rows of figures printed side by side: a figure with a row group and the next block that
+    /// prints something, when that is a figure of the same row group, two to a row.
+    /// </summary>
+    private static (Dictionary<ParagraphBlock, IReadOnlyList<Figure>> Rows, HashSet<ParagraphBlock> Followers) FigureRowsOf(
+        IReadOnlyList<Block> blocks, IReadOnlyDictionary<ParagraphBlock, Figure> figures, string source)
+    {
+        var rows = new Dictionary<ParagraphBlock, IReadOnlyList<Figure>>();
+        var followers = new HashSet<ParagraphBlock>();
+
+        bool PrintsNothing(Block block)
+            => block is LinkReferenceDefinitionGroup
+               || (block is ParagraphBlock marker && !figures.ContainsKey(marker) && FigureKeyOf(marker, source) != null);
+
+        for (int i = 0; i < blocks.Count; i++)
+        {
+            if (blocks[i] is not ParagraphBlock first || !figures.TryGetValue(first, out var leader) || leader.RowGroup is not int group)
+            {
+                continue;
+            }
+
+            int next = i + 1;
+            while (next < blocks.Count && PrintsNothing(blocks[next])) next++;
+            if (next < blocks.Count && blocks[next] is ParagraphBlock second
+                && figures.TryGetValue(second, out var partner) && partner.RowGroup == group)
+            {
+                rows[first] = new[] { leader, partner };
+                followers.Add(second);
+                i = next;
+            }
+        }
+
+        return (rows, followers);
     }
 
     /// <summary>The figure key when the paragraph's whole text is a figure marker; null otherwise.</summary>
@@ -318,7 +404,7 @@ internal static class BenchmarkPdfMarkdownComposer
 
     /// <summary>
     /// A generous estimate of a top-level block's height, in points: a heading at its own height, a
-    /// drawn figure at its image's height cap and a caption, a table at two lines of cell text per
+    /// drawn figure (a row of figures by its first) at its image's height cap and a caption, a table at two lines of cell text per
     /// source line, and any other block at one line of body text per <see cref="EstimatedLineCharacters"/>
     /// characters of each source line. It errs high, so a section it keeps together fits.
     /// </summary>
@@ -328,6 +414,8 @@ internal static class BenchmarkPdfMarkdownComposer
         {
             case HeadingBlock heading:
                 return HeadingHeight(heading.Level);
+            case ParagraphBlock paragraph when document.RowFollowers.Contains(paragraph):
+                return 0;
             case ParagraphBlock paragraph when document.Figures.ContainsKey(paragraph):
                 return frame.MaxHeight + 3 * BenchmarkPdfStyle.BaseSize * BenchmarkPdfStyle.LineHeight;
             case ParagraphBlock paragraph when IsUndrawnMarker(paragraph, document):
@@ -361,22 +449,23 @@ internal static class BenchmarkPdfMarkdownComposer
             var block = blocks[i];
 
             if (block is LinkReferenceDefinitionGroup
-                || (block is ParagraphBlock marker && IsUndrawnMarker(marker, ctx.Document)))
+                || (block is ParagraphBlock marker && (IsUndrawnMarker(marker, ctx.Document) || ctx.Document.RowFollowers.Contains(marker))))
             {
                 continue;
             }
 
             if (block is HeadingBlock)
             {
-                // A run of consecutive headings keeps with what follows: a first paragraph moves with
-                // it when the group does not fit, and before anything else the run needs room on its
-                // page for its own height and the first lines of the next block.
+                // A run of consecutive headings keeps with what follows: a first paragraph or figure
+                // moves with it when the group does not fit, and before anything else the run needs
+                // room on its page for its own height and the first lines of the next block.
                 int last = i;
                 while (last + 1 < blocks.Count && blocks[last + 1] is HeadingBlock) last++;
                 var headings = blocks.Skip(i).Take(last - i + 1).Cast<HeadingBlock>().ToList();
-                var next = last + 1 < blocks.Count ? blocks[last + 1] : null;
+                int? nextIndex = FirstPrintedAfter(blocks, last, ctx.Document);
+                var next = nextIndex is int n ? blocks[n] : null;
 
-                if (next is ParagraphBlock paragraph && !IsUndrawnMarker(paragraph, ctx.Document))
+                if (next is ParagraphBlock paragraph)
                 {
                     col.Item().PreventPageBreak().Column(group =>
                     {
@@ -384,7 +473,7 @@ internal static class BenchmarkPdfMarkdownComposer
                         foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
                         group.Item().Element(c => ParagraphOrFigure(c, paragraph, ctx));
                     });
-                    i = last + 1;
+                    i = nextIndex!.Value;
                 }
                 else
                 {
@@ -400,6 +489,25 @@ internal static class BenchmarkPdfMarkdownComposer
 
             col.Item().Element(c => ComposeBlock(c, block, ctx, listDepth));
         }
+    }
+
+    /// <summary>
+    /// The index of the block a run of headings ending at <paramref name="last"/> keeps with: the first
+    /// later block that prints something, past link reference definitions and figure markers without
+    /// a chart; null when none does.
+    /// </summary>
+    internal static int? FirstPrintedAfter(IReadOnlyList<Block> blocks, int last, Prepared document)
+    {
+        for (int i = last + 1; i < blocks.Count; i++)
+        {
+            if (blocks[i] is LinkReferenceDefinitionGroup
+                || (blocks[i] is ParagraphBlock marker && IsUndrawnMarker(marker, document)))
+            {
+                continue;
+            }
+            return i;
+        }
+        return null;
     }
 
     /// <summary>
@@ -529,10 +637,17 @@ internal static class BenchmarkPdfMarkdownComposer
         });
     }
 
-    /// <summary>A figure when the paragraph is a marker with a chart, else the paragraph; an undrawn marker prints nothing.</summary>
+    /// <summary>
+    /// A figure, or a row of figures from its first, when the paragraph is a marker with a chart, else
+    /// the paragraph; an undrawn marker prints nothing.
+    /// </summary>
     private static void ParagraphOrFigure(IContainer container, ParagraphBlock paragraph, Context ctx)
     {
-        if (ctx.Document.Figures.TryGetValue(paragraph, out var figure))
+        if (ctx.Document.FigureRows.TryGetValue(paragraph, out var row))
+        {
+            ComposeFigureRow(container, row, ctx);
+        }
+        else if (ctx.Document.Figures.TryGetValue(paragraph, out var figure))
         {
             ComposeFigure(container, figure, ctx);
         }
@@ -543,17 +658,49 @@ internal static class BenchmarkPdfMarkdownComposer
     }
 
     /// <summary>
-    /// A tagged figure: the chart image, centered, as wide as the text column unless its height reaches
-    /// the frame's cap, and below it the caption "<b>Figure N.</b> <i>Title</i> — caption" in the
-    /// secondary size, kept on one page with the image.
+    /// A tagged figure, centered in a frame of its width share of the text column: the chart image as
+    /// wide as the frame unless its height reaches the frame's cap, and below it the caption
+    /// "<b>Figure N.</b> <i>Title</i> — caption" in the secondary size, kept on one page with the image.
     /// </summary>
     private static void ComposeFigure(IContainer container, Figure figure, Context ctx)
     {
+        float frameWidth = (float)(ctx.Frame.Width * figure.WidthShare);
+        var target = container.PaddingVertical(4).PreventPageBreak();
+        if (figure.WidthShare < 1)
+        {
+            target = target.AlignCenter().Width(frameWidth);
+        }
+        FigureColumn(target, figure, frameWidth, ctx);
+    }
+
+    /// <summary>
+    /// Two figures side by side, kept on one page: the text column, less <see cref="FigureRowGap"/>,
+    /// shared between them by their width shares, each with its own image and caption.
+    /// </summary>
+    private static void ComposeFigureRow(IContainer container, IReadOnlyList<Figure> figures, Context ctx)
+    {
+        float total = (float)figures.Sum(f => f.WidthShare);
+        float available = ctx.Frame.Width - FigureRowGap * (figures.Count - 1);
+
+        container.PaddingVertical(4).PreventPageBreak().Row(row =>
+        {
+            row.Spacing(FigureRowGap);
+            foreach (var figure in figures)
+            {
+                float share = (float)figure.WidthShare;
+                row.RelativeItem(share).Element(c => FigureColumn(c, figure, available * share / total, ctx));
+            }
+        });
+    }
+
+    /// <summary>The image, centered and sized within <paramref name="maxWidth"/> and the frame's height cap, above its caption.</summary>
+    private static void FigureColumn(IContainer container, Figure figure, float maxWidth, Context ctx)
+    {
         var chart = figure.Chart;
-        var (width, height) = FigureSize(chart.WidthPx, chart.HeightPx, ctx.Frame.Width, ctx.Frame.MaxHeight);
+        var (width, height) = FigureSize(chart.WidthPx, chart.HeightPx, maxWidth, ctx.Frame.MaxHeight);
         var (label, title, caption) = CaptionParts(figure);
 
-        container.PaddingVertical(4).PreventPageBreak().Column(col =>
+        container.Column(col =>
         {
             col.Spacing(4);
             col.Item().AlignCenter()
@@ -641,8 +788,9 @@ internal static class BenchmarkPdfMarkdownComposer
     /// start on the same page; a row taller than a page breaks across pages. A table of at most
     /// <see cref="ShortTableMaxBodyRows"/> body rows is kept on one page when it fits on one. A column
     /// whose non-empty body cells are all numbers, percentages, currency amounts or durations is
-    /// right-aligned unless the Markdown sets its alignment, and a narrow table
-    /// (<see cref="PdfColumnLayout"/>) is set at its preferred widths against the left margin.
+    /// right-aligned unless the Markdown sets its alignment. The text size, the column widths, the
+    /// short headers with their legend line below the table, and a column set on a second line of each
+    /// body row are <see cref="TableLayout"/>'s.
     /// </summary>
     private static void ComposeTable(IContainer container, MdTable table, Context ctx)
     {
@@ -659,21 +807,21 @@ internal static class BenchmarkPdfMarkdownComposer
             (rows[r].IsHeader ? headerRows : bodyRows).Add(cellsByRow[r]);
         }
 
-        var (aligns, widths, constant) = PdfColumnLayout(table, headerRows, bodyRows, columns, ctx.Document.Source);
+        var layout = TableLayout(table, headerRows, bodyRows, columns, ctx.Document.Source);
+        string secondLineLabel = layout.SecondLineColumn is int moved && headerRows.Count > 0 && CellAt(headerRows[0], moved) is { } movedHeader
+            ? CellText(movedHeader, ctx.Document.Source)
+            : string.Empty;
 
         void Columns(TableDescriptor t) => t.ColumnsDefinition(cd =>
         {
-            foreach (float width in widths)
+            foreach (float width in layout.Widths)
             {
-                if (constant) cd.ConstantColumn(width);
+                if (layout.Constant) cd.ConstantColumn(width);
                 else cd.RelativeColumn(width);
             }
         });
 
-        var target = constant ? container.AlignLeft() : container;
-        if (bodyRows.Count <= ShortTableMaxBodyRows) target = target.PreventPageBreak();
-
-        target.SemanticTable().Decoration(d =>
+        void Grid(IContainer grid) => grid.SemanticTable().Decoration(d =>
         {
             if (headerRows.Count > 0)
             {
@@ -684,7 +832,7 @@ internal static class BenchmarkPdfMarkdownComposer
                     {
                         for (int r = 0; r < headerRows.Count; r++)
                         {
-                            PlaceRow(() => h.Cell(), headerRows[r], (uint)(r + 1), columns, aligns, header: true, zebra: false, ctx);
+                            PlaceRow(() => h.Cell(), headerRows[r], (uint)(r + 1), columns, layout, header: true, zebra: false, ctx);
                         }
                     });
                 });
@@ -700,48 +848,187 @@ internal static class BenchmarkPdfMarkdownComposer
                     col.Item().PreventPageBreak().Table(t =>
                     {
                         Columns(t);
-                        PlaceRow(() => t.Cell(), cells, 1, columns, aligns, header: false, zebra, ctx);
+                        PlaceRow(() => t.Cell(), cells, 1, columns, layout, header: false, zebra, ctx);
+                        if (layout.SecondLineColumn is int second)
+                        {
+                            SecondLine(t.Cell().Row(2).Column(1).ColumnSpan((uint)layout.GridColumns.Length),
+                                CellAt(cells, second), secondLineLabel, zebra, layout.FontSize, ctx);
+                        }
                     });
                 }
+            });
+        });
+
+        var target = layout.Constant ? container.AlignLeft() : container;
+        if (bodyRows.Count <= ShortTableMaxBodyRows) target = target.PreventPageBreak();
+
+        if (layout.Legend is not string legend)
+        {
+            Grid(target);
+            return;
+        }
+
+        target.Column(col =>
+        {
+            col.Spacing(3);
+            col.Item().Element(Grid);
+            col.Item().Text(t =>
+            {
+                t.DefaultTextStyle(s => s.FontSize(BenchmarkPdfStyle.SmallSize).FontColor(BenchmarkPdfStyle.Muted));
+                t.Span(legend);
             });
         });
     }
 
     /// <summary>
-    /// The PDF's column layout: relative weights across the text width from
-    /// <see cref="PdfColumnWeights"/>, or, for a table of at most <see cref="NarrowTableMaxColumns"/>
-    /// columns whose preferred widths fill less than <see cref="NarrowTableMaxShare"/> of it, constant
-    /// widths in points at those preferred widths.
+    /// The PDF's column layout of <see cref="TableLayout"/>: each source column's alignment, the grid
+    /// columns' widths, and whether those are constant widths in points.
     /// </summary>
     internal static (CellAlign[] Aligns, float[] Widths, bool Constant) PdfColumnLayout(
         MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
         int columns, string source)
     {
-        var (aligns, bodyMinimum, headerMinimum, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
+        var layout = TableLayout(table, headerRows, bodyRows, columns, source);
+        return (layout.Aligns, layout.Widths, layout.Constant);
+    }
 
-        var preferredPoints = preferred.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
-        if (columns <= NarrowTableMaxColumns && preferredPoints.Sum() < TableWidthPoints * NarrowTableMaxShare)
+    /// <summary>The table text sizes a wide table tries, largest first: the base size, then down by half a point to <see cref="MinTableCellSize"/>.</summary>
+    internal static IReadOnlyList<float> TableFontSizes()
+    {
+        var sizes = new List<float> { BenchmarkPdfStyle.TableCellSize };
+        for (float size = BenchmarkPdfStyle.TableCellSize - TableCellSizeStep; size >= MinTableCellSize - 0.001f; size -= TableCellSizeStep)
         {
-            return (aligns, preferredPoints, true);
+            sizes.Add(size);
         }
-
-        return (aligns, PdfColumnWeights(aligns, bodyMinimum, headerMinimum, minimum, preferred), false);
+        return sizes;
     }
 
     /// <summary>
-    /// Relative column widths for the PDF, in points for the A4 text width. Every column's minimum is
-    /// its longest token, header and body together. When the minimums fit, the widths are those of
-    /// <see cref="ColumnWeights"/>. When they do not, a right-aligned (numeric) column keeps its
-    /// minimum and only the other columns shrink, each in proportion to how far its minimum exceeds
-    /// its header's longest token, so a header word does not break inside itself; only when the
-    /// header tokens alone do not fit do those columns shrink in proportion to them.
+    /// How a table is set, in the PDF and in Word. A table of at most <see cref="NarrowTableMaxColumns"/>
+    /// columns whose preferred widths fill less than <see cref="NarrowTableMaxShare"/> of the text width
+    /// is set at those widths in points. Any other table spans the text width, and when its columns'
+    /// longest words (<see cref="MeasureColumns"/>) do not fit across it, these measures are taken in
+    /// order until they do: the text size steps down through <see cref="TableFontSizes"/>; then the
+    /// headers of <see cref="BenchmarkTableLayout.HeaderAbbreviations"/> that shorten their column's
+    /// longest word are printed short, one at a time, the largest saving first; then a
+    /// <see cref="BenchmarkTableLayout.SecondLineHeader"/> column moves onto a full-width second line of
+    /// each body row, with as few short headers as then fit. Each measure is tried at every text size
+    /// before the next is taken, and the largest size that fits wins. When nothing fits, every measure
+    /// is taken at the smallest size and <see cref="PdfColumnWeights"/> shares out the shortfall.
+    /// </summary>
+    internal static BenchmarkTableLayout TableLayout(
+        MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
+        int columns, string source)
+    {
+        var measure = MeasureColumns(table, headerRows, bodyRows, columns, source);
+        var all = Enumerable.Range(0, columns).ToArray();
+        float baseSize = BenchmarkPdfStyle.TableCellSize;
+
+        double[] MinimumOf(double[] headerMinimum)
+            => all.Select(c => Math.Max(measure.BodyMinimum[c], headerMinimum[c])).ToArray();
+        double[] PreferredOf(double[] minimum, double[] headerLongest)
+            => all.Select(c => Math.Max(minimum[c], Math.Min(Math.Max(measure.BodyLongest[c], headerLongest[c]), MaxColumnTextCharacters))).ToArray();
+
+        var fullMinimum = MinimumOf(measure.HeaderMinimum);
+        var fullPreferred = PreferredOf(fullMinimum, measure.HeaderLongest);
+        var preferredPoints = fullPreferred.Select(w => Points(w, baseSize)).ToArray();
+        if (columns <= NarrowTableMaxColumns && preferredPoints.Sum() < TableWidthPoints * NarrowTableMaxShare)
+        {
+            return new BenchmarkTableLayout
+            {
+                Aligns = measure.Aligns,
+                GridColumns = all,
+                Widths = preferredPoints,
+                Weights = ColumnWeights(measure.BodyMinimum, fullMinimum, fullPreferred),
+                Constant = true,
+                FontSize = baseSize
+            };
+        }
+
+        // The short headers that shorten their column's longest word, the largest saving first.
+        var abbreviations = new List<(BenchmarkTableAbbreviation Abbreviation, double HeaderMinimum, double Saving)>();
+        for (int c = 0; c < columns; c++)
+        {
+            if (measure.HeaderText[c] is string header
+                && BenchmarkTableLayout.HeaderAbbreviations.TryGetValue(header, out string? shortHeader))
+            {
+                double headerMinimum = HeaderMinimum(shortHeader);
+                double saving = fullMinimum[c] - Math.Max(measure.BodyMinimum[c], headerMinimum);
+                if (saving > 0) abbreviations.Add((new BenchmarkTableAbbreviation(c, shortHeader, header), headerMinimum, saving));
+            }
+        }
+        abbreviations = abbreviations.OrderByDescending(a => a.Saving).ThenBy(a => a.Abbreviation.Column).ToList();
+
+        int topicIndex = Array.FindIndex(measure.HeaderText, h => h == BenchmarkTableLayout.SecondLineHeader);
+        int? topic = columns > 1 && topicIndex >= 0 && measure.Aligns[topicIndex] != CellAlign.Right ? topicIndex : null;
+
+        var levels = new List<(int Abbreviated, int? Moved)>();
+        for (int k = 0; k <= abbreviations.Count; k++) levels.Add((k, null));
+        if (topic != null)
+        {
+            for (int k = 0; k <= abbreviations.Count; k++) levels.Add((k, topic));
+        }
+
+        BenchmarkTableLayout? Try((int Abbreviated, int? Moved) level, float? only)
+        {
+            var used = abbreviations.Take(level.Abbreviated).ToList();
+            var headerMinimum = (double[])measure.HeaderMinimum.Clone();
+            var headerLongest = (double[])measure.HeaderLongest.Clone();
+            foreach (var (abbreviation, shortMinimum, _) in used)
+            {
+                headerMinimum[abbreviation.Column] = shortMinimum;
+                headerLongest[abbreviation.Column] = abbreviation.Short.Length;
+            }
+            var minimum = MinimumOf(headerMinimum);
+            var preferred = PreferredOf(minimum, headerLongest);
+            var grid = all.Where(c => c != level.Moved).ToArray();
+            double needed = grid.Sum(c => minimum[c]);
+
+            foreach (float size in only is float forced ? new[] { forced } : TableFontSizes())
+            {
+                bool fits = needed <= Capacity(grid.Length, size);
+                if (!fits && only == null) continue;
+
+                T[] Pick<T>(T[] values) => grid.Select(c => values[c]).ToArray();
+                var widths = PdfColumnWeights(Pick(measure.Aligns), Pick(measure.BodyMinimum), Pick(headerMinimum), Pick(minimum), Pick(preferred), size);
+                return new BenchmarkTableLayout
+                {
+                    Aligns = measure.Aligns,
+                    GridColumns = grid,
+                    Widths = widths,
+                    Weights = widths,
+                    FontSize = size,
+                    Abbreviations = used.Select(u => u.Abbreviation).OrderBy(a => a.Column).ToList(),
+                    SecondLineColumn = level.Moved,
+                    Fits = fits
+                };
+            }
+            return null;
+        }
+
+        foreach (var level in levels)
+        {
+            if (Try(level, null) is { } layout) return layout;
+        }
+        return Try(levels[^1], MinTableCellSize)!;
+    }
+
+    /// <summary>
+    /// Relative column widths for the PDF at the table text size <paramref name="fontSize"/>, in points
+    /// for the A4 text width. Every column's minimum is its longest token, header and body together.
+    /// When the minimums fit, the widths are those of <see cref="ColumnWeights"/>. When they do not, a
+    /// right-aligned (numeric) column keeps its minimum and only the other columns shrink, each in
+    /// proportion to how far its minimum exceeds its header's longest token, so a header word does not
+    /// break inside itself; only when the header tokens alone do not fit do those columns shrink in
+    /// proportion to them.
     /// </summary>
     internal static float[] PdfColumnWeights(
-        CellAlign[] aligns, double[] bodyMinimum, double[] headerMinimum, double[] minimum, double[] preferred)
+        CellAlign[] aligns, double[] bodyMinimum, double[] headerMinimum, double[] minimum, double[] preferred,
+        float fontSize = BenchmarkPdfStyle.TableCellSize)
     {
         int columns = minimum.Length;
-        double capacity = Capacity(columns);
-        if (minimum.Sum() <= capacity) return ColumnWeights(bodyMinimum, minimum, preferred);
+        double capacity = Capacity(columns, fontSize);
+        if (minimum.Sum() <= capacity) return ColumnWeights(bodyMinimum, minimum, preferred, fontSize);
 
         var text = Enumerable.Range(0, columns).Where(c => aligns[c] != CellAlign.Right).ToList();
         var widths = (double[])minimum.Clone();
@@ -761,31 +1048,30 @@ internal static class BenchmarkPdfMarkdownComposer
             }
         }
 
-        return widths.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
+        return widths.Select(w => Points(w, fontSize)).ToArray();
     }
 
-    /// <summary>The estimated characters of cell text a table of <paramref name="columns"/> columns holds across the text width.</summary>
-    private static double Capacity(int columns)
-        => Math.Max(columns * 3.0, (TableWidthPoints - columns * CellPaddingPoints) / AverageCharacterPoints);
+    /// <summary>The width in points of a column of <paramref name="characters"/> estimated characters at the table text size, with its cell padding.</summary>
+    private static float Points(double characters, float fontSize) => (float)(characters * CharacterPoints(fontSize) + CellPaddingPoints);
+
+    /// <summary>The average glyph advance of the cell text at <paramref name="fontSize"/>, in points.</summary>
+    private static double CharacterPoints(float fontSize) => AverageCharacterPoints * fontSize / BenchmarkPdfStyle.TableCellSize;
+
+    /// <summary>The estimated characters of cell text at <paramref name="fontSize"/> a table of <paramref name="columns"/> columns holds across the text width.</summary>
+    private static double Capacity(int columns, float fontSize)
+        => Math.Max(columns * 3.0, (TableWidthPoints - columns * CellPaddingPoints) / CharacterPoints(fontSize));
 
     /// <summary>
-    /// Each column's alignment and relative width, in points for the A4 text width: a declared
-    /// alignment, else right for a numeric column and left otherwise; the widths from
-    /// <see cref="ColumnWeights"/> over the columns' word and text lengths.
+    /// A table's columns in estimated characters of the regular cell text at the base table size: each
+    /// column's alignment (a declared alignment, else right for a numeric column and left otherwise), its
+    /// body's and its header's longest word, its longest body text and header text, and, when the table
+    /// has exactly one header row, that header's plain text.
     /// </summary>
-    internal static (CellAlign[] Aligns, float[] Weights) ColumnLayout(
-        MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
-        int columns, string source)
-    {
-        var (aligns, bodyMinimum, _, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
-        return (aligns, ColumnWeights(bodyMinimum, minimum, preferred));
-    }
+    private sealed record ColumnMeasure(
+        CellAlign[] Aligns, double[] BodyMinimum, double[] HeaderMinimum, double[] BodyLongest, double[] HeaderLongest,
+        string?[] HeaderText);
 
-    /// <summary>
-    /// Each column's alignment, and its body's longest word, its header's longest word, the longer of
-    /// the two, and its preferred width, in estimated characters.
-    /// </summary>
-    private static (CellAlign[] Aligns, double[] BodyMinimum, double[] HeaderMinimum, double[] Minimum, double[] Preferred) MeasureColumns(
+    private static ColumnMeasure MeasureColumns(
         MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
         int columns, string source)
     {
@@ -803,12 +1089,14 @@ internal static class BenchmarkPdfMarkdownComposer
         var aligns = new CellAlign[columns];
         var bodyMinimum = new double[columns];
         var headerMinimum = new double[columns];
-        var minimum = new double[columns];
-        var preferred = new double[columns];
+        var bodyLongest = new double[columns];
+        var headerLongest = new double[columns];
+        var headerText = new string?[columns];
         for (int c = 0; c < columns; c++)
         {
-            var bodyValues = bodyRows.Select(cells => CellAt(cells, c)).Where(cell => cell != null).Select(cell => TextOf(cell!)).ToList();
-            var allValues = headerRows.Concat(bodyRows).Select(cells => CellAt(cells, c)).Where(cell => cell != null).Select(cell => TextOf(cell!));
+            var bodyCells = bodyRows.Select(cells => CellAt(cells, c)).Where(cell => cell != null).Select(cell => cell!).ToList();
+            var headerCells = headerRows.Select(cells => CellAt(cells, c)).Where(cell => cell != null).Select(cell => cell!).ToList();
+            var bodyValues = bodyCells.Select(TextOf).ToList();
 
             MdTableColumnAlign? declared = c < table.ColumnDefinitions.Count ? table.ColumnDefinitions[c].Alignment : null;
             aligns[c] = declared switch
@@ -819,27 +1107,74 @@ internal static class BenchmarkPdfMarkdownComposer
                 _ => IsNumericColumn(bodyValues) ? CellAlign.Right : CellAlign.Left
             };
 
-            var values = allValues.ToList();
-            // Word lengths scaled to regular-weight characters: monospace code is wider, and so is the
-            // semibold header, whose identifiers may wrap at their CamelCase boundaries.
-            var bodyWords = bodyRows.Select(cells => CellAt(cells, c)).Where(cell => cell != null)
-                .Select(cell => (Text: TextOf(cell!), Scale: cell!.Descendants<CodeInline>().Any() ? MonoWidthScale : 1.0));
-            var headerWords = headerRows.Select(cells => CellAt(cells, c)).Where(cell => cell != null)
-                .Select(cell => (Text: CamelCaseBreak.Replace(TextOf(cell!), "$1 $2"), Scale: SemiboldWidthScale));
-            static double LongestWord(IEnumerable<(string Text, double Scale)> texts) => texts
-                .SelectMany(v => v.Text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Select(w => w.Length * v.Scale))
+            // Monospace code is measured by its length, scaled; any other body text by its glyphs.
+            bodyMinimum[c] = Fit(bodyCells
+                .SelectMany(cell => cell.Descendants<CodeInline>().Any()
+                    ? Words(TextOf(cell)).Select(w => w.Length * MonoWidthScale)
+                    : Words(TextOf(cell)).Select(WordCharacters))
                 .DefaultIfEmpty(1)
-                .Max();
-            static double Fit(double characters) => Math.Clamp(Math.Ceiling(characters) + 1, 3, MaxColumnWordCharacters);
-
-            int longest = values.Select(v => v.Length).DefaultIfEmpty(1).Max();
-            bodyMinimum[c] = Fit(LongestWord(bodyWords));
-            headerMinimum[c] = Fit(LongestWord(headerWords));
-            minimum[c] = Math.Max(bodyMinimum[c], headerMinimum[c]);
-            preferred[c] = Math.Max(minimum[c], Math.Min(longest, MaxColumnTextCharacters));
+                .Max());
+            headerMinimum[c] = headerCells.Select(cell => HeaderMinimum(TextOf(cell))).DefaultIfEmpty(Fit(1)).Max();
+            bodyLongest[c] = bodyValues.Select(v => v.Length).DefaultIfEmpty(1).Max();
+            headerLongest[c] = headerCells.Select(cell => TextOf(cell).Length).DefaultIfEmpty(0).Max();
+            if (headerRows.Count == 1 && headerCells.Count == 1 && Math.Max(1, headerCells[0].ColumnSpan) == 1)
+            {
+                headerText[c] = TextOf(headerCells[0]).Trim();
+            }
         }
 
-        return (aligns, bodyMinimum, headerMinimum, minimum, preferred);
+        return new ColumnMeasure(aligns, bodyMinimum, headerMinimum, bodyLongest, headerLongest, headerText);
+    }
+
+    /// <summary>
+    /// A header's longest word in estimated characters, with its slack: the semibold header is wider,
+    /// and its identifiers may wrap at their CamelCase boundaries.
+    /// </summary>
+    private static double HeaderMinimum(string header)
+        => Fit(Words(CamelCaseBreak.Replace(header, "$1 $2")).Select(w => WordCharacters(w) * SemiboldWidthScale).DefaultIfEmpty(1).Max());
+
+    /// <summary>A longest word's column minimum: its estimated characters rounded up, one more for slack, between 3 and <see cref="MaxColumnWordCharacters"/>.</summary>
+    private static double Fit(double characters) => Math.Clamp(Math.Ceiling(characters) + 1, 3, MaxColumnWordCharacters);
+
+    /// <summary>
+    /// The pieces a line may not break inside: the text split at every breaking space and zero-width
+    /// space, and after a hyphen followed by a letter. A no-break space joins its neighbors.
+    /// </summary>
+    internal static IEnumerable<string> Words(string text)
+    {
+        var word = new StringBuilder();
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '\u200B' || (char.IsWhiteSpace(c) && c is not ('\u00A0' or '\u2007' or '\u202F')))
+            {
+                if (word.Length > 0) yield return word.ToString();
+                word.Clear();
+                continue;
+            }
+            word.Append(c);
+            if (c == '-' && i + 1 < text.Length && char.IsLetter(text[i + 1]))
+            {
+                yield return word.ToString();
+                word.Clear();
+            }
+        }
+        if (word.Length > 0) yield return word.ToString();
+    }
+
+    /// <summary>A word's width in estimated characters of the regular cell text, by the width class of each of its characters.</summary>
+    internal static double WordCharacters(string word)
+    {
+        double width = 0;
+        foreach (char c in word)
+        {
+            width += NarrowCharacters.Contains(c) ? NarrowCharacter
+                : WideCharacters.Contains(c) ? WideCharacter
+                : RoundCapitals.Contains(c) ? RoundCapitalCharacter
+                : c >= '\u2E80' && !char.IsSurrogate(c) ? FullWidthCharacter
+                : 1.0;
+        }
+        return width;
     }
 
     /// <summary>
@@ -850,10 +1185,11 @@ internal static class BenchmarkPdfMarkdownComposer
     /// value never breaks inside a word before a column heading does. When even the body's words do not
     /// fit, the columns are sized by them, so words break as evenly as they can.
     /// </summary>
-    internal static float[] ColumnWeights(double[] bodyMinimum, double[] minimum, double[] preferred)
+    internal static float[] ColumnWeights(
+        double[] bodyMinimum, double[] minimum, double[] preferred, float fontSize = BenchmarkPdfStyle.TableCellSize)
     {
         int columns = minimum.Length;
-        double capacity = Capacity(columns);
+        double capacity = Capacity(columns, fontSize);
 
         double[] Share(double[] low, double[] high)
         {
@@ -868,7 +1204,7 @@ internal static class BenchmarkPdfMarkdownComposer
         double[] widths = minimum.Sum() <= capacity ? Share(minimum, preferred) : Share(bodyMinimum, minimum);
 
         // In points with the padding, since every cell loses the same padding whatever its share.
-        return widths.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
+        return widths.Select(w => Points(w, fontSize)).ToArray();
     }
 
     internal static MdTableCell? CellAt(List<MdTableCell> cells, int column)
@@ -883,30 +1219,44 @@ internal static class BenchmarkPdfMarkdownComposer
         return null;
     }
 
+    /// <summary>
+    /// One row of cells placed in the layout's grid: a cell of the second-line column is left out, a
+    /// header the layout prints short prints short, and a short row gets empty cells.
+    /// </summary>
     private static void PlaceRow(
-        Func<ITableCellContainer> newCell, List<MdTableCell> cells, uint row, int columns, CellAlign[] aligns,
+        Func<ITableCellContainer> newCell, List<MdTableCell> cells, uint row, int columns, BenchmarkTableLayout layout,
         bool header, bool zebra, Context ctx)
     {
-        uint column = 1;
+        int position = 0;
         foreach (var cell in cells)
         {
-            if (column > columns) break;
-            uint span = (uint)Math.Clamp(cell.ColumnSpan, 1, columns - (int)column + 1);
-            var slot = newCell().Row(row).Column(column);
-            if (span > 1) slot = slot.ColumnSpan(span);
-            CellBody(slot, cell, aligns[column - 1], header, zebra, ctx);
-            column += span;
+            if (position >= columns) break;
+            int span = Math.Clamp(cell.ColumnSpan, 1, columns - position);
+            var (first, gridSpan) = layout.GridSpanOf(position, span);
+            if (gridSpan > 0)
+            {
+                var slot = newCell().Row(row).Column((uint)first + 1);
+                if (gridSpan > 1) slot = slot.ColumnSpan((uint)gridSpan);
+                string? shortHeader = header && span == 1 ? layout.HeaderTextOf(position) : null;
+                CellBody(slot, cell, layout.Aligns[position], header, zebra, layout.FontSize, ctx, shortHeader);
+            }
+            position += span;
         }
 
         // A short row gets empty cells, so every row carries the full set of rules.
-        while (column <= columns)
+        for (; position < columns; position++)
         {
-            CellBody(newCell().Row(row).Column(column), null, aligns[column - 1], header, zebra, ctx);
-            column++;
+            var (first, gridSpan) = layout.GridSpanOf(position, 1);
+            if (gridSpan > 0)
+            {
+                CellBody(newCell().Row(row).Column((uint)first + 1), null, layout.Aligns[position], header, zebra, layout.FontSize, ctx);
+            }
         }
     }
 
-    private static void CellBody(IContainer slot, MdTableCell? cell, CellAlign align, bool header, bool zebra, Context ctx)
+    private static void CellBody(
+        IContainer slot, MdTableCell? cell, CellAlign align, bool header, bool zebra, float fontSize, Context ctx,
+        string? shortHeader = null)
     {
         IContainer c = slot;
         if (header) c = c.Background(BenchmarkPdfStyle.TableHeader);
@@ -915,8 +1265,18 @@ internal static class BenchmarkPdfMarkdownComposer
         c = c.Border(BenchmarkPdfStyle.Hairline, BenchmarkPdfStyle.Rule)
             .PaddingVertical(2.5f).PaddingHorizontal(4)
             .DefaultTextStyle(s => header
-                ? BenchmarkPdfStyle.Semibold(s).FontSize(BenchmarkPdfStyle.TableCellSize).LineHeight(1.25f)
-                : s.FontSize(BenchmarkPdfStyle.TableCellSize).LineHeight(1.25f));
+                ? BenchmarkPdfStyle.Semibold(s).FontSize(fontSize).LineHeight(1.25f)
+                : s.FontSize(fontSize).LineHeight(1.25f));
+
+        if (shortHeader != null)
+        {
+            c.Text(t =>
+            {
+                Align(t, align);
+                t.Span(shortHeader);
+            });
+            return;
+        }
 
         if (cell == null || cell.Count == 0) return;
 
@@ -932,6 +1292,30 @@ internal static class BenchmarkPdfMarkdownComposer
             col.Spacing(3);
             Blocks(col, children, ctx, 0);
         });
+    }
+
+    /// <summary>
+    /// The second line of a body row: the moved column's cell across the whole row, after its header
+    /// in semibold, as "Topic: …", on the row's stripe.
+    /// </summary>
+    private static void SecondLine(IContainer slot, MdTableCell? cell, string label, bool zebra, float fontSize, Context ctx)
+    {
+        IContainer c = zebra ? slot.Background(BenchmarkPdfStyle.Zebra) : slot;
+        c.Border(BenchmarkPdfStyle.Hairline, BenchmarkPdfStyle.Rule)
+            .PaddingVertical(2.5f).PaddingHorizontal(4)
+            .DefaultTextStyle(s => s.FontSize(fontSize).LineHeight(1.25f))
+            .Text(t =>
+            {
+                if (label.Length > 0) BenchmarkPdfStyle.SemiboldSpan(t.Span(label + ": "));
+                if (cell is { Count: 1 } && cell[0] is ParagraphBlock paragraph)
+                {
+                    Inlines(t, paragraph.Inline, default, ctx);
+                }
+                else if (cell != null)
+                {
+                    t.Span(CellText(cell, ctx.Document.Source));
+                }
+            });
     }
 
     internal static bool IsNumericColumn(IReadOnlyList<string> values)

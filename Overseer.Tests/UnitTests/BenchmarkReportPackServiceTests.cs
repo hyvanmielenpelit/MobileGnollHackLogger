@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -522,6 +523,283 @@ public class BenchmarkReportPackServiceTests
         var result = Assert.IsAssignableFrom<ObjectResult>(await h.Controller().Start(request, CancellationToken.None));
         Assert.Equal(409, result.StatusCode);
         Assert.Equal(running.Id, Assert.IsType<BenchmarkReportPackJobDto>(result.Value).Id);
+    }
+
+    // --- Comparison scope, several subjects and replacement ------------------------------------------
+
+    private static string Reply(BenchmarkReportWriterOutput output) => JsonSerializer.Serialize(output);
+
+    [Fact]
+    public async Task AComparisonJob_StoresOneComparisonScopeDocument_OfItsNumberedComparisonAndCoveredSet()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.ComparisonRequest();
+        var prep = await h.PrepareComparisonAsync(request);
+        string reply = Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, prep.Sheet));
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        var job = await h.RunComparisonAsync(request);
+
+        var comparison = Assert.Single(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportComparisonKey.From(h.Seeded.RunIds, Array.Empty<long>()), comparison.ComparisonKey);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportScope.Comparison, document.Scope);
+        Assert.Equal(comparison.Id, document.ComparisonId);
+        Assert.Equal(comparison.Id, job.ComparisonId);
+        Assert.Equal("comparison:" + comparison.Id, document.SubjectKey);
+        Assert.Equal(job.Documents[0].SubjectKey, document.SubjectKey);
+
+        var keys = h.Seeded.RunIds.Select(id => "run:" + id).ToList();
+        Assert.Equal(BenchmarkReportComparisonKey.ForCoveredSet(keys), document.CoveredSetKey);
+        Assert.Equal(keys, BenchmarkReportRenderService.CoveredEntryKeys(document.CoveredEntryKeysJson));
+        Assert.Equal(BenchmarkReportPackRenderer.ComparisonReportFormatVersion, document.ReportFormatVersion);
+        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportScope.Comparison), document.WriterPromptSha256);
+        Assert.StartsWith("Comparison #" + comparison.Id + " — ", document.Title);
+        Assert.All(document.Runs, r => Assert.False(r.IsPeer));
+        Assert.Equal(h.Seeded.RunIds.OrderBy(id => id), document.Runs.Select(r => r.RunId).OrderBy(id => id));
+
+        var facts = BenchmarkReportRenderService.ReadFacts(document.FactsJson);
+        Assert.True(facts.CoversAllEntries);
+        Assert.Equal(3, facts.ComparisonEntryCount);
+        Assert.Equal(3, facts.PeerLetters.Count);
+    }
+
+    [Fact]
+    public async Task AComparisonJob_WritesItsTopicsOnce_AndGivesThemToItsLaterDocuments()
+    {
+        await using var h = await Harness.CreateAsync();
+        var audiences = new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief };
+        var request = h.ComparisonRequest(audiences: audiences);
+        var prep = await h.PrepareComparisonAsync(request);
+        var technical = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.TechnicalReport, prep.Sheet);
+        var brief = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.InternalBrief, prep.Sheet);
+        foreach (var topic in brief.QuestionTopics) topic.Topic = "A different wording";
+        h.Provider.Replies.Enqueue(Reply(technical));
+        h.Provider.Replies.Enqueue(Reply(brief));
+
+        var job = await h.RunComparisonAsync(request);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var documents = await h.Db.BenchmarkReportDocuments.OrderBy(d => d.Audience).ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, documents.Count);
+        var topics = documents
+            .Select(d => BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(d.WriterOutputJson).QuestionTopics.Select(t => (t.Question, t.Topic)).ToList())
+            .ToList();
+        Assert.Equal(technical.QuestionTopics.Select(t => (t.Question, t.Topic)), topics[0]);
+        Assert.Equal(topics[0], topics[1]);
+        Assert.Equal(2, h.Provider.MessageCounts.Length);
+    }
+
+    [Fact]
+    public async Task ASubsetJob_IsKeyedByItsCoveredSet_AndIsUniqueApartFromTheWholeComparison()
+    {
+        await using var h = await Harness.CreateAsync(maxRunsPerHour: 0);
+        var whole = h.ComparisonRequest();
+        var wholePrep = await h.PrepareComparisonAsync(whole);
+        h.Provider.Replies.Enqueue(Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, wholePrep.Sheet)));
+        h.Provider.Replies.Enqueue(Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, wholePrep.Sheet)));
+        await h.RunComparisonAsync(whole);
+
+        var covered = h.Seeded.RunIds.Take(2).Select(id => "run:" + id).ToList();
+        var subset = h.ComparisonRequest(covered: covered);
+
+        // The whole comparison's Executive Summary is written; the subset's is not.
+        var conflict = Assert.IsType<ConflictObjectResult>(await h.Controller().Start(h.ComparisonRequest(), CancellationToken.None));
+        Assert.Contains("already written", ErrorOf(conflict.Value));
+        Assert.Equal(429, Assert.IsAssignableFrom<ObjectResult>(await h.Controller().Start(subset, CancellationToken.None)).StatusCode);
+
+        var subsetPrep = await h.PrepareComparisonAsync(subset);
+        h.Provider.Replies.Enqueue(Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, subsetPrep.Sheet)));
+        h.Provider.Replies.Enqueue(Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, subsetPrep.Sheet)));
+        await h.RunComparisonAsync(subset);
+
+        var document = await h.Db.BenchmarkReportDocuments.OrderByDescending(d => d.Id).FirstAsync(TestContext.Current.CancellationToken);
+        string coveredSetKey = BenchmarkReportComparisonKey.ForCoveredSet(covered);
+        Assert.Equal(coveredSetKey, document.CoveredSetKey);
+        Assert.Equal("comparison:" + document.ComparisonId + "/" + coveredSetKey[..16], document.SubjectKey);
+        Assert.False(BenchmarkReportRenderService.ReadFacts(document.FactsJson).CoversAllEntries);
+
+        Assert.IsType<ConflictObjectResult>(await h.Controller().Start(subset, CancellationToken.None));
+
+        var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(h.ComparisonRequest(), CancellationToken.None)).Value);
+        Assert.Equal(document.ComparisonId, preview.ComparisonId);
+        Assert.True(preview.CoversAllEntries);
+        Assert.Single(preview.WrittenDocuments);
+        var other = Assert.Single(preview.OtherModelSets);
+        Assert.Equal(coveredSetKey, other.CoveredSetKey);
+        Assert.Equal(covered, other.CoveredModels.Select(m => m.EntryKey));
+        Assert.Equal(document.Id, Assert.Single(other.Documents).DocumentId);
+    }
+
+    [Fact]
+    public async Task AModelScopeJobOfSeveralSubjects_WritesEachInTurn_InOneNumberedComparison()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        var subjects = new[] { $"run:{h.Seeded.RunIds[0]}", $"run:{h.Seeded.RunIds[1]}" };
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken, subjects);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var documents = await h.Db.BenchmarkReportDocuments.OrderBy(d => d.Id).ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(subjects, documents.Select(d => d.SubjectKey));
+        var comparison = Assert.Single(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.All(documents, d =>
+        {
+            Assert.Equal(BenchmarkReportScope.Model, d.Scope);
+            Assert.Equal(comparison.Id, d.ComparisonId);
+            Assert.Equal(new[] { d.SubjectKey }, BenchmarkReportRenderService.CoveredEntryKeys(d.CoveredEntryKeysJson));
+            Assert.Equal(BenchmarkReportComparisonKey.ForCoveredSet(new[] { d.SubjectKey }), d.CoveredSetKey);
+        });
+        Assert.Equal(subjects, job.ToDto().Documents.Select(d => d.SubjectKey));
+    }
+
+    [Fact]
+    public async Task ACompletionDocument_KeepsModelScope_WithNoComparison()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportScope.Model, document.Scope);
+        Assert.Null(document.ComparisonId);
+        Assert.Null(document.CoveredSetKey);
+        Assert.Null(document.CoveredEntryKeysJson);
+        Assert.Empty(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AReplacingDocument_IsStoredFirst_ThenTheReplacedRowAndItsChartsGo()
+    {
+        using var charts = TestChartStores.InTempFolder();
+        await using var h = await Harness.CreateAsync();
+        long old = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, h.Request());
+        await AttachChartAsync(h, charts.Store, old);
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken, replace: new[] { old }, charts: charts.Store);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken));
+        Assert.NotEqual(old, document.Id);
+        Assert.Equal(job.Documents[0].DocumentId, document.Id);
+        Assert.False(Directory.Exists(Path.Combine(charts.Root, old.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+    }
+
+    [Fact]
+    public async Task AFailedWrite_ReplacesNothing()
+    {
+        using var charts = TestChartStores.InTempFolder();
+        await using var h = await Harness.CreateAsync();
+        long old = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, h.Request());
+        await AttachChartAsync(h, charts.Store, old);
+        h.Provider.Replies.Enqueue(WriterProvider.ProviderError);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken, replace: new[] { old }, charts: charts.Store);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Failed, job.Status);
+        Assert.Equal(old, Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken)).Id);
+        Assert.True(Directory.Exists(Path.Combine(charts.Root, old.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+    }
+
+    private static async Task AttachChartAsync(Harness h, BenchmarkReportChartStore store, long documentId)
+    {
+        var render = new BenchmarkReportRenderService(h.Db, store, NullLogger<BenchmarkReportRenderService>.Instance);
+        var (summary, _, refusal) = await render.SetChartsAsync(documentId, new PutReportDocumentChartsRequest
+        {
+            Charts = new List<ReportDocumentChartUpload>
+            {
+                new()
+                {
+                    FigureKey = BenchmarkReportChartPlacement.QualityKey,
+                    Naming = BenchmarkReportChartStore.Named,
+                    Title = "Intelligence",
+                    Caption = "Caption.",
+                    AltText = "Alt text.",
+                    SettingsHash = new string('a', 64),
+                    PngBase64 = TestPngs.MakeBase64(640, 360, 0)
+                }
+            }
+        }, CancellationToken.None);
+        Assert.True(summary != null, refusal);
+    }
+
+    [Fact]
+    public async Task Start_RefusesAWrittenDocument_UnlessTheRequestReplacesIt()
+    {
+        await using var h = await Harness.CreateAsync(maxRunsPerHour: 0);
+        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary });
+        long old = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request);
+
+        Assert.IsType<ConflictObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+
+        request.ReplaceDocumentIds = new List<long> { old };
+        Assert.Equal(429, Assert.IsAssignableFrom<ObjectResult>(await h.Controller().Start(request, CancellationToken.None)).StatusCode);
+
+        request.ReplaceDocumentIds = new List<long> { old + 1000 };
+        var bad = Assert.IsType<BadRequestObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Contains("does not exist", ErrorOf(bad.Value));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task StartComparison_RefusesInOrder_TheCoveredSetAndTheWriter()
+    {
+        await using var h = await Harness.CreateAsync();
+        var controller = h.Controller();
+
+        var unknown = Assert.IsType<BadRequestObjectResult>(await controller.Start(h.ComparisonRequest(covered: new[] { "run:999999", $"run:{h.Seeded.RunIds[0]}" }), CancellationToken.None));
+        Assert.Contains("is not an entry of this comparison", ErrorOf(unknown.Value));
+
+        var one = Assert.IsType<ConflictObjectResult>(await controller.Start(h.ComparisonRequest(covered: new[] { $"run:{h.Seeded.RunIds[0]}" }), CancellationToken.None));
+        Assert.Equal(BenchmarkComparisonReportFacts.TooFewRefusal, ErrorOf(one.Value));
+
+        var itself = Assert.IsType<BadRequestObjectResult>(await controller.Start(h.ComparisonRequest(writerId: h.SameConfiguration.Id), CancellationToken.None));
+        Assert.Contains("a model this document covers", ErrorOf(itself.Value));
+
+        // The same model at another thinking level only shares the provider.
+        var warning = Assert.IsAssignableFrom<ObjectResult>(await controller.Start(h.ComparisonRequest(writerId: h.SameModel.Id), CancellationToken.None));
+        Assert.Equal(409, warning.StatusCode);
+        var dto = Assert.IsType<SameProviderWarningDto>(warning.Value);
+        Assert.Equal("OpenAI", dto.Provider);
+        Assert.Contains("models this document covers", dto.Message);
+
+        Assert.Empty(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task PreviewComparison_LettersTheCoveredModels_AndEstimatesWithTheComparisonOutputSizes()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.ComparisonRequest(audiences: new[]
+        {
+            BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief
+        });
+
+        var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(request, CancellationToken.None)).Value);
+
+        Assert.Null(preview.Refusal);
+        Assert.Equal(BenchmarkReportScope.Comparison, preview.Scope);
+        Assert.Null(preview.ComparisonId);
+        Assert.Equal(3, preview.ComparisonEntryCount);
+        Assert.True(preview.CoversAllEntries);
+        Assert.Equal(new[] { "A", "B", "C" }, preview.CoveredModels.Select(m => m.Letter));
+        Assert.Equal(new[] { 3000, 9500, 9000 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
+        Assert.All(preview.Estimates, e => Assert.Equal(preview.SubjectKey, e.SubjectKey));
+        Assert.Equal(3, preview.SubjectDocuments.Count);
+        Assert.Empty(preview.OtherModelSets);
+        Assert.Null(preview.WriterContextWindowTokens);
+        Assert.Equal(0, h.Provider.Calls);
     }
 
     // --- Preview ----------------------------------------------------------------------------------------
@@ -1081,6 +1359,9 @@ public class BenchmarkReportPackServiceTests
         public SystemAiApiConfiguration SameModel { get; private set; } = default!;
         public SystemAiApiConfiguration Disabled { get; private set; } = default!;
 
+        /// <summary>The seeded runs' own configuration: provider, model id and thinking level.</summary>
+        public SystemAiApiConfiguration SameConfiguration { get; private set; } = default!;
+
         public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100)
         {
             var options = BenchmarkRunExamTests.InMemoryOptions();
@@ -1123,8 +1404,59 @@ public class BenchmarkReportPackServiceTests
             SameProvider = Config("OpenAI", "gpt-5.6-sol", "GPT Sol");
             SameModel = Config("OpenAI", "gpt-5.6-luna", "GPT Luna");
             Disabled = Config("Anthropic", "claude-disabled", "Disabled Writer", enabled: false);
-            Db.SystemAiApiConfigurations.AddRange(Writer, SameProvider, SameModel, Disabled);
+            SameConfiguration = Config("OpenAI", "gpt-5.6-luna", "GPT Luna High");
+            SameConfiguration.ThinkingLevel = "high";
+            Db.SystemAiApiConfigurations.AddRange(Writer, SameProvider, SameModel, Disabled, SameConfiguration);
             await Db.SaveChangesAsync();
+        }
+
+        /// <summary>A comparison-scope request over the three seeded runs, covering <paramref name="covered"/> or every run.</summary>
+        public BenchmarkReportPackRequest ComparisonRequest(
+            IEnumerable<string>? covered = null,
+            IEnumerable<BenchmarkReportAudience>? audiences = null,
+            long? writerId = null,
+            bool acknowledgeSameProvider = false,
+            IEnumerable<long>? replace = null) => new()
+        {
+            RunIds = Seeded.RunIds.ToList(),
+            PricingBasis = BenchmarkModelComparisonPricingBasis.AsRun,
+            Scope = BenchmarkReportScope.Comparison,
+            CoveredEntryKeys = covered?.ToList(),
+            Audiences = (audiences ?? new[] { BenchmarkReportAudience.ExecutiveSummary }).ToList(),
+            WriterModelConfigurationId = writerId ?? Writer.Id,
+            AcknowledgeSameProvider = acknowledgeSameProvider,
+            ReplaceDocumentIds = replace?.ToList()
+        };
+
+        public async Task<BenchmarkReportPackPreparation> PrepareComparisonAsync(BenchmarkReportPackRequest request)
+        {
+            var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
+                Db, new BenchmarkModelComparisonService(Db), request, BenchmarkReportPackPreparation.DefaultAnswerExcerptChars, null, CancellationToken.None);
+            Assert.True(prep != null, refusal);
+            return prep!;
+        }
+
+        /// <summary>Runs one comparison-scope job for the request through the service, over the fake writer.</summary>
+        public async Task<BenchmarkReportPackJob> RunComparisonAsync(BenchmarkReportPackRequest request, BenchmarkReportChartStore? charts = null)
+        {
+            var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(Db, Writer, CancellationToken.None);
+            var job = new BenchmarkReportPackJob
+            {
+                Scope = BenchmarkReportScope.Comparison,
+                SubjectLabel = "Comparison",
+                SuiteName = "Isolation Suite",
+                WriterConfigId = Writer.Id,
+                WriterDisplayName = Writer.DisplayName,
+                WriterSnapshotId = snapshot.Id,
+                Request = request,
+                StartedByUserId = UserId,
+                Cts = new CancellationTokenSource(),
+                Documents = request.Audiences.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a }).ToList()
+            };
+            Assert.True(Jobs.TryStart(job, out _));
+
+            await Service(charts).RunAsync(job.Id, CancellationToken.None);
+            return job;
         }
 
         public BenchmarkReportPackRequest Request(
@@ -1259,11 +1591,21 @@ public class BenchmarkReportPackServiceTests
             return job;
         }
 
-        /// <summary>Runs one job for the given audiences through the service, over the fake writer.</summary>
-        public async Task<BenchmarkReportPackJob> RunAsync(BenchmarkReportAudience audience, CancellationToken ct = default)
+        /// <summary>
+        /// Runs one job for the given audience through the service, over the fake writer: about the first
+        /// seeded run, or each of <paramref name="subjects"/> in turn, replacing <paramref name="replace"/>.
+        /// </summary>
+        public async Task<BenchmarkReportPackJob> RunAsync(
+            BenchmarkReportAudience audience,
+            CancellationToken ct = default,
+            IReadOnlyList<string>? subjects = null,
+            IEnumerable<long>? replace = null,
+            BenchmarkReportChartStore? charts = null)
         {
             var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(Db, Writer, CancellationToken.None);
             var request = Request(audiences: new[] { audience });
+            request.SubjectKeys = subjects?.ToList();
+            request.ReplaceDocumentIds = replace?.ToList();
             var job = new BenchmarkReportPackJob
             {
                 SubjectKey = request.SubjectKey,
@@ -1275,15 +1617,17 @@ public class BenchmarkReportPackServiceTests
                 Request = request,
                 StartedByUserId = UserId,
                 Cts = new CancellationTokenSource(),
-                Documents = { new BenchmarkReportPackDocumentProgress { Audience = audience } }
+                Documents = subjects == null
+                    ? new List<BenchmarkReportPackDocumentProgress> { new() { Audience = audience } }
+                    : subjects.Select(s => new BenchmarkReportPackDocumentProgress { Audience = audience, SubjectKey = s, SubjectLabel = s }).ToList()
             };
             Assert.True(Jobs.TryStart(job, out _));
 
-            await Service().RunAsync(job.Id, ct);
+            await Service(charts).RunAsync(job.Id, ct);
             return job;
         }
 
-        private BenchmarkReportPackService Service()
+        private BenchmarkReportPackService Service(BenchmarkReportChartStore? charts = null)
         {
             var services = new ServiceCollection();
             services.AddLogging();
@@ -1315,7 +1659,8 @@ public class BenchmarkReportPackServiceTests
                 new BenchmarkModelComparisonService(Db),
                 Jobs,
                 Configuration,
-                NullLogger<BenchmarkReportPackService>.Instance);
+                NullLogger<BenchmarkReportPackService>.Instance,
+                charts);
         }
 
         public async ValueTask DisposeAsync() => await Db.DisposeAsync();

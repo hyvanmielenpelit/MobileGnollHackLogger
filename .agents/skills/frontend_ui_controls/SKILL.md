@@ -196,7 +196,8 @@ you already read the label, it is noise; drop it.
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs) | "This begins now", and it reinforces the consequence of a button that starts real work |
-| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
 | refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
@@ -204,7 +205,7 @@ you already read the label, it is noise; drop it.
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step) | "Copies to the clipboard" — nothing is saved to disk |
-| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center; opens the PDF viewer) | "Look at it here" — shows content without changing or downloading it |
+| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-ghost`, the *Layout* disclosure of step 3's chart picker; opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
 | more (three dots in a row) | **More actions** (icon-only, each Report Pack row of the Download Center in the Model Comparison wizard's Documents step; opens a §4f action popover with *Update charts* and *Remove charts*) | "More actions are behind this" — the row keeps its frequent actions as visible icon buttons and puts the rarer, worded ones in the popover |
 | external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
@@ -837,6 +838,103 @@ selected option, so the handler must be idempotent.
 - The native customizable `<select>` (`appearance: base-select`) is not used until Firefox supports
   it: its fallback runs the badge texts together and loses the distinctions an administrator
   chooses by.
+- The badge row is its own component, `app-model-option-badges` (`shared/model-picker/`, host
+  `display: contents`; inputs `model`, `showPrice`, `showParallel`, `narrowHidesBadges`), which the
+  multi-model picker (§4e-3) renders too, so both pickers draw identical badges.
+
+### 4e-2. Multi-select picker: `app-multi-picker`
+
+The control for choosing **several** items an action will act on — a generic, model-agnostic
+multi-select in `app/shared/multi-picker/` (`multi-picker.component.*`, option types in
+`multi-picker.models.ts`). It implements the WAI-ARIA *collapsible listbox* with
+`aria-multiselectable="true"`: a `<button aria-haspopup="listbox" aria-expanded>` whose text summarizes the
+selection opens a popup `role="listbox"`, which takes focus and tracks the active option with
+`aria-activedescendant`; every option carries `aria-selected`, and a check glyph (`aria-hidden`) shows
+selection, so color is never the only carrier. It reuses §4e's trigger and dropdown look.
+
+**Facet or picker?** `app-filter-facet` (§8h) **filters a list it sits over**: its choice narrows what is
+shown and changes nothing else. `app-multi-picker` **chooses what an action acts on**: the selection is
+the input of a Generate, an export or a job. Never use one for the other's job.
+
+```html
+<label id="rpModelsLabel">Models</label>
+<app-multi-picker labelledBy="rpModelsLabel" describedBy="rpModelsLine" summaryNoun="sources"
+                  [options]="options" [selectedKeys]="chosenKeys" [min]="2" [max]="12"
+                  (selectionChange)="onChosen($event.keys)"></app-multi-picker>
+<p id="rpModelsLine" class="form-hint">…</p>
+```
+
+| Input | Meaning |
+|-------|---------|
+| `options` | `MultiPickerOption[]` — `{ key, label, tag?, detail?, group?, disabledReason? }`. `key` is a string or number, unique in the picker. `label` is the option's accessible name, the chip text and what type-ahead matches. `tag` is a short chip before the label (`.model-option-tag`), `detail` a muted part after it, `group` a `role="group"` heading shared by consecutive options, and `disabledReason` makes the option `aria-disabled` with the reason under it. From a memoized getter (§4e's rule) |
+| `selectedKeys` | The chosen keys, compared with `===`; keys not among `options` are ignored. **The host owns the selection** and feeds it back after each `selectionChange` |
+| `min` / `max` | The fewest that must stay selected (default 0) and the most allowed (default `null`, no limit) |
+| `labelledBy` / `label` | As §4e: the visible label's id, or `label` only for a picker with no visible label (rendered `visually-hidden`); development mode warns when both are missing |
+| `describedBy` | The hint's id, on the trigger's `aria-describedby` |
+| `placeholder` / `emptyHint` | Muted trigger text while nothing is selected (default *Select <summaryNoun>*); the popup's text when `options` is empty |
+| `summaryNoun` | What the options are, in the plural (default *items*): the trigger reads *All 5 sources* or *3 of 5 sources*, and with one selected that option's tag and label |
+| `chips` | `'selected'` (default) adds a chip row after the trigger; `'none'` leaves the trigger's summary alone |
+| `maxChips` | Chips shown before the row ends in **+N more**, which opens the list (default 6) |
+| `showAllNone` | Text-only **All** / **None** `.btn-link`s after the trigger (default on) |
+| `dropsUp` | Opens the popup upward |
+| `optionTemplate` | `TemplateRef<{ $implicit: MultiPickerOption; selected: boolean }>`: **the extension point**, rendered in place of the default tag, label and detail. It must render **text only** — never a button, link or input — because options live inside a listbox |
+
+`selectionChange` emits `{ keys }`, the chosen keys in option order, **once per toggle, All, None or
+chip removal**.
+
+- **Keyboard.** On the trigger: Enter, Space and click toggle the list; ArrowDown opens on the first
+  selected option, else the first; ArrowUp on the first selected, else the last. In the list:
+  ArrowUp / ArrowDown by one without wrapping, Home / End, PageUp / PageDown by ten; **Space toggles the
+  active option and keeps the list open**; **Enter toggles it and closes**; **Ctrl+A** (Cmd+A) selects
+  all, or clears all when all are selected; **Shift+ArrowUp / ArrowDown** moves and adds the next option
+  to the selection (it never removes one); typing a printable character jumps by label (a 500 ms
+  buffer, a repeated letter cycles; Space while a buffer is open is part of it).
+- **Escape and Tab close without undoing anything**: a multi-select commits as it goes. Escape returns
+  focus to the trigger and calls `stopPropagation()`, so an enclosing `<dialog>` stays open; Tab moves
+  focus to the trigger first and the browser's Tab moves on from there. A `pointerdown` outside the
+  picker, or focus leaving it, closes it too.
+- **Limits.** A toggle that would go below `min` or above `max`, or touch a disabled option, does
+  nothing and announces why. **All** and **None** honor `min` and `max` (All takes every enabled option
+  and keeps the disabled ones already selected; None keeps only those) and are `aria-disabled` with an
+  `interestfor` tooltip giving the reason when they cannot act (*All sources are already selected.*,
+  *At least 2 sources must stay selected.*); their visually hidden completions (*All sources*, *None of
+  the sources*) give each pair a distinct name (§4.1).
+- **Chips** are a `ul` (*Selected sources*) after the trigger, never inside it (buttons in a button are
+  invalid): each chip's tag, label and detail, and a remove `.action-btn` named *Remove <label>* (*Remove
+  <label> (<detail>)* when it has one) with an `interestfor` tooltip — *Remove from the selection*, or the
+  reason it cannot (`aria-disabled`). After a removal focus moves to the next chip's remove button, else
+  to the trigger.
+- **One polite status line** (`role="status"`, visually hidden) announces each change with the count:
+  *"Battery run #10 selected. 2 of 5 selected."*; a refused toggle announces its reason there. A repeated
+  message alternates a trailing space so it is read again.
+- **Styles** live in `styles.scss` under `.gh-multi-picker` (the host's class), reusing
+  `.custom-model-selector`, `.selector-trigger`, `.selector-dropdown`, `.model-option` and
+  `.model-option-tag` and adding only the check column, the chip row and forced-colors rules; the
+  component SCSS is `:host { display: block }`. Polyfills: `ensureOverlayPolyfills()` for the tooltips.
+  No `title` attribute anywhere (§4.2).
+- **Specs**: it is `OnPush`; drive a spec through real clicks and key events, or `markForCheck()`, never a
+  bare property set and `detectChanges()`.
+
+### 4e-3. Multi-model picker: `app-model-multi-picker`
+
+A thin wrapper over `app-multi-picker` in `app/shared/model-picker/` for choosing several **models**:
+each option is drawn as the model's name, the single picker's badges (`app-model-option-badges`) and a
+muted detail. It keeps every rule of §4e-2; only the option rendering (its `optionTemplate`) is its own.
+The Model Comparison wizard's step 3 uses it to choose which models a report covers (labeled *Models*).
+
+| Input | Meaning |
+|-------|---------|
+| `options` | `ModelPickerOption[]`, the single picker's type (§4e), whose optional `detail` and `disabledReason` only this picker honors; the label is the model's display name, else its model id |
+| `selectedKeys`, `min`, `max`, `labelledBy` / `label`, `describedBy`, `placeholder`, `emptyHint`, `chips`, `maxChips`, `showAllNone`, `dropsUp` | Passed through to `app-multi-picker`; `summaryNoun` is fixed to *models*, and with one model selected the trigger reads its name |
+| `showPrice` / `showParallel` | The price and parallel-execution badges, **both off by default** |
+
+`selectionChange` emits `{ keys, models }`, the chosen keys and their `ModelPickerModel`s in option order.
+
+- **A picker choosing which models a report covers shows no price or parallel badge**: it chooses what a
+  document is about, not what to run. Thinking level, reasoning mode and provider are always shown.
+- **Keys stay the host's units.** Step 3 keys each option by comparison entry (`run:` / `group:` /
+  `battery:`), so two entries of one model are two options; where two options would look identical,
+  each carries its source as `detail` (*Battery run #10*), and only then.
 
 ### 4f. Action popovers: `.gh-action-popover`
 
@@ -1718,6 +1816,10 @@ Diff this against your markup before calling button, tab or table work finished.
 
 **Model pickers**
 - [ ] Every model choice is `app-model-picker` (§4e); no hand-rolled `.custom-model-selector` remains.
+- [ ] A choice of several items an action acts on is `app-multi-picker` (§4e-2), or for models
+      `app-model-multi-picker` (§4e-3) — never `app-filter-facet`, which only filters a list; an
+      `optionTemplate` renders text only, and a picker choosing which models a report covers shows no
+      price or parallel badge.
 - [ ] Each picker has `labelledBy` (a visible label's id) or, with no visible label, `label`; its
       hint, where there is one, is passed as `describedBy`.
 - [ ] `options` comes from a memoized getter, not a new array on every change-detection pass.

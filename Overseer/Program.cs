@@ -300,6 +300,7 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryAnalys
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryLeaderboardService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunCostEstimator>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparisonIdentityService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkPairedComparisonCache>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkPairedTestsService>();
@@ -581,6 +582,15 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await Overseer.Services.Benchmarking.BenchmarkReportDocumentBackfill.BackfillComparisonKeysAsync(db, app.Logger, CancellationToken.None);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark report-document comparison-key backfill failed."); }
+
+    // Report Pack documents get their numbered comparison and their covered entries.
+    try
+    {
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await Overseer.Services.Benchmarking.BenchmarkReportDocumentBackfill.BackfillComparisonsAsync(db, app.Logger, CancellationToken.None);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark report-document comparison backfill failed."); }
 }
 
 app.Run();

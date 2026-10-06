@@ -636,6 +636,26 @@
     font-size: 13px;
     color: #8b8b90;
   }
+
+  /* Comparison #12 — name, then its Rename button; a long name wraps rather than pushing the button out. */
+  .mc-identity {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-inline-size: 100%;
+  }
+
+  .mc-identity-name {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  .mc-identity-rename {
+    flex: none;
+  }
 }
 
 /* The fetch state, between the header and the step tabs: a failed comparison has to be

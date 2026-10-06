@@ -58,6 +58,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRunBoardSnapshot> BenchmarkRunBoardSnapshots { get; set; } = null!;
         public DbSet<BenchmarkReportDocument> BenchmarkReportDocuments { get; set; } = null!;
         public DbSet<BenchmarkReportDocumentRun> BenchmarkReportDocumentRuns { get; set; } = null!;
+        public DbSet<BenchmarkComparison> BenchmarkComparisons { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -564,9 +565,19 @@ namespace MobileGnollHackLogger.Data
                 e.HasIndex(d => new { d.SubjectKey, d.Origin });
                 // A comparison's documents are found by its entry-set key.
                 e.HasIndex(d => new { d.ComparisonKey, d.Origin, d.CreatedAtUtc });
+                // A comparison's documents of one scope and covered set, one per audience.
+                e.HasIndex(d => new { d.ComparisonId, d.Scope, d.CoveredSetKey, d.Audience });
                 e.Property(d => d.CostUsd).HasPrecision(18, 8);
                 e.HasOne(d => d.WriterModelSnapshot).WithMany().HasForeignKey(d => d.WriterModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.Navigation(d => d.WriterModelSnapshot).AutoInclude();
+                // Deleting documents leaves their comparison, which has no deletion of its own.
+                e.HasOne(d => d.Comparison).WithMany().HasForeignKey(d => d.ComparisonId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // One comparison per entry set; a concurrent insert of the same set loses on this index.
+            modelBuilder.Entity<BenchmarkComparison>(e =>
+            {
+                e.HasIndex(c => c.ComparisonKey).IsUnique();
             });
 
             // The only foreign key is to the document: a run's deletion leaves the documents about it.

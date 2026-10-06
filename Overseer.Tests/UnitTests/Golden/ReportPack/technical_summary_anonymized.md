@@ -11,11 +11,11 @@
 
 ## Abstract
 
-GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Model A and Model B.
+GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking joint 1st of 3 (intervals overlap) against Model A and Model B.
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap); its 95 % interval overlaps those of Models A and B.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
@@ -38,11 +38,11 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Model A an
 
 ### Compared models
 
-| Model | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |
-|---|---|---|---|---|---|
-| **GPT-5.6 Luna** | run | 1 | high | 41 | 2026-09-20 |
-| Model A | run | 1 | high | 41 | 2026-09-19 |
-| Model B | run | 1 | not set | 41 | 2026-09-12 |
+| Model | Letter | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |
+|---|---|---|---|---|---|---|
+| **GPT-5.6 Luna** | — | run | 1 | high | 41 | 2026-09-20 |
+| Model A | A | run | 1 | high | 41 | 2026-09-19 |
+| Model B | B | run | 1 | not set | 41 | 2026-09-12 |
 
 ## Results against peers
 
@@ -50,9 +50,9 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Model A an
 
 | Model | Intelligence Index | 95 % interval | Rank | Paired difference |
 |---|---|---|---|---|
-| **GPT-5.6 Luna** | 80 | 77–83 | 2 | — |
-| Model A | 85 | 81–89 | 1 | -4.6 points (-9.8 to +0.7) |
-| Model B | 78 | 74–83 | 3 | not available |
+| **GPT-5.6 Luna** | 80 | 77–83 | joint 1 | — |
+| Model A | 85 | 81–89 | joint 1 | -4.6 points (-9.8 to +0.7) |
+| Model B | 78 | 74–83 | joint 1 | not available |
 
 *Paired difference: mean per-question difference, subject minus peer, over the questions both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several models, and is not a significance test.*
 

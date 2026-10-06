@@ -13,6 +13,15 @@ public enum BenchmarkReportPackDocumentStatus { Pending, Writing, Repairing, Com
 public class BenchmarkReportPackDocumentProgress
 {
     public BenchmarkReportAudience Audience { get; set; }
+
+    /// <summary>
+    /// The document's subject: a model's entry key, or the comparison-scope subject key once the job
+    /// has prepared it; empty for a completion job's document, whose subject is the job's.
+    /// </summary>
+    public string SubjectKey { get; set; } = string.Empty;
+
+    /// <summary>The subject as the progress list names it: the model's label, or <c>Comparison #12</c>.</summary>
+    public string SubjectLabel { get; set; } = string.Empty;
     public BenchmarkReportPackDocumentStatus Status { get; set; } = BenchmarkReportPackDocumentStatus.Pending;
     public long? DocumentId { get; set; }
     public string? ErrorMessage { get; set; }
@@ -37,8 +46,9 @@ public class BenchmarkReportPackJobLogEntry
 }
 
 /// <summary>
-/// In-memory state for one report-pack generation: one subject, its documents written one after
-/// another. Documents are persisted as each completes; nothing is stored for a failed one.
+/// In-memory state for one report-pack generation: an ordered list of (subject, document) rows — the
+/// subjects of a model-scope job one after another, or the one comparison-scope subject — written one
+/// after another. Documents are persisted as each completes; nothing is stored for a failed one.
 /// </summary>
 public class BenchmarkReportPackJob
 {
@@ -46,8 +56,23 @@ public class BenchmarkReportPackJob
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public Guid PackId { get; set; } = Guid.NewGuid();
+
+    /// <summary>The first subject's key; each document's own subject is on its progress row.</summary>
     public string SubjectKey { get; set; } = string.Empty;
+
     public string SubjectLabel { get; set; } = string.Empty;
+
+    /// <summary>Per-model documents or comparison-scope documents.</summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>The numbered comparison every document of a Report Pack job belongs to; null for a completion job.</summary>
+    public int? ComparisonId { get; set; }
+
+    /// <summary>
+    /// Question topics written once per covered set of a comparison-scope job, by subject key, and
+    /// given to every later document of that set.
+    /// </summary>
+    public Dictionary<string, List<BenchmarkReportQuestionTopic>> SharedTopics { get; } = new(StringComparer.Ordinal);
     public long? SuiteId { get; set; }
     public string SuiteName { get; set; } = string.Empty;
 
@@ -90,13 +115,25 @@ public class BenchmarkReportPackJob
         }
     }
 
+    /// <summary>The status of the first document of <paramref name="audience"/>; for a job with one subject.</summary>
     public void SetDocumentStatus(BenchmarkReportAudience audience, BenchmarkReportPackDocumentStatus status,
         string? errorMessage = null, long? documentId = null)
     {
+        BenchmarkReportPackDocumentProgress? document;
         lock (_lock)
         {
-            var document = Documents.FirstOrDefault(d => d.Audience == audience);
-            if (document == null) return;
+            document = Documents.FirstOrDefault(d => d.Audience == audience);
+        }
+        if (document != null) SetDocumentStatus(document, status, errorMessage, documentId);
+    }
+
+    /// <summary>The status of one document row; its start and completion times as it first reaches them.</summary>
+    public void SetDocumentStatus(BenchmarkReportPackDocumentProgress document, BenchmarkReportPackDocumentStatus status,
+        string? errorMessage = null, long? documentId = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        lock (_lock)
+        {
             document.Status = status;
             if (errorMessage != null) document.ErrorMessage = errorMessage;
             if (documentId != null) document.DocumentId = documentId;
@@ -112,7 +149,19 @@ public class BenchmarkReportPackJob
         }
     }
 
+    /// <summary>One model call's usage, counted on the job and on the first document of <paramref name="audience"/>.</summary>
     public void AddUsage(BenchmarkReportAudience audience, long inputTokens, long outputTokens, decimal? cost)
+    {
+        BenchmarkReportPackDocumentProgress? document;
+        lock (_lock)
+        {
+            document = Documents.FirstOrDefault(d => d.Audience == audience);
+        }
+        AddUsage(document, inputTokens, outputTokens, cost);
+    }
+
+    /// <summary>One model call's usage, counted on the job and on <paramref name="document"/> when given.</summary>
+    public void AddUsage(BenchmarkReportPackDocumentProgress? document, long inputTokens, long outputTokens, decimal? cost)
     {
         lock (_lock)
         {
@@ -120,7 +169,6 @@ public class BenchmarkReportPackJob
             InputTokens += inputTokens;
             OutputTokens += outputTokens;
             if (cost != null) CostUsd = (CostUsd ?? 0m) + cost.Value;
-            var document = Documents.FirstOrDefault(d => d.Audience == audience);
             if (document != null)
             {
                 document.ModelCalls++;
@@ -153,6 +201,8 @@ public class BenchmarkReportPackJob
                 PackId = PackId,
                 SubjectKey = SubjectKey,
                 SubjectLabel = SubjectLabel,
+                Scope = Scope,
+                ComparisonId = ComparisonId,
                 SuiteId = SuiteId,
                 SuiteName = SuiteName,
                 WriterConfigId = WriterConfigId,
@@ -168,6 +218,8 @@ public class BenchmarkReportPackJob
                 Documents = Documents.Select(d => new BenchmarkReportPackDocumentProgressDto
                 {
                     Audience = d.Audience,
+                    SubjectKey = d.SubjectKey,
+                    SubjectLabel = d.SubjectLabel,
                     Status = d.Status.ToString(),
                     DocumentId = d.DocumentId,
                     ErrorMessage = d.ErrorMessage,

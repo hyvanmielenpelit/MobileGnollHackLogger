@@ -111,9 +111,16 @@ public static class BenchmarkReportJson
 /// role, count or fact falls back to the wording that version printed, a missing slot or column is
 /// left out, and its single-grader support labels are read in their provider wording.</para>
 /// </summary>
-public static class BenchmarkReportPackRenderer
+public static partial class BenchmarkReportPackRenderer
 {
     public const int ReportFormatVersion = 11;
+
+    /// <summary>The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>).</summary>
+    public const int ComparisonReportFormatVersion = 12;
+
+    /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
+    public static int CurrentFormatVersion(BenchmarkReportScope scope)
+        => scope == BenchmarkReportScope.Comparison ? ComparisonReportFormatVersion : ReportFormatVersion;
 
     private const string PairedDifferenceNote = "Paired difference: mean per-question difference, subject minus peer, over the questions "
         + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
@@ -184,9 +191,25 @@ public static class BenchmarkReportPackRenderer
         return AllowedDisclosures(audience).Contains(options.Disclosure);
     }
 
+    /// <summary>
+    /// A per-model document's title. A comparison-scope sheet's title is
+    /// <see cref="BuildComparisonTitle"/>'s, numbered from the sheet's subject key and without the
+    /// comparison's name, which only the stored comparison holds.
+    /// </summary>
     public static string BuildTitle(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
+        if (sheet.IsComparison)
+        {
+            string key = sheet.SubjectKey ?? string.Empty;
+            string number = key.StartsWith(BenchmarkComparisonReportFacts.SubjectKeyPrefix, StringComparison.Ordinal)
+                ? new string(key[BenchmarkComparisonReportFacts.SubjectKeyPrefix.Length..].TakeWhile(char.IsAsciiDigit).ToArray())
+                : string.Empty;
+            var comparison = int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out int id)
+                ? new Pdf.BenchmarkPdfComparison(id, null, sheet.ComparisonEntryCount)
+                : null;
+            return BuildComparisonTitle(audience, sheet, comparison, BenchmarkReportPeerNaming.Named);
+        }
         return sheet.SubjectLabel + " on the " + ProductName + " — " + AudienceName(audience);
     }
 
@@ -215,23 +238,31 @@ public static class BenchmarkReportPackRenderer
         BenchmarkReportFacts.NormalizeSupportLabels(ctx.Sheet);
 
         var sb = new StringBuilder();
-        switch (document.Audience)
+        if (ctx.Comparison)
         {
-            case BenchmarkReportAudience.ExecutiveSummary:
-                RenderExecutiveSummary(sb, ctx);
-                break;
-            case BenchmarkReportAudience.TechnicalReport:
-                RenderTechnicalReport(sb, ctx);
-                break;
-            default:
-                RenderInternalBrief(sb, ctx);
-                break;
+            RenderComparison(sb, ctx);
+        }
+        else
+        {
+            switch (document.Audience)
+            {
+                case BenchmarkReportAudience.ExecutiveSummary:
+                    RenderExecutiveSummary(sb, ctx);
+                    break;
+                case BenchmarkReportAudience.TechnicalReport:
+                    RenderTechnicalReport(sb, ctx);
+                    break;
+                default:
+                    RenderInternalBrief(sb, ctx);
+                    break;
+            }
         }
 
         RemovedContent(sb, ctx);
         if (ctx.PrintsEvaluationTerms)
         {
-            EvaluationTerms(sb, ctx);
+            if (ctx.Comparison) ComparisonEvaluationTerms(sb, ctx);
+            else EvaluationTerms(sb, ctx);
         }
         if (options.IncludeDocumentFooter)
         {
@@ -402,8 +433,9 @@ public static class BenchmarkReportPackRenderer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The title, then, with <see cref="BenchmarkReportRenderOptions.IncludeFrontMatter"/>, the stamp and
-    /// the facts list; with peers, the list names them under Compared with and states the pricing basis.
+    /// The title, then, with <see cref="BenchmarkReportRenderOptions.IncludeFrontMatter"/>, the
+    /// comparison line of a document of a numbered comparison, the stamp and the facts list; with
+    /// peers, the list names them under Compared with and states the pricing basis.
     /// </summary>
     private static void TitleBlock(StringBuilder sb, Context ctx)
     {
@@ -411,6 +443,13 @@ public static class BenchmarkReportPackRenderer
         Line(sb, "# " + BuildTitle(ctx.Document.Audience, sheet));
         Line(sb);
         if (!ctx.Options.IncludeFrontMatter) return;
+
+        if (Pdf.BenchmarkPdfDocumentInfo.ComparisonOf(ctx.Document) is { } comparison)
+        {
+            Line(sb, "**Comparison:** " + Pdf.BenchmarkPdfDocumentInfo.ComparisonText(
+                comparison, Pdf.BenchmarkPdfDocumentInfo.ComparisonComputedOn(sheet), ctx.Options.PeerNaming));
+            Line(sb);
+        }
 
         Line(sb, "*" + Stamp(ctx.Document.Audience, ctx.Options.Disclosure) + "*");
         Line(sb);
@@ -793,8 +832,10 @@ public static class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// One row per entry: kind, runs, thinking level, and where the sheet stores them, the harness
-    /// version and the runs' dates. A column no entry has data for is left out.
+    /// One row per entry: its letter (the subject has none), kind, runs, thinking level, and where the
+    /// sheet stores them, the harness version and the runs' dates. A column no entry has data for is
+    /// left out; the letter column is printed under both namings, so a named and an anonymized copy can
+    /// be matched.
     /// </summary>
     private static void ComparedModels(StringBuilder sb, Context ctx)
     {
@@ -804,7 +845,7 @@ public static class BenchmarkReportPackRenderer
         bool harness = rows.Any(r => r.Entry.HarnessVersion != null);
         bool dates = rows.Any(r => r.Entry.FirstRunUtc.HasValue || r.Entry.LastRunUtc.HasValue);
 
-        var columns = new List<string> { "Kind", "Runs", "Thinking level" };
+        var columns = new List<string> { "Letter", "Kind", "Runs", "Thinking level" };
         if (harness) columns.Add("Harness version");
         if (dates) columns.Add("Run dates (UTC)");
 
@@ -814,6 +855,7 @@ public static class BenchmarkReportPackRenderer
         {
             var cells = new List<string>
             {
+                peer == null ? NoValue : peer.Letter,
                 entry.EntryKey.StartsWith("group:", StringComparison.Ordinal) ? "group"
                     : entry.EntryKey.StartsWith("battery:", StringComparison.Ordinal) ? "battery" : "run",
                 Inv(entry.RunCount),
@@ -858,7 +900,7 @@ public static class BenchmarkReportPackRenderer
             string interval = entry.QualityLower.HasValue && entry.QualityUpper.HasValue
                 ? BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value)
                 : BenchmarkReportFacts.NotAvailable;
-            var cells = new List<string> { index, interval, RankCell(entry.QualityRank) };
+            var cells = new List<string> { index, interval, QualityRankCell(ctx, entry) };
             if (paired) cells.Add(PairedCell(ctx, peer));
             TableRow(sb, ctx, peer, cells);
         }
@@ -977,7 +1019,8 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
         foreach (var (_, peer) in flagged)
         {
-            Line(sb, "- " + PlainName(ctx, peer) + ": " + (peer == null ? ctx.Sheet.SubjectExplanation : peer.Explanation));
+            string explanation = peer == null ? ctx.Sheet.SubjectExplanation : peer.Explanation;
+            Line(sb, "- " + PlainName(ctx, peer) + ": " + (ctx.Comparison ? SheetText(ctx, explanation) : explanation));
         }
         Line(sb);
     }
@@ -1805,9 +1848,10 @@ public static class BenchmarkReportPackRenderer
     private static void Footer(StringBuilder sb, Context ctx)
     {
         var document = ctx.Document;
-        string version = document.ReportFormatVersion == ReportFormatVersion
-            ? "format version " + Inv(ReportFormatVersion)
-            : "generated under format version " + Inv(document.ReportFormatVersion) + " · rendered with format version " + Inv(ReportFormatVersion);
+        int current = ctx.Comparison ? ComparisonReportFormatVersion : ReportFormatVersion;
+        string version = document.ReportFormatVersion == current
+            ? "format version " + Inv(current)
+            : "generated under format version " + Inv(document.ReportFormatVersion) + " · rendered with format version " + Inv(current);
 
         Line(sb, "---");
         Line(sb);
@@ -1816,7 +1860,7 @@ public static class BenchmarkReportPackRenderer
             + " · created " + document.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC"
             + " · writer " + document.WriterDisplayName + " (" + document.WriterProvider + ", " + document.WriterModelId + ")"
             + " · disclosure " + ctx.Options.Disclosure.ToString()
-            + " · peers " + (ctx.Anonymized ? "anonymized" : "named") + "*");
+            + (ctx.Comparison ? " · models " : " · peers ") + (ctx.Anonymized ? "anonymized" : "named") + "*");
         Line(sb);
         // Documents written from format version 7 were also checked for interval-overlap wording and hype words.
         string claims = document.ReportFormatVersion >= 7
@@ -2080,14 +2124,57 @@ public static class BenchmarkReportPackRenderer
     private static string TableName(Context ctx, BenchmarkReportPeer? peer)
         => peer == null
             ? "**" + Cell(ctx.Sheet.SubjectLabel) + "**"
-            : ctx.Anonymized ? "Model " + peer.Letter : Cell(peer.Label) + " (" + peer.Letter + ")";
+            : ctx.Anonymized ? "Model " + peer.Letter : Cell(peer.Label);
 
     private static string PlainName(Context ctx, BenchmarkReportPeer? peer)
         => peer == null
             ? ctx.Sheet.SubjectLabel
-            : ctx.Anonymized ? "Model " + peer.Letter : peer.Label + " (" + peer.Letter + ")";
+            : ctx.Anonymized ? "Model " + peer.Letter : peer.Label;
 
     private static string RankCell(int? rank) => rank.HasValue ? Inv(rank.Value) : NoValue;
+
+    /// <summary>An entry's quality rank cell: <c>joint 1</c> where its interval overlaps a neighbor's, else <see cref="RankCell"/>.</summary>
+    private static string QualityRankCell(Context ctx, BenchmarkReportEntryFigures entry)
+        => QualityJointRanks(ctx.Sheet).TryGetValue(entry.EntryKey, out var joint) && joint.Joint
+            ? "joint " + Inv(joint.Rank)
+            : RankCell(entry.QualityRank);
+
+    /// <summary>
+    /// The joint quality ranks of the sheet's entries with an Intelligence Index
+    /// (<see cref="BenchmarkReportFacts.JointRanks"/>), by entry key; empty on a sheet without entries.
+    /// </summary>
+    private static IReadOnlyDictionary<string, BenchmarkReportFacts.JointRank> QualityJointRanks(BenchmarkReportFactSheet sheet)
+    {
+        var ranked = sheet.Entries
+            .Where(e => e.QualityIndex.HasValue)
+            .GroupBy(e => e.EntryKey, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .Select(e => (Key: e.EntryKey, Score: e.QualityIndex!.Value, Lower: e.QualityLower, Upper: e.QualityUpper))
+            .ToList();
+        return BenchmarkReportFacts.JointRanks(ranked);
+    }
+
+    /// <summary>
+    /// <c>joint 1st of 2 (intervals overlap)</c> for the entry of a <c>quality.rank</c> or
+    /// <c>peer.X.quality.rank</c> fact whose rank is joint; null otherwise, and on a sheet without entries.
+    /// </summary>
+    private static string? JointQualityRank(Context ctx, string key)
+    {
+        string? entryKey = null;
+        if (string.Equals(key, "quality.rank", StringComparison.Ordinal))
+        {
+            entryKey = ctx.Sheet.Entries.FirstOrDefault(e => e.IsSubject)?.EntryKey;
+        }
+        else if (key.StartsWith("peer.", StringComparison.Ordinal) && key.EndsWith(".quality.rank", StringComparison.Ordinal))
+        {
+            string letter = key["peer.".Length..^".quality.rank".Length];
+            entryKey = ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, letter, StringComparison.Ordinal))?.EntryKey;
+        }
+        if (entryKey == null) return null;
+
+        var ranks = QualityJointRanks(ctx.Sheet);
+        return ranks.TryGetValue(entryKey, out var rank) && rank.Joint ? BenchmarkReportFacts.JointRankText(rank, ranks.Count) : null;
+    }
 
     /// <summary>A peer's paired difference with its interval, <c>+4.2 points (-1.3 to +9.8)</c>; <see cref="NoValue"/> for the subject.</summary>
     private static string PairedCell(Context ctx, BenchmarkReportPeer? peer)
@@ -2156,14 +2243,18 @@ public static class BenchmarkReportPackRenderer
     private static string D(Context ctx, string key) => Fact(ctx, key) is { } fact ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable;
 
     /// <summary>
-    /// A fact's display as this document prints it: <see cref="DisplayOf"/>, and in a named copy the
-    /// peers of <c>quality.intervalOverlap</c> and <c>panel.judgeDependentPairs</c> by name instead of
-    /// by letter.
+    /// A fact's display as this document prints it: <see cref="DisplayOf"/>; a joint quality rank as
+    /// <see cref="JointQualityRank"/> words it; and in a named copy the peers of
+    /// <c>quality.intervalOverlap</c> and <c>panel.judgeDependentPairs</c> by name instead of by letter.
     /// </summary>
     private static string Shown(Context ctx, BenchmarkReportFact fact)
     {
         string display = DisplayOf(fact);
+        if (fact.Available && JointQualityRank(ctx, fact.Key) is string joint) return joint;
         if (ctx.Anonymized || !fact.Available) return display;
+
+        // A comparison-scope display names its models by letter; a named copy names them by label.
+        if (ctx.Comparison) return NamedLetters(ctx, display);
 
         return fact.Key switch
         {
@@ -2235,7 +2326,7 @@ public static class BenchmarkReportPackRenderer
 
     /// <summary>
     /// A fact's label with the peer naming applied: a peer's own fact reads <c>Model A's …</c> when
-    /// peers are anonymized and <c>Grok 5 (A)'s …</c> when they are named.
+    /// peers are anonymized and <c>Grok 5's …</c> when they are named.
     /// </summary>
     private static string FactLabel(Context ctx, string key)
     {
@@ -2247,7 +2338,7 @@ public static class BenchmarkReportPackRenderer
         if (peer == null) return label;
 
         return Regex.Replace(label, @"\bModel " + Regex.Escape(peer.Letter) + @"(?![A-Za-z])",
-            _ => peer.Label + " (" + peer.Letter + ")", RegexOptions.CultureInvariant);
+            _ => peer.Label, RegexOptions.CultureInvariant);
     }
 
     private static string NotAvailableText(BenchmarkReportFact? fact)
@@ -2256,7 +2347,10 @@ public static class BenchmarkReportPackRenderer
         return reason.Length == 0 ? "not available." : "not available. " + reason;
     }
 
-    /// <summary>Writer prose with its tokens resolved: <c>{{subject}}</c>, <c>{{peer:X}}</c> and <c>{{fact.key}}</c>.</summary>
+    /// <summary>
+    /// Writer prose with its tokens resolved: <c>{{subject}}</c>, <c>{{peer:X}}</c> and <c>{{fact.key}}</c>;
+    /// on a comparison-scope sheet <c>{{model:X}}</c> as a peer's.
+    /// </summary>
     private static string Prose(Context ctx, string? text)
         => Regex.Replace(Normalize(text), TokenPattern, match => Resolve(ctx, match), RegexOptions.CultureInvariant);
 
@@ -2266,9 +2360,9 @@ public static class BenchmarkReportPackRenderer
 
         if (string.Equals(token, "subject", StringComparison.Ordinal)) return ctx.Sheet.SubjectLabel;
 
-        if (token.StartsWith("peer:", StringComparison.Ordinal))
+        if (token.StartsWith("peer:", StringComparison.Ordinal) || (ctx.Comparison && token.StartsWith("model:", StringComparison.Ordinal)))
         {
-            string letter = token["peer:".Length..].Trim();
+            string letter = token[(token.IndexOf(':') + 1)..].Trim();
             var peer = ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, letter, StringComparison.Ordinal));
             if (peer == null) return match.Value;
             return ProseName(ctx, peer);
@@ -2291,7 +2385,8 @@ public static class BenchmarkReportPackRenderer
         var charts = ctx.Options.Charts;
         if (ctx.Standalone || charts == null || charts.Count == 0) return;
 
-        foreach (string key in BenchmarkReportChartPlacement.KeysAt(ctx.Document.Audience, anchor))
+        var scope = ctx.Comparison ? BenchmarkReportScope.Comparison : BenchmarkReportScope.Model;
+        foreach (string key in BenchmarkReportChartPlacement.KeysAt(ctx.Document.Audience, anchor, scope))
         {
             if (!charts.Any(c => c != null && string.Equals(c.FigureKey, key, StringComparison.Ordinal))) continue;
 
@@ -2389,6 +2484,9 @@ public static class BenchmarkReportPackRenderer
         public required List<BenchmarkReportValidationNote> Notes { get; init; }
 
         public bool Anonymized => Options.PeerNaming == BenchmarkReportPeerNaming.Anonymized;
+
+        /// <summary>The sheet is a comparison-scope sheet: every covered model lettered, no subject.</summary>
+        public bool Comparison => Sheet.IsComparison;
 
         /// <summary>The sheet has no peers: a stand-alone report.</summary>
         public bool Standalone => Sheet.Peers.Count == 0;

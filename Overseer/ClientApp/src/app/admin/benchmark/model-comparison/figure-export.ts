@@ -306,6 +306,11 @@ export interface FigureExportRequest {
   readonly logo?: FigureLogo | null;
   /** Where the Better badge goes when it fits under the logo. Absent is `'fit'`. */
   readonly betterBadgePlacement?: BetterBadgePlacement;
+  /**
+   * The narrowest content column {@link resolveFigureLayout} accepts, in layout px. Absent is
+   * {@link FIGURE_EXPORT_MIN_CONTENT_WIDTH}; document charts pass a narrower one.
+   */
+  readonly minContentWidth?: number;
 }
 
 /** What `encodeFigureImage` produced, including the format actually written. */
@@ -325,8 +330,9 @@ const RULE_GAP = 12;
 /** The space between the header block (title, badges, detail) and the plot. */
 const PLOT_GAP = 16;
 
-/** The narrowest content column a figure is laid out in. */
-const MIN_CONTENT_WIDTH = 360;
+/** The narrowest content column a figure is laid out in, unless its request names another. */
+export const FIGURE_EXPORT_MIN_CONTENT_WIDTH = 360;
+const MIN_CONTENT_WIDTH = FIGURE_EXPORT_MIN_CONTENT_WIDTH;
 
 /** Badge pill geometry; the text size and the pill height come from the request's badge size. */
 const BADGE_RADIUS = 4;
@@ -474,13 +480,14 @@ export function resolveFigureLayout(
   const box = layoutBoxFor(pixelWidth, pixelHeight, textScale);
   const { layoutWidth, layoutHeight } = box;
   const plotWidth = layoutWidth - PADDING * 2;
-  if (plotWidth < MIN_CONTENT_WIDTH) {
+  const minContentWidth = request.minContentWidth ?? MIN_CONTENT_WIDTH;
+  if (plotWidth < minContentWidth) {
     return {
       layout: null,
       refusal:
         `At ${Math.round(textScale * 100)}% text, ${figureName(request.chrome.title)} does not fit ` +
         `${pixelWidth} × ${pixelHeight} px: the caption column would be narrower than ` +
-        `${MIN_CONTENT_WIDTH} px. Lower the text size or choose a wider export.`
+        `${minContentWidth} px. Lower the text size or choose a wider export.`
     };
   }
 

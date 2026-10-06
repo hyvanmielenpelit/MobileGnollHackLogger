@@ -27,11 +27,11 @@ Both panel members flagged the Q3 error (R1).
 
 ## 3. The model's result
 
-GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
+GPT-5.6 Luna ranks joint 1st of 3 (intervals overlap) at $0.036 per question.
 
 ### Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap); its 95 % interval overlaps those of Models A and B.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.

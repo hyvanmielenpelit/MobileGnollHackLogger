@@ -28,6 +28,21 @@ public enum BenchmarkReportChartAnchor
 
     /// <summary>Internal Improvement Brief: section 3, after its key figures.</summary>
     ModelResult = 7,
+
+    /// <summary>Comparison-scope Executive Summary: How they compare, after its tables.</summary>
+    HowTheyCompare = 8,
+
+    /// <summary>Comparison-scope Report for AI Researchers and Developers: Results, after the results table.</summary>
+    ComparisonResults = 9,
+
+    /// <summary>Comparison-scope Report for AI Researchers and Developers: Dimension profiles, after its table.</summary>
+    DimensionProfiles = 10,
+
+    /// <summary>Comparison-scope Report for AI Researchers and Developers: Speed and cost frontier, after its table.</summary>
+    SpeedAndCostFrontier = 11,
+
+    /// <summary>Comparison-scope Internal Improvement Brief: Models compared, after its table.</summary>
+    ModelsCompared = 12,
 }
 
 /// <summary>
@@ -73,23 +88,52 @@ public static class BenchmarkReportChartPlacement
             [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat(BenchmarkReportChartAnchor.ModelResult, 7).ToArray(),
         };
 
+    // The anchor of each figure per audience in a comparison-scope document, in the order of FigureKeys.
+    private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]> ComparisonAnchors =
+        new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]>
+        {
+            [BenchmarkReportAudience.ExecutiveSummary] = Enumerable.Repeat(BenchmarkReportChartAnchor.HowTheyCompare, 7).ToArray(),
+            [BenchmarkReportAudience.TechnicalReport] = new[]
+            {
+                BenchmarkReportChartAnchor.ComparisonResults,
+                BenchmarkReportChartAnchor.SpeedAndCostFrontier,
+                BenchmarkReportChartAnchor.SpeedAndCostFrontier,
+                BenchmarkReportChartAnchor.DimensionProfiles,
+                BenchmarkReportChartAnchor.SpeedAndCostFrontier,
+                BenchmarkReportChartAnchor.SpeedAndCostFrontier,
+                BenchmarkReportChartAnchor.SpeedAndCostFrontier
+            },
+            [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat(BenchmarkReportChartAnchor.ModelsCompared, 7).ToArray(),
+        };
+
     /// <summary>Whether <paramref name="figureKey"/> is one of <see cref="FigureKeys"/>, compared ordinally.</summary>
     public static bool IsKnown(string? figureKey)
         => figureKey != null && FigureKeys.Contains(figureKey, StringComparer.Ordinal);
 
     /// <summary>Where a figure is drawn in a document of <paramref name="audience"/>; null for an unknown key or audience.</summary>
     public static BenchmarkReportChartAnchor? AnchorOf(BenchmarkReportAudience audience, string? figureKey)
+        => AnchorOf(audience, figureKey, BenchmarkReportScope.Model);
+
+    /// <summary>Where a figure is drawn in a document of <paramref name="audience"/> and <paramref name="scope"/>; null for an unknown key or audience.</summary>
+    public static BenchmarkReportChartAnchor? AnchorOf(BenchmarkReportAudience audience, string? figureKey, BenchmarkReportScope scope)
     {
-        if (!IsKnown(figureKey) || !Anchors.TryGetValue(audience, out var anchors)) return null;
+        if (!IsKnown(figureKey) || !TableOf(scope).TryGetValue(audience, out var anchors)) return null;
         return anchors[IndexOf(figureKey!)];
     }
 
     /// <summary>The figure keys drawn at <paramref name="anchor"/> in a document of <paramref name="audience"/>, in placement order.</summary>
     public static IReadOnlyList<string> KeysAt(BenchmarkReportAudience audience, BenchmarkReportChartAnchor anchor)
+        => KeysAt(audience, anchor, BenchmarkReportScope.Model);
+
+    /// <summary>The figure keys drawn at <paramref name="anchor"/> in a document of <paramref name="audience"/> and <paramref name="scope"/>, in placement order.</summary>
+    public static IReadOnlyList<string> KeysAt(BenchmarkReportAudience audience, BenchmarkReportChartAnchor anchor, BenchmarkReportScope scope)
     {
-        if (!Anchors.TryGetValue(audience, out var anchors)) return Array.Empty<string>();
+        if (!TableOf(scope).TryGetValue(audience, out var anchors)) return Array.Empty<string>();
         return FigureKeys.Where((_, i) => anchors[i] == anchor).ToList();
     }
+
+    private static IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]> TableOf(BenchmarkReportScope scope)
+        => scope == BenchmarkReportScope.Comparison ? ComparisonAnchors : Anchors;
 
     /// <summary>The marker line of a figure: <c>[[figure:p1a-quality]]</c>.</summary>
     public static string Marker(string figureKey) => MarkerPrefix + figureKey + MarkerSuffix;

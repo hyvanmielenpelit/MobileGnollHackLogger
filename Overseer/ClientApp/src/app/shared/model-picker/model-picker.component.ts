@@ -16,8 +16,7 @@ import {
   isDevMode
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { ProviderBadgeComponent } from '../provider-badge/provider-badge.component';
-import { formatPickerPrice, formatThinkingLevel, showReasoningBadge } from '../../utils/model-badge-format.util';
+import { ModelOptionBadgesComponent } from './model-option-badges.component';
 
 /** The fields a picker renders. Structural, so SystemAiConfigDto and UserAiModel both fit. */
 export interface ModelPickerModel {
@@ -41,6 +40,10 @@ export interface ModelPickerOption<M extends ModelPickerModel = ModelPickerModel
   group?: string;
   /** A short role shown before the model name, e.g. the panel member a calibration compares against. */
   tag?: string;
+  /** A muted note after the badges; shown by `app-model-multi-picker` only. */
+  detail?: string;
+  /** Makes the option unavailable, with this reason under it; honored by `app-model-multi-picker` only. */
+  disabledReason?: string;
 }
 
 export interface ModelPickerSelection<M extends ModelPickerModel = ModelPickerModel> {
@@ -97,7 +100,7 @@ let nextUid = 0;
 @Component({
   selector: 'app-model-picker',
   standalone: true,
-  imports: [ProviderBadgeComponent, NgTemplateOutlet],
+  imports: [ModelOptionBadgesComponent, NgTemplateOutlet],
   templateUrl: './model-picker.component.html',
   styleUrl: './model-picker.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -207,12 +210,6 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   isSelected(key: ModelPickerKey | null): boolean { return key === this.selectedKey; }
 
   modelName(model: ModelPickerModel): string { return model.displayName || model.modelId || ''; }
-
-  formatThinkingLevel(level: string | null | undefined): string { return formatThinkingLevel(level); }
-
-  showReasoningBadge(mode: string | null | undefined): boolean { return showReasoningBadge(mode); }
-
-  formatPrice(model: ModelPickerModel): string { return formatPickerPrice(model); }
 
   toggle(): void {
     if (this.open) {

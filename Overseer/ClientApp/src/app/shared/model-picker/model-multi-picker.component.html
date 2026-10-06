@@ -1,0 +1,21 @@
+<ng-template #modelOption let-option>
+  @if (option.tag) {
+    <span class="model-option-tag">{{ option.tag }}</span>
+  }
+  <span class="model-name">{{ option.label }}</span>
+  @if (modelFor(option.key); as model) {
+    <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"></app-model-option-badges>
+  }
+  @if (option.detail) {
+    <span class="gh-multi-picker-detail">{{ option.detail }}</span>
+  }
+</ng-template>
+
+<app-multi-picker summaryNoun="models"
+                  [options]="pickerOptions" [selectedKeys]="selectedKeys"
+                  [min]="min" [max]="max"
+                  [labelledBy]="labelledBy" [label]="label" [describedBy]="describedBy"
+                  [placeholder]="placeholder" [emptyHint]="emptyHint"
+                  [chips]="chips" [maxChips]="maxChips" [showAllNone]="showAllNone" [dropsUp]="dropsUp"
+                  [optionTemplate]="modelOption"
+                  (selectionChange)="onSelectionChange($event)"></app-multi-picker>

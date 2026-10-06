@@ -16,7 +16,11 @@ using Overseer.Services.Agents;
 using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
 
-/// <summary>What a report pack is built from: the comparison, the subject's fact sheet and its content snapshot.</summary>
+/// <summary>
+/// What a report pack is built from: the comparison, the fact sheet and its content snapshot. For
+/// model scope the sheet is the subject's; for comparison scope (<see cref="Scope"/>) it describes every
+/// covered model, and <see cref="Subject"/> is the covered model lettered A.
+/// </summary>
 public sealed class BenchmarkReportPackPreparation
 {
     public BenchmarkModelComparisonDto Comparison { get; init; } = default!;
@@ -24,7 +28,25 @@ public sealed class BenchmarkReportPackPreparation
     public BenchmarkReportFactSheet Sheet { get; init; } = default!;
     public BenchmarkReportContentSnapshot Content { get; init; } = default!;
 
-    /// <summary>The subject's runs, in run-id order.</summary>
+    /// <summary>Per-model documents, or comparison-scope documents over <see cref="CoveredEntryKeys"/>.</summary>
+    public BenchmarkReportScope Scope { get; init; } = BenchmarkReportScope.Model;
+
+    /// <summary>The covered models of a comparison-scope preparation, in letter order; the subject alone for model scope.</summary>
+    public IReadOnlyList<BenchmarkModelComparisonEntryDto> Covered { get; init; } = Array.Empty<BenchmarkModelComparisonEntryDto>();
+
+    /// <summary>The covered entry keys, canonically sorted; the subject's key alone for model scope.</summary>
+    public IReadOnlyList<string> CoveredEntryKeys { get; init; } = Array.Empty<string>();
+
+    /// <summary><see cref="BenchmarkReportComparisonKey.ForCoveredSet"/> of <see cref="CoveredEntryKeys"/>.</summary>
+    public string CoveredSetKey { get; init; } = string.Empty;
+
+    /// <summary>A comparison-scope preparation covers every entry of the comparison that is not Excluded.</summary>
+    public bool CoversAllEntries { get; init; }
+
+    /// <summary>The comparison's entries that are not Excluded.</summary>
+    public int ComparisonEntryCount { get; init; }
+
+    /// <summary>The subject's runs, in run-id order; for comparison scope, every covered model's runs.</summary>
     public IReadOnlyList<BenchmarkRun> SubjectRuns { get; init; } = default!;
 
     /// <summary>The peers' runs that still exist, in run-id order; never a subject run.</summary>
@@ -140,26 +162,89 @@ public sealed class BenchmarkReportPackPreparation
     /// The comparison, the fact sheet and the content snapshot. Makes no model call. A battery subject
     /// takes its detail cap and prompt budget from <paramref name="configuration"/>, else the defaults.
     /// </summary>
-    public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareAsync(
+    public static Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareAsync(
         ApplicationDbContext db,
         BenchmarkModelComparisonService comparisonService,
         BenchmarkReportPackRequest request,
         int answerExcerptChars,
         CancellationToken ct,
         IConfiguration? configuration = null)
+        => PrepareAsync(db, comparisonService, request, answerExcerptChars, ct, configuration, comparison: null);
+
+    /// <summary>
+    /// As <see cref="PrepareAsync(ApplicationDbContext, BenchmarkModelComparisonService, BenchmarkReportPackRequest, int, CancellationToken, IConfiguration?)"/>,
+    /// over <paramref name="comparison"/> when it is given, so the subjects of one job share one
+    /// computation of the comparison; computed from the request otherwise.
+    /// </summary>
+    public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareAsync(
+        ApplicationDbContext db,
+        BenchmarkModelComparisonService comparisonService,
+        BenchmarkReportPackRequest request,
+        int answerExcerptChars,
+        CancellationToken ct,
+        IConfiguration? configuration,
+        BenchmarkModelComparisonDto? comparison)
     {
         if (MixesSources(request)) return (null, BenchmarkBatteryModelComparison.MixedSourcesError);
 
-        var (comparison, subject, refusal) = await CompareAsync(comparisonService, request, ct);
+        BenchmarkModelComparisonEntryDto? subject;
+        string? refusal;
+        if (comparison == null)
+        {
+            (comparison, subject, refusal) = await CompareAsync(comparisonService, request, ct);
+        }
+        else
+        {
+            (subject, refusal) = SubjectOf(comparison, request.SubjectKey);
+        }
         if (refusal != null) return (null, refusal);
 
-        if (string.Equals(subject!.SourceKind, BenchmarkBatteryModelComparison.SourceKind, StringComparison.Ordinal))
-        {
-            return await PrepareBatteryAsync(db, comparison!, subject, answerExcerptChars,
-                BatteryDetailQuestionsPerSuite(configuration), BatteryMaxPromptChars(configuration), ct);
-        }
+        var (prep, prepRefusal) = string.Equals(subject!.SourceKind, BenchmarkBatteryModelComparison.SourceKind, StringComparison.Ordinal)
+            ? await PrepareBatteryAsync(db, comparison!, subject, answerExcerptChars,
+                BatteryDetailQuestionsPerSuite(configuration), BatteryMaxPromptChars(configuration), ct)
+            : await PrepareRunsAsync(db, comparison!, subject, answerExcerptChars, ct);
+        if (prep == null) return (null, prepRefusal);
 
-        var runIds = comparison!.Entries
+        var covered = new[] { subject.Key };
+        return (new BenchmarkReportPackPreparation
+        {
+            Comparison = prep.Comparison,
+            Subject = prep.Subject,
+            Sheet = prep.Sheet,
+            Content = prep.Content,
+            SubjectRuns = prep.SubjectRuns,
+            PeerRuns = prep.PeerRuns,
+            Notes = prep.Notes,
+            Scope = BenchmarkReportScope.Model,
+            Covered = new[] { subject },
+            CoveredEntryKeys = covered,
+            CoveredSetKey = BenchmarkReportComparisonKey.ForCoveredSet(covered),
+            ComparisonEntryCount = comparison!.Entries.Count(e => !e.Excluded)
+        }, null);
+    }
+
+    /// <summary>The subject entry of a computed comparison, refused as <see cref="CompareAsync"/> refuses it.</summary>
+    public static (BenchmarkModelComparisonEntryDto? Subject, string? Refusal) SubjectOf(BenchmarkModelComparisonDto comparison, string? subjectKey)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        var subject = comparison.Entries.FirstOrDefault(e => string.Equals(e.Key, subjectKey, StringComparison.Ordinal));
+        if (subject == null) return (null, $"'{subjectKey}' is not an entry of this comparison.");
+        if (subject.Excluded)
+        {
+            return (subject, $"{subject.Label} is excluded from this comparison and cannot be reported on: {subject.Explanation}");
+        }
+        return (subject, null);
+    }
+
+    /// <summary>A run or group subject: the comparison's runs loaded with their answers, the fact sheet and the content.</summary>
+    private static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareRunsAsync(
+        ApplicationDbContext db,
+        BenchmarkModelComparisonDto comparison,
+        BenchmarkModelComparisonEntryDto subject,
+        int answerExcerptChars,
+        CancellationToken ct)
+    {
+        var runIds = comparison.Entries
             .Where(e => !e.Excluded)
             .SelectMany(e => e.RunIds)
             .Distinct()
@@ -291,6 +376,245 @@ public sealed class BenchmarkReportPackPreparation
         }, null);
     }
 
+    /// <summary>
+    /// A comparison-scope preparation over the request's covered entries, or every entry that is not
+    /// Excluded when it names none: each covered model's per-model sheet and content over the covered
+    /// models only, the paired-test families requested for the covered models only, so each Holm
+    /// adjustment counts the tests the document reports, and the comparison sheet built from them
+    /// (<see cref="BenchmarkComparisonReportFacts.Build"/>). Refused when a covered entry is not in the
+    /// comparison or is Excluded, or the covered models are fewer than two or more than twelve. Over
+    /// <paramref name="comparison"/> when it is given; computed from the request otherwise. Makes no
+    /// model call.
+    /// </summary>
+    public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareComparisonAsync(
+        ApplicationDbContext db,
+        BenchmarkModelComparisonService comparisonService,
+        BenchmarkReportPackRequest request,
+        int answerExcerptChars,
+        int? comparisonId,
+        CancellationToken ct,
+        IConfiguration? configuration = null,
+        BenchmarkPairedTestsService? pairedTests = null,
+        BenchmarkModelComparisonDto? comparison = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (MixesSources(request)) return (null, BenchmarkBatteryModelComparison.MixedSourcesError);
+
+        if (comparison == null)
+        {
+            var (computed, error) = await comparisonService.CompareAsync(ComparisonRequest(request), ct);
+            if (computed == null) return (null, error ?? "The comparison could not be computed.");
+            comparison = computed;
+        }
+
+        var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
+        string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
+            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count);
+        if (refusal != null) return (null, refusal);
+
+        var restricted = BenchmarkComparisonReportFacts.Restrict(comparison, covered);
+        var (reference, allPairs, pairedUnavailable) = await PairedFamiliesAsync(
+            pairedTests ?? new BenchmarkPairedTestsService(db, comparisonService), restricted, request.PricingBasis, ct);
+
+        bool batteries = string.Equals(comparison.SubjectKind, BenchmarkModelComparisonSubjectKinds.Batteries, StringComparison.Ordinal);
+        BenchmarkComparisonReportFactsResult built;
+        List<BenchmarkRun> runs;
+        if (batteries)
+        {
+            var (entries, batteryRuns, batteryRefusal) = await BatteryEntriesAsync(db, restricted, answerExcerptChars, BatteryDetailQuestionsPerSuite(configuration), ct);
+            if (entries == null) return (null, batteryRefusal);
+            runs = batteryRuns;
+            built = BenchmarkComparisonReportFacts.Build(new BenchmarkComparisonReportFactsInput
+            {
+                Comparison = comparison,
+                Entries = entries,
+                ReferenceFamily = reference,
+                AllPairsFamily = allPairs,
+                PairedTestsUnavailableReason = pairedUnavailable,
+                AnswerExcerptChars = answerExcerptChars,
+                ComparisonId = comparisonId
+            });
+        }
+        else
+        {
+            var runIds = restricted.Entries.SelectMany(e => e.RunIds).Distinct().ToList();
+            runs = await db.BenchmarkRuns
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(r => r.Answers).ThenInclude(a => a.ToolCalls)
+                .Where(r => runIds.Contains(r.Id))
+                .OrderBy(r => r.Id)
+                .ToListAsync(ct);
+            built = BenchmarkComparisonReportFacts.BuildFromRuns(
+                comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId);
+        }
+        if (built.Sheet == null || built.Content == null) return (null, built.Refusal ?? "The fact sheet could not be computed.");
+        if (runs.Count == 0) return (null, "The covered models' runs no longer exist.");
+
+        var lettered = BenchmarkComparisonReportFacts.InLetterOrder(restricted.Entries);
+        return (new BenchmarkReportPackPreparation
+        {
+            Comparison = comparison,
+            Subject = lettered[0],
+            Sheet = built.Sheet,
+            Content = built.Content,
+            Scope = BenchmarkReportScope.Comparison,
+            Covered = lettered,
+            CoveredEntryKeys = built.CoveredEntryKeys,
+            CoveredSetKey = built.CoveredSetKey ?? string.Empty,
+            CoversAllEntries = built.Sheet.CoversAllEntries == true,
+            ComparisonEntryCount = built.Sheet.ComparisonEntryCount ?? comparison.Entries.Count(e => !e.Excluded),
+            SubjectRuns = runs,
+            PeerRuns = Array.Empty<BenchmarkRun>(),
+            Notes = built.Notes
+        }, null);
+    }
+
+    /// <summary>
+    /// The preparation a request's documents are written from, with no model call: the covered set of a
+    /// comparison-scope request (<see cref="PrepareComparisonAsync"/>), else the first subject of a
+    /// model-scope request. What a preview, an estimate or a layout preview renders from.
+    /// </summary>
+    public static Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareForRequestAsync(
+        ApplicationDbContext db,
+        BenchmarkModelComparisonService comparisonService,
+        BenchmarkReportPackRequest request,
+        int answerExcerptChars,
+        int? comparisonId,
+        CancellationToken ct,
+        IConfiguration? configuration = null,
+        BenchmarkPairedTestsService? pairedTests = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Scope == BenchmarkReportScope.Comparison)
+        {
+            return PrepareComparisonAsync(db, comparisonService, request, answerExcerptChars, comparisonId, ct, configuration, pairedTests);
+        }
+
+        var subjects = request.ModelSubjectKeys();
+        var first = new BenchmarkReportPackRequest
+        {
+            RunIds = request.RunIds ?? new List<long>(),
+            GroupIds = request.GroupIds ?? new List<long>(),
+            BatteryRunIds = request.BatteryRunIds ?? new List<long>(),
+            PricingBasis = request.PricingBasis,
+            SubjectKey = subjects.Count > 0 ? subjects[0] : request.SubjectKey ?? string.Empty,
+            Audiences = request.Audiences ?? new List<BenchmarkReportAudience>(),
+            WriterModelConfigurationId = request.WriterModelConfigurationId
+        };
+        return PrepareAsync(db, comparisonService, first, answerExcerptChars, ct, configuration);
+    }
+
+    /// <summary>The comparison request of a report-pack request's sources.</summary>
+    public static BenchmarkModelComparisonRequest ComparisonRequest(BenchmarkReportPackRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return new BenchmarkModelComparisonRequest
+        {
+            RunIds = request.RunIds ?? new List<long>(),
+            GroupIds = request.GroupIds ?? new List<long>(),
+            BatteryRunIds = request.BatteryRunIds ?? new List<long>(),
+            PricingBasis = request.PricingBasis
+        };
+    }
+
+    /// <summary>
+    /// Each covered battery result's own battery sheet and content over the covered results: the
+    /// battery analyses loaded once, the members' answers loaded once, and each result's tool-call
+    /// outcomes. The prompt budget is applied over the whole comparison, so none is applied here.
+    /// </summary>
+    private static async Task<(List<BenchmarkComparisonReportEntry>? Entries, List<BenchmarkRun> Runs, string? Refusal)> BatteryEntriesAsync(
+        ApplicationDbContext db, BenchmarkModelComparisonDto restricted, int answerExcerptChars, int detailQuestionsPerSuite, CancellationToken ct)
+    {
+        var batteryRunIds = restricted.Entries.Where(e => e.BatteryRunId.HasValue).Select(e => e.BatteryRunId!.Value).Distinct().ToList();
+        var (sources, error) = await BenchmarkBatteryModelComparison.LoadAsync(db, batteryRunIds, ct);
+        if (sources == null) return (null, new List<BenchmarkRun>(), error ?? "The battery results could not be loaded.");
+
+        var runIds = restricted.Entries.SelectMany(e => e.RunIds).Distinct().ToList();
+        var runs = await db.BenchmarkRuns
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Include(r => r.Answers)
+            .Where(r => runIds.Contains(r.Id))
+            .OrderBy(r => r.Id)
+            .ToListAsync(ct);
+        var runsById = runs.ToDictionary(r => r.Id);
+
+        var entries = new List<BenchmarkComparisonReportEntry>();
+        foreach (var entry in restricted.Entries)
+        {
+            var memberIds = entry.RunIds.Distinct().ToList();
+            var built = BenchmarkBatteryReportFacts.Build(new BenchmarkBatteryReportFactsInput
+            {
+                Comparison = restricted,
+                SubjectKey = entry.Key,
+                Sources = sources,
+                Runs = memberIds.Where(runsById.ContainsKey).ToDictionary(id => id, id => runsById[id]),
+                AnswerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, memberIds, withRefutedSentences: false, ct),
+                AnswerExcerptChars = answerExcerptChars,
+                DetailQuestionsPerSuite = detailQuestionsPerSuite,
+                MaxPromptChars = 0
+            });
+            if (built.Sheet == null || built.Content == null)
+            {
+                return (null, runs, entry.Label + ": " + (built.Refusal ?? "The fact sheet could not be computed."));
+            }
+            entries.Add(new BenchmarkComparisonReportEntry { Entry = entry, Sheet = built.Sheet, Content = built.Content });
+        }
+
+        return (entries, runs, null);
+    }
+
+    /// <summary>
+    /// The paired-test families of the covered models, from the service the wizard's Paired tests view
+    /// uses, requested for the covered models only: against the highest-Index one, and over all pairs
+    /// from three to <see cref="BenchmarkComparisonReportFacts.AllPairsMaxEntries"/> models. A refusal or a
+    /// failure is the reason the sheet states instead.
+    /// </summary>
+    private static async Task<(BenchmarkPairedComparisonDto? Reference, BenchmarkPairedComparisonDto? AllPairs, string? Unavailable)> PairedFamiliesAsync(
+        BenchmarkPairedTestsService pairedTests, BenchmarkModelComparisonDto restricted, BenchmarkModelComparisonPricingBasis basis, CancellationToken ct)
+    {
+        var lettered = BenchmarkComparisonReportFacts.InLetterOrder(restricted.Entries.Where(e => !e.Excluded));
+        if (lettered.Count < 2) return (null, null, BenchmarkPairedTests.NeedsTwoEntriesError);
+
+        var keys = lettered.Select(e => e.Key).ToList();
+        var request = new BenchmarkPairedComparisonRequest
+        {
+            RunIds = IdsOf(keys, "run:"),
+            GroupIds = IdsOf(keys, "group:"),
+            BatteryRunIds = IdsOf(keys, "battery:"),
+            PricingBasis = basis,
+            Mode = BenchmarkPairedComparisonMode.Reference,
+            ReferenceKey = lettered[0].Key,
+            Recompute = true
+        };
+
+        try
+        {
+            var (reference, error) = await pairedTests.CompareAsync(request, ct);
+            if (reference == null) return (null, null, error ?? "The paired tests could not be computed.");
+
+            BenchmarkPairedComparisonDto? allPairs = null;
+            if (BenchmarkComparisonReportFacts.UsesAllPairs(lettered.Count))
+            {
+                request.Mode = BenchmarkPairedComparisonMode.AllPairs;
+                (allPairs, _) = await pairedTests.CompareAsync(request, ct);
+            }
+            return (reference, allPairs, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return (null, null, "The paired tests could not be computed: " + ExceptionDetails.DescribeShort(ex));
+        }
+    }
+
+    private static List<long> IdsOf(IEnumerable<string> keys, string prefix)
+        => keys
+            .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(k => long.TryParse(k.AsSpan(prefix.Length), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long id) ? id : 0)
+            .Where(id => id > 0)
+            .ToList();
+
     /// <summary>A stand-in configuration carrying only the subject's provider and model id, for the compliance checks.</summary>
     public static SystemAiApiConfiguration SubjectIdentity(BenchmarkModelComparisonEntryDto subject)
         => new() { Provider = subject.Provider, ModelId = subject.ModelId, DisplayName = subject.ModelDisplayName };
@@ -298,6 +622,38 @@ public sealed class BenchmarkReportPackPreparation
     public static string SameProviderWarning(BenchmarkModelComparisonEntryDto subject, SystemAiApiConfiguration writer)
         => $"The report writer ({writer.DisplayName}) belongs to the same provider as the model under report ({subject.Label}, {subject.Provider}). "
             + "A writer from the model's own family may describe it more favorably; a writer from another family is recommended.";
+
+    /// <summary>
+    /// The same-provider warning of a comparison-scope document, naming the covered models that share
+    /// the writer's provider.
+    /// </summary>
+    public static string SameProviderWarning(IReadOnlyList<BenchmarkModelComparisonEntryDto> sharing, SystemAiApiConfiguration writer)
+    {
+        ArgumentNullException.ThrowIfNull(sharing);
+        ArgumentNullException.ThrowIfNull(writer);
+        string models = BenchmarkReportFormat.LetterList(sharing.Select(e => e.Label).ToList());
+        return $"The report writer ({writer.DisplayName}) belongs to the same provider ({writer.Provider}) as {models}, "
+            + (sharing.Count == 1 ? "a model" : "models") + " this document covers. "
+            + "A writer from a model's own family may describe it more favorably; a writer from another family is recommended.";
+    }
+
+    /// <summary>
+    /// The writer is the same configuration as a covered model: the same provider and model id (trimmed,
+    /// ignoring case) and the same thinking level (an unset one equal to another unset one).
+    /// </summary>
+    public static BenchmarkModelComparisonEntryDto? WriterAsCoveredModel(
+        IReadOnlyList<BenchmarkModelComparisonEntryDto> covered, SystemAiApiConfiguration writer)
+    {
+        ArgumentNullException.ThrowIfNull(covered);
+        ArgumentNullException.ThrowIfNull(writer);
+
+        static string Norm(string? value) => (value ?? string.Empty).Trim();
+        return covered.FirstOrDefault(e =>
+            string.Equals(Norm(e.Provider), Norm(writer.Provider), StringComparison.OrdinalIgnoreCase)
+            && Norm(e.ModelId).Length > 0
+            && string.Equals(Norm(e.ModelId), Norm(writer.ModelId), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Norm(e.ThinkingLevel), Norm(writer.ThinkingLevel), StringComparison.OrdinalIgnoreCase));
+    }
 
 }
 
@@ -324,8 +680,12 @@ public interface IBenchmarkRunReportWriter
 
 /// <summary>
 /// Writes report-pack documents: one writer call per document, one repair turn when validation
-/// fails, then drop-and-notice. The only class of the feature that calls a model; rendering is
-/// <see cref="BenchmarkReportRenderService"/>'s and never calls one.
+/// fails, then drop-and-notice. A job writes its subjects one after another: each subject of a
+/// model-scope job, sharing one computation of the comparison, or the one covered set of a
+/// comparison-scope job, whose question topics are written once and given to its later documents.
+/// A document that replaces another is stored first, the replaced row removed in the same save and
+/// its chart folder after it, so a failed write deletes nothing. The only class of the feature that
+/// calls a model; rendering is <see cref="BenchmarkReportRenderService"/>'s and never calls one.
 /// </summary>
 public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 {
@@ -342,6 +702,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private readonly BenchmarkReportPackJobManager _jobManager;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkReportPackService> _logger;
+    private readonly BenchmarkReportChartStore? _charts;
 
     public BenchmarkReportPackService(
         ApplicationDbContext db,
@@ -353,7 +714,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         BenchmarkModelComparisonService comparisonService,
         BenchmarkReportPackJobManager jobManager,
         IConfiguration configuration,
-        ILogger<BenchmarkReportPackService> logger)
+        ILogger<BenchmarkReportPackService> logger,
+        BenchmarkReportChartStore? charts = null)
     {
         _db = db;
         _agentLoopRunner = agentLoopRunner;
@@ -365,6 +727,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         _jobManager = jobManager;
         _configuration = configuration;
         _logger = logger;
+        _charts = charts;
     }
 
     /// <summary>One writer turn: the raw reply, the terminal error, and what it cost.</summary>
@@ -398,7 +761,22 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         return RunJobAsync(job, BenchmarkReportDocumentOrigin.BatteryCompletion, ct);
     }
 
-    /// <summary>Prepares the job's subject once, then writes and stores each document with <paramref name="origin"/>.</summary>
+    /// <summary>
+    /// What a job's subjects share: the comparison computed once for a model-scope job's several
+    /// subjects, and the numbered comparison its documents' titles name.
+    /// </summary>
+    private sealed class JobState
+    {
+        public BenchmarkModelComparisonDto? Comparison { get; set; }
+        public Pdf.BenchmarkPdfComparison? Numbered { get; set; }
+        public bool SeveralSubjects { get; init; }
+    }
+
+    /// <summary>
+    /// Prepares each subject of the job once, in the order of its document rows, then writes and stores
+    /// each of its documents with <paramref name="origin"/>. A subject that cannot be prepared fails its
+    /// own documents; the job goes on with the next.
+    /// </summary>
     private async Task RunJobAsync(BenchmarkReportPackJob job, BenchmarkReportDocumentOrigin origin, CancellationToken ct)
     {
         string jobId = job.Id;
@@ -408,16 +786,18 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
             int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
 
-            var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, job.Request, excerptChars, ct, _configuration);
-            if (prep == null)
+            var subjects = SubjectsOf(job);
+            var state = new JobState { SeveralSubjects = subjects.Count > 1 };
+            if (origin == BenchmarkReportDocumentOrigin.ReportPack)
             {
-                FailAll(job, refusal ?? "The report pack could not be prepared.");
-                return;
+                await EnsureComparisonAsync(job, state, ct);
             }
-            job.AddLog($"Fact sheet computed: {prep.Sheet.Facts.Count} facts, {prep.Sheet.Peers.Count} peers, {prep.Sheet.Questions.Count} questions, {prep.Sheet.Rows.Count} findings.");
-            foreach (var note in prep.Notes)
+
+            var (firstPrep, firstRefusal) = await PrepareSubjectAsync(job, subjects[0].Key, state, excerptChars, ct);
+            if (firstPrep == null && subjects.Count == 1)
             {
-                job.AddLog(note.Message, "warning");
+                FailAll(job, firstRefusal ?? "The report pack could not be prepared.");
+                return;
             }
 
             var liveConfig = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == job.WriterConfigId, ct);
@@ -452,11 +832,40 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
             int completed = 0;
             int failed = 0;
-            foreach (var progress in job.Documents.ToList())
+            for (int i = 0; i < subjects.Count; i++)
             {
                 ct.ThrowIfCancellationRequested();
-                bool ok = await WriteDocumentAsync(job, progress.Audience, origin, prep, config, endpoint, apiKey, pricing, excerptChars, maxOutputTokens, ct);
-                if (ok) completed++; else failed++;
+                var (subjectKey, rows) = subjects[i];
+                var (prep, refusal) = i == 0 ? (firstPrep, firstRefusal) : await PrepareSubjectAsync(job, subjectKey, state, excerptChars, ct);
+                if (prep == null)
+                {
+                    string message = refusal ?? "The report pack could not be prepared.";
+                    job.AddLog(message, "error");
+                    foreach (var row in rows)
+                    {
+                        job.SetDocumentStatus(row, BenchmarkReportPackDocumentStatus.Failed, message);
+                    }
+                    failed += rows.Count;
+                    continue;
+                }
+
+                job.AddLog(prep.Scope == BenchmarkReportScope.Comparison
+                    ? $"Fact sheet computed: {prep.Sheet.Facts.Count} facts, {prep.Covered.Count} models, {prep.Sheet.Questions.Count} questions."
+                    : $"Fact sheet computed: {prep.Sheet.Facts.Count} facts, {prep.Sheet.Peers.Count} peers, {prep.Sheet.Questions.Count} questions, {prep.Sheet.Rows.Count} findings.");
+                foreach (var note in prep.Notes)
+                {
+                    job.AddLog(note.Message, "warning");
+                }
+
+                foreach (var row in rows)
+                {
+                    if (string.IsNullOrEmpty(row.SubjectKey)) row.SubjectKey = prep.Scope == BenchmarkReportScope.Comparison ? prep.Sheet.SubjectKey : prep.Subject.Key;
+                    if (string.IsNullOrEmpty(row.SubjectLabel)) row.SubjectLabel = prep.Sheet.SubjectLabel;
+
+                    ct.ThrowIfCancellationRequested();
+                    bool ok = await WriteDocumentAsync(job, row, origin, prep, state, config, endpoint, apiKey, pricing, excerptChars, maxOutputTokens, ct);
+                    if (ok) completed++; else failed++;
+                }
             }
 
             job.SetStatus(failed == 0
@@ -467,9 +876,9 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         catch (OperationCanceledException)
         {
             foreach (var d in job.Documents.Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
-                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing))
+                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing).ToList())
             {
-                job.SetDocumentStatus(d.Audience, BenchmarkReportPackDocumentStatus.Canceled);
+                job.SetDocumentStatus(d, BenchmarkReportPackDocumentStatus.Canceled);
             }
             job.AddLog("Report pack generation was canceled.", "warning");
             job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
@@ -482,12 +891,99 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         }
     }
 
+    /// <summary>
+    /// The job's subjects in the order of its document rows, each with its rows. A row without a subject
+    /// key (a completion job's, and every row of a job started before rows carried one) belongs to the
+    /// request's subject.
+    /// </summary>
+    private static List<(string Key, List<BenchmarkReportPackDocumentProgress> Rows)> SubjectsOf(BenchmarkReportPackJob job)
+    {
+        var subjects = new List<(string Key, List<BenchmarkReportPackDocumentProgress> Rows)>();
+        foreach (var row in job.Documents.ToList())
+        {
+            string key = string.IsNullOrEmpty(row.SubjectKey) ? job.Request.SubjectKey ?? string.Empty : row.SubjectKey;
+            int index = subjects.FindIndex(s => string.Equals(s.Key, key, StringComparison.Ordinal));
+            if (index < 0)
+            {
+                subjects.Add((key, new List<BenchmarkReportPackDocumentProgress> { row }));
+            }
+            else
+            {
+                subjects[index].Rows.Add(row);
+            }
+        }
+        if (subjects.Count == 0) subjects.Add((job.Request.SubjectKey ?? string.Empty, new List<BenchmarkReportPackDocumentProgress>()));
+        return subjects;
+    }
+
+    /// <summary>
+    /// Numbers the job's comparison when the start has not (a Report Pack document always belongs to a
+    /// numbered comparison), and reads its name for the documents' titles. A comparison that cannot be
+    /// numbered is logged; its documents are then stored without one.
+    /// </summary>
+    private async Task EnsureComparisonAsync(BenchmarkReportPackJob job, JobState state, CancellationToken ct)
+    {
+        if (job.ComparisonId == null)
+        {
+            var identity = new BenchmarkComparisonIdentityService(_db, _comparisonService);
+            var (comparison, error) = await identity.EnsureAsync(
+                job.Request.RunIds, job.Request.GroupIds, job.Request.BatteryRunIds, job.StartedByUserId, ct);
+            if (comparison == null)
+            {
+                job.AddLog($"The comparison could not be numbered: {error}", "warning");
+                return;
+            }
+            job.ComparisonId = comparison.Id;
+        }
+
+        var stored = await _db.BenchmarkComparisons.AsNoTracking().FirstOrDefaultAsync(c => c.Id == job.ComparisonId, ct);
+        state.Numbered = stored == null
+            ? new Pdf.BenchmarkPdfComparison(job.ComparisonId!.Value, null, null)
+            : new Pdf.BenchmarkPdfComparison(stored.Id, stored.DisplayName, stored.EntryCount > 0 ? stored.EntryCount : null);
+    }
+
+    /// <summary>
+    /// One subject's preparation: the covered set of a comparison-scope job, or a model-scope subject
+    /// over the comparison computed once for the job.
+    /// </summary>
+    private async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareSubjectAsync(
+        BenchmarkReportPackJob job, string subjectKey, JobState state, int excerptChars, CancellationToken ct)
+    {
+        if (job.Scope == BenchmarkReportScope.Comparison)
+        {
+            return await BenchmarkReportPackPreparation.PrepareComparisonAsync(
+                _db, _comparisonService, job.Request, excerptChars, job.ComparisonId, ct, _configuration,
+                new BenchmarkPairedTestsService(_db, _comparisonService, null, _pricingService));
+        }
+
+        var request = SubjectRequest(job.Request, subjectKey);
+        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+            _db, _comparisonService, request, excerptChars, ct, _configuration, state.SeveralSubjects ? state.Comparison : null);
+        if (prep != null && state.SeveralSubjects) state.Comparison ??= prep.Comparison;
+        return (prep, refusal);
+    }
+
+    /// <summary>A copy of the request for one model-scope subject.</summary>
+    private static BenchmarkReportPackRequest SubjectRequest(BenchmarkReportPackRequest request, string subjectKey) => new()
+    {
+        RunIds = request.RunIds ?? new List<long>(),
+        GroupIds = request.GroupIds ?? new List<long>(),
+        BatteryRunIds = request.BatteryRunIds ?? new List<long>(),
+        PricingBasis = request.PricingBasis,
+        SubjectKey = subjectKey,
+        Scope = BenchmarkReportScope.Model,
+        Audiences = request.Audiences,
+        WriterModelConfigurationId = request.WriterModelConfigurationId,
+        AcknowledgeSameProvider = request.AcknowledgeSameProvider,
+        ReplaceDocumentIds = request.ReplaceDocumentIds
+    };
+
     private static void FailAll(BenchmarkReportPackJob job, string message)
     {
         job.AddLog(message, "error");
-        foreach (var d in job.Documents)
+        foreach (var d in job.Documents.ToList())
         {
-            job.SetDocumentStatus(d.Audience, BenchmarkReportPackDocumentStatus.Failed, message);
+            job.SetDocumentStatus(d, BenchmarkReportPackDocumentStatus.Failed, message);
         }
         job.SetStatus(BenchmarkReportPackJobStatus.Failed);
     }
@@ -495,9 +991,10 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// <summary>Writes, validates, repairs once, drops what still fails, and persists one document. True when stored.</summary>
     private async Task<bool> WriteDocumentAsync(
         BenchmarkReportPackJob job,
-        BenchmarkReportAudience audience,
+        BenchmarkReportPackDocumentProgress progress,
         BenchmarkReportDocumentOrigin origin,
         BenchmarkReportPackPreparation prep,
+        JobState state,
         SystemAiApiConfiguration config,
         AiEndpointDescriptor endpoint,
         string apiKey,
@@ -506,11 +1003,19 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         int maxOutputTokens,
         CancellationToken ct)
     {
-        string name = BenchmarkReportRenderService.AudienceName(audience);
-        job.SetDocumentStatus(audience, BenchmarkReportPackDocumentStatus.Writing);
+        var audience = progress.Audience;
+        bool comparisonScope = prep.Scope == BenchmarkReportScope.Comparison;
+        var spec = BenchmarkReportSlots.For(audience, prep.Scope);
+        string name = BenchmarkReportRenderService.AudienceName(audience) + (state.SeveralSubjects ? " about " + prep.Sheet.SubjectLabel : string.Empty);
+        job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Writing);
         job.AddLog($"Writing the {name} with {config.DisplayName}...");
 
-        var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
+        // A comparison-scope document set writes its question topics once and gives them to its later documents.
+        var sharedTopics = comparisonScope && spec.RequiresQuestionTopics && job.SharedTopics.TryGetValue(prep.Sheet.SubjectKey, out var topics)
+            ? topics
+            : null;
+
+        var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content, sharedTopics);
         var runRequest = new AgentRunRequest
         {
             ProviderName = config.Provider,
@@ -538,38 +1043,38 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             }
         };
 
-        var first = await RunTurnAsync(job, audience, runRequest, config, pricing, ct);
+        var first = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
         var turns = new List<WriterTurn> { first };
         if (first.Error != null)
         {
             job.AddLog($"{name}: provider error: {first.Error}", "error");
-            job.SetDocumentStatus(audience, BenchmarkReportPackDocumentStatus.Failed, first.Error);
+            job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, first.Error);
             return false;
         }
 
-        var (output, issues) = ParseAndValidate(audience, first.FinalText, prep);
+        var (output, issues) = ParseAndValidate(audience, first.FinalText, prep, sharedTopics);
         if (issues.Count > 0)
         {
-            job.SetDocumentStatus(audience, BenchmarkReportPackDocumentStatus.Repairing);
+            job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Repairing);
             job.AddLog($"{name}: {issues.Count} validation issue(s); sending one repair turn.", "warning");
 
             runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
-            runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildRepairMessage(issues) });
+            runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope) });
 
-            var repair = await RunTurnAsync(job, audience, runRequest, config, pricing, ct);
+            var repair = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
             turns.Add(repair);
             if (repair.Error != null)
             {
                 job.AddLog($"{name}: provider error on the repair turn: {repair.Error}", "error");
                 if (output == null)
                 {
-                    job.SetDocumentStatus(audience, BenchmarkReportPackDocumentStatus.Failed, repair.Error);
+                    job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, repair.Error);
                     return false;
                 }
             }
             else
             {
-                var (repairedOutput, repairedIssues) = ParseAndValidate(audience, repair.FinalText, prep);
+                var (repairedOutput, repairedIssues) = ParseAndValidate(audience, repair.FinalText, prep, sharedTopics);
                 if (repairedOutput != null)
                 {
                     output = repairedOutput;
@@ -582,19 +1087,19 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         {
             string message = issues.FirstOrDefault()?.Message ?? "The writer's reply could not be parsed.";
             job.AddLog($"{name}: {message}", "error");
-            job.SetDocumentStatus(audience, BenchmarkReportPackDocumentStatus.Failed, message);
+            job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, message);
             return false;
         }
 
         var notes = new List<BenchmarkReportValidationNote>(prep.Notes);
         if (issues.Count > 0)
         {
-            var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, output, prep.Sheet, prep.Content);
+            var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, output, prep.Sheet, prep.Content, sharedTopics);
             if (cleaned.Fatal)
             {
                 string reason = cleaned.FatalReason ?? "Required content failed validation after the repair turn.";
                 job.AddLog($"{name}: {reason}", "error");
-                job.SetDocumentStatus(audience, BenchmarkReportPackDocumentStatus.Failed, reason);
+                job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, reason);
                 return false;
             }
             output = cleaned.Output;
@@ -602,20 +1107,40 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog($"{name}: {notes.Count(n => n.Dropped)} item(s) removed by validation.", "warning");
         }
 
-        // A warning note (rules 12, 13 and 14) keeps its text but still marks the document.
+        if (comparisonScope && spec.RequiresQuestionTopics)
+        {
+            if (sharedTopics != null)
+            {
+                output.QuestionTopics = sharedTopics.Select(t => new BenchmarkReportQuestionTopic { Question = t.Question, Topic = t.Topic }).ToList();
+            }
+            else if (output.QuestionTopics.Count > 0)
+            {
+                job.SharedTopics[prep.Sheet.SubjectKey] = output.QuestionTopics
+                    .Select(t => new BenchmarkReportQuestionTopic { Question = t.Question, Topic = t.Topic })
+                    .ToList();
+            }
+        }
+
+        // A warning note (rules 12 to 19 and 21) keeps its text but still marks the document.
         var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule))
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
 
+        bool reportPack = origin == BenchmarkReportDocumentOrigin.ReportPack;
         var requestRunIds = job.Request.RunIds.OrderBy(id => id).ToList();
         var requestGroupIds = job.Request.GroupIds.OrderBy(id => id).ToList();
         var requestBatteryRunIds = (job.Request.BatteryRunIds ?? new List<long>()).OrderBy(id => id).ToList();
+        string comparisonKey = BenchmarkReportComparisonKey.From(requestRunIds, requestGroupIds, requestBatteryRunIds);
         var document = new BenchmarkReportDocument
         {
             PackId = job.PackId,
             Audience = audience,
             Origin = origin,
-            SubjectKey = prep.Subject.Key,
+            Scope = reportPack ? prep.Scope : BenchmarkReportScope.Model,
+            ComparisonId = reportPack ? job.ComparisonId : null,
+            CoveredEntryKeysJson = reportPack ? BenchmarkReportJson.Serialize(prep.CoveredEntryKeys.ToList()) : null,
+            CoveredSetKey = reportPack && prep.CoveredSetKey.Length > 0 ? prep.CoveredSetKey : null,
+            SubjectKey = comparisonScope ? prep.Sheet.SubjectKey : prep.Subject.Key,
             SubjectLabel = Truncate(prep.Sheet.SubjectLabel, 256),
             SubjectRunIdsJson = BenchmarkReportJson.Serialize(prep.SubjectRuns.Select(r => r.Id).ToList()),
             ComparisonRequestJson = BenchmarkReportJson.Serialize(new BenchmarkModelComparisonRequest
@@ -625,7 +1150,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 BatteryRunIds = requestBatteryRunIds,
                 PricingBasis = job.Request.PricingBasis
             }),
-            ComparisonKey = BenchmarkReportComparisonKey.From(requestRunIds, requestGroupIds, requestBatteryRunIds),
+            ComparisonKey = comparisonKey,
             SuiteId = prep.Sheet.SuiteId,
             SuiteName = Truncate(prep.Sheet.SuiteName, 256),
             WriterConfigId = config.Id,
@@ -635,14 +1160,16 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             WriterModelId = Truncate(config.ModelId, 128),
             WriterThinkingLevel = config.ThinkingLevel,
             SameProviderAcknowledged = job.SameProviderAcknowledged,
-            ReportFormatVersion = BenchmarkReportPackRenderer.ReportFormatVersion,
-            WriterPromptSha256 = BenchmarkReportPackPrompt.PromptSha256(audience),
+            ReportFormatVersion = BenchmarkReportPackRenderer.CurrentFormatVersion(prep.Scope),
+            WriterPromptSha256 = BenchmarkReportPackPrompt.PromptSha256(audience, prep.Scope),
             AnswerExcerptChars = excerptChars,
             FactsJson = BenchmarkReportJson.Serialize(prep.Sheet),
             ContentJson = BenchmarkReportJson.Serialize(prep.Content),
             WriterOutputJson = BenchmarkReportJson.Serialize(output),
             ValidationNotesJson = BenchmarkReportJson.Serialize(notes),
-            Title = Truncate(BenchmarkReportPackRenderer.BuildTitle(audience, prep.Sheet), 512),
+            Title = Truncate(comparisonScope
+                ? BenchmarkReportPackRenderer.BuildComparisonTitle(audience, prep.Sheet, state.Numbered, BenchmarkReportPeerNaming.Named)
+                : BenchmarkReportPackRenderer.BuildTitle(audience, prep.Sheet), 512),
             Status = status,
             CreatedAtUtc = DateTime.UtcNow,
             CreatedByUserId = job.StartedByUserId,
@@ -658,10 +1185,21 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 .ToList()
         };
 
+        // Replace-after-persist: the replaced rows leave in the same save that stores the new one.
+        var replaced = reportPack
+            ? await ReplacedDocumentsAsync(job, prep, audience, document.SubjectKey, comparisonKey, ct)
+            : new List<BenchmarkReportDocument>();
         _db.BenchmarkReportDocuments.Add(document);
+        _db.BenchmarkReportDocuments.RemoveRange(replaced);
         await _db.SaveChangesAsync(CancellationToken.None);
 
-        job.SetDocumentStatus(audience,
+        foreach (var old in replaced)
+        {
+            job.AddLog($"{name}: replaced document #{old.Id}.");
+            await DeleteChartFolderAsync(old.Id);
+        }
+
+        job.SetDocumentStatus(progress,
             status == BenchmarkReportDocumentStatus.Completed
                 ? BenchmarkReportPackDocumentStatus.Completed
                 : BenchmarkReportPackDocumentStatus.CompletedWithWarnings,
@@ -670,9 +1208,48 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         return true;
     }
 
+    /// <summary>
+    /// The documents of <c>ReplaceDocumentIds</c> this new document replaces: Report Pack documents of
+    /// the same audience and comparison, of the same covered set (comparison scope) or subject (model scope).
+    /// </summary>
+    private async Task<List<BenchmarkReportDocument>> ReplacedDocumentsAsync(
+        BenchmarkReportPackJob job, BenchmarkReportPackPreparation prep, BenchmarkReportAudience audience,
+        string subjectKey, string comparisonKey, CancellationToken ct)
+    {
+        var ids = (job.Request.ReplaceDocumentIds ?? new List<long>()).Distinct().ToList();
+        if (ids.Count == 0) return new List<BenchmarkReportDocument>();
+
+        var candidates = await _db.BenchmarkReportDocuments
+            .IgnoreAutoIncludes()
+            .Where(d => ids.Contains(d.Id) && d.Origin == BenchmarkReportDocumentOrigin.ReportPack && d.Audience == audience)
+            .ToListAsync(ct);
+
+        return candidates
+            .Where(d => (job.ComparisonId != null && d.ComparisonId == job.ComparisonId) || d.ComparisonKey == comparisonKey)
+            .Where(d => prep.Scope == BenchmarkReportScope.Comparison
+                ? d.Scope == BenchmarkReportScope.Comparison && string.Equals(d.CoveredSetKey, prep.CoveredSetKey, StringComparison.Ordinal)
+                : d.Scope == BenchmarkReportScope.Model && string.Equals(d.SubjectKey, subjectKey, StringComparison.Ordinal))
+            .ToList();
+    }
+
+    /// <summary>Removes a replaced document's chart folder; a failure is logged and never fails the write.</summary>
+    private async Task DeleteChartFolderAsync(long documentId)
+    {
+        if (_charts == null || !_charts.IsConfigured) return;
+        try
+        {
+            await _charts.DeleteChartsAsync(documentId, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ChartStoreException)
+        {
+            _logger.LogWarning(ex, "The charts of replaced report document {DocumentId} could not be removed.", documentId);
+        }
+    }
+
     /// <summary>The parsed output (null when unparseable) and every validation issue, a parse failure included.</summary>
     private static (BenchmarkReportWriterOutput? Output, IReadOnlyList<BenchmarkReportValidationNote> Issues) ParseAndValidate(
-        BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep)
+        BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep,
+        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics)
     {
         var parsed = BenchmarkReportPackParser.Parse(rawText);
         if (!parsed.Success || parsed.Output == null)
@@ -687,13 +1264,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 }
             });
         }
-        return (parsed.Output, BenchmarkReportPackValidator.Validate(audience, parsed.Output, prep.Sheet, prep.Content));
+        return (parsed.Output, BenchmarkReportPackValidator.Validate(audience, parsed.Output, prep.Sheet, prep.Content, sharedTopics));
     }
 
     /// <summary>Sends the request once and records the call's usage under <see cref="UsageRoleContext"/>.</summary>
     private async Task<WriterTurn> RunTurnAsync(
         BenchmarkReportPackJob job,
-        BenchmarkReportAudience audience,
+        BenchmarkReportPackDocumentProgress progress,
         AgentRunRequest runRequest,
         SystemAiApiConfiguration config,
         ModelPricing? pricing,
@@ -714,7 +1291,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             sw.Stop();
             if (runResult.TotalPromptTokens > 0 || runResult.OutputTokens > 0)
             {
-                await TryRecordUsageAsync(job, audience, config, pricing, runResult, sw.ElapsedMilliseconds);
+                await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
             }
             throw;
         }
@@ -724,13 +1301,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         }
         sw.Stop();
 
-        var (inputTokens, outputTokens, cost) = await TryRecordUsageAsync(job, audience, config, pricing, runResult, sw.ElapsedMilliseconds);
+        var (inputTokens, outputTokens, cost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
         return new WriterTurn(runResult.FinalText, terminalError, inputTokens, outputTokens, sw.ElapsedMilliseconds, cost);
     }
 
     private async Task<(int InputTokens, int OutputTokens, decimal? Cost)> TryRecordUsageAsync(
         BenchmarkReportPackJob job,
-        BenchmarkReportAudience audience,
+        BenchmarkReportPackDocumentProgress progress,
         SystemAiApiConfiguration config,
         ModelPricing? pricing,
         AgentRunResult runResult,
@@ -738,7 +1315,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     {
         var (inputTokens, outputTokens, _) = BenchmarkDescriptionService.NormalizeTokens(runResult);
         decimal? cost = pricing == null ? null : BenchmarkDescriptionService.ComputeCost(pricing, runResult, config.ServiceTier);
-        job.AddUsage(audience, inputTokens, outputTokens, cost);
+        job.AddUsage(progress, inputTokens, outputTokens, cost);
 
         try
         {

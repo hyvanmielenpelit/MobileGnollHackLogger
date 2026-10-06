@@ -1,0 +1,27 @@
+/* The rename dialog. .gh-dialog, .gh-input, .form-hint, .gh-field-error, .btn-link and .btn-gh come from styles.scss. */
+
+.mc-rename-dialog {
+  inline-size: min(36rem, calc(100dvw - 32px));
+}
+
+.mc-rename-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+
+  .form-group {
+    align-self: stretch;
+  }
+
+  .gh-field-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 0;
+  }
+}
+
+.mc-rename-reset {
+  font-size: var(--text-secondary);
+}

@@ -15,7 +15,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap); its 95 % interval overlaps those of Models A and B.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
@@ -35,7 +35,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 | Conciseness | 88 | 85 | +3 |
 | Readability | 90 | 89 | +1 |
 
-GPT-5.6 Luna places 2nd of 3 on intelligence, but its interval overlaps those of Model A and Model B, so the order is not established. Its paired difference from Model A is -4.6 points.
+GPT-5.6 Luna places joint 1st of 3 (intervals overlap) on intelligence, but its interval overlaps those of Model A and Model B, so the order is not established. Its paired difference from Model A is -4.6 points.
 
 ## What it did well
 

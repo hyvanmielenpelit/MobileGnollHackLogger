@@ -1,9 +1,12 @@
-# Report Packs — AI-Written Documents about One Model
+# Report Packs — AI-Written Documents about the Models of a Comparison
 
-A **report pack** is a set of up to three documents about one model of a Model Comparison, written in
-the context of the other models compared with it — at least one other, since a pack compares models
-(§ 1a). The documents are for three different readers: the model's provider or a manager, AI researchers
-and model developers, and the Overseer team itself.
+A **report pack** is a set of up to three documents about the models of a Model Comparison. By default
+they are **comparison-wide**: one document of each type covering every model of the comparison, or a
+chosen subset of two to twelve of them, each model described as an equal (§ 15). The secondary choice is
+a **per-model** set: documents about one model, written in the context of the other models compared with
+it — at least one other, since a pack compares models (§ 1a). Every comparison is numbered, *Comparison
+#N*, and its documents carry the number (§ 15). The documents are for three different readers: a model's
+provider or a manager, AI researchers and model developers, and the Overseer team itself.
 
 The same machinery also writes a run's own **run-completion documents**: the Executive Summary, the
 Report for AI Researchers and Developers and the Internal Improvement Brief about one run on its own,
@@ -15,8 +18,9 @@ after the battery run finishes and is analyzed (§ 14).
 
 This document describes the feature for developers: what each document holds, how the figures and the
 prose are kept apart, how the prose is validated, what is stored, how a stored document is rendered
-at download, how its PDF and Word copies carry charts (§ 13), and how a battery result is a subject
-(§ 14). It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
+at download, how its PDF and Word copies carry charts (§ 13), how a battery result is a subject
+(§ 14), and how comparisons are numbered and written about as a whole (§ 15). §§ 1–14 describe the
+per-model documents unless they say otherwise. It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
 the run report and Model Comparison. Read that first if you have not.
 
 The one design rule behind everything below: **numbers come from code, words come from the writer, and
@@ -32,6 +36,9 @@ Implementation:
 | Parsing the writer's JSON | `BenchmarkReportPackParser` |
 | The validation rules and the drop policy | `BenchmarkReportPackValidator` |
 | A comparison's identity, and its startup backfill | `BenchmarkReportComparisonKey`, `BenchmarkReportDocumentBackfill` |
+| The numbered comparison (*Comparison #N*), its name and its endpoints | `BenchmarkComparison`, `BenchmarkComparisonIdentityService`, `AdminBenchmarkComparisonsController` (§ 15) |
+| A comparison-wide document's fact sheet and content | `BenchmarkComparisonReportFacts`, `BenchmarkReportContent.BuildComparison` (§ 15) |
+| A document laid out with placeholder text, for step 3's Preview layout | `BenchmarkReportLayoutPreview` (§ 15) |
 | Generation: preparation, the writer call, repair, storage | `BenchmarkReportPackService` |
 | The background job and its progress | `BenchmarkReportPackJob`, `BenchmarkReportPackJobManager` |
 | A run's run-completion documents: scheduling, the queued job, the run's status | `BenchmarkRunReportDocumentService` (singleton) |
@@ -47,11 +54,12 @@ Implementation:
 
 ## 1. Purpose and the Three Documents
 
-Step 3 of the Model Comparison wizard, **Reports**, starts a report pack (§ 12). The admin
-picks one comparison entry as the **subject** — a run, an analysis group or a battery result (§ 14) —
-and a separate **report
-writer** model, and chooses which documents to write. The other entries of the comparison are the
-subject's **peers**, lettered A, B, C… in quality-rank order.
+Step 3 of the Model Comparison wizard, **Reports**, starts a report pack (§ 12). Under *Whole
+comparison*, the default, it writes the comparison-wide documents of § 15. Under *One model at a time*
+the admin picks one or more comparison entries as **subjects** — each a run, an analysis group or a
+battery result (§ 14) — and each subject gets its own per-model documents, the subject of this section.
+The admin also picks a separate **report writer** model and which documents to write. The other entries
+of the comparison are a subject's **peers**, lettered A, B, C… in quality-rank order.
 
 Any entry that is not **Excluded** can be the subject, as long as at least one other entry is not
 Excluded either: a subject with no peer is refused (§ 1a). A **Degraded** entry is allowed: its degraded
@@ -158,7 +166,7 @@ the alternatives it rejected are `ai-benchmark-multi-suite.md` § 7.2, decision 
 |---|---|---|---|
 | A run's own documents (no peers) | Run report → **AI Reports** tab, and automatically at the end of the run (§ 11) | The run's Download Center | Model Comparison |
 | A battery run's own documents (no peers) | Battery Run Report → **AI Reports** tab, and automatically at stage 3 of the battery progress dialog (§ 14) | The battery run's Download Center | Model Comparison |
-| Comparison documents (one subject, at least one peer) | Model Comparison → step 3 (§ 12) | Step 4 (this comparison), and the launcher's **Comparison reports** (all comparisons) | A run's or battery run's Download Center. These show a pointer instead (§ 8) |
+| Comparison documents (comparison-wide over two to twelve models, § 15; or per-model, one subject with at least one peer) | Model Comparison → step 3 (§ 12) | Step 4 (this comparison), and the launcher's **Comparison reports** (all comparisons) | A run's or battery run's Download Center. These show a pointer instead (§ 8) |
 
 What keeps each document in its home:
 
@@ -170,15 +178,18 @@ What keeps each document in its home:
   report."* (§ 9). The rule is checked by the Report Pack endpoints only, never inside `CompareAsync` or
   `PrepareAsync`, because the run- and battery-completion paths prepare a one-entry comparison. The
   wizard's step 3 is unavailable until the comparison holds two entries that are not Excluded (§ 12).
-- **One comparison document per comparison, subject and document type** (§ 5): step 3 shows a document
-  already written as unchecked and disabled, and the start refuses a duplicate with 409. Nothing is
-  overwritten or duplicated silently; to write one again, delete it on step 4.
+- **One comparison document per comparison, subject (or covered set) and document type** (§§ 5, 15):
+  step 3 lists a document already written as *Written*, its checkbox *Rewrite — replaces the current
+  document* unchecked, and the start refuses a duplicate with 409 unless the request names it under
+  `replaceDocumentIds`. Nothing is overwritten or duplicated silently: a rewrite replaces the old
+  document only once the new one is stored (§ 15), and a document can also be deleted, on step 3 or 4.
 - **The run and battery Download Centers list their own documents only**, by `Origin`, and point to the
   comparison documents about their subject with **Open comparison documents** (§ 8).
 - **The Internal Improvement Brief is a completion document** (§ 1), so a run's or battery run's brief
   has a home without a one-entry comparison.
-- **Comparison file names carry the comparison** (§ 8), and a completion document has no `vs-` part, so
-  the two kinds never share a file name.
+- **Comparison file names carry the comparison** (§ 8): a Report Pack document of a numbered comparison
+  is named `comparison-<N>_…`, and an older one without a number has a `vs-` part when it has peers;
+  a completion document has neither, so the two kinds never share a file name.
 
 **What stays as it was.** `ReportPack` (1) keeps meaning a document of a Report Pack job; no `Origin` was
 added. Report Pack documents stored before this rule — peerless ones included — are not re-homed: the
@@ -222,9 +233,10 @@ copy the comparison's *Pairwise significance* excluded measure, whose text now t
 operator that the charts and table carry no test and points to the wizard's **Paired tests** view
 (`ai-benchmark.md`, *Paired Tests*). Decoupling them kept every golden render and stored sheet where
 it was. The *Instead* sentence is kept on the sheet and is never printed or shown to the writer.
-**Documents do not yet cite the paired tests**: a Report Pack or run-completion document still states
-that no pair is tested, even where the wizard has tested one. Having documents cite the
-family-adjusted tests is a follow-up.
+**Per-model documents do not cite the paired tests**: a per-model Report Pack document, a
+run-completion and a battery-completion document state that no pair is tested, even where the wizard
+has tested one. Comparison-wide documents cite the family-adjusted paired tests over their covered
+models instead, and carry no such statement (§ 15).
 
 **Per-peer facts.** Each peer `X` has its own facts, so the writer can say how the subject compares with
 it: `peer.X.quality.index`, `peer.X.quality.interval`, `peer.X.quality.rank`,
@@ -301,7 +313,8 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules, and a comparison-wide
+document against rule 21 too, with rules 2, 10 and 16 read for its tokens (§ 15). Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message. Rule 20 is not a check on the writer: it is the note a battery
 subject's preparation records when it left question detail out of the prompt (§ 14).
@@ -328,6 +341,7 @@ subject's preparation records when it left question detail out of the prompt (§
 | 18 | A `model_developers` recommendation mentions nothing a model developer cannot change (`OverseerOnlyTerms`: *rubric, retrieval, index, corpus, regression test, system prompt, tool guide, prompt the model, the assistant's prompt, GnollHack*, with their plural and inflected forms, as whole words ignoring case; `ModelDeveloperScopeRule`) |
 | 19 | No negation — *no, none, never, without, zero*, ignoring case — among the four words before a token whose display value starts with `0` in the same sentence, as in *"no critical errors across {{errors.critical}}"* reading *"0 of 18 answers"* (format 9). Tokens are set aside before the text is split into sentences |
 | 20 | *Not a writer check.* A battery subject's prompt exceeded `Benchmark:ReportPack:BatteryMaxPromptChars`, so the full detail of the questions it names was left out and only their rows were given (`BenchmarkBatteryReportFacts.PromptBudgetRule`, location `prompt`, § 14). Recorded before the writer call, stored with the document and logged as a warning; it neither drops anything nor marks the document *Completed with warnings* |
+| 21 | A comparison-wide document's `models` list has an entry for every covered model (`ModelCoverageRule`, § 15). A warning, kept after the repair turn like rules 12 to 19 |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
@@ -395,7 +409,9 @@ it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped 
 
 **Rules enforced by the server.**
 
-- **The model under report is refused as its own writer** — the same provider and model id (400).
+- **The model under report is refused as its own writer** — the same provider and model id (400). A
+  comparison-wide document refuses a writer that is a covered model's configuration — the same provider,
+  model id and thinking level — and warns about a writer sharing any covered model's provider (§ 15).
 - **A writer from the subject's provider** triggers a warning that must be acknowledged: the Reports
   step shows it in amber, and **Generate** then asks a nested *Same-Provider Report Writer* confirmation
   (**Write Anyway**) on every write (§ 12) before sending `acknowledgeSameProvider`; without it the start
@@ -476,14 +492,20 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
   implementation). Documents
   of the same **set of entries** share it whatever their subject; the pricing basis is not part of it, so
   changing *Prices* in the wizard keeps the same documents listed. A run-completion document carries its
-  one run's key. An index on `(ComparisonKey, Origin, CreatedAtUtc)` serves the list.
+  one run's key. An index on `(ComparisonKey, Origin, CreatedAtUtc)` serves the list;
+- `Scope` (`Model` or `Comparison`), `ComparisonId` (the numbered comparison, a `Restrict` foreign key,
+  never auto-included), `CoveredEntryKeysJson` and `CoveredSetKey` — the comparison a Report Pack
+  document belongs to and the entries it covers (§ 15). Run- and battery-completion documents keep
+  `Scope = Model` and null in the other three.
 
 **One Report Pack document per `(ComparisonKey, SubjectKey, Audience)`.** From 2026-10-06 a comparison
-holds at most one document of each type about each subject (§ 1a). The start endpoint enforces it, not a
+holds at most one per-model document of each type about each subject (§ 1a), and one comparison-wide
+document of each type per covered set (§ 15). The start endpoint enforces it, not a
 database constraint: it hashes the **request's** sources with `BenchmarkReportComparisonKey.From`, exactly
 as the stored key was hashed (Excluded entries included, because the request carries them), looks for a
 `ReportPack` row with that key, the subject's key and a requested audience, and refuses 409 when one
-exists (§ 9). The preview reports the same rows as `writtenDocuments`, the newest per audience. Rows
+exists and the request does not name it under `replaceDocumentIds` (§§ 9, 15). The preview reports the
+same rows as `writtenDocuments`, the newest per audience. Rows
 stored before the rule may hold two documents of one type for one comparison and subject; the check then
 reports the newest. Completion documents are not counted: their `Origin` differs.
 
@@ -509,9 +531,10 @@ row with no `ComparisonKey` one derived from its stored `ComparisonRequestJson`,
 beside the run-completion settlement in `Program.cs`; a row it cannot read is logged and stays null, and
 lists only where no comparison filter applies. The backfill is idempotent. Those rows have **no peer
 rows** — their peers' fingerprints were never stored — so they are never flagged *Comparison changed*.
+A second startup backfill then numbers their comparisons and fills their covered entries (§ 15).
 
 There is **no foreign key to runs**: deleting a run keeps its documents. Deleting a document cascades to
-its child rows and removes its chart folder (§ 13).
+its child rows and removes its chart folder (§ 13); its numbered comparison stays.
 
 A document's **chart images are not in the row**. They are PNG files in a folder of their own on disk
 (§ 13), the only part of a document that is not immutable: they can be added, replaced or removed at
@@ -566,8 +589,10 @@ provider column, and replaces the peers' model ids and providers in every table.
 is withheld (a peer's provider that is not the subject's, as in *Evaluation terms*, § 1) reads *a model
 from a withheld provider* in place of its name and model id, in *Setup and method*, the *Reproducibility
 appendix* and the full question details. Named prints the peers' names wherever a fact states them by
-letter — the interval-overlap figure (*"overlaps every peer's"*) and *Judge-dependent pairs*. The subject
-is always named.
+letter — the interval-overlap figure (*"overlaps every peer's"*) and *Judge-dependent pairs* — and prints a
+peer's label with no letter after it (*Grok 5*, not *Grok 5 (A)*). The *Compared models* table carries a
+*Letter* column under both namings, so a named and an anonymized copy can be matched. The subject is
+always named.
 
 The Report for AI Researchers and Developers renders at any level with either naming. The Executive
 Summary is **offered** at Summary and Full only (`BenchmarkReportPackRenderer.AllowedDisclosures`, which
@@ -610,7 +635,14 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 11** (the current one, 2026-10-04, with harness 49 in `ai-benchmark.md`) comes from the
+**Format version 12** (2026-10-06) is the format of the comparison-wide documents
+(`ComparisonReportFormatVersion`, § 15); `BenchmarkReportPackRenderer.CurrentFormatVersion(scope)` gives
+each scope's version. Per-model documents are written under format 11. Every Report Pack document of a
+numbered comparison prints its comparison (§ 15), and every per-model document prints a named peer
+without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
+overlap)"*), whatever format it was written under.
+
+**Format version 11** (the current per-model one, 2026-10-04, with harness 49 in `ai-benchmark.md`) comes from the
 battery run 4 analysis (runs 82 and 83). It changes no score or index of its own; stored documents
 re-render with the new renderer on their next download, and the prompt changes reach only documents
 written from now on.
@@ -919,7 +951,8 @@ benchmark round: on one run-73 question the claim verifier's verdict contradicte
 the synthesis can merge unrelated items into one Conflicting row.
 
 The goldens include two stand-alone ones, `exec_standalone.md` and `technical_standalone.md`, rendered
-from the fixture's single-run subject. To regenerate every golden after an intended change, set
+from the fixture's single-run subject; the comparison-wide documents' `comparison_*.md` and
+`comparison_subset_*.md`; and the comparison-scope prompts' `prompt_*_comparison.txt`. To regenerate every golden after an intended change, set
 `$env:OVERSEER_UPDATE_GOLDENS = '1'` and run the normal test command (`ai-benchmark.md` and the
 `testing-guidelines` skill give it), then review each diff before keeping it.
 
@@ -977,8 +1010,12 @@ Opened on a list of documents (`DownloadCenterDocumentsContext`, by id) or on a 
 library context lists **only Report Pack documents**, with one request, and never a run report of a
 subject run. Its `scope` is one of:
 
-- `{ kind: 'comparison', entryKeys }` — this comparison's Report Pack documents,
-  `comparison=<entry keys>&origin=reportPack` (§ 9);
+- `{ kind: 'comparison', comparisonId, name, entryKeys }` — this comparison's Report Pack documents:
+  those of its number, `comparisonId=<N>&origin=reportPack`, and beside them those listed by its entry
+  keys, `comparison=<entry keys>&origin=reportPack` (§ 9), that carry no number, each once, newest
+  first (a failure of the second request lists the numbered documents alone); before the comparison
+  has a number, the entry-key request alone. Only the comparison's name changing keeps the rows and
+  choices;
 - `{ kind: 'all' }` — every Report Pack document, `origin=reportPack&take=500`;
 - `{ kind: 'subject', subjectKey, label }` (`DownloadCenterSubjectScope`) — every comparison document
   about one run or battery run, whichever comparison wrote it, `subject=<key>&origin=reportPack`. The
@@ -1032,23 +1069,31 @@ preparation overlay counts *Preparing k of n*. Unchecking the option, or narrowi
 *Document* filter, keeps a download quick.
 
 **The documents list** shows each document as a full-width card (the `frontend_ui_controls` skill
-§ 8h). The list's header holds the *Documents* heading, an (i) button **About document options** that
+§ 8h). The list's header holds the *Documents* heading — *Documents of Comparison #12 — <name>* while it
+lists one numbered comparison's documents (*Documents of Comparison #12* while the name is unknown) —
+an (i) button **About document options** that
 opens one dialog explaining *Sharing*, *Disclosure* (what each level contains, per document type),
 *Peer names*, *Formats* and, in the wizard, *Charts*, and a status line such as *Showing 10 of 23
 documents* (*· filtered from 40* while a filter is active), which screen readers announce.
 
 Above the cards, a filter bar:
 
-- **Search** matches the title, the subject, the suite and the writer once typing pauses. Escape clears
-  the text without closing the dialog; with the field empty, Escape closes it as usual.
-- **Sort by** offers *Newest first* (the default), *Oldest first*, *Document type*, *Title*, *Subject*,
-  *Suite*, *Writer*, *Writing cost, highest first* and *Changed since written first*. The choice is
-  remembered in the browser, separately from the download settings.
-- **Filters** — *Document*, *Subject*, *Suite*, *Written by*, *Changes*, *Charts* (in the wizard only,
-  § 13) and *Created* (the last 24 hours, 7 days or 30 days) — each open a list of options with the
-  number of documents each would leave, counted with the other filters applied. Several options of one
-  filter widen the list; several filters narrow it. A filter is offered only while its documents differ
-  in it. There is no Sharing filter: a document's sharing follows the disclosure chosen on its own card.
+- **Search** matches the title, the subject, the models, the comparison (*Comparison #12*, *#12* and its
+  name), the suite and the writer once typing pauses. Escape clears the text without closing the dialog;
+  with the field empty, Escape closes it as usual.
+- **Sort by** offers *Newest first* (the default), *Oldest first*, *Document type*, *Title*, *Model
+  (A–Z)* (by the first model a document covers; its stored id is still `subject`), *Suite*, *Writer*,
+  *Writing cost, highest first* and *Changed since written first*. The choice is remembered in the
+  browser, separately from the download settings.
+- **Filters** — *Document*; *Scope* (*Whole comparison*, *Model subset*, *One model*); *Comparison*
+  (*#12 — <name>*, newest first; never while one comparison's documents are listed, as on step 4);
+  *Model* (every model a document covers: a comparison-wide or subset document counts under each of its
+  covered models, a per-model document under its subject); *Suite*; *Written by*; *Changes*; *Charts*
+  (in the wizard only, § 13); and *Created* (the last 24 hours, 7 days or 30 days) — each open a list of
+  options with the number of documents each would leave, counted with the other filters applied. Several
+  options of one filter widen the list; several filters narrow it. A filter is offered only while its
+  documents hold two values or more of it, or it has a selection. There is no Sharing filter: a
+  document's sharing follows the disclosure chosen on its own card.
 - **Chips** show each active filter and the search; each removes itself, and **Clear all** removes them
   all but *Show selected only*.
 - **The selection line** reads *N selected — M not shown*, with **Show selected only**, **Clear
@@ -1059,8 +1104,10 @@ The bar stays at the top of the panel while the list scrolls, where the panel is
 
 Each card has the *Include* checkbox top left (a click on the title selects the card too, and a selected
 card turns gold), a line with the document type, the *Shareable* or *Internal only* tag and the *Run
-changed since this document was written* and *Comparison changed* tags in words, the title, a line with
-the date, the subject, the suite and the writer (a run file's suite and model), the actions top right,
+changed since this document was written* and *Comparison changed* tags in words, the title, a meta line
+— for a document of a numbered comparison first *Comparison #12* and its name, then *2 of 5 models* for
+a subset; the date; the subject (per-model documents only), the suite and the writer (a run file's suite
+and model) — the actions top right,
 and under a rule the options, each labeled: *Disclosure*, *Peer names*, *Formats* and, in the wizard,
 *Charts*. An internal-only card in the External package is dimmed, with its checkbox disabled and no
 options. The list shows 10 cards, then **Show N more** and **Show all M**; after either, focus moves to
@@ -1098,11 +1145,27 @@ usable) and shows a ring spinner, the current step — *Preparing 2 of 5 — …
 with reduced motion the ring stands still.
 
 **File names.** A pack document at Full, and every internal-only file (run report, tool-call log,
-diagnostics), gets an `_INTERNAL` file-name suffix. A document whose subject is one run (`run:<digits>`,
+diagnostics), gets an `_INTERNAL` file-name suffix. Every name ends
+`_<summary|detailed|full>_<named|anonymized>[_INTERNAL].<pdf|docx|md|html>`.
+
+**A Report Pack document of a numbered comparison** (§ 15) is named by its comparison
+(`BenchmarkPdfFileNames.ComparisonStem` on the server, `comparisonFilePart` in the client), with the kind
+slug `executive-summary`, `researcher-report` or `internal-brief`:
+
+| Document | Stem |
+|---|---|
+| Per-model | `comparison-12_<model slug>_<kind>`, in both namings, since the subject is always named — `comparison-12_gpt-5.6-luna-max_executive-summary_full_named_INTERNAL.pdf` |
+| Comparison-wide, named | `comparison-12_<name slug>_<kind>`, the name slug cut at the last hyphen at or before 40 characters |
+| Comparison-wide, anonymized, or the name unknown | `comparison-12_<kind>` |
+| Subset, named, up to three models | `comparison-12_subset-<covered slug>_<kind>`, the models' slugs joined by `-vs-` and cut as the name slug is (no dangling `-vs`) |
+| Subset, anonymized or more than three models | `comparison-12_subset-2-of-5-models-<first 6 hex of CoveredSetKey>_<kind>` |
+
+**Any other document** — a Report Pack row without a comparison number, a run-completion or a
+battery-completion document — keeps these names. A document whose subject is one run (`run:<digits>`,
 every run-completion document) is named from the run number first, with a `run-<digits>_` prefix, in its
 PDF, Word and Download Center names alike — `run-73_…_full_named_INTERNAL.pdf`. A document with peers
 adds a **comparison part** after the run prefix, or first for a group subject, so documents of two
-comparisons never share a name (from 2026-10-06):
+comparisons never share a name:
 
 - **1 to 3 peers whose entry keys all parse:** `vs-` and one token per peer in letter order (letter
   length, then ordinal), joined by `-`, then `_` — a token being `run-<id>`, `group-<id>` or
@@ -1121,9 +1184,26 @@ with `_INTERNAL.pdf` and `_INTERNAL.docx`. Run diagnostics are a point-in-time c
 download**: the `.txt`, the `.pdf` and the `.docx` of one download hold the same text and the same capture
 time.
 
-**ZIP and manifest.** Several files download as one ZIP, `<model>_<package>_<yyyyMMdd_HHmmss>.zip`, with a
-`MANIFEST.md` listing each file's name, document id, audience, disclosure, naming, renderer version,
-creation time, writer, format and SHA-256 — for a PDF, of its exact bytes, and with a
+**ZIP and manifest.** Several files download as one ZIP, `<stem>_<package>_<yyyyMMdd_HHmmss>.zip`, its
+stem built from the **chosen** rows (`downloadZipStem`):
+
+- documents of one numbered comparison: `comparison-12_<name slug>`, or `comparison-12` when any of them
+  is chosen anonymized or the name is unknown — the comparison's name only when every chosen document of
+  it is named;
+- documents of several comparisons, or of one beside documents without a number: `comparison-reports`;
+- a run context: the one model the chosen rows are about, else the run's model; a battery context: its
+  label, else `battery-run-<id>`;
+- other documents without a number: the one subject they are about, else `comparison-reports` for
+  Report Pack documents and `reports` for any others.
+
+The ZIP holds a `MANIFEST.md`. Its header lists the package, the packaging time, the file count and
+*Comparison* (or *Comparisons*, separated by semicolons): each comparison of the chosen documents as
+*Comparison #12 — <name>*, without the name when any chosen document of it is anonymized. Each file's
+block lists its name, document id, audience, *Comparison* (*Comparison #12 — <name>*, *Comparison #12* in
+an anonymized copy, a dash without one), *Model* (a per-model document's subject, a run file's model) or
+*Models* (*all 5* for a comparison-wide document; a subset's names in a named copy and letters, *Model A,
+Model B*, in an anonymized one), disclosure, naming, renderer version, creation time, writer, format and
+SHA-256 — for a PDF, of its exact bytes, and with a
 `PDF: PDF/UA-1, PDF/A-3A, A4` (or `US Letter`) line, or for a Word file a
 `Word: Office Open XML (.docx), A4` (or `US Letter`) line. PDFs and Word files are stored in the ZIP
 uncompressed, since their streams already are. The packaging time appears only in the manifest and the ZIP name, so the Markdown
@@ -1150,7 +1230,7 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 5*, and a classification banner — amber
+  *Source {first 16 hex of the source hash} · PDF layout 6*, and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
   *"{Suite} · run #68 · compared with 4 models"* (*group #N* for a group subject); a stand-alone one
@@ -1164,12 +1244,17 @@ still reaches no model client, clock or configuration, and the architecture pins
   empty part left out) and *Provenance* (the figures computed by Overseer, the prose by the writer and
   checked automatically for structure, permitted figures and references, word limits and disclosure,
   which does not verify its interpretations); it has no *Audience* row, since the document kind says it.
+  A document of a numbered comparison opens its facts table with a *Comparison* row and adds
+  *· Comparison #12* to a per-model subject line; a comparison-wide document's subject line, title and
+  facts are in § 15.
   The Markdown's front matter — the stamp and the *Date*, *Suite*, *Questions*, *Runs* and *Peers* list
   under the title, *Compared with* and *Pricing basis* in place of *Peers* when there are peers — and its
   closing footer — the document ID, version, writer and provenance lines — are
   left out of the PDF and Word files (`BenchmarkReportRenderOptions.IncludeFrontMatter = false` and
   `IncludeDocumentFooter = false`), because the cover prints the same.
-- **Every page**: from page 2 a running header with the emblem, *GnollBench · {kind}* and the subject;
+- **Every page**: from page 2 a running header with the emblem, *GnollBench · {kind}* and, at its right,
+  *Comparison #12 — <name>* (*Comparison #12* in an anonymized copy) kept to one line with an ellipsis,
+  or the subject line for a document without a numbered comparison;
   a footer with the short classification, the source hash and layout version, and *Page X of Y*; for
   internal documents a diagonal *INTERNAL* watermark. Header, footer and watermark are artifacts, skipped
   by screen readers.
@@ -1183,11 +1268,18 @@ still reaches no model client, clock or configuration, and the architecture pins
   tables, the placeholder and the new cover table.
 - **Figures** (*PDF layout 3*, 2026-09-30): a paragraph that is exactly a figure marker,
   `[[figure:<key>]]`, is drawn as the chart given for that key (§ 13), and prints nothing when there is
-  none. The image is centered, as wide as the text column unless its height would pass 60 % of the page's
-  content height, in which case it is scaled down to that height. It is tagged `SemanticFigure` with the
+  none. The image is centered in a frame of its **width share** of the text column (the whole column
+  without a chart layout, § 13) unless its height would pass the layout's maximum height share of the
+  page's content height (60 % without a layout; 20 % to 90 % with one), in which case it is scaled down to
+  that height. It is tagged `SemanticFigure` with the
   chart's alternative text (its title, else *Chart*, when the text is empty), and the caption below it,
   tagged `SemanticCaption`, reads **Figure N.** *Title* — caption, in the table text size. Image and
-  caption are kept on one page, and figures are numbered in order of appearance.
+  caption are kept on one page, and figures are numbered in order of appearance. **Figure rows**
+  (*PDF layout 6*): two consecutive figures of one row group, with nothing printed between them, print
+  side by side as one `Row` of two `RelativeItem`s sharing the column less a 12 pt gap by their width
+  shares, each with its own image and caption, kept on one page. A figure directly after a heading is
+  kept with it: a run of headings moves to the next page with its first paragraph or figure when the
+  group does not fit.
 - **Closing section** (*PDF layout 4*, 2026-09-30): the last `##` section of a document with at least two
   (*Evaluation terms*) is kept on one page when its estimated height fits a page
   (`BenchmarkPdfMarkdownComposer.KeptTogetherSectionStart`, an estimate that errs high), so no document
@@ -1198,8 +1290,25 @@ still reaches no model client, clock or configuration, and the architecture pins
   columns keep their width and the text columns shrink toward their header minimums in proportion to
   their excess; only when the header words alone do not fit do they shrink further, so a header word
   breaks mid-word only then. A table of at most 10 body rows (`ShortTableMaxBodyRows`) is kept on one page
-  when it fits on one (`PreventPageBreak`), so a four-row table is no longer split. The Word renderer
-  keeps the shared `ColumnWeights`, and `Autofit` lets Word widen a column to its longest word.
+  when it fits on one (`PreventPageBreak`), so a four-row table is no longer split.
+- **Wide tables** (*PDF layout 6*, 2026-10-06; `BenchmarkPdfMarkdownComposer.TableLayout`, shared with
+  Word as `BenchmarkTableLayout`): every column's minimum is its longest word, header and body together,
+  and when those do not fit across the text width these measures are taken in order until they do —
+  the table text steps down from 9.5 pt by half a point to 8 pt; then the deterministic tables' known
+  long headers print short, one at a time, the largest saving first, with a legend line under the table
+  (*Assessed band* → *Band*, *Refuted answer sentences* → *Refuted*, *Critical errors* → *Crit.*,
+  *Contribution* → *Contrib.*, *Cost per run, graders included* → *Cost/run*, *Critical-error rate* →
+  *Crit. rate*; *"Band: Assessed band · Refuted: Refuted answer sentences"*); then a per-question table's
+  *Topic* column leaves the grid for a full-width second line of each row (*Topic: …*). Each measure is
+  tried at every text size before the next is taken, and the largest size that fits wins; when nothing
+  fits, every measure is taken at the smallest size and `PdfColumnWeights` shares out the shortfall, so
+  only a token longer than its whole column breaks inside itself. Widths are **estimated** per
+  character: an average glyph advance of a little over half an em, scaled by each character's width
+  class (narrow glyphs 0.65, round capitals 1.25, *m*, *w*, *M*, *W*, *%*, *@* and the em dash 1.55, a
+  full-width glyph 1.85, any other 1), and monospace code by its length.
+- **Inline code** keeps the space before and after it: a test measures the gaps around a code span in
+  QuestPDF's own layout (review W4), and the composer passes literal text through unchanged, with no
+  workaround.
 - **Source hash**: SHA-256 over the UTF-8 Markdown followed by each drawn chart's SHA-256 (lowercase hex)
   in figure order, so a changed chart changes the hash; with no chart drawn it equals the Markdown's own
   hash, as before layout 3. The cover and the footer print its first 16 hex characters.
@@ -1226,14 +1335,19 @@ never by string templating. It is static and stateless like the PDF renderer, so
   instance for each ordered list, starting at its own number.
 - **Tables** use *GnollBench Table*: a shaded header row that repeats on every page, zebra banding, rows
   that do not split across pages, numeric columns right-aligned, and column widths from the
-  same weights the PDF uses.
+  same table layout the PDF uses, with `Autofit` letting Word widen a column to its longest word. A wide
+  table takes the PDF's measures: the smaller text size on every run, the short headers with their legend
+  in a *Source Line* paragraph below the table, and the moved *Topic* column as a merged second row under
+  each body row, kept with it and striped with it.
 - **Page 1** mirrors the PDF: the wide logo, the document kind, the title, the subject line, a facts table,
   *Source {first 16 hex} · Word layout 2* and the classification banner; the subject line, the facts table
   and the banner text come from the same document information as the PDF's, so they change with the
   PDF's cover. The source hash follows the PDF's rule, charts included. The table of contents follows
   under the PDF's rule, as a real `TOC` field pre-filled with links to the `##` sections and marked for
   Word to refresh (page numbers included) when the file is opened; Word may ask once to update fields.
-- **Every page**: from page 2 a header with the emblem, *GnollBench · {kind}* and the subject; a footer
+- **Every page**: from page 2 a header with the emblem, *GnollBench · {kind}* and, at the right tab, the
+  PDF header's text (a comparison heading cut with an ellipsis to the characters half the text width
+  holds); a footer
   with the short classification, the source hash and layout version, and *Page X of Y* as `PAGE` and
   `NUMPAGES` fields; for internal documents Word's own *INTERNAL* text watermark, which *Design →
   Watermark → Remove Watermark* removes.
@@ -1243,11 +1357,14 @@ never by string templating. It is static and stateless like the PDF renderer, so
 - **Images**: the two logos are PNG (`Overseer/Resources/Word/`), because WebP pictures do not open in
   Word 2019, Word 2021 or LibreOffice. A Markdown image, `![alt](url)`, still prints as `[alt]`.
 - **Figures** (*Word layout 2*, 2026-09-30): a figure marker with a chart (§ 13) becomes an inline picture
-  in a paragraph of its own, the PNG in its own image part, as wide as the text column with its height
-  capped as in the PDF. Its `DocProperties` carry an id unique in the document from 3 (1 and 2 are the
-  logos), the name *Figure N* and the chart's alternative text as the description, which Word shows as
-  the picture's alt text. The picture is centered and kept with the caption paragraph below it, which
-  reads, as in the PDF, **Figure N.** *Title* — caption.
+  in a paragraph of its own, the PNG in its own image part, as wide as its width share of the text
+  column with its height capped as in the PDF. Its `DocProperties` carry an id unique in the document
+  from 3 (1 and 2 are the logos), the name *Figure N* and the chart's alternative text as the
+  description, which Word shows as the picture's alt text. The picture is centered and kept with the
+  caption paragraph below it, which reads, as in the PDF, **Figure N.** *Title* — caption, indented to
+  the figure's width. A figure row is a borderless table of one row that is not split across pages, the
+  column shared between its two cells by the figures' width shares, each cell holding one figure. The
+  Word layout version stays 2.
 - **Properties**: title, author *GnollBench (Overseer)*, subject, keywords, language `en-US` and the
   stored creation date (never the request time), plus the custom properties *GnollBench Classification*
   and *GnollBench Source SHA-256*. The file opens without *Compatibility Mode*.
@@ -1260,25 +1377,60 @@ never by string templating. It is static and stateless like the PDF renderer, so
 
 All endpoints require the `AdminOnly` policy and sit under `api/admin/benchmark`.
 
+### Comparisons (`AdminBenchmarkComparisonsController`)
+
+- `POST /api/admin/benchmark/model-comparisons/identify`: Body `{ runIds, groupIds, batteryRunIds }`. The
+  numbered comparison of the selection, created and named when it is new (§ 15); the same selection in any
+  order is always the same comparison. 200 with `{ id, name, customName, defaultName, entryCount,
+  subjectKind, entryKeys, createdAtUtc, renamedAtUtc }` (`BenchmarkComparisonDto`; `name` is the display
+  name, `customName` null while it carries its default). 400 for no body, and for a selection the
+  comparison refuses: empty, battery results mixed with runs or groups, or an entry that does not exist.
+- `PATCH /api/admin/benchmark/model-comparisons/{id}`: Body `{ name }`. Renames the comparison, trimmed;
+  an empty or null name resets it to its default name. 200 with the comparison; 400 for no body or a name
+  over 160 characters; 404 for an unknown comparison.
+- `GET /api/admin/benchmark/model-comparisons`: Every comparison, newest first, each `{ id, name,
+  customName, defaultName, entryCount, subjectKind, documentCount, lastDocumentAtUtc, createdAtUtc }`.
+
 ### Report packs (`AdminBenchmarkReportPacksController`)
 
-- `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and prompts without a model call —
-  subject, peers, estimated tokens and cost per document, the same-provider warning and any refusal.
-  A subject with no peer answers 200 with the subject's fields, `refusal` set to
-  `PeerlessReportRefusal` (§ 1a) and no estimates. Otherwise the preview also carries
-  `writtenDocuments`: the Report Pack documents already stored for this comparison and subject (§ 5),
-  the newest per audience, in audience order, each `{ audience, documentId, createdAtUtc,
-  writerDisplayName }` (`BenchmarkReportPackWrittenDocumentDto`).
-- `POST /api/admin/benchmark/report-packs`: Start a job. Body
-  `{ runIds, groupIds, batteryRunIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`,
-  with audiences as numbers (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal
-  Brief). `batteryRunIds` names battery results, and a request naming any may name no run or group.
-  Returns 202 `{ jobId }`.
+The request of the preview, the start and the layout preview is
+`{ runIds, groupIds, batteryRunIds, pricingBasis, scope, subjectKey, subjectKeys, coveredEntryKeys, audiences[], writerModelConfigurationId, acknowledgeSameProvider, replaceDocumentIds }`:
+
+- `scope` is 1 (`Model`, the default) or 2 (`Comparison`);
+- model scope reads `subjectKeys`, the subjects written one after another sharing one computation of the
+  comparison, or `subjectKey` alone when that list is empty;
+- comparison scope reads `coveredEntryKeys`, empty or absent meaning every entry that is not Excluded;
+- `audiences` are numbers (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal
+  Brief); `batteryRunIds` names battery results, and a request naming any may name no run or group;
+- `replaceDocumentIds` names the written documents the job replaces (§ 15).
+
+- `POST /api/admin/benchmark/report-packs/preview`: The fact sheets and prompts without a model call.
+  Model scope: the first subject, its peers, the estimated tokens, cost and `contextWindowShare` per
+  document and subject, the same-provider warning and any refusal. A subject with no peer answers 200
+  with the subject's fields, `refusal` set to `PeerlessReportRefusal` (§ 1a) and no estimates. Otherwise
+  the preview also carries `writtenDocuments`: the Report Pack documents already stored for this
+  comparison and its first subject (§ 5), the newest per audience, in audience order, each
+  `{ audience, documentId, createdAtUtc, writerDisplayName, subjectKey, status, writerProvider,
+  writerModelId, writerThinkingLevel, durationMs, costUsd }` (`BenchmarkReportPackWrittenDocumentDto`).
+  Comparison scope: the covered models with their letters, this covered set's `writtenDocuments`, and
+  `otherModelSets` (every other covered set of the comparison with documents, the comparison-wide set
+  first, then the newest first). Both scopes add `scope`, `comparisonId` and `comparisonName` (null before
+  the comparison is identified; the preview never creates one), `comparisonEntryCount`,
+  `coversAllEntries`, `coveredSetKey`, `coveredModels`, `subjectDocuments` (each subject's or covered
+  model's per-model documents) and `writerContextWindowTokens`. A refusal of comparison scope —
+  a covered entry outside the comparison or Excluded, fewer than 2 or more than 12 covered models, a
+  writer that is a covered model, a prompt above 90 % of the writer's context window — is answered 200
+  in `refusal`.
+- `POST /api/admin/benchmark/report-packs`: Start a job. Returns 202 `{ jobId }`. The job's view carries
+  `scope` and `comparisonId`, and each document row its `subjectKey` and `subjectLabel` (a model's label,
+  or *Comparison #12*, with *· 2 of 5 models* for a subset).
+- `POST /api/admin/benchmark/report-packs/layout-preview`: One document laid out with placeholder text,
+  as a PDF; multipart, no model call, nothing stored (§ 15).
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel the job.
 
-The start's refusals, in the order they are checked:
+The start's refusals in model scope, each subject checked in turn, in the order they are checked:
 
 1. Battery results mixed with runs or groups — 400, *"A comparison holds either battery results or runs
    and analysis groups."* The preview refuses the mix the same way.
@@ -1288,15 +1440,29 @@ The start's refusals, in the order they are checked:
    report."*
 4. A writer that is invalid, disabled, keyless, not of the Benchmark role, or refused by the endpoint
    policy — 400.
-5. A writer that is the subject's own model — 400.
+5. A writer that is a subject's own model — 400.
 6. No audience — 400.
-7. A requested document already written for this comparison and subject (§ 5) — 409 `{ error }`,
-   *"The <document name> about <subject label> is already written for this comparison. Delete it in step
-   4 to write it again."*
-8. The spend cap — 429.
-9. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
-10. A job already running, or a run-completion or battery-completion job waiting for the slot — 409,
+7. A document whose prompt is above 90 % of the writer's context window — 400 (§ 15).
+8. An id in `replaceDocumentIds` that does not exist, or is not a requested Report Pack document of this
+   comparison and of these subjects — 400.
+9. A requested document already written for this comparison and subject (§ 5) and not named in
+   `replaceDocumentIds` — 409 `{ error }`, *"The <document name> about <subject label> is already written
+   for this comparison. Delete it in step 4 to write it again."*
+10. The spend cap — 429.
+11. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
+12. A job already running, or a run-completion or battery-completion job waiting for the slot — 409,
     with that job.
+
+In comparison scope: battery results mixed with runs or groups — 400; a comparison that cannot be
+computed — 400; a covered entry that is not in the comparison or is Excluded — 400; fewer than 2 or more
+than 12 covered models — 409; an unusable writer — 400; a writer that is a covered model's
+configuration (provider, model id and thinking level) — 400; no audience — 400; a prompt above 90 % of
+the writer's context window — 400; an id in `replaceDocumentIds` this job does not write again — 400; a
+requested document already written for this covered set and not named in `replaceDocumentIds` — 409
+(*"The <document name> of these models is already written for this comparison. Delete it, or rewrite it
+to replace it."*); the spend cap — 429; a writer sharing a covered model's provider without
+`acknowledgeSameProvider` — 409 with the warning naming those models; a job already running — 409.
+Either scope numbers the comparison before the job starts (§ 15).
 
 - `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing
   run-completion documents now (§ 11). Body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`:
@@ -1363,12 +1529,16 @@ response shapes of the run endpoints above (§ 14):
 
 ### Report documents (`AdminBenchmarkReportDocumentsController`)
 
-- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&subject=&take=`: List documents,
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&comparisonId=&origin=&subject=&take=`: List documents,
   newest first, without rendered text, each with `runChangedSinceGeneration`,
   `peersChangedSinceGeneration`, `comparisonKey`, `comparisonEntryCount` (the subject and its peers; a
   group counts once), `peerCount`, `pricingBasis` (`AsRun` or `Current`), `peerLetters` (each peer's entry
-  key and its letter, from the fact sheet) and, from the chart manifest only (§ 13), `chartCount`,
-  `chartFigureKeys` and `chartSettingsHash`. Every filter is optional:
+  key and its letter, from the fact sheet; for a comparison-wide document every covered model's), the
+  numbered comparison's `comparisonId` and `comparisonName` (its display name now), `scope`,
+  `coversAllEntries`, `coveredSetKey`, `comparisonModelCount` (comparison scope: the comparison's
+  non-excluded entries when the document was written), `coveredModels` (`{ entryKey, label, provider,
+  letter }`: the subject for model scope, every covered model for comparison scope) and, from the chart
+  manifest only (§ 13), `chartCount`, `chartFigureKeys` and `chartSettingsHash`. Every filter is optional:
   - `runId` matches a run of the **subject** only, never a peer's run (§ 5): every document with a
     subject row for the run, a group's or a battery result's included. For the documents about the run
     itself use `subject=run:<id>` (below), as the run's Download Center does with
@@ -1378,6 +1548,8 @@ response shapes of the run endpoints above (§ 14):
     *The comparison must be a comma-separated list of run:&lt;id&gt; and group:&lt;id&gt; keys, or of
     battery:&lt;id&gt; keys.*, and a key that matches nothing lists nothing. The client sends entry keys
     and never hashes;
+  - `comparisonId=12` matches the documents of numbered comparison #12 (§ 15); `comparison` stays for the
+    documents written before comparisons were numbered;
   - `origin=reportPack|runCompletion|batteryCompletion` filters on `Origin`; absent lists every origin,
     and any other value is a 400;
   - `subject=` takes **one** entry key (`run:<id>`, `group:<id>` or `battery:<id>`, a positive id,
@@ -1392,12 +1564,13 @@ response shapes of the run endpoints above (§ 14):
   The rendered Markdown (`text/markdown; charset=utf-8`), deterministic, with no model call; 400 for a
   refused combination.
 - `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter&inline=`: The same
-  document as a PDF (`application/pdf`), named
+  document as a PDF (`application/pdf`). A Report Pack document of a numbered comparison is named
+  `comparison-<N>_…_<disclosure>_<peers>[_INTERNAL].pdf` (§ 8); any other
   `[run-<id>_][vs-<comparison>_]<title>_<disclosure>_<peers>[_INTERNAL].pdf` (the prefix for a `run:<id>`
   subject and the comparison part for a document with peers, § 8; a `battery:<id>` subject takes
-  `battery-run-<id>_` in place of `run-<id>_`, § 14), with the document's charts of the requested naming drawn
-  in it (§ 13); the same refusals as `render`, 400 for another `paper`, 413 over the size limit. A Report
-  for AI Researchers and Developers is named
+  `battery-run-<id>_` in place of `run-<id>_`, § 14). The document's charts of the requested naming are
+  drawn in it, placed by its chart layout (§ 13); the same refusals as `render`, 400 for another `paper`,
+  413 over the size limit. Without a comparison number, a Report for AI Researchers and Developers is named
   `[run-<id>_][vs-<comparison>_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
   whether the stored title ends in the current name or the legacy *Technical Report*. With
   `inline=true` the response carries `Content-Disposition: inline` with the same file name, so a
@@ -1405,20 +1578,21 @@ response shapes of the run endpoints above (§ 14):
 - `GET /api/admin/benchmark/report-documents/{id}/render/docx?disclosure=&peers=&paper=a4|letter`: The
   same document as Word
   (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`), named
-  `[run-<id>_][vs-<comparison>_]<title>_<disclosure>_<peers>[_INTERNAL].docx` (with `_Researcher_Report` as
-  for the PDF), with its charts drawn as for the PDF and the PDF endpoint's refusals.
+  as the PDF is with `.docx`, with its charts drawn and placed as for the PDF and the PDF endpoint's
+  refusals.
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade, and its
   chart folder is removed (a folder that cannot be removed is logged and never fails the delete).
   Deleting a run-completion document also settles its run's status (§ 11), and a battery-completion
   document its battery run's (§ 14); unlike the run and battery endpoints, this one does not refuse
   while the documents are being written.
-- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace the document's whole chart set (§ 13).
-  Body `{ charts: [{ figureKey, naming, title, caption, altText, settingsHash, pngBase64 }] }`, at most
-  40,000,000 bytes (`[RequestSizeLimit]`). 200 `{ documentId, chartCount, figureKeys, settingsHash }`;
+- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace the document's whole chart set and its
+  layout (§ 13). Body `{ charts: [{ figureKey, naming, title, caption, altText, settingsHash, pngBase64 }],
+  layout? }`, at most 40,000,000 bytes (`[RequestSizeLimit]`); a body without `layout` stores none.
+  200 `{ documentId, chartCount, figureKeys, settingsHash }`;
   400 `{ error }` for a stand-alone document (*"This document has no peers; charts are drawn only for
-  documents that compare models."*), when chart storage is not configured (*"Chart storage is not
-  configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder."*) and for any chart the
-  validation refuses; 404 for an unknown document.
+  documents that compare models."*; never a comparison-wide one), when chart storage is not configured
+  (*"Chart storage is not configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder."*),
+  for any chart the validation refuses and for an invalid layout; 404 for an unknown document.
 - `DELETE /api/admin/benchmark/report-documents/{id}/charts`: Remove the document's charts. 204, also
   when there were none or chart storage is not configured; 404 for an unknown document.
 
@@ -1442,11 +1616,14 @@ response shapes of the run endpoints above (§ 14):
 
 - It changes no score, index, grading prompt or comparability key, and moves neither `HarnessVersion`
   nor `ScoringMethodVersion`.
-- It runs no significance test and states none.
+- A per-model document runs no significance test and states none. A comparison-wide document cites the
+  paired tests the wizard's own paired-test service computes for its covered models (§ 15); no other
+  test is run.
 - It never reads the live suite: question and rubric text come from the subject's answer rows.
 - It never re-writes a stored document. A changed run is flagged, not re-generated; generate a new pack
-  if the old one is out of date — after deleting the old document of that type, since a comparison holds
-  one per subject and type (§ 5). A run's run-completion documents are written again only after they are
+  if the old one is out of date — step 3's *Rewrite* replaces the old document of that type once the new
+  one is stored, since a comparison holds one per subject (or covered set) and type (§§ 5, 15). A run's
+  run-completion documents are written again only after they are
   deleted (§ 11). A document's charts can be replaced or removed at any time (§ 13), which changes its
   PDF and Word copies but not the stored row, and involves no model call.
 
@@ -1639,7 +1816,7 @@ wrote the deleted document, so a rewrite starts from a deliberate choice.
 ## 12. The Comparison Wizard's Reports and Documents Steps, and the Comparison Reports Launcher
 
 The Model Comparison wizard has four steps: *1. Sources*, *2. Charts & table*, *3. Reports* (*"Write AI
-reports that compare one model with the others in this comparison."*) and *4. Documents* (*"View, chart,
+reports that compare the models of this comparison."*) and *4. Documents* (*"View, chart,
 download and delete this comparison's documents"*). Steps 3 and 4 are reachable once a comparison
 exists; step 3 also needs **two** entries that are not Excluded (`hasComparisonPeers`), because a
 comparison report needs a subject and a peer (§ 1a). Otherwise it is `aria-disabled` with a visually
@@ -1648,6 +1825,14 @@ other. Add another model on step 1, or write a run's or battery run's own report
 of its report."*, with none *"Every model in this comparison was measured differently, so none of them
 can be the subject of a report."* — and **Next** skips it. Next runs 2 → 3 → 4, and closes the wizard on step 4. Step 2's former **Reports** button and
 the Report Pack dialog it opened are gone; **About** and **Recompute** stay on step 2.
+
+**The comparison's number in the header.** After a successful Compare, and whenever the entry set
+changes, the wizard calls `identify` (§ 15). The header then shows *Comparison #12 — <name>* under the
+wizard's title, followed by an icon-only **Rename comparison** (`.action-btn`, *edit-3*, named *Rename
+comparison #12*, with a tooltip). It opens a nested *Rename comparison #12* dialog: a *Name* field of at
+most 160 characters with the hint *"Up to 160 characters. Leave it empty to use the default name: <default
+name>."*, a **Reset to default** link, **Cancel** and **Save**. The new name reaches the header and steps 3
+and 4 at once. A failed identify leaves the header without the number and blocks nothing.
 
 Steps 3 and 4 are mounted on their first visit and afterwards hidden, never destroyed, when another step
 is active, so step 3's form, its running job and its polling, and step 4's table page, filters and
@@ -1664,34 +1849,77 @@ Left and Right on it); the width is kept under `sidebarWidth` in
 `localStorage['overseer.benchmark.reportPack']`. Below 60rem the two stack, the sidebar first. Each
 column scrolls on its own.
 
-Under the step heading a lead paragraph says what the step writes and where the other documents live:
-*"These reports compare the chosen model with every other model of this comparison and are kept with the
-comparison: step 4 lists them, and so does Comparison reports on the Model Comparison tab. A run's or
-battery run's own reports are written in the AI Reports tab of its report."*
+Under the step heading, the subtitle names the suite, the number of models and how many are Excluded,
+and a lead paragraph says where the documents live: *"These reports are kept with the comparison: step 4
+lists them, and so does Comparison reports on the Model Comparison tab. A run's or battery run's own
+reports are written in the AI Reports tab of its report."*
 
-- **Sidebar**, *New report pack*: *Subject*; *Documents* (the three checkboxes); *Charts in PDF and
-  Word*, the chart picker (§ 13) with, on screen, the print advisory when step 2's theme would print
-  badly and, while the `report-charts-location-missing` alert is present, *"Chart storage is not
-  configured; documents will be written without charts."*; *Report writer*, with the dialog-mode info tip
-  *Choosing a report writer* (`run-ai-reports/report-writer-advice.ts`, shared with the run report's **AI
-  Reports** tab, with an Internal Brief entry) and the *How the graders work* link; the refusal or the
-  amber same-provider warning; the *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI
-  Reports tab); **Generate**.
-- **Documents already written.** The preview's `writtenDocuments` (§ 9) are kept per subject. A
-  document type already written for the chosen subject in this comparison is shown unchecked and
-  disabled, with the hint *"Written <yyyy-MM-dd HH:mm> UTC by <writer>. Delete it in step 4 to write it
-  again."*; a checked type that turns out to be written is unchecked. When every type is written,
-  **Generate** is `aria-disabled` with the reason *"Every document about this subject is already written
-  for this comparison. Delete one in step 4 to write it again."* A 409 from the start — a document
-  written in the meantime (§ 9) — shows its `error` as any other start error. A preview refused for a
-  subject with no peer, which the step's own gate normally prevents, blocks **Generate** with *"This
-  subject has no other model to be compared with in this comparison."*
+- **Sidebar**, *New report pack*, in order:
+  - **Document scope**: a `.gh-tabs-segmented` pair, *Whole comparison (recommended)* and *One model at
+    a time*, remembered as `documentScope` in `localStorage['overseer.benchmark.reportPack']`, with an info
+    tip: *"Per-model documents restate the comparison from one model's side. Use them only when one
+    model's document must be shared on its own."*
+  - **Models**: `app-model-multi-picker` (`frontend_ui_controls` § 4e-3) over the comparison's entries
+    that are not Excluded, with no price or parallel badge and no chips; each option is the entry's model
+    name with its thinking-level, reasoning-mode and provider badges, keyed by entry key, and two options
+    that would look the same each name their source (*Battery run #10*). Under *Whole comparison* every
+    model starts chosen (2 to 12; with more than 12, the 12 of highest Intelligence Index, and a note says
+    why); under *One model at a time* the highest-Index model starts chosen (at least one). The choice is
+    component state, reset when the comparison changes. One line under the picker says what Generate
+    writes: *"Writes the comparison-wide documents."*, *"Writes documents for 3 of 5 models — leaves out
+    Claude 5 Opus (high), Gemini 3.8 Pro (high)."* (naming only what is left out, with its source where
+    two models share a name), or the per-model documents of the chosen models. Once the preview answers,
+    *Letters in the anonymized copies: A = …, B = …* follows.
+  - **Documents of this comparison** (`app-comparison-documents-status`): under *Whole comparison*,
+    three rows, one per document type, for the chosen set — the comparison-wide documents while every
+    model is chosen, else that subset's — and below them a closed *Other model sets (n)* disclosure with
+    every other covered set that has documents (*"GPT-5.6 Luna (max), GPT-6.1 Sol (medium) — 2 of 5
+    models"*), each with its rows and a **Choose these models** link that sets the picker to that set
+    (`aria-disabled` with its reason when a model of the set is Excluded now, or the set is outside 2 to
+    12). Under *One model at a time*, one group per chosen model, one row per document type. Each row
+    shows a *Written* / *Written with warnings* / *Not written* tag, *Comparison changed since written*
+    when flagged, and for a written document *by <writer> (<provider>; <thinking level>)*, the time, the
+    duration, the cost and *Charts: 3* or *No charts*, with icon-only **View** (*eye*, the PDF viewer) and
+    **Delete** (*trash*, `.action-btn-danger`, a nested confirmation). Its checkbox reads *Write* for a
+    document not written and *Rewrite — replaces the current document* for a written one; not-written
+    rows start checked, written ones unchecked. The other sets' rows have no checkbox. The list follows
+    the preview, asked 300 ms after the last change of scope, models, checks or writer, an answer for an
+    older choice dropped.
+  - **Charts in PDF and Word**: the chart picker with its per-figure *Width* and its *Layout* disclosure
+    (§ 13), whose **Preview layout** (`.btn-ghost`, *eye*) opens the layout preview (below); on screen,
+    the print advisory when a document type's theme *As in step 2* would print badly and, while the
+    `report-charts-location-missing` alert is present, *"Chart storage is not configured; documents will
+    be written without charts."*
+  - **Report writer**, with the dialog-mode info tip *Choosing a report writer*
+    (`run-ai-reports/report-writer-advice.ts`, shared with the run report's **AI Reports** tab, with an
+    Internal Brief entry) and the *How the graders work* link; the refusal or the amber same-provider
+    warning (*Writer from a chosen model's provider*).
+  - The *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI Reports tab), summing the
+    checked rows, with an amber warning when a checked document's prompt would fill 70 % or more of the
+    writer's context window (refused from 90 %, § 15).
+  - **Generate** (*zap*), which sends `scope`, `coveredEntryKeys` (whole comparison) or `subjectKeys`
+    (the chosen models with a checked row), the checked document types and `replaceDocumentIds` (the
+    checked written rows). It is unavailable, with its reason under it, while a job runs, with fewer than
+    two (or more than twelve) models under *Whole comparison* or none under *One model at a time*, with
+    no row checked, when the checked document types differ between the chosen models (*"One job writes
+    the same documents for every model it covers. …"*), without a writer, while the preview is pending,
+    and on a refusal. When every listed document is written and none is checked, it stays focusable and
+    `aria-disabled` with *"Every document listed is already written. Check Rewrite on one to replace it,
+    or delete it."* A 409 from the start — a document written in the meantime (§ 9) — shows its `error`
+    as any other start error.
+- **Preview layout** composes the selected figures of the document type the chart picker shows, as the
+  documents would carry them, and opens the server's layout preview PDF (§ 15) in `app-pdf-viewer-dialog`,
+  titled *Layout preview — Executive Summary*, on the remembered paper; per-model, it previews the first
+  chosen model. A figure that cannot be drawn is listed under the button (*Not drawn: …*). It is
+  `aria-disabled` with its reason when the charts cannot be drawn, chart storage is not configured, the
+  comparison has no number yet, too few models are chosen or no chart is chosen for that document type.
 - **Same-provider writer**: Generate opens a nested *Same-Provider Report Writer* confirmation, **Write
   Anyway**, on every write, and only then sends `acknowledgeSameProvider: true`. Nothing is remembered.
 - **Main area**, *Report pack progress*: a status line that changes with the job's phase; while a job
   runs, the stage rail (*Queued*, *Preparing*, one stage per document, *Done*); a stat strip (elapsed,
   writer, model calls, tokens, cost, estimate) that stays after the job finishes; one row per document
-  with its status chip, a live duration, its model calls and a charts cell — *Charts: attaching…*,
+  (preceded by a *Model* column in a per-model job) with its status chip, a live duration, its model calls
+  and a charts cell — *Charts: attaching…*,
   *Charts: 3*, *Charts failed — retry* (a button that tries again) or *Charts: none*; and *Log and
   diagnostics*, a disclosure with the job log and icon-only **Copy diagnostics** and **Download
   diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`, LF line endings, never naming
@@ -1706,16 +1934,19 @@ ones included, because the Report Pack request sends every entry's run and group
 hashes those.
 
 **Step 4, Documents** is the Download Center panel (§ 8) placed directly in the wizard, on a library
-context of this comparison's Report Pack documents (`comparison=<entry keys>&origin=reportPack`, § 9) and
-nothing else: no run report of a subject run. **Preselection:** the wizard records the document ids of
+context of this comparison's Report Pack documents — by its number, `comparisonId=<N>&origin=reportPack`,
+with the documents written before comparisons were numbered by its entry keys (§§ 8, 9) — and nothing
+else: no run report of a subject run. Its heading reads *Documents of Comparison #12 — <name>*, and it
+has no *Comparison* facet. **Preselection:** the wizard records the document ids of
 the last step 3 job that finished in this wizard session (its `jobFinished` output's
 `documents[].documentId`); while they belong to the comparison on step 1 — the same entry set — step 4
 starts with only those chosen (`preselect: { ids }`), otherwise with every document chosen, and the
 context is rebuilt when the ids change. Above the panel, the step prints the note *"Run reports, and
 each run's or battery run's own AI reports, are in that report's Downloads."*
 (`COMPARISON_DOCUMENTS_NOTE`), which the context also carries as its subtitle; the panel placed directly
-prints no context title or subtitle, since only the dialog wrapper does. Run-completion and battery-completion documents stay in their own report (§ 1a). A document belongs to a comparison when the comparison has the same set of
-entries (§ 5), so changing *Prices* keeps the list, and adding or removing a model empties it. The wizard
+prints no context title or subtitle, since only the dialog wrapper does. Run-completion and battery-completion documents stay in their own report (§ 1a). A document belongs to a comparison by its number, or,
+written before comparisons were numbered, when the comparison has the same set of entries (§ 5), so
+changing *Prices* keeps the list, and adding or removing a model empties it. The wizard
 lends the panel its chart actions (§ 13): the *Charts* option and filter, **Update charts…** and each
 card's **More actions**. The list reloads when a job finishes and when a document is charted.
 
@@ -1726,7 +1957,9 @@ steps and the like-for-like note — in a disclosure that is open on the first v
 operator left it (`localStorage['overseer.benchmark.modelComparison.launcher']`). Below it, **Comparison
 reports** (`app-report-documents-launcher`, `report-pack/report-documents-launcher.component.*`) sums up
 every Report Pack document in one line — *"5 report documents from 2 comparisons · the latest written
-…"*, or *"No reports yet. Reports written on the comparison wizard's Reports step appear here."* — with an
+…"*, comparisons counted by their number (a document without one by the number another document of its
+comparison key carries, else by that key), or *"No reports yet. Reports written on the comparison
+wizard's Reports step appear here."* — with an
 *N changed since written* tag when a subject's or a peer's run changed, and a click-mode info tip. Its one
 `.btn-ghost` **Open Download Center** (*file-with-arrow*) is `aria-disabled` while there is nothing to
 open, the summary line saying why, and opens the Download Center dialog on every Report Pack document
@@ -1747,7 +1980,10 @@ A comparison document's PDF and Word copies can carry the Model Comparison's own
 step 2, drawn for print. **Charts are drawn in the browser, from step 2's settings, and stored on the
 server as PNG files beside the document; rendering only places them.** No model call is involved, the
 stored document row never changes, and the Markdown and HTML copies never carry a chart. Only a document
-with peers can have charts; a stand-alone document (every run-completion document) has none.
+with peers can have charts — a comparison-wide document always covers two or more models, so it always
+can; a stand-alone document (every run-completion document) has none. Each chart is **composed for a
+target size in points** (below), and the server places it by the document's **chart layout**: its width
+share of the text column, rows of two, and a height cap.
 
 ### The figures and where they go
 
@@ -1770,7 +2006,8 @@ Seven figures can be chosen per document type (`BenchmarkReportChartPlacement`; 
 | Report for AI Researchers and Developers | Intelligence at the end of *Results against peers → Quality*; Speed and Cost at the end of their blocks; Model profiles at the very end of *Results against peers*; the three trade-off charts after the *Speed and cost* table (and not at all when that section is absent) |
 | Internal Improvement Brief | All in section 3, after *Key figures* and the interval sentence |
 
-Several figures at one anchor appear in the order of the first table.
+Several figures at one anchor appear in the order of the first table. A comparison-wide document has its
+own anchors (§ 15); the picker shows each figure's section for the scope being written.
 
 **Markers.** The renderer writes a line `[[figure:<key>]]`, with a blank line before and after, at each
 anchor for each chart it is given (`BenchmarkReportRenderOptions.Charts`), and only for a document with
@@ -1793,40 +2030,86 @@ documents of one type) there is no tab row, only that document's list. A documen
 written, and a figure the comparison cannot draw, stay listed with `aria-disabled` checkboxes and their
 reason (*Not checked under Documents*, *needs three or more models*).
 
+On step 3 each figure also has a **Width** (*Full column*, *Two thirds*, *Half*), and each document type a
+closed ***Layout*** disclosure under its figure list:
+
+| Setting | Values | Default |
+|---|---|---|
+| Bar orientation | *As in step 2* / *Vertical* / *Horizontal* | *As in step 2* |
+| Side by side | consecutive *Half* figures in one section form a row of two | on |
+| Label size | 7, 7.5, 8, 8.5, 9, 10 pt | 8 pt |
+| Maximum height | 40 / 50 / 60 % of the page | 60 % |
+| Heading inside the chart | *None — the caption names it* / *Title* / *Title and badges* | None |
+| GnollBench logo | on / off (step 2's variant and height) | off |
+| Theme | *Light, for print* / *As in step 2* | *Light, for print* |
+
+A width or label size that would not fit (below) stays offered, `aria-disabled` and marked *(does not
+fit)*, its reason listed in the disclosure; choosing it keeps the current value and says why. The
+disclosure ends with **Preview layout** (§ 12).
+
 The defaults are the Executive Summary's Intelligence and Intelligence against cost; all seven for the
 Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the Internal Improvement
-Brief. The last selection is remembered per browser in `localStorage['overseer.benchmark.reportCharts']`
-(version 1).
+Brief. The last selection and every document type's layout are remembered per browser in
+`localStorage['overseer.benchmark.reportCharts']` (**version 2**, `{ selection, layout }`); a stored
+version 1 keeps its selection and takes the default layout.
 
 ### How a chart is drawn
 
 `composeReportChart` in the wizard composes one figure off-screen through the same export pipeline as
-step 2's downloads, at the document layout (`DOCUMENT_CHART_LAYOUT` in `report-pack/report-charts.ts`):
-1800 px wide, 1800 × 1125 for bars and scatters and 1800 × 1350 for the profile, text at 175 %, PNG —
-about 9 pt text and about 270 dpi at column width. Everything else is **step 2's active setting, used as
-is**: theme, background, font, weights, colors, border, logo, the per-family styles, Show, Highlight, the
-model order and the measures. A bar orientation of *Automatic* is resolved from the document layout's
-width, never from the chart on screen. Documents print on white paper, so when step 2 uses the dark
-theme, or a transparent background with light text, an **on-screen advisory** says so, beside the picker
-on step 3 and in the Update charts dialog; it changes nothing.
+step 2's downloads, for a **target width and label size in points** (`documentChartLayout` and
+`documentFigureLayout` in `report-pack/report-charts.ts`):
+
+```
+pxWidth     = round(widthPt × 300 / 72)                   // 300 dpi
+layoutWidth = widthPt × BASE_LABEL_PX / labelPt           // BASE_LABEL_PX = 11, the bar label size in layout px
+textScale   = (pxWidth / layoutWidth) / min(pxWidth / 960, pxHeight / 540)
+```
+
+- **The width** is the figure's share of the text column. Charts are composed for the A4 column,
+  481.9 pt (US Letter's is 498.6 pt), so a chart printed on Letter is never shrunk. At the default 8 pt
+  a full-column chart is about 663 layout px wide.
+- **The height** follows the width: 16:10 at full column, 4:3 at two thirds and square at half for bars
+  and scatters, one step taller for the profile; a figure grows taller where its heading, key and notes
+  would leave the plot less than 200 layout px.
+- **The minimum width.** A document chart is laid out with a minimum content width of **260** layout px
+  (`DOCUMENT_MIN_CONTENT_WIDTH`, 300 with the padding), not the 360 of step 2's exports, so a *Half*
+  chart fits at 7 to 8.5 pt and is refused at 9 pt and above; *Two thirds* and *Full column* fit every
+  size. A refused width is composed at full column.
+- **Orientation**: *As in step 2* takes step 2's choice, whose *Automatic* is resolved at the document
+  chart's own layout width (a full-column chart at 8 pt gets horizontal bars, being below the 720 px
+  breakpoint), never at the chart on screen.
+- **Theme, heading and logo** are baked into the PNG. *Light, for print* replaces step 2's theme,
+  background, text, heading and border colors and nothing else; *None* leaves the title, the badges and
+  the detail line to the caption. Everything else is **step 2's active setting, used as is**: font,
+  weights, colors, the per-family styles, Show, Highlight, the model order and the measures.
+- Documents print on white paper, so when a document type's theme is *As in step 2* and step 2 uses the
+  dark theme, or a transparent background with light text, an **on-screen advisory** says so, beside
+  the picker on step 3 and in the Update charts dialog; it changes nothing.
 
 Each chart carries a title (the figure's), a caption (its detail line, then *"Drawn from the comparison
 computed {time}."*) and alternative text (the title, then one clause per plotted model with its value and
-interval). `chartSettingsHash` is the SHA-256 of the canonical JSON of the figure style, the layout, Show,
+interval). `chartSettingsHash` is the SHA-256 of the canonical JSON of the figure style, the layout (the
+column width, 300 dpi, `BASE_LABEL_PX`, PNG, and every document type's layout settings), Show,
 Highlight, the order, the measures, the pricing basis and the comparison's `computedAtUtc`; it is stored
 with the charts, so step 4 can tell charts drawn with the settings on screen from older ones.
+
+**The chart layout.** Width, rows and height are applied by the server at render time, from the layout
+the publisher sends with the charts (`reportDocumentChartLayout`): each figure's `widthShare` (1, 2/3 or
+1/2), a shared `rowGroup` for two consecutive half-width figures in one section while *Side by side* is
+on, and `maxHeightShare` (0.4, 0.5 or 0.6). The PDF and Word renderers place figures by it (§ 8).
 
 **Anonymized variants.** Every figure is drawn twice: **named**, as step 2 shows it, and, when the
 document has peer letters, **anonymized** (`anonymizeComparisonForSubject`,
 `model-comparison/report-chart-anonymize.ts`): the peers relabeled *Model A*… with the letters of **that
 document's** fact sheet (`peerLetters` in the document list), their provider and model id removed and
 drawn in the neutral gray, other free text naming a peer rewritten or dropped, entries without a letter
-dropped, and the subject unchanged and highlighted. An anonymized render draws only anonymized images;
-a missing variant is left out, never replaced by the other.
+dropped, and the subject unchanged and highlighted. A comparison-wide document's variants plot its
+covered models only (`anonymizeComparisonForAll` for the anonymized one, § 15). An anonymized render
+draws only anonymized images; a missing variant is left out, never replaced by the other.
 
 **The publisher.** `ReportChartPublisher` composes and uploads one document at a time: every selected
-figure of the document's type, both variants, converted to base64 and sent as the whole set in one
-`PUT`. It records a failure per document and carries on, can be canceled after the document in flight,
+figure of the document's type, both variants, drawn by that type's layout, converted to base64 and sent
+as the whole set in one `PUT` with the chart layout. It records a failure per document and carries on, can be canceled after the document in flight,
 and stops once — reported once, not per document — when the server says chart storage is not configured.
 The wizard owns one publisher and queues step 3's and step 4's work through it.
 
@@ -1873,7 +2156,14 @@ first write, never at startup.
 `<figureKey>.<named|anonymized>.png` per image; `<ChartsDataLocation>/.staging/<documentId>-<guid>/`
 exists only while a set is being written. The manifest is camelCase UTF-8 JSON without a BOM: `version`
 (1), `documentId`, `settingsHash`, `createdAtUtc` and `charts`, one entry per image with `figureKey`,
-`naming`, `file`, `sha256`, `widthPx`, `heightPx`, `title`, `caption` and `altText`. Every path is built
+`naming`, `file`, `sha256`, `widthPx`, `heightPx`, `title`, `caption` and `altText`, and, when the upload
+carried one, `layout`: `{ version: 1, figures: [{ key, widthShare, rowGroup }], maxHeightShare }`
+(`BenchmarkReportChartLayout`). The upload's layout is validated (`ValidateLayout`): version 1 only; a
+`widthShare` above 0 and at most 1; a `maxHeightShare` from 0.2 to 0.9 or null; a figure of an unknown
+key dropped, and of a key given twice the first kept. An absent layout — every manifest written before
+it — renders every figure full width on its own row under the 60 % cap; a stored layout that no longer
+validates is logged and rendered as absent. **Update charts…** and a rewrite redraw the charts and send
+the layout again. Every path is built
 from the numeric document id, a known figure key and a fixed naming word, and is checked to lie inside
 the folder.
 
@@ -1882,7 +2172,8 @@ the files and the manifest are written to a staging folder, the old folder is de
 folder is moved into place in one `Directory.Move`. A render reads the manifest and skips, with a logged
 warning, an image that is missing or whose SHA-256 differs from the manifest; **a render never fails
 because of its charts**. The list and detail DTOs read `chartCount`, `chartFigureKeys` and
-`chartSettingsHash` from the manifest alone.
+`chartSettingsHash` from the manifest alone, and the PDF and Word endpoints its layout
+(`BenchmarkReportRenderService.ReadRenderLayout`).
 
 **Upload limits** (`BenchmarkReportChartStore.ValidateCharts`; every chart is checked before anything is
 written): a known figure key; naming `named` or `anonymized`; no figure and naming twice; at least one
@@ -1977,7 +2268,9 @@ the battery's M7 comparison or the wizard's paired tests; that is a follow-up.
 runs per suite)* (`BenchmarkPdfDocumentInfo.BatterySubjectLine`), and the facts table names the battery,
 the battery run and the member-run count. Files are named with the prefix `battery-run-<id>_` in place of
 `run-<id>_` (`BenchmarkPdfFileNames.ForReportDocument`, and the Download Center's
-`reportDocumentFileStem`).
+`reportDocumentFileStem`), except a Report Pack document of a numbered comparison, which is named
+`comparison-<N>_…` (§ 8). A comparison of battery results can have comparison-wide documents too (§ 15):
+their questions keep the `S<n>-Q<m>` references, and their cover names the battery.
 
 ### Battery-completion documents
 
@@ -2026,3 +2319,282 @@ that lists the battery's own documents: a member run's Download Center lists tha
 (`subject=run:<id>&origin=runCompletion`) and, above them, the pointer *"This run is a member of battery
 run #<id>. Its AI-written documents are in the battery run's downloads."* with **Open battery run
 downloads**, which switches the same dialog to this `battery` context (§ 8).
+
+---
+
+## 15. Comparisons and Comparison-Wide Documents
+
+A Model Comparison has an identity of its own, **Comparison #N**, and its documents can describe its
+models **as equals** rather than one model against its peers. Step 3 of the wizard writes these
+**comparison-wide documents** by default (*Whole comparison (recommended)*); the per-model documents of
+§§ 1–14 are the secondary choice, *One model at a time* (§ 12).
+
+Implementation:
+
+| Concern | Type |
+|---|---|
+| The numbered comparison | `BenchmarkComparison`, `BenchmarkComparisonSubjectKind` (`GnollHackServer.Data/BenchmarkComparison.cs`) |
+| Numbering, naming, renaming and listing | `BenchmarkComparisonIdentityService`, `AdminBenchmarkComparisonsController`, `Overseer/Models/BenchmarkComparisonModels.cs` |
+| The comparison fact sheet and content | `BenchmarkComparisonReportFacts`, `BenchmarkReportContent.BuildComparison` |
+| The comparison-scope prompt | `BenchmarkReportPackPrompt.Comparison.cs` |
+| The comparison-scope sections | `BenchmarkReportPackRenderer.Comparison.cs` |
+| The layout preview | `BenchmarkReportLayoutPreview`, `POST report-packs/layout-preview` |
+| Table layout shared by the PDF and Word | `BenchmarkTableLayout`, `BenchmarkPdfMarkdownComposer.TableLayout` |
+
+### The numbered comparison
+
+`BenchmarkComparison` is one row per **entry set**, keyed by the existing `ComparisonKey`
+(`BenchmarkReportComparisonKey.From`, § 5), with a unique index on it. The same runs, analysis groups or
+battery results, in any order, on either pricing basis and with any entries Excluded, are always the
+same comparison. Its columns: `Id` (shown as *Comparison #Id*, never reused), `ComparisonKey`,
+`EntryKeysJson` (runs, then groups, then battery results, each by ascending id), `SubjectKind` (`Runs`
+or `Batteries`), `EntryCount`, `DefaultName`, `Name` (the admin's rename, nullable), `CreatedAtUtc`,
+`CreatedByUserId` and `RenamedAtUtc`.
+
+- **When it is created.** The wizard calls `POST model-comparisons/identify` after every successful
+  **Compare**, and again whenever the entry set changes; a recompute of the same set asks nothing. The
+  start of a Report Pack job (`POST report-packs`) numbers the comparison server-side before the job
+  runs, so a Report Pack document always belongs to a numbered comparison. The preview, the estimate and
+  the layout preview never create one; they report the number only once it exists. A failed identify
+  leaves the wizard's header without a number and blocks nothing: step 3 shows the server's refusal at
+  **Generate**. The comparison endpoint itself numbers nothing, since it also serves the paired tests,
+  the battery leaderboard and other ad-hoc computations.
+- **The default name** is computed once, when the comparison is first identified, from the computed
+  comparison's entry labels in canonical order: up to three entries *"A vs B vs C"*; four or more
+  *"10 models · <battery or suite name>"*, the name left out when the entries share none; at most 160
+  characters, cut with an ellipsis. A concurrent insert of the same set loses on the unique index and
+  returns the winner.
+- **Rename.** `PATCH model-comparisons/{id}` trims the name; an empty or null name resets to the default;
+  more than 160 characters is a 400. The display name is `Name ?? DefaultName`, read **at render time**:
+  renaming a comparison changes what an old document's PDF or Word copy prints the next time it is
+  downloaded, but *Comparison #N* never changes, so the document stays identifiable.
+- **No deletion.** There is no endpoint or UI to delete a comparison. Deleting its documents leaves the
+  row (the foreign key from the documents is `Restrict`), which keeps the number stable.
+- **The startup backfill.** After the comparison-key backfill (§ 5), `Program.cs` runs
+  `BenchmarkReportDocumentBackfill.BackfillComparisonsAsync`: every Report Pack row with a comparison key
+  and no comparison is linked to the comparison ensured from its own `ComparisonRequestJson`, the input
+  that produced its key; an entry set that can no longer be computed (a run deleted since) is still
+  numbered, named by its entry keys. A row whose request is unreadable, or names another entry set than
+  its key, keeps a null comparison and is logged. Every model-scope Report Pack row also gets its subject
+  alone as `CoveredEntryKeysJson` and `CoveredSetKey`. Run- and battery-completion documents are left
+  alone. The backfill saves every 200 rows and is idempotent.
+
+### Document scope
+
+`BenchmarkReportDocuments` carries four columns for this:
+
+| Column | Model scope | Comparison scope |
+|---|---|---|
+| `Scope` (`BenchmarkReportScope`) | `Model` (1, the default; every earlier row) | `Comparison` (2), Report Pack only |
+| `ComparisonId` | The numbered comparison; null on run- and battery-completion documents | The numbered comparison |
+| `CoveredEntryKeysJson` | The subject alone | The covered entry keys, canonically sorted |
+| `CoveredSetKey` | SHA-256 of the subject alone | SHA-256 of the covered set (`BenchmarkReportComparisonKey.ForCoveredSet`), computed as the comparison key is, so a set covering every entry has the comparison's own key |
+| `SubjectKey` | `run:` / `group:` / `battery:` entry key | `comparison:<id>` for a comparison-wide document; `comparison:<id>/<first 16 hex of CoveredSetKey>` for a subset |
+| Letters | Peers only, per document | Every covered model, A = highest Intelligence Index |
+| One document per | `(ComparisonKey, SubjectKey, Audience)` | `(ComparisonId, CoveredSetKey, Audience)` |
+
+An index on `(ComparisonId, Scope, CoveredSetKey, Audience)` serves the lookups; the uniqueness is
+enforced by the start endpoint, not by a constraint, as in § 5. The comparison-wide and the subset
+documents of one comparison are separate sets: every covered set is its own document set.
+
+**Comparison-wide or subset.** The covered set defaults to every entry that is not Excluded. Whether a
+document covers the whole comparison is decided when it is written and stored in its fact sheet as
+`coversAllEntries`, with `comparisonEntryCount` (the comparison's non-excluded entries then). It decides
+the title, the cover, the file name and the Download Center's *Scope* facet. A later exclusion or
+restore does not change what a document was written as; the changed-since-written flags of § 5 tell the
+reader when a covered run changed.
+
+### The comparison fact sheet
+
+`BenchmarkComparisonReportFacts.Build` prepares each covered model as the subject of its own per-model
+sheet **over the covered models only** (so no sheet names an uncovered entry), then builds one sheet with
+`scope: "Comparison"`, `SubjectKind = "Comparison"`, no subject, and every covered model in `peers` and
+`models` with its letter. Everything below is computed over the covered models: a subset document reads
+as a complete comparison of its models, and its cover and *Setup and method* count the comparison's
+other models without naming them.
+
+- **Letters** follow the Intelligence Index, highest first, an unmeasured model last, ties by entry key
+  (ordinal). They are the same in the three documents of one covered set.
+- **Per-model facts** `model.<L>.*`: every fact the per-model sheet has for its subject, the `subject.`
+  prefix dropped (`subject.runs` becomes `model.A.runs`), plus `model.<L>.quality.rank` (the joint rank,
+  below), `model.<L>.speed.rank`, `model.<L>.cost.rank` and `model.<L>.frontier` (*"on the intelligence
+  against cost frontier"*).
+- **Comparison facts**: `comparison.models`, `comparison.pricingBasis` and its kind, `comparison.signature`,
+  `suite.name` (runs and groups), the Pareto frontiers `frontier.qualityCost`, `frontier.qualitySpeed` and
+  `frontier.speedCost` (the models no other model matches or beats on both measures), the spreads
+  `spread.quality`, `spread.dimension.<d>`, `spread.speed` and `spread.cost` (*"from 62 (Model D) to 85
+  (Model A), 23 points apart"*), and `questions.anyCriticalError`, `questions.wideSpread` and
+  `questions.sharedLow`.
+- **Joint ranks.** `BenchmarkReportFacts.JointRanks` ranks by Intelligence Index and joins a model to the
+  group of the model just above it when their 95 % intervals overlap (touching counts) or their scores
+  are equal. Groups are **transitive overlap chains**: A–B and B–C overlapping make A, B and C one group
+  even when A and C do not overlap. A joint rank prints *"joint 1st of 2 (intervals overlap)"*. The same
+  helper words the per-model documents' ranks (W2, below).
+- **The paired-test family** comes from the service step 2's *Paired tests* view uses, requested for the
+  covered models only, so each Holm adjustment counts exactly the tests the document reports: *Against a
+  reference* with model A as the reference always, plus *All pairs* when there are **3 to 6** covered
+  models (`AllPairsMaxEntries`). Intelligence, Speed and Cost are each a family of their own. The sheet
+  stores the families (`pairedTests`, each pair oriented with the earlier letter first) and the facts
+  `pair.<L>.<M>.quality.difference`, `.quality.interval`, `.sharedQuestions`, `.speed.ratio`,
+  `.cost.ratio`, `.intervalOverlap`, and one verdict per family, `pair.<L>.<M>.<quality|speed|cost>.reference`
+  and `.allPairs` (*"Model A scored higher on the same questions, established after the Holm adjustment
+  across 4 tests (adjusted p 0.012)"*, or *"no difference established …"*). A family that could not be
+  computed leaves its reason in `pairedTestsUnavailableReason`.
+- **The per-question matrix**: every question any covered model was asked (a battery question matched
+  across models by its suite-qualified reference, any other by question and item revision), each with
+  every model's score, critical error, refuted answer sentences, tool calls and model time.
+- **Excerpts** share one total budget, `AnswerExcerptChars` × the number of questions, allotted in this
+  order: questions where any model made a critical error or had a refuted answer sentence; then those
+  whose scores span at least 20 points, widest first; then those every model scored below 50 (a shared
+  gap: chat, corpus or suite); then the rest. Within a question the models with a critical error or a
+  refuted sentence come first, then the lowest scores; each excerpt is from the model's run whose score
+  is closest to its score on the question. Each question's text and rubric are given once.
+
+**The writer never sees a model name.** The sheet's free text — every fact's display and unavailable
+reason, each model's explanation, the purpose statements and the paired tests' notes and caveats — is
+lettered (*Model A*) when the sheet is built. As a backstop, the prompt writes any covered model's label,
+display name or model id left in its text (an answer excerpt, a grader comment, a claim) as *Model X*,
+and every covered model's provider as *[provider withheld]*. A named copy puts the names back when it
+renders.
+
+### The writer contract
+
+The prompt (`BuildComparisonSystemPrompt`, per audience) tells the writer every covered model is an
+equal known only by its letter, and that the document covers exactly the models listed. The user
+message gives, in order: COMPARISON, MODELS, GRADERS (each role's shared provider by letter), PAIRED
+TESTS, FACTS, RESPONSE STYLE, the QUESTION MATRIX, the questions with their excerpts, and the question
+topics. The prompt's SHA-256 covers it.
+
+- **Tokens.** `{{model:X}}` for a covered model and `{{key}}` for a fact; there is no `{{subject}}` and
+  no `{{peer:X}}`. The validator accepts `{{model:X}}` for every letter of the sheet and the `model.<L>.*`
+  and `pair.<L>.<M>.*` keys, and rejects any other letter.
+- **Slots** (word caps): Executive Summary `overview` (90), `whichModel` (120), `tradeOffs` (100) and
+  `reliability` (80); Report for AI Researchers and Developers `abstract` (150), `results` (200),
+  `dimensionProfiles` (150), `frontier` (120), `questionPatterns` (250), `graderReliability` (120) and
+  `limitations` (120); Internal Improvement Brief `sharedGaps` (250), `modelGaps` (200) and
+  `benchmarkSystem` (150).
+- **Lists.** A `models` list with one entry per covered model, at most 2 points of at most 30 words in
+  the Executive Summary and at most 4 of at most 40 words in the researcher report, each citing evidence;
+  question topics in the researcher report and the brief; at most 8 leads in the brief, each tagged
+  `chat`, `harness`, `suite`, `corpus` or `model`. No strengths, weaknesses, recommendations or question
+  notes. A lead is still not a finding and goes through `server_benchmark_to_chat_transfer`.
+- **Validation.** The rules of § 3 apply, read for comparison scope: rule 10 treats every covered
+  model's name as a name; rule 16 reads two `{{model:X}}` tokens against the pair's `intervalOverlap`,
+  and a family's established result may be stated instead of *overlap*; **rule 21**, a warning, asks for
+  a `models` entry for every covered model.
+- **Topics are written once per job.** The first document of a comparison-scope job writes the question
+  topics; its later documents are given them and keep them, and their own topics are not checked.
+- **The writer** cannot be a covered model's configuration: the same provider, model id and thinking
+  level (400). A writer sharing a covered model's provider gets the amber warning naming those models
+  and the *Same-Provider Report Writer* confirmation (§ 4).
+
+### Limits, refusals and the estimate
+
+- **2 to 12 covered models** (`MinEntries`, `MaxEntries`; the charts' `MAX_PLOTTED_ENTRIES`). Outside the
+  bounds the start and the layout preview answer **409**, and the preview answers 200 with the refusal.
+  A comparison of more than 12 models can still have documents: step 3's picker then starts with the 12
+  highest-Index models chosen and says why.
+- A covered entry that is not in the comparison, or is Excluded — **400**.
+- **The writer's context window.** Each estimate carries `contextWindowShare`, the estimated input
+  tokens over the writer configuration's context window from the model catalog. Step 3 warns in amber
+  from **70 %**; the preview reports, and the start refuses with **400**, a prompt above **90 %**
+  (`ContextWindowRefusalShare`), in both scopes.
+- **Already written.** A requested document already written for this covered set (comparison scope) or
+  subject (model scope) and not named in `replaceDocumentIds` — **409**; an id in `replaceDocumentIds`
+  that this job does not write again — **400**.
+- **The estimate** uses 3,000, 9,500 and 9,000 output tokens for the comparison-scope Executive Summary,
+  researcher report and brief. These are first guesses, to be recalibrated after the first real jobs.
+
+### Rewriting: replace after persist
+
+`ReplaceDocumentIds` names the documents a job replaces. For each document it writes, the job stores the
+new row and removes the replaced Report Pack rows of the same comparison, audience and covered set
+(comparison scope) or subject (model scope) **in the same `SaveChanges`**; only then is each replaced
+chart folder deleted (a failure there is logged and never fails the write). A write that fails deletes
+nothing. A single document is deleted with `DELETE report-documents/{id}`, which step 3 offers per row
+behind a confirmation.
+
+### The rendered documents
+
+`ReportFormatVersion` for comparison scope is **12** (`ComparisonReportFormatVersion`); per-model
+documents stay at 11. The sections, by audience:
+
+- **Executive Summary**: *The result in one sentence*, *The comparison in one paragraph*, *Which model to
+  use*, *How they compare* (every model's Intelligence Index with its interval and joint rank, median
+  answer time, cost per question and critical errors; a dimensions table; the figures), *Model by model*,
+  *Trade-offs* (with the frontier lines), *How reliable this is* (with the interval-overlap sentence, the
+  paired-test summary and the writer caveat), *About this benchmark* and *Evaluation terms*.
+- **Report for AI Researchers and Developers**: *Abstract*, *Setup and method* (with *Compared models*),
+  *Results* (the results table, figures, the writer's text and *Paired tests*), *Dimension profiles*,
+  *Speed and cost frontier*, *Per-model analysis*, *Cross-model question patterns* (with the per-question
+  matrix), *Grader reliability*, *Threats to validity*, *Reproducibility appendix*, and the question
+  details at Detailed and Full.
+- **Internal Improvement Brief**: *Models compared*, *1. Shared gaps*, *2. Model-specific gaps*, *3. The
+  benchmarking system* (with *Paired tests*), *4. Leads*, *5. Per-question matrix* with the question
+  details, and *6. Fact sheet*.
+
+*Paired tests* names the family, its adjustment and its size, and notes that another set of models gives
+another family: a subset document's adjusted *p* can differ from step 2's view over all models, and both
+are correct for their own family. Tables that list the models carry a **Letter** column under both
+namings, and a named copy prints each model's label and provider and **no letter in its prose (W1)**.
+The per-model documents print the same way: a named peer reads *Grok 5*, never *Grok 5 (A)*, their
+*Compared models* table gains the Letter column, and a rank whose interval overlaps a neighbor's reads
+*joint* (**W2**), whatever format they were written under.
+
+### Titles, covers and running headers
+
+| | Named copy | Anonymized copy |
+|---|---|---|
+| Comparison-wide title | `Comparison #12 — <name>: Executive Summary` | `Comparison #12: Executive Summary` |
+| Subset title | `Comparison #12 — A vs B: …` for up to three models, else `Comparison #12 — 4 of 10 models: …` | `Comparison #12 — 2 of 5 models: …` |
+| Per-model title | unchanged: `<model> on the Overseer GnollHack Assistant Benchmark — <kind>` | unchanged |
+
+- **The cover's first fact row is *Comparison*** for every document of a numbered comparison:
+  *"Comparison #12 — <name> · 3 models · computed 2026-09-20"*, each unknown part left out (the date is
+  the sheet's `comparison.pricedOn`). A comparison-scope cover then lists *Models* (the labels and count
+  named; *"4 models (A to D), identities withheld"* anonymized), *Coverage* for a subset (*"2 of 5
+  models; the other 3 are not part of this document"*), *Pricing basis*, *Suite* or *Battery*,
+  *Questions* and *Runs* or *Member runs*, in place of *Compared with*.
+- **The subject line**: a per-model document's line as in § 8, followed by *· Comparison #12*; a
+  comparison-wide document's *Comparison #12 — <name>*; a subset's *Comparison #12 — <name> · 2 of 5
+  models: <covered names>*.
+- **The running header** prints *Comparison #12 — <name>* at its right for both scopes, kept to one line
+  with an ellipsis; a document without a comparison prints its subject line.
+- **An anonymized copy never prints the comparison's name**, which usually names its models: title,
+  cover row, subject line, header, file name and ZIP name print *Comparison #N* alone, and a subset's
+  covered models are counted, not named.
+- The Markdown and HTML copies print a `**Comparison:**` line under the title.
+
+### Figures in comparison-scope documents
+
+| Document | Where the figures go |
+|---|---|
+| Executive Summary | All in *How they compare*, after its tables |
+| Report for AI Researchers and Developers | Intelligence in *Results*; Model profiles in *Dimension profiles*; Speed, Cost and the three trade-off charts in *Speed and cost frontier* |
+| Internal Improvement Brief | All in *Models compared*, after its table |
+
+A comparison-scope document plots its **covered models only**: the named variant is step 2's chart with
+*Show* limited to the covered set (step 2's *Highlight* kept where it falls inside it), and the
+anonymized variant (`anonymizeComparisonForAll`) letters every covered model with the set's letters,
+draws it in the neutral gray and removes every other entry. Such a document always covers two or more
+models, so the chart endpoints never refuse it as stand-alone.
+
+### The layout preview
+
+`POST report-packs/layout-preview` renders one document as it would print, with **no model call** and
+nothing stored. It is multipart: a `request` field holding JSON — a preview request (§ 9) with
+`audience`, `paper` (`a4` or `letter`; empty is A4), `naming` (`named` or `anonymized`; empty is named),
+`layout` (as stored in the manifest, § 13) and `charts` (`figureKey`, `title`, `caption`, `altText`) — and
+up to **12** files named `<figureKey>.png`, in a request of at most 40,000,000 bytes, each image checked as
+an uploaded chart is (§ 13). It prepares the request as the preview does (a model-scope request: its
+first subject), builds the document in memory with **placeholder text** in every slot and list the writer
+fills — *"The report writer's text for <slot> appears here."* repeated to **80 %** of the slot's word limit,
+lists of typical length — and the real deterministic sections and tables, and renders it at Full with
+the real PDF renderer, the given charts and layout. The cover banner opens *"LAYOUT PREVIEW — no AI
+text."* and the *Document ID* row reads *none (layout preview)*.
+
+Status codes: 200 `application/pdf`; 400 for a missing or invalid `request` field, battery results mixed
+with runs or groups, an unknown audience, paper or naming, an invalid layout, a chart or file refused, a
+file no chart names or a chart without its file, and a preparation refusal (a subject with no peer, a
+covered entry outside the comparison or Excluded); 409 for fewer than 2 or more than 12 covered models;
+413 for a document too large for a PDF; 499 when the client aborts.

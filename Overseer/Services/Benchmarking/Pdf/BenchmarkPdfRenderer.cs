@@ -40,8 +40,8 @@ public sealed class BenchmarkPdfSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkPdfRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 5".</summary>
-    public const int LayoutVersion = 5;
+    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 6".</summary>
+    public const int LayoutVersion = 6;
 
     /// <summary>The longest source text rendered; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = 6_000_000;
@@ -87,12 +87,14 @@ public static class BenchmarkPdfRenderer
 
     /// <summary>
     /// Markdown rendered as a PDF, each figure marker with a chart in <paramref name="charts"/> drawn as a
-    /// figure. Throws <see cref="BenchmarkPdfSourceTooLargeException"/> for a source above
+    /// figure, placed by <paramref name="layout"/> (width, rows and height cap; null for full-width
+    /// figures on their own rows under <see cref="BenchmarkPdfMarkdownComposer.FigureMaxHeightShare"/>).
+    /// Throws <see cref="BenchmarkPdfSourceTooLargeException"/> for a source above
     /// <see cref="MaxSourceCharacters"/>, and <see cref="OperationCanceledException"/> once the token is canceled.
     /// </summary>
     public static byte[] RenderMarkdown(
         string markdown, BenchmarkPdfDocumentInfo info, CancellationToken cancellationToken = default,
-        IReadOnlyList<BenchmarkReportRenderChart>? charts = null)
+        IReadOnlyList<BenchmarkReportRenderChart>? charts = null, BenchmarkReportChartLayout? layout = null)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         ArgumentNullException.ThrowIfNull(info);
@@ -100,10 +102,10 @@ public static class BenchmarkPdfRenderer
         cancellationToken.ThrowIfCancellationRequested();
         BenchmarkPdfResources.EnsureRegistered();
 
-        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts);
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts, layout);
         var sourced = info with { SourceSha256 = SourceSha256(markdown, prepared.OrderedFigures.Select(f => f.Chart)) };
         bool contents = sourced.AllowTableOfContents && prepared.Contents.Count >= 4;
-        var frame = FigureFrameFor(sourced.Paper);
+        var frame = FigureFrameFor(sourced.Paper, BenchmarkPdfMarkdownComposer.MaxHeightShareOf(layout));
 
         return Generate(sourced, cancellationToken, body =>
         {
@@ -117,15 +119,17 @@ public static class BenchmarkPdfRenderer
 
     /// <summary>
     /// The room a figure's image takes on the paper: the text column's width, less half a point so
-    /// rounding never overflows it, and <see cref="BenchmarkPdfMarkdownComposer.FigureMaxHeightShare"/>
-    /// of the height between the top and bottom margins; and that height itself.
+    /// rounding never overflows it, and <paramref name="maxHeightShare"/> (by default
+    /// <see cref="BenchmarkPdfMarkdownComposer.FigureMaxHeightShare"/>) of the height between the top and
+    /// bottom margins; and that height itself.
     /// </summary>
-    internal static BenchmarkPdfMarkdownComposer.FigureFrame FigureFrameFor(BenchmarkPdfPaper paper)
+    internal static BenchmarkPdfMarkdownComposer.FigureFrame FigureFrameFor(BenchmarkPdfPaper paper, double? maxHeightShare = null)
     {
         var size = paper == BenchmarkPdfPaper.Letter ? PageSizes.Letter : PageSizes.A4;
         float width = size.Width - 2 * HorizontalMarginMillimeters * PointsPerMillimeter - 0.5f;
         float height = size.Height - 2 * VerticalMarginMillimeters * PointsPerMillimeter;
-        return new BenchmarkPdfMarkdownComposer.FigureFrame(width, (float)(height * BenchmarkPdfMarkdownComposer.FigureMaxHeightShare), height);
+        double share = maxHeightShare ?? BenchmarkPdfMarkdownComposer.FigureMaxHeightShare;
+        return new BenchmarkPdfMarkdownComposer.FigureFrame(width, (float)(height * share), height);
     }
 
     /// <summary>
@@ -295,7 +299,11 @@ public static class BenchmarkPdfRenderer
         });
     }
 
-    /// <summary>Pages 2 onward: the emblem, "GnollBench · kind" and the subject line over a gold hairline. An artifact.</summary>
+    /// <summary>
+    /// Pages 2 onward: the emblem, "GnollBench · kind" and <see cref="BenchmarkPdfDocumentInfo.RunningHeaderText"/>
+    /// over a gold hairline, a <see cref="BenchmarkPdfDocumentInfo.HeaderText"/> kept to one line with an
+    /// ellipsis. An artifact.
+    /// </summary>
     private static void RunningHeader(IContainer container, BenchmarkPdfDocumentInfo info)
     {
         container.SemanticIgnore()
@@ -313,7 +321,11 @@ public static class BenchmarkPdfRenderer
                 row.RelativeItem().AlignMiddle().Text(t =>
                 {
                     t.AlignRight();
-                    t.Span(info.SubjectLine);
+                    if (!string.IsNullOrWhiteSpace(info.HeaderText))
+                    {
+                        t.ClampLines(1, "…");
+                    }
+                    t.Span(info.RunningHeaderText);
                 });
             });
     }

@@ -11,11 +11,11 @@
 
 ## Abstract
 
-GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Grok 5 and Mistral Large 4.
+GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking joint 1st of 3 (intervals overlap) against Grok 5 and Mistral Large 4.
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps every peer's.
+- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap); its 95 % interval overlaps every peer's.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
@@ -38,11 +38,11 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Grok 5 and
 
 ### Compared models
 
-| Model | Provider | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |
-|---|---|---|---|---|---|---|
-| **GPT-5.6 Luna** | OpenAI | run | 1 | high | 41 | 2026-09-20 |
-| Grok 5 (A) | xAI | run | 1 | high | 41 | 2026-09-19 |
-| Mistral Large 4 (B) | Mistral | run | 1 | not set | 41 | 2026-09-12 |
+| Model | Provider | Letter | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |
+|---|---|---|---|---|---|---|---|
+| **GPT-5.6 Luna** | OpenAI | — | run | 1 | high | 41 | 2026-09-20 |
+| Grok 5 | xAI | A | run | 1 | high | 41 | 2026-09-19 |
+| Mistral Large 4 | Mistral | B | run | 1 | not set | 41 | 2026-09-12 |
 
 ## Results against peers
 
@@ -50,15 +50,15 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Grok 5 and
 
 | Model | Provider | Intelligence Index | 95 % interval | Rank | Paired difference |
 |---|---|---|---|---|---|
-| **GPT-5.6 Luna** | OpenAI | 80 | 77–83 | 2 | — |
-| Grok 5 (A) | xAI | 85 | 81–89 | 1 | -4.6 points (-9.8 to +0.7) |
-| Mistral Large 4 (B) | Mistral | 78 | 74–83 | 3 | not available |
+| **GPT-5.6 Luna** | OpenAI | 80 | 77–83 | joint 1 | — |
+| Grok 5 | xAI | 85 | 81–89 | joint 1 | -4.6 points (-9.8 to +0.7) |
+| Mistral Large 4 | Mistral | 78 | 74–83 | joint 1 | not available |
 
 *Paired difference: mean per-question difference, subject minus peer, over the questions both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several models, and is not a significance test.*
 
 No paired difference:
 
-- Mistral Large 4 (B): Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference.
+- Mistral Large 4: Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference.
 
 *GPT-5.6 Luna: its 95 % interval overlaps every peer's. This describes where the intervals overlap; it is not a significance test.*
 
@@ -69,20 +69,20 @@ No pair of models is tested for significance: with 3 models, testing every pair 
 | Model | Provider | Median answer time | Rank |
 |---|---|---|---|
 | **GPT-5.6 Luna** | OpenAI | 12.3 s | 2 |
-| Grok 5 (A) | xAI | 9.8 s | 1 |
-| Mistral Large 4 (B) | Mistral | not available | — |
+| Grok 5 | xAI | 9.8 s | 1 |
+| Mistral Large 4 | Mistral | not available | — |
 
 Not ranked on speed:
 
-- Mistral Large 4 (B): Degraded: speed was measured with parallel execution disabled.
+- Mistral Large 4: Degraded: speed was measured with parallel execution disabled.
 
 ### Cost
 
 | Model | Provider | Cost per question | Rank |
 |---|---|---|---|
 | **GPT-5.6 Luna** | OpenAI | $0.036 | 2 |
-| Grok 5 (A) | xAI | $0.052 | 3 |
-| Mistral Large 4 (B) | Mistral | $0.021 | 1 |
+| Grok 5 | xAI | $0.052 | 3 |
+| Mistral Large 4 | Mistral | $0.021 | 1 |
 
 ### Dimensions
 

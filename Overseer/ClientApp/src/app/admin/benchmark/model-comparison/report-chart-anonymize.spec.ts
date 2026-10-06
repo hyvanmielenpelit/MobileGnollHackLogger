@@ -1,6 +1,11 @@
 import type { BenchmarkModelComparisonDto, BenchmarkModelComparisonEntryDto } from './model-comparison.models';
 import { toChartEntries } from './model-comparison.models';
-import { anonymizeComparisonForSubject, anonymizedPeerName } from './report-chart-anonymize';
+import {
+  anonymizeComparisonForAll,
+  anonymizeComparisonForSubject,
+  anonymizedPeerName,
+  restrictComparisonToEntries
+} from './report-chart-anonymize';
 
 function entry(key: string, provider: string, modelId: string, name: string, overrides: Partial<BenchmarkModelComparisonEntryDto> = {}): BenchmarkModelComparisonEntryDto {
   return {
@@ -149,5 +154,66 @@ describe('anonymizeComparisonForSubject', () => {
 
     expect(copy.entries.map(e => e.key)).toEqual(['run:1']);
     expect(JSON.stringify(copy)).not.toContain('Claude Harbor');
+  });
+});
+
+describe('anonymizeComparisonForAll', () => {
+  const first = entry('run:1', 'Google', 'gemini-orchard-2', 'Gemini Orchard');
+  const second = entry('run:2', 'Anthropic', 'claude-harbor-5', 'Claude Harbor');
+  const third = entry('run:3', 'OpenAI', 'gpt-lantern-4', 'GPT Lantern');
+  const uncovered = entry('run:4', 'Mistral', 'mistral-quill-1', 'Mistral Quill');
+  const dto = comparison([first, second, third, uncovered]);
+  const letters = { 'run:1': 'B', 'run:2': 'A', 'run:3': 'C' };
+
+  it('letters every covered entry by the covered set\'s letters, with no provider or model id, and drops the rest', () => {
+    const copy = anonymizeComparisonForAll(dto, letters);
+
+    expect(copy.entries.map(e => [e.key, e.label, e.modelDisplayName, e.provider, e.modelId])).toEqual([
+      ['run:1', 'Model B', 'Model B', '', ''],
+      ['run:2', 'Model A', 'Model A', '', ''],
+      ['run:3', 'Model C', 'Model C', '', '']
+    ]);
+    expect(copy.baselineEntryKeys).toEqual(['run:1', 'run:2', 'run:3']);
+    expect(copy.comparableCount).toBe(3);
+    expect(copy.excludedCount).toBe(0);
+    expect(copy.panelDiagnostics).toBeNull();
+    // Every entry in the neutral gray.
+    expect(toChartEntries(copy).map(e => e.provider)).toEqual(['', '', '']);
+  });
+
+  it('leaves no entry\'s name, provider, model id or source name anywhere in the copy', () => {
+    const json = JSON.stringify(anonymizeComparisonForAll(dto, letters)).toLowerCase();
+
+    for (const model of [first, second, third, uncovered]) {
+      for (const text of [model.label, model.modelDisplayName, model.modelId, model.provider, model.sourceName!]) {
+        expect(json, text).not.toContain(text.toLowerCase());
+      }
+    }
+  });
+
+  it('never changes its input', () => {
+    const before = JSON.stringify(dto);
+
+    anonymizeComparisonForAll(dto, letters);
+
+    expect(JSON.stringify(dto)).toBe(before);
+  });
+});
+
+describe('restrictComparisonToEntries', () => {
+  const first = entry('run:1', 'Google', 'gemini-orchard-2', 'Gemini Orchard');
+  const second = entry('run:2', 'Anthropic', 'claude-harbor-5', 'Claude Harbor');
+  const excluded = entry('run:3', 'OpenAI', 'gpt-lantern-4', 'GPT Lantern', { excluded: true, comparable: false, state: 'Excluded' });
+  const dto = comparison([first, second, excluded]);
+
+  it('keeps the named entries as they are, recounts, and drops the judge-family diagnostics', () => {
+    const copy = restrictComparisonToEntries(dto, ['run:3', 'run:1']);
+
+    expect(copy.entries).toEqual([first, excluded]);
+    expect(copy.baselineEntryKeys).toEqual(['run:1', 'run:3']);
+    expect(copy.excludedCount).toBe(1);
+    expect(copy.comparableCount).toBe(1);
+    expect(copy.panelDiagnostics).toBeNull();
+    expect(dto.entries.length).toBe(3);
   });
 });

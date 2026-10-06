@@ -3375,7 +3375,8 @@ the rows stored before it. The full description is
 [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 1, 2, 3, 5, 7, 8, 9 and 12.
 
 - **A comparison's identity**: a document belongs to a comparison when the comparison has the same set of
-  runs and groups; the pricing basis is not part of it. The document list takes `comparison=<entry keys>`
+  runs and groups; the pricing basis is not part of it. The same key numbers the comparison (see
+  *Numbered Comparisons, Comparison-Wide Documents and Document Charts in Points* below). The document list takes `comparison=<entry keys>`
   and `origin=`, and its `runId` filter matches the subject's runs only.
 - **Peer fingerprints**: each peer run's scoring fingerprint is stored with the document, and a later
   re-score, re-run or deletion of a peer marks the document *Comparison changed*. Documents written before
@@ -6188,11 +6189,15 @@ the wizard's responses are kept in memory for **10 minutes** per (comparison key
 reference); **Recompute** bypasses the cache. Answers are loaded only for the comparable entries, and
 nothing is computed on a chart redraw.
 
-**Why documents do not cite them yet.** Report Pack, run-completion and battery-completion documents
-keep their own frozen *no significance test* statement (`BenchmarkReportFacts.NoSignificanceStatement`,
-`ai-benchmark-report-pack.md` § 2), decoupled from the wizard's *Pairwise significance* text so that
-changing the wizard moved no golden render and no stored document. Having documents cite the
-family-adjusted tests is a follow-up: it changes what a document states, and so its format.
+**Which documents cite them.** A comparison-wide Report Pack document (format 12) cites these tests:
+its preparation asks the same service for the covered models only — *Against a reference* with the
+highest-Index covered model as the reference, plus *All pairs* for 3 to 6 covered models — so each Holm
+adjustment counts the tests the document reports, and the response cache is not used
+(`ai-benchmark-report-pack.md` § 15). Per-model Report Pack, run-completion and battery-completion
+documents keep their own frozen *no significance test* statement
+(`BenchmarkReportFacts.NoSignificanceStatement`, `ai-benchmark-report-pack.md` § 2), decoupled from the
+wizard's *Pairwise significance* text so that changing the wizard moved no golden render and no stored
+document.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
@@ -7242,8 +7247,8 @@ alternatives are [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) §
   missing one. A run or battery run that already has some gets the rest from its **AI Reports** tab.
 - **Comparison documents** — one subject, at least one peer — are written on the Model Comparison
   wizard's step 3 and listed on step 4 and in the launcher's **Comparison reports**. Step 3 needs two
-  entries that are not Excluded; its summary reads *"Write AI reports that compare one model with the
-  others in this comparison."*, and with one comparable entry its reason reads *"A comparison report
+  entries that are not Excluded; its summary reads *"Write AI reports that compare the models of this
+  comparison."*, and with one comparable entry its reason reads *"A comparison report
   compares one model with at least one other. Add another model on step 1, or write a run's or battery
   run's own reports in the AI Reports tab of its report."* The server refuses a peerless preview and
   start, and a second document of one type about one subject in one comparison (409); step 3 shows such
@@ -7254,7 +7259,9 @@ alternatives are [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) §
   **Include member runs**, checked whenever it opens, lists every member run's report, tool-call log and
   diagnostics beside the battery's own documents.
 - **File names** of comparison documents name their peers (`battery-run-9_vs-battery-run-10_…`) or carry
-  the comparison key (`vs-4-models-3f9a0c21_`), so two comparisons never share a name.
+  the comparison key (`vs-4-models-3f9a0c21_`), so two comparisons never share a name. (A document of a
+  numbered comparison is named `comparison-<N>_…`; see *Numbered Comparisons, Comparison-Wide Documents
+  and Document Charts in Points* below.)
 
 The details are in [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 1a, 5, 8, 9, 11, 12
 and 14, and [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) §§ 4.3, 4.7 and 7.2.
@@ -7262,6 +7269,39 @@ and 14, and [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) §§ 4.
 **Comparability.** `HarnessVersion` (an Instrument key) moves 52 → 53, so a harness-53 run differs from
 a harness-52 one on that key: B3 changes what the synthesis is given. A battery run started under
 harness 52 refuses to launch members under 53 (`HarnessVersionRefusal`).
+
+### Numbered Comparisons, Comparison-Wide Documents and Document Charts in Points (2026-10-06) — No Harness Version Bump
+
+*Every model comparison has a number, and its AI-written documents can describe all its models at once.*
+Nothing here grades anything: no grading prompt, score, index or comparability key changes, and
+`HarnessVersion` and `ScoringMethodVersion` do not move. One EF Core migration, `AddBenchmarkComparisons`,
+adds the `BenchmarkComparisons` table and the document columns `Scope`, `ComparisonId`,
+`CoveredEntryKeysJson` and `CoveredSetKey`; a startup backfill numbers the comparisons of the documents
+stored before it. The full description is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)
+§ 15, with §§ 8, 9, 12 and 13.
+
+- **Comparison identity.** A comparison is one `BenchmarkComparison` row per entry set, keyed by the
+  comparison key documents already store (the sorted runs, groups or battery results; not the pricing
+  basis, not the *Excluded* flags), and shown as **Comparison #N — <name>**. The wizard numbers it with
+  `POST model-comparisons/identify` after every Compare, and the Report Pack start numbers it
+  server-side, so every Report Pack document belongs to one; the preview never creates one. Its default
+  name is *"A vs B vs C"* for up to three entries and *"10 models · <battery or suite name>"* for more;
+  the wizard's header shows it with **Rename comparison**, and the name is read at render time, while
+  *Comparison #N* never changes. There is no deletion.
+- **Comparison-wide documents** (`ReportFormatVersion` 12) cover every non-excluded model of the
+  comparison, or a chosen subset of 2 to 12, as equals, lettered by Intelligence Index; they cite the
+  family-adjusted paired tests over their covered models (*Paired Tests* above). Per-model documents
+  stay at format 11 and are step 3's secondary choice, several subjects per job. A rewrite replaces a
+  document only once the new one is stored.
+- **Names.** Report Pack documents of a numbered comparison are named `comparison-<N>_…` in their PDF,
+  Word and Download Center names; ZIPs are named from the chosen rows; an anonymized copy never prints
+  the comparison's name. Covers, running headers and the manifest name the comparison, and the Download
+  Center filters by *Scope*, *Comparison* and *Model*.
+- **Document charts** are composed for a size in points — 300 dpi, labels at 8 pt by default — with
+  per-figure widths, side-by-side rows, a height cap, a light print theme and no in-image heading by
+  default; the layout travels in the chart manifest, and step 3's **Preview layout** renders a document's
+  PDF with placeholder text and no model call (`POST report-packs/layout-preview`). The PDF layout moves
+  to **6**: figure rows, wide-table fallbacks and the comparison in the running header.
 
 ---
 
@@ -8536,6 +8576,9 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 - `POST /api/admin/benchmark/model-comparison/paired/battery`: The Battery Run Report's Paired Test rows, body `{ batteryRunId, baselineBatteryRunId, pricingBasis }`, judged by M7's eligibility rule. 404 for an unknown battery run; 400 *Not comparable: …*.
 - `POST /api/admin/benchmark/runs/{id}/paired-comparison`: The run report's Paired Test tab, body `{ baselineRunId, pricingBasis }`; this run is the treatment. Returns the kind (`ModelComparison`, `Verification` or `Replicate`), its explanation, the changed keys, every differing key, the degrade flags, the single-run caveat and the measures as one unadjusted pair. 400 when the runs are not comparable, a run has not finished, or the suites differ; 404 for an unknown run.
 - `POST /api/admin/benchmark/runs/{id}/paired-comparison/kinds`: Body `{ runIds }`, at most 1,000: the kind each candidate baseline would make with this run, in request order, so the tab can group its select. Reads no answer text.
+- `POST /api/admin/benchmark/model-comparisons/identify`: Body `{ runIds, groupIds, batteryRunIds }`. The numbered comparison of the selection (*Comparison #N*), created and named when the entry set is new, else returned as it is: `{ id, name, customName, defaultName, entryCount, subjectKind, entryKeys, createdAtUtc, renamedAtUtc }`. 400 for no body, an empty selection, battery results mixed with runs or groups, or an entry that does not exist. Makes no model call.
+- `PATCH /api/admin/benchmark/model-comparisons/{id}`: Body `{ name }`: renames the comparison, trimmed; an empty or null name restores its default name. 400 for a name over 160 characters; 404 for an unknown comparison.
+- `GET /api/admin/benchmark/model-comparisons`: Every numbered comparison, newest first, with its display, custom and default names, entry count, subject kind, document count, last document time and creation time.
 
 #### Rubric Gap Author
 - `POST /api/admin/benchmark/rubric-gap-author`, `GET .../{jobId}`, `GET .../active`, `POST .../{jobId}/cancel`: An AI job that **drafts** proposed rubric additions from verified claim clusters, using read-only tools to confirm each citation. It writes nothing.
@@ -8544,8 +8587,9 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
   > There is deliberately **no accept-all endpoint**. § 7 rung 1 of `server_benchmark_to_chat_transfer` requires human authorship of curated knowledge, and `BenchmarkRubricGapDetector`'s own documentation says a gap is *"surfaced for a human to fold into the rubric — never applied automatically"*. One endpoint, one draft, one click, one item-revision bump. Editing before accepting strengthens the authorship claim rather than weakening it.
 
 #### Report Packs and Documents
-- `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and writer prompts for a report pack, without a model call (body as for the start). Returns the subject, the lettered peers, the estimated tokens and cost per document, the same-provider warning, any refusal and `writtenDocuments` — the Report Pack documents already stored for this comparison and subject, the newest per audience. A subject with no peer is answered with the peerless refusal and no estimate.
-- `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, batteryRunIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for battery results mixed with runs or groups; 400 for an unknown entry or an Excluded subject; 400 for a subject with no peer (*"A comparison report compares one model with at least one other. …"*); 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 409 `{ error }` when a requested document is already written for this comparison and subject (*"The <document name> about <subject> is already written for this comparison. Delete it in step 4 to write it again."*); 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
+- `POST /api/admin/benchmark/report-packs/preview`: The fact sheets and writer prompts for a report pack, without a model call (body as for the start). Per-model scope: the first subject, the lettered peers, `writtenDocuments` (the Report Pack documents already stored for this comparison and that subject, the newest per audience) and each subject's per-model documents. Comparison scope: the covered models with their letters, the covered set's `writtenDocuments` and `otherModelSets`. Both: the numbered comparison once identified (`comparisonId`, `comparisonName`; never created here), the estimated tokens, cost and share of the writer's context window per document, the same-provider warning and any refusal. A subject with no peer is answered with the peerless refusal and no estimate.
+- `POST /api/admin/benchmark/report-packs`: Start a report-pack job. Body `{ runIds, groupIds, batteryRunIds, pricingBasis, scope, subjectKey, subjectKeys, coveredEntryKeys, audiences[], writerModelConfigurationId, acknowledgeSameProvider, replaceDocumentIds }`: `scope` 1 writes per-model documents for each of `subjectKeys` (else `subjectKey`), `scope` 2 comparison-wide documents over `coveredEntryKeys` (empty means every entry that is not Excluded); audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief; `replaceDocumentIds` names written documents to replace once the new ones are stored. Returns 202 `{ jobId }`; the comparison is numbered before the job starts. Per-model refusals, in order: 400 for battery results mixed with runs or groups; 400 for an unknown entry or an Excluded subject; 400 for a subject with no peer (*"A comparison report compares one model with at least one other. …"*); 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is a subject's own model; 400 for no audience; 400 for a prompt above 90 % of the writer's context window; 400 for a `replaceDocumentIds` entry the job does not write again; 409 `{ error }` when a requested document is already written for this comparison and subject and not replaced (*"The <document name> about <subject> is already written for this comparison. Delete it in step 4 to write it again."*); 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs. Comparison scope adds 400 for a covered entry outside the comparison or Excluded, 409 for fewer than 2 or more than 12 covered models, and 400 for a writer that is a covered model's configuration; its full order is in `ai-benchmark-report-pack.md` § 9.
+- `POST /api/admin/benchmark/report-packs/layout-preview`: Multipart: a `request` field (a preview request with `audience`, `paper`, `naming`, `layout` and `charts`) and up to 12 files `<figureKey>.png`, at most 40,000,000 bytes. Returns one document as `application/pdf`, rendered by the real PDF renderer with placeholder text in the writer's slots, the real tables and the given charts and layout; no model call, nothing stored. 400 for an invalid request or chart, 409 for a covered set outside 2 to 12, 413 for a document too large. See `ai-benchmark-report-pack.md` § 15.
 - `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary, Report for AI Researchers and Developers and Internal Improvement Brief) with the writer in the body, `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`, which is recorded on the run as its report writer; `audiences` names the documents to write, and null or empty writes every missing one. Returns 202 with the run's Pending status and the documents the job will write. 400 when the run has no final synthesis, an audience is not a run-completion document, or the writer is refused (unusable, the model under test, the endpoint policy); 404 for an unknown run; 409 when a requested document is already written (or, with none requested, every one is), when a job for the run is Pending or Writing, or, with a `SameProviderWarningDto` of role `reportWriter`, for a writer of the candidate's provider without `acknowledgeSameProvider`; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
 - `GET /api/admin/benchmark/runs/{runId}/report-documents/job`: The run's current or last run-completion job: phase (Queued, Preparing, Writing, Finished), queue position and blocking job, writer, per-document times, tokens and cost, the log, the persisted status and message, and the server's time. 204 when this process knows no job for the run (none since a restart, or a finished job older than 6 hours); 404 for an unknown run.
 - `POST /api/admin/benchmark/runs/{runId}/report-documents/cancel`: Cancel the run's job, queued or writing; documents already written are kept and the run's status becomes Canceled. 202 with the job view; 409 when nothing is in progress; 404 for an unknown run.
@@ -8554,11 +8598,11 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
-- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&subject=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` and `peersChangedSinceGeneration` from its runs' scoring fingerprints, its comparison key, peer count, pricing basis and peer letters, and its charts' `chartCount`, `chartFigureKeys` and `chartSettingsHash` read from the chart manifest. `origin` takes `reportPack`, `runCompletion` or `batteryCompletion`, `comparison` takes `run:`/`group:` keys or `battery:` keys, and `subject` one `run:`, `group:` or `battery:` key matched exactly. The filters are in `ai-benchmark-report-pack.md` § 9.
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&comparisonId=&origin=&subject=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` and `peersChangedSinceGeneration` from its runs' scoring fingerprints, its comparison key, peer count, pricing basis and peer letters, its numbered comparison (`comparisonId`, `comparisonName`), `scope`, `coversAllEntries`, `coveredSetKey`, `comparisonModelCount` and `coveredModels`, and its charts' `chartCount`, `chartFigureKeys` and `chartSettingsHash` read from the chart manifest. `origin` takes `reportPack`, `runCompletion` or `batteryCompletion`, `comparison` takes `run:`/`group:` keys or `battery:` keys, `comparisonId` a comparison number, and `subject` one `run:`, `group:` or `battery:` key matched exactly. The filters are in `ai-benchmark-report-pack.md` § 9.
 - `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Internal Brief renders at `full` only).
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade and its chart folder is removed. Deleting a run never deletes a document. Deleting a run's run-completion document returns the run's status to NotRequested when no job is in progress.
-- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace a document's whole chart set with the PNGs the browser drew (at most 16 images, 4 MB each, 40,000,000 bytes per request). 400 for a stand-alone document, for chart storage that is not configured and for any chart refused; 404 for an unknown document.
+- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace a document's whole chart set with the PNGs the browser drew (at most 16 images, 4 MB each, 40,000,000 bytes per request), and its layout: an optional `layout` `{ version: 1, figures: [{ key, widthShare, rowGroup }], maxHeightShare }` stored in the chart manifest, absent meaning every figure full width on its own row under a 60 % height cap. 400 for a stand-alone document, for chart storage that is not configured, for any chart refused and for an invalid layout; 404 for an unknown document.
 - `DELETE /api/admin/benchmark/report-documents/{id}/charts`: Remove a document's charts. 204; 404 for an unknown document.
 
 The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, and `inline=true` on the PDF for viewing in a browser tab), with its charts drawn in them, and the chart endpoints' bodies and limits are in `ai-benchmark-report-pack.md` §§ 9 and 13. Clearing every chart image is a Database tab maintenance action, `POST /api/admin/maintenance/clear-report-charts` (`chat-data-retention.md`).

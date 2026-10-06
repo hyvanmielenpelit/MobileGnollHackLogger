@@ -166,10 +166,8 @@ public class BenchmarkPdfRendererTests
     }
 
     [Fact]
-    public void AWideTable_KeepsEveryHeaderWordWhole_AndShrinksOnlyItsTextColumns()
+    public void AWideTable_KeepsEveryHeaderWordWhole_AndRightAlignsItsNumericColumns()
     {
-        // The minimums (89 estimated characters) exceed the A4 text width (about 80), so the text
-        // columns shrink and the five numeric columns keep their minimums.
         const string wide =
             "| Question | Topic | Assessed band | Mean score | Critical errors | Refuted answer sentences | Tool calls | Model time |\n"
             + "|---|---|---|---|---|---|---|---|\n"
@@ -177,29 +175,29 @@ public class BenchmarkPdfRendererTests
             + "| S1-Q2 | Reading the map | Simple | 72 | 1 | 1 | 3 | 11.0 s |\n";
         string[] headers = { "Question", "Topic", "Assessed band", "Mean score", "Critical errors", "Refuted answer sentences", "Tool calls", "Model time" };
 
-        var (aligns, widths, constant) = Layout(wide);
+        var layout = BenchmarkPdfTableLayoutTests.Layout(wide);
 
-        Assert.False(constant);
+        Assert.False(layout.Constant);
+        Assert.True(layout.Fits);
         Assert.Equal(
             new[] { false, false, false, true, true, true, true, true },
-            aligns.Select(a => a == BenchmarkPdfMarkdownComposer.CellAlign.Right).ToArray());
+            layout.Aligns.Select(a => a == BenchmarkPdfMarkdownComposer.CellAlign.Right).ToArray());
 
-        // A header word in points as the composer estimates it: semibold characters of 5.2 points,
-        // one character of slack, and the cell padding.
-        static double HeaderWordPoints(string header)
-            => (Math.Ceiling(header.Split(' ').Max(w => w.Length) * 1.08) + 1) * 5.2 + 8;
-        for (int c = 0; c < headers.Length; c++)
+        // A header word in points as the composer estimates it: its characters by width class, 8 %
+        // wider for the semibold header, at 5.2 points for 9.5 pt text scaled to the layout's text
+        // size, plus the cell padding. Relative widths are spread across the A4 text width first.
+        double scale = 482 / layout.Widths.Sum(w => (double)w);
+        double characterPoints = 5.2 * layout.FontSize / 9.5;
+        for (int g = 0; g < layout.GridColumns.Length; g++)
         {
-            Assert.True(widths[c] >= HeaderWordPoints(headers[c]) - 0.001,
-                $"Column '{headers[c]}' is {widths[c]} points, narrower than its longest header word ({HeaderWordPoints(headers[c])}).");
+            int c = layout.GridColumns[g];
+            string header = layout.HeaderTextOf(c) ?? headers[c];
+            double needed = BenchmarkPdfMarkdownComposer.Words(header)
+                .Max(w => BenchmarkPdfMarkdownComposer.WordCharacters(w) * 1.08) * characterPoints + 8;
+            double width = layout.Widths[g] * scale;
+            Assert.True(width >= needed - 0.001,
+                $"Column '{header}' is {width:0.0} points at {layout.FontSize} pt, narrower than its longest header word ({needed:0.0}).");
         }
-
-        // The numeric columns sit at their header words; the Topic column gave up the most.
-        for (int c = 3; c < headers.Length; c++)
-        {
-            Assert.Equal(HeaderWordPoints(headers[c]), widths[c], 3);
-        }
-        Assert.True(widths[1] < (24 * 5.2 + 8), "The Topic column did not shrink.");
     }
 
     [Fact]
@@ -303,7 +301,7 @@ public class BenchmarkPdfRendererTests
         // The Markdown footer is left out; the cover states its facts once.
         Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
         Assert.DoesNotContain(Squash("rendered with format version"), text);
-        Assert.Contains(Squash("PDF layout 5"), text);
+        Assert.Contains(Squash("PDF layout 6"), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.
         Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
@@ -404,7 +402,7 @@ public class BenchmarkPdfRendererTests
         string second = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, changed));
         Assert.Contains("Source" + original[..16], first);
         Assert.Contains("Source" + altered[..16], second);
-        Assert.Contains("PDFlayout5", first);
+        Assert.Contains("PDFlayout6", first);
 
         // A chart with no marker is not drawn and leaves the hash alone.
         string unplaced = AllText(BenchmarkPdfRenderer.RenderMarkdown("Only text.\n", Info(), TestContext.Current.CancellationToken, charts));
@@ -435,12 +433,209 @@ public class BenchmarkPdfRendererTests
         Assert.Contains(StructureElements(reader), e => e.Type == "Figure" && e.Alt == "Tall chart alt text.");
     }
 
+    // --- Figure layout -------------------------------------------------------------------------------
+
+    private const string RowMarkdown = "## Results\n\nIntro text.\n\n[[figure:p1a-quality]]\n\n[[figure:p1b-speed]]\n\nEnd text.\n";
+
+    private static BenchmarkReportRenderChart[] RowCharts() => new[]
+    {
+        Chart("p1a-quality", 800, 450, 10, "Quality index", "Left chart.", "Bar chart of the quality index."),
+        Chart("p1b-speed", 800, 450, 90, "Answer time", "Right chart.", "Bar chart of the answer time.")
+    };
+
+    private static BenchmarkReportChartLayout Layout(double? maxHeightShare, params (string Key, double Width, int? Row)[] figures) => new()
+    {
+        Figures = figures.Select(f => new BenchmarkReportChartLayoutFigure { Key = f.Key, WidthShare = f.Width, RowGroup = f.Row }).ToList(),
+        MaxHeightShare = maxHeightShare
+    };
+
+    /// <summary>The chart images of a PDF, wider or taller than the frame's logo and emblem, with their page numbers.</summary>
+    private static List<(int Page, UglyToad.PdfPig.Core.PdfRectangle Bounds)> ChartImages(byte[] pdf)
+    {
+        using var reader = PdfDocument.Open(pdf);
+        return reader.GetPages()
+            .SelectMany(p => p.GetImages().Select(i => (Page: p.Number, Bounds: i.BoundingBox)))
+            .Where(i => i.Bounds.Width > 150 || i.Bounds.Height > 100)
+            .ToList();
+    }
+
+    [Fact]
+    public void TwoFiguresOfOneRowGroup_PrintSideBySide_EachWithItsOwnCaption()
+    {
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(
+            RowMarkdown, Info(), TestContext.Current.CancellationToken, RowCharts(),
+            Layout(null, ("p1a-quality", 0.5, 1), ("p1b-speed", 0.5, 1)));
+
+        var images = ChartImages(pdf).OrderBy(i => i.Bounds.Left).ToList();
+        Assert.Equal(2, images.Count);
+        Assert.Equal(images[0].Page, images[1].Page);
+        Assert.Equal(images[0].Bounds.Top, images[1].Bounds.Top, 1.0);
+        Assert.True(images[1].Bounds.Left >= images[0].Bounds.Right + BenchmarkPdfMarkdownComposer.FigureRowGap - 1,
+            $"The second figure starts at {images[1].Bounds.Left}, the first ends at {images[0].Bounds.Right}.");
+
+        // Each cell is half the column less half the gap; the image fills its cell's width.
+        var frame = BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4);
+        double cell = (frame.Width - BenchmarkPdfMarkdownComposer.FigureRowGap) / 2;
+        Assert.All(images, i => Assert.Equal(cell, i.Bounds.Width, 1.0));
+
+        using var reader = PdfDocument.Open(pdf);
+        var elements = StructureElements(reader);
+        // The cover's logo is a figure too; count the charts by their alt text.
+        Assert.Equal(2, elements.Count(e => e.Type == "Figure" && e.Alt?.StartsWith("Bar chart", StringComparison.Ordinal) == true));
+        Assert.Equal(2, elements.Count(e => e.Type == "Caption"));
+        string text = AllText(pdf);
+        Assert.Contains(Squash("Figure 1. Quality index — Left chart."), text);
+        Assert.Contains(Squash("Figure 2. Answer time — Right chart."), text);
+
+        // Without the layout the same figures print one under the other, each across the column.
+        var stacked = ChartImages(BenchmarkPdfRenderer.RenderMarkdown(RowMarkdown, Info(), TestContext.Current.CancellationToken, RowCharts()));
+        Assert.Equal(2, stacked.Count);
+        Assert.True(stacked.Select(i => (i.Page, Math.Round(i.Bounds.Top))).Distinct().Count() == 2, "The figures without a layout share a line.");
+        Assert.All(stacked, i => Assert.Equal((double)frame.Width, i.Bounds.Width, 1.0));
+    }
+
+    [Fact]
+    public void FiguresOfDifferentRowGroups_OrWithTextBetweenThem_PrintAlone()
+    {
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(
+            "[[figure:p1a-quality]]\n\n[[figure:p1b-speed]]\n\n[[figure:p1c-cost]]\n\nText.\n\n[[figure:p2-profile]]\n\n"
+            + "[[figure:s1-quality-speed]]\n\n[[figure:s2-quality-cost]]\n\n[[figure:s3-speed-cost]]\n",
+            "Title",
+            new[] { "p1a-quality", "p1b-speed", "p1c-cost", "p2-profile", "s1-quality-speed", "s2-quality-cost", "s3-speed-cost" }
+                .Select((key, i) => Chart(key, 640, 360, (byte)(i * 30), key, string.Empty, "Alt " + key))
+                .ToArray(),
+            Layout(null,
+                ("p1a-quality", 0.5, 1), ("p1b-speed", 0.5, 1), ("p1c-cost", 0.5, 1),
+                ("p2-profile", 0.5, 2),
+                ("s1-quality-speed", 0.5, 3), ("s2-quality-cost", 0.5, 4), ("s3-speed-cost", 0.6667, null)));
+
+        // Three of one group: the first two pair and the third prints alone; text ends a group; groups differ.
+        var rows = prepared.FigureRows.Values.Select(r => string.Join(",", r.Select(f => f.Chart.FigureKey))).ToList();
+        Assert.Equal(new[] { "p1a-quality,p1b-speed" }, rows);
+        Assert.Single(prepared.RowFollowers);
+        Assert.Equal(0.6667, prepared.Figures.Values.Single(f => f.Chart.FigureKey == "s3-speed-cost").WidthShare, 4);
+        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7 }, prepared.OrderedFigures.Select(f => f.Number));
+    }
+
+    [Fact]
+    public void AFigureOfHalfTheColumn_IsHalfAsWide_AndCentered()
+    {
+        var chart = Chart("p1a-quality", 800, 450, 10, "Quality index", "Higher is better.", "Bar chart of the quality index.");
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(
+            "[[figure:p1a-quality]]\n", Info(), TestContext.Current.CancellationToken, new[] { chart },
+            Layout(null, ("p1a-quality", 0.5, null)));
+
+        var image = Assert.Single(ChartImages(pdf)).Bounds;
+        var frame = BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4);
+        Assert.Equal(frame.Width * 0.5, image.Width, 1.0);
+        // A4 is 595.28 points wide, with equal side margins.
+        Assert.Equal(595.28 / 2, image.Left + image.Width / 2, 1.0);
+        Assert.Contains(Squash("Figure 1. Quality index — Higher is better."), AllText(pdf));
+    }
+
+    [Fact]
+    public void ALayoutsMaximumHeightShare_ReplacesTheSixtyPercentCap()
+    {
+        Assert.Equal(0.6, BenchmarkPdfMarkdownComposer.MaxHeightShareOf(null));
+        Assert.Equal(0.6, BenchmarkPdfMarkdownComposer.MaxHeightShareOf(new BenchmarkReportChartLayout()));
+        Assert.Equal(0.4, BenchmarkPdfMarkdownComposer.MaxHeightShareOf(new BenchmarkReportChartLayout { MaxHeightShare = 0.4 }));
+
+        var frame = BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4, 0.4);
+        Assert.Equal((841.89 - 2 * 18 * 72 / 25.4) * 0.4, frame.MaxHeight, 0.1);
+        Assert.Equal(BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4).Width, frame.Width);
+
+        var tall = Chart("p2-profile", 400, 2000, 60, "Tall", "A tall chart.", "Tall chart alt text.");
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(
+            "[[figure:p2-profile]]\n", Info(), TestContext.Current.CancellationToken, new[] { tall },
+            new BenchmarkReportChartLayout { MaxHeightShare = 0.4 });
+
+        var image = Assert.Single(ChartImages(pdf)).Bounds;
+        Assert.Equal((double)frame.MaxHeight, image.Height, 1.0);
+        Assert.Equal(frame.MaxHeight / 5.0, image.Width, 1.0);
+    }
+
+    [Fact]
+    public void AFigureRowAfterAHeading_StartsOnTheHeadingsPage()
+    {
+        var charts = RowCharts();
+        var layout = Layout(null, ("p1a-quality", 0.5, 1), ("p1b-speed", 0.5, 1));
+        bool movedPastPageOne = false;
+        for (int filler = 10; filler <= 40; filler += 3)
+        {
+            var markdown = new StringBuilder("## Opening\n\n");
+            for (int i = 1; i <= filler; i++)
+            {
+                markdown.Append("Filler paragraph ").Append(i).Append(" moves the heading down the page.\n\n");
+            }
+            markdown.Append("## ROWHEADING\n\n[[figure:p1a-quality]]\n\n[[figure:p1b-speed]]\n\nAfter the row.\n");
+
+            byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(), TestContext.Current.CancellationToken, charts, layout);
+
+            using var reader = PdfDocument.Open(pdf);
+            int heading = reader.GetPages().First(p => Squash(p.Text).Contains("ROWHEADING", StringComparison.Ordinal)).Number;
+            var images = ChartImages(pdf);
+            Assert.Equal(2, images.Count);
+            Assert.All(images, i => Assert.True(i.Page == heading, $"With {filler} filler paragraphs the heading is on page {heading} and a figure on page {i.Page}."));
+            movedPastPageOne |= heading > 1;
+        }
+
+        Assert.True(movedPastPageOne, "No filler count pushed the heading past page 1.");
+    }
+
     // --- The last section ----------------------------------------------------------------------------
 
     [Fact]
-    public void TheLayoutVersion_IsFive()
+    public void TheLayoutVersion_IsSix()
     {
-        Assert.Equal(5, BenchmarkPdfRenderer.LayoutVersion);
+        Assert.Equal(6, BenchmarkPdfRenderer.LayoutVersion);
+    }
+
+    [Fact]
+    public void AComparisonDocument_PrintsTheComparisonInItsRunningHeader_OnOneLine()
+    {
+        const string name = "Luna vs Grok vs Mistral";
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        document.ComparisonId = 12;
+        document.Comparison = new BenchmarkComparison
+        {
+            Id = 12,
+            ComparisonKey = new string('c', 64),
+            EntryKeysJson = "[]",
+            SubjectKind = BenchmarkComparisonSubjectKind.Runs,
+            EntryCount = 3,
+            DefaultName = name,
+            CreatedAtUtc = CreatedAt
+        };
+        var options = new BenchmarkReportRenderOptions
+        {
+            Disclosure = BenchmarkReportDisclosure.Full,
+            PeerNaming = BenchmarkReportPeerNaming.Named,
+            IncludeFrontMatter = false,
+            IncludeDocumentFooter = false
+        };
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+        using (var reader = PdfDocument.Open(BenchmarkPdfRenderer.RenderMarkdown(
+                   BenchmarkReportPackRenderer.Render(document, options), info, TestContext.Current.CancellationToken)))
+        {
+            Assert.True(reader.NumberOfPages >= 2, "The report should run past one page.");
+            Assert.Contains(Squash("Comparison #12 — " + name), Squash(reader.GetPage(2).Text));
+            Assert.Contains(Squash("Comparison #12 — " + name + " · 3 models · computed 2026-09-20"), Squash(reader.GetPage(1).Text));
+        }
+
+        // A name wider than the header is cut on one line; the cover still prints it whole.
+        string longName = string.Join(" ", Enumerable.Repeat("Averyverylongcomparisonname", 12));
+        document.Comparison!.Name = longName;
+        var longInfo = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+        using (var reader = PdfDocument.Open(BenchmarkPdfRenderer.RenderMarkdown(
+                   BenchmarkReportPackRenderer.Render(document, options), longInfo, TestContext.Current.CancellationToken)))
+        {
+            string header = Squash(reader.GetPage(2).Text);
+            Assert.Contains(Squash("Comparison #12 — Averyverylongcomparisonname"), header);
+            Assert.DoesNotContain(Squash(longName), header);
+            Assert.Contains(Squash(longName), Squash(reader.GetPage(1).Text));
+        }
     }
 
     private const string ClosingSection =

@@ -25,7 +25,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { BehaviorSubject } from 'rxjs';
 import { AdminAlertService, SystemAlert } from '../../../services/admin-alert.service';
 import { BenchmarkReportPackDocumentProgressDto } from '../../../services/admin-benchmark.service';
-import { ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
+import { REPORT_PACK_STORAGE_KEY, ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
 import { REPORT_CHART_STORAGE_KEY } from '../report-pack/report-charts';
 
 // Spec helper for the ModelComparisonComponent spec files, which are split by area and share this
@@ -42,7 +42,10 @@ import { REPORT_CHART_STORAGE_KEY } from '../report-pack/report-charts';
 })
 export class ReportPackPanelStubComponent {
   @Input() context: unknown = null;
+  @Input() comparisonId: number | null = null;
   @Input() chartSelection: unknown = null;
+  @Input() chartLayout: unknown = null;
+  @Input() documentChartsComposer: unknown = null;
   @Input() chartsAvailable: readonly string[] = [];
   @Input() chartAdvisory: string | null = null;
   @Input() chartStorageMissing = false;
@@ -52,7 +55,9 @@ export class ReportPackPanelStubComponent {
   @Output() documentWritten = new EventEmitter<BenchmarkReportPackDocumentProgressDto>();
   @Output() jobFinished = new EventEmitter<unknown>();
   @Output() documentsRequested = new EventEmitter<void>();
+  @Output() documentsChanged = new EventEmitter<void>();
   @Output() chartSelectionChange = new EventEmitter<unknown>();
+  @Output() chartLayoutChange = new EventEmitter<unknown>();
   @Output() chartRetryRequested = new EventEmitter<BenchmarkReportPackDocumentProgressDto>();
   @Output() busyChange = new EventEmitter<boolean>();
 }
@@ -313,7 +318,7 @@ export function cancelCompareButton(): HTMLButtonElement | null {
 /** Every key this wizard remembers per browser. */
 const STORED_KEYS = [
   FIGURE_STYLE_STORAGE_KEY, FIGURE_SIDEBAR_STORAGE_KEY, FIGURE_SIZE_STORAGE_KEY, TABLE_IMAGE_SIZE_STORAGE_KEY,
-  TABLE_COLUMNS_STORAGE_KEY, DOWNLOAD_SETTINGS_STORAGE_KEY, REPORT_CHART_STORAGE_KEY
+  TABLE_COLUMNS_STORAGE_KEY, DOWNLOAD_SETTINGS_STORAGE_KEY, REPORT_CHART_STORAGE_KEY, REPORT_PACK_STORAGE_KEY
 ];
 
 /**

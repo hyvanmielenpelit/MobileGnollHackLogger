@@ -153,26 +153,7 @@ public class BenchmarkReportChartStore
             string title = upload.Title ?? string.Empty;
             string caption = upload.Caption ?? string.Empty;
             string altText = upload.AltText ?? string.Empty;
-
-            if (string.IsNullOrWhiteSpace(altText))
-            {
-                throw new ChartStoreException($"{label} has no alt text.");
-            }
-
-            if (title.Length > MaxTitleChars)
-            {
-                throw new ChartStoreException($"{label} has a title of {title.Length} characters; the limit is {MaxTitleChars}.");
-            }
-
-            if (caption.Length > MaxCaptionChars)
-            {
-                throw new ChartStoreException($"{label} has a caption of {caption.Length} characters; the limit is {MaxCaptionChars}.");
-            }
-
-            if (altText.Length > MaxAltTextChars)
-            {
-                throw new ChartStoreException($"{label} has alt text of {altText.Length} characters; the limit is {MaxAltTextChars}.");
-            }
+            CheckText(label, title, caption, altText);
 
             string hash = upload.SettingsHash ?? string.Empty;
             if (!SettingsHashPattern.IsMatch(hash))
@@ -191,22 +172,7 @@ public class BenchmarkReportChartStore
             }
 
             byte[] png = DecodeBase64(upload.PngBase64, label);
-
-            if (png.Length > MaxPngBytes)
-            {
-                throw new ChartStoreException($"{label} is {png.Length:N0} bytes; the limit is {MaxPngBytes:N0}.");
-            }
-
-            if (!TryReadPngSize(png, out int width, out int height))
-            {
-                throw new ChartStoreException($"{label} is not a PNG image.");
-            }
-
-            if (width < MinDimensionPx || width > MaxDimensionPx || height < MinDimensionPx || height > MaxDimensionPx)
-            {
-                throw new ChartStoreException(
-                    $"{label} is {width}x{height} pixels; each side must be {MinDimensionPx} to {MaxDimensionPx} pixels.");
-            }
+            var (width, height) = CheckImage(label, png);
 
             validated.Add(new ValidatedChart
             {
@@ -224,6 +190,141 @@ public class BenchmarkReportChartStore
         }
 
         return validated;
+    }
+
+    /// <summary>Refuses a chart without alt text, or with a title, caption or alt text over its limit.</summary>
+    private static void CheckText(string label, string title, string caption, string altText)
+    {
+        if (string.IsNullOrWhiteSpace(altText))
+        {
+            throw new ChartStoreException($"{label} has no alt text.");
+        }
+
+        if (title.Length > MaxTitleChars)
+        {
+            throw new ChartStoreException($"{label} has a title of {title.Length} characters; the limit is {MaxTitleChars}.");
+        }
+
+        if (caption.Length > MaxCaptionChars)
+        {
+            throw new ChartStoreException($"{label} has a caption of {caption.Length} characters; the limit is {MaxCaptionChars}.");
+        }
+
+        if (altText.Length > MaxAltTextChars)
+        {
+            throw new ChartStoreException($"{label} has alt text of {altText.Length} characters; the limit is {MaxAltTextChars}.");
+        }
+    }
+
+    /// <summary>The image's width and height; refuses one over <see cref="MaxPngBytes"/>, not a PNG, or of a side outside the limits.</summary>
+    private static (int Width, int Height) CheckImage(string label, byte[] png)
+    {
+        if (png.Length > MaxPngBytes)
+        {
+            throw new ChartStoreException($"{label} is {png.Length:N0} bytes; the limit is {MaxPngBytes:N0}.");
+        }
+
+        if (!TryReadPngSize(png, out int width, out int height))
+        {
+            throw new ChartStoreException($"{label} is not a PNG image.");
+        }
+
+        if (width < MinDimensionPx || width > MaxDimensionPx || height < MinDimensionPx || height > MaxDimensionPx)
+        {
+            throw new ChartStoreException(
+                $"{label} is {width}x{height} pixels; each side must be {MinDimensionPx} to {MaxDimensionPx} pixels.");
+        }
+
+        return (width, height);
+    }
+
+    /// <summary>
+    /// One chart of a layout preview, checked as an upload's chart is: a known figure key, its text
+    /// within the limits, and a PNG within the size limits. Nothing is stored.
+    /// </summary>
+    public static BenchmarkReportRenderChart ValidateRenderChart(
+        int index, string? figureKey, string? title, string? caption, string? altText, byte[]? png)
+    {
+        string key = figureKey ?? string.Empty;
+        if (key.Length == 0 || !BenchmarkReportChartPlacement.IsKnown(key))
+        {
+            throw new ChartStoreException($"Chart {index + 1} has an unknown figure key \"{Clip(key)}\".");
+        }
+
+        string label = $"Chart {index + 1} ({key})";
+        string titleText = title ?? string.Empty;
+        string captionText = caption ?? string.Empty;
+        string alt = altText ?? string.Empty;
+        CheckText(label, titleText, captionText, alt);
+
+        if (png == null || png.Length == 0)
+        {
+            throw new ChartStoreException($"{label} has no image data.");
+        }
+
+        var (width, height) = CheckImage(label, png);
+        return new BenchmarkReportRenderChart
+        {
+            FigureKey = key,
+            Title = titleText,
+            Caption = captionText,
+            AltText = alt,
+            Png = png,
+            WidthPx = width,
+            HeightPx = height,
+            Sha256 = Sha256Hex(png)
+        };
+    }
+
+    /// <summary>
+    /// The layout as stored: null stays null; a figure of an unknown key is dropped, and of a key given
+    /// twice the first entry is kept. Refuses a version other than
+    /// <see cref="BenchmarkReportChartLayout.CurrentVersion"/>, a width share outside (0, 1] and a
+    /// maximum height share outside [<see cref="BenchmarkReportChartLayout.MinMaxHeightShare"/>,
+    /// <see cref="BenchmarkReportChartLayout.MaxMaxHeightShare"/>].
+    /// </summary>
+    public static BenchmarkReportChartLayout? ValidateLayout(BenchmarkReportChartLayout? layout)
+    {
+        if (layout == null) return null;
+
+        if (layout.Version != BenchmarkReportChartLayout.CurrentVersion)
+        {
+            throw new ChartStoreException(
+                $"The chart layout has version {layout.Version.ToString(CultureInfo.InvariantCulture)}; only version {BenchmarkReportChartLayout.CurrentVersion.ToString(CultureInfo.InvariantCulture)} is known.");
+        }
+
+        if (layout.MaxHeightShare is double share
+            && (double.IsNaN(share) || share < BenchmarkReportChartLayout.MinMaxHeightShare || share > BenchmarkReportChartLayout.MaxMaxHeightShare))
+        {
+            throw new ChartStoreException(
+                $"The chart layout's maximum height share is {share.ToString(CultureInfo.InvariantCulture)}; it must be from "
+                + $"{BenchmarkReportChartLayout.MinMaxHeightShare.ToString(CultureInfo.InvariantCulture)} to {BenchmarkReportChartLayout.MaxMaxHeightShare.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        var figures = new List<BenchmarkReportChartLayoutFigure>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var figure in layout.Figures ?? new List<BenchmarkReportChartLayoutFigure>())
+        {
+            if (figure == null || string.IsNullOrEmpty(figure.Key) || !BenchmarkReportChartPlacement.IsKnown(figure.Key)) continue;
+
+            if (double.IsNaN(figure.WidthShare) || figure.WidthShare <= 0 || figure.WidthShare > 1)
+            {
+                throw new ChartStoreException(
+                    $"The chart layout gives figure \"{figure.Key}\" a width share of {figure.WidthShare.ToString(CultureInfo.InvariantCulture)}; it must be above 0 and at most 1.");
+            }
+
+            if (seen.Add(figure.Key))
+            {
+                figures.Add(new BenchmarkReportChartLayoutFigure { Key = figure.Key, WidthShare = figure.WidthShare, RowGroup = figure.RowGroup });
+            }
+        }
+
+        return new BenchmarkReportChartLayout
+        {
+            Version = BenchmarkReportChartLayout.CurrentVersion,
+            Figures = figures,
+            MaxHeightShare = layout.MaxHeightShare
+        };
     }
 
     /// <summary>Reads the width and height from a PNG's signature and IHDR chunk.</summary>
@@ -364,9 +465,20 @@ public class BenchmarkReportChartStore
     /// folder is deleted and the staging folder moved into its place. A failure removes the staging
     /// folder and leaves the old set as it was.
     /// </summary>
+    public Task<ReportDocumentChartsSummaryDto> SetChartsAsync(
+        long documentId,
+        IReadOnlyList<ValidatedChart> validated,
+        CancellationToken cancellationToken = default)
+        => SetChartsAsync(documentId, validated, null, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="SetChartsAsync(long, IReadOnlyList{ValidatedChart}, CancellationToken)"/>, with the
+    /// layout the manifest stores (<see cref="ValidateLayout"/>); null stores none.
+    /// </summary>
     public async Task<ReportDocumentChartsSummaryDto> SetChartsAsync(
         long documentId,
         IReadOnlyList<ValidatedChart> validated,
+        BenchmarkReportChartLayout? layout,
         CancellationToken cancellationToken = default)
     {
         string target = GetDocumentFolder(documentId);
@@ -379,7 +491,8 @@ public class BenchmarkReportChartStore
         {
             DocumentId = documentId,
             SettingsHash = validated[0].SettingsHash,
-            CreatedAtUtc = DateTime.UtcNow
+            CreatedAtUtc = DateTime.UtcNow,
+            Layout = ValidateLayout(layout)
         };
 
         foreach (var chart in validated)
@@ -582,6 +695,26 @@ public class BenchmarkReportChartStore
 
         var manifest = ReadManifest(documentId);
         return manifest == null ? null : Summarize(manifest);
+    }
+
+    /// <summary>
+    /// A document's stored chart layout; null when it has no charts, its manifest has no layout, or the
+    /// stored layout no longer passes <see cref="ValidateLayout"/>, which renders as without one.
+    /// </summary>
+    public BenchmarkReportChartLayout? ReadLayout(long documentId)
+    {
+        if (!IsConfigured || documentId <= 0) return null;
+
+        var layout = ReadManifest(documentId)?.Layout;
+        try
+        {
+            return ValidateLayout(layout);
+        }
+        catch (ChartStoreException ex)
+        {
+            _logger.LogWarning(ex, "The chart layout of document {DocumentId} is not valid; its figures render without it.", documentId);
+            return null;
+        }
     }
 
     private BenchmarkReportChartManifest? ReadManifest(long documentId)

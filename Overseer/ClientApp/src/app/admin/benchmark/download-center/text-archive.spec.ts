@@ -230,6 +230,33 @@ describe('text-archive', () => {
       expect(manifest).not.toContain('Office Open XML');
     });
 
+    it('lists the comparisons in the header, and each file\'s comparison and models, a dash where it has none', async () => {
+      const numbered: ManifestFile = {
+        ...files[0],
+        comparison: 'Comparison #12 — Five-model comparison',
+        models: { label: 'Models', text: 'GPT-5.6 Luna, Grok 5' }
+      };
+      const one = await buildManifest({
+        packageName: 'Internal package', packagedAt: packaged, comparisons: ['Comparison #12 — Five-model comparison'], files: [numbered, files[1]]
+      });
+
+      expect(one).toContain('- **Files:** 2\n- **Comparison:** Comparison #12 — Five-model comparison\n\n');
+      const blocks = one.split('\n## ').slice(1);
+      expect(blocks[0]).toContain('- **Audience:** Executive Summary\n- **Comparison:** Comparison #12 — Five-model comparison\n'
+        + '- **Models:** GPT-5.6 Luna, Grok 5\n- **Disclosure:** Summary\n');
+      expect(blocks[1]).toContain('- **Audience:** —\n- **Comparison:** —\n- **Model:** —\n');
+
+      const several = await buildManifest({
+        packageName: 'Custom', packagedAt: packaged, comparisons: ['Comparison #12', 'Comparison #14 — Second comparison'], files
+      });
+      expect(several).toContain('- **Comparisons:** Comparison #12; Comparison #14 — Second comparison\n');
+      expect(several).not.toContain('- **Comparison:** Comparison');
+
+      const none = await buildManifest({ packageName: 'Custom', packagedAt: packaged, comparisons: [], files });
+      expect(none).toContain('- **Files:** 2\n\n');
+      expect(none).not.toContain('**Comparisons:**');
+    });
+
     it('lists the files that could not be prepared, only when there are any', async () => {
       const failures = [{ label: 'Run report, run #42 (Markdown)', reason: 'the run no longer exists' }];
       const withFailures = await buildManifest({ packageName: 'Custom', packagedAt: packaged, files, failures });

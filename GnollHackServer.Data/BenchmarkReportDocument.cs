@@ -33,6 +33,16 @@ public enum BenchmarkReportDocumentOrigin
     BatteryCompletion = 3,
 }
 
+/// <summary>Whom a report-pack document describes.</summary>
+public enum BenchmarkReportScope
+{
+    /// <summary>One entry, its subject, against its peers.</summary>
+    Model = 1,
+
+    /// <summary>The covered entries of a comparison, as equals.</summary>
+    Comparison = 2,
+}
+
 /// <summary>
 /// Where a run's two AI-written run-completion documents stand. Stored on the run as
 /// <c>ReportDocumentsStatus</c>; the documents themselves are <see cref="BenchmarkReportDocument"/> rows.
@@ -102,6 +112,29 @@ public class BenchmarkReportDocument
     /// </summary>
     [MaxLength(64)]
     public string? ComparisonKey { get; set; }
+
+    /// <summary>One subject against its peers, or the covered entries of a comparison as equals. Rows written before the column existed describe one subject.</summary>
+    public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
+
+    /// <summary>The comparison a Report Pack document belongs to; null on run- and battery-completion documents, and on a Report Pack row whose comparison could not be derived.</summary>
+    public int? ComparisonId { get; set; }
+
+    /// <summary>Not auto-included.</summary>
+    public BenchmarkComparison? Comparison { get; set; }
+
+    /// <summary>
+    /// The entry keys the document covers, as a JSON array in canonical order: the subject alone for
+    /// <see cref="BenchmarkReportScope.Model"/>, the covered entries for
+    /// <see cref="BenchmarkReportScope.Comparison"/>. Null on run- and battery-completion documents.
+    /// </summary>
+    public string? CoveredEntryKeysJson { get; set; }
+
+    /// <summary>
+    /// Lower-case hex SHA-256 of the covered entry set, computed as <see cref="ComparisonKey"/> is;
+    /// equal to it when the document covers every entry. Null where <see cref="CoveredEntryKeysJson"/> is.
+    /// </summary>
+    [MaxLength(64)]
+    public string? CoveredSetKey { get; set; }
 
     public long? SuiteId { get; set; }
 

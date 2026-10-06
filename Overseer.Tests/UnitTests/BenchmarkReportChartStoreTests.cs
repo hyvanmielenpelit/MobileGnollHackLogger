@@ -129,6 +129,106 @@ public class BenchmarkReportChartStoreTests
         Assert.Empty(await charts.Store.LoadAsync(7, "other", TestContext.Current.CancellationToken));
     }
 
+    // --- Figure layout -------------------------------------------------------------------------------
+
+    private static BenchmarkReportChartLayout Layout(double? maxHeightShare, params (string Key, double Width, int? Row)[] figures) => new()
+    {
+        Figures = figures.Select(f => new BenchmarkReportChartLayoutFigure { Key = f.Key, WidthShare = f.Width, RowGroup = f.Row }).ToList(),
+        MaxHeightShare = maxHeightShare
+    };
+
+    [Fact]
+    public async Task SetCharts_WithALayout_StoresItInTheManifest_AndReadLayoutReturnsIt()
+    {
+        using var charts = TestChartStores.InTempFolder();
+        var layout = Layout(0.5,
+            ("p1a-quality", 0.5, 1), ("x-unknown", 0.5, 1), ("p1b-speed", 0.5, 1), ("p1a-quality", 1, null), ("s1-quality-speed", 0.6667, null));
+
+        await charts.Store.SetChartsAsync(
+            9, BenchmarkReportChartStore.ValidateCharts(new[] { Upload("p1a-quality"), Upload("p1b-speed") }), layout, TestContext.Current.CancellationToken);
+
+        using var json = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(charts.Root, "9", BenchmarkReportChartStore.ManifestFileName)));
+        var stored = json.RootElement.GetProperty("layout");
+        Assert.Equal(1, stored.GetProperty("version").GetInt32());
+        Assert.Equal(0.5, stored.GetProperty("maxHeightShare").GetDouble());
+        var figures = stored.GetProperty("figures").EnumerateArray().ToList();
+        // An unknown key is dropped, and of a key given twice the first entry is kept.
+        Assert.Equal(new[] { "p1a-quality", "p1b-speed", "s1-quality-speed" }, figures.Select(f => f.GetProperty("key").GetString()));
+        Assert.Equal(0.5, figures[0].GetProperty("widthShare").GetDouble());
+        Assert.Equal(1, figures[0].GetProperty("rowGroup").GetInt32());
+        Assert.Equal(JsonValueKind.Null, figures[2].GetProperty("rowGroup").ValueKind);
+
+        var read = charts.Store.ReadLayout(9);
+        Assert.NotNull(read);
+        Assert.Equal(0.5, read!.MaxHeightShare);
+        Assert.Equal(new[] { ("p1a-quality", 0.5, (int?)1), ("p1b-speed", 0.5, (int?)1), ("s1-quality-speed", 0.6667, (int?)null) },
+            read.Figures.Select(f => (f.Key, f.WidthShare, f.RowGroup)));
+        Assert.Null(charts.Store.ReadLayout(10));
+    }
+
+    [Fact]
+    public async Task AManifestWithoutALayout_HasNoLayoutProperty_AndASetWithoutOneDropsTheEarlierLayout()
+    {
+        using var charts = TestChartStores.InTempFolder();
+        await charts.Store.SetChartsAsync(
+            4, BenchmarkReportChartStore.ValidateCharts(new[] { Upload("p1a-quality") }), Layout(0.4, ("p1a-quality", 0.5, null)),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(charts.Store.ReadLayout(4));
+
+        await SetAsync(charts.Store, 4, Upload("p1a-quality"));
+
+        string manifestPath = Path.Combine(charts.Root, "4", BenchmarkReportChartStore.ManifestFileName);
+        string chartsJson;
+        using (var json = JsonDocument.Parse(File.ReadAllBytes(manifestPath)))
+        {
+            Assert.False(json.RootElement.TryGetProperty("layout", out _), "A manifest stored without a layout must not carry one.");
+            chartsJson = json.RootElement.GetProperty("charts").GetRawText();
+        }
+        Assert.Null(charts.Store.ReadLayout(4));
+        Assert.Single(await charts.Store.LoadAsync(4, BenchmarkReportChartStore.Named, TestContext.Current.CancellationToken));
+
+        // A manifest written before layouts existed reads as no layout, and its charts still load.
+        string old = "{\"version\":1,\"documentId\":4,\"settingsHash\":\"" + HashA + "\",\"createdAtUtc\":\"2026-09-01T00:00:00Z\",\"charts\":"
+            + chartsJson + "}";
+        File.WriteAllText(manifestPath, old);
+        Assert.Null(charts.Store.ReadLayout(4));
+        Assert.Single(await charts.Store.LoadAsync(4, BenchmarkReportChartStore.Named, TestContext.Current.CancellationToken));
+
+        // A stored layout that no longer validates renders as no layout.
+        File.WriteAllText(manifestPath, old[..^1] + ",\"layout\":{\"version\":1,\"figures\":[{\"key\":\"p1a-quality\",\"widthShare\":3,\"rowGroup\":null}],\"maxHeightShare\":0.6}}");
+        Assert.Null(charts.Store.ReadLayout(4));
+        Assert.Single(await charts.Store.LoadAsync(4, BenchmarkReportChartStore.Named, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void ValidateLayout_RefusesSharesOutOfRange_AndAnUnknownVersion()
+    {
+        Assert.Null(BenchmarkReportChartStore.ValidateLayout(null));
+
+        var valid = BenchmarkReportChartStore.ValidateLayout(Layout(0.2, ("p1a-quality", 1, null), ("p1b-speed", 0.0001, 2)));
+        Assert.Equal(2, valid!.Figures.Count);
+        Assert.Equal(0.9, BenchmarkReportChartStore.ValidateLayout(Layout(0.9))!.MaxHeightShare);
+        Assert.Null(BenchmarkReportChartStore.ValidateLayout(Layout(null))!.MaxHeightShare);
+
+        // An unknown key's entry is dropped without its width share being checked.
+        Assert.NotNull(BenchmarkReportChartStore.ValidateLayout(Layout(null, ("x-unknown", 7, null))));
+
+        var refused = new[]
+        {
+            Layout(null, ("p1a-quality", 0, null)),
+            Layout(null, ("p1a-quality", -0.5, null)),
+            Layout(null, ("p1a-quality", 1.01, null)),
+            Layout(0.19),
+            Layout(0.91),
+            new BenchmarkReportChartLayout { Version = 2 }
+        };
+        foreach (var layout in refused)
+        {
+            var ex = Assert.Throws<ChartStoreException>(() => BenchmarkReportChartStore.ValidateLayout(layout));
+            Assert.Contains("layout", ex.Message, StringComparison.Ordinal);
+        }
+    }
+
     // --- Replacement ---------------------------------------------------------------------------------
 
     [Fact]

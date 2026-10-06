@@ -1,0 +1,157 @@
+@use '../benchmark-dialog-frame' as frame;
+
+/* Step 3's Documents of this comparison. .gh-tag, .gh-tag-changed, .gh-disclosure, .action-btn,
+   .gh-tooltip, .checkbox-label and .gh-field-error come from styles.scss. */
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.cds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.cds-heading {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: #ddd;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.cds-note {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.cds-error {
+  margin: 0;
+}
+
+.cds-group-title {
+  margin: 4px 0 0;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #d4d4d8;
+}
+
+.cds-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cds-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  min-inline-size: 0;
+}
+
+.cds-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-inline-size: 0;
+
+  /* Its own line under the name, as .gh-tag-changed is everywhere else. */
+  .gh-tag-changed {
+    flex-basis: 100%;
+  }
+}
+
+.cds-doc-name {
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.cds-status {
+  border-color: var(--border-glass);
+  color: var(--nav-color);
+
+  &.is-warning {
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+  }
+
+  &.is-missing {
+    color: #888;
+  }
+}
+
+.cds-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.cds-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.cds-check {
+  font-size: var(--text-secondary);
+}
+
+.cds-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+
+.cds-other-sets {
+  margin: 0;
+}
+
+.cds-set + .cds-set {
+  margin-top: 12px;
+}
+
+.cds-set-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+}
+
+.cds-set-title {
+  margin: 0;
+}
+
+.cds-choose-set {
+  font-size: var(--text-secondary);
+}
+
+/* --- Nested dialog --- */
+
+.gh-dialog.cds-delete-dialog {
+  @include frame.frame($width: 34rem);
+  @include frame.confirm;
+}

@@ -97,23 +97,24 @@ public static class BenchmarkWordRenderer
 
     /// <summary>
     /// Markdown rendered as a Word document, each figure marker with a chart in <paramref name="charts"/>
-    /// drawn as a picture. Throws <see cref="BenchmarkWordSourceTooLargeException"/> for a source above
-    /// <see cref="MaxSourceCharacters"/>, and <see cref="OperationCanceledException"/> once the token is canceled.
+    /// drawn as a picture, placed by <paramref name="layout"/> as the PDF places it. Throws
+    /// <see cref="BenchmarkWordSourceTooLargeException"/> for a source above <see cref="MaxSourceCharacters"/>,
+    /// and <see cref="OperationCanceledException"/> once the token is canceled.
     /// </summary>
     public static byte[] RenderMarkdown(
         string markdown, BenchmarkPdfDocumentInfo info, CancellationToken ct = default,
-        IReadOnlyList<BenchmarkReportRenderChart>? charts = null)
+        IReadOnlyList<BenchmarkReportRenderChart>? charts = null, BenchmarkReportChartLayout? layout = null)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         ArgumentNullException.ThrowIfNull(info);
         Guard(markdown);
         ct.ThrowIfCancellationRequested();
 
-        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts);
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts, layout);
         var sourced = info with { SourceSha256 = BenchmarkPdfRenderer.SourceSha256(markdown, prepared.OrderedFigures.Select(f => f.Chart)) };
         bool contents = sourced.AllowTableOfContents && prepared.Contents.Count >= 4;
         int pageHeight = sourced.Paper == BenchmarkPdfPaper.Letter ? LetterHeight : A4Height;
-        int maxFigureHeight = (int)Math.Round((pageHeight - 2 * VerticalMargin) * BenchmarkPdfMarkdownComposer.FigureMaxHeightShare);
+        int maxFigureHeight = (int)Math.Round((pageHeight - 2 * VerticalMargin) * BenchmarkPdfMarkdownComposer.MaxHeightShareOf(layout));
 
         return Generate(sourced, ct, (body, part, textWidth) =>
         {
@@ -315,7 +316,7 @@ public static class BenchmarkWordRenderer
         var defaultHeader = main.AddNewPart<HeaderPart>();
         var emblem = defaultHeader.AddImagePart(ImagePartType.Png);
         Feed(emblem, Logos.Value.Emblem);
-        defaultHeader.Header = RunningHeader(info, defaultHeader.GetIdOfPart(emblem), watermark);
+        defaultHeader.Header = RunningHeader(info, defaultHeader.GetIdOfPart(emblem), watermark, textWidth);
 
         var defaultFooter = main.AddNewPart<FooterPart>();
         defaultFooter.Footer = Footer(info);
@@ -356,8 +357,12 @@ public static class BenchmarkWordRenderer
         return header;
     }
 
-    /// <summary>Pages 2 onward: the emblem, "GnollBench · kind" and, at the right tab, the subject line.</summary>
-    private static Header RunningHeader(BenchmarkPdfDocumentInfo info, string emblemId, bool watermark)
+    /// <summary>
+    /// Pages 2 onward: the emblem, "GnollBench · kind" and, at the right tab,
+    /// <see cref="BenchmarkPdfDocumentInfo.RunningHeaderText"/>; a <see cref="BenchmarkPdfDocumentInfo.HeaderText"/>
+    /// is cut with an ellipsis to <see cref="HeaderTextCharacters"/>.
+    /// </summary>
+    private static Header RunningHeader(BenchmarkPdfDocumentInfo info, string emblemId, bool watermark, int textWidth)
     {
         var paragraph = new Paragraph(Writer.Properties(WordStyles.Header));
         if (watermark)
@@ -365,16 +370,27 @@ public static class BenchmarkWordRenderer
             paragraph.Append(Watermark(2));
         }
 
+        string right = string.IsNullOrWhiteSpace(info.HeaderText)
+            ? info.RunningHeaderText
+            : BenchmarkPdfDocumentInfo.Ellipsize(info.RunningHeaderText, HeaderTextCharacters(textWidth));
+
         long size = 7 * EmuPerMillimeter;
         paragraph.Append(new Run(Writer.Picture(emblemId, 2U,"GnollBench emblem", string.Empty, size, size)));
         paragraph.Append(new Run(Writer.TextOf(" GnollBench · " + info.DocumentKind)));
         paragraph.Append(new Run(new TabChar(), new TabChar()));
-        paragraph.Append(new Run(Writer.TextOf(info.SubjectLine)));
+        paragraph.Append(new Run(Writer.TextOf(right)));
 
         var header = new Header(paragraph);
         DeclareNamespaces(header);
         return header;
     }
+
+    /// <summary>
+    /// The characters the running header's right-hand text keeps: half the text width, as the PDF's
+    /// header gives it, at an average character width of half the header's font size.
+    /// </summary>
+    internal static int HeaderTextCharacters(int textWidth)
+        => Math.Max(16, (int)(textWidth / 2.0 / 20.0 / (BenchmarkPdfStyle.SmallSize * 0.5)));
 
     /// <summary>Every page: the short classification, the source hash and layout version, and "Page X of Y" in fields.</summary>
     private static Footer Footer(BenchmarkPdfDocumentInfo info)

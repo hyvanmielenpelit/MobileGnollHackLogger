@@ -1,0 +1,59 @@
+<!--
+  RENAME COMPARISON
+
+  Nested inside the comparison wizard's dialog: onDialogEvent stops its close, cancel and click
+  events, so Escape and clicks here never reach the wizard.
+-->
+<dialog #dialog class="gh-dialog mc-rename-dialog" [attr.aria-labelledby]="idPrefix + '-title'"
+        (close)="onDialogEvent($event)" (cancel)="onDialogEvent($event)" (click)="onDialogEvent($event)">
+  <form class="dialog-content" (submit)="onSubmit($event)">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 [id]="idPrefix + '-title'">Rename comparison{{ comparison ? ' #' + comparison.id : '' }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close Rename comparison"
+              [attr.interestfor]="idPrefix + '-close-tip'"
+              [attr.style]="'anchor-name: --' + idPrefix + '-close-tip'"
+              (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-close-tip'"
+           [attr.style]="'position-anchor: --' + idPrefix + '-close-tip'">Close</div>
+    </div>
+
+    <div class="dialog-body mc-rename-body">
+      <div class="form-group">
+        <label [for]="idPrefix + '-name'">Name</label>
+        <input #nameInput type="text" class="gh-input" autocomplete="off" [id]="idPrefix + '-name'"
+               [attr.maxlength]="maxLength" [value]="name"
+               [attr.aria-describedby]="idPrefix + '-hint' + (error ? ' ' + idPrefix + '-error' : '')"
+               [attr.aria-invalid]="error ? 'true' : null"
+               (input)="onNameInput($event)">
+        <p class="form-hint" [id]="idPrefix + '-hint'">
+          Up to {{ maxLength }} characters. Leave it empty to use the default name@if (comparison) {: {{ comparison.defaultName }}}.
+        </p>
+        @if (error) {
+          <p class="gh-field-error" role="alert" [id]="idPrefix + '-error'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            {{ error }}
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-link mc-rename-reset" (click)="resetToDefault()">Reset to default</button>
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Cancel</button>
+      <button type="submit" class="btn-gh mc-rename-save"
+              [attr.aria-disabled]="saving ? 'true' : null"
+              [attr.aria-busy]="saving ? 'true' : null">{{ saving ? 'Saving…' : 'Save' }}</button>
+    </div>
+  </form>
+</dialog>

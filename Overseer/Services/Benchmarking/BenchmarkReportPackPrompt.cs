@@ -25,7 +25,7 @@ public sealed record BenchmarkReportWriterPrompt(string SystemPrompt, string Use
 /// <see cref="BenchmarkReportPackValidator"/> enforces, keep it out of the output. Peers are shown
 /// only by letter and graders only by role, so the writer never sees another model's name.</para>
 /// </summary>
-public static class BenchmarkReportPackPrompt
+public static partial class BenchmarkReportPackPrompt
 {
     /// <summary>A question more than this many points below the peer mean gets a question note.</summary>
     public const double QuestionNoteGapPoints = 15.0;
@@ -40,16 +40,36 @@ public static class BenchmarkReportPackPrompt
         BenchmarkReportAudience audience,
         BenchmarkReportFactSheet sheet,
         BenchmarkReportContentSnapshot content)
+        => Build(audience, sheet, content, sharedTopics: null);
+
+    /// <summary>
+    /// The prompt for the sheet's scope. A comparison-scope sheet is given the question topics already
+    /// written for its covered set in <paramref name="sharedTopics"/>, so they are written once per
+    /// job; a per-model sheet ignores them.
+    /// </summary>
+    public static BenchmarkReportWriterPrompt Build(
+        BenchmarkReportAudience audience,
+        BenchmarkReportFactSheet sheet,
+        BenchmarkReportContentSnapshot content,
+        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics)
     {
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(content);
 
-        return new BenchmarkReportWriterPrompt(BuildSystemPrompt(audience), BuildUserMessage(audience, sheet, content));
+        return sheet.IsComparison
+            ? new BenchmarkReportWriterPrompt(BuildComparisonSystemPrompt(audience), BuildComparisonUserMessage(audience, sheet, content, sharedTopics))
+            : new BenchmarkReportWriterPrompt(BuildSystemPrompt(audience), BuildUserMessage(audience, sheet, content));
     }
 
     /// <summary>Lower-case hex SHA-256 of the audience's system prompt.</summary>
     public static string PromptSha256(BenchmarkReportAudience audience)
         => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildSystemPrompt(audience))));
+
+    /// <summary>Lower-case hex SHA-256 of the audience's system prompt for <paramref name="scope"/>.</summary>
+    public static string PromptSha256(BenchmarkReportAudience audience, BenchmarkReportScope scope)
+        => scope == BenchmarkReportScope.Comparison
+            ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildComparisonSystemPrompt(audience))))
+            : PromptSha256(audience);
 
     /// <summary>The user message of the one repair turn: every issue, then the output rules in brief.</summary>
     public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues)
@@ -90,6 +110,7 @@ public static class BenchmarkReportPackPrompt
     public static IReadOnlyList<int> QuestionsNeedingNote(BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
+        if (sheet.IsComparison) return Array.Empty<int>();
         bool battery = sheet.Battery != null;
         bool standalone = battery || sheet.Peers.Count == 0;
 
@@ -107,12 +128,13 @@ public static class BenchmarkReportPackPrompt
 
     /// <summary>
     /// The questions that need a topic where the document requires topics: every question, or on a
-    /// battery sheet the questions given in detail.
+    /// battery sheet the questions given in detail, or on a comparison-scope sheet the questions whose
+    /// text the writer was given.
     /// </summary>
     public static IReadOnlyList<int> QuestionsNeedingTopic(BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
-        bool battery = sheet.Battery != null;
+        bool battery = sheet.Battery != null || sheet.IsComparison;
 
         return sheet.Questions
             .Where(q => !battery || q.Detailed == true)

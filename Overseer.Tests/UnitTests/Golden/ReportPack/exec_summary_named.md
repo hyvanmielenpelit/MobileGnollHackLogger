@@ -15,7 +15,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps every peer's.
+- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap); its 95 % interval overlaps every peer's.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
@@ -25,8 +25,8 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 | Model | Intelligence Index | Median answer time | Cost per question | Critical errors |
 |---|---|---|---|---|
 | **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 | 1 of 4 answers |
-| Grok 5 (A) | 85 (81–89) | 9.8 s | $0.052 | not available |
-| Mistral Large 4 (B) | 78 (74–83) | not available | $0.021 | not available |
+| Grok 5 | 85 (81–89) | 9.8 s | $0.052 | not available |
+| Mistral Large 4 | 78 (74–83) | not available | $0.021 | not available |
 
 | Dimension | GPT-5.6 Luna | Peer mean | Difference |
 |---|---|---|---|
@@ -35,7 +35,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 | Conciseness | 88 | 85 | +3 |
 | Readability | 90 | 89 | +1 |
 
-GPT-5.6 Luna places 2nd of 3 on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order is not established. Its paired difference from Grok 5 is -4.6 points.
+GPT-5.6 Luna places joint 1st of 3 (intervals overlap) on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order is not established. Its paired difference from Grok 5 is -4.6 points.
 
 ## What it did well
 
