@@ -760,6 +760,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * The launcher applies it once its remembered settings and lists are in, so they cannot overwrite it.
    */
   private applyRepeatRunSetup(runId: number): void {
+    if (this.refuseLeaving()) return;
     const token = ++this.repeatRunSetupToken;
     this.closeRunDetail();
     this.selectSubTab('run');
@@ -777,6 +778,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.viewSync.notify();
       }
     });
+  }
+
+  /**
+   * The run report's actions that switch to Run Benchmark ask the active sub-tab first. A refusal is
+   * shown in the report's status line, untimed, and the report stays open; true when refused.
+   */
+  private refuseLeaving(): boolean {
+    const refusal = this.bridge.leaveRefusal();
+    if (!refusal) return false;
+    if (this.runReportCopyTimer) {
+      clearTimeout(this.runReportCopyTimer);
+      this.runReportCopyTimer = null;
+    }
+    this.runReportCopyStatus = refusal;
+    this.cdr.markForCheck();
+    return true;
   }
   // ---------------------------------------------------------------------------------------------
   // The comparison wizard dialog
@@ -815,21 +832,47 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * tearing the DOM out from under it would leave a detached chart and a half-written batch. The
    * wizard's export status line says so, and its own close controls are disabled for the same
    * duration, so this is not a silent refusal. Refused as well while the wizard draws and uploads
-   * the charts of report documents, which it composes the same way.
+   * the charts of report documents, which it composes the same way. Chrome makes a second `cancel`
+   * without user activation in between non-cancelable, so the focused element is recorded for the
+   * reopen in `onComparisonWizardClose`.
    */
   onComparisonWizardCancel(event: Event): void {
     if (this.comparisonWizard?.exporting || this.comparisonWizard?.chartsPublishing) {
       event.preventDefault();
+      this.comparisonFocusBeforeCancel = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
   }
 
   /**
    * Nothing is torn down here: the mounted content is what reopening is supposed to preserve. The
    * Comparison reports card counts again, since the wizard's Reports step may have written documents.
+   * A close that gets through while an export or a chart upload runs (a repeated Escape, or a browser
+   * without `closedby`) reopens the dialog instead.
    */
   onComparisonWizardClose(): void {
+    if (this.comparisonWizard?.closeBlocked) {
+      this.reopenBlockedComparisonWizard();
+      return;
+    }
     this.comparison.comparisonReportsReloadToken++;
     this.viewSync.notify();
+  }
+
+  /** The element focused when a refused Escape arrived, restored if the wizard has to be reopened. */
+  private comparisonFocusBeforeCancel: HTMLElement | null = null;
+
+  /** Shows the comparison wizard again and puts focus back where it was, else on its heading. */
+  private reopenBlockedComparisonWizard(): void {
+    const dialog = this.comparisonWizardDialog?.nativeElement;
+    if (dialog && !dialog.open) dialog.showModal();
+    const previous = this.comparisonFocusBeforeCancel;
+    this.comparisonFocusBeforeCancel = null;
+    if (previous && dialog?.contains(previous)) {
+      previous.focus();
+    } else {
+      this.comparisonWizard?.focusHeading();
+    }
+    this.cdr.markForCheck();
   }
 
   /**
@@ -3002,6 +3045,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * shows a run's progress rather than behind a strip whose only other action was Cancel.
    */
   rerunFailedFromRunDetail(runId: number): void {
+    if (this.refuseLeaving()) return;
     this.monitor.armCompletionSignalsFromGesture();
     this.questionRerun = null;
     const failed = (this.selectedRunDetail?.answers ?? [])
@@ -3020,6 +3064,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   openRunProgressForSelectedRun(): void {
     const runId = this.selectedRunDetail?.id;
     if (runId == null) return;
+    if (this.refuseLeaving()) return;
     this.closeRunDetail();
     this.activeSubTab = 'run';
     if (this.monitor.activeRunId != null && this.monitor.activeRunId !== runId && this.monitor.pollTickerHandle != null) {

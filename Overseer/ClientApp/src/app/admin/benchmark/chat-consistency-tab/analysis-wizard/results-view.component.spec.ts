@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { groupOverseerEvents } from '../chat-consistency-events';
 import { MINUS } from '../chat-consistency-format';
 import {
   ccAnalysisResult,
@@ -148,24 +149,62 @@ describe('CcResultsViewComponent', () => {
     expect(textOf(el.querySelector('#cc-res-ev-item-E1 .cc-ev-title'))).toBe('Changes under harness 30');
   });
 
-  it('builds the event list from the result\'s events and annotations over the analysis\'s runs only', () => {
+  it('builds the event list with the timeline\'s harness and E numbers, and draws the analysis\'s runs only', () => {
     const base = ccAnalysisResult();
+    const timelineGroups = groupOverseerEvents(ccOverseerEvents(), ccEventPoints());
     fixture.componentRef.setInput('result', ccAnalysisResult({
       events: ccOverseerEvents(),
       annotations: ccEventAnnotations(),
-      baseline: { ...base.baseline, runIds: [201, 202, 203] },
-      // Run 205 is not analyzed, so its served-model change (S2) is not listed.
-      comparison: { ...base.comparison, runIds: [204, 206] }
+      // Runs 202 and 203, whose changes make up E1, are not analyzed.
+      baseline: { ...base.baseline, runIds: [201, 204] },
+      comparison: { ...base.comparison, runIds: [205, 206] }
     }));
     fixture.componentRef.setInput('points', ccEventPoints());
+    fixture.componentRef.setInput('eventNumbering', timelineGroups);
     fixture.detectChanges();
 
-    expect(textOf(el.querySelector('#cc-res-ev-summary'))).toBe('4 Overseer changes on 4 days · 2 annotations · 1 served-model change');
+    expect(textOf(el.querySelector('#cc-res-ev-summary'))).toBe('4 Overseer changes on 4 days · 2 annotations · 2 served-model changes');
     const days = Array.from(el.querySelectorAll('app-cc-event-list section.cc-ev-day')).map(day => day.getAttribute('data-day'));
-    expect(days).toEqual(['2026-09-02', '2026-09-03', '2026-09-05', '2026-09-09', '2026-09-10']);
+    expect(days).toEqual(['2026-09-02', '2026-09-03', '2026-09-05', '2026-09-08', '2026-09-09', '2026-09-10']);
     const tags = Array.from(el.querySelectorAll('app-cc-event-list li.cc-ev-item')).map(item => item.getAttribute('data-tag'));
-    expect(tags).toEqual(['A1', 'E1', 'E2', 'A2', 'S1', 'E3', 'E4']);
-    expect(el.querySelectorAll('app-cc-event-list h6.cc-ev-day-heading').length).toBe(5);
+    expect(tags).toEqual(['A1', 'E1', 'E2', 'A2', 'S1', 'S2', 'E3', 'E4']);
+    // The harness of runs 202 and 203 comes from the full timeline points.
+    expect(textOf(el.querySelector('#cc-res-ev-item-E1 .cc-ev-title'))).toBe('Changes under harness 27');
+    const events = fixture.componentInstance.eventDays.flatMap(day => day.items)
+      .flatMap(item => item.kind === 'event' ? [`${item.group.tag} ${item.group.key}`] : []);
+    expect(events).toEqual(timelineGroups.map(group => `${group.tag} ${group.key}`));
+
+    const quality = fixture.componentInstance.figures[0];
+    expect(quality.table.rows.map(row => row[0])).toEqual(['#201', '#204', '#205', '#206']);
+    expect(quality.markers.filter(m => m.kind === 'event').map(m => m.tag)).toEqual(['E1', 'E2', 'E3', 'E4']);
+  });
+
+  it('keeps the timeline\'s E numbers when the span starts after its first composite', () => {
+    const base = ccAnalysisResult();
+    const timelineGroups = groupOverseerEvents(ccOverseerEvents(), ccEventPoints());
+    // The server sends only the events between the first and the last analyzed run.
+    const spanEvents = ccOverseerEvents().filter(event => event.atUtc >= '2026-09-05');
+    fixture.componentRef.setInput('result', ccAnalysisResult({
+      events: spanEvents,
+      annotations: [],
+      baseline: { ...base.baseline, runIds: [204, 205] },
+      comparison: { ...base.comparison, runIds: [206] }
+    }));
+    fixture.componentRef.setInput('points', ccEventPoints());
+    fixture.componentRef.setInput('eventNumbering', timelineGroups);
+    fixture.detectChanges();
+
+    const tags = Array.from(el.querySelectorAll('app-cc-event-list li.cc-ev-item[data-tag^="E"]')).map(item => item.getAttribute('data-tag'));
+    expect(tags).toEqual(['E2', 'E3', 'E4']);
+    for (const figure of fixture.componentInstance.figures) {
+      expect(figure.markers.filter(m => m.kind === 'event').map(m => m.tag)).toEqual(['E2', 'E3', 'E4']);
+    }
+
+    // Without the timeline's numbering the span would restart at E1.
+    fixture.componentRef.setInput('eventNumbering', []);
+    fixture.detectChanges();
+    expect(Array.from(el.querySelectorAll('app-cc-event-list li.cc-ev-item[data-tag^="E"]')).map(item => item.getAttribute('data-tag')))
+      .toEqual(['E1', 'E2', 'E3']);
   });
 
   it('notes the common grader and relaxed pooling', () => {

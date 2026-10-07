@@ -372,9 +372,16 @@ To find specific popups, look in the corresponding component's `.html` template:
       overrides; 5 and 6 a result. Every step is mounted on its first visit and then kept, hidden;
       `wizardMounted` on the tab is never reset, so reopening keeps everything. `closeBlocked` — a chart
       export running or the Reports step's `chartsAttaching` — disables the close button and Close and
-      makes the tab refuse Escape (`onWizardCancel`). Closing reloads the saved analyses. *Repeat this
-      run's setup* closes the wizard first; *Open run report* and the Download Center are shell dialogs
-      opened after it, so they show above it.
+      makes the tab refuse Escape (`onWizardCancel`). It also locks step 1 (`subjectLockedReason` →
+      `lockedReason`: the picker's `disabled`, `readonly` dates, an `aria-disabled` *Every date*, one
+      reason line), binds `closedby="none"` on the dialog, and `onWizardClose` reopens a close that slips
+      through (Chrome lets a second Escape's `cancel` through), restoring focus without reloading the saved
+      analyses. The tab registers a leave guard on `BenchmarkShellBridge` (`setLeaveGuard`, returning
+      `CC_LEAVE_REFUSAL` while blocked), which the run report's sub-tab-switching actions (*Repeat this
+      run's setup*, *Re-run failed questions*, *Open run progress*) honor through `leaveRefusal()`,
+      showing it in `.rr-status`. Closing reloads the saved analyses. *Repeat this run's setup* closes the
+      wizard first; *Open run report* and the Download Center are shell dialogs opened after it, so they
+      show above it.
     - `model-step/` (`app-cc-model-step`, step 1): the model picker (field capped at 32 rem) and the
       *From (UTC)* / *To (UTC)* dates on one subgrid row of labels, controls and hints from 44 rem, *Every
       date*, and the **Runs** table (`TableState`, pager above and below) with per-axis eligibility,
@@ -1174,7 +1181,9 @@ To find specific popups, look in the corresponding component's `.html` template:
   trip back to step 2. The loop the steps serve: set the charts on step 2, generate on step 3, view on
   step 4, go back to step 2 to change them, then **Update charts…** on step 4 and view again. While
   charts are being published the wizard's own close controls are disabled and the benchmark
-  component's Escape guard refuses Escape, as during an export.
+  component's Escape guard refuses Escape, as during an export. For both, the dialog binds
+  `closedby="none"` to the wizard's `closeBlocked`, and `onComparisonWizardClose` reopens a close that
+  slips through, restoring focus, before the reports token and `viewSync.notify()`.
   - **The numbered comparison.** After a successful Compare, and whenever the entry set changes (a
     recompute of the same set asks nothing), the wizard calls `identifyComparison`
     (`POST model-comparisons/identify`); an answer for an older set, or a failure, is dropped, and the

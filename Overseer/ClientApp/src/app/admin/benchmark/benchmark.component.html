@@ -2590,6 +2590,7 @@
 <dialog #comparisonWizardDialog
         class="gh-dialog gh-dialog-fullscreen benchmark-model-comparison-dialog"
         aria-labelledby="mc-wizard-title"
+        [attr.closedby]="comparisonWizard?.closeBlocked ? 'none' : null"
         (cancel)="onComparisonWizardCancel($event)"
         (close)="onComparisonWizardClose()">
   @if (comparisonWizardMounted) {

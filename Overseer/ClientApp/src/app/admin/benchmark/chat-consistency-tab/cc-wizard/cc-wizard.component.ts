@@ -188,6 +188,13 @@ export class CcWizardComponent {
     return this.workspaceExporting || (this.analysis?.chartsAttaching ?? false);
   }
 
+  /** Why step 1's model and dates cannot change now; empty while they can. */
+  get subjectLockedReason(): string {
+    if (this.workspaceExporting) return 'The model and the dates are locked while the charts export.';
+    if (this.analysis?.chartsAttaching) return 'The model and the dates are locked while report charts are attached.';
+    return '';
+  }
+
   isVisited(step: CcWizardStep): boolean {
     return this.visitedSteps.has(step);
   }

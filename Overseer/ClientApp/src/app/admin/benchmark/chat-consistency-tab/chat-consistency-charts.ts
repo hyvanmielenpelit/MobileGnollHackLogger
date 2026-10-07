@@ -21,6 +21,7 @@ import {
   CcTimelinePoint
 } from './chat-consistency.models';
 import {
+  CcEventGroup,
   CcMarkerFilter,
   CcMarkerKind,
   dominantServedModel,
@@ -159,6 +160,18 @@ export interface CcFigureInput {
   bands?: readonly CcPeriodBand[];
   /** The markers drawn; every marker when absent. */
   markerFilter?: CcMarkerFilter;
+  /** The points whose harness versions group the events; `points` when absent. */
+  harnessPoints?: readonly CcTimelinePoint[];
+  /** Composite events whose tags the markers reuse. */
+  eventNumbering?: readonly CcEventGroup[];
+}
+
+/** How `buildMarkers` groups and numbers the events, beyond the drawn points. */
+export interface CcEventContext {
+  /** The points whose harness versions group the events; the drawn points when absent. */
+  harnessPoints?: readonly CcTimelinePoint[];
+  /** Composite events whose tags the event markers reuse. */
+  numbering?: readonly CcEventGroup[];
 }
 
 export interface CcChartOptions {
@@ -295,18 +308,21 @@ export function commonGraderQualityOf(point: CcTimelinePoint, snapshotId: number
  * The markers of the range: one per composite Overseer event (`E1`…, `groupOverseerEvents`),
  * annotations (`A1`…) and the runs whose dominant served model differs from the previous run's
  * (`S1`…), each kind numbered in time order. The filter drops markers and never renumbers them.
+ * `context` can group the events by a wider set of points and take their tags from reference
+ * composites; served-model changes are always over `points`.
  */
 export function buildMarkers(
   points: readonly CcTimelinePoint[],
   events: readonly CcEvent[] = [],
   annotations: readonly CcAnnotation[] = [],
-  filter?: CcMarkerFilter
+  filter?: CcMarkerFilter,
+  context: CcEventContext = {}
 ): CcChartMarker[] {
   const markers: CcChartMarker[] = [];
   const shows = (kind: CcMarkerKind) => !filter || filter.kinds.has(kind);
 
   if (shows('event')) {
-    for (const group of groupOverseerEvents(events, points)) {
+    for (const group of groupOverseerEvents(events, context.harnessPoints ?? points, context.numbering)) {
       if (eventGroupShown(group, filter)) {
         markers.push({ kind: 'event', x: utcMillis(group.atUtc), tag: group.tag, label: eventGroupLabel(group) });
       }
@@ -697,7 +713,11 @@ function row(point: CcTimelinePoint, ...cells: string[]): string[] {
 
 /** The markers a figure draws: the input's, through its marker filter. */
 function markersOf(points: readonly CcTimelinePoint[], input: CcFigureInput): CcChartMarker[] {
-  return buildMarkers(points, input.events, input.annotations, input.markerFilter);
+  return buildMarkers(points, input.events, input.annotations, input.markerFilter, eventContextOf(input));
+}
+
+function eventContextOf(input: CcFigureInput): CcEventContext {
+  return { harnessPoints: input.harnessPoints, numbering: input.eventNumbering };
 }
 
 // --- The figures ---
@@ -959,7 +979,9 @@ export function timelineOverviewFigure(input: CcFigureInput, options: CcChartOpt
   const theme = options.theme ?? CC_SCREEN_THEME;
   const points = sortedPoints(input.points);
   const markers = markersOf(points, input);
-  const every = input.markerFilter ? buildMarkers(points, input.events, input.annotations) : markers;
+  const every = input.markerFilter
+    ? buildMarkers(points, input.events, input.annotations, undefined, eventContextOf(input))
+    : markers;
   const telemetry = seriesOf(points, point => point.isLegacy ? null : 1);
   const legacy = seriesOf(points, point => point.isLegacy ? 1 : null);
   const count = (kind: CcMarkerKind) => every.filter(marker => marker.kind === kind).length;

@@ -392,6 +392,57 @@ describe('AdminBenchmarkComponent', () => {
       expect(allowed.defaultPrevented).toBe(false);
     });
 
+    it('takes closedby="none" only while an export or a chart upload runs', () => {
+      component.openComparisonWizard();
+      fixture.detectChanges();
+      const dialog: HTMLDialogElement = component.comparisonWizardDialog!.nativeElement;
+      expect(dialog.hasAttribute('closedby')).toBe(false);
+
+      component.comparisonWizard!.exporting = true;
+      ctx.refresh();
+      expect(dialog.getAttribute('closedby')).toBe('none');
+
+      component.comparisonWizard!.exporting = false;
+      ctx.refresh();
+      expect(dialog.hasAttribute('closedby')).toBe(false);
+      component.closeComparisonWizard();
+    });
+
+    it('reopens a close that gets through during an export, restoring focus, and closes once it is over', async () => {
+      component.openComparisonWizard();
+      fixture.detectChanges();
+      const dialog: HTMLDialogElement = component.comparisonWizardDialog!.nativeElement;
+      const closed = (): Promise<void> =>
+        new Promise<void>(resolve => dialog.addEventListener('close', () => resolve(), { once: true }));
+      const token = ctx.comparison.comparisonReportsReloadToken;
+
+      component.comparisonWizard!.exporting = true;
+      ctx.refresh();
+      // A step tab, not the heading, which the reopen focuses when nothing was recorded.
+      const focused = dialog.querySelector<HTMLElement>('#mc-step-tab-1')!;
+      focused.focus();
+      expect(document.activeElement).toBe(focused);
+      const refused = new Event('cancel', { cancelable: true });
+      dialog.dispatchEvent(refused);
+      expect(refused.defaultPrevented).toBe(true);
+
+      // As a second Escape, whose cancel the browser no longer lets the page refuse.
+      const bounced = closed();
+      dialog.close();
+      await bounced;
+      expect(dialog.open).toBe(true);
+      expect(document.activeElement).toBe(focused);
+      expect(ctx.comparison.comparisonReportsReloadToken).toBe(token);
+
+      component.comparisonWizard!.exporting = false;
+      ctx.refresh();
+      const done = closed();
+      dialog.close();
+      await done;
+      expect(dialog.open).toBe(false);
+      expect(ctx.comparison.comparisonReportsReloadToken).toBe(token + 1);
+    });
+
     it('loads the comparability index for the sources on offer, and survives it failing', () => {
       benchmarkServiceMock.getComparabilityIndex.mockClear();
 

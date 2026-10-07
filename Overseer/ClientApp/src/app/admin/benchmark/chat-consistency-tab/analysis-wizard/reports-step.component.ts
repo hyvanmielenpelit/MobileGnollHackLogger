@@ -32,7 +32,8 @@ import {
   reportJobStatusText
 } from '../../run-ai-reports/report-documents-list';
 import { reportWriterRefusal, reportWriterWarning, reportWriterWarningText } from '../../run-ai-reports/report-writer-policy';
-import { analysisBands } from '../chat-consistency-charts';
+import { CcFigureInput, analysisBands } from '../chat-consistency-charts';
+import { CcEventGroup } from '../chat-consistency-events';
 import { formatUsd } from '../chat-consistency-format';
 import { publishCcReportCharts } from '../chat-consistency-report-charts';
 import {
@@ -88,6 +89,8 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   @Input() pickerEmptyHint: string | null = null;
   /** The subject's timeline points, for the attached charts. */
   @Input() points: readonly CcTimelinePoint[] = [];
+  /** The timeline's composite events, whose E numbers the attached charts reuse. */
+  @Input() eventNumbering: readonly CcEventGroup[] = [];
 
   @Output() readonly openDocuments = new EventEmitter<CcOpenDocumentsRequest>();
 
@@ -437,19 +440,29 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     });
   }
 
+  /**
+   * What the attached charts draw: the analyzed runs, the analysis's events and annotations, its
+   * period bands, every timeline point for the events' harness lookup, and the timeline's E numbers.
+   */
+  chartInput(): CcFigureInput {
+    const ids = new Set([...this.result.baseline.runIds, ...this.result.comparison.runIds]);
+    return {
+      points: this.points.filter(point => ids.has(point.runId)),
+      events: this.result.events,
+      annotations: this.result.annotations,
+      bands: analysisBands(this.result.baseline, this.result.comparison),
+      harnessPoints: this.points,
+      eventNumbering: this.eventNumbering
+    };
+  }
+
   private async attachCharts(analysisId: number, documentIds: number[]): Promise<void> {
     const generation = ++this.chartsGeneration;
     this.chartState = 'attaching';
     this.chartMessage = `Attaching charts to ${documentIds.length} ${documentIds.length === 1 ? 'document' : 'documents'}…`;
     this.cdr.markForCheck();
     try {
-      const ids = new Set([...this.result.baseline.runIds, ...this.result.comparison.runIds]);
-      const outcome = await publishCcReportCharts(this.benchmarkService, documentIds, {
-        points: this.points.filter(point => ids.has(point.runId)),
-        events: this.result.events,
-        annotations: this.result.annotations,
-        bands: analysisBands(this.result.baseline, this.result.comparison)
-      });
+      const outcome = await publishCcReportCharts(this.benchmarkService, documentIds, this.chartInput());
       if (generation !== this.chartsGeneration || this.analysisId !== analysisId) return;
       if (outcome.failed.length === 0) {
         this.chartState = 'done';

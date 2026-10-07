@@ -32,7 +32,7 @@ const MODELS: TestModel[] = [
       <label id="pickerALabel">Model A</label>
       <app-model-picker class="picker-a marker" labelledBy="pickerALabel" describedBy="pickerAHint"
                         [noneLabel]="noneLabel" [options]="optionsA" [selectedKey]="selectedA"
-                        [showPrice]="true" [showParallel]="true"
+                        [showPrice]="true" [showParallel]="true" [disabled]="disabledA"
                         (selectionChange)="onSelect($event)"></app-model-picker>
       <span id="pickerAHint">Hint A</span>
       <app-model-picker class="picker-b" label="Model B" emptyHint="Nothing to choose from."
@@ -49,6 +49,7 @@ class HostComponent {
   optionsA: ModelPickerOption<TestModel>[] = toModelPickerOptions(MODELS);
   optionsB: ModelPickerOption<TestModel>[] = [];
   selectedA: ModelPickerKey | null = null;
+  disabledA = false;
   selections: ModelPickerSelection<TestModel>[] = [];
   outerKeys: string[] = [];
 
@@ -58,7 +59,7 @@ class HostComponent {
     this.cdr.markForCheck();
   }
 
-  set(changes: Partial<Pick<HostComponent, 'noneLabel' | 'optionsA' | 'selectedA'>>): void {
+  set(changes: Partial<Pick<HostComponent, 'noneLabel' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -87,7 +88,7 @@ describe('ModelPickerComponent', () => {
     return id ? picker.querySelector<HTMLElement>(`#${id}`) : null;
   };
 
-  function update(changes: Partial<Pick<HostComponent, 'noneLabel' | 'optionsA' | 'selectedA'>>): void {
+  function update(changes: Partial<Pick<HostComponent, 'noneLabel' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
     host.set(changes);
     fixture.detectChanges();
   }
@@ -446,6 +447,38 @@ describe('ModelPickerComponent', () => {
       el.querySelector<HTMLElement>('.outside')!.focus();
       fixture.detectChanges();
       expect(listbox()).toBeNull();
+    });
+  });
+
+  describe('disabled', () => {
+    it('marks the trigger aria-disabled, keeps it focusable, and opens neither on click nor on ArrowDown', () => {
+      expect(trigger().hasAttribute('aria-disabled')).toBe(false);
+      update({ disabledA: true });
+      const button = trigger();
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
+      button.focus();
+      expect(document.activeElement).toBe(button);
+
+      openByClick();
+      expect(listbox()).toBeNull();
+      const event = key(button, 'ArrowDown');
+      expect(listbox()).toBeNull();
+      expect(event.defaultPrevented).toBe(false);
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('closes an open list when it becomes disabled', () => {
+      openByClick();
+      expect(listbox()).not.toBeNull();
+      update({ disabledA: true });
+      expect(listbox()).toBeNull();
+      expect(host.selections.length).toBe(0);
+
+      update({ disabledA: false });
+      expect(trigger().hasAttribute('aria-disabled')).toBe(false);
+      openByClick();
+      expect(listbox()).not.toBeNull();
     });
   });
 });

@@ -37,6 +37,10 @@ export const CC_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.chatConsistency.launc
 /** The version of the stored launcher record; a record of another version reads as none. */
 const CC_LAUNCHER_STORAGE_VERSION = 1;
 
+/** The run report's refusal to switch sub-tabs while the wizard is blocked. */
+export const CC_LEAVE_REFUSAL =
+  'Chat Consistency is exporting charts or attaching report charts. Wait for it to finish, then try again.';
+
 /**
  * The Chat Consistency sub-tab: whether the Overseer chat with one model stayed the same over time.
  * A launcher page — what the view does, the current model, how it works and the saved analyses —
@@ -104,6 +108,10 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   private analysesSub: Subscription | null = null;
   private openSub: Subscription | null = null;
   private readonly anchorSubs = new Map<number, Subscription>();
+  private releaseLeaveGuard: (() => void) | null = null;
+  private destroyed = false;
+  /** The element focused when a refused Escape arrived, restored if the dialog has to be reopened. */
+  private focusBeforeCancel: HTMLElement | null = null;
 
   constructor() {
     // The configurations the pickers offer arrive through the shell; OnPush needs telling.
@@ -115,9 +123,14 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.restoreHowItWorks();
     this.loadAxes();
     this.loadAnalyses();
+    // The run report's actions that switch to Run Benchmark would destroy this tab, and the wizard with it.
+    this.releaseLeaveGuard = this.bridge.setLeaveGuard(() => this.wizard?.closeBlocked ? CC_LEAVE_REFUSAL : null);
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    this.releaseLeaveGuard?.();
+    this.releaseLeaveGuard = null;
     // A sub-tab switch must not leave a modal behind.
     const dialog = this.wizardDialog?.nativeElement;
     if (dialog?.open) dialog.close();
@@ -243,20 +256,46 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   /**
    * Escape, which reaches the dialog as (cancel) before (close). Refused while a chart export runs
    * or report charts are attached. A `cancel` does not bubble, so one from a nested dialog never
-   * arrives here; the target check keeps that so for a synthetic one.
+   * arrives here; the target check keeps that so for a synthetic one. Chrome makes a second
+   * `cancel` without user activation in between non-cancelable, so the focused element is recorded
+   * for the reopen in `onWizardClose`.
    */
   onWizardCancel(event: Event): void {
     if (event.target !== this.wizardDialog?.nativeElement) return;
-    if (this.wizard?.closeBlocked) event.preventDefault();
+    if (this.wizard?.closeBlocked) {
+      event.preventDefault();
+      this.focusBeforeCancel = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
   }
 
   /**
    * Nothing is torn down: the mounted content is what reopening preserves. The saved analyses are read
-   * again, since the Reports step may have written documents from one of them.
+   * again, since the Reports step may have written documents from one of them. A close that gets
+   * through while the wizard is blocked (a repeated Escape, or a browser without `closedby`) reopens
+   * the dialog instead.
    */
   onWizardClose(event: Event): void {
     if (event.target !== this.wizardDialog?.nativeElement) return;
+    if (this.destroyed) return;
+    if (this.wizard?.closeBlocked) {
+      this.reopenBlockedWizard();
+      return;
+    }
     this.loadAnalyses();
+    this.cdr.markForCheck();
+  }
+
+  /** Shows the dialog again and puts focus back where it was, else on the wizard heading. */
+  private reopenBlockedWizard(): void {
+    const dialog = this.wizardDialog?.nativeElement;
+    if (dialog && !dialog.open) dialog.showModal();
+    const previous = this.focusBeforeCancel;
+    this.focusBeforeCancel = null;
+    if (previous && dialog?.contains(previous)) {
+      previous.focus();
+    } else {
+      this.wizard?.focusHeading();
+    }
     this.cdr.markForCheck();
   }
 

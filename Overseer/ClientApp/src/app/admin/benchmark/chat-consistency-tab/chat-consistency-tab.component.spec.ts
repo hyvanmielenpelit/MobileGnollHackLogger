@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
-import { CC_LAUNCHER_STORAGE_KEY, ChatConsistencyTabComponent } from './chat-consistency-tab.component';
+import { CC_LAUNCHER_STORAGE_KEY, CC_LEAVE_REFUSAL, ChatConsistencyTabComponent } from './chat-consistency-tab.component';
 import { endOfUtcDay, startOfUtcDay } from './chat-consistency-format';
 import {
   CC_API,
@@ -331,6 +331,90 @@ describe('ChatConsistencyTabComponent', () => {
     dialog().dispatchEvent(again);
     expect(again.defaultPrevented).toBe(false);
     expect(dialog().open).toBe(true);
+  });
+
+  /** Starts or ends a Timeline chart export, the way the workspace reports one, from step 2. */
+  function setExporting(exporting: boolean): void {
+    const wizard = fixture.componentInstance.wizard!;
+    if (!wizard.timelineWorkspace) {
+      dialog().querySelector<HTMLButtonElement>('#cc-step-tab-2')!.click();
+      fixture.detectChanges();
+    }
+    const workspace = wizard.timelineWorkspace!;
+    workspace.exporting = exporting;
+    workspace.exportingChange.emit(exporting);
+    fixture.detectChanges();
+  }
+
+  it('takes closedby="none" only while the wizard blocks closing', () => {
+    createTab();
+    openWizard();
+    chooseModelInWizard();
+    expect(dialog().hasAttribute('closedby')).toBe(false);
+
+    setExporting(true);
+    expect(dialog().getAttribute('closedby')).toBe('none');
+
+    setExporting(false);
+    expect(dialog().hasAttribute('closedby')).toBe(false);
+  });
+
+  it('reopens a close that gets through while blocked, restores focus and does not read the saved analyses', async () => {
+    createTab();
+    openWizard();
+    chooseModelInWizard();
+    setExporting(true);
+
+    const focused = dialog().querySelector<HTMLElement>('#cc-step-heading-2')!;
+    focused.focus();
+    const refused = new Event('cancel', { cancelable: true });
+    dialog().dispatchEvent(refused);
+    expect(refused.defaultPrevented).toBe(true);
+
+    // As a second Escape, whose cancel the browser no longer lets the page refuse.
+    const bounced = closed();
+    dialog().close();
+    await bounced;
+    fixture.detectChanges();
+    expect(dialog().open).toBe(true);
+    expect(document.activeElement).toBe(focused);
+    http.expectNone(`${CC_API}/analyses`);
+
+    // Without a recorded element, the wizard heading takes focus.
+    const again = closed();
+    dialog().close();
+    await again;
+    expect(dialog().open).toBe(true);
+    expect(document.activeElement?.id).toBe('cc-wizard-title');
+    http.expectNone(`${CC_API}/analyses`);
+
+    // Once the export is over, a close stays closed and the saved analyses are read again.
+    setExporting(false);
+    const done = closed();
+    dialog().close();
+    await done;
+    fixture.detectChanges();
+    expect(dialog().open).toBe(false);
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(7)]);
+  });
+
+  it('refuses leaving the sub-tab through the bridge while the wizard blocks closing, and stops asking once destroyed', () => {
+    createTab();
+    expect(bridge.leaveRefusal()).toBeNull();
+    openWizard();
+    chooseModelInWizard();
+    expect(bridge.leaveRefusal()).toBeNull();
+
+    setExporting(true);
+    expect(bridge.leaveRefusal()).toBe(CC_LEAVE_REFUSAL);
+
+    setExporting(false);
+    expect(bridge.leaveRefusal()).toBeNull();
+
+    setExporting(true);
+    dialog().close();
+    fixture.destroy();
+    expect(bridge.leaveRefusal()).toBeNull();
   });
 
   // --- Run actions ---

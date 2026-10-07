@@ -2160,5 +2160,64 @@ describe('AdminBenchmarkComponent', () => {
       expect(ctx.launcher.prefillResult).toBeNull();
       expect(prefillStatus().textContent?.trim()).toBe('');
     });
+
+    describe('while the active sub-tab refuses to be left', () => {
+      const REFUSAL = 'Chat Consistency is exporting charts. Wait for it to finish, then try again.';
+      let release: () => void;
+
+      const reportStatus = (): string =>
+        ((fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .rr-status[role="status"]') as HTMLElement)
+          ?.textContent ?? '').trim();
+
+      beforeEach(() => {
+        component.viewRunDetail(55);
+        fixture.detectChanges();
+        component.selectSubTab('history');
+        fixture.detectChanges();
+        release = ctx.bridge.setLeaveGuard(() => REFUSAL);
+      });
+
+      afterEach(() => release());
+
+      it('keeps the run report open and the sub-tab, and says why, on Repeat this run\'s setup', () => {
+        (fixture.nativeElement.querySelector('#rr-repeat-setup-btn') as HTMLButtonElement).click();
+        fixture.detectChanges();
+
+        expect(component.runDetailDialog.nativeElement.open).toBe(true);
+        expect(component.activeSubTab).toBe('history');
+        expect(reportStatus()).toBe(REFUSAL);
+        expect(ctx.launcher.pendingPrefillRunId).toBeNull();
+      });
+
+      it('refuses Re-run failed questions and Open run progress the same way', () => {
+        const rerun = vi.spyOn(ctx.monitor, 'launchFailedQuestionRerun').mockImplementation(() => undefined);
+        const poll = vi.spyOn(ctx.monitor, 'startPolling').mockImplementation(() => undefined);
+
+        component.rerunFailedFromRunDetail(55);
+        fixture.detectChanges();
+        expect(rerun).not.toHaveBeenCalled();
+        expect(component.runDetailDialog.nativeElement.open).toBe(true);
+        expect(component.activeSubTab).toBe('history');
+        expect(reportStatus()).toBe(REFUSAL);
+
+        component.openRunProgressForSelectedRun();
+        fixture.detectChanges();
+        expect(poll).not.toHaveBeenCalled();
+        expect(component.runDetailDialog.nativeElement.open).toBe(true);
+        expect(component.activeSubTab).toBe('history');
+        expect(reportStatus()).toBe(REFUSAL);
+      });
+
+      it('repeats the setup once the guard is released', () => {
+        release();
+        (fixture.nativeElement.querySelector('#rr-repeat-setup-btn') as HTMLButtonElement).click();
+        fixture.detectChanges();
+
+        expect(component.runDetailDialog.nativeElement.open).toBe(false);
+        expect(component.activeSubTab).toBe('run');
+        expect(ctx.launcher.testedConfigId).toBe(2);
+        expect(prefillStatus().textContent).toContain('Set up from run #55');
+      });
+    });
   });
 });

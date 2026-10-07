@@ -55,6 +55,21 @@ export class BenchmarkShellBridge {
   /** A run id whose setup the Run Benchmark launcher takes over. */
   readonly repeatRunSetup$ = new Subject<number>();
 
+  private leaveGuard: (() => string | null) | null = null;
+
+  /** Registers why the active sub-tab cannot be left now (null while it can); returns the release. */
+  setLeaveGuard(guard: () => string | null): () => void {
+    this.leaveGuard = guard;
+    return () => {
+      if (this.leaveGuard === guard) this.leaveGuard = null;
+    };
+  }
+
+  /** Why switching away from the active sub-tab would break work in progress, or null. */
+  leaveRefusal(): string | null {
+    return this.leaveGuard?.() ?? null;
+  }
+
   selectSubTab(tab: BenchmarkSubTab): void {
     this.selectSubTab$.next(tab);
   }

@@ -3426,7 +3426,8 @@ hidden rather than destroyed, so a running job, its polling, the form and the do
 filters and selection survive a trip back to step 2. The steps serve one loop: set the charts on step 2,
 generate on step 3, view on step 4, go back to step 2 to change the charts, **Update charts…** on step
 4, view again. While charts are being drawn and uploaded, the wizard's close controls are disabled and
-Escape is refused, as during an export. The launcher's *How the comparison works* names the four steps.
+Escape is refused, as during an export, even a repeated Escape, which the browser would otherwise let
+through. The launcher's *How the comparison works* names the four steps.
 
 **Step 3, Reports.** The form sits in the resizable sidebar as before, with a new fieldset, *Charts in
 PDF and Word*, between *Documents* and *Report writer*. The main area follows the job: one row per

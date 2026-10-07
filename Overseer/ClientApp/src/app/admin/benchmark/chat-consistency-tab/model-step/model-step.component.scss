@@ -44,6 +44,11 @@
   &[type="date"] {
     color-scheme: dark;
   }
+
+  &[readonly] {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
 }
 
 .cc-model-clear {
@@ -102,6 +107,10 @@
     grid-column: 1 / -1;
     grid-row: 4;
     margin-top: 0.25rem;
+  }
+
+  .cc-model-lock-reason {
+    grid-column: 1 / -1;
   }
 }
 

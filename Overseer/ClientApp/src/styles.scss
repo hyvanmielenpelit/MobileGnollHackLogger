@@ -4306,6 +4306,16 @@ progress.job-progress {
   }
 }
 
+.selector-trigger[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+
+  &:hover {
+    border-color: #3d3d3d;
+    background: #141414;
+  }
+}
+
 /* The tag, name and badges: one row that wraps, spaced only by gap, so a wrapped badge starts
    flush with the name. The chevron stays outside it, at the end. */
 .selector-trigger-content {

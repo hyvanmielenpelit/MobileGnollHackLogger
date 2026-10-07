@@ -1912,7 +1912,8 @@ is active, so step 3's form, its running job and its polling, and step 4's table
 selection survive a trip back to step 2. That trip is the loop the steps are built for: set the charts
 on step 2, generate on step 3, view on step 4, go back to step 2 to change them, then **Update charts…**
 on step 4 and view again (§ 13). While charts are being drawn and uploaded, the wizard's close controls
-are disabled and Escape is refused, as during an export.
+are disabled and Escape is refused, as during an export, even a repeated Escape, which the browser would
+otherwise let through.
 
 **Step 3, Reports** (`app-report-pack-panel`, `report-pack/report-pack-panel.component.*`), headed
 *Reports*, uses `app-run-report-frame` in its **sidebar** layout: a resizable sidebar with the form, then

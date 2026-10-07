@@ -3,11 +3,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController, TestRequest } from '@angular/common/http/testing';
 
 import { toModelPickerOptions } from '../../../../shared/model-picker/model-picker.component';
+import { groupOverseerEvents } from '../chat-consistency-events';
 import { CcOpenDocumentsRequest } from '../chat-consistency.models';
 import {
   CC_API,
   ccAnalysisResult,
   ccConfig,
+  ccPoint,
   ccReportEstimate,
   ccTimeline,
   chatConsistencyTestProviders,
@@ -63,6 +65,21 @@ describe('CcReportsStepComponent', () => {
     expect(estimate.request.method).toBe('POST');
     return estimate;
   }
+
+  it('draws the attached charts over the analyzed runs, with every timeline point for the harness and the timeline\'s numbering', () => {
+    const points = [...ccTimeline().points, ccPoint(201, '2026-10-05T08:00:00Z')];
+    const numbering = groupOverseerEvents(ccTimeline().events, points);
+    fixture.componentRef.setInput('points', points);
+    fixture.componentRef.setInput('eventNumbering', numbering);
+    fixture.detectChanges();
+
+    const input = fixture.componentInstance.chartInput();
+    expect(input.points.map(point => point.runId)).toEqual([101, 102, 103, 104, 105, 106]);
+    expect(input.harnessPoints).toBe(points);
+    expect(input.eventNumbering).toBe(numbering);
+    expect(input.events).toEqual(ccAnalysisResult().events);
+    expect(input.bands!.map(band => band.name)).toEqual(['Baseline', 'Comparison']);
+  });
 
   it('lists the four documents, the first three checked', () => {
     const labels = Array.from(el.querySelectorAll('.cc-rep-audiences .checkbox-label')).map(label => textOf(label));

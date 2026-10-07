@@ -205,6 +205,67 @@ describe('chat-consistency-events', () => {
       expect(group.events.length).toBe(1);
       expect(groupOverseerEvents([], ccEventPoints())).toEqual([]);
     });
+
+    describe('with a numbering reference', () => {
+      const tagged = (list: readonly { tag: string; key: string }[]) => list.map(g => `${g.tag} ${g.key}`);
+      const onDays = (...days: string[]) => ccOverseerEvents().filter(e => days.some(day => e.atUtc.startsWith(day)));
+
+      it('takes the tag of the reference group with the same key', () => {
+        const span = groupOverseerEvents(onDays('2026-09-05', '2026-09-10'), ccEventPoints(), groups);
+        expect(tagged(span)).toEqual(['E2 2026-09-05|28', 'E4 2026-09-10|29']);
+        // Without the reference the span restarts at E1.
+        expect(tagged(groupOverseerEvents(onDays('2026-09-05', '2026-09-10'), ccEventPoints())))
+          .toEqual(['E1 2026-09-05|28', 'E2 2026-09-10|29']);
+      });
+
+      it('gives a group of unknown harness the tag of its day\'s earliest reference group', () => {
+        // Run 297 has no point, so its corpus index change has no harness of its own.
+        const [corpus] = groupOverseerEvents(ccOverseerEvents().filter(e => e.runId === 297), ccEventPoints(), groups);
+        expect(`${corpus.tag} ${corpus.key}`).toBe('E4 2026-09-10|');
+
+        const points = [ccPoint(1, '2026-09-15T08:00:00Z', { harnessVersion: '30' }), ccPoint(2, '2026-09-15T10:00:00Z', { harnessVersion: '31' })];
+        const reference = groupOverseerEvents([
+          ccEvent({ atUtc: '2026-09-15T10:00:00Z', runId: 2, kind: 'ToolGuidesSha256' }),
+          ccEvent({ atUtc: '2026-09-15T08:00:00Z', runId: 1, kind: 'WikiHeadSha' })
+        ], points);
+        expect(tagged(reference)).toEqual(['E1 2026-09-15|30', 'E2 2026-09-15|31']);
+        const [unknown] = groupOverseerEvents([ccEvent({ atUtc: '2026-09-15T12:00:00Z', runId: 99, kind: 'SourceCodeHeadSha' })], points, reference);
+        expect(unknown.tag).toBe('E1');
+      });
+
+      it('numbers a group the reference lacks after the reference\'s last number, in time order', () => {
+        const events = [
+          ...onDays('2026-09-05'),
+          // A control-series change on a day the reference has no composite on.
+          ccEvent({ atUtc: '2026-09-07T09:00:00Z', runId: 501, kind: 'WikiHeadSha', inTargetSeries: false }),
+          // A harness the reference never saw on 2026-09-03.
+          ccEvent({ atUtc: '2026-09-03T06:00:00Z', runId: 502, kind: 'ToolGuidesSha256' })
+        ];
+        const points = [...ccEventPoints(), ccPoint(502, '2026-09-03T06:00:00Z', { harnessVersion: '26' })];
+        const span = groupOverseerEvents(events, points, groups);
+        expect(tagged(span)).toEqual(['E5 2026-09-03|26', 'E2 2026-09-05|28', 'E6 2026-09-07|']);
+      });
+
+      it('never gives one tag to two composites', () => {
+        // A reference that repeats a tag: the second group to claim it is numbered after the reference.
+        const reference = [groups[0], { ...groups[1], tag: 'E1' }];
+        const span = groupOverseerEvents(onDays('2026-09-03', '2026-09-05'), ccEventPoints(), reference);
+        expect(tagged(span)).toEqual(['E1 2026-09-03|27', 'E2 2026-09-05|28']);
+
+        const mixed = groupOverseerEvents([
+          ...ccOverseerEvents(),
+          ccEvent({ atUtc: '2026-09-07T09:00:00Z', runId: 501, kind: 'WikiHeadSha' })
+        ], ccEventPoints(), groups);
+        const tags = mixed.map(g => g.tag);
+        expect(new Set(tags).size).toBe(tags.length);
+        expect(tags).toEqual(['E1', 'E2', 'E5', 'E3', 'E4']);
+      });
+
+      it('numbers as without a reference when the reference is empty', () => {
+        const events = onDays('2026-09-05', '2026-09-10');
+        expect(groupOverseerEvents(events, ccEventPoints(), [])).toEqual(groupOverseerEvents(events, ccEventPoints()));
+      });
+    });
   });
 
   describe('labels and summaries', () => {

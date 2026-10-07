@@ -82,6 +82,8 @@ export class CcModelStepComponent implements OnChanges {
   @Input() anchorError: string | null = null;
   /** A one-off confirmation for the table's status line. */
   @Input() announcement = '';
+  /** Why the model and the dates cannot change now; empty while they can. */
+  @Input() lockedReason = '';
 
   @Output() readonly modelChange = new EventEmitter<string>();
   @Output() readonly rangeChange = new EventEmitter<CcDayRange>();
@@ -128,15 +130,35 @@ export class CcModelStepComponent implements OnChanges {
     return this.axesError ?? (this.axesLoading ? 'Loading the models…' : 'No model has benchmark runs yet.');
   }
 
+  /** The picker's description: its hint, and the lock reason while locked. */
+  get modelDescribedBy(): string {
+    return this.lockedReason ? 'cc-tl-model-hint cc-tl-lock-reason' : 'cc-tl-model-hint';
+  }
+
+  /** A date input's description: the range error and the lock reason, whichever are shown. */
+  dateDescribedBy(): string | null {
+    const ids = [this.rangeError ? 'cc-tl-range-error' : '', this.lockedReason ? 'cc-tl-lock-reason' : ''].filter(Boolean);
+    return ids.length > 0 ? ids.join(' ') : null;
+  }
+
   selectModel(key: string | number | null): void {
+    if (this.lockedReason) return;
     if (typeof key === 'string' && key !== this.selectedKey) {
       this.modelChange.emit(key);
     }
   }
 
-  /** A date field changed: a valid range is applied at once, an invalid one is explained. */
+  /**
+   * A date field changed: a valid range is applied at once, an invalid one is explained. While locked
+   * the stored date is written back to the field.
+   */
   onDayChange(which: 'from' | 'to', event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
+    const input = event.target as HTMLInputElement;
+    if (this.lockedReason) {
+      input.value = which === 'from' ? this.fromDay : this.toDay;
+      return;
+    }
+    const value = input.value;
     if (which === 'from') this.fromDay = value; else this.toDay = value;
     if ((this.fromDay && !isUtcDateInput(this.fromDay)) || (this.toDay && !isUtcDateInput(this.toDay))) {
       this.rangeError = 'Enter the dates as complete calendar dates.';
@@ -150,6 +172,7 @@ export class CcModelStepComponent implements OnChanges {
   }
 
   clearRange(): void {
+    if (this.lockedReason) return;
     this.fromDay = '';
     this.toDay = '';
     this.rangeError = null;

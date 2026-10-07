@@ -185,6 +185,85 @@ describe('CcModelStepComponent', () => {
     });
   });
 
+  describe('the lock', () => {
+    const REASON = 'The model and the dates are locked while the charts export.';
+    let ranges: CcDayRange[];
+    let chosen: string[];
+
+    const trigger = () => el.querySelector<HTMLButtonElement>('.cc-subject-model-selector .selector-trigger')!;
+    const day = (id: 'cc-tl-from' | 'cc-tl-to') => el.querySelector<HTMLInputElement>(`#${id}`)!;
+    const clear = () => el.querySelector<HTMLButtonElement>('.cc-tl-range-clear')!;
+
+    function lock(reason: string): void {
+      fixture.componentRef.setInput('lockedReason', reason);
+      fixture.detectChanges();
+    }
+
+    beforeEach(() => {
+      ranges = [];
+      chosen = [];
+      component.rangeChange.subscribe(range => ranges.push(range));
+      component.modelChange.subscribe(key => chosen.push(key));
+      fixture.componentRef.setInput('range', { fromDay: '2026-09-01', toDay: '2026-09-30' });
+      lock(REASON);
+    });
+
+    it('shows the reason and describes the locked picker and dates with it', () => {
+      const reason = el.querySelector<HTMLElement>('#cc-tl-lock-reason')!;
+      expect(textOf(reason)).toBe(REASON);
+      expect(reason.classList).toContain('form-hint');
+
+      expect(trigger().getAttribute('aria-disabled')).toBe('true');
+      expect(trigger().disabled).toBe(false);
+      expect(trigger().getAttribute('aria-describedby')).toBe('cc-tl-model-hint cc-tl-lock-reason');
+      expect(openPicker()).toEqual([]);
+
+      for (const id of ['cc-tl-from', 'cc-tl-to'] as const) {
+        expect(day(id).readOnly).toBe(true);
+        expect(day(id).disabled).toBe(false);
+        expect(day(id).getAttribute('aria-describedby')).toBe('cc-tl-lock-reason');
+      }
+    });
+
+    it('refuses a model choice', () => {
+      component.selectModel('anthropic/claude-opus');
+      expect(chosen).toEqual([]);
+    });
+
+    it('refuses a date change and writes the stored date back to the field', () => {
+      setDay('cc-tl-from', '2026-09-10');
+      expect(ranges).toEqual([]);
+      expect(day('cc-tl-from').value).toBe('2026-09-01');
+      expect(el.querySelector('#cc-tl-range-error')).toBeNull();
+    });
+
+    it('marks Every date aria-disabled, described by the reason, and refuses it', () => {
+      expect(clear().getAttribute('aria-disabled')).toBe('true');
+      expect(clear().getAttribute('aria-describedby')).toBe('cc-tl-lock-reason');
+      clear().click();
+      fixture.detectChanges();
+      expect(ranges).toEqual([]);
+      expect(day('cc-tl-from').value).toBe('2026-09-01');
+      expect(day('cc-tl-to').value).toBe('2026-09-30');
+    });
+
+    it('lifts every part of the lock when the reason clears', () => {
+      lock('');
+      expect(el.querySelector('#cc-tl-lock-reason')).toBeNull();
+      expect(trigger().hasAttribute('aria-disabled')).toBe(false);
+      expect(trigger().getAttribute('aria-describedby')).toBe('cc-tl-model-hint');
+      for (const id of ['cc-tl-from', 'cc-tl-to'] as const) {
+        expect(day(id).readOnly).toBe(false);
+        expect(day(id).hasAttribute('aria-describedby')).toBe(false);
+      }
+      expect(clear().hasAttribute('aria-disabled')).toBe(false);
+      expect(clear().hasAttribute('aria-describedby')).toBe(false);
+
+      setDay('cc-tl-from', '2026-09-10');
+      expect(ranges).toEqual([{ fromDay: '2026-09-10', toDay: '2026-09-30' }]);
+    });
+  });
+
   describe('the status line and the runs heading', () => {
     it('says the timeline is loading, then counts the runs under a Runs of heading', () => {
       fixture.componentRef.setInput('selectedKey', 'openai/gpt-5|high');

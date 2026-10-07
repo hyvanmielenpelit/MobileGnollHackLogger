@@ -105,7 +105,7 @@
   Full-screen, as the Model Comparison wizard. No closedby="any": the backdrop shows only as a thin
   ring, too thin to be an honest click target. Escape, the header close and the footer Close work on
   a showModal() dialog without it; Escape is refused while a chart export runs or report charts are
-  attached.
+  attached. While blocked, the dialog takes closedby="none", and a close that still happens reopens it.
 
   @if (wizardMounted) is set once and never reset, so reopening keeps the step, the tables, the
   charts and an analysis in progress. The run report and the Download Center are shell dialogs
@@ -113,6 +113,7 @@
 -->
 <dialog #wizardDialog class="gh-dialog gh-dialog-fullscreen cc-wizard-dialog"
         aria-labelledby="cc-wizard-title"
+        [attr.closedby]="wizard?.closeBlocked ? 'none' : null"
         (cancel)="onWizardCancel($event)" (close)="onWizardClose($event)">
   @if (wizardMounted) {
     <app-cc-wizard [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"

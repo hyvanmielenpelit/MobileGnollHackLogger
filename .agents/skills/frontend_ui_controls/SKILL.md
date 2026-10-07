@@ -449,6 +449,13 @@ for the *All charts* toolbar's **Fit width**, meaning "stretch to the width"; no
 Copy and Download are `aria-disabled` with their reason as the tooltip while an export runs, the chart
 size is refused or the chart has nothing to draw.*
 
+*Changed 2026-10-07 (Chat Consistency follow-up A): `app-model-picker` gains a `disabled` input (§4e):
+the trigger is `aria-disabled`, stays in the focus order, and opens no list, and the host names the
+reason through `describedBy`. The Chat Consistency wizard's step 1 uses it while a chart export runs or
+report charts are attached: the picker is `aria-disabled`, the date inputs are `readonly` rather than
+`disabled` so they keep their place in the focus order (§6), and *Every date* is `aria-disabled`, each
+described by one visible reason line.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -824,6 +831,7 @@ opens a popup `role="listbox"`, which takes focus and tracks the active option w
 | `triggerId` | Only where a host already references the trigger's id |
 | `showPrice` / `showParallel` | The price and parallel-execution badges; thinking level, reasoning mode and provider are always shown |
 | `variant="compact"`, `dropsUp`, `narrowHidesBadges` | The composer and Models page look; `narrowHidesBadges` hides the provider and parallel badges below 992 px |
+| `disabled` | The trigger is `aria-disabled` and stays focusable; the list does not open, and an open one closes; the host names the reason through `describedBy` |
 
 `selectionChange` emits `{ key, model }` on every committed choice, including re-choosing the
 selected option, so the handler must be idempotent.

@@ -187,6 +187,45 @@ describe('chat-consistency-charts', () => {
       expect(overview.takeaway).toBe(timelineOverviewFigure(eventInput).takeaway);
     });
 
+    describe('over a subset of the timeline', () => {
+      // The analyzed runs are 204–206; the events are the composites of 2026-09-03 (runs 202 and 203)
+      // and 2026-09-10, which the full timeline tags E1 and E4.
+      const all = ccEventPoints();
+      const drawn = all.filter(point => point.runId >= 204);
+      const events = ccOverseerEvents().filter(e => e.atUtc.startsWith('2026-09-03') || e.atUtc.startsWith('2026-09-10'));
+      const numbering = groupOverseerEvents(ccOverseerEvents(), all);
+      const eventLines = (markers: { kind: string; tag: string; label: string }[]) =>
+        markers.filter(m => m.kind === 'event').map(m => `${m.tag} ${m.label}`);
+
+      it('groups by the harness points and reuses the numbering, while the served-model markers stay over the drawn points', () => {
+        const markers = buildMarkers(drawn, events, [], undefined, { harnessPoints: all, numbering });
+        expect(eventLines(markers)).toEqual([
+          'E1 Changes under harness 27 on 2026-09-03: System prompt, Knowledge base (2 runs)',
+          'E4 Changes under harness 29 on 2026-09-10: Source code, Corpus index (2 runs)'
+        ]);
+        // Over runs 204–206 only, the served model changes at run 205; run 204 has no earlier run drawn.
+        expect(markers.filter(m => m.kind === 'served').map(m => `${m.tag} ${m.label}`))
+          .toEqual(['S1 Served model changed from gpt-5-2026-09 to gpt-5-2026-08 (run #205)']);
+
+        // Without the context the 2026-09-03 runs have no harness, and the numbering restarts.
+        expect(eventLines(buildMarkers(drawn, events))).toEqual([
+          'E1 Overseer changes on 2026-09-03: System prompt, Knowledge base (2 runs)',
+          'E2 Changes under harness 29 on 2026-09-10: Source code, Corpus index (2 runs)'
+        ]);
+      });
+
+      it('draws a figure input\'s harness points and event numbering the same way', () => {
+        const figureInput: CcFigureInput = { points: drawn, events, harnessPoints: all, eventNumbering: numbering };
+        expect(qualityFigure(figureInput).markers.filter(m => m.kind === 'event').map(m => m.tag)).toEqual(['E1', 'E4']);
+        const filtered = timelineOverviewFigure({
+          ...figureInput, markerFilter: { kinds: new Set<CcMarkerKind>(['annotation']), hiddenEventKinds: new Set() }
+        });
+        expect(filtered.markers).toEqual([]);
+        expect(filtered.takeaway).toBe('3 runs, 2 Overseer changes, 0 annotations and 1 served-model change in this range.');
+        expect(qualityFigure(figureInput).table.rows.map(row => row[0])).toEqual(['#204', '#205', '#206']);
+      });
+    });
+
     it('attaches the overlay plugin and turns animation off for reduced motion', () => {
       const figure = qualityFigure(input, { reducedMotion: true });
       expect(figure.config!.plugins.map(p => p.id)).toEqual(['ccOverlay']);

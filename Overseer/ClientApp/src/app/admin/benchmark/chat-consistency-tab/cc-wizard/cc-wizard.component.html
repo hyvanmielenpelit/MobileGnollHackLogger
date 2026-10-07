@@ -78,6 +78,7 @@
                            [timeline]="timeline" [rows]="rows" [loading]="loading"
                            [timelineError]="timelineError" [runsError]="runsError"
                            [anchorBusy]="anchorBusy" [anchorError]="anchorError" [announcement]="announcement"
+                           [lockedReason]="subjectLockedReason"
                            (modelChange)="modelChange.emit($event)" (rangeChange)="rangeChange.emit($event)"
                            (repeatSetup)="repeatSetup.emit($event)" (anchorToggle)="anchorToggle.emit($event)"
                            (openRunReport)="openRunReport.emit($event)"></app-cc-model-step>

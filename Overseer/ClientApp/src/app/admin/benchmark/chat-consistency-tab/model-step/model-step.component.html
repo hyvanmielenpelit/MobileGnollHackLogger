@@ -5,9 +5,9 @@
 <div class="cc-model-fields">
   <div class="cc-model-field cc-model-field--model">
     <label id="cc-tl-model-label" class="cc-model-label">Model</label>
-    <app-model-picker class="cc-subject-model-selector cc-model-picker" labelledBy="cc-tl-model-label" describedBy="cc-tl-model-hint"
+    <app-model-picker class="cc-subject-model-selector cc-model-picker" labelledBy="cc-tl-model-label" [describedBy]="modelDescribedBy"
                       placeholder="Select a model" [emptyHint]="pickerEmptyHint"
-                      [options]="options" [selectedKey]="selectedKey"
+                      [options]="options" [selectedKey]="selectedKey" [disabled]="!!lockedReason"
                       (selectionChange)="selectModel($event.key)"></app-model-picker>
     <div class="cc-model-hints">
       <span id="cc-tl-model-hint" class="form-hint">
@@ -29,7 +29,8 @@
   <div class="cc-model-field cc-model-field--from">
     <label for="cc-tl-from" class="cc-model-label">From (UTC)</label>
     <input id="cc-tl-from" type="date" class="gh-input cc-model-date" [value]="fromDay"
-           [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
+           [readOnly]="!!lockedReason"
+           [attr.aria-describedby]="dateDescribedBy()"
            [attr.aria-invalid]="rangeError ? 'true' : null"
            (change)="onDayChange('from', $event)">
   </div>
@@ -37,13 +38,17 @@
   <div class="cc-model-field cc-model-field--to">
     <label for="cc-tl-to" class="cc-model-label">To (UTC)</label>
     <input id="cc-tl-to" type="date" class="gh-input cc-model-date" [value]="toDay"
-           [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
+           [readOnly]="!!lockedReason"
+           [attr.aria-describedby]="dateDescribedBy()"
            [attr.aria-invalid]="rangeError ? 'true' : null"
            (change)="onDayChange('to', $event)">
   </div>
 
   @if (fromDay || toDay) {
-    <button type="button" class="btn-ghost cc-tl-range-clear cc-model-clear" (click)="clearRange()">Every date</button>
+    <button type="button" class="btn-ghost cc-tl-range-clear cc-model-clear"
+            [attr.aria-disabled]="lockedReason ? 'true' : null"
+            [attr.aria-describedby]="lockedReason ? 'cc-tl-lock-reason' : null"
+            (click)="clearRange()">Every date</button>
   }
 
   @if (rangeError) {
@@ -51,6 +56,12 @@
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       <span>{{ rangeError }}</span>
     </p>
+  }
+
+  <!-- While a chart export or report charts attach, the model and the dates are locked but stay
+       focusable, each described by this reason. -->
+  @if (lockedReason) {
+    <p id="cc-tl-lock-reason" class="form-hint cc-model-lock-reason">{{ lockedReason }}</p>
   }
 </div>
 

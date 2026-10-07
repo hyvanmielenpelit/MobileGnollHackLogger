@@ -137,6 +137,8 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   @Input() dropsUp = false;
   /** Hides the provider and parallel badges below 992 px. */
   @Input() narrowHidesBadges = false;
+  /** The trigger is aria-disabled and the list does not open; the host names the reason through describedBy. */
+  @Input() disabled = false;
 
   /** Every committed choice, including re-choosing the selected option. */
   @Output() selectionChange = new EventEmitter<ModelPickerSelection<M>>();
@@ -198,6 +200,9 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     if (changes['options'] || changes['noneLabel']) {
       this.rebuild();
     }
+    if (changes['disabled'] && this.disabled) {
+      this.close(false);
+    }
   }
 
   ngOnDestroy(): void {
@@ -212,6 +217,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   modelName(model: ModelPickerModel): string { return model.displayName || model.modelId || ''; }
 
   toggle(): void {
+    if (this.disabled) return;
     if (this.open) {
       this.close(true);
     } else {
@@ -220,6 +226,7 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   }
 
   onTriggerKeydown(event: KeyboardEvent): void {
+    if (this.disabled) return;
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();

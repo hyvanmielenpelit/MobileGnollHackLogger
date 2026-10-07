@@ -471,4 +471,44 @@ describe('CcWizardComponent', () => {
     next().click();
     expect(closes).toBe(1);
   });
+
+  it('locks step 1\'s model and dates, naming why, while charts export and while report charts attach', async () => {
+    chooseModel();
+    const lockReason = (): string | null => {
+      const reason = el.querySelector('#cc-step-panel-1 #cc-tl-lock-reason');
+      return reason ? textOf(reason) : null;
+    };
+    expect(wizard.subjectLockedReason).toBe('');
+    expect(lockReason()).toBeNull();
+
+    tab(2).click();
+    fixture.detectChanges();
+    const workspace = wizard.timelineWorkspace!;
+    workspace.exporting = true;
+    workspace.exportingChange.emit(true);
+    fixture.detectChanges();
+    expect(lockReason()).toBe('The model and the dates are locked while the charts export.');
+    expect(el.querySelector('#cc-step-panel-1 .selector-trigger')!.getAttribute('aria-disabled')).toBe('true');
+
+    workspace.exporting = false;
+    workspace.exportingChange.emit(false);
+    fixture.detectChanges();
+    expect(lockReason()).toBeNull();
+
+    wizard.showResult(ccAnalysisResult());
+    await settle();
+    next().click();
+    await settle();
+    const reports = wizard.analysis!.reportsStep!;
+    reports.chartState = 'attaching';
+    wizard.analysis!.stateChange.emit();
+    await settle();
+    expect(lockReason()).toBe('The model and the dates are locked while report charts are attached.');
+
+    reports.chartState = 'idle';
+    wizard.analysis!.stateChange.emit();
+    await settle();
+    expect(lockReason()).toBeNull();
+    expect(el.querySelector('#cc-step-panel-1 .selector-trigger')!.hasAttribute('aria-disabled')).toBe(false);
+  });
 });

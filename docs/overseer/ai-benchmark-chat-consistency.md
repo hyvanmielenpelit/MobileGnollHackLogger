@@ -187,9 +187,15 @@ event of one UTC day under one harness version is one composite, and a harness c
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
 takes the events one per kind and change, as above. Report charts are drawn the same way, and
-`CC_REPORT_CHART_VERSION` (2, in `chat-consistency-report-charts.ts`) enters their settings hash, so newly
-drawn report charts are told apart from those drawn before the grouping; documents already written keep
-their charts. An `E` number in an older report therefore need not match the one the tab shows today.
+`CC_REPORT_CHART_VERSION` (3, in `chat-consistency-report-charts.ts`) enters their settings hash, so newly
+drawn report charts are told apart from those drawn before the grouping or the timeline numbering below;
+documents already written keep their charts. An `E` number in an older report therefore need not match
+the one the tab shows today.
+
+Results and newly drawn report charts take each composite's `E` number from the timeline loaded in
+step 1, so a change keeps its number across the steps. A composite the timeline lacks (a control-series
+change, or a span outside the step-1 dates) is numbered after the timeline's last, so it can carry a
+higher number than a later composite.
 
 ## 6. Events and Control Runs
 
@@ -561,7 +567,9 @@ a result, analyzed or opened from the saved analyses. A step that cannot be open
 marked unavailable, with its reason. Each step is kept once shown, so closing and reopening the wizard,
 or changing step, keeps a table's sort and page, the chart zoom and an analysis in progress. **Escape
 and the close buttons are refused while a chart export runs or while the Reports step attaches report
-charts**, since closing would strand a half-written batch. The model, the step and the analysis live as
+charts**, since closing would strand a half-written batch. For the same duration the model and the dates
+in step 1 are locked, with the reason shown under them, and a repeated Escape cannot close the wizard
+either. The model, the step and the analysis live as
 long as the tab: switching to another GnollBench sub-tab loses them.
 
 ### 17.3 The Timeline step
@@ -621,7 +629,10 @@ the download settings are kept per browser.
 **"Repeat this run's setup"** — in the run table, on the next-run suggestions and in the run report —
 opens Run Benchmark with the run's suite, scoring profile, models and prompt options filled in, and
 notes anything that no longer exists. **It never starts a run**: the operator checks the settings and
-presses Start. From the wizard it switches sub-tab, so it closes the wizard first.
+presses Start. From the wizard it switches sub-tab, so it closes the wizard first. While Chat
+Consistency exports charts or attaches report charts, the run report refuses *Repeat this run's setup*,
+*Re-run failed questions* and *Open run progress*, which would switch sub-tab too, and names the reason
+in its status line; the report stays open.
 
 ## 18. Detection and Confirmation
 

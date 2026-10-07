@@ -112,8 +112,15 @@ function groupTitle(harnessVersion: string | null, harnessChange: CcEventGroup['
  * An event of unknown harness joins the earliest group of its day, or starts one of unknown harness;
  * a later known-harness event of that day with no group of its own joins that group, which takes
  * its harness. Events without a parsable time are left out.
+ *
+ * With a non-empty `numbering`, the tags are taken from those reference groups instead: see
+ * {@link retagFromReference}. `points` serves only to look up each event's harness version.
  */
-export function groupOverseerEvents(events: readonly CcEvent[], points: readonly CcTimelinePoint[]): CcEventGroup[] {
+export function groupOverseerEvents(
+  events: readonly CcEvent[],
+  points: readonly CcTimelinePoint[],
+  numbering?: readonly CcEventGroup[]
+): CcEventGroup[] {
   const harnessByRun = new Map<number, string | null>();
   for (const point of points) harnessByRun.set(point.runId, cleanHarness(point.harnessVersion));
 
@@ -140,7 +147,7 @@ export function groupOverseerEvents(events: readonly CcEvent[], points: readonly
     draft.events.push(event);
   }
 
-  return drafts.map((draft, i) => {
+  const groups: CcEventGroup[] = drafts.map((draft, i) => {
     const harnessEvent = draft.events.find(event => event.kind === CC_HARNESS_EVENT_KIND) ?? null;
     const harnessChange = harnessEvent ? { from: harnessEvent.from, to: harnessEvent.to } : null;
     const kinds = [...new Set(draft.events.map(event => event.kind))].sort(compareEventKinds);
@@ -162,6 +169,46 @@ export function groupOverseerEvents(events: readonly CcEvent[], points: readonly
       events: draft.events
     };
   });
+  return numbering && numbering.length > 0 ? retagFromReference(groups, numbering) : groups;
+}
+
+function eventTagNumber(tag: string): number {
+  const match = /^E(\d+)$/.exec(tag);
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * The groups, in their order, tagged after the reference groups: a group takes the tag of the
+ * reference group with its key; a group of unknown harness takes the tag of its day's earliest
+ * reference group, as such an event joins its day's earliest group. A group left without a tag,
+ * or whose tag an earlier match took, is numbered after the reference's highest number, in time
+ * order, so no tag names two composites.
+ */
+function retagFromReference(groups: readonly CcEventGroup[], reference: readonly CcEventGroup[]): CcEventGroup[] {
+  const tagByKey = new Map<string, string>();
+  const earliestOfDay = new Map<string, { tag: string; at: number }>();
+  let next = 0;
+  for (const ref of reference) {
+    if (!tagByKey.has(ref.key)) tagByKey.set(ref.key, ref.tag);
+    const at = utcMillis(ref.atUtc);
+    const known = earliestOfDay.get(ref.day);
+    if (!known || at < known.at) earliestOfDay.set(ref.day, { tag: ref.tag, at });
+    next = Math.max(next, eventTagNumber(ref.tag));
+  }
+
+  const tags: (string | null)[] = groups.map(() => null);
+  const used = new Set<string>();
+  const claim = (index: number, tag: string | undefined) => {
+    if (tag === undefined || used.has(tag) || tags[index] !== null) return;
+    tags[index] = tag;
+    used.add(tag);
+  };
+  // Exact keys first, so a same-day unknown-harness group cannot take the tag of a keyed match.
+  groups.forEach((group, i) => claim(i, tagByKey.get(group.key)));
+  groups.forEach((group, i) => {
+    if (group.harnessVersion === null) claim(i, earliestOfDay.get(group.day)?.tag);
+  });
+  return groups.map((group, i) => ({ ...group, tag: tags[i] ?? `E${++next}` }));
 }
 
 /**

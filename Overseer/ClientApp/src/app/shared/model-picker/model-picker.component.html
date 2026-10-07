@@ -22,6 +22,7 @@
         [attr.aria-controls]="open ? listboxId : null"
         [attr.aria-labelledby]="triggerLabelledBy"
         [attr.aria-describedby]="describedBy"
+        [attr.aria-disabled]="disabled ? 'true' : null"
         (click)="toggle()" (keydown)="onTriggerKeydown($event)">
   <span class="selector-trigger-content">
     @if (selectedModel; as model) {
