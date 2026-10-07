@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -133,40 +135,46 @@ public class AiRequestGovernor
     {
         try
         {
-            if (response.Headers.TryGetValues("Retry-After", out var retryAfterValues))
+            if (IsThrottlingStatus(response.StatusCode))
             {
-                var val = retryAfterValues.FirstOrDefault();
-                if (int.TryParse(val, out int seconds) && seconds > 0)
+                TimeSpan retryAfter = TimeSpan.Zero;
+                if (response.Headers.TryGetValues("Retry-After", out var retryAfterValues))
                 {
-                    RecordRateLimit(credentialKey, TimeSpan.FromSeconds(seconds));
-                }
-                else if (DateTimeOffset.TryParse(val, out var dateOffset))
-                {
-                    var diff = dateOffset.UtcDateTime - DateTime.UtcNow;
-                    if (diff > TimeSpan.Zero)
+                    var val = retryAfterValues.FirstOrDefault();
+                    if (int.TryParse(val, out int seconds) && seconds > 0)
                     {
-                        RecordRateLimit(credentialKey, diff);
+                        retryAfter = TimeSpan.FromSeconds(seconds);
+                    }
+                    else if (DateTimeOffset.TryParse(val, out var dateOffset))
+                    {
+                        retryAfter = dateOffset.UtcDateTime - DateTime.UtcNow;
                     }
                 }
-            }
-            else if (response.Headers.TryGetValues("retry-after-ms", out var retryMsValues))
-            {
-                var val = retryMsValues.FirstOrDefault();
-                if (int.TryParse(val, out int ms) && ms > 0)
+                else if (response.Headers.TryGetValues("retry-after-ms", out var retryMsValues))
                 {
-                    RecordRateLimit(credentialKey, TimeSpan.FromMilliseconds(ms));
+                    var val = retryMsValues.FirstOrDefault();
+                    if (int.TryParse(val, out int ms) && ms > 0)
+                    {
+                        retryAfter = TimeSpan.FromMilliseconds(ms);
+                    }
+                }
+
+                if (retryAfter > TimeSpan.Zero)
+                {
+                    RecordRateLimit(credentialKey, retryAfter);
+                    return;
                 }
             }
-            else if (response.Headers.TryGetValues("anthropic-ratelimit-unified-reset", out var anthropicReset))
+
+            if (response.Headers.TryGetValues("anthropic-ratelimit-unified-status", out var unifiedStatus)
+                && string.Equals(unifiedStatus.FirstOrDefault()?.Trim(), "rejected", StringComparison.OrdinalIgnoreCase)
+                && response.Headers.TryGetValues("anthropic-ratelimit-unified-reset", out var unifiedReset)
+                && TryParseUnifiedReset(unifiedReset.FirstOrDefault(), out var reset))
             {
-                var val = anthropicReset.FirstOrDefault();
-                if (DateTimeOffset.TryParse(val, out var dateOffset))
+                var diff = reset.UtcDateTime - DateTime.UtcNow;
+                if (diff > TimeSpan.Zero)
                 {
-                    var diff = dateOffset.UtcDateTime - DateTime.UtcNow;
-                    if (diff > TimeSpan.Zero)
-                    {
-                        RecordRateLimit(credentialKey, diff);
-                    }
+                    RecordRateLimit(credentialKey, diff);
                 }
             }
         }
@@ -174,6 +182,25 @@ public class AiRequestGovernor
         {
             _logger.LogDebug(ex, "[AiRequestGovernor] Error parsing rate limit headers for {CredentialKey}", credentialKey);
         }
+    }
+
+    // 429, 503 and Anthropic's 529 overloaded
+    private static bool IsThrottlingStatus(HttpStatusCode status)
+    {
+        int code = (int)status;
+        return code == 429 || code == 503 || code == 529;
+    }
+
+    // Unix epoch seconds, or an RFC 3339 timestamp
+    private static bool TryParseUnifiedReset(string? value, out DateTimeOffset reset)
+    {
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long epochSeconds))
+        {
+            reset = DateTimeOffset.FromUnixTimeSeconds(epochSeconds);
+            return true;
+        }
+        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out reset);
     }
 
     /// <summary>A partition's semaphore and the permit count it was created with.</summary>

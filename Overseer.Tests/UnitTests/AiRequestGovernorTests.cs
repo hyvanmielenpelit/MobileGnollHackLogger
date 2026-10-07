@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -83,6 +85,178 @@ public class AiRequestGovernorTests
         Assert.True(isRateLimited);
         Assert.True(remaining.TotalSeconds > 8 && remaining.TotalSeconds <= 12);
     }
+
+    [Fact]
+    public void UpdateLimitsFromHeaders_SuccessWithRetryAfter_RecordsNoCooldown()
+    {
+        var governor = CreateGovernor();
+        string key = "openai:user:success_retry_after";
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add("Retry-After", "12");
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        Assert.False(governor.IsRateLimited(key, out _));
+    }
+
+    [Fact]
+    public void UpdateLimitsFromHeaders_SuccessWithRetryAfterMs_RecordsNoCooldown()
+    {
+        var governor = CreateGovernor();
+        string key = "openai:user:success_retry_after_ms";
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add("retry-after-ms", "4000");
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        Assert.False(governor.IsRateLimited(key, out _));
+    }
+
+    [Theory]
+    [InlineData("allowed")]
+    [InlineData("allowed_warning")]
+    public void UpdateLimitsFromHeaders_SuccessWithAllowedUnifiedReset_RecordsNoCooldown(string status)
+    {
+        var governor = CreateGovernor();
+        string key = $"anthropic:user:unified_{status}";
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add("anthropic-ratelimit-unified-status", status);
+        response.Headers.Add("anthropic-ratelimit-unified-reset", EpochSecondsFromNow(60));
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        Assert.False(governor.IsRateLimited(key, out _));
+    }
+
+    [Fact]
+    public void UpdateLimitsFromHeaders_UnifiedResetWithoutStatus_RecordsNoCooldown()
+    {
+        var governor = CreateGovernor();
+        string key = "anthropic:user:unified_no_status";
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add("anthropic-ratelimit-unified-reset", EpochSecondsFromNow(60));
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        Assert.False(governor.IsRateLimited(key, out _));
+    }
+
+    [Theory]
+    [InlineData("epoch")]
+    [InlineData("rfc3339")]
+    public void UpdateLimitsFromHeaders_RejectedUnifiedStatus_RecordsCooldownUntilReset(string resetFormat)
+    {
+        var governor = CreateGovernor();
+        string key = $"anthropic:user:unified_rejected_{resetFormat}";
+
+        var resetAt = DateTimeOffset.UtcNow.AddSeconds(30);
+        string resetValue = resetFormat == "epoch"
+            ? resetAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)
+            : resetAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add("anthropic-ratelimit-unified-status", "rejected");
+        response.Headers.Add("anthropic-ratelimit-unified-reset", resetValue);
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        bool isRateLimited = governor.IsRateLimited(key, out var remaining);
+        Assert.True(isRateLimited);
+        Assert.True(remaining.TotalSeconds > 25 && remaining.TotalSeconds <= 30);
+    }
+
+    [Fact]
+    public void UpdateLimitsFromHeaders_RejectedUnifiedStatus_CapsAtMaxRetryAfter()
+    {
+        var governor = CreateGovernor(maxRetryAfterSeconds: 10);
+        string key = "anthropic:user:unified_rejected_capped";
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        response.Headers.Add("anthropic-ratelimit-unified-status", "rejected");
+        response.Headers.Add("anthropic-ratelimit-unified-reset", EpochSecondsFromNow(2 * 60 * 60));
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        bool isRateLimited = governor.IsRateLimited(key, out var remaining);
+        Assert.True(isRateLimited);
+        Assert.True(remaining.TotalSeconds > 5 && remaining.TotalSeconds <= 10);
+    }
+
+    [Theory]
+    [InlineData(429)]
+    [InlineData(503)]
+    [InlineData(529)]
+    public void UpdateLimitsFromHeaders_ThrottlingStatusWithRetryAfter_RecordsCooldown(int status)
+    {
+        var governor = CreateGovernor();
+        string key = $"anthropic:user:throttled_{status}";
+
+        var response = new HttpResponseMessage((HttpStatusCode)status);
+        response.Headers.Add("Retry-After", "12");
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        bool isRateLimited = governor.IsRateLimited(key, out var remaining);
+        Assert.True(isRateLimited);
+        Assert.True(remaining.TotalSeconds > 8 && remaining.TotalSeconds <= 12);
+    }
+
+    [Fact]
+    public void UpdateLimitsFromHeaders_ThrottlingStatusWithRetryAfterMs_RecordsCooldown()
+    {
+        var governor = CreateGovernor();
+        string key = "anthropic:user:throttled_retry_after_ms";
+
+        var response = new HttpResponseMessage((HttpStatusCode)529);
+        response.Headers.Add("retry-after-ms", "6000");
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        bool isRateLimited = governor.IsRateLimited(key, out var remaining);
+        Assert.True(isRateLimited);
+        Assert.True(remaining.TotalSeconds > 2 && remaining.TotalSeconds <= 6);
+    }
+
+    [Theory]
+    [InlineData(400)]
+    [InlineData(500)]
+    public void UpdateLimitsFromHeaders_NonThrottlingErrorWithRetryAfter_RecordsNoCooldown(int status)
+    {
+        var governor = CreateGovernor();
+        string key = $"openai:user:error_{status}";
+
+        var response = new HttpResponseMessage((HttpStatusCode)status);
+        response.Headers.Add("Retry-After", "12");
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        Assert.False(governor.IsRateLimited(key, out _));
+    }
+
+    [Fact]
+    public void UpdateLimitsFromHeaders_RetryAfterTakesPrecedenceOverUnifiedReset()
+    {
+        var governor = CreateGovernor();
+        string key = "anthropic:user:retry_after_precedence";
+
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        response.Headers.Add("Retry-After", "5");
+        response.Headers.Add("anthropic-ratelimit-unified-status", "rejected");
+        response.Headers.Add("anthropic-ratelimit-unified-reset", EpochSecondsFromNow(60));
+
+        governor.UpdateLimitsFromHeaders(key, response);
+
+        bool isRateLimited = governor.IsRateLimited(key, out var remaining);
+        Assert.True(isRateLimited);
+        Assert.True(remaining.TotalSeconds > 1 && remaining.TotalSeconds <= 5);
+    }
+
+    private static string EpochSecondsFromNow(int seconds) =>
+        DateTimeOffset.UtcNow.AddSeconds(seconds).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
 
     [Fact]
     public async Task GetStatus_ReportsInFlightCallsAndCooldown()
