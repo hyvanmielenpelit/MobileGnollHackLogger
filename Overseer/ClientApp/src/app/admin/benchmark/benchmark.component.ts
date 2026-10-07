@@ -152,7 +152,8 @@ import {
   formatModelTime as formatModelTimeText,
   DELIBERATING_THINKING_LEVELS,
   INTERACTIVE_SPEED_TARGET_MAX_MS,
-  MISSING_BOARD_QUOTE_LIST_CAP
+  MISSING_BOARD_QUOTE_LIST_CAP,
+  refusalText
 } from './benchmark-run-format';
 import { RUN_STAGE_NAMES, runRailIndexOf, runStageFromServer } from './run-stage-labels';
 import * as repair from './run-repair-actions';
@@ -169,6 +170,7 @@ import { BenchmarkHistoryTabComponent } from './history-tab/benchmark-history-ta
 import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.component';
 import { BenchmarkProfilesTabComponent } from './profiles-tab/benchmark-profiles-tab.component';
 import { BenchmarkComparisonTabComponent } from './comparison-tab/benchmark-comparison-tab.component';
+import { ChatConsistencyTabComponent } from './chat-consistency-tab/chat-consistency-tab.component';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 export * from './benchmark.models';
@@ -189,7 +191,7 @@ export interface RunRailItem {
   selector: 'app-admin-benchmark',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent
+    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent, ChatConsistencyTabComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss'],
@@ -276,6 +278,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.closeRunDetail();
       }
     });
+    bridge.repeatRunSetup$.pipe(takeUntilDestroyed()).subscribe(runId => this.applyRepeatRunSetup(runId));
   }
 
   /** The admin page's configurations; the workspace store holds them for every sub-tab. */
@@ -387,15 +390,35 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   cdr = inject(ChangeDetectorRef);
 
-  activeSubTab: 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
+  activeSubTab: BenchmarkSubTab = 'run';
 
   /**
    * Tab order, and the source of truth for arrow-key navigation indices. Multi-Run Analysis sits
    * immediately right of Run History because a group is built out of the runs listed there, so the
    * two are read in that order, and Multi-Suite follows them. Scoring Profiles sits right of Manage
-   * Suites.
+   * Suites. Chat Consistency is last.
    */
-  readonly subTabs = ['run', 'history', 'multirun', 'multisuite', 'suites', 'profiles', 'modelcomparison'] as const;
+  readonly subTabs = [
+    'run', 'history', 'multirun', 'multisuite', 'suites', 'profiles', 'modelcomparison', 'chatconsistency'
+  ] as const satisfies readonly BenchmarkSubTab[];
+
+  /** Each sub-tab's visible label; the tab row renders one button per entry of `subTabs`. */
+  readonly subTabLabels: Readonly<Record<BenchmarkSubTab, string>> = {
+    run: 'Run Benchmark',
+    history: 'Run History',
+    multirun: 'Multi-Run Analysis',
+    multisuite: 'Multi-Suite',
+    suites: 'Manage Suites',
+    profiles: 'Scoring Profiles',
+    modelcomparison: 'Model Comparison',
+    chatconsistency: 'Chat Consistency'
+  };
+
+  /** Why a Repeat this run's setup request could not load the run, or null. */
+  repeatRunSetupError: string | null = null;
+
+  /** Discards a run that arrives after a newer repeat request. */
+  private repeatRunSetupToken = 0;
 
   /**
    * BenchmarkAnswerFlags bits that mean the graded text was corrupted in transport:
@@ -719,7 +742,41 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   selectSubTab(tab: BenchmarkSubTab): void {
     this.activeSubTab = tab;
+    // The prefill note describes the launcher as it was filled; it is not shown again on return.
+    if (tab !== 'run') {
+      this.launcher.clearPrefillResult();
+      this.repeatRunSetupError = null;
+    }
     this.cdr.markForCheck();
+  }
+
+  /** The run report's Repeat this run's setup. */
+  repeatRunSetup(runId: number): void {
+    this.bridge.repeatRunSetup(runId);
+  }
+
+  /**
+   * Closes the run report, shows Run Benchmark and fills its launcher from the run's recorded setup.
+   * The launcher applies it once its remembered settings and lists are in, so they cannot overwrite it.
+   */
+  private applyRepeatRunSetup(runId: number): void {
+    const token = ++this.repeatRunSetupToken;
+    this.closeRunDetail();
+    this.selectSubTab('run');
+    this.launcher.clearPrefillResult();
+    this.repeatRunSetupError = null;
+    this.benchmarkService.getRun(runId).subscribe({
+      next: (run) => {
+        if (token !== this.repeatRunSetupToken) return;
+        this.launcher.prefillFromRun(run);
+        this.viewSync.notify();
+      },
+      error: (err) => {
+        if (token !== this.repeatRunSetupToken) return;
+        this.repeatRunSetupError = refusalText(err, `The setup of run #${runId} could not be loaded.`);
+        this.viewSync.notify();
+      }
+    });
   }
   // ---------------------------------------------------------------------------------------------
   // The comparison wizard dialog
@@ -3341,6 +3398,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       ? [battery.batteryName, battery.testedModelLabel].filter(part => !!part).join(' · ')
       : '';
     this.runDownloadCenter?.open({ kind: 'battery', batteryRunId, label, memberDiagnosticsText: this.memberDiagnosticsText });
+  }
+
+  /** The Chat Consistency tab's request: the Download Center on a saved analysis's documents. */
+  openChatConsistencyDownloads(analysisId: number): void {
+    this.runDownloadsOpener = null;
+    this.runDownloadCenter?.open({ kind: 'chatConsistency', analysisId });
   }
 
   /**

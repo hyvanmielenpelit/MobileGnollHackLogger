@@ -44,12 +44,15 @@ import { CardListChip, CardListFacet, CardListNoun, CardListState } from '../../
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
 import {
+  REPORT_DOCUMENT_AUDIENCE_OPTIONS,
   REPORT_DOCUMENT_SCOPES,
   REPORT_LIBRARY_ALL_TAKE,
   REPORT_PACK_AUDIENCES,
   ReportDocumentLibraryScope,
   ReportDocumentScopeValue,
   audienceLabel,
+  chatConsistencyAnalysisIdOf,
+  chatConsistencySubjectKey,
   formatUtc,
   reportDocumentScope,
   reportKindSlug,
@@ -162,11 +165,18 @@ export interface DownloadCenterBatteryContext {
   memberDiagnosticsText?: (run: BenchmarkRunDetailDto) => string;
 }
 
+/** Opened from a saved chat consistency analysis: its chat consistency documents (subject `chat-consistency:<id>`). */
+export interface DownloadCenterChatConsistencyContext {
+  kind: 'chatConsistency';
+  analysisId: number;
+}
+
 export type DownloadCenterContext =
   | DownloadCenterRunContext
   | DownloadCenterDocumentsContext
   | DownloadCenterLibraryContext
-  | DownloadCenterBatteryContext;
+  | DownloadCenterBatteryContext
+  | DownloadCenterChatConsistencyContext;
 
 /**
  * What the host lends the panel so it can chart the documents of the comparison open beside it: the
@@ -202,6 +212,7 @@ export type DownloadRowCategory =
   | 'executiveSummary'
   | 'technicalReport'
   | 'internalBrief'
+  | 'providerIssueReport'
   | 'runReport'
   | 'toolCallLog'
   | 'diagnostics'
@@ -305,10 +316,14 @@ export const downloadCenterIo = {
 export const DOWNLOAD_CENTER_STORAGE_KEY = 'overseer.benchmark.downloadCenter';
 
 /**
- * The stored settings' version. Version 2 is migrated on reading, without the Internal package's
- * remembered formats; settings of any other version read as absent.
+ * The stored settings' version. Versions 2 and 3 are migrated on reading: every package gains the
+ * Provider Issue Report's default choice, and version 2 loses the Internal package's remembered
+ * formats. Settings of any other version read as absent.
  */
-export const STORED_SETTINGS_VERSION = 3;
+export const STORED_SETTINGS_VERSION = 4;
+
+/** The Provider Issue Report's default choice in every package: no field remembered, so each takes the package's preset. */
+const PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE: Readonly<StoredChoice> = Object.freeze({});
 
 /** One remembered row choice; every field is checked against the row before it is applied. */
 interface StoredChoice {
@@ -406,7 +421,7 @@ export function reportJobPhaseText(phase: BenchmarkRunReportJobPhase): string {
 
 /** The document types in the order the Document facet lists them and the type sort ranks them. */
 const DOCUMENT_TYPE_ORDER: readonly string[] = [
-  ...REPORT_PACK_AUDIENCES.map(option => option.label),
+  ...REPORT_DOCUMENT_AUDIENCE_OPTIONS.map(option => option.label),
   'Run report',
   'Tool-call log',
   'Run diagnostics',
@@ -871,6 +886,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       case 'library':
         this.loadLibrary(context, this.generation, false);
         break;
+      case 'chatConsistency':
+        this.loadChatConsistencyDocuments(context.analysisId, this.generation);
+        break;
     }
     this.cdr.markForCheck();
   }
@@ -1284,6 +1302,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         case 'subject': return 'No comparison documents have been written about it.';
         default: return 'No comparison reports yet.';
       }
+    }
+    if (context?.kind === 'chatConsistency') {
+      return 'No documents have been written for this analysis yet.';
     }
     return 'Nothing is available to download.';
   }
@@ -2178,6 +2199,32 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     });
   }
 
+  /** The analysis's chat consistency documents (`chat-consistency:<id>`), newest first. */
+  private loadChatConsistencyDocuments(analysisId: number, generation: number): void {
+    this.loadingDocuments = true;
+    this.listSub = this.benchmarkService.listReportDocuments({
+      subject: chatConsistencySubjectKey(analysisId),
+      origin: 'chatConsistencyReport'
+    }).subscribe({
+      next: documents => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.addRows(sortDocuments(documents ?? []).map(packRow));
+        this.loadingDocuments = false;
+        this.cdr.markForCheck();
+      },
+      error: (error: HttpErrorResponse) => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.notices = [...this.notices, serverMessage(error) ?? 'The documents of this analysis could not be loaded.'];
+        this.loadingDocuments = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
   /** Counts the comparison (Report Pack) documents about the subject, for the pointer; a failed count shows nothing. */
   private countComparisonDocuments(subjectKey: string, generation: number): void {
     this.countSub = this.benchmarkService.listReportDocuments({ subject: subjectKey, origin: 'reportPack' }).subscribe({
@@ -2458,7 +2505,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     const options = this.disclosureOptionsFor(row, pkg);
     if (pkg === 'provider') {
       return {
-        selected: this.isSelectableIn(row, pkg) && (row.category === 'executiveSummary' || row.category === 'technicalReport'),
+        selected: this.isSelectableIn(row, pkg)
+          && (row.category === 'executiveSummary' || row.category === 'technicalReport' || row.category === 'providerIssueReport'),
         disclosure: options.includes(BenchmarkReportDisclosure.Summary) ? BenchmarkReportDisclosure.Summary : (options[0] ?? BenchmarkReportDisclosure.Summary),
         naming: BenchmarkReportPeerNaming.Anonymized,
         formats: presetFormats(row, 'provider')
@@ -2929,6 +2977,16 @@ function fallbackDisclosures(audience: BenchmarkReportAudience): BenchmarkReport
   }
 }
 
+/** A pack document's remembered-choice category, by its audience; an unknown audience counts as an Internal Improvement Brief. */
+function packCategory(audience: BenchmarkReportAudience): DownloadRowCategory {
+  switch (audience) {
+    case BenchmarkReportAudience.ExecutiveSummary: return 'executiveSummary';
+    case BenchmarkReportAudience.TechnicalReport: return 'technicalReport';
+    case BenchmarkReportAudience.ProviderIssueReport: return 'providerIssueReport';
+    default: return 'internalBrief';
+  }
+}
+
 function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
   const allowed = doc.allowedDisclosures && doc.allowedDisclosures.length > 0
     ? doc.allowedDisclosures
@@ -2940,8 +2998,7 @@ function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
   return {
     key: `doc:${doc.id}`,
     kind: 'pack',
-    category: doc.audience === BenchmarkReportAudience.ExecutiveSummary ? 'executiveSummary'
-      : doc.audience === BenchmarkReportAudience.TechnicalReport ? 'technicalReport' : 'internalBrief',
+    category: packCategory(doc.audience),
     label: doc.title || `${type}: ${doc.subjectLabel}`,
     detail: parts.join(' · '),
     note: null,
@@ -3159,7 +3216,8 @@ function peersFilePart(doc: BenchmarkReportDocumentListItemDto): string {
  * `_Researcher_Report`; every other document by its title. A document about one run (subject
  * `run:<digits>`) is prefixed `run-<digits>_`, one about a battery run (`battery:<digits>`)
  * `battery-run-<digits>_`, and a document compared with peers by its peers part after that (first,
- * for a group subject): `vs-run-92_`, `vs-run-94-run-95_`, `vs-4-models-1a2b3c4d_`.
+ * for a group subject): `vs-run-92_`, `vs-run-94-run-95_`, `vs-4-models-1a2b3c4d_`. A Chat Consistency Report
+ * (subject `chat-consistency:<id>`) is `chat-consistency-<id>_<model>_<kind>`, as the server names it.
  */
 export function reportDocumentFileStem(
   doc: BenchmarkReportDocumentListItemDto,
@@ -3169,6 +3227,11 @@ export function reportDocumentFileStem(
   const numbered = comparisonFilePart(doc, naming);
   if (numbered !== null) {
     return numbered;
+  }
+  const analysisId = doc.chatConsistencyAnalysisId ?? chatConsistencyAnalysisIdOf(doc.subjectKey);
+  if (doc.origin === BenchmarkReportDocumentOrigin.ChatConsistencyReport || doc.scope === BenchmarkReportScope.ChatConsistency) {
+    const prefix = analysisId === null ? 'chat-consistency' : `chat-consistency-${analysisId}`;
+    return `${prefix}_${safeFileName(doc.subjectLabel ?? '')}_${reportKindSlug(doc.audience)}`;
   }
   const title = doc.title || fallbackTitle;
   const run = RUN_SUBJECT_KEY.exec(doc.subjectKey ?? '');
@@ -3416,9 +3479,9 @@ export function rememberedPdfPaper(): BenchmarkPdfPaper {
 }
 
 /**
- * The stored settings, or null when absent, unreadable, corrupt or of another version. Version 2
- * reads as version 3 without the formats remembered for the Internal package, so its rows take the
- * Internal preset.
+ * The stored settings, or null when absent, unreadable, corrupt or of another version. Versions 2
+ * and 3 read as version 4 with the Provider Issue Report's default choice in every package; version 2
+ * also without the formats remembered for the Internal package, so its rows take the Internal preset.
  */
 function readStoredSettings(): StoredSettings | null {
   try {
@@ -3427,7 +3490,8 @@ function readStoredSettings(): StoredSettings | null {
       return null;
     }
     const parsed = JSON.parse(raw) as { version?: unknown; package?: unknown; paper?: unknown; packages?: unknown } | null;
-    if (!parsed || typeof parsed !== 'object' || (parsed.version !== STORED_SETTINGS_VERSION && parsed.version !== 2)) {
+    if (!parsed || typeof parsed !== 'object'
+        || (parsed.version !== STORED_SETTINGS_VERSION && parsed.version !== 3 && parsed.version !== 2)) {
       return null;
     }
     const pkg = DOWNLOAD_PACKAGES.find(p => p.id === parsed.package)?.id;
@@ -3445,6 +3509,17 @@ function readStoredSettings(): StoredSettings | null {
         }
       }
       packages = { ...packages, internal };
+    }
+    if (parsed.version !== STORED_SETTINGS_VERSION) {
+      const migrated: NonNullable<StoredSettings['packages']> = { ...(packages ?? {}) };
+      for (const { id } of DOWNLOAD_PACKAGES) {
+        const choices = migrated[id];
+        migrated[id] = {
+          ...(choices && typeof choices === 'object' ? choices : {}),
+          providerIssueReport: { ...PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE }
+        };
+      }
+      packages = migrated;
     }
     return { version: STORED_SETTINGS_VERSION, package: pkg, paper, packages };
   } catch {

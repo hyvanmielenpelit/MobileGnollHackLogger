@@ -292,6 +292,7 @@ public class AnthropicProvider : IAiProvider
         int anthropicInputTokens = 0;
         int anthropicCacheCreationTokens = 0;
         int anthropicCacheReadTokens = 0;
+        var meta = new ProviderCallMeta();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -300,6 +301,7 @@ public class AnthropicProvider : IAiProvider
 
             if (line.StartsWith("data: "))
             {
+                long ts = ProviderCallMeta.Now();
                 var data = line.Substring(6).Trim();
                 string? chunkStr = null;
                 string? thinkingChunkStr = null;
@@ -317,6 +319,7 @@ public class AnthropicProvider : IAiProvider
                     if (json.TryGetProperty("type", out var type))
                     {
                         var t = type.GetString();
+                        meta.MarkEvent(ts);
                         if (t == "content_block_start")
                         {
                             int idx = json.TryGetProperty("index", out var idxProp) ? idxProp.GetInt32() : 0;
@@ -328,6 +331,22 @@ public class AnthropicProvider : IAiProvider
                             {
                                 var typeStr = cbType.GetString() ?? "";
                                 block.Type = typeStr;
+                                if (typeStr == "thinking" || typeStr == "redacted_thinking")
+                                {
+                                    meta.MarkReasoning(ts);
+                                }
+                                else if (typeStr == "tool_use" || typeStr == "server_tool_use")
+                                {
+                                    meta.MarkToolCall(ts);
+                                }
+                                else if (typeStr == "fallback"
+                                    && cb.TryGetProperty("model", out var fbModel)
+                                    && fbModel.ValueKind == JsonValueKind.String
+                                    && !string.IsNullOrEmpty(fbModel.GetString()))
+                                {
+                                    meta.FallbackModelId = fbModel.GetString();
+                                }
+
                                 if (typeStr == "tool_use")
                                 {
                                     block.ToolId = cb.GetProperty("id").GetString();
@@ -381,6 +400,7 @@ public class AnthropicProvider : IAiProvider
                                     if (dt == "text_delta")
                                     {
                                         var text = delta.GetProperty("text").GetString() ?? "";
+                                        meta.MarkText(ts, text.Length);
                                         block.Content.Append(text);
                                         var sanitized = visibleSanitizer.Push(text);
                                         if (!string.IsNullOrEmpty(sanitized))
@@ -391,6 +411,7 @@ public class AnthropicProvider : IAiProvider
                                     else if (dt == "thinking_delta")
                                     {
                                         var text = delta.GetProperty("thinking").GetString() ?? "";
+                                        meta.MarkReasoning(ts);
                                         block.Content.Append(text);
                                         var sanitized = reasoningSanitizer.Push(text);
                                         if (!string.IsNullOrEmpty(sanitized))
@@ -405,6 +426,7 @@ public class AnthropicProvider : IAiProvider
                                     }
                                     else if (dt == "input_json_delta")
                                     {
+                                        meta.MarkToolCall(ts);
                                         block.ToolArgs.Append(delta.GetProperty("partial_json").GetString());
                                     }
                                 }
@@ -459,6 +481,7 @@ public class AnthropicProvider : IAiProvider
                         }
                         else if (t == "error")
                         {
+                            meta.MarkCompleted(ts);
                             string errMsg = "Unknown stream error";
                             if (json.TryGetProperty("error", out var errObj))
                             {
@@ -479,9 +502,12 @@ public class AnthropicProvider : IAiProvider
                                 }
 
                                 var resolvedModel = msg.TryGetProperty("model", out var mp) ? mp.GetString() : "unknown";
+                                if (mp.ValueKind == JsonValueKind.String) meta.ServedModelId = mp.GetString();
+                                if (msg.TryGetProperty("id", out var idp) && idp.ValueKind == JsonValueKind.String) meta.ResponseId = idp.GetString();
                                 string usageInfo = "";
                                 if (msg.TryGetProperty("usage", out var usage))
                                 {
+                                    ReadUsageMeta(usage, meta);
                                     anthropicInputTokens = usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32() : 0;
                                     anthropicCacheCreationTokens = usage.TryGetProperty("cache_creation_input_tokens", out var cct) ? cct.GetInt32() : 0;
                                     anthropicCacheReadTokens = usage.TryGetProperty("cache_read_input_tokens", out var crt) ? crt.GetInt32() : 0;
@@ -507,11 +533,14 @@ public class AnthropicProvider : IAiProvider
                                 if (!string.IsNullOrEmpty(stopReason) && stopReason != "null")
                                 {
                                     finishReasonEvt = new ChatEvent { Type = "finish_reason", Data = stopReason };
+                                    if (stopReason == "refusal") meta.IsRefusal = true;
+                                    meta.MarkCompleted(ts);
                                 }
 
                                 string usageInfo = "";
                                 if (json.TryGetProperty("usage", out var usage))
                                 {
+                                    ReadUsageMeta(usage, meta);
                                     int outputTokens = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32() : 0;
                                     usageInfo = $", output_tokens={outputTokens}";
 
@@ -545,6 +574,10 @@ public class AnthropicProvider : IAiProvider
                                 }
                             }
                         }
+                        else if (t == "message_stop")
+                        {
+                            meta.MarkCompleted(ts);
+                        }
                     }
                 }
                 catch (JsonException) { }
@@ -574,6 +607,48 @@ public class AnthropicProvider : IAiProvider
         {
             if (showDebugLog) yield return new ChatEvent { Type = "debug", Data = "[Main Chat - Anthropic] turn not replayable (thinking block without signature) — using reconstruction" };
             yield return new ChatEvent { Type = "provider_history_discard", Data = "" };
+        }
+
+        yield return new ChatEvent { Type = "call_meta", CallMeta = meta };
+    }
+
+    /// <summary>
+    /// Reads <c>usage.speed</c> and the fallback model from <c>usage.iterations</c> into
+    /// <paramref name="meta"/>. An iteration of type <c>fallback</c>, or one whose model differs from
+    /// the first iteration's, names the fallback model. Unknown shapes are ignored.
+    /// </summary>
+    private static void ReadUsageMeta(JsonElement usage, ProviderCallMeta meta)
+    {
+        if (usage.ValueKind != JsonValueKind.Object) return;
+
+        if (usage.TryGetProperty("speed", out var sp) && sp.ValueKind == JsonValueKind.String)
+        {
+            meta.ServedSpeed = sp.GetString();
+        }
+
+        if (!usage.TryGetProperty("iterations", out var its) || its.ValueKind != JsonValueKind.Array) return;
+
+        string? firstModel = null;
+        foreach (var it in its.EnumerateArray())
+        {
+            if (it.ValueKind != JsonValueKind.Object) continue;
+
+            string? model = it.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() : null;
+            if (string.IsNullOrEmpty(model)) continue;
+
+            bool isFallback = it.TryGetProperty("type", out var ty) && ty.ValueKind == JsonValueKind.String && ty.GetString() == "fallback";
+            if (isFallback)
+            {
+                meta.FallbackModelId = model;
+            }
+            else if (firstModel == null)
+            {
+                firstModel = model;
+            }
+            else if (model != firstModel)
+            {
+                meta.FallbackModelId = model;
+            }
         }
     }
 

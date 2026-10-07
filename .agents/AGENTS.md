@@ -6,6 +6,23 @@ These rules apply to all AI-assisted development on the MobileGnollHackLogger co
 
 MobileGnollHackLogger is an ASP.NET Core web application that logs, processes, and displays game logs, leaderboards, and user accounts for GnollHack.
 
+## Terminology: GnollBench
+
+**"GnollBench"** is the name for the AI benchmarking functionality of the Overseer project:
+the **GnollBench** tab of the Overseer admin page (tab id `benchmark`, formerly labeled
+"AI Benchmark") and all its sub-tabs (Run Benchmark, Run History, Multi-Run Analysis,
+Multi-Suite, Manage Suites, Scoring Profiles, Model Comparison, Chat Consistency), the
+services under `Overseer/Services/Benchmarking/` and `Overseer/Services/ChatConsistency/`, and
+their reports. When the user says "GnollBench", a "GnollBench run", "GnollBench report" or
+"GnollBench analysis", read it as the AI benchmark, a benchmark run, a benchmark report or a
+benchmark analysis, and apply every rule this file and the `server_benchmark_*` skills attach
+to those. Code identifiers, API routes, `localStorage` keys and the grader prompts keep the
+word "benchmark"; only the visible name is GnollBench. GnollBench runs on the development
+computer in sessions started from Visual Studio; it is not an always-on monitoring service and
+must not be designed as one. Its purpose is the Overseer chat: every GnollBench feature
+measures the production chat pipeline, and conclusions about the chat's quality over time rest
+on rubric-graded GnollBench runs.
+
 ## Language and Spelling
 
 **The Overseer project uses US English spelling and vocabulary**: UI text, tooltips,
@@ -193,7 +210,9 @@ Notable project skills include `server_implementation_planning`, `server_benchma
 `server_benchmark_runbook` (the Developer Runbook every benchmark analysis ends in: one numbered
 step list, the following runs included as steps),
 `server_data_privacy_framework`, `server_snapshot_suite_authoring` (turning an exported GnollHack
-AI snapshot into a one-file benchmark suite YAML, offline), and the tool-layer trio
+AI snapshot into a one-file benchmark suite YAML, offline), `server_chat_consistency`
+(GnollBench Chat Consistency: whether the Overseer chat stays as good, fast and cheap over time
+with a given model), and the tool-layer trio
 `server_tool_data_sources`, `server_tool_parameter_reference` and
 `server_benchmark_tool_diagnostics`.
 

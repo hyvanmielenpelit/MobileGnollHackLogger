@@ -1,0 +1,168 @@
+<!-- The verdict on the chat comes first; everything after it is the evidence for it. -->
+<div class="cc-headline" role="status">
+  <p class="cc-headline-label">Verdict on the Overseer chat</p>
+  <p class="cc-headline-text">{{ result.headline }}</p>
+  @if (result.headlineReliabilityIncreases.length > 0) {
+    <ul class="cc-headline-reliability">
+      @for (line of result.headlineReliabilityIncreases; track $index) {
+        <li>{{ line }}</li>
+      }
+    </ul>
+  }
+</div>
+
+<dl class="cc-res-facts">
+  <div><dt>Model</dt><dd>{{ result.subject.displayName }} ({{ result.subject.provider }}, {{ result.subject.modelId }})</dd></div>
+  <div><dt>Baseline</dt><dd>{{ day(result.baseline.startUtc) }} to {{ day(result.baseline.endUtc) }} · {{ result.baseline.runCount }} {{ result.baseline.runCount === 1 ? 'run' : 'runs' }}</dd></div>
+  <div><dt>Comparison</dt><dd>{{ day(result.comparison.startUtc) }} to {{ day(result.comparison.endUtc) }} · {{ result.comparison.runCount }} {{ result.comparison.runCount === 1 ? 'run' : 'runs' }}</dd></div>
+  <div><dt>Scope</dt><dd>{{ result.scope.text || 'No common time stratum' }}</dd></div>
+  <div><dt>Protocol</dt><dd>{{ result.protocolLabel }}</dd></div>
+  @if (result.commonGrader; as grader) {
+    <div><dt>Common grader</dt><dd>{{ grader.display }}</dd></div>
+  }
+</dl>
+
+<h5 class="cc-res-heading" id="cc-res-verdicts-title">Verdicts</h5>
+<div class="cc-res-table-scroll">
+  <table class="gh-table cc-verdict-table" aria-labelledby="cc-res-verdicts-title">
+    <thead>
+      <tr>
+        <th scope="col">Endpoint</th>
+        <th scope="col">Estimate (95 % CI)</th>
+        <th scope="col">Verdict</th>
+        <th scope="col">Grade</th>
+        <th scope="col">Detectable effect</th>
+        <th scope="col">Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (endpoint of result.endpoints; track endpoint.id) {
+        <tr [attr.data-endpoint]="endpoint.id">
+          <th scope="row">
+            <span class="cc-endpoint-id">{{ endpoint.id }}</span> {{ endpoint.name }}
+            <span class="cc-endpoint-margin">Margin {{ endpoint.marginText }}</span>
+          </th>
+          <td class="cc-num">{{ estimate(endpoint) }}</td>
+          <td><span class="cc-verdict" [attr.data-verdict]="endpoint.verdict ?? 'none'">{{ verdict(endpoint) }}</span></td>
+          <td><span class="cc-grade" [attr.data-grade]="endpoint.grade">{{ grade(endpoint.grade) }}</span></td>
+          <td class="cc-num">{{ mde(endpoint) }}</td>
+          <td>
+            @if (notes(endpoint).length > 0) {
+              <ul class="cc-notes">
+                @for (note of notes(endpoint); track $index) {
+                  <li>{{ note }}</li>
+                }
+              </ul>
+            } @else {
+              <span class="cc-muted">—</span>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<h5 class="cc-res-heading">Attribution</h5>
+@if (result.attribution.totalChanges.length > 0) {
+  <p class="cc-res-total">
+    Total change before attribution:
+    @for (change of result.attribution.totalChanges; track change.endpointId; let last = $last) {
+      {{ change.name }} {{ change.verdictLabel }} ({{ grade(change.grade) }}){{ last ? '.' : ';' }}
+    }
+  </p>
+}
+<div class="cc-attribution-groups">
+  @for (group of groups; track group.side) {
+    <section class="cc-attribution-group" [attr.data-side]="group.side" [attr.aria-labelledby]="'cc-attr-' + group.side">
+      <h6 class="cc-attribution-title" [id]="'cc-attr-' + group.side">{{ group.title }}</h6>
+      @for (attribution of attributionsOf(group.side); track $index) {
+        <article class="cc-attribution-card">
+          <p class="cc-attribution-label">{{ attribution.label }}</p>
+          <p class="cc-attribution-meta">
+            <span class="cc-grade" [attr.data-grade]="attribution.grade">{{ grade(attribution.grade) }}</span>
+            @if (attribution.endpoints.length > 0) {
+              <span>{{ ' · ' + attribution.endpoints.join(', ') }}</span>
+            }
+          </p>
+          <p class="cc-attribution-evidence">{{ attribution.evidence }}</p>
+          @if (attribution.eventRefs.length > 0) {
+            <p class="cc-attribution-refs">Events: {{ attribution.eventRefs.join('; ') }}</p>
+          }
+        </article>
+      } @empty {
+        <p class="cc-attribution-none">None.</p>
+      }
+    </section>
+  }
+</div>
+
+<h5 class="cc-res-heading">Next runs that would resolve open questions</h5>
+@if (result.nextRuns.length === 0) {
+  <p class="cc-muted">None: no verdict is waiting on more data.</p>
+} @else {
+  <ul class="cc-next-runs" role="list">
+    @for (next of result.nextRuns; track $index) {
+      <li class="cc-next-run" [attr.data-kind]="next.kind">
+        <p class="cc-next-run-title">
+          {{ nextRunTitle(next) }}
+          @if (next.endpointId) {
+            <span>{{ ' for ' + next.endpointId }}</span>
+          }
+          <span class="cc-muted">{{ ' · ' + next.period }}</span>
+        </p>
+        <p class="cc-next-run-reason">{{ next.reason }}</p>
+        <p class="cc-next-run-suggestion">{{ next.suggestion }}</p>
+        @if (next.repeatRunId !== null) {
+          <button type="button" class="btn-ghost cc-next-run-repeat"
+                  [attr.aria-label]="'Repeat this run\'s setup: run #' + next.repeatRunId + ', ' + nextRunTitle(next)"
+                  (click)="repeatSetup.emit(next.repeatRunId!)">Repeat this run's setup</button>
+        }
+      </li>
+    }
+  </ul>
+}
+
+<h5 class="cc-res-heading">Charts</h5>
+<div class="cc-res-figures">
+  @for (figure of figures; track figure.key) {
+    <app-cc-chart-figure [figure]="figure" [figureId]="figureId(figure)"></app-cc-chart-figure>
+  }
+</div>
+
+<h5 class="cc-res-heading">Limitations</h5>
+@if (result.limitations.length > 0) {
+  <ul class="cc-res-list">
+    @for (limitation of result.limitations; track $index) {
+      <li>{{ limitation }}</li>
+    }
+  </ul>
+} @else {
+  <p class="cc-muted">None recorded.</p>
+}
+
+<h5 class="cc-res-heading">Data quality</h5>
+@if (result.dataQuality.length > 0) {
+  <ul class="cc-res-list">
+    @for (note of result.dataQuality; track $index) {
+      <li>{{ note.text }}</li>
+    }
+  </ul>
+} @else {
+  <p class="cc-muted">No data-quality notes.</p>
+}
+
+<dl class="cc-res-identity">
+  <div>
+    <dt>Analysis</dt>
+    <dd>
+      #{{ result.analysisId ?? '—' }}
+      @if (result.name) {
+        <span> · {{ result.name }}</span>
+      }
+    </dd>
+  </div>
+  <div><dt>Saved</dt><dd>{{ dateTime(result.createdAtUtc) }}</dd></div>
+  <div><dt>InputSha256</dt><dd><code class="cc-sha">{{ result.inputSha256 }}</code></dd></div>
+  <div><dt>Analysis code</dt><dd>version {{ result.analysisCodeVersion }}</dd></div>
+</dl>

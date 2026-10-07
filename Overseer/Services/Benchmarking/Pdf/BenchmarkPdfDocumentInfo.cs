@@ -141,6 +141,10 @@ public sealed record BenchmarkPdfDocumentInfo
         bool full = options.Disclosure == BenchmarkReportDisclosure.Full;
         var runIds = ParseRunIds(document.SubjectRunIdsJson);
         var sheet = ParseSheet(document.FactsJson);
+        if (sheet?.IsChatConsistency == true)
+        {
+            return ForChatConsistencyDocument(document, sheet, options, paper);
+        }
         bool compared = sheet != null && sheet.Peers.Count > 0;
         var comparison = ComparisonOf(document);
         bool comparisonScope = sheet?.IsComparison == true;
@@ -227,6 +231,62 @@ public sealed record BenchmarkPdfDocumentInfo
             Facts = facts,
             CreatedAtUtc = document.CreatedAtUtc,
             Keywords = KeywordsOf(document.SubjectLabel, document.SuiteName, audience),
+            Paper = paper,
+            AllowTableOfContents = document.Audience != BenchmarkReportAudience.ExecutiveSummary
+        };
+    }
+
+    /// <summary>
+    /// A stored chat consistency document: its cover names the analysis, the model, both periods, the
+    /// hours the result holds for, the control models as the naming allows (never by name in a Provider
+    /// Issue Report) and the protocol. The subject line is <c>Chat consistency analysis #12 — name</c>,
+    /// the name left out of an anonymized copy.
+    /// </summary>
+    private static BenchmarkPdfDocumentInfo ForChatConsistencyDocument(
+        BenchmarkReportDocument document, BenchmarkReportFactSheet sheet, BenchmarkReportRenderOptions options, BenchmarkPdfPaper paper)
+    {
+        string audience = BenchmarkReportRenderService.AudienceName(document.Audience);
+        var naming = document.Audience == BenchmarkReportAudience.ProviderIssueReport ? BenchmarkReportPeerNaming.Anonymized : options.PeerNaming;
+        var subject = sheet.ChatConsistency ?? new BenchmarkReportChatConsistencySubject();
+        string Fact(string key)
+        {
+            var fact = sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
+            return fact is { Available: true } ? fact.Display : "—";
+        }
+
+        string analysis = "Chat consistency analysis " + (subject.AnalysisId is int id ? "#" + Inv(id) : "(not saved)");
+        string subjectLine = naming == BenchmarkReportPeerNaming.Named && !string.IsNullOrWhiteSpace(subject.Name)
+            ? analysis + " — " + subject.Name.Trim()
+            : analysis;
+
+        string model = string.Join(", ", new[] { sheet.SubjectProvider, sheet.SubjectModelId }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()));
+        var facts = new List<BenchmarkPdfFact>
+        {
+            new("Document ID", Inv(document.Id)),
+            new("Disclosure", options.Disclosure.ToString()),
+            new("Analysis", subjectLine),
+            new("Model", model.Length == 0 ? sheet.SubjectLabel : sheet.SubjectLabel + " (" + model + ")"),
+            new("Baseline period", Fact("period.baseline.start") + " to " + Fact("period.baseline.end") + ", " + Fact("period.baseline.runs")),
+            new("Comparison period", Fact("period.comparison.start") + " to " + Fact("period.comparison.end") + ", " + Fact("period.comparison.runs")),
+            new("Hours", Fact("scope.hours")),
+            new("Control models", sheet.Peers.Count == 0 ? "none" : ComparedWithText(sheet, naming)),
+            new("Protocol", string.IsNullOrWhiteSpace(subject.ProtocolLabel) ? Fact("protocol.label") : subject.ProtocolLabel),
+            new("Created (UTC)", Stamp(document.CreatedAtUtc)),
+            new("Generated format", "version " + Inv(document.ReportFormatVersion)),
+            new("Writer", WriterText(document)),
+            new("Provenance", ProvenanceText),
+        };
+
+        return new BenchmarkPdfDocumentInfo
+        {
+            DocumentKind = audience,
+            Title = string.IsNullOrWhiteSpace(document.Title) ? BenchmarkReportPackRenderer.BuildChatConsistencyTitle(sheet) : document.Title,
+            SubjectLine = subjectLine,
+            Classification = options.Disclosure == BenchmarkReportDisclosure.Full ? BenchmarkPdfClassification.Internal : BenchmarkPdfClassification.ProviderConfidential,
+            ClassificationText = BenchmarkReportPackRenderer.ChatConsistencyStamp(document.Audience, options.Disclosure),
+            Facts = facts,
+            CreatedAtUtc = document.CreatedAtUtc,
+            Keywords = KeywordsOf(document.SubjectLabel, "Chat consistency", audience),
             Paper = paper,
             AllowTableOfContents = document.Audience != BenchmarkReportAudience.ExecutiveSummary
         };

@@ -42,6 +42,20 @@
   gap: 20px;
 }
 
+/* The Run Benchmark panel's prefill status. Empty, it takes back the column gap it would add. */
+.bm-prefill-status:not(:has(*)) {
+  margin-block-end: -20px;
+}
+
+.bm-prefill-card {
+  margin-bottom: 0;
+}
+
+.bm-prefill-notes {
+  margin: 4px 0 0;
+  padding-inline-start: 1.25rem;
+}
+
 @include shared.shared-6;
 
 @include shared.shared-11;
@@ -911,7 +925,8 @@ p.repair-reason { margin: 6px 0 0; }
   grid-template-columns: auto auto;
   grid-template-areas:
     "downloads snapshot"
-    "rerun copy";
+    "rerun copy"
+    "repeat .";
   gap: 6px;
   align-items: center;
   .action-btn { margin: 0; }
@@ -920,7 +935,8 @@ p.repair-reason { margin: 6px 0 0; }
 #rr-rerun-trigger { grid-area: rerun; }
 #rr-snapshot-btn { grid-area: snapshot; }
 #rr-copy-diagnostics-btn { grid-area: copy; }
-#rr-downloads-trigger, #rr-rerun-trigger { justify-content: flex-start; inline-size: 100%; }
+#rr-repeat-setup-btn { grid-area: repeat; }
+#rr-downloads-trigger, #rr-rerun-trigger, #rr-repeat-setup-btn { justify-content: flex-start; inline-size: 100%; }
 // Under the group, so the live region takes no grid cell and a message never shifts the buttons.
 .rr-status {
   position: absolute; inset-block-start: 100%; inset-inline-end: 0;
@@ -929,7 +945,7 @@ p.repair-reason { margin: 6px 0 0; }
 // A narrow report: the header's width is spare and its height is not, so the actions take one row.
 @container run-report-frame (inline-size < 40rem) {
   .rr-actions { grid-template-columns: none; grid-template-areas: none; grid-auto-flow: column; }
-  #rr-downloads-trigger, #rr-rerun-trigger, #rr-snapshot-btn, #rr-copy-diagnostics-btn { grid-area: auto; }
+  #rr-downloads-trigger, #rr-rerun-trigger, #rr-repeat-setup-btn, #rr-snapshot-btn, #rr-copy-diagnostics-btn { grid-area: auto; }
 }
 // Counts and shares in the Tools tables, right-aligned so the digits line up down a column.
 .gh-table .rr-num { text-align: end; font-variant-numeric: tabular-nums; }

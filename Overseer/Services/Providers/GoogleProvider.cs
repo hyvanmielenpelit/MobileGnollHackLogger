@@ -246,6 +246,7 @@ public class GoogleProvider : IAiProvider
         // Gemini reports cumulative usage on every chunk; one report per call is emitted after the
         // stream ends, so the last chunk's figures are the call's totals.
         TokenUsageReport? lastUsage = null;
+        var meta = new ProviderCallMeta();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -254,6 +255,7 @@ public class GoogleProvider : IAiProvider
 
             if (line.StartsWith("data: "))
             {
+                long ts = ProviderCallMeta.Now();
                 var data = line.Substring(6).Trim();
                 string? chunkStr = null;
                 string? thinkingChunkStr = null;
@@ -267,6 +269,18 @@ public class GoogleProvider : IAiProvider
                 try
                 {
                     var json = JsonSerializer.Deserialize<JsonElement>(data);
+                    meta.MarkEvent(ts);
+                    if (json.TryGetProperty("modelVersion", out var mvProp) && mvProp.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrEmpty(mvProp.GetString()))
+                    {
+                        meta.ServedModelId = mvProp.GetString();
+                    }
+                    if (json.TryGetProperty("responseId", out var ridProp) && ridProp.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrEmpty(ridProp.GetString()))
+                    {
+                        meta.ResponseId = ridProp.GetString();
+                    }
+
                     if (json.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
                     {
                         var cand = candidates[0];
@@ -280,6 +294,11 @@ public class GoogleProvider : IAiProvider
                             if (!string.IsNullOrEmpty(finishReason))
                             {
                                 finishReasonEvt = new ChatEvent { Type = "finish_reason", Data = finishReason };
+                                meta.MarkCompleted(ts);
+                                if (IsRefusalFinishReason(finishReason))
+                                {
+                                    meta.IsRefusal = true;
+                                }
                             }
                             if (finishReason == "MAX_TOKENS")
                             {
@@ -297,6 +316,7 @@ public class GoogleProvider : IAiProvider
                             {
                                 if (part.TryGetProperty("thought", out var thoughtProp) && thoughtProp.GetBoolean() == true)
                                 {
+                                    meta.MarkReasoning(ts);
                                     if (!part.TryGetProperty("thoughtSignature", out var tsProp) || tsProp.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(tsProp.GetString()))
                                     {
                                         replayUnavailable = true;
@@ -328,6 +348,7 @@ public class GoogleProvider : IAiProvider
                                         providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = part.GetRawText() });
                                     }
                                     var text = textProp.GetString() ?? "";
+                                    meta.MarkText(ts, text.Length);
                                     var sanitized = visibleSanitizer.Push(text);
                                     if (!string.IsNullOrEmpty(sanitized))
                                     {
@@ -337,6 +358,7 @@ public class GoogleProvider : IAiProvider
                                 }
                                 else if (part.TryGetProperty("functionCall", out var fcProp))
                                 {
+                                    meta.MarkToolCall(ts);
                                     if (!replayUnavailable)
                                     {
                                         providerItemEvts.Add(new ChatEvent { Type = "provider_history_item", Data = part.GetRawText() });
@@ -358,6 +380,17 @@ public class GoogleProvider : IAiProvider
                         errorEvt = new ChatEvent { Type = "error", Data = $"Google stream error: [{errCode}] {errMessage}" };
                     }
 
+                    // A blocked prompt ends the response without a candidate finish reason; its block
+                    // reason is surfaced as the finish reason instead.
+                    if (json.TryGetProperty("promptFeedback", out var pfProp) && pfProp.ValueKind == JsonValueKind.Object
+                        && pfProp.TryGetProperty("blockReason", out var brProp) && brProp.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrEmpty(brProp.GetString()))
+                    {
+                        meta.IsRefusal = true;
+                        meta.MarkCompleted(ts);
+                        finishReasonEvt ??= new ChatEvent { Type = "finish_reason", Data = brProp.GetString()! };
+                    }
+
                     if (json.TryGetProperty("usageMetadata", out var usageProp))
                     {
                         var tier = ExtractServiceTierFromBody(json);
@@ -366,7 +399,10 @@ public class GoogleProvider : IAiProvider
                             tierEvt = new ChatEvent { Type = "service_tier", Data = tier };
                         }
 
-                        int promptTokens = usageProp.TryGetProperty("promptTokenCount", out var pt) ? pt.GetInt32() : 0;
+                        // toolUsePromptTokenCount is billed as input on top of promptTokenCount; the cached
+                        // count is a subset of promptTokenCount only.
+                        int promptTokens = (usageProp.TryGetProperty("promptTokenCount", out var pt) ? pt.GetInt32() : 0)
+                            + (usageProp.TryGetProperty("toolUsePromptTokenCount", out var tupt) ? tupt.GetInt32() : 0);
                         int outputTokens = usageProp.TryGetProperty("candidatesTokenCount", out var ct) ? ct.GetInt32() : 0;
                         int cachedTokens = usageProp.TryGetProperty("cachedContentTokenCount", out var cct) ? cct.GetInt32() : 0;
                         int thoughtTokens = usageProp.TryGetProperty("thoughtsTokenCount", out var tht) ? tht.GetInt32() : 0;
@@ -426,7 +462,13 @@ public class GoogleProvider : IAiProvider
             if (showDebugLog) yield return new ChatEvent { Type = "debug", Data = "[Main Chat - Google] turn not replayable (thought part without thoughtSignature) — using reconstruction" };
             yield return new ChatEvent { Type = "provider_history_discard", Data = "" };
         }
+
+        yield return new ChatEvent { Type = "call_meta", CallMeta = meta };
     }
+
+    /// <summary>Finish reasons with which Gemini declines to answer rather than ending normally.</summary>
+    private static bool IsRefusalFinishReason(string finishReason) =>
+        finishReason is "SAFETY" or "PROHIBITED_CONTENT" or "BLOCKLIST" or "SPII" or "RECITATION";
 
     public object FormatMessage(string role, string text, List<SendMessageAttachment>? imageAttachments)
     {

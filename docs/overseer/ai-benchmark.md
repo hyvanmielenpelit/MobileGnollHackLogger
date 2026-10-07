@@ -53,7 +53,7 @@ has finished and been analyzed, and the member runs write none. Batteries are de
 
 Starting a run opens a modal progress dialog, reachable again at any time from the **Show Progress** button on the active-run banner.
 
-The dialog header carries the run number, the suite and the scoring profile. The models are **not** in the header: they appear directly below it in a roster (*Model under test*, *Assessor*, in a panel run *Co-assessor* and *Reference reader*, and *Report writer* when the run names one), badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report. The active-run banner names the grader as *Assessor:*, or *Assessors:* in a panel run.
+The dialog header carries the run number, the suite and the scoring profile. The models are **not** in the header: they appear directly below it in a roster (*Model under test*, *Assessor*, in a panel run *Co-assessor* and *Reference reader*, and *Report writer* when the run names one), badged exactly as the model selectors in the GnollBench tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report. The active-run banner names the grader as *Assessor:*, or *Assessors:* in a panel run.
 
 **Layout.** The dialog is full-screen (`gh-dialog-fullscreen`). Its body holds two sections: the **overview** — alerts, roster, stage rail, progress bars, statistics, cost panel, failed-questions alert and diagnostics, in that order, with no heading of its own — and **Questions**, the per-question list under the shared gold section heading (`gh-section-title`) with its count in a small pill. The dialog title is the focus target when the dialog opens, and while the run detail is loading the subtitle reads *Starting benchmark run…*. The content wrapper is an inline-size container (`run-progress`): below `60rem` of dialog content width the two sections stack in one column and the body scrolls as a whole; at `60rem` and wider the body is a two-column grid (`minmax(0, 3fr) minmax(22rem, 2fr)`) in which each section scrolls on its own, with `overscroll-behavior: contain` and a stable scrollbar gutter. The Questions section is focusable (`tabindex="0"`, with a visible focus ring) so a keyboard user can scroll it. The overview stays a block container, because the cost panel relies on margin collapse. A scored question row shows its published score beside its status chip — the panel score in a panel run (once both members have scored), otherwise the quality score — in tabular figures, as a badge colored by the Run History tiers (green from 80, amber from 50, red below), which repeats what the number says.
 
@@ -8125,6 +8125,71 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 - **`BenchmarkRunBoardSnapshot`**: `Sha256` (`char(64)`, unique), `SanitizedText`, `DigestText`, `CharCount`, `CreatedAtUtc`. Append-only and content-addressed: the key is the lower-case hex SHA-256 of the UTF-16LE `SanitizedText + "\0" + (DigestText ?? "")`, so a digest change is a new row. No suite operation edits or deletes a row; written through `BenchmarkRunBoardSnapshotStore.GetOrCreateAsync` at launch.
 - **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor's settings snapshot (`AssessorModelSnapshotId`), `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, `VerdictsJson`, and `ComparedAgainst` (`Assessor`, `CoAssessor` or `Panel`, max length 16; the last two exist only on panel runs, and null means `Assessor`). Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
 - **`BenchmarkRunAnswerToolCall`** (from harness 17): One row per tool call **attempted** during an answer's turn — `SortOrder`, `IterationIndex`, `Name`, `ToolCallId`, `Status`, `ArgsText`, `Result`, `Error`, `QueueWaitMs`, `ExecutionMs`, `Depth`, `AgentName`, `ArgsTruncated`, `ResultTruncated`, `ResultLengthChars` — cascade-deleted with `BenchmarkRunAnswer` and indexed on `(BenchmarkRunAnswerId, SortOrder)`. `ArgsText` and `Result` are pruned by age; every other field survives the prune. See **Harness Version 17 Updates**.
+- **`BenchmarkRun` call telemetry**: `CallTelemetryVersion` (int, null) — the version of the per-call telemetry the run recorded, stamped at launch with `BenchmarkService.CurrentCallTelemetryVersion` (currently 1); null means the run recorded none. It is **not a harness version**: nothing any model is sent depends on it, so a run with and a run without it can share one `HarnessVersion`. `ServedModelIdsJson` (nvarchar(1024), null) — the model ids the provider reported serving the candidate's calls, as a JSON object of id to call count, recomputed from the saved candidate rows when the run finishes or is aborted and after failed or single questions are re-run (a rescore leaves it as it is); null without telemetry or when no call reported a model. `IsConsistencyAnchor` (bit) — the run is a chat consistency grader anchor (see [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md)).
+- **`BenchmarkRunAnswer` turn timing** (null on a run without call telemetry, meaning "not recorded"): `StartedAtUtc` and `CompletedAtUtc`, the wall-clock bounds of the candidate's turn; `PermitWaitMs` and `BackoffWaitMs`, the time inside `DurationMs` spent waiting for Overseer's own request-governor permit (its cooldown included) and sleeping between retries — Overseer's waits, never the provider's; `RetryAttemptCount`, failed attempts retried across the turn's model calls; `ServedModelId`, the model id the provider reported serving, null when the calls disagree or none reported one; and `ModelCalls`, the answer's `ModelCallTelemetry` rows.
+- **`ModelCallTelemetry`**: One row per model call of an answer, candidate (`Source = BenchmarkCandidate`) or grader (`BenchmarkGrader`, with `GraderRole` `Assessor`, `CoAssessor`, `SecondOpinion`, `ClaimVerifier` or `Synthesis`), cascade-deleted with its answer; a synthesis call has no answer and carries only `BenchmarkRunId`. It records what was requested (`Provider`, `RequestedModelId`, `ThinkingLevelSent`, `ReasoningSummarySent`, `ServiceTierRequested`, `MaxOutputTokensSent`, `EndpointKind`), what the provider reported serving (`ServedModelId`, `ResponseId`, `RequestId`, `ServedServiceTier`, `ServedSpeed`, `FinishReason`, `IsRefusal`, `FallbackModelId`, `HttpVersion`), the waits and attempts before the successful send (`PermitWaitMs`, `BackoffWaitMs`, `FailedAttemptMs`, `AttemptCount`, `Http429Count`, `Http5xxCount`, `StreamErrorRetryCount`, `FinalHttpStatus`), the stream marks relative to that send (`HeadersMs`, `ServerProcessingMs`, `FirstEventMs`, `FirstReasoningMs`, `FirstOutputMs`, `FirstToolCallMs`, `LastDeltaMs`, `CompletedMs`, `StreamEndMs`), the visible output (`OutputDeltaCount`, `VisibleOutputChars`, `Last80DecodeSpanMs`, `Last80VisibleChars`), the call's usage (`InputTokens`, `CachedInputTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens`), the successful attempt's rate-limit headers (`RateLimitJson`) and, for a call that failed for good, `ErrorKind`. Indexed on `BenchmarkRunAnswerId` and on `(Source, Provider, RequestedModelId, StartedAtUtc)`. See **Per-Call Telemetry and the Timing Decomposition** below.
+- **`ChatConsistencyAnalysis`** and **`ChatConsistencyAnnotation`**: a saved chat consistency analysis (immutable; runs referenced by id without foreign keys) and a dated admin note on its timeline. Both are specified in [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md).
+
+### Per-Call Telemetry and the Timing Decomposition
+
+From `CallTelemetryVersion` 1 every candidate and grader model call of a GnollBench run writes one
+`ModelCallTelemetry` row. The agent loop keeps each call as a `ModelCallRecord` on
+`AgentRunResult.ModelCalls`; only GnollBench persists them — the production chat records the same
+marks in memory and stores nothing. The marks come from two sources:
+
+- **Ours** — measured by Overseer in `AgentLoopRunner`, on the monotonic `Stopwatch` clock except the
+  wall-clock `StartedAtUtc` of the call and of the turn: the permit wait, retry backoff, failed
+  attempts, attempt and HTTP 429 / 5xx counts, the final HTTP status and version, `HeadersMs` and
+  `StreamEndMs`.
+  `ProviderCallMeta` stamps the stream milestones (first event, first reasoning, first visible text
+  or tool-call delta, last delta, completion, and each visible-text delta for the last-80 % decode
+  span) right after the provider adapter reads each line and before any sanitizer; the loop converts
+  them to milliseconds from the successful attempt's send.
+- **The provider's** — what the provider reported about itself: the served model id, response and
+  request ids (`x-request-id`, `request-id` or `x-goog-request-id`), the served service tier and
+  speed (Anthropic `usage.speed`), refusal, fallback model, finish reason, usage, OpenAI's
+  `openai-processing-ms` (`ServerProcessingMs`), and the `x-ratelimit-*`, `anthropic-ratelimit-*` and
+  `retry-after` headers (`ProviderResponseHeaders`; no other header is read or stored).
+
+**Which rows a re-grade keeps.** A new verdict of the assessor, the co-assessor or the claim
+verifier, and a new synthesis, **replaces** that role's earlier rows on the answer (on the run, for
+synthesis), as the verdict replaces its cost columns; a contested-verdict re-grade and the second
+reader's calls are **appended**. A re-executed answer deletes every row of the replaced attempt,
+candidate and grader, before its new candidate rows are written. An answer re-executed on a run that
+started without telemetry records its rows, but the run's `CallTelemetryVersion` stays null, so such a
+run is never read as one whose every answer carries them. An assessor calibration — and with it the
+chat consistency common-grader re-grade, which runs one — writes no telemetry rows.
+
+**Derived measures** (`Overseer/Services/Telemetry/CallTelemetryMeasures.cs`, read alike by the run
+report and the chat consistency analysis; each is null when a mark it needs was not recorded):
+
+| Measure | Definition |
+|---------|------------|
+| Time to first answer text | From the turn's start to the **final** candidate call's first visible output, minus every permit and retry-backoff wait of the turn, floored at 0. Failed attempts are provider time and stay in. |
+| Answer streaming rate | The final candidate call's visible tokens over the last 80 % of its visible deltas, per second. Visible tokens are `OutputTokens − ReasoningTokens`, scaled by the window's share of the visible characters; for Anthropic, which counts thinking inside its output tokens, they are estimated at 4 characters per token and the rate is marked estimated. |
+| Net model time | `ModelTimeMs` minus the turn's permit and backoff waits. |
+| Own-wait share | (permit + backoff) ÷ model time, over the answers with candidate telemetry. |
+
+**The run report's Timing Decomposition.** On a run with call telemetry, the timing block of the run
+report's *§ 2 Results Summary*, under the speed headline — after *Turn Duration Percentiles*, the
+tool-overhead and model-time lines and *Time to First Token*, before *Total Input Tokens* — adds a
+**Timing Decomposition** item: *call telemetry version N, recorded on k of n answers* (n counts every
+answer, failed ones included), then, over the answers that carry candidate rows:
+
+- **Time to First Answer Text** — P50 and P90, net of Overseer's own waits;
+- **Answer Streaming Rate** — the median in tokens per second, with the estimation note when any rate
+  was estimated;
+- **Own Waits** — total permit wait, total retry backoff, retried attempts, HTTP 429 and 5xx counts;
+- **Served Model IDs** and **Served Tiers** — each with its call count;
+- an interpretation line giving own waits as a share of model time, which says *the rate limit, not the
+  provider, dominated* above 25 % (`OwnWaitDominanceShare`).
+
+A measure some covered answers could not produce says *over m of k answers*. A run without telemetry
+prints no Timing Decomposition.
+
+**What uses it.** The GnollBench Chat Consistency analysis — whether the Overseer chat with one
+model stays as good, fast and cheap over time — reads these rows and columns; its method is in
+[`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md).
 
 ### Model Configuration Snapshots
 
@@ -8608,6 +8673,13 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 
 The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, and `inline=true` on the PDF for viewing in a browser tab), with its charts drawn in them, and the chart endpoints' bodies and limits are in `ai-benchmark-report-pack.md` §§ 9 and 13. Clearing every chart image is a Database tab maintenance action, `POST /api/admin/maintenance/clear-report-charts` (`chat-data-retention.md`).
 
+### Chat Consistency
+
+`AdminChatConsistencyController`, `/api/admin/benchmark/chat-consistency` (`AdminOnly`): the model
+axes, timeline and run table, the analyses and their report documents, the common-grader re-grade,
+grader anchors and annotations. Every route, with its responses, is listed in
+[`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) § 19.
+
 ---
 
 ## 7. AI Provider Terms Compliance Controls
@@ -8714,10 +8786,12 @@ and the comparability key used to hash that entire blob. None of those four fiel
 score, and all four moved the hash: renaming a profile, promoting a different profile to default,
 or editing a field and reverting it each silently ended a comparable series with nothing in the
 UI saying so. The key now hashes `BenchmarkScoringProfileService.CanonicalSignature`, computed
-only from the profile's *scoring semantics* — the four dimension weights, a normalised
-`LevelScoresJson`, `CriticalErrorCeiling`, the five second-reader fields, the three speed
-constants, and `MaxParallelQuestions` — deserialised from the stored snapshot, falling back to a
-hash of the raw blob when the snapshot will not deserialise. The profile id still travels alongside
+only from the profile's *scoring semantics* — the four dimension weights, a normalized
+`LevelScoresJson`, `CriticalErrorCeiling`, the five second-reader fields and `MaxParallelQuestions`,
+followed by `NotAttemptedScore` only when the profile sets one (the three speed constants are
+fingerprinted apart by `SpeedCalibrationSignature` since Harness 28) — deserialized from the
+stored snapshot, falling back to a hash of the raw blob when the snapshot will not deserialize.
+The profile id still travels alongside
 this signature in the key, because two profiles with identical scoring semantics are still two
 profiles. `ScoringProfileSnapshotJson` itself is unchanged: it remains the historical record of
 what the profile actually was.

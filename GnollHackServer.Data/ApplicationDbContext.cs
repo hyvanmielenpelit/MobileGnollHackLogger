@@ -60,6 +60,9 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkReportDocument> BenchmarkReportDocuments { get; set; } = null!;
         public DbSet<BenchmarkReportDocumentRun> BenchmarkReportDocumentRuns { get; set; } = null!;
         public DbSet<BenchmarkComparison> BenchmarkComparisons { get; set; } = null!;
+        public DbSet<ModelCallTelemetry> ModelCallTelemetry { get; set; } = null!;
+        public DbSet<ChatConsistencyAnalysis> ChatConsistencyAnalyses { get; set; } = null!;
+        public DbSet<ChatConsistencyAnnotation> ChatConsistencyAnnotations { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -577,6 +580,28 @@ namespace MobileGnollHackLogger.Data
                 e.Navigation(d => d.WriterModelSnapshot).AutoInclude();
                 // Deleting documents leaves their comparison, which has no deletion of its own.
                 e.HasOne(d => d.Comparison).WithMany().HasForeignKey(d => d.ComparisonId).OnDelete(DeleteBehavior.Restrict);
+                // An analysis with documents is not deleted until its documents are.
+                e.HasOne(d => d.ChatConsistencyAnalysis).WithMany().HasForeignKey(d => d.ChatConsistencyAnalysisId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // --- Chat consistency ---
+
+            // A call row belongs to its answer and goes with it; run-level grader calls carry only the run id.
+            modelBuilder.Entity<ModelCallTelemetry>(e =>
+            {
+                e.HasIndex(m => m.BenchmarkRunAnswerId);
+                e.HasIndex(m => new { m.Source, m.Provider, m.RequestedModelId, m.StartedAtUtc });
+                e.HasOne(m => m.BenchmarkRunAnswer).WithMany(a => a.ModelCalls).HasForeignKey(m => m.BenchmarkRunAnswerId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ChatConsistencyAnalysis>(e =>
+            {
+                e.HasIndex(a => new { a.SubjectModelKey, a.CreatedAtUtc });
+            });
+
+            modelBuilder.Entity<ChatConsistencyAnnotation>(e =>
+            {
+                e.HasIndex(a => a.AtUtc);
             });
 
             // One comparison per entry set; a concurrent insert of the same set loses on this index.

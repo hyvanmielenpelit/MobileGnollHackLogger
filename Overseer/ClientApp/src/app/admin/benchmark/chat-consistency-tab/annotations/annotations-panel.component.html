@@ -1,0 +1,111 @@
+<h4 id="cc-ann-title" class="gh-section-title cc-ann-title">Annotations</h4>
+@if (!axis) {
+  <p class="cc-ann-empty">Choose a model in the Timeline to see and add its annotations.</p>
+} @else {
+  <p class="cc-ann-status" role="status">
+    @if (loading) {
+      Loading the annotations…
+    } @else {
+      {{ announcement }}
+    }
+  </p>
+
+  @if (listError) {
+    <p class="gh-field-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ listError }}</span>
+    </p>
+  } @else if (!loading && annotations.length === 0) {
+    <p class="cc-ann-empty">No annotation applies to {{ axis.displayName }} yet.</p>
+  } @else {
+    <ul class="cc-ann-list" role="list" aria-labelledby="cc-ann-title">
+      @for (annotation of annotations; track annotation.id) {
+        <li class="cc-ann-item" [attr.data-annotation-id]="annotation.id">
+          <div class="cc-ann-text">
+            <p class="cc-ann-head">
+              <time [attr.datetime]="annotation.atUtc">{{ when(annotation) }}</time>{{ ' ' }}<span class="gh-tag cc-ann-kind">{{ kindLabel(annotation.kind) }}</span>{{ ' ' }}<span class="cc-ann-applies">{{ appliesTo(annotation) }}</span>
+            </p>
+            <p class="cc-ann-body">{{ annotation.text }}</p>
+            @if (annotation.sourceUrl) {
+              <p class="cc-ann-source">
+                Source:
+                @if (isLink(annotation.sourceUrl)) {
+                  <a [href]="annotation.sourceUrl" target="_blank" rel="noopener noreferrer">{{ annotation.sourceUrl }}</a>
+                } @else {
+                  {{ annotation.sourceUrl }}
+                }
+              </p>
+            }
+          </div>
+          <button type="button" class="action-btn action-btn-danger cc-ann-delete"
+                  [attr.aria-label]="'Delete the annotation of ' + when(annotation)"
+                  [attr.interestfor]="'cc-ann-tip-' + annotation.id"
+                  [attr.style]="'anchor-name: --cc-ann-tip-' + annotation.id"
+                  (click)="remove(annotation)">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'cc-ann-tip-' + annotation.id"
+               [attr.style]="'position-anchor: --cc-ann-tip-' + annotation.id">Delete annotation</div>
+        </li>
+      }
+    </ul>
+  }
+  @if (deleteError) {
+    <p class="gh-field-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ deleteError }}</span>
+    </p>
+  }
+
+  <fieldset class="gh-fieldset cc-ann-form">
+    <legend>Add an annotation</legend>
+    <div class="cc-ann-grid">
+      <div class="cc-ann-field">
+        <label for="cc-ann-at">Date and time (UTC)</label>
+        <input id="cc-ann-at" type="datetime-local" class="gh-input" [value]="atLocal" (input)="onField('atLocal', $event)">
+      </div>
+      <div class="cc-ann-field">
+        <label for="cc-ann-kind">Kind</label>
+        <select id="cc-ann-kind" class="gh-input" (change)="onKind($event)">
+          @for (entry of kinds; track entry.kind) {
+            <option [value]="entry.kind" [selected]="entry.kind === kind">{{ entry.label }}</option>
+          }
+        </select>
+      </div>
+      <div class="cc-ann-field">
+        <label for="cc-ann-provider">Provider</label>
+        <input id="cc-ann-provider" type="text" class="gh-input" [attr.maxlength]="limits.provider" [value]="provider"
+               aria-describedby="cc-ann-scope-hint" (input)="onField('provider', $event)">
+      </div>
+      <div class="cc-ann-field">
+        <label for="cc-ann-model">Model id</label>
+        <input id="cc-ann-model" type="text" class="gh-input" [attr.maxlength]="limits.modelId" [value]="modelId"
+               aria-describedby="cc-ann-scope-hint" (input)="onField('modelId', $event)">
+      </div>
+    </div>
+    <p id="cc-ann-scope-hint" class="form-hint">Leave the model id empty for every model of the provider, and both empty for every provider.</p>
+    <div class="cc-ann-field">
+      <label for="cc-ann-text">Text</label>
+      <textarea id="cc-ann-text" class="gh-input gh-textarea-autosize" rows="2" [attr.maxlength]="limits.text"
+                [value]="text" (input)="onField('text', $event)"></textarea>
+    </div>
+    <div class="cc-ann-field">
+      <label for="cc-ann-source">Source URL <span class="cc-optional">Optional</span></label>
+      <input id="cc-ann-source" type="url" class="gh-input" [attr.maxlength]="limits.sourceUrl" [value]="sourceUrl"
+             placeholder="https://" (input)="onField('sourceUrl', $event)">
+    </div>
+    @if (addError) {
+      <p id="cc-ann-add-error" class="gh-field-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ addError }}</span>
+      </p>
+    }
+    <div class="cc-ann-actions">
+      <button type="button" class="btn-gh cc-ann-add" [attr.aria-busy]="adding ? 'true' : null"
+              [attr.aria-describedby]="addError ? 'cc-ann-add-error' : null" (click)="add()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Add Annotation
+      </button>
+    </div>
+  </fieldset>
+}

@@ -1,102 +1,82 @@
 <div class="benchmark-container">
   <!-- Benchmark Sub-Navigation -->
-  <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Benchmark sections">
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-run"
-      aria-controls="bm-panel-run"
-      [attr.aria-selected]="activeSubTab === 'run'"
-      [attr.tabindex]="activeSubTab === 'run' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 0)"
-      (click)="selectSubTab('run')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-      Run Benchmark
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-history"
-      aria-controls="bm-panel-history"
-      [attr.aria-selected]="activeSubTab === 'history'"
-      [attr.tabindex]="activeSubTab === 'history' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 1)"
-      (click)="selectSubTab('history')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
-      Run History
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-multirun"
-      aria-controls="bm-panel-multirun"
-      [attr.aria-selected]="activeSubTab === 'multirun'"
-      [attr.tabindex]="activeSubTab === 'multirun' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 2)"
-      (click)="selectSubTab('multirun')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-      Multi-Run Analysis
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-multisuite"
-      aria-controls="bm-panel-multisuite"
-      [attr.aria-selected]="activeSubTab === 'multisuite'"
-      [attr.tabindex]="activeSubTab === 'multisuite' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 3)"
-      (click)="selectSubTab('multisuite')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-      Multi-Suite
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-suites"
-      aria-controls="bm-panel-suites"
-      [attr.aria-selected]="activeSubTab === 'suites'"
-      [attr.tabindex]="activeSubTab === 'suites' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 4)"
-      (click)="selectSubTab('suites')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-      Manage Suites
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-profiles"
-      aria-controls="bm-panel-profiles"
-      [attr.aria-selected]="activeSubTab === 'profiles'"
-      [attr.tabindex]="activeSubTab === 'profiles' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 5)"
-      (click)="selectSubTab('profiles')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
-      Scoring Profiles
-    </button>
-    <button
-      type="button"
-      role="tab"
-      class="gh-tab"
-      id="bm-tab-modelcomparison"
-      aria-controls="bm-panel-modelcomparison"
-      [attr.aria-selected]="activeSubTab === 'modelcomparison'"
-      [attr.tabindex]="activeSubTab === 'modelcomparison' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 6)"
-      (click)="selectSubTab('modelcomparison')">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-      Model Comparison
-    </button>
+  <!-- One button per entry of subTabs, in its order; the row wraps rather than scrolls. Each case holds a
+       whole <svg>, so the icon's shapes are parsed in the SVG namespace. -->
+  <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap" role="tablist" aria-label="Benchmark sections">
+    @for (tab of subTabs; track tab) {
+      <button
+        type="button"
+        role="tab"
+        class="gh-tab"
+        [id]="'bm-tab-' + tab"
+        [attr.aria-controls]="'bm-panel-' + tab"
+        [attr.aria-selected]="activeSubTab === tab"
+        [attr.tabindex]="activeSubTab === tab ? 0 : -1"
+        (keydown)="onTabKeydown($event, $index)"
+        (click)="selectSubTab(tab)">
+        @switch (tab) {
+          @case ('run') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          }
+          @case ('history') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+          }
+          @case ('multirun') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          }
+          @case ('multisuite') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          }
+          @case ('suites') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+          }
+          @case ('profiles') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+          }
+          @case ('modelcomparison') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          }
+          @case ('chatconsistency') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+          }
+        }
+        {{ subTabLabels[tab] }}
+      </button>
+    }
   </div>
 
   <!-- TAB 1: RUN BENCHMARK -->
   @if (activeSubTab === 'run') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-run" aria-labelledby="bm-tab-run" tabindex="0">
+      <!-- Repeat this run's setup: what was copied into the launcher below, and every recorded
+           selection it kept back. Always rendered, so the status is announced when it fills. -->
+      <div class="bm-prefill-status" role="status">
+        @if (repeatRunSetupError) {
+          <div class="alert alert-danger bm-prefill-card">
+            <div class="alert-content"><div class="alert-body">{{ repeatRunSetupError }}</div></div>
+          </div>
+        } @else if (launcher.pendingPrefillRunId != null) {
+          <div class="alert alert-info bm-prefill-card">
+            <div class="alert-content">
+              <div class="alert-body">Copying the setup of run #{{ launcher.pendingPrefillRunId }} once the launcher has loaded its lists.</div>
+            </div>
+          </div>
+        } @else if (launcher.prefillResult; as prefill) {
+          <div class="alert alert-info bm-prefill-card">
+            <div class="alert-content">
+              <div class="alert-heading">Set up from run #{{ prefill.runId }}</div>
+              <div class="alert-body">Check the settings below, then press Start. Nothing starts on its own.</div>
+              @if (prefill.notes.length > 0) {
+                <ul class="alert-body bm-prefill-notes">
+                  @for (note of prefill.notes; track $index) {
+                    <li>{{ note }}</li>
+                  }
+                </ul>
+              }
+            </div>
+          </div>
+        }
+      </div>
       <app-benchmark-run-tab></app-benchmark-run-tab>
     </div>
   }
@@ -146,6 +126,13 @@
   @if (activeSubTab === 'modelcomparison') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-modelcomparison" aria-labelledby="bm-tab-modelcomparison" tabindex="0">
       <app-benchmark-comparison-tab></app-benchmark-comparison-tab>
+    </div>
+  }
+
+  <!-- TAB 8: CHAT CONSISTENCY -->
+  @if (activeSubTab === 'chatconsistency') {
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-chatconsistency" aria-labelledby="bm-tab-chatconsistency" tabindex="0">
+      <app-chat-consistency-tab (openDocuments)="openChatConsistencyDownloads($event.analysisId)"></app-chat-consistency-tab>
     </div>
   }
 </div>
@@ -238,6 +225,12 @@
                 </button>
               }
             </div>
+
+            <!-- Fills Run Benchmark with this run's recorded setup; the operator starts the run there. -->
+            <button type="button" class="btn-ghost" id="rr-repeat-setup-btn" (click)="repeatRunSetup(selectedRunDetail.id)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+              Repeat this run's setup
+            </button>
 
             @if (selectedRunHasBoard) {
               <button type="button" class="action-btn" id="rr-snapshot-btn"

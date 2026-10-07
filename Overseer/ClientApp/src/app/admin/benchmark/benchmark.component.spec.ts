@@ -5,9 +5,11 @@ import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
+import { ChatConsistencyTabComponent } from './chat-consistency-tab/chat-consistency-tab.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import {
-  AdminBenchmarkSpecContext, benchmarkSpecHandles, clearStoredState, createAdminBenchmarkFixture
+  AdminBenchmarkSpecContext, RUN_SETTINGS_KEY, benchmarkSpecHandles, buildBenchmarkConfig, buildRepeatableRun, clearStoredState,
+  createAdminBenchmarkFixture
 } from './benchmark.component.testing';
 
 describe('AdminBenchmarkComponent', () => {
@@ -93,6 +95,12 @@ describe('AdminBenchmarkComponent', () => {
       component.navigation = { subTab: 'history', suiteId: null };
 
       expect(component.activeSubTab).toBe('history');
+    });
+
+    it('selects Chat Consistency from a link', () => {
+      component.navigation = { subTab: 'chatconsistency', suiteId: null };
+
+      expect(component.activeSubTab).toBe('chatconsistency');
     });
 
     it('stays on Run for an unknown sub-tab and still reports the request handled', async () => {
@@ -1607,13 +1615,14 @@ describe('AdminBenchmarkComponent', () => {
     it('should expose the sub-navigation as a labelled tablist', () => {
       expect(tabList()).toBeTruthy();
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
-      expect(tabs().length).toBe(7);
+      expect(tabs().length).toBe(8);
+      expect(tabList().classList.contains('gh-tabs-wrap')).toBe(true);
     });
 
     it('should place Multi-Suite fourth, right after Multi-Run Analysis', () => {
       expect(tabs().map(t => t.id)).toEqual([
         'bm-tab-run', 'bm-tab-history', 'bm-tab-multirun', 'bm-tab-multisuite',
-        'bm-tab-suites', 'bm-tab-profiles', 'bm-tab-modelcomparison'
+        'bm-tab-suites', 'bm-tab-profiles', 'bm-tab-modelcomparison', 'bm-tab-chatconsistency'
       ]);
       const multiSuite = tabs()[3];
       expect((multiSuite.textContent || '').trim()).toBe('Multi-Suite');
@@ -1641,28 +1650,64 @@ describe('AdminBenchmarkComponent', () => {
     it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(6);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(7);
     });
 
     it('should wrap forward from the last tab to the first with ArrowRight', () => {
-      component.activeSubTab = 'modelcomparison';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 6);
+      component.activeSubTab = 'chatconsistency';
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 7);
       expect(component.activeSubTab).toBe('run');
     });
 
     it('should wrap backward from the first tab to the last with ArrowLeft', () => {
       component.activeSubTab = 'run';
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
-      expect(component.activeSubTab).toBe('modelcomparison');
+      expect(component.activeSubTab).toBe('chatconsistency');
     });
 
     it('should select the first and last tab with Home and End', () => {
       component.activeSubTab = 'history';
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
-      expect(component.activeSubTab).toBe('modelcomparison');
+      expect(component.activeSubTab).toBe('chatconsistency');
 
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 6);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 7);
       expect(component.activeSubTab).toBe('run');
+    });
+
+    it('should place Chat Consistency last, with its own panel', () => {
+      const last = tabs()[tabs().length - 1];
+      expect(last.id).toBe('bm-tab-chatconsistency');
+      expect((last.textContent || '').trim()).toBe('Chat Consistency');
+      expect(last.getAttribute('aria-controls')).toBe('bm-panel-chatconsistency');
+      expect(last.querySelector('svg.btn-icon[aria-hidden="true"]')).toBeTruthy();
+
+      last.click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('#bm-panel-chatconsistency') as HTMLElement;
+      expect(panel).toBeTruthy();
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-chatconsistency');
+      expect(panel.querySelector('app-chat-consistency-tab h3')?.textContent?.trim()).toBe('Chat Consistency');
+      expect(last.getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('should open the Download Center on an analysis\'s documents when the Chat Consistency tab asks', () => {
+      tabs()[tabs().length - 1].click();
+      fixture.detectChanges();
+      const open = vi.spyOn(component.runDownloadCenter!, 'open').mockReturnValue(undefined);
+      const tab = fixture.debugElement.query(By.directive(ChatConsistencyTabComponent)).componentInstance as ChatConsistencyTabComponent;
+
+      tab.openDocuments.emit({ analysisId: 12 });
+
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledWith({ kind: 'chatConsistency', analysisId: 12 });
+    });
+
+    it('should give every tab an icon', () => {
+      for (const tab of tabs()) {
+        expect(tab.querySelectorAll('svg.btn-icon').length, tab.id).toBe(1);
+      }
     });
 
     it('should ignore keys that are not part of the tab keyboard model', () => {
@@ -1956,6 +2001,164 @@ describe('AdminBenchmarkComponent', () => {
 
       expect((benchmarkServiceMock as any).createQuestion).toHaveBeenCalledWith(1, expect.objectContaining({ questionText: 'New?' }));
       expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe("Repeat this run's setup", () => {
+    const prefillStatus = (): HTMLElement =>
+      fixture.nativeElement.querySelector('#bm-panel-run .bm-prefill-status[role="status"]') as HTMLElement;
+
+    const storedSettings = (): any => JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? 'null');
+
+    beforeEach(() => {
+      // Configuration 2 is a second benchmark-capable model; 3 is disabled.
+      const base = component.systemConfigs[0];
+      component.systemConfigs = [
+        base,
+        buildBenchmarkConfig(base, { id: 2, displayName: 'Second Model', provider: 'OpenAI', modelId: 'gpt-test' }),
+        buildBenchmarkConfig(base, { id: 3, displayName: 'Disabled Model', isEnabled: false })
+      ];
+      ctx.launcher.setDefaultModelSelections();
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRepeatableRun()));
+    });
+
+    afterEach(() => {
+      const dialog = component.runDetailDialog?.nativeElement;
+      if (dialog?.open) {
+        dialog.close();
+      }
+      component.stopDetailPolling();
+    });
+
+    it('offers the action in the run report and sends it through the bridge', () => {
+      const requests: number[] = [];
+      ctx.bridge.repeatRunSetup$.subscribe(id => requests.push(id));
+      component.viewRunDetail(55);
+      fixture.detectChanges();
+
+      const button = fixture.nativeElement.querySelector(
+        '.benchmark-run-detail-dialog [role="group"][aria-label="Run actions"] > #rr-repeat-setup-btn') as HTMLButtonElement;
+      expect(button).toBeTruthy();
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.classList.contains('btn-ghost')).toBe(true);
+      expect((button.textContent || '').replace(/\s+/g, ' ').trim()).toBe("Repeat this run's setup");
+      expect(button.querySelector('svg.btn-icon[aria-hidden="true"]')).toBeTruthy();
+      expect(button.hasAttribute('title')).toBe(false);
+
+      button.click();
+
+      expect(requests).toEqual([55]);
+    });
+
+    it('closes the report, switches to Run Benchmark and fills the launcher without starting a run', () => {
+      component.viewRunDetail(55);
+      fixture.detectChanges();
+      component.selectSubTab('history');
+      ctx.launcher.runCount = 4;
+      ctx.refresh();
+
+      (fixture.nativeElement.querySelector('#rr-repeat-setup-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(component.runDetailDialog.nativeElement.open).toBe(false);
+      expect(component.activeSubTab).toBe('run');
+      const launcher = ctx.launcher;
+      expect(launcher.selectedSuiteId).toBe(1);
+      expect(launcher.selectedScoringProfileId).toBe(1);
+      expect(launcher.testedConfigId).toBe(2);
+      expect(launcher.assessorConfigId).toBe(1);
+      expect(launcher.coAssessorConfigId).toBeNull();
+      expect(launcher.secondOpinionConfigId).toBe(2);
+      expect(launcher.secondOpinionMode).toBe(3);
+      expect(launcher.claimVerifierConfigId).toBe(1);
+      expect(launcher.reportWriterConfigId).toBeNull();
+      expect(launcher.candidateVerboseMode).toBe(true);
+      expect(launcher.candidateAllowSourceCodeReferences).toBe(true);
+      expect(launcher.runCount).toBe(1);
+      expect(launcher.runTargetKind).toBe('suite');
+      expect(storedSettings()).toEqual(expect.objectContaining({ testedConfigId: 2, secondOpinionConfigId: 2, verboseMode: true, runCount: 1 }));
+      expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
+      expect(benchmarkServiceMock.startRunSeries).not.toHaveBeenCalled();
+
+      expect(prefillStatus().textContent).toContain('Set up from run #55');
+      expect(prefillStatus().querySelector('.bm-prefill-notes')).toBeNull();
+    });
+
+    it('applies the setup only after the remembered settings, so their restore cannot overwrite it', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1, scoringProfileId: 1, testedConfigId: 1, assessorConfigId: 1, verboseMode: false, runCount: 3, targetKind: 'suite'
+      }));
+      const launcher = ctx.launcher;
+      // As on a fresh page load: the stored blob is read and waits for its lists.
+      launcher.restoreRunSettings();
+      expect(launcher.pendingRunSettings).not.toBeNull();
+
+      ctx.bridge.repeatRunSetup(55);
+      fixture.detectChanges();
+
+      expect(component.activeSubTab).toBe('run');
+      expect(launcher.pendingPrefillRunId).toBe(55);
+      expect(launcher.testedConfigId).toBe(1);
+      expect(prefillStatus().textContent).toContain('Copying the setup of run #55');
+
+      // The lists arrive and apply the remembered settings; the prefill follows them.
+      ctx.workspace.suitesLoaded$.next();
+      ctx.workspace.profilesLoaded$.next();
+      launcher.setDefaultModelSelections();
+      ctx.workspace.batteriesLoaded$.next(true);
+      ctx.refresh();
+
+      expect(launcher.pendingRunSettings).toBeNull();
+      expect(launcher.pendingPrefillRunId).toBeNull();
+      expect(launcher.testedConfigId).toBe(2);
+      expect(launcher.candidateVerboseMode).toBe(true);
+      expect(launcher.runCount).toBe(1);
+      expect(storedSettings()).toEqual(expect.objectContaining({ testedConfigId: 2, verboseMode: true, runCount: 1 }));
+      expect(prefillStatus().textContent).toContain('Set up from run #55');
+    });
+
+    it('keeps a selection that is gone or disabled and names it on the Run Benchmark panel', () => {
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRepeatableRun({
+        testedModelConfigurationId: 3, testedModelDisplayNameUsed: 'Disabled Model',
+        claimVerifierModelConfigurationId: 99, claimVerifierDisplayNameUsed: 'Gone Verifier'
+      })));
+      const before = ctx.launcher.testedConfigId;
+      ctx.launcher.claimVerifierConfigId = null;
+
+      ctx.bridge.repeatRunSetup(55);
+      fixture.detectChanges();
+
+      expect(ctx.launcher.testedConfigId).toBe(before);
+      expect(ctx.launcher.claimVerifierConfigId).toBeNull();
+      const notes = Array.from(prefillStatus().querySelectorAll('.bm-prefill-notes li')).map(li => (li.textContent || '').trim());
+      expect(notes.length).toBe(2);
+      expect(notes[0]).toContain('Model Under Test: Disabled Model');
+      expect(notes[1]).toContain('Claim Verifier: Gone Verifier');
+    });
+
+    it('says so when the run cannot be loaded', () => {
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 404, error: 'Run 55 not found.' })));
+
+      ctx.bridge.repeatRunSetup(55);
+      fixture.detectChanges();
+
+      expect(component.activeSubTab).toBe('run');
+      expect(prefillStatus().textContent).toContain('Run 55 not found.');
+      expect(ctx.launcher.prefillResult).toBeNull();
+    });
+
+    it('drops the note when the operator leaves Run Benchmark', () => {
+      ctx.bridge.repeatRunSetup(55);
+      fixture.detectChanges();
+      expect(ctx.launcher.prefillResult?.runId).toBe(55);
+
+      (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('#bm-tab-run') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(ctx.launcher.prefillResult).toBeNull();
+      expect(prefillStatus().textContent?.trim()).toBe('');
     });
   });
 });

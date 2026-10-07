@@ -1,8 +1,8 @@
 ---
 name: server-wiki-handoff
 description: >-
-  Mandatory method for turning a rung-2 wiki finding from an Overseer AI benchmark analysis into
-  a three-step handoff document: proposed changes in plain text and as diffs, an AI validation prompt
+  Mandatory method for turning a rung-2 wiki finding from an Overseer AI benchmark (GnollBench)
+  analysis into a three-step handoff document: proposed changes in plain text and as diffs, an AI validation prompt
   for a read-only session on the GnollHack source clone at C:\hmp\GnollHack, and an execution prompt
   for a session on the GnollHackWiki clone at C:\hmp\GnollHackWiki run only after validation passes.
   Covers pre-flight checks against the wiki clone (target page exists, which page carries the fact,

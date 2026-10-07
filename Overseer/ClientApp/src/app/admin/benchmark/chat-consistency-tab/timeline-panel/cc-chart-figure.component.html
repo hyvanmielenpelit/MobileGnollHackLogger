@@ -1,0 +1,58 @@
+<figure class="cc-figure" [attr.data-figure]="figure.key" [attr.aria-labelledby]="figureId + '-title'">
+  <figcaption class="cc-figure-caption">
+    <span class="cc-figure-title" [id]="figureId + '-title'">{{ figure.title }}</span>
+    <span class="cc-figure-takeaway" [id]="figureId + '-takeaway'">{{ figure.takeaway }}</span>
+  </figcaption>
+
+  @if (chartData) {
+    <div class="cc-chart-box">
+      <canvas baseChart role="img" [attr.aria-label]="figure.altText"
+              [type]="chartType" [data]="chartData" [options]="chartOptions" [plugins]="chartPlugins"></canvas>
+    </div>
+  } @else {
+    <p class="cc-figure-empty">Nothing to chart in this range.</p>
+  }
+
+  @if (figure.markers.length > 0) {
+    <ul class="cc-marker-list" [attr.aria-label]="'Markers on ' + figure.title">
+      @for (marker of figure.markers; track marker.tag) {
+        <li class="cc-marker" [attr.data-kind]="marker.kind">
+          <span [class]="'cc-marker-tag is-' + marker.kind">{{ marker.tag }}</span>{{ ' ' }}<span class="cc-marker-label">{{ marker.label }}</span>
+        </li>
+      }
+    </ul>
+  }
+
+  <details class="gh-disclosure cc-figure-data">
+    <summary>Show data</summary>
+    <div class="gh-disclosure-body">
+      <div class="cc-figure-table-scroll">
+        <table class="gh-table cc-figure-table">
+          <caption class="visually-hidden" [id]="figureId + '-table-caption'">{{ figure.title }}: data per run</caption>
+          <thead>
+            <tr>
+              @for (column of figure.table.columns; track $index) {
+                <th scope="col">{{ column }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of figure.table.rows; track $index) {
+              <tr>
+                @for (cell of row; track $index) {
+                  @if ($first) {
+                    <th scope="row">{{ cell }}</th>
+                  } @else {
+                    <td>{{ cell }}</td>
+                  }
+                }
+              </tr>
+            } @empty {
+              <tr><td [attr.colspan]="figure.table.columns.length">No runs in this range.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>
+</figure>

@@ -94,6 +94,9 @@ public sealed record BenchmarkReportAudienceSpec(
     /// </summary>
     public bool ComparisonScope { get; init; }
 
+    /// <summary>A chat consistency document: one model's chat measured over two periods, with no questions and no peers.</summary>
+    public bool ChatConsistencyScope { get; init; }
+
     /// <summary>The strengths and weaknesses lists; a comparison-scope document has neither.</summary>
     public bool UsesStrengthsAndWeaknesses { get; init; } = true;
 
@@ -145,6 +148,39 @@ public static class BenchmarkReportSlots
     // Comparison scope: Internal Improvement Brief (benchmarkSystem as above)
     public const string SharedGaps = "sharedGaps";
     public const string ModelGaps = "modelGaps";
+
+    // Chat consistency scope: Executive Summary
+    public const string AsGoodAsBefore = "asGoodAsBefore";     // Is the Overseer chat with this model as good as before?
+    public const string PlayerImpact = "playerImpact";         // What changed for players
+    public const string OurChanges = "ourChanges";             // Our changes and their effect
+    public const string ProviderChanges = "providerChanges";   // Provider-side changes
+    public const string ConfidenceAndScope = "confidenceAndScope"; // Confidence and scope
+    public const string NextRuns = "nextRuns";                 // Next runs (also in the Internal Brief)
+
+    // Chat consistency scope: Report for AI Researchers and Developers (limitations as above)
+    public const string QuestionAndDesign = "questionAndDesign";   // Question and design
+    public const string RunsAndCoverage = "runsAndCoverage";       // Runs, coverage and scope
+    public const string OverseerEvents = "overseerEvents";         // Overseer events
+    public const string EndpointResults = "endpointResults";       // Results by endpoint
+    public const string Attribution = "attribution";               // Attribution
+    public const string Robustness = "robustness";                 // Robustness
+    public const string Reproducibility = "reproducibility";       // Reproducibility
+
+    // Chat consistency scope: Internal Brief (nextRuns as above)
+    public const string ChatFindings = "chatFindings";             // Findings for the chat
+    public const string ChangeEffects = "changeEffects";           // Our changes that helped or hurt
+    public const string InfrastructureIssues = "infrastructureIssues"; // Infrastructure issues
+    public const string Actions = "actions";                       // Actions
+
+    // Chat consistency scope: Provider Issue Report
+    public const string IssueSummary = "issueSummary";             // Summary
+    public const string AffectedModel = "affectedModel";           // Affected model and configuration
+    public const string Timeline = "timeline";                     // Timeline
+    public const string Measurements = "measurements";             // Measurements with intervals
+    public const string HoursObserved = "hoursObserved";           // Hours observed
+    public const string RuledOut = "ruledOut";                     // What we ruled out (our changes, infrastructure)
+    public const string SampleRequestIds = "sampleRequestIds";     // Sample request ids
+    public const string ProviderRequest = "providerRequest";       // Request to the provider
 
     public const string TargetModelDevelopers = "model_developers";
     public const string TargetOverseerChat = "overseer_chat";
@@ -238,6 +274,88 @@ public static class BenchmarkReportSlots
         LeadTriages = new[] { "chat", "harness", "suite", "corpus", LeadTriageModel }
     };
 
+    public static readonly BenchmarkReportAudienceSpec ChatConsistencyExecutiveSummary = ChatConsistencySpec(
+        BenchmarkReportAudience.ExecutiveSummary,
+        AsGoodAsBefore, PlayerImpact, OurChanges, ProviderChanges, ConfidenceAndScope, NextRuns);
+
+    public static readonly BenchmarkReportAudienceSpec ChatConsistencyTechnicalReport = ChatConsistencySpec(
+        BenchmarkReportAudience.TechnicalReport,
+        QuestionAndDesign, RunsAndCoverage, OverseerEvents, EndpointResults, Attribution, Robustness, Limitations, Reproducibility);
+
+    public static readonly BenchmarkReportAudienceSpec ChatConsistencyInternalBrief = ChatConsistencySpec(
+        BenchmarkReportAudience.InternalBrief,
+        ChatFindings, ChangeEffects, InfrastructureIssues, NextRuns, Actions);
+
+    public static readonly BenchmarkReportAudienceSpec ChatConsistencyProviderIssueReport = ChatConsistencySpec(
+        BenchmarkReportAudience.ProviderIssueReport,
+        IssueSummary, AffectedModel, Timeline, Measurements, HoursObserved, RuledOut, SampleRequestIds, ProviderRequest);
+
+    /// <summary>The audiences of a chat consistency document, in document order.</summary>
+    public static IReadOnlyList<BenchmarkReportAudience> ChatConsistencyAudiences { get; } = new[]
+    {
+        BenchmarkReportAudience.ExecutiveSummary,
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief,
+        BenchmarkReportAudience.ProviderIssueReport
+    };
+
+    /// <summary>The section title of each chat consistency slot.</summary>
+    public static IReadOnlyDictionary<string, string> ChatConsistencySlotTitles { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [AsGoodAsBefore] = "Is the Overseer chat with this model as good as before?",
+        [PlayerImpact] = "What changed for players",
+        [OurChanges] = "Our changes and their effect",
+        [ProviderChanges] = "Provider-side changes",
+        [ConfidenceAndScope] = "Confidence and scope",
+        [NextRuns] = "Next runs",
+        [QuestionAndDesign] = "Question and design",
+        [RunsAndCoverage] = "Runs, coverage and scope",
+        [OverseerEvents] = "Overseer events",
+        [EndpointResults] = "Results by endpoint",
+        [Attribution] = "Attribution",
+        [Robustness] = "Robustness",
+        [Limitations] = "Limitations",
+        [Reproducibility] = "Reproducibility",
+        [ChatFindings] = "Findings for the chat",
+        [ChangeEffects] = "Our changes that helped or hurt",
+        [InfrastructureIssues] = "Infrastructure issues",
+        [Actions] = "Actions",
+        [IssueSummary] = "Summary",
+        [AffectedModel] = "Affected model and configuration",
+        [Timeline] = "Timeline",
+        [Measurements] = "Measurements with intervals",
+        [HoursObserved] = "Hours observed",
+        [RuledOut] = "What we ruled out (our changes, infrastructure)",
+        [SampleRequestIds] = "Sample request ids",
+        [ProviderRequest] = "Request to the provider",
+    };
+
+    /// <summary>A chat consistency audience's slots: prose sections only, with no lists, questions or peers.</summary>
+    private static BenchmarkReportAudienceSpec ChatConsistencySpec(BenchmarkReportAudience audience, params string[] slots) => new(
+        audience,
+        slots,
+        MaxStrengths: 0,
+        MaxWeaknesses: 0,
+        UsesRecommendations: false,
+        RecommendationTargets: Array.Empty<string>(),
+        UsesQuestionNotes: false,
+        RequiresQuestionTopics: false,
+        UsesLeads: false)
+    {
+        ChatConsistencyScope = true,
+        UsesStrengthsAndWeaknesses = false
+    };
+
+    /// <summary>The audience's slots for a chat consistency document.</summary>
+    public static BenchmarkReportAudienceSpec ForChatConsistency(BenchmarkReportAudience audience) => audience switch
+    {
+        BenchmarkReportAudience.ExecutiveSummary => ChatConsistencyExecutiveSummary,
+        BenchmarkReportAudience.TechnicalReport => ChatConsistencyTechnicalReport,
+        BenchmarkReportAudience.InternalBrief => ChatConsistencyInternalBrief,
+        BenchmarkReportAudience.ProviderIssueReport => ChatConsistencyProviderIssueReport,
+        _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
+    };
+
     public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => ExecutiveSummary,
@@ -246,9 +364,11 @@ public static class BenchmarkReportSlots
         _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
     };
 
-    /// <summary>The audience's slots for a per-model document or a comparison-scope document.</summary>
+    /// <summary>The audience's slots for a per-model, comparison-scope or chat consistency document.</summary>
     public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience, BenchmarkReportScope scope)
-        => scope != BenchmarkReportScope.Comparison
+        => scope == BenchmarkReportScope.ChatConsistency
+            ? ForChatConsistency(audience)
+            : scope != BenchmarkReportScope.Comparison
             ? For(audience)
             : audience switch
             {
@@ -262,7 +382,9 @@ public static class BenchmarkReportSlots
     public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
-        return For(audience, sheet.IsComparison ? BenchmarkReportScope.Comparison : BenchmarkReportScope.Model);
+        return For(audience, sheet.IsChatConsistency ? BenchmarkReportScope.ChatConsistency
+            : sheet.IsComparison ? BenchmarkReportScope.Comparison
+            : BenchmarkReportScope.Model);
     }
 }
 
@@ -576,6 +698,16 @@ public sealed class BenchmarkReportFactSheet
     [JsonIgnore]
     public bool IsComparison => string.Equals(Scope, ComparisonScopeValue, StringComparison.Ordinal);
 
+    /// <summary>The value of <see cref="Scope"/> on a chat consistency sheet.</summary>
+    public const string ChatConsistencyScopeValue = "ChatConsistency";
+
+    /// <summary>The sheet is a chat consistency sheet.</summary>
+    [JsonIgnore]
+    public bool IsChatConsistency => string.Equals(Scope, ChatConsistencyScopeValue, StringComparison.Ordinal);
+
+    /// <summary>The analysis a chat consistency sheet describes; null on every other sheet.</summary>
+    public BenchmarkReportChatConsistencySubject? ChatConsistency { get; set; }
+
     /// <summary>
     /// A comparison-scope sheet written over every entry of the comparison that was not Excluded at
     /// the time; null on a per-model sheet.
@@ -596,6 +728,34 @@ public sealed class BenchmarkReportFactSheet
 
     /// <summary>Why a comparison-scope sheet has no paired tests; null when it has them, and on a per-model sheet.</summary>
     public string? PairedTestsUnavailableReason { get; set; }
+}
+
+/// <summary>
+/// The saved chat consistency analysis behind a chat consistency sheet. The sheet's subject is the
+/// analysis's model; its <see cref="BenchmarkReportFactSheet.Peers"/> are the control models, lettered.
+/// </summary>
+public sealed class BenchmarkReportChatConsistencySubject
+{
+    /// <summary>The stored analysis; null for an analysis not yet saved.</summary>
+    public int? AnalysisId { get; set; }
+
+    public string Name { get; set; } = string.Empty;
+    public string Headline { get; set; } = string.Empty;
+    public string ProtocolLabel { get; set; } = string.Empty;
+    public string InputSha256 { get; set; } = string.Empty;
+    public int AnalysisCodeVersion { get; set; }
+
+    /// <summary>Ascending.</summary>
+    public List<long> BaselineRunIds { get; set; } = new();
+
+    /// <summary>Ascending.</summary>
+    public List<long> ComparisonRunIds { get; set; } = new();
+
+    /// <summary>The control runs the analysis read, ascending; never a run of the subject.</summary>
+    public List<long> ControlRunIds { get; set; } = new();
+
+    /// <summary>At least one provider-side attribution is graded Established or Indicated.</summary>
+    public bool ProviderIssueReportAvailable { get; set; }
 }
 
 /// <summary>One covered model of a comparison-scope sheet.</summary>
@@ -1380,6 +1540,9 @@ public class BenchmarkReportDocumentListItemDto
 
     /// <summary>The numbered comparison (<c>Comparison #Id</c>); null for a document without one.</summary>
     public int? ComparisonId { get; set; }
+
+    /// <summary>The chat consistency analysis a Chat Consistency Report was written from; null on every other document.</summary>
+    public int? ChatConsistencyAnalysisId { get; set; }
 
     /// <summary>The comparison's display name, its rename or else its default name; null without a comparison.</summary>
     public string? ComparisonName { get; set; }

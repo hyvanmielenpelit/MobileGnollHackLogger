@@ -6782,4 +6782,164 @@ public class BenchmarkReportBuilderTests
 
         Assert.DoesNotContain("Critical-error resolution sensitivity", BenchmarkReportBuilder.BuildMarkdownReport(run));
     }
+
+    // --- Timing Decomposition ---------------------------------------------------------------------
+
+    private static readonly DateTime TelemetryTurnStart = new(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
+
+    private static ModelCallTelemetry TelemetryCall(
+        int callIndex,
+        DateTime startedAtUtc,
+        int permitWaitMs,
+        int backoffWaitMs,
+        int failedAttemptMs,
+        int firstOutputMs,
+        string servedModelId,
+        string servedTier,
+        string provider = "OpenAI")
+    {
+        return new ModelCallTelemetry
+        {
+            Source = ModelCallSource.BenchmarkCandidate,
+            Provider = provider,
+            RequestedModelId = "gpt-5.6-luna",
+            CallIndex = callIndex,
+            StartedAtUtc = startedAtUtc,
+            PermitWaitMs = permitWaitMs,
+            BackoffWaitMs = backoffWaitMs,
+            FailedAttemptMs = failedAttemptMs,
+            FirstOutputMs = firstOutputMs,
+            AttemptCount = 1,
+            ServedModelId = servedModelId,
+            ServedServiceTier = servedTier,
+        };
+    }
+
+    /// <summary>
+    /// A call telemetry run of three answers, two with candidate rows. Q1's net time to first answer
+    /// text is 4 + (1 + 1 + 0.5) + 1.5 − (3 + 1) = 4.0 s and its rate (600 − 200) × 1280 / 1600 / 4 s =
+    /// 80 tokens/s; Q2's is (5 + 2 + 1) + 2 − (5 + 2) = 3.0 s and 1000 × 0.8 / 4 s = 200 tokens/s. Own
+    /// waits are 11 s of 28 s model time, 39 %. Q3 carries no rows.
+    /// </summary>
+    private static BenchmarkRun TimingDecompositionRun(string provider = "OpenAI")
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.StartedAtUtc = TelemetryTurnStart;
+        q1.DurationMs = 10_000;
+        q1.ToolTimeMs = 0;
+        q1.PermitWaitMs = 3_000;
+        q1.BackoffWaitMs = 1_000;
+        q1.RetryAttemptCount = 1;
+        var q1Final = TelemetryCall(1, TelemetryTurnStart.AddMilliseconds(4_000), 1_000, 1_000, 500, 1_500, "gpt-5.6-luna-2026-08-01", "default", provider);
+        q1Final.Http429Count = 1;
+        q1Final.AttemptCount = 2;
+        q1Final.OutputTokens = 600;
+        q1Final.ReasoningTokens = 200;
+        q1Final.VisibleOutputChars = 1_600;
+        q1Final.Last80VisibleChars = 1_280;
+        q1Final.Last80DecodeSpanMs = 4_000;
+        q1.ModelCalls = new List<ModelCallTelemetry>
+        {
+            TelemetryCall(0, TelemetryTurnStart, 2_000, 0, 0, 500, "gpt-5.6-luna-2026-08-01", "default", provider),
+            q1Final,
+        };
+
+        var q2Start = TelemetryTurnStart.AddMinutes(1);
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        q2.StartedAtUtc = q2Start;
+        q2.DurationMs = 20_000;
+        q2.ToolTimeMs = 2_000;
+        q2.PermitWaitMs = 5_000;
+        q2.BackoffWaitMs = 2_000;
+        q2.RetryAttemptCount = 2;
+        var q2Call = TelemetryCall(0, q2Start, 5_000, 2_000, 1_000, 2_000, "gpt-5.6-luna-2026-09-01", "priority", provider);
+        q2Call.Http429Count = 1;
+        q2Call.Http5xxCount = 1;
+        q2Call.AttemptCount = 3;
+        q2Call.OutputTokens = 1_000;
+        q2Call.ReasoningTokens = 0;
+        q2Call.VisibleOutputChars = 4_000;
+        q2Call.Last80VisibleChars = 3_200;
+        q2Call.Last80DecodeSpanMs = 4_000;
+        var grader = TelemetryCall(0, q2Start.AddSeconds(30), 9_000, 9_000, 0, 100, "gemini-judge", "standard", "Google");
+        grader.Source = ModelCallSource.BenchmarkGrader;
+        grader.GraderRole = ModelCallGraderRole.Assessor;
+        grader.Http429Count = 5;
+        q2.ModelCalls = new List<ModelCallTelemetry> { q2Call, grader };
+
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 80);
+        q3.DurationMs = 5_000;
+        q3.ToolTimeMs = 0;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        run.CallTelemetryVersion = 1;
+        return run;
+    }
+
+    [Fact]
+    public void TimingDecomposition_IsAbsent_WhenTheRunRecordedNoCallTelemetry()
+    {
+        // Rows alone do not open the section: the run's telemetry version does.
+        var run = TimingDecompositionRun();
+        run.CallTelemetryVersion = null;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("Timing Decomposition", report);
+        Assert.DoesNotContain("Time to First Answer Text", report);
+        Assert.DoesNotContain("Own waits were", report);
+    }
+
+    [Fact]
+    public void TimingDecomposition_ReportsNetFirstTextRateWaitsAndServedModels_BeforeTheTokenTotals()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(TimingDecompositionRun());
+
+        // First text 3.0 s and 4.0 s: median 3.5 s, P90 3.0 + 0.9 × 1.0 = 3.9 s. Rates 80 and 200:
+        // median 140. Waits: permit 3 + 5 s, backoff 1 + 2 s. The grader row's 429s and model id are not
+        // the candidate's, and the served ids fall back to the candidate rows.
+        string section = string.Join(Environment.NewLine,
+            "- **Timing Decomposition:** call telemetry version 1, recorded on 2 of 3 answers",
+            "  - **Time to First Answer Text:** Median (P50) = 3.5 s, P90 = 3.9 s *(from the start of the turn to the final call's first visible output, net of our own waits)*",
+            "  - **Answer Streaming Rate:** Median 140.0 tokens/s *(visible output over the last 80 % of the final call's deltas)*",
+            "  - **Own Waits:** permit wait 8.0 s, retry backoff 3.0 s; 3 retried attempt(s); HTTP 429 ×2, HTTP 5xx ×1",
+            "  - **Served Model IDs:** `gpt-5.6-luna-2026-08-01` ×2, `gpt-5.6-luna-2026-09-01` ×1",
+            "  - **Served Tiers:** `default` ×2, `priority` ×1",
+            "  - *Own waits were 39% of model time; the rate limit, not the provider, dominated.*",
+            "- **Total Input Tokens:**");
+        Assert.Contains(section, report);
+        Assert.True(report.IndexOf("- **Model Time Mean:**", StringComparison.Ordinal) < report.IndexOf("- **Timing Decomposition:**", StringComparison.Ordinal));
+        Assert.DoesNotContain("gemini-judge", report);
+    }
+
+    [Fact]
+    public void TimingDecomposition_PrefersTheRunsServedModelIds_AndSaysNothingDominatedUnderTheThreshold()
+    {
+        var run = TimingDecompositionRun();
+        run.ServedModelIdsJson = "{\"gpt-5.6-luna-2026-08-01\":7}";
+        foreach (var answer in run.Answers)
+        {
+            answer.PermitWaitMs = answer.PermitWaitMs.HasValue ? 300 : null;
+            answer.BackoffWaitMs = answer.BackoffWaitMs.HasValue ? 0 : null;
+        }
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("  - **Served Model IDs:** `gpt-5.6-luna-2026-08-01` ×7" + Environment.NewLine, report);
+        // 600 ms of own waits in 28 s of model time.
+        Assert.Contains("  - *Own waits were 2% of model time.*" + Environment.NewLine, report);
+        Assert.DoesNotContain("not the provider, dominated", report);
+    }
+
+    [Fact]
+    public void TimingDecomposition_MarksTheRateEstimated_ForAnAnthropicCandidate()
+    {
+        var run = TimingDecompositionRun(provider: "Anthropic");
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-x", displayName: "Claude X");
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // Characters ÷ 4 over the window: 1280 / 4 / 4 s = 80 and 3200 / 4 / 4 s = 200; median 140.
+        Assert.Contains("  - **Answer Streaming Rate:** Median 140.0 tokens/s *(estimated: the provider counts thinking inside its output tokens, so visible tokens are estimated at 4 characters per token)*", report);
+    }
 }

@@ -39,6 +39,13 @@ export const REPORT_WRITER_ADVICE_BY_AUDIENCE: Readonly<Record<BenchmarkReportAu
     text: 'For the Overseer team. It weighs the whole fact sheet, rubrics and grader notes included, and says what to '
       + 'improve in the chat, the benchmark and the model. Use the strongest scoring-tier model — Claude Opus or GPT '
       + 'Sol — at medium effort.'
+  },
+  [BenchmarkReportAudience.ProviderIssueReport]: {
+    term: 'Provider Issue Report',
+    badge: 'Provider',
+    text: 'For the model’s provider, from a chat consistency analysis: the issue, its timeline and measurements, what '
+      + 'was ruled out, and the request to the provider. Use a strong writing model that keeps every figure exact — '
+      + 'Claude Opus or GPT Sol — at medium effort.'
   }
 };
 

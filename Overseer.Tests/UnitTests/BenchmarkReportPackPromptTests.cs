@@ -1301,4 +1301,133 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("{{peer:X}}", message);
         Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues), BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: false));
     }
+
+    // Chat consistency scope --------------------------------------------------------------------
+
+    public static TheoryData<BenchmarkReportAudience, string> ChatConsistencyPromptFiles => new()
+    {
+        { BenchmarkReportAudience.ExecutiveSummary, "prompt_chatconsistency_exec.txt" },
+        { BenchmarkReportAudience.TechnicalReport, "prompt_chatconsistency_technical.txt" },
+        { BenchmarkReportAudience.InternalBrief, "prompt_chatconsistency_internal.txt" },
+        { BenchmarkReportAudience.ProviderIssueReport, "prompt_chatconsistency_provider.txt" },
+    };
+
+    public static TheoryData<BenchmarkReportAudience> ChatConsistencyAudiences => new()
+    {
+        BenchmarkReportAudience.ExecutiveSummary,
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief,
+        BenchmarkReportAudience.ProviderIssueReport,
+    };
+
+    private static BenchmarkReportWriterPrompt ChatConsistencyPrompt(BenchmarkReportAudience audience)
+        => BenchmarkReportPackPrompt.Build(audience, ChatConsistencyReportTestData.Sheet(audience), ChatConsistencyReportTestData.Content());
+
+    /// <summary>
+    /// The chat consistency writer prompt of the claim-discipline fixture, system prompt and user
+    /// message, against a golden file; with <c>OVERSEER_UPDATE_GOLDENS=1</c> the file is written
+    /// instead. The stored prompt hash is the hash of the pinned system prompt.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ChatConsistencyPromptFiles))]
+    public void TheChatConsistencyPrompt_IsPinned(BenchmarkReportAudience audience, string file)
+    {
+        var prompt = ChatConsistencyPrompt(audience);
+        string text = prompt.SystemPrompt + PromptSeparator + prompt.UserMessage;
+
+        if (BenchmarkReportPackFixture.UpdateGoldens)
+        {
+            BenchmarkReportPackFixture.WriteGolden(file, text);
+            return;
+        }
+
+        string golden = BenchmarkReportPackFixture.ReadGolden(file);
+        Assert.Equal(golden, text);
+
+        string system = golden[..golden.IndexOf(PromptSeparator, StringComparison.Ordinal)];
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(system))),
+            BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.ChatConsistency));
+    }
+
+    [Theory]
+    [MemberData(nameof(ChatConsistencyAudiences))]
+    public void TheChatConsistencySystemPrompt_IsItsOwn_AndItsHashIsTheScopes(BenchmarkReportAudience audience)
+    {
+        string system = BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(audience);
+
+        Assert.Equal(system, ChatConsistencyPrompt(audience).SystemPrompt);
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(system))),
+            BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.ChatConsistency));
+        if (audience != BenchmarkReportAudience.ProviderIssueReport)
+        {
+            Assert.NotEqual(BenchmarkReportPackPrompt.PromptSha256(audience), BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.ChatConsistency));
+            Assert.NotEqual(BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.Comparison), BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.ChatConsistency));
+            Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(audience), BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.Model));
+        }
+
+        Assert.Contains("the Overseer chat with {{subject}}", system);
+        Assert.Contains("{{scope.hours}}", system);
+        foreach (string slot in BenchmarkReportSlots.For(audience, BenchmarkReportScope.ChatConsistency).RequiredSlots)
+        {
+            Assert.Contains("\"" + slot + "\": \"Markdown paragraphs\"", system);
+            Assert.Contains("(\"" + BenchmarkReportSlots.ChatConsistencySlotTitles[slot] + "\")", system);
+        }
+        Assert.DoesNotContain("\"strengths\": [", system);
+        Assert.Equal(audience == BenchmarkReportAudience.ProviderIssueReport, system.Contains("Under ruledOut, list every Overseer event", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ChatConsistencyPromptSha256_DiffersPerAudience()
+    {
+        var hashes = BenchmarkReportSlots.ChatConsistencyAudiences
+            .Select(a => BenchmarkReportPackPrompt.PromptSha256(a, BenchmarkReportScope.ChatConsistency))
+            .ToList();
+
+        Assert.Equal(hashes.Count, hashes.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(hashes, h => Assert.Matches("^[0-9a-f]{64}$", h));
+    }
+
+    [Fact]
+    public void AChatConsistencyUserMessage_ListsTheClaimSupport_AndNamesNoControlModel()
+    {
+        string message = ChatConsistencyPrompt(BenchmarkReportAudience.ProviderIssueReport).UserMessage;
+
+        var blocks = new[] { "\nSUBJECT\n", "\nPEERS (", "\nFACTS (", "\nCLAIM SUPPORT (" };
+        var positions = blocks.Select(b => message.IndexOf(b, StringComparison.Ordinal)).ToList();
+        Assert.All(positions, p => Assert.True(p >= 0));
+        Assert.Equal(positions.OrderBy(p => p), positions);
+
+        Assert.Contains("- {{peer:A}}: its facts (values under FACTS): controls.1.model", message);
+        Assert.Contains("- Results that show a change, for change words: verdict.overall (degraded), verdict.quality (degraded), endpoint.P1.* (degraded), endpoint.P2.* (equivalent), attribution.1.*, did.1.*", message);
+        Assert.Contains("- Inconclusive endpoints, each needing its minimum detectable effect in the same section: endpoint.P5.* with endpoint.P5.mde\n", message);
+        Assert.Contains("- Established grades, for public-claim words: endpoint.P2.grade\n", message);
+        Assert.Contains("- Provider-confirmed causes, for mechanism words: annotation.1.*\n", message);
+        Assert.Contains("- Provider-side attributions, for sentences about the model or its serving: attribution.1.*\n", message);
+        Assert.Contains("- Overseer events to list under ruledOut: events.1.*, events.2.*\n", message);
+        Assert.Contains("- Sample request ids for sampleRequestIds: requestIds.sample.1, requestIds.sample.2\n", message);
+        Assert.Contains("Provider Issue Report: available", message);
+        Assert.DoesNotContain(ChatConsistencyReportTestData.ControlName, message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(ChatConsistencyReportTestData.ControlProvider, message, StringComparison.OrdinalIgnoreCase);
+
+        string executive = ChatConsistencyPrompt(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
+        Assert.DoesNotContain("Overseer events to list under ruledOut", executive);
+        Assert.DoesNotContain("requestIds.sample", executive);
+    }
+
+    [Fact]
+    public void TheChatConsistencyRepairMessage_RemindsOfTheClaimRules_AndTheOtherScopesKeepTheirs()
+    {
+        var issues = new List<BenchmarkReportValidationNote>
+        {
+            new() { Rule = BenchmarkReportPackValidator.ChatChangeClaimRule, Location = "sections.asGoodAsBefore[p1]", Message = "C1: Uses \"degraded\" without a result that shows a change." }
+        };
+
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(issues, BenchmarkReportScope.ChatConsistency);
+
+        Assert.Contains("- rule 22 at sections.asGoodAsBefore[p1]: C1: Uses \"degraded\" without a result that shows a change.", message);
+        Assert.Contains("{{scope.hours}}", message);
+        Assert.Contains("{{peer:X}}", message);
+        Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues), BenchmarkReportPackPrompt.BuildRepairMessage(issues, BenchmarkReportScope.Model));
+        Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: true), BenchmarkReportPackPrompt.BuildRepairMessage(issues, BenchmarkReportScope.Comparison));
+    }
 }

@@ -45,7 +45,7 @@ public static partial class BenchmarkReportPackPrompt
     /// <summary>
     /// The prompt for the sheet's scope. A comparison-scope sheet is given the question topics already
     /// written for its covered set in <paramref name="sharedTopics"/>, so they are written once per
-    /// job; a per-model sheet ignores them.
+    /// job; a per-model or chat consistency sheet ignores them.
     /// </summary>
     public static BenchmarkReportWriterPrompt Build(
         BenchmarkReportAudience audience,
@@ -56,7 +56,9 @@ public static partial class BenchmarkReportPackPrompt
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(content);
 
-        return sheet.IsComparison
+        return sheet.IsChatConsistency
+            ? new BenchmarkReportWriterPrompt(BuildChatConsistencySystemPrompt(audience), BuildChatConsistencyUserMessage(audience, sheet))
+            : sheet.IsComparison
             ? new BenchmarkReportWriterPrompt(BuildComparisonSystemPrompt(audience), BuildComparisonUserMessage(audience, sheet, content, sharedTopics))
             : new BenchmarkReportWriterPrompt(BuildSystemPrompt(audience), BuildUserMessage(audience, sheet, content));
     }
@@ -67,7 +69,9 @@ public static partial class BenchmarkReportPackPrompt
 
     /// <summary>Lower-case hex SHA-256 of the audience's system prompt for <paramref name="scope"/>.</summary>
     public static string PromptSha256(BenchmarkReportAudience audience, BenchmarkReportScope scope)
-        => scope == BenchmarkReportScope.Comparison
+        => scope == BenchmarkReportScope.ChatConsistency
+            ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildChatConsistencySystemPrompt(audience))))
+            : scope == BenchmarkReportScope.Comparison
             ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildComparisonSystemPrompt(audience))))
             : PromptSha256(audience);
 

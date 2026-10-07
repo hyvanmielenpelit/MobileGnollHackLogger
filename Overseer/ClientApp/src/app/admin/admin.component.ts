@@ -44,7 +44,7 @@ export class AdminComponent implements OnInit, OnDestroy {
     { id: 'configs',   label: 'System Configs' },
     { id: 'database',  label: 'Database' },
     { id: 'telemetry', label: 'AI Telemetry' },
-    { id: 'benchmark', label: 'AI Benchmark' },
+    { id: 'benchmark', label: 'GnollBench' },
     { id: 'devtools',  label: 'Developer Tools' }
   ];
   loading = false;

@@ -84,6 +84,16 @@ public sealed class BenchmarkReportCleanResult
 /// or <c>.allPairs</c>) may be stated instead; its <c>models</c> list gives each covered model at
 /// most the audience's points, each citing evidence; and rule 21, a warning, asks for an entry for
 /// every covered model. Topics already written for the job's covered set are not checked again.</para>
+///
+/// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
+/// against its audience's chat consistency slots and word caps, with the claim discipline of rules
+/// C1 to C7 (rule numbers 22 to 28) on top of the rules above. Its controls are the peers, so
+/// <c>{{peer:X}}</c> names one. C1, C2, C3, C4, the wording half of C6 and the claim half of C7 read
+/// each sentence of the headline and of every paragraph, and a paragraph failing one is dropped like
+/// any other error. C5 is a warning on a whole slot. The other halves of C6 (the document cites
+/// <c>{{scope.hours}}</c>) and C7 (<c>ruledOut</c> cites every Overseer event) have nothing to drop,
+/// so after the repair turn they are recorded against the kept text without
+/// <see cref="BenchmarkReportValidationNote.Dropped"/>.</para>
 /// </summary>
 public static class BenchmarkReportPackValidator
 {
@@ -202,10 +212,37 @@ public static class BenchmarkReportPackValidator
     /// <summary>Rule 19 looks this many words back from a token for a negation.</summary>
     public const int NegationWindowWords = 4;
 
+    // Chat consistency claim discipline, rules C1 to C7 (chat consistency scope only). Each note's
+    // message starts with its C id.
+
+    /// <summary>C1: change vocabulary needs a decisive endpoint verdict, estimate or attribution token in its sentence.</summary>
+    public const int ChatChangeClaimRule = 22;
+
+    /// <summary>C2: intent and mechanism vocabulary needs a provider-confirmed cause in its sentence.</summary>
+    public const int ChatIntentMechanismRule = 23;
+
+    /// <summary>C3: a causal connective needs an attribution token in its sentence.</summary>
+    public const int ChatCausalClaimRule = 24;
+
+    /// <summary>C4: public-claim wording needs an Established grade token in its sentence.</summary>
+    public const int ChatPublicClaimRule = 25;
+
+    /// <summary>C5: an inconclusive endpoint a slot cites needs its minimum detectable effect in that slot. A warning.</summary>
+    public const int ChatInconclusiveMdeRule = 26;
+
+    /// <summary>C6: all-hours wording needs a true time-of-day fact in its sentence, and every document cites the hours.</summary>
+    public const int ChatHoursRule = 27;
+
+    /// <summary>
+    /// C7: in a Provider Issue Report, a claim about the model or its serving needs a provider-side
+    /// attribution in its sentence, and the ruled-out slot cites every Overseer event.
+    /// </summary>
+    public const int ChatProviderReportRule = 28;
+
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule
-            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule or ModelCoverageRule;
+            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule;
 
     /// <summary>
     /// Terms rule 18 flags in a <c>model_developers</c> recommendation, matched as whole words ignoring
@@ -255,6 +292,62 @@ public static class BenchmarkReportPackValidator
     public const string DisagreementWord = "disagree";
 
     public static readonly IReadOnlyList<string> LeadTriages = new[] { "harness", "suite", "chat", "corpus" };
+
+    /// <summary>C1's change vocabulary, matched as whole words and phrases, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ChatChangeWords = new[]
+    {
+        "got slower", "got faster", "got worse", "got better", "became slower", "became faster", "became worse", "became better",
+        "slower", "faster", "degraded", "degradation", "improved", "regressed", "dropped", "rose", "declined",
+        "slowdown", "slowdowns", "speedup", "speedups", "speed-up", "slowed", "sped up", "worsened", "deteriorated"
+    };
+
+    /// <summary>C2's intent vocabulary, matched as whole words and phrases, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ChatIntentWords = new[]
+    {
+        "deliberately", "deliberate", "intentionally", "intentional", "on purpose", "throttled", "throttling", "nerfed", "nerfing",
+        "sabotage", "sabotaged", "cheating", "cheated", "secretly", "quietly downgraded", "silently downgraded"
+    };
+
+    /// <summary>C2's mechanism vocabulary, matched as whole words and phrases, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ChatMechanismWords = new[]
+    {
+        "quantized", "quantization", "quantised", "quantisation", "speculative decoding", "hardware", "batching"
+    };
+
+    /// <summary>C3's causal connectives, matched as whole phrases, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ChatCausalConnectives = new[]
+    {
+        "because", "due to", "caused by", "as a result of", "led to", "owing to", "driven by", "attributable to"
+    };
+
+    /// <summary>
+    /// C4's public-claim wording, matched as whole words and phrases, ignoring case; a word after
+    /// <c>not</c>, <c>never</c> or <c>not yet</c>, or after a hyphen (<c>provider-confirmed</c>), is not one.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ChatPublicClaimWords = new[]
+    {
+        "publishable", "established", "confirmed", "proven", "definitively", "conclusively", "we can state"
+    };
+
+    /// <summary>C6's all-hours wording, matched as whole phrases, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ChatAllHoursWords = new[]
+    {
+        "at all hours", "around the clock", "any time of day", "all times of day", "every hour of the day", "load-independent",
+        "independent of load", "regardless of load", "regardless of the time of day", "24/7"
+    };
+
+    /// <summary>C7's model and serving terms in a Provider Issue Report, matched as whole words and phrases, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ChatModelServingTerms = new[]
+    {
+        "the model", "its serving", "serving", "latency", "latencies", "speed", "speeds", "decode", "decoding",
+        "served model", "served models", "snapshot", "snapshots"
+    };
+
+    /// <summary>The Provider Issue Report slots C7 leaves out of its model and serving check: they identify, and claim nothing.</summary>
+    public static readonly IReadOnlyList<string> ChatIdentifyingSlots = new[]
+    {
+        BenchmarkReportSlots.AffectedModel, BenchmarkReportSlots.SampleRequestIds
+    };
 
     private static readonly Regex TokenRegex = new(@"\{\{([^{}]*)\}\}", RegexOptions.Compiled);
     private static readonly Regex QuestionRefRegex = new(@"(?<![\p{L}\p{N}_])Q(\d+)(?![\p{L}\p{N}_])", RegexOptions.Compiled);
@@ -340,6 +433,30 @@ public static class BenchmarkReportPackValidator
     /// <summary>The placeholder rule 16 puts in place of a token before splitting sentences, so a fact key's dots never end one.</summary>
     private static readonly Regex TokenPlaceholderRegex = new("\u0001(\\d+)\u0002", RegexOptions.Compiled);
 
+    private static readonly Regex ChatChangeRegex = PhraseRegex(ChatChangeWords);
+    private static readonly Regex ChatIntentMechanismRegex = PhraseRegex(ChatIntentWords.Concat(ChatMechanismWords));
+    private static readonly Regex ChatCausalRegex = PhraseRegex(ChatCausalConnectives);
+    private static readonly Regex ChatPublicClaimRegex = PhraseRegex(ChatPublicClaimWords, @"(?<!(?<![\p{L}\p{N}])(?:not|never)\s+(?:yet\s+)?)");
+    private static readonly Regex ChatAllHoursRegex = PhraseRegex(ChatAllHoursWords);
+    private static readonly Regex ChatModelServingRegex = PhraseRegex(ChatModelServingTerms);
+
+    /// <summary>
+    /// Whole words and phrases of <paramref name="phrases"/>, ignoring case, longest first; a space or
+    /// hyphen inside a phrase matches any run of whitespace and hyphens, and a match never touches a
+    /// letter, digit or hyphen on either side. <paramref name="lookbehind"/>, when given, guards the start.
+    /// </summary>
+    private static Regex PhraseRegex(IEnumerable<string> phrases, string? lookbehind = null)
+    {
+        var alternatives = phrases
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(p => p.Length)
+            .ThenBy(p => p, StringComparer.Ordinal)
+            .Select(p => string.Join(@"[\s-]+", Regex.Split(p.Trim(), @"[\s-]+").Select(Regex.Escape)));
+        return new Regex(
+            @"(?<![\p{L}\p{N}-])" + (lookbehind ?? string.Empty) + "(?:" + string.Join("|", alternatives) + @")(?![\p{L}\p{N}-])",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
     private enum ItemKind
     {
         Strength,
@@ -401,6 +518,55 @@ public static class BenchmarkReportPackValidator
         _ => null
     };
 
+    /// <summary>The word cap of a slot of a document of <paramref name="scope"/>, or null when it has none.</summary>
+    public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot, BenchmarkReportScope scope) => scope switch
+    {
+        BenchmarkReportScope.ChatConsistency => ChatConsistencySlotMaxWords(audience, slot),
+        BenchmarkReportScope.Comparison => SlotMaxWords(audience, slot, comparisonScope: true),
+        _ => SlotMaxWords(audience, slot, comparisonScope: false)
+    };
+
+    /// <summary>
+    /// The word cap of a chat consistency slot, or null when it has none: the Executive Summary's
+    /// slots sixty to one hundred and twenty words, the researcher report's one hundred and fifty to two
+    /// hundred and fifty, the Internal Brief's sixty to one hundred and fifty, the Provider Issue
+    /// Report's sixty to two hundred.
+    /// </summary>
+    public static int? ChatConsistencySlotMaxWords(BenchmarkReportAudience audience, string slot) => (audience, slot) switch
+    {
+        (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.AsGoodAsBefore) => 120,
+        (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.PlayerImpact) => 90,
+        (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.OurChanges) => 80,
+        (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.ProviderChanges) => 80,
+        (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.ConfidenceAndScope) => 90,
+        (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.NextRuns) => 60,
+
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.QuestionAndDesign) => 200,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.RunsAndCoverage) => 200,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.OverseerEvents) => 150,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.EndpointResults) => 250,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Attribution) => 250,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Robustness) => 150,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Limitations) => 150,
+        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Reproducibility) => 150,
+
+        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.ChatFindings) => 150,
+        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.ChangeEffects) => 120,
+        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.InfrastructureIssues) => 100,
+        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.NextRuns) => 100,
+        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.Actions) => 150,
+
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.IssueSummary) => 120,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.AffectedModel) => 80,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Timeline) => 150,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Measurements) => 200,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.HoursObserved) => 80,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.RuledOut) => 200,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.SampleRequestIds) => 60,
+        (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.ProviderRequest) => 100,
+        _ => null
+    };
+
     // -----------------------------------------------------------------------------------------
     // Validate
     // -----------------------------------------------------------------------------------------
@@ -440,13 +606,16 @@ public static class BenchmarkReportPackValidator
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), notes);
                 CheckIntervalWidth(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
                 CheckAbstractVerifier(slot, paragraphs[p], ParagraphLocation(slot, p), notes);
+                CheckChatClaims(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
             }
+            CheckChatSlot(ctx, slot, text, location, notes);
 
-            if (SlotMaxWords(audience, slot, ctx.Comparison) is int cap && WordCount(text) > cap)
+            if (SlotMaxWords(audience, slot, ctx.Scope) is int cap && WordCount(text) > cap)
             {
                 Issue(notes, 7, location, $"{SlotName(slot)} has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {cap.ToString(CultureInfo.InvariantCulture)}.");
             }
         }
+        CheckChatHoursCited(ctx, output.Headline, sections, notes);
 
         foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
@@ -603,7 +772,7 @@ public static class BenchmarkReportPackValidator
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
     /// question topics and notes are recorded but not fatal, and so are the warnings of rules 12 to
-    /// 19: their text is kept.
+    /// 19, 21 and 26: their text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -649,6 +818,7 @@ public static class BenchmarkReportPackValidator
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), issues);
                 CheckIntervalWidth(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
                 CheckAbstractVerifier(slot, paragraphs[p], ParagraphLocation(slot, p), issues);
+                CheckChatClaims(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
                 if (issues.Any(Blocks))
                 {
                     notes.AddRange(MarkDropped(issues));
@@ -660,7 +830,7 @@ public static class BenchmarkReportPackValidator
                 }
             }
 
-            if (SlotMaxWords(audience, slot, ctx.Comparison) is int cap)
+            if (SlotMaxWords(audience, slot, ctx.Scope) is int cap)
             {
                 while (kept.Count > 0 && WordCount(string.Join("\n\n", kept.Select(k => k.Text))) > cap)
                 {
@@ -679,8 +849,12 @@ public static class BenchmarkReportPackValidator
             else
             {
                 copy.Sections[slot] = kept.Count == paragraphs.Count ? text : string.Join("\n\n", kept.Select(k => k.Text));
+
+                // Nothing to drop for a slot-wide check: its note is recorded against the kept text.
+                CheckChatSlot(ctx, slot, copy.Sections[slot], location, notes);
             }
         }
+        CheckChatHoursCited(ctx, copy.Headline, copy.Sections, notes);
 
         foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
@@ -813,6 +987,7 @@ public static class BenchmarkReportPackValidator
 
         CheckProse(ctx, headline, "headline", notes);
         CheckVerifierMention(headline, "headline", notes);
+        CheckChatClaims(ctx, null, headline, "headline", notes);
 
         int words = WordCount(headline);
         if (words > HeadlineMaxWords)
@@ -853,7 +1028,9 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, 3, location, ctx.Battery
                 ? $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as S<suite>-Q<n>."
-                : $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as Q<n>.");
+                : ctx.ChatConsistency
+                    ? $"Contains the digit form \"{digit.Value}\": place figures, dates, hours and run ids only as {{{{key}}}} tokens, and write counts as number words."
+                    : $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as Q<n>.");
         }
 
         // Rule 4: question references.
@@ -936,7 +1113,9 @@ public static class BenchmarkReportPackValidator
             .ToList();
         if (claims.Count > 0)
         {
-            Issue(notes, 11, location, $"Uses \"{string.Join("\", \"", claims)}\": the comparison runs no significance test, so say only whether the intervals overlap, or whether a paired interval excludes zero.");
+            Issue(notes, 11, location, ctx.ChatConsistency
+                ? $"Uses \"{string.Join("\", \"", claims)}\": state what the analysis decided instead, citing the endpoint's verdict and grade tokens, and its interval where it matters."
+                : $"Uses \"{string.Join("\", \"", claims)}\": the comparison runs no significance test, so say only whether the intervals overlap, or whether a paired interval excludes zero.");
         }
 
         // Rule 12: US English.
@@ -1176,6 +1355,155 @@ public static class BenchmarkReportPackValidator
             Issue(notes, VerifierInSummaryRule, location, $"Mentions the \"{match.Value}\": a claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Leave refuted claims out of the headline and the abstract, and state them among the weaknesses, attributed to the claim verifier.");
         }
     }
+
+    /// <summary>
+    /// Rules C1, C2, C3, C4, the wording half of C6 and, in a Provider Issue Report, the claim half of
+    /// C7, sentence by sentence, on one prose string of a chat consistency sheet; every other sheet is
+    /// not checked. <paramref name="slot"/> is null for the headline. Each rule gives one note per
+    /// string, naming every offending phrase.
+    /// </summary>
+    private static void CheckChatClaims(
+        Context ctx, string? slot, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.ChatConsistency || string.IsNullOrWhiteSpace(text)) return;
+
+        var claims = ctx.Claims;
+        bool providerReport = ctx.Spec.Audience == BenchmarkReportAudience.ProviderIssueReport
+                              && (slot == null || !ChatIdentifyingSlots.Contains(slot, StringComparer.Ordinal));
+        var change = new List<string>();
+        var intent = new List<string>();
+        var causal = new List<string>();
+        var publicClaim = new List<string>();
+        var allHours = new List<string>();
+        var modelServing = new List<string>();
+
+        foreach (var (plain, tokens) in TokenSentences(text))
+        {
+            if (!tokens.Any(claims.SupportsChange)) change.AddRange(Phrases(ChatChangeRegex, plain));
+            if (!tokens.Any(claims.IsProviderConfirmedCause)) intent.AddRange(Phrases(ChatIntentMechanismRegex, plain));
+            if (!tokens.Any(claims.IsAttribution)) causal.AddRange(Phrases(ChatCausalRegex, plain));
+            if (!tokens.Any(claims.IsEstablished))
+            {
+                // A provider-confirmed cause is what lets a sentence say the provider confirmed it.
+                bool providerConfirmed = tokens.Any(claims.IsProviderConfirmedCause);
+                publicClaim.AddRange(Phrases(ChatPublicClaimRegex, plain)
+                    .Where(p => !(providerConfirmed && p.Equals("confirmed", StringComparison.OrdinalIgnoreCase))));
+            }
+            if (!(claims.TimeOfDayAssessable && tokens.Contains(BenchmarkReportPackPrompt.ChatClaimSupport.TimeOfDayKey, StringComparer.Ordinal)))
+            {
+                allHours.AddRange(Phrases(ChatAllHoursRegex, plain));
+            }
+            if (providerReport && !tokens.Any(claims.IsProviderSideAttribution))
+            {
+                modelServing.AddRange(Phrases(ChatModelServingRegex, plain));
+            }
+        }
+
+        string Quoted(List<string> phrases) => "\"" + string.Join("\", \"", phrases.Distinct(StringComparer.OrdinalIgnoreCase)) + "\"";
+
+        if (change.Count > 0)
+        {
+            Issue(notes, ChatChangeClaimRule, location, $"C1: Uses {Quoted(change)} without a result that shows a change: in the same sentence, cite an endpoint's verdict or estimate token, or an attribution token, whose verdict is not inconclusive (CLAIM SUPPORT lists them), or leave the change word out.");
+        }
+        if (intent.Count > 0)
+        {
+            Issue(notes, ChatIntentMechanismRule, location, $"C2: Uses {Quoted(intent)}: the analysis measures what changed, never why or how anyone changed it. Describe the measured change instead; a mechanism may be named only in a sentence that cites an annotation.<n> token whose kind is ProviderConfirmedCause.");
+        }
+        if (causal.Count > 0)
+        {
+            Issue(notes, ChatCausalClaimRule, location, $"C3: Uses the causal connective {Quoted(causal)} without an attribution token in the same sentence: state a cause only as the analysis attributes it, citing its attribution.<n> token, or write two sentences instead.");
+        }
+        if (publicClaim.Count > 0)
+        {
+            Issue(notes, ChatPublicClaimRule, location, $"C4: Uses {Quoted(publicClaim)} without an Established grade in the same sentence: cite an endpoint.<P>.grade or attribution.<n>.grade token whose grade is Established, or state the grade the result has (Indicated, or not established).");
+        }
+        if (allHours.Count > 0)
+        {
+            Issue(notes, ChatHoursRule, location, claims.TimeOfDayAssessable
+                ? $"C6: Uses {Quoted(allHours)} without {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.TimeOfDayKey}}}}} in the same sentence: cite it there, or say that the result holds for {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey}}}}}."
+                : $"C6: Uses {Quoted(allHours)}, but the analysis cannot assess time of day: say that the result holds for {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey}}}}} only.");
+        }
+        if (modelServing.Count > 0)
+        {
+            Issue(notes, ChatProviderReportRule, location, $"C7: Makes a claim about the model or its serving ({Quoted(modelServing)}) without a provider-side attribution in the same sentence: cite an attribution.<n> token whose side is the provider, or describe what was measured of the Overseer chat instead.");
+        }
+    }
+
+    /// <summary>
+    /// The slot-wide chat consistency checks: rule C5 (a warning) on every slot, and in a Provider
+    /// Issue Report the half of C7 that wants every Overseer event cited under <c>ruledOut</c>.
+    /// </summary>
+    private static void CheckChatSlot(
+        Context ctx, string slot, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.ChatConsistency || string.IsNullOrWhiteSpace(text)) return;
+
+        var cited = TokenRegex.Matches(text).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+
+        var missingMde = ctx.Claims.InconclusiveEndpoints
+            .Where(id => cited.Any(t => t.StartsWith(BenchmarkReportPackPrompt.ChatClaimSupport.EndpointPrefix(id), StringComparison.Ordinal)))
+            .Where(id => !cited.Contains(BenchmarkReportPackPrompt.ChatClaimSupport.MdeKey(id)))
+            .ToList();
+        if (missingMde.Count > 0)
+        {
+            string keys = string.Join(", ", missingMde.Select(id => "{{" + BenchmarkReportPackPrompt.ChatClaimSupport.MdeKey(id) + "}}"));
+            Issue(notes, ChatInconclusiveMdeRule, location, $"C5: Cites the inconclusive endpoint{Plural(missingMde.Count)} {string.Join(", ", missingMde)} without {(missingMde.Count == 1 ? "its" : "their")} minimum detectable effect: cite {keys} in this section, so the reader knows how large a change the runs could have missed.");
+        }
+
+        if (ctx.Spec.Audience == BenchmarkReportAudience.ProviderIssueReport
+            && string.Equals(slot, BenchmarkReportSlots.RuledOut, StringComparison.Ordinal))
+        {
+            var missingEvents = ctx.Claims.EventNumbers
+                .Where(n => !cited.Any(t => t.StartsWith(BenchmarkReportPackPrompt.ChatClaimSupport.EventPrefix(n), StringComparison.Ordinal)))
+                .ToList();
+            if (missingEvents.Count > 0)
+            {
+                string events = string.Join(", ", missingEvents.Select(n => BenchmarkReportPackPrompt.ChatClaimSupport.EventPrefix(n) + "*"));
+                Issue(notes, ChatProviderReportRule, location, $"C7: Does not cite the Overseer event{Plural(missingEvents.Count)} {events}: list every Overseer event of the period under {SlotName(slot)}, each with one of its events.<n> tokens, so the provider sees what we ruled out on our side.");
+            }
+        }
+    }
+
+    /// <summary>The half of rule C6 that wants every chat consistency document to cite the hours its result covers.</summary>
+    private static void CheckChatHoursCited(
+        Context ctx, string? headline, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.ChatConsistency) return;
+
+        string hours = "{{" + BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey + "}}";
+        bool cited = (headline ?? string.Empty).Contains(hours, StringComparison.Ordinal)
+                     || ctx.RequiredSlots.Any(s => sections.TryGetValue(s, out string? text) && (text ?? string.Empty).Contains(hours, StringComparison.Ordinal));
+        if (!cited)
+        {
+            Issue(notes, ChatHoursRule, "sections", $"C6: The document never cites {hours}: every chat consistency result holds for the hours the two periods share, so state them at least once.");
+        }
+    }
+
+    /// <summary>
+    /// Each sentence of <paramref name="text"/>: its text with every token blanked, and the tokens it
+    /// holds. Tokens are set aside before the text is split, so the dots of a fact key never end a sentence.
+    /// </summary>
+    private static List<(string Plain, List<string> Tokens)> TokenSentences(string text)
+    {
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text ?? string.Empty, m =>
+        {
+            tokens.Add(m.Groups[1].Value);
+            return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
+        });
+
+        return SentenceSplitRegex.Split(masked)
+            .Select(sentence => (
+                TokenPlaceholderRegex.Replace(sentence, " "),
+                TokenPlaceholderRegex.Matches(sentence)
+                    .Select(m => tokens[int.Parse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)])
+                    .ToList()))
+            .ToList();
+    }
+
+    /// <summary>Every match of <paramref name="regex"/>, its whitespace folded to single spaces.</summary>
+    private static IEnumerable<string> Phrases(Regex regex, string text)
+        => regex.Matches(text).Select(m => Regex.Replace(m.Value, @"\s+", " "));
 
     private static void CheckItems<T>(
         Context ctx,
@@ -1528,7 +1856,8 @@ public static class BenchmarkReportPackValidator
     private static string UnusedListMessage(BenchmarkReportAudienceSpec spec, string array)
         => $"The {DocumentName(spec.Audience)} does not use \"{array}\"; leave it out.";
 
-    private static string DocumentName(BenchmarkReportAudience audience) => BenchmarkReportRenderService.AudienceName(audience);
+    private static string DocumentName(BenchmarkReportAudience audience)
+        => audience == BenchmarkReportAudience.ProviderIssueReport ? "Provider Issue Report" : BenchmarkReportRenderService.AudienceName(audience);
 
     private static string SlotName(string slot) => slot switch
     {
@@ -1553,13 +1882,14 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.GraderReliability => "\"Grader reliability\"",
         BenchmarkReportSlots.SharedGaps => "\"Shared gaps\"",
         BenchmarkReportSlots.ModelGaps => "\"Model-specific gaps\"",
+        _ when BenchmarkReportSlots.ChatConsistencySlotTitles.TryGetValue(slot, out string? title) => $"\"{title}\"",
         _ => $"The \"{slot}\" slot"
     };
 
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but the warning rules 12 to 19 and 21 removes the offending item or paragraph.</summary>
+    /// <summary>Every rule but the warning rules 12 to 19, 21 and 26 (C5) removes the offending item or paragraph.</summary>
     private static bool Blocks(BenchmarkReportValidationNote note) => !IsWarningRule(note.Rule);
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
@@ -1630,6 +1960,11 @@ public static class BenchmarkReportPackValidator
 
             Spec = BenchmarkReportSlots.For(audience, sheet);
             Comparison = sheet.IsComparison;
+            ChatConsistency = sheet.IsChatConsistency;
+            Scope = ChatConsistency ? BenchmarkReportScope.ChatConsistency
+                : Comparison ? BenchmarkReportScope.Comparison
+                : BenchmarkReportScope.Model;
+            Claims = BenchmarkReportPackPrompt.ChatClaimSupport.From(ChatConsistency ? sheet : new BenchmarkReportFactSheet());
             RequiredSlots = Comparison ? Spec.RequiredSlots : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
             _trueFacts = new HashSet<string>(
@@ -1777,6 +2112,15 @@ public static class BenchmarkReportPackValidator
 
         /// <summary>The sheet is a comparison-scope sheet: models are <c>{{model:X}}</c>, and there is no subject.</summary>
         public bool Comparison { get; }
+
+        /// <summary>The sheet is a chat consistency sheet: rules C1 to C7 apply.</summary>
+        public bool ChatConsistency { get; }
+
+        /// <summary>The document scope the sheet describes.</summary>
+        public BenchmarkReportScope Scope { get; }
+
+        /// <summary>What each kind of chat consistency claim may cite; empty on every other sheet.</summary>
+        public BenchmarkReportPackPrompt.ChatClaimSupport Claims { get; }
 
         /// <summary>The sheet's letters in letter order: shorter letters first, then ordinal.</summary>
         public IReadOnlyList<string> OrderedLetters { get; }

@@ -43,6 +43,7 @@ public class BenchmarkReportRenderService
         BenchmarkReportAudience.ExecutiveSummary => "Executive Summary",
         BenchmarkReportAudience.TechnicalReport => "Report for AI Researchers and Developers",
         BenchmarkReportAudience.InternalBrief => "Internal Improvement Brief",
+        BenchmarkReportAudience.ProviderIssueReport => "Provider Issue Report",
         _ => audience.ToString()
     };
 
@@ -117,7 +118,7 @@ public class BenchmarkReportRenderService
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd,
                 d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson,
-                d.Scope, d.ComparisonId, d.CoveredEntryKeysJson, d.CoveredSetKey,
+                d.Scope, d.ComparisonId, d.CoveredEntryKeysJson, d.CoveredSetKey, d.ChatConsistencyAnalysisId,
                 Runs = d.Runs.Select(r => new { r.RunId, r.IsPeer, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256 }).ToList()
             })
             .ToListAsync(ct);
@@ -140,6 +141,7 @@ public class BenchmarkReportRenderService
             item.RunChangedSinceGeneration = AnyChanged(subjectRuns, current);
             item.PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current);
             item.MissingRunIds = missing;
+            item.ChatConsistencyAnalysisId = d.ChatConsistencyAnalysisId;
             FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
             FillScope(item, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.FactsJson);
             FillCharts(item);
@@ -457,6 +459,7 @@ public class BenchmarkReportRenderService
             ValidationNotes = DeserializeNotes(d.ValidationNotesJson, d.Id),
             FactsJson = d.FactsJson,
             MissingRunIds = missing,
+            ChatConsistencyAnalysisId = d.ChatConsistencyAnalysisId,
             RunChangedSinceGeneration = AnyChanged(subjectRuns, current),
             PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current)
         };
@@ -535,7 +538,8 @@ public class BenchmarkReportRenderService
     /// configured, for any upload <see cref="BenchmarkReportChartStore.ValidateCharts"/> refuses and for
     /// a layout <see cref="BenchmarkReportChartStore.ValidateLayout"/> refuses. Everything is checked
     /// before anything is written. A comparison-scope document always covers two or more models, so it
-    /// is never stand-alone.
+    /// is never stand-alone; a chat consistency document plots the model under test over time, so it
+    /// takes charts with or without control models.
     /// </summary>
     public async Task<(ReportDocumentChartsSummaryDto? Summary, bool NotFound, string? Refusal)> SetChartsAsync(
         long documentId, PutReportDocumentChartsRequest? request, CancellationToken ct)
@@ -548,7 +552,10 @@ public class BenchmarkReportRenderService
             .FirstOrDefaultAsync(ct);
         if (d == null) return (null, true, null);
 
-        if (d.Scope != BenchmarkReportScope.Comparison && PeersOf(d.FactsJson).Count == 0) return (null, false, StandaloneChartsRefusal);
+        if (d.Scope is not (BenchmarkReportScope.Comparison or BenchmarkReportScope.ChatConsistency) && PeersOf(d.FactsJson).Count == 0)
+        {
+            return (null, false, StandaloneChartsRefusal);
+        }
         if (!_charts.IsConfigured) return (null, false, BenchmarkReportChartStore.NotConfiguredMessage);
 
         try
@@ -579,13 +586,23 @@ public class BenchmarkReportRenderService
         return true;
     }
 
-    /// <summary>A document's stored charts in one peer naming, for a PDF or Word render; empty when it has none.</summary>
-    public Task<IReadOnlyList<BenchmarkReportRenderChart>> LoadRenderChartsAsync(
+    /// <summary>
+    /// A document's stored charts in one peer naming, for a PDF or Word render; empty when it has none.
+    /// A chat consistency document's figures plot the model under test alone and are drawn once, named,
+    /// so every copy of it carries them.
+    /// </summary>
+    public async Task<IReadOnlyList<BenchmarkReportRenderChart>> LoadRenderChartsAsync(
         long documentId, BenchmarkReportPeerNaming naming, CancellationToken ct)
-        => _charts.LoadAsync(
-            documentId,
-            naming == BenchmarkReportPeerNaming.Anonymized ? BenchmarkReportChartStore.Anonymized : BenchmarkReportChartStore.Named,
-            ct);
+    {
+        bool chatConsistency = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .AnyAsync(x => x.Id == documentId && x.Scope == BenchmarkReportScope.ChatConsistency, ct);
+        string variant = naming == BenchmarkReportPeerNaming.Anonymized && !chatConsistency
+            ? BenchmarkReportChartStore.Anonymized
+            : BenchmarkReportChartStore.Named;
+        return await _charts.LoadAsync(documentId, variant, ct);
+    }
 
     /// <summary>The layout a document's charts render with, from its chart manifest; null for the default layout.</summary>
     public BenchmarkReportChartLayout? ReadRenderLayout(long documentId) => _charts.ReadLayout(documentId);

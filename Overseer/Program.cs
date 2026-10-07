@@ -305,6 +305,11 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparability
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkPairedComparisonCache>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkPairedTestsService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>();
+builder.Services.AddScoped<Overseer.Services.ChatConsistency.ChatConsistencyEvidenceBuilder>();
+builder.Services.AddScoped<Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService>();
+// Singleton: the re-grade job outlives the request that starts it and opens its own scopes.
+builder.Services.AddSingleton<Overseer.Services.ChatConsistency.ChatConsistencyRegradeJobManager>();
+builder.Services.AddScoped<Overseer.Services.ChatConsistency.ChatConsistencyRegradeService>();
 builder.Services.AddScoped<Overseer.Services.SystemConfigUsageGuard>();
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
 // own scope per member.

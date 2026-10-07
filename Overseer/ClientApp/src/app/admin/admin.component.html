@@ -76,7 +76,7 @@
           </div>
         }
 
-        <!-- AI BENCHMARK TAB -->
+        <!-- GNOLLBENCH TAB -->
         @if (activeTab === 'benchmark') {
           <div role="tabpanel" id="admin-panel-benchmark" aria-labelledby="admin-tab-benchmark" tabindex="0">
             <app-admin-benchmark [systemConfigs]="store.configs" [openRunId]="pendingRunId" (openRunHandled)="pendingRunId = null"

@@ -1,0 +1,113 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.cc-ann-title {
+  margin: 0;
+}
+
+.cc-ann-status,
+.cc-ann-empty {
+  margin: 0;
+  color: var(--nav-color);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.cc-ann-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-ann-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+}
+
+.cc-ann-text {
+  flex: 1 1 auto;
+  min-width: 0;
+
+  p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.cc-ann-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  font-size: var(--text-secondary);
+}
+
+.cc-ann-kind {
+  border-color: var(--border-glass);
+  color: var(--provider-google-ink);
+}
+
+.cc-ann-applies,
+.cc-ann-source {
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+}
+
+.cc-ann-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.cc-ann-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.cc-ann-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+
+  label {
+    font-weight: 600;
+  }
+
+  input[type="datetime-local"] {
+    color-scheme: dark;
+  }
+}
+
+.cc-ann-form textarea {
+  --autosize-min: 3rem;
+  --autosize-max: 12rem;
+}
+
+.cc-optional {
+  color: var(--nav-color);
+  font-weight: 400;
+  font-size: var(--text-secondary);
+}
+
+.cc-ann-actions {
+  display: flex;
+  justify-content: flex-end;
+}

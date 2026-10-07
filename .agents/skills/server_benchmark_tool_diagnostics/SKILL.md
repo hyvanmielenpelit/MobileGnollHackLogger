@@ -1,7 +1,7 @@
 ---
 name: server_benchmark_tool_diagnostics
 description: >-
-  How to read an Overseer AI benchmark run as a diagnostic instrument for the production chat
+  How to read an Overseer AI benchmark (GnollBench) run as a diagnostic instrument for the production chat
   agent's tool layer, rather than as a scoreboard. Answers "did the AI have access to the wiki
   or the source at all", "why did this tool return nothing", "did the tool actually work or was
   there a technical problem". Covers what a run records about its tool calls and what it
@@ -15,6 +15,8 @@ description: >-
 ---
 
 # Benchmark Tool Diagnostics: Reading a Run as an Instrument, Not a Scoreboard
+
+GnollBench is the user's name for the Overseer AI benchmark.
 
 ---
 

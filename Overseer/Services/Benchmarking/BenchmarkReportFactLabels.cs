@@ -106,6 +106,178 @@ public static class BenchmarkReportFactLabels
         ["run.dates"] = "Run dates",
         ["run.promptSha256"] = "System prompt SHA-256 prefix",
         ["run.toolGuidesSha256"] = "Tool guides SHA-256 prefix",
+
+        // Chat consistency: the fixed keys of BenchmarkChatConsistencyReportFacts
+        ["subject.serviceTier"] = "Service tier",
+        ["analysis.id"] = "Analysis ID",
+        ["analysis.name"] = "Analysis name",
+        ["analysis.inputSha256"] = "Analysis input SHA-256 prefix",
+        ["analysis.codeVersion"] = "Analysis code version",
+        ["analysis.relaxedPooling"] = "Relaxed pooling across a measurement change",
+        ["verdict.overall"] = "Overall verdict on the chat",
+        ["verdict.quality"] = "Verdict on quality",
+        ["verdict.headline"] = "Analysis headline",
+        ["verdict.reliabilityIncreases"] = "Established reliability increases",
+        ["scope.hours"] = "Hours the comparison holds for",
+        ["scope.excludedShare"] = "Timed answers outside the common hours",
+        ["scope.oneTimeStratum"] = "Single common time stratum",
+        ["coverage.strata.count"] = "Common time strata",
+        ["coverage.usBusinessHours"] = "US business hours covered",
+        ["coverage.outsideBusinessHours"] = "Hours outside US business hours covered",
+        ["protocol.version"] = "Protocol version",
+        ["protocol.label"] = "Protocol",
+        ["protocol.alpha"] = "Significance level (alpha)",
+        ["protocol.overridden"] = "Protocol overrides",
+        ["n.targetRuns"] = "Runs of the model under test",
+        ["n.controlRuns"] = "Control runs",
+        ["n.answers"] = "Answers analyzed",
+        ["quality.commonGrader"] = "Common grader",
+        ["grader.drift.count"] = "Grader drift checks",
+        ["robustness.count"] = "Robustness checks",
+        ["robustness.failed"] = "Failed robustness checks",
+        ["identity.changed"] = "Served model changed",
+        ["serving.configurationDiffers"] = "Served configuration differs from the request",
+        ["serving.timeOfDayAssessable"] = "Time of day assessable",
+        ["pricing.source"] = "Price card source",
+        ["pricing.asOf"] = "Price card date",
+        ["pricing.card"] = "Price card",
+        ["events.count"] = "Overseer events",
+        ["controls.count"] = "Control models",
+        ["controls.missing.count"] = "Missing controls",
+        ["did.count"] = "Difference-in-differences estimates",
+        ["annotation.count"] = "Annotations",
+        ["annotation.providerConfirmed"] = "Provider-confirmed causes",
+        ["attribution.count"] = "Attributions",
+        ["limitation.count"] = "Limitations",
+        ["limitation.dataQuality.count"] = "Data-quality notes",
+        ["nextRuns.count"] = "Suggested next runs",
+        ["requestIds.sample.count"] = "Sample request IDs",
+    };
+
+    /// <summary>The primary endpoints of a chat consistency analysis by id.</summary>
+    private static readonly IReadOnlyDictionary<string, string> EndpointNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["P1"] = "Quality",
+        ["P2"] = "Time to first answer text",
+        ["P3"] = "Answer streaming rate",
+        ["P4"] = "Work per turn",
+        ["P5"] = "Cost per question",
+    };
+
+    /// <summary>The periods of a chat consistency analysis.</summary>
+    private static readonly IReadOnlyDictionary<string, string> PeriodNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["baseline"] = "Baseline",
+        ["comparison"] = "Comparison",
+    };
+
+    /// <summary>The reliability rates of a chat consistency analysis by id; another id reads as its words.</summary>
+    private static readonly IReadOnlyDictionary<string, string> ReliabilityNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["terminalFailures"] = "Terminal failures",
+        ["timeouts"] = "Timeouts",
+        ["emptyAnswers"] = "Empty answers",
+        ["refusals"] = "Refusals",
+        ["toolBudgetExhausted"] = "Tool-budget exhaustion",
+        ["http429"] = "429 responses",
+        ["http5xx"] = "5xx responses",
+    };
+
+    /// <summary>The secondary families of a chat consistency analysis by id; another id reads as its words.</summary>
+    private static readonly IReadOnlyDictionary<string, string> FamilyNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["reasoningTokens"] = "Reasoning tokens",
+        ["answerLength"] = "Answer length",
+        ["netModelTime"] = "Net model time",
+        ["shiftFunction"] = "Shift function",
+        ["timeOfDay"] = "Time-of-day contrast",
+        ["generationRate"] = "Implied generation rate",
+    };
+
+    /// <summary>
+    /// The last part of a patterned chat consistency key, as the words after the colon of its label:
+    /// <c>endpoint.P1.ci95</c> reads <c>Quality (P1): 95 % interval</c>.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> ChatSuffixes = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["name"] = "name",
+        ["estimate"] = "change",
+        ["percent"] = "change in percent",
+        ["baseline"] = "baseline",
+        ["comparison"] = "comparison",
+        ["ci95"] = "95 % interval",
+        ["ci95Low"] = "lower bound of the 95 % interval",
+        ["ci95High"] = "upper bound of the 95 % interval",
+        ["ci90"] = "90 % interval",
+        ["p"] = "p-value",
+        ["adjustedP"] = "adjusted p-value",
+        ["rejected"] = "rejected at the false discovery rate",
+        ["items"] = "paired items",
+        ["runs"] = "runs",
+        ["verdict"] = "verdict",
+        ["grade"] = "evidence grade",
+        ["mde"] = "minimum detectable effect",
+        ["runsForMargin"] = "runs per period to reach the margin",
+        ["legacyProxy"] = "legacy proxy",
+        ["commonGrader"] = "common grader",
+        ["minimumSampleMet"] = "minimum sample",
+        ["note"] = "note",
+        ["at"] = "time",
+        ["kind"] = "kind",
+        ["label"] = "description",
+        ["from"] = "from",
+        ["to"] = "to",
+        ["run"] = "run",
+        ["previousRun"] = "previous run",
+        ["series"] = "series",
+        ["model"] = "model",
+        ["sameProvider"] = "provider relation",
+        ["periods"] = "periods matched",
+        ["endpoint"] = "endpoint",
+        ["controlChange"] = "control's own change",
+        ["controlChangeCi95"] = "95 % interval of the control's own change",
+        ["includesZero"] = "interval relative to zero",
+        ["separatesTarget"] = "separates the model under test",
+        ["movedSameWay"] = "control moved the same way",
+        ["status"] = "status",
+        ["detail"] = "detail",
+        ["servedModels"] = "served model IDs",
+        ["calls"] = "candidate calls",
+        ["tierMismatchCalls"] = "calls served at another tier",
+        ["fallbackCalls"] = "calls served by a fallback model",
+        ["speeds"] = "served speeds",
+        ["share"] = "own-wait share of model time",
+        ["permitWait"] = "permit wait",
+        ["backoffWait"] = "backoff wait",
+        ["retries"] = "retry attempts",
+        ["answersWithTelemetry"] = "answers with call telemetry",
+        ["text"] = "text",
+        ["provider"] = "provider",
+        ["source"] = "source",
+        ["side"] = "side",
+        ["rule"] = "decision-table rule",
+        ["endpoints"] = "endpoints",
+        ["evidence"] = "evidence",
+        ["period"] = "period",
+        ["suite"] = "suite",
+        ["suggestion"] = "suggestion",
+        ["targetRun"] = "run of the model under test",
+        ["reason"] = "reason",
+        ["repeatRun"] = "run whose setup to repeat",
+        ["start"] = "start",
+        ["end"] = "end",
+        ["days"] = "days",
+        ["answers"] = "answers",
+        ["legacyRuns"] = "runs without call telemetry",
+        ["suites"] = "suites",
+        ["increased"] = "increased",
+        ["establishedIncrease"] = "established increase",
+        ["anchorRun"] = "anchor run",
+        ["grader"] = "grader",
+        ["earliest"] = "earliest re-grade",
+        ["latest"] = "latest re-grade",
+        ["drift"] = "drift",
+        ["withinMargin"] = "within the margin",
     };
 
     /// <summary>
@@ -216,8 +388,128 @@ public static class BenchmarkReportFactLabels
             }
         }
 
-        return false;
+        return TryChatConsistencyLabel(parts, out label);
     }
+
+    /// <summary>
+    /// The patterned keys of a chat consistency sheet: <c>&lt;prefix&gt;.&lt;suffix&gt;</c>, the prefix
+    /// naming the figure and the suffix one of <see cref="ChatSuffixes"/>; indexed prefixes count from 1.
+    /// </summary>
+    private static bool TryChatConsistencyLabel(string[] parts, out string label)
+    {
+        label = string.Empty;
+        string? head = null;
+        int suffixAt = parts.Length - 1;
+
+        switch (parts[0])
+        {
+            // endpoint.<P>.<suffix>
+            case "endpoint" when parts.Length == 3 && EndpointNames.TryGetValue(parts[1], out var endpoint):
+                head = endpoint + " (" + parts[1] + ")";
+                break;
+
+            // protocol.margin.<P>
+            case "protocol" when parts.Length == 3 && parts[1] == "margin" && EndpointNames.TryGetValue(parts[2], out var margined):
+                label = "Equivalence margin of " + LowerFirst(margined) + " (" + parts[2] + ")";
+                return true;
+
+            // period.<baseline|comparison>.<suffix>, identity.…, serving.…, ownWaits.…
+            case "period" or "identity" or "serving" or "ownWaits" when parts.Length == 3 && PeriodNames.TryGetValue(parts[1], out var period):
+                head = period + " period" + parts[0] switch
+                {
+                    "identity" => ", served model",
+                    "serving" => ", served configuration",
+                    "ownWaits" => ", Overseer's own waits",
+                    _ => string.Empty
+                };
+                break;
+
+            // coverage.strata.<n>
+            case "coverage" when parts.Length == 3 && parts[1] == "strata" && IsIndex(parts[2]):
+                label = "Common time stratum " + parts[2];
+                return true;
+
+            // quality.dimensions.<d>.<suffix>, quality.criticalErrors.<suffix>
+            case "quality" when parts.Length == 4 && parts[1] == "dimensions" && DimensionNames.TryGetValue(parts[2], out var level):
+                head = level + " level";
+                break;
+            case "quality" when parts.Length == 3 && parts[1] == "criticalErrors":
+                head = "Critical-error rate";
+                break;
+
+            // flip.<suffix>
+            case "flip" when parts.Length == 2:
+                head = "Per-item flips against the null flip rate";
+                break;
+
+            // grader.drift.<n>.<suffix>
+            case "grader" when parts.Length == 4 && parts[1] == "drift" && IsIndex(parts[2]):
+                head = "Grader drift check " + parts[2];
+                break;
+
+            // reliability.<id>.<suffix>
+            case "reliability" when parts.Length == 3 && parts[1].Length > 0:
+                head = ReliabilityNames.TryGetValue(parts[1], out var rate) ? rate : Fallback(parts[1]);
+                break;
+
+            // tools.<id>.<suffix>
+            case "tools" when parts.Length == 3 && parts[1].Length > 0:
+                head = "Tool use, " + LowerFirst(Fallback(parts[1]));
+                break;
+
+            // secondary.<family>.note, secondary.<family>.<id>.<suffix>
+            case "secondary" when parts.Length == 3 && parts[2] == "note" && parts[1].Length > 0:
+                head = FamilyName(parts[1]);
+                break;
+            case "secondary" when parts.Length == 4 && parts[1].Length > 0 && parts[2].Length > 0:
+                head = FamilyName(parts[1]) + ", " + LowerFirst(Fallback(parts[2]));
+                break;
+
+            // events.<n>.<suffix>, did.<n>.<suffix>, robustness.<n>.<suffix>, annotation.<n>.<suffix>,
+            // attribution.<n>.<suffix>, nextRuns.<n>.<suffix>
+            case "events" or "did" or "robustness" or "annotation" or "attribution" or "nextRuns" when parts.Length == 3 && IsIndex(parts[1]):
+                head = parts[0] switch
+                {
+                    "events" => "Overseer event ",
+                    "did" => "Difference in differences ",
+                    "robustness" => "Robustness check ",
+                    "annotation" => "Annotation ",
+                    "attribution" => "Attribution ",
+                    _ => "Suggested next run "
+                } + parts[1];
+                break;
+
+            // controls.<n>.<suffix>, controls.missing.<n>.<suffix>
+            case "controls" when parts.Length == 3 && IsIndex(parts[1]):
+                head = "Control model " + parts[1];
+                break;
+            case "controls" when parts.Length == 4 && parts[1] == "missing" && IsIndex(parts[2]):
+                head = "Missing control " + parts[2];
+                break;
+
+            // limitation.<n>, limitation.dataQuality.<n>, requestIds.sample.<n>
+            case "limitation" when parts.Length == 2 && IsIndex(parts[1]):
+                label = "Limitation " + parts[1];
+                return true;
+            case "limitation" when parts.Length == 3 && parts[1] == "dataQuality" && IsIndex(parts[2]):
+                label = "Data-quality note " + parts[2];
+                return true;
+            case "requestIds" when parts.Length == 3 && parts[1] == "sample" && IsIndex(parts[2]):
+                label = "Sample request ID " + parts[2];
+                return true;
+        }
+
+        if (head == null || !ChatSuffixes.TryGetValue(parts[suffixAt], out var suffix)) return false;
+        label = head + ": " + suffix;
+        return true;
+    }
+
+    private static string FamilyName(string family)
+        => FamilyNames.TryGetValue(family, out var name) ? name : Fallback(family);
+
+    /// <summary>A 1-based index: digits, no leading zero.</summary>
+    private static bool IsIndex(string part)
+        => part.Length > 0 && part[0] != '0' && part.All(char.IsAsciiDigit);
 
     private static string? Comparison(string suffix) => suffix switch
     {

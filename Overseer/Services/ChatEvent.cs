@@ -16,5 +16,7 @@ public class ChatEvent
     // Bounded raw provider failure payload; set only on "error" events, null otherwise.
     public string? Detail { get; set; }
     public TokenUsageReport? UsageReport { get; set; }
+    // Set only on "call_meta" events, which the agent loop consumes and never yields onward.
+    public ProviderCallMeta? CallMeta { get; set; }
 }
 

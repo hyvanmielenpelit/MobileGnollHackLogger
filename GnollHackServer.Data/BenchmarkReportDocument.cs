@@ -10,6 +10,9 @@ public enum BenchmarkReportAudience
     ExecutiveSummary = 1,
     TechnicalReport = 2,
     InternalBrief = 3,
+
+    /// <summary>A chat consistency finding written for the model's provider. Chat consistency scope only.</summary>
+    ProviderIssueReport = 4,
 }
 
 public enum BenchmarkReportDocumentStatus
@@ -31,6 +34,9 @@ public enum BenchmarkReportDocumentOrigin
 
     /// <summary>Written once after a battery run finished and was analyzed, about that battery run on its own, with no peers.</summary>
     BatteryCompletion = 3,
+
+    /// <summary>Written from a saved chat consistency analysis, about one model's Overseer chat over time.</summary>
+    ChatConsistencyReport = 4,
 }
 
 /// <summary>Whom a report-pack document describes.</summary>
@@ -41,6 +47,9 @@ public enum BenchmarkReportScope
 
     /// <summary>The covered entries of a comparison, as equals.</summary>
     Comparison = 2,
+
+    /// <summary>One model's Overseer chat across two periods of GnollBench runs.</summary>
+    ChatConsistency = 3,
 }
 
 /// <summary>
@@ -89,10 +98,10 @@ public class BenchmarkReportDocument
 
     public BenchmarkReportAudience Audience { get; set; }
 
-    /// <summary>A report pack's document, or one written after a run completed. Rows written before the column existed are report-pack documents.</summary>
+    /// <summary>How the document came to be written. Rows written before the column existed are report-pack documents.</summary>
     public BenchmarkReportDocumentOrigin Origin { get; set; } = BenchmarkReportDocumentOrigin.ReportPack;
 
-    /// <summary>The comparison entry key of the subject: <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> or <c>battery:&lt;id&gt;</c>.</summary>
+    /// <summary>The comparison entry key of the subject: <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c>, <c>battery:&lt;id&gt;</c> or <c>chat-consistency:&lt;id&gt;</c>.</summary>
     [MaxLength(64)]
     public string SubjectKey { get; set; } = default!;
 
@@ -113,14 +122,20 @@ public class BenchmarkReportDocument
     [MaxLength(64)]
     public string? ComparisonKey { get; set; }
 
-    /// <summary>One subject against its peers, or the covered entries of a comparison as equals. Rows written before the column existed describe one subject.</summary>
+    /// <summary>One subject against its peers, the covered entries of a comparison as equals, or one model's chat across two periods. Rows written before the column existed describe one subject.</summary>
     public BenchmarkReportScope Scope { get; set; } = BenchmarkReportScope.Model;
 
-    /// <summary>The comparison a Report Pack document belongs to; null on run- and battery-completion documents, and on a Report Pack row whose comparison could not be derived.</summary>
+    /// <summary>The comparison a Report Pack document belongs to; null on run-completion, battery-completion and chat consistency documents, and on a Report Pack row whose comparison could not be derived.</summary>
     public int? ComparisonId { get; set; }
 
     /// <summary>Not auto-included.</summary>
     public BenchmarkComparison? Comparison { get; set; }
+
+    /// <summary>The chat consistency analysis a Chat Consistency Report document was written from; null on every other document.</summary>
+    public int? ChatConsistencyAnalysisId { get; set; }
+
+    /// <summary>Not auto-included.</summary>
+    public ChatConsistencyAnalysis? ChatConsistencyAnalysis { get; set; }
 
     /// <summary>
     /// The entry keys the document covers, as a JSON array in canonical order: the subject alone for

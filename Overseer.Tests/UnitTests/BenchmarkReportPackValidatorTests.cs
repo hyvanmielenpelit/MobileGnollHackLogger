@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.ChatConsistency;
 using Xunit;
 
 /// <summary>A small fact sheet, content snapshot and valid writer outputs for the report-pack writer tests.</summary>
@@ -219,6 +220,236 @@ internal static class ReportPackWriterTestData
     {
         output.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = 2, Note = "Relied on a general test instead of what the board already showed." });
         output.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = 3, Note = "Recommended an unsafe prayer." });
+    }
+}
+
+/// <summary>
+/// A small chat consistency analysis, its fact sheets and valid writer outputs for the claim
+/// discipline tests and the chat consistency prompt goldens. Quality (P1) degraded, graded Indicated;
+/// time to first answer text (P2) is equivalent, graded Established; P3 is not computable; cost per
+/// answer (P5) is inconclusive. Attribution 1 is on the provider's side, attribution 2 on ours;
+/// annotation 1 is a provider-confirmed cause, annotation 2 a provider statement; two Overseer events.
+/// </summary>
+internal static class ChatConsistencyReportTestData
+{
+    public const string ControlKey = "provider=OtherProvider;model=control-model-2";
+    public const string ControlName = "Control Model Two";
+    public const string ControlProvider = "OtherProvider";
+
+    private static readonly DateTime Day1 = new(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    public static ChatConsistencyAnalysisResult Result(bool timeOfDayAssessable = false) => new()
+    {
+        AnalysisId = 7,
+        Name = "Weekly check",
+        Headline = "Overseer chat with Test Model: quality degraded; speed equivalent within weekdays 04–12 UTC",
+        Subject = new ChatConsistencySubject
+        {
+            Key = "provider=TestProvider;model=test-model-1",
+            DisplayName = "Test Model",
+            Provider = "TestProvider",
+            ModelId = "test-model-1",
+            ThinkingLevel = "high"
+        },
+        Scope = new ChatConsistencyScope
+        {
+            Text = "weekdays 04–12 UTC",
+            StrataIndexes = new[] { 1, 2 },
+            StrataUsed = new[] { "weekdays 04–08 UTC", "weekdays 08–12 UTC" },
+            ExcludedShare = 0.125,
+            UsBusinessHoursCovered = timeOfDayAssessable,
+            OutsideBusinessHoursCovered = true,
+            TimeOfDayAssessable = timeOfDayAssessable
+        },
+        Baseline = new ChatConsistencyPeriodSummary
+        {
+            Name = "baseline",
+            StartUtc = Day1,
+            EndUtc = Day1.AddDays(7),
+            RunIds = new long[] { 10, 11 },
+            RunCount = 2,
+            Days = new[] { "2026-09-01", "2026-09-02" },
+            AnswerCount = 40,
+            ItemCount = 20,
+            SuiteNames = new[] { "Core suite" }
+        },
+        Comparison = new ChatConsistencyPeriodSummary
+        {
+            Name = "comparison",
+            StartUtc = Day1.AddDays(14),
+            EndUtc = Day1.AddDays(21),
+            RunIds = new long[] { 20, 21 },
+            RunCount = 2,
+            Days = new[] { "2026-09-15", "2026-09-16" },
+            AnswerCount = 40,
+            ItemCount = 20,
+            SuiteNames = new[] { "Core suite" }
+        },
+        ProtocolLabel = "V1",
+        Endpoints = new[]
+        {
+            new ChatConsistencyEndpointResult
+            {
+                Id = "P1", Name = "Quality", Unit = "index points", Scale = ChatConsistencyEffectScale.Difference,
+                Margin = 3, MarginText = "±3 index points", Direction = "higherIsBetter", Computed = true,
+                Estimate = -4.2, Ci95 = new ChatConsistencyInterval(-6.0, -3.1), Ci90 = new ChatConsistencyInterval(-5.6, -3.4),
+                PValue = 0.004, AdjustedPValue = 0.016, Verdict = ConsistencyVerdict.ChangedDegraded, VerdictLabel = "degraded",
+                Grade = ChatConsistencyEvidenceGrade.Indicated, GradeReasons = new[] { "a comparison run lacks call telemetry" },
+                MinimumDetectableEffect = 2.5, MinimumSampleMet = true, CommonGrader = true,
+                BaselineRunCount = 2, ComparisonRunCount = 2, ItemCount = 20
+            },
+            new ChatConsistencyEndpointResult
+            {
+                Id = "P2", Name = "Time to first answer text", Unit = "log ratio", Scale = ChatConsistencyEffectScale.LogRatio,
+                Margin = Math.Log(1.15), Computed = true, Estimate = 0.02, EstimatePercent = 2.02,
+                Ci95 = new ChatConsistencyInterval(-0.05, 0.09), Ci90 = new ChatConsistencyInterval(-0.04, 0.08),
+                PValue = 0.61, AdjustedPValue = 1.0, Verdict = ConsistencyVerdict.Equivalent, VerdictLabel = "equivalent",
+                Grade = ChatConsistencyEvidenceGrade.Established, MinimumDetectableEffect = 0.08, MinimumDetectableEffectPercent = 8.3,
+                RunsPerPeriodForMargin = 3, MinimumSampleMet = true, BaselineRunCount = 2, ComparisonRunCount = 2, ItemCount = 20
+            },
+            new ChatConsistencyEndpointResult
+            {
+                Id = "P3", Name = "Answer streaming rate", Unit = "log ratio", Scale = ChatConsistencyEffectScale.LogRatio,
+                Computed = false, NotComputedReason = "No telemetry run in the baseline.", VerdictLabel = "not computable",
+                Grade = ChatConsistencyEvidenceGrade.NotEstablished
+            },
+            new ChatConsistencyEndpointResult
+            {
+                Id = "P5", Name = "Cost per answer", Unit = "log ratio", Scale = ChatConsistencyEffectScale.LogRatio,
+                Margin = Math.Log(1.1), Computed = true, Estimate = 0.03, EstimatePercent = 3.05,
+                Ci95 = new ChatConsistencyInterval(-0.04, 0.10), Ci90 = new ChatConsistencyInterval(-0.03, 0.09),
+                PValue = 0.4, AdjustedPValue = 0.8, Verdict = ConsistencyVerdict.Inconclusive, VerdictLabel = "inconclusive",
+                Grade = ChatConsistencyEvidenceGrade.NotEstablished, MinimumDetectableEffect = 0.12, MinimumDetectableEffectPercent = 12.7,
+                RunsPerPeriodForMargin = 6, MinimumSampleMet = true, BaselineRunCount = 2, ComparisonRunCount = 2, ItemCount = 20
+            }
+        },
+        Events = new[]
+        {
+            new ChatConsistencyEventView { AtUtc = Day1.AddDays(10), Kind = "toolGuides", Label = "tool guides edited on 2026-09-11", From = "abc123", To = "def456", RunId = 20, PreviousRunId = 11, SubjectKey = "provider=TestProvider;model=test-model-1", InTargetSeries = true },
+            new ChatConsistencyEventView { AtUtc = Day1.AddDays(11), Kind = "systemPrompt", Label = "system prompt edited on 2026-09-12", RunId = 31, PreviousRunId = 30, SubjectKey = ControlKey }
+        },
+        Controls = new ChatConsistencyControls
+        {
+            Matches = new[]
+            {
+                new ChatConsistencyControlMatchView { Period = "baseline", TargetRunId = 10, ControlRunId = 30, ControlSubjectKey = ControlKey, PairedItemCount = 20 },
+                new ChatConsistencyControlMatchView { Period = "comparison", TargetRunId = 20, ControlRunId = 31, ControlSubjectKey = ControlKey, PairedItemCount = 20 }
+            },
+            Effects = new[]
+            {
+                new ChatConsistencyControlEffect
+                {
+                    EndpointId = "P1", ControlSubjectKey = ControlKey, ControlDisplay = ControlName, ControlProvider = ControlProvider,
+                    ControlBaselineRunIds = new long[] { 30 }, ControlComparisonRunIds = new long[] { 31 }, ItemCount = 20,
+                    ControlChange = -0.2, ControlChangeCi95 = new ChatConsistencyInterval(-1.5, 1.1),
+                    DidEstimate = -4.0, DidCi95 = new ChatConsistencyInterval(-6.1, -2.0), DidPValue = 0.002, DidSeparatesTarget = true
+                }
+            },
+            ControlRunIds = new long[] { 30, 31 }
+        },
+        Attribution = new ChatConsistencyAttributionOutcome
+        {
+            Attributions = new[]
+            {
+                new ChatConsistencyAttributionResult
+                {
+                    Label = "Undeclared change of the model", Side = ChatConsistencyAttribution.SideProvider,
+                    Grade = ChatConsistencyEvidenceGrade.Indicated, Rule = ChatConsistencyAttribution.RuleUndeclaredChange,
+                    Endpoints = new[] { "P1" }, Evidence = "Quality degraded for the model under test while " + ControlName + " held steady."
+                },
+                new ChatConsistencyAttributionResult
+                {
+                    Label = "Overseer change", Side = ChatConsistencyAttribution.SideOurs,
+                    Grade = ChatConsistencyEvidenceGrade.NotEstablished, Rule = ChatConsistencyAttribution.RuleNotAttributable,
+                    Endpoints = new[] { "P5" }
+                }
+            }
+        },
+        ServedModels = new ChatConsistencyServedModels
+        {
+            Baseline = new[] { new ChatConsistencyServedModelCount("test-model-1-2026-08-01", 120) },
+            Comparison = new[] { new ChatConsistencyServedModelCount("test-model-1-2026-08-01", 118) },
+            BaselineCalls = 120,
+            ComparisonCalls = 118
+        },
+        OwnWaits = new[]
+        {
+            new ChatConsistencyOwnWaits { Period = "comparison", PermitWaitMs = 900, BackoffWaitMs = 3000, ModelTimeMs = 100_000, OwnWaitShare = 0.039, RetryAttemptCount = 2, AnswersWithTelemetry = 39 }
+        },
+        Annotations = new[]
+        {
+            new ChatConsistencyAnnotationView { Id = 1, AtUtc = Day1.AddDays(12), Provider = "TestProvider", Kind = ChatConsistencyAnnotationKind.ProviderConfirmedCause, Text = "The provider confirmed a serving change.", SourceUrl = "https://example.com/status" },
+            new ChatConsistencyAnnotationView { Id = 2, AtUtc = Day1.AddDays(13), Provider = "TestProvider", Kind = ChatConsistencyAnnotationKind.ProviderStatement, Text = "The provider published a status note." }
+        },
+        Limitations = new[] { "Only weekday mornings were sampled." },
+        NextRuns = new[]
+        {
+            new ChatConsistencyNextRun { Kind = "stratum", Period = "comparison", EndpointId = "P5", Reason = "The cost change is inconclusive.", Suggestion = "Repeat the comparison runs during US business hours.", RepeatRunId = 21 }
+        },
+        InputSha256 = string.Concat(Enumerable.Repeat("0123456789abcdef", 4)),
+        AnalysisCodeVersion = 3
+    };
+
+    /// <summary>The sample request ids a Provider Issue Report's sheet states.</summary>
+    public static readonly IReadOnlyList<string> RequestIds = new[] { "req-alpha", "req-beta" };
+
+    public static BenchmarkReportFactSheet Sheet(BenchmarkReportAudience audience, bool timeOfDayAssessable = false)
+        => BenchmarkChatConsistencyReportFacts.Build(
+            Result(timeOfDayAssessable), audience, audience == BenchmarkReportAudience.ProviderIssueReport ? RequestIds : null);
+
+    public static BenchmarkReportContentSnapshot Content() => new();
+
+    /// <summary>A writer output of the audience that keeps every rule, C1 to C7 included.</summary>
+    public static BenchmarkReportWriterOutput ValidOutput(BenchmarkReportAudience audience)
+    {
+        var output = new BenchmarkReportWriterOutput();
+        var s = output.Sections;
+        switch (audience)
+        {
+            case BenchmarkReportAudience.ExecutiveSummary:
+                output.Headline = "The Overseer chat with {{subject}} is {{verdict.overall}} within {{scope.hours}}.";
+                s[BenchmarkReportSlots.AsGoodAsBefore] = "Answer quality degraded by {{endpoint.P1.estimate}} within {{scope.hours}}. Waiting time is {{endpoint.P2.verdict}}.";
+                s[BenchmarkReportSlots.PlayerImpact] = "Players got answers of lower quality, by {{endpoint.P1.estimate}}. Cost per answer is inconclusive at {{endpoint.P5.estimate}}, and the runs could only detect a change of {{endpoint.P5.mde}}.";
+                s[BenchmarkReportSlots.OurChanges] = "The Overseer edited its tool guides on {{events.1.at}}. Their effect is not established, graded {{attribution.2.grade}}.";
+                s[BenchmarkReportSlots.ProviderChanges] = "The analysis places the quality change on the provider's side, graded {{attribution.1.grade}}.";
+                s[BenchmarkReportSlots.ConfidenceAndScope] = "The result rests on {{n.targetRuns}} and {{n.answers}}, and time of day is {{serving.timeOfDayAssessable}}.";
+                s[BenchmarkReportSlots.NextRuns] = "The analysis suggests one more run: {{nextRuns.1.suggestion}}";
+                break;
+
+            case BenchmarkReportAudience.TechnicalReport:
+                output.Headline = "Quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
+                s[BenchmarkReportSlots.QuestionAndDesign] = "The analysis asks whether the Overseer chat with {{subject}} changed between a baseline and a comparison period. It compares matched runs of the same suites under {{protocol.label}}.";
+                s[BenchmarkReportSlots.RunsAndCoverage] = "The baseline holds {{period.baseline.runs}} and the comparison {{period.comparison.runs}}, within {{scope.hours}}.";
+                s[BenchmarkReportSlots.OverseerEvents] = "Two Overseer events fall between the periods: {{events.1.label}} and {{events.2.label}}.";
+                s[BenchmarkReportSlots.EndpointResults] = "Quality degraded by {{endpoint.P1.estimate}}, with an interval of {{endpoint.P1.ci95}}, graded {{endpoint.P1.grade}}. Time to first answer text is {{endpoint.P2.verdict}}, graded {{endpoint.P2.grade}}.";
+                s[BenchmarkReportSlots.Attribution] = "The analysis places the quality change on the provider's side, graded {{attribution.1.grade}} under {{attribution.1.rule}}.";
+                s[BenchmarkReportSlots.Robustness] = "The analysis ran {{robustness.count}}, and {{robustness.failed}} failed.";
+                s[BenchmarkReportSlots.Limitations] = "The analysis records one limitation: {{limitation.1}}";
+                s[BenchmarkReportSlots.Reproducibility] = "Analysis {{analysis.id}} used code version {{analysis.codeVersion}} on input {{analysis.inputSha256}}.";
+                break;
+
+            case BenchmarkReportAudience.InternalBrief:
+                output.Headline = "Quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
+                s[BenchmarkReportSlots.ChatFindings] = "Check the chat tools first: quality degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
+                s[BenchmarkReportSlots.ChangeEffects] = "The effect of {{events.1.label}} is not established, graded {{attribution.2.grade}}.";
+                s[BenchmarkReportSlots.InfrastructureIssues] = "Our own waits took {{ownWaits.comparison.share}} of model time in the comparison period.";
+                s[BenchmarkReportSlots.NextRuns] = "Run the suggested follow-up: {{nextRuns.1.suggestion}}";
+                s[BenchmarkReportSlots.Actions] = "Prepare a Provider Issue Report on {{attribution.1.label}}, graded {{attribution.1.grade}}.";
+                break;
+
+            case BenchmarkReportAudience.ProviderIssueReport:
+                output.Headline = "Answer quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
+                s[BenchmarkReportSlots.IssueSummary] = "Answer quality degraded by {{endpoint.P1.estimate}}, and the analysis places it on the provider's side as {{attribution.1.grade}}.";
+                s[BenchmarkReportSlots.AffectedModel] = "The model is {{subject.label}} with thinking level {{subject.thinkingLevel}}, served as {{identity.comparison.servedModels}}.";
+                s[BenchmarkReportSlots.Timeline] = "The baseline ran from {{period.baseline.start}} to {{period.baseline.end}}, and the comparison from {{period.comparison.start}} to {{period.comparison.end}}.";
+                s[BenchmarkReportSlots.Measurements] = "Quality degraded by {{endpoint.P1.estimate}}, with an interval of {{endpoint.P1.ci95}}, graded {{endpoint.P1.grade}}.";
+                s[BenchmarkReportSlots.HoursObserved] = "We observed {{scope.hours}} only, and time of day is {{serving.timeOfDayAssessable}}.";
+                s[BenchmarkReportSlots.RuledOut] = "We checked {{events.1.label}} and {{events.2.label}} on our side, graded {{attribution.2.grade}}.";
+                s[BenchmarkReportSlots.SampleRequestIds] = "These request ids come from the comparison period.\n\n- {{requestIds.sample.1}}\n- {{requestIds.sample.2}}";
+                s[BenchmarkReportSlots.ProviderRequest] = "Please tell us whether anything changed on your side in the period of {{attribution.1.label}}.";
+                break;
+        }
+        return output;
     }
 }
 
@@ -2168,5 +2399,304 @@ public class BenchmarkReportPackComparisonValidatorTests
         Assert.Equal("plain", parsed.Output.Models![1].Points[0].Text);
         Assert.True(parsed.Output.Sections.ContainsKey(BenchmarkReportSlots.Overview));
         Assert.Null(BenchmarkReportPackParser.Parse("{\"headline\":\"h\"}").Output!.Models);
+    }
+}
+
+/// <summary>
+/// The chat consistency scope: its slots and word caps, and the claim discipline of rules C1 to C7,
+/// each with a passing and a failing case; a per-model document is unaffected by them.
+/// </summary>
+public class BenchmarkReportPackChatConsistencyValidatorTests
+{
+    private const BenchmarkReportAudience Es = BenchmarkReportAudience.ExecutiveSummary;
+    private const BenchmarkReportAudience Tr = BenchmarkReportAudience.TechnicalReport;
+    private const BenchmarkReportAudience Pir = BenchmarkReportAudience.ProviderIssueReport;
+
+    private static IReadOnlyList<BenchmarkReportValidationNote> ValidateModelScope(BenchmarkReportAudience audience, BenchmarkReportWriterOutput output)
+        => BenchmarkReportPackValidator.Validate(audience, output, ReportPackWriterTestData.Sheet(), ReportPackWriterTestData.Content());
+
+    private static BenchmarkReportCleanResult DropModelScope(BenchmarkReportAudience audience, BenchmarkReportWriterOutput output)
+        => BenchmarkReportPackValidator.DropInvalid(audience, output, ReportPackWriterTestData.Sheet(), ReportPackWriterTestData.Content());
+
+    public static TheoryData<BenchmarkReportAudience> ChatConsistencyAudiences => new()
+    {
+        BenchmarkReportAudience.ExecutiveSummary,
+        BenchmarkReportAudience.TechnicalReport,
+        BenchmarkReportAudience.InternalBrief,
+        BenchmarkReportAudience.ProviderIssueReport,
+    };
+
+    private static IReadOnlyList<BenchmarkReportValidationNote> ValidateChat(
+        BenchmarkReportAudience audience, BenchmarkReportWriterOutput output, bool timeOfDayAssessable = false)
+        => BenchmarkReportPackValidator.Validate(
+            audience, output, ChatConsistencyReportTestData.Sheet(audience, timeOfDayAssessable), ChatConsistencyReportTestData.Content());
+
+    /// <summary>The notes of the valid output of <paramref name="audience"/> with <paramref name="slot"/> replaced by <paramref name="text"/>.</summary>
+    private static IReadOnlyList<BenchmarkReportValidationNote> ValidateChatSlot(
+        BenchmarkReportAudience audience, string slot, string text, bool timeOfDayAssessable = false)
+    {
+        var output = ChatConsistencyReportTestData.ValidOutput(audience);
+        output.Sections[slot] = text;
+        return ValidateChat(audience, output, timeOfDayAssessable);
+    }
+
+    private static IReadOnlyList<BenchmarkReportValidationNote> ValidateAsGoodAsBefore(string text, bool timeOfDayAssessable = false)
+        => ValidateChatSlot(Es, BenchmarkReportSlots.AsGoodAsBefore, "Within {{scope.hours}}. " + text, timeOfDayAssessable);
+
+    private static BenchmarkReportValidationNote AssertChatRule(IReadOnlyList<BenchmarkReportValidationNote> notes, int rule, string id, string location, string phrase)
+    {
+        var note = Assert.Single(notes);
+        Assert.Equal(rule, note.Rule);
+        Assert.Equal(location, note.Location);
+        Assert.StartsWith(id + ": ", note.Message, StringComparison.Ordinal);
+        Assert.Contains(phrase, note.Message, StringComparison.Ordinal);
+        return note;
+    }
+
+    private const string AsGoodAsBeforeP1 = "sections.asGoodAsBefore[p1]";
+
+    [Theory]
+    [MemberData(nameof(ChatConsistencyAudiences))]
+    public void ChatConsistency_ValidOutput_HasNoIssues(BenchmarkReportAudience audience)
+    {
+        Assert.Empty(ValidateChat(audience, ChatConsistencyReportTestData.ValidOutput(audience)));
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(
+            audience, ChatConsistencyReportTestData.ValidOutput(audience), ChatConsistencyReportTestData.Sheet(audience), ChatConsistencyReportTestData.Content());
+        Assert.False(cleaned.Fatal);
+        Assert.Empty(cleaned.Notes);
+    }
+
+    [Theory]
+    [InlineData("Answer quality degraded in the comparison period.", "degraded")]
+    [InlineData("Answers got slower for players.", "got slower")]
+    [InlineData("The Overseer chat regressed after the tool guide edit.", "regressed")]
+    public void C1_AChangeWordWithoutAResult_IsAnError(string text, string phrase)
+    {
+        AssertChatRule(ValidateAsGoodAsBefore(text), BenchmarkReportPackValidator.ChatChangeClaimRule, "C1", AsGoodAsBeforeP1, "\"" + phrase + "\"");
+    }
+
+    [Fact]
+    public void C1_AChangeWordCitingOnlyAnInconclusiveEndpoint_IsAnError()
+    {
+        var notes = ValidateAsGoodAsBefore("Cost per answer rose by {{endpoint.P5.estimate}}, against {{endpoint.P5.mde}} detectable.");
+
+        AssertChatRule(notes, BenchmarkReportPackValidator.ChatChangeClaimRule, "C1", AsGoodAsBeforeP1, "\"rose\"");
+    }
+
+    [Theory]
+    [InlineData("Answer quality degraded by {{endpoint.P1.estimate}}.")]
+    [InlineData("Answer quality degraded, as {{attribution.1.label}} records.")]
+    [InlineData("The chat {{verdict.overall}} degraded overall.")]
+    [InlineData("Answer quality degraded against the control, by {{did.1.estimate}}.")]
+    public void C1_AChangeWordCitingADecisiveResult_Passes(string text)
+    {
+        Assert.Empty(ValidateAsGoodAsBefore(text));
+    }
+
+    [Theory]
+    [InlineData("The provider deliberately changed the chat.", "deliberately")]
+    [InlineData("Answers fell short after the provider throttled requests.", "throttled")]
+    [InlineData("The provider moved to quantized weights, as {{annotation.2.text}} says.", "quantized")]
+    [InlineData("New hardware may explain it.", "hardware")]
+    public void C2_IntentOrAMechanismWithoutAProviderConfirmedCause_IsAnError(string text, string phrase)
+    {
+        AssertChatRule(ValidateAsGoodAsBefore(text), BenchmarkReportPackValidator.ChatIntentMechanismRule, "C2", AsGoodAsBeforeP1, "\"" + phrase + "\"");
+    }
+
+    [Fact]
+    public void C2_AMechanismCitingAProviderConfirmedCause_Passes()
+    {
+        Assert.Empty(ValidateAsGoodAsBefore("The provider names quantization in {{annotation.1.text}}."));
+    }
+
+    [Theory]
+    [InlineData("Quality degraded by {{endpoint.P1.estimate}} because the provider changed something.", "because")]
+    [InlineData("The gap is due to our tool guides, by {{endpoint.P1.estimate}}.", "due to")]
+    public void C3_ACausalConnectiveWithoutAnAttribution_IsAnError(string text, string phrase)
+    {
+        AssertChatRule(ValidateAsGoodAsBefore(text), BenchmarkReportPackValidator.ChatCausalClaimRule, "C3", AsGoodAsBeforeP1, "\"" + phrase + "\"");
+    }
+
+    [Fact]
+    public void C3_ACausalConnectiveCitingAnAttribution_Passes()
+    {
+        Assert.Empty(ValidateAsGoodAsBefore("Quality degraded by {{endpoint.P1.estimate}}, driven by the provider's side as {{attribution.1.label}} records."));
+    }
+
+    [Theory]
+    [InlineData("The quality loss of {{endpoint.P1.estimate}} is established.", "established")]
+    [InlineData("We can state that quality fell short, at {{endpoint.P1.estimate}}.", "We can state")]
+    [InlineData("The result is publishable.", "publishable")]
+    public void C4_PublicClaimWordingWithoutAnEstablishedGrade_IsAnError(string text, string phrase)
+    {
+        AssertChatRule(ValidateAsGoodAsBefore(text), BenchmarkReportPackValidator.ChatPublicClaimRule, "C4", AsGoodAsBeforeP1, "\"" + phrase + "\"");
+    }
+
+    [Theory]
+    [InlineData("Waiting time is established as {{endpoint.P2.verdict}}, graded {{endpoint.P2.grade}}.")]
+    [InlineData("Our own part is not established, graded {{attribution.2.grade}}.")]
+    [InlineData("A provider-confirmed cause is on record in {{annotation.1.text}}.")]
+    [InlineData("The provider confirmed a cause in {{annotation.1.text}}.")]
+    public void C4_PublicClaimWordingWithAnEstablishedGrade_OrNegated_Passes(string text)
+    {
+        Assert.Empty(ValidateAsGoodAsBefore(text));
+    }
+
+    [Fact]
+    public void C5_AnInconclusiveEndpointWithoutItsMde_IsAWarning_AndKeepsItsText()
+    {
+        string text = "Cost per answer is {{endpoint.P5.verdict}} at {{endpoint.P5.estimate}}.";
+        var notes = ValidateChatSlot(Es, BenchmarkReportSlots.PlayerImpact, text);
+
+        var note = AssertChatRule(notes, BenchmarkReportPackValidator.ChatInconclusiveMdeRule, "C5", "sections.playerImpact", "{{endpoint.P5.mde}}");
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.PlayerImpact] = text;
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
+        Assert.Equal(text, cleaned.Output.Sections[BenchmarkReportSlots.PlayerImpact]);
+        Assert.False(Assert.Single(cleaned.Notes).Dropped);
+    }
+
+    [Fact]
+    public void C5_AnInconclusiveEndpointWithItsMdeElsewhereInTheSlot_Passes()
+    {
+        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.PlayerImpact,
+            "Cost per answer is {{endpoint.P5.verdict}} at {{endpoint.P5.estimate}}.\n\nThe runs could detect a change of {{endpoint.P5.mde}}."));
+    }
+
+    [Theory]
+    [InlineData(false, "Waiting time held at all hours, as {{endpoint.P2.verdict}} shows.", "at all hours")]
+    [InlineData(false, "Waiting time held around the clock: {{serving.timeOfDayAssessable}}.", "around the clock")]
+    [InlineData(true, "Waiting time held regardless of load, as {{endpoint.P2.verdict}} shows.", "regardless of load")]
+    public void C6_AllHoursWordingWithoutATrueTimeOfDayFact_IsAnError(bool assessable, string text, string phrase)
+    {
+        AssertChatRule(ValidateAsGoodAsBefore(text, assessable), BenchmarkReportPackValidator.ChatHoursRule, "C6", AsGoodAsBeforeP1, "\"" + phrase + "\"");
+    }
+
+    [Fact]
+    public void C6_AllHoursWordingCitingATrueTimeOfDayFact_Passes()
+    {
+        Assert.Empty(ValidateAsGoodAsBefore("Waiting time held around the clock: {{serving.timeOfDayAssessable}}.", timeOfDayAssessable: true));
+    }
+
+    [Theory]
+    [MemberData(nameof(ChatConsistencyAudiences))]
+    public void C6_ADocumentThatNeverCitesTheHours_IsAnError(BenchmarkReportAudience audience)
+    {
+        var output = ChatConsistencyReportTestData.ValidOutput(audience);
+        output.Headline = output.Headline.Replace("{{scope.hours}}", "{{n.answers}}", StringComparison.Ordinal);
+        foreach (string slot in output.Sections.Keys.ToList())
+        {
+            output.Sections[slot] = output.Sections[slot].Replace("{{scope.hours}}", "{{n.answers}}", StringComparison.Ordinal);
+        }
+
+        AssertChatRule(ValidateChat(audience, output), BenchmarkReportPackValidator.ChatHoursRule, "C6", "sections", "{{scope.hours}}");
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, output, ChatConsistencyReportTestData.Sheet(audience), ChatConsistencyReportTestData.Content());
+        var note = Assert.Single(cleaned.Notes);
+        Assert.Equal(BenchmarkReportPackValidator.ChatHoursRule, note.Rule);
+        Assert.False(note.Dropped);
+        Assert.False(cleaned.Fatal);
+    }
+
+    [Theory]
+    [InlineData("The model got slower by {{endpoint.P1.estimate}}.", "The model")]
+    [InlineData("Serving latency moved by {{endpoint.P1.estimate}}.", "latency")]
+    [InlineData("A new snapshot may be live, at {{endpoint.P1.estimate}}.", "snapshot")]
+    public void C7_AModelOrServingClaimWithoutAProviderSideAttribution_IsAnError(string text, string phrase)
+    {
+        var notes = ValidateChatSlot(Pir, BenchmarkReportSlots.Measurements, text);
+
+        AssertChatRule(notes, BenchmarkReportPackValidator.ChatProviderReportRule, "C7", "sections.measurements[p1]", phrase);
+    }
+
+    [Fact]
+    public void C7_AModelClaimCitingAProviderSideAttribution_Passes_AndTheIdentifyingSlotsAreExempt()
+    {
+        Assert.Empty(ValidateChatSlot(Pir, BenchmarkReportSlots.Measurements,
+            "The model's answers degraded by {{endpoint.P1.estimate}}, which the analysis places on the provider's side as {{attribution.1.grade}}."));
+
+        // C7 reads a Provider Issue Report only, and not its slots that only identify.
+        Assert.Empty(ValidateChatSlot(Pir, BenchmarkReportSlots.AffectedModel, "The model is {{subject.label}}, with the served model {{identity.baseline.servedModels}}."));
+        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.ProviderChanges, "The served model is {{identity.comparison.servedModels}} in the comparison period."));
+    }
+
+    [Fact]
+    public void C7_RuledOutMustCiteEveryOverseerEvent()
+    {
+        var notes = ValidateChatSlot(Pir, BenchmarkReportSlots.RuledOut, "We checked {{events.1.label}} on our side.");
+
+        AssertChatRule(notes, BenchmarkReportPackValidator.ChatProviderReportRule, "C7", "sections.ruledOut", "events.2.*");
+
+        // Another document's slots need no event list.
+        Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, "One Overseer event matters here: {{events.1.label}}."));
+    }
+
+    [Fact]
+    public void AChatConsistencyError_DropsItsParagraph_AndAHeadlineError_IsFatal()
+    {
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.PlayerImpact] = "Answers got worse for players.\n\nCost per answer is inconclusive at {{endpoint.P5.estimate}}, with {{endpoint.P5.mde}} detectable.";
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
+
+        Assert.Equal("Cost per answer is inconclusive at {{endpoint.P5.estimate}}, with {{endpoint.P5.mde}} detectable.", cleaned.Output.Sections[BenchmarkReportSlots.PlayerImpact]);
+        var dropped = Assert.Single(cleaned.Notes);
+        Assert.Equal(BenchmarkReportPackValidator.ChatChangeClaimRule, dropped.Rule);
+        Assert.True(dropped.Dropped);
+
+        output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Headline = "The Overseer chat deliberately got worse within {{scope.hours}}.";
+        Assert.True(BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content()).Fatal);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    public void AModelScopeDocument_IsUnaffectedByTheChatConsistencyRules(BenchmarkReportAudience audience)
+    {
+        const string claims = "Answers degraded because the provider deliberately throttled them at all hours, which is established and publishable.";
+        var output = ReportPackWriterTestData.ValidOutput(audience);
+        string slot = BenchmarkReportSlots.For(audience).RequiredSlots[^1];
+        output.Sections[slot] = output.Sections[slot] + "\n\n" + claims;
+
+        Assert.Empty(ValidateModelScope(audience, output));
+        Assert.Equal(output.Sections[slot], DropModelScope(audience, output).Output.Sections[slot]);
+    }
+
+    [Fact]
+    public void ChatConsistencySlotCaps_ApplyToTheirScopeOnly()
+    {
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.AsGoodAsBefore] = "Within {{scope.hours}}. " + string.Join(" ", Enumerable.Repeat("word", 120));
+
+        var note = Assert.Single(ValidateChat(Es, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("sections.asGoodAsBefore", note.Location);
+        Assert.Contains("\"Is the Overseer chat with this model as good as before?\"", note.Message, StringComparison.Ordinal);
+
+        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations, BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(BenchmarkReportPackValidator.LimitationsMaxWords, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations, BenchmarkReportScope.Model));
+        Assert.Equal(BenchmarkReportPackValidator.LimitationsMaxWords, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations, BenchmarkReportScope.Comparison));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.AsGoodAsBefore, comparisonScope: false));
+        Assert.Equal(60, BenchmarkReportPackValidator.SlotMaxWords(Pir, BenchmarkReportSlots.SampleRequestIds, BenchmarkReportScope.ChatConsistency));
+        foreach (var audience in BenchmarkReportSlots.ChatConsistencyAudiences)
+        {
+            Assert.All(BenchmarkReportSlots.ForChatConsistency(audience).RequiredSlots,
+                slot => Assert.NotNull(BenchmarkReportPackValidator.ChatConsistencySlotMaxWords(audience, slot)));
+        }
+    }
+
+    [Fact]
+    public void TheParser_NormalizesChatConsistencySlotNames()
+    {
+        var parsed = BenchmarkReportPackParser.Parse("{\"headline\":\"h\",\"sections\":{\"IssueSummary\":\"a\",\"ruledout\":\"b\",\"asGoodAsBefore\":\"c\"}}");
+
+        Assert.True(parsed.Success);
+        Assert.Equal(new[] { BenchmarkReportSlots.AsGoodAsBefore, BenchmarkReportSlots.IssueSummary, BenchmarkReportSlots.RuledOut },
+            parsed.Output!.Sections.Keys.OrderBy(k => k, StringComparer.Ordinal));
     }
 }

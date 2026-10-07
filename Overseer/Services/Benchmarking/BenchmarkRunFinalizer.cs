@@ -3,10 +3,13 @@ namespace Overseer.Services.Benchmarking;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using MobileGnollHackLogger.Data;
 
 public static class BenchmarkRunFinalizer
 {
+    /// <summary>The length of <see cref="BenchmarkRun.ServedModelIdsJson"/>.</summary>
+    public const int ServedModelIdsJsonMaxLength = 1024;
     public static int FallbackDifficulty(BenchmarkDifficulty difficulty) => difficulty switch
     {
         BenchmarkDifficulty.Simple => 25,
@@ -344,6 +347,53 @@ public static class BenchmarkRunFinalizer
             .OrderByDescending(g => g.Count())
             .Select(g => g.Key)
             .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Sets <see cref="BenchmarkRun.ServedModelIdsJson"/> from the served model id of each candidate
+    /// call of the run, given as id and call count. Null on a run without call telemetry, whose
+    /// re-executed answers alone may carry rows. Kept out of <see cref="ApplyTotals"/>, whose callers
+    /// load answers without their telemetry rows: it is computed from those rows wherever the
+    /// candidate answers change, and a re-score leaves it as it is.
+    /// </summary>
+    public static void ApplyServedModelIds(
+        BenchmarkRun run, IEnumerable<(string ServedModelId, int CallCount)> candidateCallCounts)
+    {
+        run.ServedModelIdsJson = run.CallTelemetryVersion == null
+            ? null
+            : BuildServedModelIdsJson(candidateCallCounts);
+    }
+
+    /// <summary>
+    /// A compact JSON object of served model id to candidate call count, keys in ordinal order and
+    /// counts invariant. When every id does not fit <see cref="ServedModelIdsJsonMaxLength"/>, the most
+    /// frequent ids that do are kept, ties broken by id. Null when no call reported a model.
+    /// </summary>
+    public static string? BuildServedModelIdsJson(IEnumerable<(string ServedModelId, int CallCount)> candidateCallCounts)
+    {
+        var ranked = candidateCallCounts
+            .Where(c => !string.IsNullOrEmpty(c.ServedModelId) && c.CallCount > 0)
+            .GroupBy(c => c.ServedModelId, StringComparer.Ordinal)
+            .Select(g => (Id: g.Key, Count: g.Sum(c => c.CallCount)))
+            .OrderByDescending(c => c.Count)
+            .ThenBy(c => c.Id, StringComparer.Ordinal)
+            .ToList();
+
+        var kept = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        string? json = null;
+        foreach (var (id, count) in ranked)
+        {
+            kept[id] = count;
+            string candidate = JsonSerializer.Serialize(kept);
+            if (candidate.Length > ServedModelIdsJsonMaxLength)
+            {
+                break;
+            }
+
+            json = candidate;
+        }
+
+        return json;
     }
 
     /// <summary>

@@ -16,6 +16,10 @@ A **battery result** — one model's composite over the suites of a battery — 
 pack from a comparison of battery results, and of its own **battery-completion documents**, written once
 after the battery run finishes and is analyzed (§ 14).
 
+A saved **chat consistency analysis** — one model's Overseer chat across two periods of runs — is
+written up as **Chat Consistency Report** documents, among them a fourth audience, the **Provider Issue
+Report** (§ 16).
+
 This document describes the feature for developers: what each document holds, how the figures and the
 prose are kept apart, how the prose is validated, what is stored, how a stored document is rendered
 at download, how its PDF and Word copies carry charts (§ 13), how a battery result is a subject
@@ -48,6 +52,7 @@ Implementation:
 | Chart images on disk: storage, validation, manifest, loading | `BenchmarkReportChartStore` (singleton), `Overseer/Models/BenchmarkReportChartModels.cs` |
 | Which figure goes where, and the figure markers | `BenchmarkReportChartPlacement` |
 | Endpoints | `AdminBenchmarkReportPacksController` (the write-now endpoint included), `AdminBenchmarkReportDocumentsController` |
+| A chat consistency analysis's fact sheet, prompt, rendering and endpoints | `BenchmarkChatConsistencyReportFacts`, `BenchmarkReportPackPrompt.ChatConsistency.cs`, `BenchmarkReportPackRenderer.ChatConsistency.cs`, `AdminChatConsistencyController` (§ 16) |
 | Golden files | `Overseer.Tests/UnitTests/Golden/ReportPack/` |
 
 ---
@@ -317,7 +322,8 @@ whether that member shares the subject's provider.
 ## 3. Validation, Repair and Drops
 
 `BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules, and a comparison-wide
-document against rule 21 too, with rules 2, 10 and 16 read for its tokens (§ 15). Each failure is a
+document against rule 21 too, with rules 2, 10 and 16 read for its tokens (§ 15); a chat consistency
+document is checked against rules 22 to 28 (C1 to C7, § 16) as well. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message. Rule 20 is not a check on the writer: it is the note a battery
 subject's preparation records when it left question detail out of the prompt (§ 14).
@@ -345,6 +351,13 @@ subject's preparation records when it left question detail out of the prompt (§
 | 19 | No negation — *no, none, never, without, zero*, ignoring case — among the four words before a token whose display value starts with `0` in the same sentence, as in *"no critical errors across {{errors.critical}}"* reading *"0 of 18 answers"* (format 9). Tokens are set aside before the text is split into sentences |
 | 20 | *Not a writer check.* A battery subject's prompt exceeded `Benchmark:ReportPack:BatteryMaxPromptChars`, so the full detail of the questions it names was left out and only their rows were given (`BenchmarkBatteryReportFacts.PromptBudgetRule`, location `prompt`, § 14). Recorded before the writer call, stored with the document and logged as a warning; it neither drops anything nor marks the document *Completed with warnings* |
 | 21 | A comparison-wide document's `models` list has an entry for every covered model (`ModelCoverageRule`, § 15). A warning, kept after the repair turn like rules 12 to 19 |
+| 22 | **C1**, chat consistency only (§ 16): a sentence with a change word (`ChatChangeWords`) holds a token that supports a change — a changed endpoint, verdict or attribution, a control DiD whose interval excludes zero, an established reliability increase, or a rejected secondary estimate (`ChatChangeClaimRule`). An error: the paragraph is dropped |
+| 23 | **C2**, chat consistency only: an intent word (`ChatIntentWords`) or mechanism word (`ChatMechanismWords`) needs a *ProviderConfirmedCause* annotation token in the sentence (`ChatIntentMechanismRule`). An error |
+| 24 | **C3**, chat consistency only: a causal connective (`ChatCausalConnectives`) needs an attribution token in the sentence (`ChatCausalClaimRule`). An error |
+| 25 | **C4**, chat consistency only: a public-claim word (`ChatPublicClaimWords`: *publishable, established, confirmed, proven, definitively, conclusively, we can state*) needs an Established grade token; not counted after *not*, *never*, *not yet* or a hyphen, and *confirmed* is allowed with a provider-confirmed cause token (`ChatPublicClaimRule`). An error |
+| 26 | **C5**, chat consistency only: a slot that cites an inconclusive endpoint also cites its `{{endpoint.<P>.mde}}` (`ChatInconclusiveMdeRule`). A **warning**, checked over the slot's kept text |
+| 27 | **C6**, chat consistency only: an all-hours word (`ChatAllHoursWords`) needs `{{serving.timeOfDayAssessable}}` in the sentence and that fact true; and the document cites `{{scope.hours}}` somewhere (`ChatHoursRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
+| 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
@@ -470,12 +483,14 @@ report-pack job runs or a run-completion job waits for the slot — one job at a
 
 Each document is one **immutable** `BenchmarkReportDocument` row; there is no update endpoint. It holds:
 
-- audience, subject key (`run:<id>`, `group:<id>` or `battery:<id>`) and label, the subject's run ids
-  (for a battery, its usable member runs), the comparison request, and the suite;
+- audience, subject key (`run:<id>`, `group:<id>`, `battery:<id>` or `chat-consistency:<id>`) and
+  label, the subject's run ids (for a battery, its usable member runs), the comparison request, and the
+  suite;
 - `Origin` (`BenchmarkReportDocumentOrigin`): **ReportPack** (1, the default, and the value every row
   written before the column existed carries) for a document of a Report Pack job, **RunCompletion** (2)
   for a run's own run-completion document (§ 11), **BatteryCompletion** (3) for a battery run's own
-  battery-completion document (§ 14; the column is an `int`, so the value needed no schema change). An
+  battery-completion document (§ 14; the column is an `int`, so the value needed no schema change),
+  **ChatConsistencyReport** (4) for a document written from a saved chat consistency analysis (§ 16). An
   index on `(SubjectKey, Origin)` finds a run's or battery run's own documents, and the list DTO carries
   `origin`;
 - the writer's identity and its configuration snapshot, and `SameProviderAcknowledged`;
@@ -499,7 +514,10 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
 - `Scope` (`Model` or `Comparison`), `ComparisonId` (the numbered comparison, a `Restrict` foreign key,
   never auto-included), `CoveredEntryKeysJson` and `CoveredSetKey` — the comparison a Report Pack
   document belongs to and the entries it covers (§ 15). Run- and battery-completion documents keep
-  `Scope = Model` and null in the other three.
+  `Scope = Model` and null in the other three. A chat consistency document has `Scope = ChatConsistency`
+  (3), null in those three and in `ComparisonKey`, and its analysis in `ChatConsistencyAnalysisId` (a
+  `Restrict` foreign key to `ChatConsistencyAnalysis`, never auto-included, so an analysis with documents
+  cannot be deleted — § 16).
 
 **One Report Pack document per `(ComparisonKey, SubjectKey, Audience)`.** From 2026-10-06 a comparison
 holds at most one per-model document of each type about each subject (§ 1a), and one comparison-wide
@@ -644,6 +662,11 @@ each scope's version. Per-model documents are written under format 11. Every Rep
 numbered comparison prints its comparison (§ 15), and every per-model document prints a named peer
 without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
 overlap)"*), whatever format it was written under.
+
+**Chat consistency format version 1** is the format of the chat consistency documents
+(`ChatConsistencyReportFormatVersion = 1`, § 16), numbered on its own: `CurrentFormatVersion(scope)`
+returns it for `ChatConsistency`, the document stores it, its reproducibility section and footer print
+it, and the PDF cover shows it as *Generated format*.
 
 **Writer prompt revision (2026-10-06, no format version change)** comes from the review of the
 Comparison #2 report pack. It changes the writer prompt of every scope, and so reaches documents
@@ -1593,13 +1616,15 @@ response shapes of the run endpoints above (§ 14):
     and never hashes;
   - `comparisonId=12` matches the documents of numbered comparison #12 (§ 15); `comparison` stays for the
     documents written before comparisons were numbered;
-  - `origin=reportPack|runCompletion|batteryCompletion` filters on `Origin`; absent lists every origin,
+  - `origin=reportPack|runCompletion|batteryCompletion|chatConsistencyReport` filters on `Origin`; absent lists every origin,
     and any other value is a 400;
-  - `subject=` takes **one** entry key (`run:<id>`, `group:<id>` or `battery:<id>`, a positive id,
+  - `subject=` takes **one** entry key (`run:<id>`, `group:<id>`, `battery:<id>` or
+    `chat-consistency:<id>`, a positive id,
     exactly as written) and matches it exactly against each document's subject key; any other form is a
     400. `subject` and `origin` combine. The Download Center lists each home's own documents this way
     (§ 1a, § 8): a run's with `subject=run:<id>&origin=runCompletion`, a battery run's with
-    `subject=battery:<id>&origin=batteryCompletion`, and the comparison documents about either — the
+    `subject=battery:<id>&origin=batteryCompletion`, a chat consistency analysis's with
+    `subject=chat-consistency:<id>&origin=chatConsistencyReport` (§ 16), and the comparison documents about either — the
     pointer's count and the `subject` library scope — with `origin=reportPack`;
   - `take` defaults to 200 and is capped at 500.
 - `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON.
@@ -1652,6 +1677,11 @@ response shapes of the run endpoints above (§ 14):
   `GET /api/admin/benchmark/runs/{id}/tool-call-log/docx?paper=` and
   `POST /api/admin/benchmark/runs/{id}/diagnostics/docx?paper=`: The same three files as Word, with the
   PDF endpoints' validation and limits, named `…_INTERNAL.docx` and `…_diagnostics_INTERNAL.docx`.
+
+### Chat consistency report documents (`AdminChatConsistencyController`)
+
+The estimate, write, job and cancel routes of a chat consistency analysis's documents are under
+`/api/admin/benchmark/chat-consistency/analyses/{id}/report-documents` (§ 16).
 
 ---
 
@@ -2005,7 +2035,7 @@ changing *Prices* keeps the list, and adding or removing a model empties it. The
 lends the panel its chart actions (§ 13): the *Charts* option and filter, **Update charts…** and each
 card's **More actions**. The list reloads when a job finishes and when a document is charted.
 
-**The Model Comparison launcher** (Admin → AI Benchmark → Model Comparison) leads with the action: a hero
+**The Model Comparison launcher** (Admin → GnollBench → Model Comparison) leads with the action: a hero
 card with *Cross-model comparison*, its lead and **Open Comparison Wizard** (the page's only `.btn-gh`,
 *compass* glyph), then the *Last comparison* read-out, then *How the comparison works* — the four wizard
 steps and the like-for-like note — in a disclosure that is open on the first visit and afterwards as the
@@ -2062,11 +2092,14 @@ Seven figures can be chosen per document type (`BenchmarkReportChartPlacement`; 
 | Internal Improvement Brief | All in section 3, after *Key figures* and the interval sentence |
 
 Several figures at one anchor appear in the order of the first table. A comparison-wide document has its
-own anchors (§ 15); the picker shows each figure's section for the scope being written.
+own anchors (§ 15); the picker shows each figure's section for the scope being written. A chat
+consistency document has four figures of its own, `cc1-quality` … `cc4-timeline`, kept in
+`BenchmarkReportChartPlacement.ChatConsistencyFigureKeys` apart from `FigureKeys` (`AllFigureKeys`
+joins both); they are not chosen in a picker (§ 16).
 
 **Markers.** The renderer writes a line `[[figure:<key>]]`, with a blank line before and after, at each
 anchor for each chart it is given (`BenchmarkReportRenderOptions.Charts`), and only for a document with
-peers. The PDF and Word renderers draw the chart there (§ 8: `SemanticFigure` with the alternative text
+peers — or for a chat consistency document, which has no peers and draws its own figures. The PDF and Word renderers draw the chart there (§ 8: `SemanticFigure` with the alternative text
 and a `SemanticCaption` in the PDF, an inline picture with its description in Word, both captioned
 **Figure N.** *Title* — caption and numbered in order of appearance); a marker with no chart prints
 nothing. The Markdown and HTML downloads pass no charts, so they never carry a marker. The source hash of
@@ -2679,3 +2712,138 @@ with runs or groups, an unknown audience, paper or naming, an invalid layout, a 
 file no chart names or a chart without its file, and a preparation refusal (a subject with no peer, a
 covered entry outside the comparison or Excluded); 409 for fewer than 2 or more than 12 covered models;
 413 for a document too large for a PDF; 499 when the client aborts.
+
+---
+
+## 16. Chat Consistency Report Documents
+
+A saved GnollBench chat consistency analysis (`ai-benchmark-chat-consistency.md`) is written up through
+this machinery as **Chat Consistency Report** documents — one model's Overseer chat across two periods
+of runs, with no peers to rank against.
+
+### Identity and storage
+
+| Column | Value |
+|---|---|
+| `Origin` | `ChatConsistencyReport` (4) |
+| `Scope` | `ChatConsistency` (3); the fact sheet's `Scope` is `"ChatConsistency"` (`BenchmarkReportFactSheet.ChatConsistencyScopeValue`) |
+| `SubjectKey` | `chat-consistency:<id>` (`BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix`) |
+| `ChatConsistencyAnalysisId` | the analysis, a `Restrict` foreign key: the analysis cannot be deleted while documents written from it exist (the API answers 409) |
+| `ComparisonKey`, `ComparisonId`, `CoveredEntryKeysJson` | null |
+| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **1** (§ 7) |
+
+The title is *Overseer Chat Consistency Report: \<model\>*. The sheet's subject block
+(`BenchmarkReportChatConsistencySubject`) carries the analysis id, name, headline, protocol label,
+`InputSha256`, analysis code version, the baseline, comparison and control run ids, and whether a
+Provider Issue Report is available.
+
+### Audiences and slots
+
+Four audiences (`ChatConsistencyAudiences`), each with prose slots only — no strengths, weaknesses,
+recommendations, question notes, topics or leads. The headline is at most 35 words.
+
+| Audience | Slots (title, word limit) |
+|---|---|
+| Executive Summary | `asGoodAsBefore` *Is the Overseer chat with this model as good as before?* (120), `playerImpact` *What changed for players* (90), `ourChanges` *Our changes and their effect* (80), `providerChanges` *Provider-side changes* (80), `confidenceAndScope` *Confidence and scope* (90), `nextRuns` *Next runs* (60) |
+| Report for AI Researchers and Developers | `questionAndDesign` *Question and design* (200), `runsAndCoverage` *Runs, coverage and scope* (200), `overseerEvents` *Overseer events* (150), `endpointResults` *Results by endpoint* (250), `attribution` *Attribution* (250), `robustness` *Robustness* (150), `limitations` *Limitations* (150), `reproducibility` *Reproducibility* (150) |
+| Internal Improvement Brief | `chatFindings` *Findings for the chat* (150), `changeEffects` *Our changes that helped or hurt* (120), `infrastructureIssues` *Infrastructure issues* (100), `nextRuns` *Next runs* (100), `actions` *Actions* (150) |
+| Provider Issue Report | `issueSummary` *Summary* (120), `affectedModel` *Affected model and configuration* (80), `timeline` *Timeline* (150), `measurements` *Measurements with intervals* (200), `hoursObserved` *Hours observed* (80), `ruledOut` *What we ruled out (our changes, infrastructure)* (200), `sampleRequestIds` *Sample request ids* (60), `providerRequest` *Request to the provider* (100) |
+
+**The Provider Issue Report** (`BenchmarkReportAudience.ProviderIssueReport`, 4) exists only in this
+scope. It is **available only when at least one attribution is provider-side and graded Established or
+Indicated** (`BenchmarkChatConsistencyReportFacts.ProviderIssueReportAvailability`). The estimate
+always answers, with `providerIssueReportAvailable` and `providerIssueReportReason`; a write that names
+it while it is unavailable is refused with 400 and *"No provider-side finding graded Established or
+Indicated in this analysis."*; a write that names no audience leaves it out. It never names a control
+model — its peers are always anonymized, lettered *Model A* … — is stamped *Confidential. Prepared for
+the model's provider.*, and its `sampleRequestIds` slot draws on at most 10 request ids of the
+comparison period's candidate calls. Report Pack's own audience list (`REPORT_PACK_AUDIENCES`) does not
+include it.
+
+### Facts and claim support
+
+The writer gets a SUBJECT block, PEERS (the controls as `{{peer:X}}`), every fact as
+`key = display`, and a **CLAIM SUPPORT** block listing which tokens support a change, the inconclusive
+endpoints, the Established grades, the attributions, the provider-confirmed causes, the time-of-day
+assessability and the hours — for a Provider Issue Report also the provider-side attributions, the
+Overseer events to list under `ruledOut` and the sample request ids. The fact families are `analysis.*`,
+`subject.*`, `verdict.*`, `scope.*`, `coverage.*`, `period.<baseline|comparison>.*`, `protocol.*`,
+`n.*`, `endpoint.<P1…P5>.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`, `tools.*`,
+`secondary.*`, `events.*`, `controls.*`, `controls.missing.*`, `did.*`, `robustness.*`, `identity.*`,
+`serving.*`, `ownWaits.*`, `pricing.*`, `annotation.*`, `attribution.*`, `limitation.*`, `nextRuns.*`
+and, for the Provider Issue Report, `requestIds.sample.*` (`BenchmarkChatConsistencyReportFacts`).
+
+### Validation
+
+Rules 22 to 28 (**C1** to **C7**, § 3) apply on top of the prose rules. C1 to C4, the first half of C6
+and the first half of C7 are checked sentence by sentence on the headline and every paragraph: a failing
+paragraph is dropped, a failing headline is fatal. C5 is a **warning**, checked over each slot's kept
+text. The second halves of C6 (*the document never cites `{{scope.hours}}`*) and C7 (*`ruledOut` misses
+an event*) cannot drop text; a note of either marks the document **Completed with warnings**.
+
+### Figures
+
+| Key | Figure |
+|---|---|
+| `cc1-quality` | Quality per run (native, and common grader where one exists) |
+| `cc2-speed` | Time to first answer text (telemetry; the legacy proxy hollow) |
+| `cc3-work` | Work per answer (output tokens and tool calls) |
+| `cc4-timeline` | Runs and events (telemetry and legacy runs; Overseer changes, annotations, served-model changes) |
+
+Two anchors: `ChatConsistencyResults` (13), after the verdict table, and `ChatConsistencyEvents` (14),
+after the events table.
+
+| Document | Figures |
+|---|---|
+| Executive Summary | cc1, cc2 after the verdict table |
+| Report for AI Researchers and Developers | cc1, cc2, cc3 after the verdict table; cc4 after the events table |
+| Internal Improvement Brief | cc1, cc3 after the verdict table |
+| Provider Issue Report | cc2 after the verdict table; cc4 after the events table |
+
+The verdict table sits under *Results by endpoint* in the researcher report and under *Measurements with
+intervals* in the Provider Issue Report, the events table under *Overseer events* and *What we ruled
+out* respectively; elsewhere under the default headings *Verdicts by endpoint* and *Overseer events
+between the periods*. The client draws the four PNGs when the writing job ends
+(`chat-consistency-report-charts.ts`, print theme, 1200 × 675 at density 2) and uploads the named
+variant only through `PUT report-documents/{id}/charts`; this scope is exempt from the stand-alone
+refusal and always renders the named variant.
+
+### File names
+
+`BenchmarkPdfFileNames` names a chat consistency document
+`chat-consistency-<analysis id>_<model slug>_<kind>_<disclosure>_<peers>[_INTERNAL].<pdf|docx>`, the kind
+being `executive-summary`, `researcher-report`, `internal-brief` or `provider-issue-report`, for example
+`chat-consistency-12_<model slug>_provider-issue-report_summary_anonymized.pdf`. The Download Center
+mirrors the stem (`reportDocumentFileStem`). The PDF cover lists the analysis, model, both periods, the
+hours, the control models, the protocol and the generated format.
+
+### Endpoints
+
+Under `AdminChatConsistencyController` (`/api/admin/benchmark/chat-consistency`), in the run
+report-documents contract (`writerModelConfigurationId`, `audiences`, `acknowledgeSameProvider`; enums
+as numbers):
+
+- `POST analyses/{id}/report-documents/estimate` — the cost estimate with the Provider Issue Report's
+  availability; no model call; 404, 400 for an audience outside the four, 499.
+- `POST analyses/{id}/report-documents` — 202 with the job (`runId` is the analysis id); 404; 409 while
+  its documents are being written, for a document already written, when every document exists, and for
+  an unacknowledged writer of the model's provider; 400 for an audience outside the four, an
+  unavailable Provider Issue Report, an unusable writer or the model under report, and a refused
+  endpoint; 429 at the spend guard. Usage rows use report-pack usage context 8.
+- `GET analyses/{id}/report-documents/job` — 200 with the job, 204 when this process knows none; jobs
+  are held in memory.
+- `POST analyses/{id}/report-documents/cancel` — 202; 409 when none is in progress; documents already
+  written are kept.
+
+The documents are then read, rendered, deleted and given charts through the ordinary report-document
+endpoints (§ 9), listed with `subject=chat-consistency:<id>&origin=chatConsistencyReport`.
+
+### The client
+
+The Chat Consistency tab's Reports step writes and polls the documents and opens the Download Center
+through the shell with the context `{ kind: 'chatConsistency', analysisId }` (title *Chat consistency
+documents*). The Download Center has a **Provider Issue Report** row (category `providerIssueReport`):
+the External preset selects it with the Executive Summary and the Report for AI Researchers and
+Developers, Internal selects every row. Its stored settings are **version 4**
+(`STORED_SETTINGS_VERSION`); versions 2 and 3 are read and migrated by giving every package the Provider
+Issue Report's empty default choice (`providerIssueReport: {}`), which the package preset fills.

@@ -2661,4 +2661,238 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains(" · format version 12 · ", text);
         Assert.Contains(" · models named*", text);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Chat consistency documents
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>A stored chat consistency document of the audience over <see cref="ChatConsistencyReportTestData"/>, with its valid writer output.</summary>
+    private static BenchmarkReportDocument ChatConsistencyDocument(BenchmarkReportAudience audience)
+    {
+        var sheet = ChatConsistencyReportTestData.Sheet(audience);
+        return new BenchmarkReportDocument
+        {
+            Id = 41,
+            PackId = Guid.Parse("7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"),
+            Audience = audience,
+            Origin = BenchmarkReportDocumentOrigin.ChatConsistencyReport,
+            Scope = BenchmarkReportScope.ChatConsistency,
+            ChatConsistencyAnalysisId = 7,
+            SubjectKey = sheet.SubjectKey,
+            SubjectLabel = sheet.SubjectLabel,
+            SubjectRunIdsJson = BenchmarkReportJson.Serialize(sheet.SubjectRunIds),
+            ComparisonRequestJson = "{}",
+            SuiteName = sheet.SuiteName,
+            WriterConfigId = 3,
+            WriterDisplayName = "Writer One",
+            WriterProvider = "Anthropic",
+            WriterModelId = "writer-1",
+            ReportFormatVersion = BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion,
+            WriterPromptSha256 = BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.ChatConsistency),
+            AnswerExcerptChars = 0,
+            FactsJson = BenchmarkReportJson.Serialize(sheet),
+            ContentJson = BenchmarkReportJson.Serialize(ChatConsistencyReportTestData.Content()),
+            WriterOutputJson = BenchmarkReportJson.Serialize(ChatConsistencyReportTestData.ValidOutput(audience)),
+            ValidationNotesJson = "[]",
+            Title = BenchmarkReportPackRenderer.BuildChatConsistencyTitle(sheet),
+            Status = BenchmarkReportDocumentStatus.Completed,
+            CreatedAtUtc = CreatedAt
+        };
+    }
+
+    private static string RenderChatConsistency(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
+        => BenchmarkReportPackRenderer.Render(ChatConsistencyDocument(audience),
+            new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+    public static TheoryData<BenchmarkReportAudience, BenchmarkReportDisclosure, BenchmarkReportPeerNaming, string> ChatConsistencyGoldenCombinations => new()
+    {
+        { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_exec.md" },
+        { BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_technical.md" },
+        { BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_internal.md" },
+        { BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_provider.md" },
+        { BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named, "chatconsistency_technical_named.md" },
+    };
+
+    [Theory]
+    [MemberData(nameof(ChatConsistencyGoldenCombinations))]
+    public void EveryChatConsistencyAudience_Renders_AndMatchesItsGoldenFile(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string file)
+    {
+        Assert.True(BenchmarkReportPackRenderer.IsAllowed(audience, new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming }));
+
+        string first = RenderChatConsistency(audience, disclosure, naming);
+        string second = RenderChatConsistency(audience, disclosure, naming);
+
+        AssertSameText(first, second, file + " rendered twice");
+        Assert.DoesNotContain("\r", first);
+        AssertMatchesGolden(file, first);
+    }
+
+    [Fact]
+    public void AChatConsistencyDocument_IsCurrentAtFormatVersion1_AndTheOtherScopesKeepTheirs()
+    {
+        Assert.Equal(1, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
+        Assert.Equal(1, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(11, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(12, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(11, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(12, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+
+        string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        Assert.Contains(" · format version 1 · ", text);
+        Assert.Contains(" · controls named*", text);
+        Assert.Contains("- **Report format version:** 1\n", text);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    [InlineData(BenchmarkReportAudience.ProviderIssueReport)]
+    public void AChatConsistencyDocument_OpensWithTheOverallVerdict_ThenTheSlotsUnderTheirTitles_AndEndsWithHowToReadAndReproducibility(
+        BenchmarkReportAudience audience)
+    {
+        var disclosure = audience == BenchmarkReportAudience.InternalBrief ? BenchmarkReportDisclosure.Full : BenchmarkReportDisclosure.Summary;
+        string text = RenderChatConsistency(audience, disclosure, BenchmarkReportPeerNaming.Anonymized);
+        int Pos(string part) => text.IndexOf(part, StringComparison.Ordinal);
+
+        Assert.StartsWith("# Overseer Chat Consistency Report: Test Model\n", text);
+        var slots = BenchmarkReportSlots.For(audience, BenchmarkReportScope.ChatConsistency).RequiredSlots;
+        var order = new List<int> { Pos("## Overall verdict\n"), Pos("## The result in one sentence\n") };
+        order.AddRange(slots.Select(slot => Pos("## " + BenchmarkReportSlots.ChatConsistencySlotTitles[slot] + "\n")));
+        order.Add(Pos("## How to read this\n"));
+        AssertInOrder(order.ToArray());
+
+        Assert.Contains("| Quality (P1) | ", text);
+        Assert.Contains("| Endpoint | Estimate | 95 % interval | Verdict | Grade | Minimum detectable effect |\n", text);
+        Assert.Contains("| Date | Kind | Change | From → to | Series | Run |\n", text);
+        Assert.Contains("- **Input SHA-256:** `" + string.Concat(Enumerable.Repeat("0123456789abcdef", 4)) + "`\n", text);
+        Assert.Contains("- **Baseline runs:** #10, #11\n", text);
+        Assert.Contains("- **Comparison runs:** #20, #21\n", text);
+        Assert.Contains("- **Control runs:** #30, #31\n", text);
+        Assert.Contains("weekdays 04–12 UTC only, the hours both periods share", text);
+        Assert.Contains("It never infers anyone's intent", text);
+        Assert.Equal(audience != BenchmarkReportAudience.InternalBrief, text.Contains("## Evaluation terms\n", StringComparison.Ordinal));
+        Assert.DoesNotContain("*Not written.*", text);
+        Assert.DoesNotContain("{{", text);
+    }
+
+    [Fact]
+    public void TheProviderIssueReport_NeverNamesAControlModel_EvenInANamedCopy()
+    {
+        foreach (var naming in new[] { BenchmarkReportPeerNaming.Named, BenchmarkReportPeerNaming.Anonymized })
+        {
+            string text = RenderChatConsistency(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Summary, naming);
+
+            Assert.DoesNotContain(ChatConsistencyReportTestData.ControlName, text, StringComparison.Ordinal);
+            Assert.DoesNotContain(ChatConsistencyReportTestData.ControlProvider, text, StringComparison.Ordinal);
+            Assert.DoesNotContain("Weekly check", text, StringComparison.Ordinal);
+            Assert.Contains("| Model A | ", text);
+            Assert.Contains("- **Control models:** 1 control model (A), identity withheld\n", text);
+            Assert.Contains(" · controls anonymized*", text);
+            Assert.Contains("*Confidential. Prepared for the model's provider.*\n", text);
+        }
+    }
+
+    [Fact]
+    public void ANamedChatConsistencyCopy_NamesTheControlModel_AndAnAnonymizedOneLettersIt()
+    {
+        string named = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string anonymized = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        Assert.Contains("| " + ChatConsistencyReportTestData.ControlName + " | " + ChatConsistencyReportTestData.ControlProvider + " | ", named);
+        Assert.Contains("- **Control models:** " + ChatConsistencyReportTestData.ControlName + "\n", named);
+        Assert.Contains("- **Analysis:** #7 — Weekly check\n", named);
+
+        Assert.DoesNotContain(ChatConsistencyReportTestData.ControlName, anonymized, StringComparison.Ordinal);
+        Assert.DoesNotContain(ChatConsistencyReportTestData.ControlProvider, anonymized, StringComparison.Ordinal);
+        Assert.Contains("| Model A | ", anonymized);
+        Assert.Contains("- **Analysis:** #7\n", anonymized);
+    }
+
+    [Fact]
+    public void AChatConsistencyDocument_PrintsTheSameTextAtEveryDisclosure_UnderItsOwnStamp()
+    {
+        string summary = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        string full = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
+
+        Assert.Contains("*Confidential. Unpublished chat consistency results. Review before sharing.*\n", summary);
+        Assert.Contains("*INTERNAL — unpublished chat consistency results. Do not share outside the Overseer team.*\n", full);
+        string sameBody = summary
+            .Replace(BenchmarkReportPackRenderer.ChatConsistencyStamp(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary),
+                BenchmarkReportPackRenderer.ChatConsistencyStamp(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full), StringComparison.Ordinal)
+            .Replace(" · disclosure Summary · ", " · disclosure Full · ", StringComparison.Ordinal);
+        AssertSameText(sameBody, full, "Report for AI Researchers and Developers at Full");
+    }
+
+    [Fact]
+    public void ThePlacement_PlacesTheChatConsistencyFiguresPerAudience_AndKeepsThemOutOfTheOtherScopes()
+    {
+        const BenchmarkReportScope chat = BenchmarkReportScope.ChatConsistency;
+        var results = BenchmarkReportChartAnchor.ChatConsistencyResults;
+        var events = BenchmarkReportChartAnchor.ChatConsistencyEvents;
+
+        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline" }, BenchmarkReportChartPlacement.ChatConsistencyFigureKeys);
+        Assert.All(BenchmarkReportChartPlacement.ChatConsistencyFigureKeys, key => Assert.True(BenchmarkReportChartPlacement.IsKnown(key)));
+        Assert.Equal(11, BenchmarkReportChartPlacement.AllFigureKeys.Count);
+
+        Assert.Equal(new[] { "cc1-quality", "cc2-speed" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, results, chat));
+        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, events, chat));
+        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.TechnicalReport, results, chat));
+        Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.TechnicalReport, events, chat));
+        Assert.Equal(new[] { "cc1-quality", "cc3-work" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.InternalBrief, results, chat));
+        Assert.Equal(new[] { "cc2-speed" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, results, chat));
+        Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, events, chat));
+
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc3-work", chat));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc1-quality"));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "cc1-quality", BenchmarkReportScope.Comparison));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "p1a-quality", chat));
+        Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "cc1-quality", chat));
+        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportChartAnchor.HowItCompares));
+        Assert.True(BenchmarkReportChartPlacement.TryParseMarker("[[figure:cc4-timeline]]", out string parsed));
+        Assert.Equal("cc4-timeline", parsed);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, new[] { "cc1-quality", "cc2-speed" })]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline" })]
+    [InlineData(BenchmarkReportAudience.InternalBrief, new[] { "cc1-quality", "cc3-work" })]
+    [InlineData(BenchmarkReportAudience.ProviderIssueReport, new[] { "cc2-speed", "cc4-timeline" })]
+    public void AChatConsistencyDocument_DrawsItsFiguresAfterTheirTables_AndNoComparisonFigure(BenchmarkReportAudience audience, string[] placed)
+    {
+        var disclosure = audience == BenchmarkReportAudience.InternalBrief ? BenchmarkReportDisclosure.Full : BenchmarkReportDisclosure.Summary;
+        var keys = BenchmarkReportChartPlacement.AllFigureKeys.Reverse().ToArray();
+        string text = RenderWithCharts(ChatConsistencyDocument(audience), disclosure, BenchmarkReportPeerNaming.Anonymized, Charts(keys));
+
+        foreach (string key in BenchmarkReportChartPlacement.AllFigureKeys)
+        {
+            Assert.Equal(placed.Contains(key) ? 1 : 0, AllIndexesOf(text, MarkerOf(key)).Count);
+        }
+
+        int Pos(string part) => text.IndexOf(part, StringComparison.Ordinal);
+        int verdictTable = Pos("| Endpoint | Estimate | 95 % interval | Verdict | Grade | Minimum detectable effect |");
+        int eventsTable = Pos("| Date | Kind | Change | From → to | Series | Run |");
+        foreach (string key in placed)
+        {
+            int at = Pos("\n\n" + MarkerOf(key) + "\n\n");
+            Assert.True(at > (key == "cc4-timeline" ? eventsTable : verdictTable), key + " stands after its table.");
+        }
+        Assert.DoesNotContain("[[figure:", RenderChatConsistency(audience, disclosure, BenchmarkReportPeerNaming.Anonymized));
+    }
+
+    [Fact]
+    public void AChatConsistencyDocumentWithoutControls_StillDrawsItsFigures()
+    {
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        sheet.Peers.Clear();
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = RenderWithCharts(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named, Charts("cc1-quality"));
+
+        Assert.Single(AllIndexesOf(text, MarkerOf("cc1-quality")));
+        Assert.Contains("- **Control models:** none\n", text);
+    }
 }

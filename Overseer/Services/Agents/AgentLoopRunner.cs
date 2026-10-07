@@ -232,6 +232,22 @@ public class AgentLoopRunner
             string? loggedTier = null;
             string? chatStreamUrl = TryGetChatStreamUrl(aiProvider, request);
 
+            // Added when the call starts, so a call abandoned by an exception is still on the list.
+            var callRecord = new ModelCallRecord
+            {
+                CallIndex = result.ModelCalls.Count,
+                StartedAtUtc = DateTime.UtcNow,
+                Provider = aiProvider.ProviderName,
+                RequestedModelId = request.ModelId,
+                ThinkingLevelSent = request.ThinkingLevel,
+                ReasoningSummarySent = request.ReasoningSummary,
+                ServiceTierRequested = request.ServiceTier,
+                MaxOutputTokensSent = effectiveMaxOutputTokens,
+                EndpointKind = request.Endpoint?.IsCustom == true ? "custom" : "official"
+            };
+            result.ModelCalls.Add(callRecord);
+            var call = new ModelCallTracker(callRecord);
+
             await foreach (var evt in ExecuteApiWithRetriesAsync(
                 async ct =>
                 {
@@ -239,6 +255,7 @@ public class AgentLoopRunner
                         HttpMethod.Post, aiProvider.GetChatStreamUrl(request.ModelId, request.ApiKey ?? "", request.Endpoint));
                     aiProvider.ConfigureRequest(httpRequest, request.ApiKey ?? "", request.Endpoint);
                     httpRequest.Content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
+                    call.AttemptSendTicks = ProviderCallMeta.Now();
                     return await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
                 },
                 (response, ct) => aiProvider.ParseStreamAsync(response, request.ShowDebugLog, ct),
@@ -254,11 +271,13 @@ public class AgentLoopRunner
                 request.ApiKeyAlert,
                 request.ApiKey,
                 request.ModelId,
-                chatStreamUrl))
+                chatStreamUrl,
+                call))
             {
                 if (evt.Type == "service_tier")
                 {
                     result.ActualServiceTier = evt.Data;
+                    callRecord.ServedServiceTier = evt.Data;
                     if (request.ShowDebugLog && !string.IsNullOrEmpty(evt.Data) && evt.Data != loggedTier)
                     {
                         loggedTier = evt.Data;
@@ -286,6 +305,7 @@ public class AgentLoopRunner
                     if (!string.IsNullOrWhiteSpace(evt.Data))
                     {
                         result.ProviderFinishReason = evt.Data;
+                        callRecord.FinishReason = evt.Data;
                         if (evt.Data.Equals("max_tokens", StringComparison.OrdinalIgnoreCase)
                             || evt.Data.Equals("max_output_tokens", StringComparison.OrdinalIgnoreCase))
                         {
@@ -322,6 +342,7 @@ public class AgentLoopRunner
                         if (report != null)
                         {
                             result.ModelCallUsages.Add(report);
+                            callRecord.Usage = report;
                             result.TotalPromptTokens += report.TotalPromptTokens;
                             result.UncachedInputTokens += report.UncachedInputTokens;
                             result.CacheReadTokens += report.CacheReadTokens;
@@ -337,6 +358,15 @@ public class AgentLoopRunner
                         }
                     }
                     catch { }
+                }
+                else if (evt.Type == "call_meta")
+                {
+                    // Consumed here and never yielded: the caller, and through ChatService the client, never sees it.
+                    if (evt.CallMeta != null)
+                    {
+                        callRecord.ApplyMeta(evt.CallMeta, call.SendTicks);
+                    }
+                    continue;
                 }
                 else
                 {
@@ -648,6 +678,9 @@ public class AgentLoopRunner
             : "completed";
         result.ModelCallCount = budget?.TotalModelCalls ?? 1;
         result.ToolCallCount = result.ToolCalls.Count;
+        result.PermitWaitMs = result.ModelCalls.Sum(c => (long)c.PermitWaitMs);
+        result.BackoffWaitMs = result.ModelCalls.Sum(c => (long)c.BackoffWaitMs);
+        result.RetryAttemptCount = result.ModelCalls.Sum(c => Math.Max(0, c.AttemptCount - 1));
 
         var fullResponse = ReasoningTextSanitizer.SanitizeStateless(sbFullResponse.ToString());
         if (wasTruncatedByMaxTokens && !fullResponse.Contains("[Response truncated: output token limit reached.]"))
@@ -698,15 +731,18 @@ public class AgentLoopRunner
         ApiKeyAlerts.ApiKeyAlertContext? alertContext,
         string? apiKey,
         string modelId,
-        string? requestUri)
+        string? requestUri,
+        ModelCallTracker call)
     {
         int[] retryDelays = { 1, 5, 10, 20, 30, 60 };
         int attempt = 0;
         bool success = false;
+        var record = call.Record;
 
         while (!success && !cancellationToken.IsCancellationRequested)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            bool retryScheduled = false;
             if (showDebugLog)
             {
                 yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Starting POST request (Attempt {attempt + 1})..." };
@@ -717,6 +753,8 @@ public class AgentLoopRunner
             string? throttleError = null;
             if (_governor != null && !string.IsNullOrEmpty(credentialKey))
             {
+                // The governor's cooldown sleeps inside AcquirePermitAsync, so it counts as permit wait.
+                long permitStartTicks = ProviderCallMeta.Now();
                 try
                 {
                     permit = await _governor.AcquirePermitAsync(credentialKey, permitWaitTimeout, cancellationToken);
@@ -725,10 +763,20 @@ public class AgentLoopRunner
                 {
                     throttleError = $"Request throttled: {tex.Message}";
                 }
+                catch (OperationCanceledException)
+                {
+                    record.ErrorKind ??= "canceled";
+                    throw;
+                }
+                finally
+                {
+                    record.PermitWaitMs += ElapsedMsSince(permitStartTicks);
+                }
             }
 
             if (throttleError != null)
             {
+                record.ErrorKind ??= "permit_timeout";
                 yield return new ChatEvent { Type = "error", Data = throttleError };
                 yield break;
             }
@@ -737,6 +785,16 @@ public class AgentLoopRunner
             {
                 HttpResponseMessage? response = null;
                 Exception? requestException = null;
+                record.AttemptCount++;
+                record.HeadersMs = null;
+                record.StreamEndMs = null;
+                record.FinalHttpStatus = null;
+                record.HttpVersion = null;
+                record.RequestId = null;
+                record.ServerProcessingMs = null;
+                record.RateLimitJson = null;
+                // The request factory restamps just before SendAsync; this covers a factory that throws first.
+                call.AttemptSendTicks = ProviderCallMeta.Now();
                 try
                 {
                     response = await requestFactory(cancellationToken);
@@ -746,11 +804,18 @@ public class AgentLoopRunner
                     requestException = ex;
                 }
 
+                long sendTicks = call.AttemptSendTicks;
+                call.SendTicks = sendTicks;
+
                 if (requestException != null)
                 {
                     sw.Stop();
                     bool isHttpClientTimeout = requestException is TaskCanceledException tce
                         && (tce.InnerException is TimeoutException || requestException.Message.Contains("HttpClient.Timeout"));
+
+                    record.ErrorKind ??= isHttpClientTimeout ? "timeout"
+                        : cancellationToken.IsCancellationRequested ? "canceled"
+                        : "exception";
 
                     int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
                     if (isHttpClientTimeout)
@@ -780,10 +845,29 @@ public class AgentLoopRunner
                 }
 
                 sw.Stop();
+                record.HeadersMs = ElapsedMsSince(sendTicks);
 
                 if (response != null && _governor != null && !string.IsNullOrEmpty(credentialKey))
                 {
                     _governor.UpdateLimitsFromHeaders(credentialKey, response);
+                }
+
+                if (response != null)
+                {
+                    var headers = ProviderResponseHeaders.From(response);
+                    record.RequestId = headers.RequestId;
+                    record.ServerProcessingMs = headers.ServerProcessingMs;
+                    record.RateLimitJson = headers.RateLimitJson;
+                    record.HttpVersion = response.Version.ToString();
+                    record.FinalHttpStatus = (int)response.StatusCode;
+                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        record.Http429Count++;
+                    }
+                    else if ((int)response.StatusCode >= 500 && (int)response.StatusCode <= 599)
+                    {
+                        record.Http5xxCount++;
+                    }
                 }
 
                 if (response!.IsSuccessStatusCode)
@@ -830,7 +914,7 @@ public class AgentLoopRunner
                                 firstChunkReceived = true;
                                 if (showDebugLog)
                                 {
-                                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] First token received after {sw.ElapsedMilliseconds}ms" };
+                                    yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] First token received after {ElapsedMsSince(sendTicks)}ms" };
                                 }
                             }
 
@@ -860,6 +944,9 @@ public class AgentLoopRunner
                                         _governor.RecordRateLimit(credentialKey, TimeSpan.FromSeconds(delaySeconds));
                                     }
 
+                                    record.FailedAttemptMs += ElapsedMsSince(sendTicks);
+                                    record.StreamErrorRetryCount++;
+
                                     yield return new ChatEvent { Type = "status", Data = $"API Overloaded (attempt {attempt + 1}/{retryDelays.Length + 1}). Retrying in {delaySeconds}s..." };
                                     if (showDebugLog)
                                     {
@@ -867,6 +954,7 @@ public class AgentLoopRunner
                                     }
 
                                     bool shouldBreak = false;
+                                    long backoffStartTicks = ProviderCallMeta.Now();
                                     try
                                     {
                                         await Task.Delay(delaySeconds * 1000, cancellationToken);
@@ -875,15 +963,22 @@ public class AgentLoopRunner
                                     {
                                         shouldBreak = true;
                                     }
+                                    record.BackoffWaitMs += ElapsedMsSince(backoffStartTicks);
 
-                                    if (shouldBreak) break;
+                                    if (shouldBreak)
+                                    {
+                                        record.ErrorKind ??= "canceled";
+                                        break;
+                                    }
 
                                     attempt++;
                                     retryTriggered = true;
+                                    retryScheduled = true;
                                     break;
                                 }
                                 else if (isRetryable)
                                 {
+                                    record.ErrorKind ??= "stream_error";
                                     if (showDebugLog)
                                     {
                                         yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
@@ -901,9 +996,15 @@ public class AgentLoopRunner
 
                             if (!retryTriggered)
                             {
+                                if (evt.Type == "error")
+                                {
+                                    record.ErrorKind ??= "stream_error";
+                                }
                                 yield return evt;
                             }
                         }
+
+                        record.StreamEndMs = ElapsedMsSince(sendTicks);
                     }
                     finally
                     {
@@ -931,7 +1032,10 @@ public class AgentLoopRunner
 
                     if (streamException != null)
                     {
-                        int elapsedSeconds = (int)(sw.ElapsedMilliseconds / 1000);
+                        int elapsedSeconds = ElapsedMsSince(sendTicks) / 1000;
+                        record.ErrorKind ??= cancellationToken.IsCancellationRequested ? "canceled"
+                            : streamException is OperationCanceledException ? "timeout"
+                            : "stream_error";
                         if (cancellationToken.IsCancellationRequested)
                         {
                             if (showDebugLog)
@@ -965,6 +1069,7 @@ public class AgentLoopRunner
                 else
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    int attemptMs = ElapsedMsSince(sendTicks);
                     // The debug event only reaches a session that asked for it; the failure itself is
                     // always worth a server-side line, with the body bounded so a wall of HTML cannot
                     // flood the log.
@@ -987,6 +1092,7 @@ public class AgentLoopRunner
                             (int)response.StatusCode, response.ReasonPhrase, errorBody, response.Headers,
                             sw.ElapsedMilliseconds, attempt + 1, requestedServiceTier);
 
+                        record.ErrorKind ??= HttpErrorKind((int)response.StatusCode);
                         if (keyFailure == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance && systemModelId.HasValue)
                         {
                             yield return new ChatEvent { Type = "error", Data = "The system provider budget has been exhausted. Please contact the administrator." };
@@ -1026,26 +1132,33 @@ public class AgentLoopRunner
 
                         if (attempt < maxRetries)
                         {
+                            record.FailedAttemptMs += attemptMs;
                             yield return new ChatEvent { Type = "status", Data = $"Rate limited (429). Retrying in {delay.TotalSeconds:F0}s (attempt {attempt + 1}/{maxRetries})..." };
                             if (showDebugLog)
                             {
                                 yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] 429 received. Cooldown {delay.TotalSeconds:F1}s before retry (attempt {attempt + 1}/{maxRetries})." };
                             }
 
+                            long backoffStartTicks = ProviderCallMeta.Now();
                             try
                             {
                                 await Task.Delay(delay, cancellationToken);
                             }
                             catch (TaskCanceledException)
                             {
+                                record.BackoffWaitMs += ElapsedMsSince(backoffStartTicks);
+                                record.ErrorKind ??= "canceled";
                                 yield break;
                             }
+                            record.BackoffWaitMs += ElapsedMsSince(backoffStartTicks);
 
                             attempt++;
+                            retryScheduled = true;
                             continue;
                         }
                         else
                         {
+                            record.ErrorKind ??= "http_429";
                             if (systemModelId.HasValue)
                             {
                                 using var errScope = _scopeFactory.CreateScope();
@@ -1061,31 +1174,39 @@ public class AgentLoopRunner
                         if (attempt < retryDelays.Length)
                         {
                             int delaySeconds = retryDelays[attempt];
+                            record.FailedAttemptMs += attemptMs;
                             yield return new ChatEvent { Type = "status", Data = $"503 Unavailable. Retrying in {delaySeconds}s..." };
                             if (showDebugLog)
                             {
                                 yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Sleeping for {delaySeconds}s before retry..." };
                             }
 
+                            long backoffStartTicks = ProviderCallMeta.Now();
                             try
                             {
                                 await Task.Delay(delaySeconds * 1000, cancellationToken);
                             }
                             catch (TaskCanceledException)
                             {
+                                record.BackoffWaitMs += ElapsedMsSince(backoffStartTicks);
+                                record.ErrorKind ??= "canceled";
                                 yield break;
                             }
+                            record.BackoffWaitMs += ElapsedMsSince(backoffStartTicks);
 
                             attempt++;
+                            retryScheduled = true;
                         }
                         else
                         {
+                            record.ErrorKind ??= "http_5xx";
                             yield return new ChatEvent { Type = "error", Data = "503 Unavailable. Max retries exceeded." };
                             yield break;
                         }
                     }
                     else
                     {
+                        record.ErrorKind ??= HttpErrorKind((int)response.StatusCode);
                         yield return new ChatEvent
                         {
                             Type = "error",
@@ -1099,8 +1220,41 @@ public class AgentLoopRunner
             finally
             {
                 permit?.Dispose();
+                // An exception, or a consumer that stopped enumerating, ends the call here without a verdict.
+                if (!success && !retryScheduled)
+                {
+                    record.ErrorKind ??= cancellationToken.IsCancellationRequested ? "canceled" : "exception";
+                }
             }
         }
+
+        // Reached without success only when cancellation stopped the loop between attempts.
+        if (!success)
+        {
+            record.ErrorKind ??= "canceled";
+        }
+    }
+
+    private static int ElapsedMsSince(long startTicks) =>
+        ProviderCallMeta.MsBetween(startTicks, ProviderCallMeta.Now()) ?? 0;
+
+    private static string HttpErrorKind(int status) =>
+        status == 429 ? "http_429"
+        : status >= 500 && status <= 599 ? "http_5xx"
+        : $"http_{status}";
+
+    /// <summary>The record of the model call in flight, and the send stamps its marks are relative to.</summary>
+    private sealed class ModelCallTracker
+    {
+        public ModelCallTracker(ModelCallRecord record) => Record = record;
+
+        public ModelCallRecord Record { get; }
+
+        /// <summary>Stopwatch ticks just before the current attempt's <c>SendAsync</c>; the request factory sets it.</summary>
+        public long AttemptSendTicks { get; set; }
+
+        /// <summary>The send of the latest attempt: the successful one once the stream is read.</summary>
+        public long SendTicks { get; set; }
     }
 
     /// <summary>The URL the request factory posts to, or null if it cannot be built; the request reports that failure itself.</summary>

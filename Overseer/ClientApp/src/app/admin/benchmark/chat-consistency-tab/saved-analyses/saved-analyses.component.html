@@ -1,0 +1,88 @@
+<h4 id="cc-saved-title" class="gh-section-title cc-saved-title" tabindex="-1">Saved analyses</h4>
+<p class="cc-saved-status" role="status">
+  @if (loading) {
+    Loading the saved analyses…
+  } @else if (!error) {
+    {{ analyses.length }} saved {{ analyses.length === 1 ? 'analysis' : 'analyses' }}{{ announcement ? ' · ' + announcement : '' }}
+  }
+</p>
+
+@if (error) {
+  <p class="gh-field-error cc-saved-error">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{ error }}</span>
+  </p>
+} @else if (!loading && analyses.length === 0) {
+  <p class="cc-saved-empty">No analysis is saved yet. Run one in <em>Analyze chat consistency</em>; every analysis is saved.</p>
+} @else {
+  <ul class="cc-analysis-list" role="list" aria-labelledby="cc-saved-title">
+    @for (analysis of analyses; track analysis.id) {
+      <li>
+        <article class="cc-analysis-card" [attr.data-analysis-id]="analysis.id" [attr.aria-labelledby]="'cc-analysis-' + analysis.id + '-title'">
+          <div class="cc-analysis-head">
+            <h5 class="cc-analysis-title" [id]="'cc-analysis-' + analysis.id + '-title'" tabindex="-1">{{ title(analysis) }}</h5>
+            <span class="cc-analysis-id">#{{ analysis.id }}</span>
+            @if (analysis.relaxedPooling) {
+              {{ ' ' }}<span class="gh-tag cc-analysis-tag">Relaxed pooling</span>
+            }
+            @if (analysis.reportDocumentCount > 0) {
+              {{ ' ' }}<span class="gh-tag cc-analysis-tag">{{ analysis.reportDocumentCount }} {{ analysis.reportDocumentCount === 1 ? 'report' : 'reports' }}</span>
+            }
+          </div>
+          <dl class="cc-analysis-facts">
+            <div><dt>Model</dt><dd>{{ subjectName(analysis) }}</dd></div>
+            <div><dt>Baseline</dt><dd>{{ period(analysis.baselineStartUtc, analysis.baselineEndUtc) }}</dd></div>
+            <div><dt>Comparison</dt><dd>{{ period(analysis.comparisonStartUtc, analysis.comparisonEndUtc) }}</dd></div>
+            <div><dt>Saved</dt><dd><time [attr.datetime]="analysis.createdAtUtc">{{ created(analysis) }}</time> · Protocol {{ analysis.protocolVersion }}</dd></div>
+          </dl>
+          @if (analysis.headline) {
+            <p class="cc-analysis-headline">{{ analysis.headline }}</p>
+          }
+          <div class="cc-analysis-actions" role="group" [attr.aria-label]="'Actions for ' + title(analysis)">
+            <button type="button" class="btn-ghost cc-analysis-open"
+                    [attr.aria-label]="'Open ' + title(analysis)"
+                    [attr.aria-busy]="openingId === analysis.id ? 'true' : null"
+                    (click)="open.emit(analysis.id)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              Open
+            </button>
+            <button #deleteButton type="button" class="btn-ghost btn-ghost-danger cc-analysis-delete"
+                    [attr.aria-label]="'Delete ' + title(analysis)"
+                    (click)="requestDelete(analysis, deleteButton)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              Delete
+            </button>
+          </div>
+        </article>
+      </li>
+    }
+  </ul>
+}
+
+<dialog #deleteDialog class="gh-dialog cc-delete-dialog" aria-labelledby="cc-delete-title"
+        (cancel)="stopNested($event)" (close)="stopNested($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="cc-delete-title">Delete {{ deleteTarget ? title(deleteTarget) : 'the analysis' }}?</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <p>The saved analysis and its result are removed permanently. The runs it analyzed are kept.</p>
+      @if (deleteError) {
+        <p class="gh-field-error cc-delete-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ deleteError }}</span>
+        </p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cc-delete-keep" (click)="cancelDelete()">Keep It</button>
+      <button type="button" class="btn-gh btn-gh-delete cc-delete-confirm" [disabled]="deleting"
+              [attr.aria-busy]="deleting ? 'true' : null" (click)="confirmDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Delete
+      </button>
+    </div>
+  </div>
+</dialog>

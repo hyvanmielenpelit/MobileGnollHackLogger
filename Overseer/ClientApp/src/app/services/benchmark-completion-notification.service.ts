@@ -7,7 +7,7 @@ export type BenchmarkNotificationPermissionOutcome = 'granted' | 'denied' | 'def
 export type BenchmarkNotifyOutcome = 'shown' | 'duplicate' | 'not-granted' | 'unsupported' | 'error';
 
 /**
- * The optional desktop notification the AI Benchmark run tab raises alongside, or instead of,
+ * The optional desktop notification the GnollBench run tab raises alongside, or instead of,
  * the completion sound (`BenchmarkCompletionSoundService`). The two are independent by design:
  * either, both or neither may be enabled, and this service knows nothing about the sound.
  *

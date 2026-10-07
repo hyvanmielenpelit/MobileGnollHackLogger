@@ -11,6 +11,7 @@ import {
   ReportDocumentChartUpload
 } from '../../../services/admin-benchmark.service';
 import type { FigureAppearanceStyle, FigureStyle } from '../model-comparison/figure-style';
+import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from '../chat-consistency-tab/chat-consistency.models';
 
 /*
  * The charts a Report Pack document carries into its PDF and Word copies: which figures, where each
@@ -43,6 +44,20 @@ const KNOWN_AUDIENCES: readonly BenchmarkReportAudience[] = [
 
 export function isReportChartFigureKey(value: string): value is ReportChartFigureKey {
   return FIGURE_KEYS.has(value);
+}
+
+/**
+ * The figures of a chat consistency document, in document order: drawn and uploaded by the Chat
+ * Consistency tab (`chat-consistency-report-charts.ts`), never by a Report Pack, so neither the
+ * figure selection nor the chart layout above lists them.
+ */
+export const CHAT_CONSISTENCY_CHART_FIGURE_KEYS: readonly CcReportFigureKey[] = CC_REPORT_FIGURE_KEYS;
+
+const CHAT_CONSISTENCY_FIGURE_KEYS: ReadonlySet<string> = new Set<string>(CHAT_CONSISTENCY_CHART_FIGURE_KEYS);
+
+/** Whether a stored document's chart manifest can hold this figure: a Report Pack figure or a chat consistency one. */
+export function isDocumentChartFigureKey(value: string): value is ReportChartFigureKey | CcReportFigureKey {
+  return FIGURE_KEYS.has(value) || CHAT_CONSISTENCY_FIGURE_KEYS.has(value);
 }
 
 // --- Placements ---

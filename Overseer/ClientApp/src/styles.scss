@@ -373,6 +373,19 @@ a:hover {
   }
 }
 
+/* Wrapping tab row: every tab stays visible on a narrow screen, in source order across rows. */
+.gh-tabs-wrap {
+  flex-wrap: wrap;
+  overflow-x: visible;
+  scroll-snap-type: none;
+  row-gap: 2px;
+  column-gap: 12px;
+
+  .gh-tab {
+    scroll-snap-align: none;
+  }
+}
+
 /* Segmented tab row: a small fixed set of views in one rounded track of equal segments. For a row
    nested under another tab row, where a second underline would read as the same level. */
 .gh-tabs-segmented {

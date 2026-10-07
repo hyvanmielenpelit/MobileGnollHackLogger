@@ -1,8 +1,8 @@
 ---
 name: server-rubric-handoff
 description: >-
-  Mandatory method for turning a Suite Defect finding from an Overseer AI benchmark analysis
-  into a YAML repair file a human imports in one action with Import Questions from YAML. Covers
+  Mandatory method for turning a Suite Defect finding from an Overseer AI benchmark
+  (GnollBench) analysis into a YAML repair file a human imports in one action with Import Questions from YAML. Covers
   why the agent never edits a rubric itself, how to obtain the current text (Download All as
   YAML from the suite's Manage Questions toolbar, with a database query kept as a fallback for
   the revision and assessed-difficulty fields alone), the pre-flight checks before a replacement

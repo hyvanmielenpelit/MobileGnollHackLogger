@@ -1,8 +1,8 @@
 ---
 name: server_benchmark_to_chat_transfer
 description: >-
-  Mandatory method for turning Overseer AI benchmark findings into improvements to the
-  production chat agent — better answer quality, lower latency, lower cost. Covers the fact
+  Mandatory method for turning Overseer AI benchmark (GnollBench) findings into improvements
+  to the production chat agent — better answer quality, lower latency, lower cost. Covers the fact
   that the benchmark grades the production chat system prompt, the required triage of every
   finding into harness defect / suite defect / chat-transferable, the evidence bar a finding
   must clear before any chat prompt is changed, the configuration-parity check, what the
@@ -16,6 +16,8 @@ description: >-
 ---
 
 # Benchmark to Chat Transfer: Turning Benchmark Findings into Chat Improvements
+
+GnollBench is the user's name for the Overseer AI benchmark.
 
 > *Naming: the Second Reader (single-assessor runs) and Reference Reader (panel runs) were called
 > the "second opinion" before 2026-09-27. Database columns, API fields and code identifiers still

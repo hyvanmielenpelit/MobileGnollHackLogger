@@ -35,6 +35,7 @@ export {
 export type {
   DownloadCenterBatteryContext,
   DownloadCenterChartActions,
+  DownloadCenterChatConsistencyContext,
   DownloadCenterContext,
   DownloadCenterDocumentsContext,
   DownloadCenterLibraryContext,
@@ -60,7 +61,8 @@ let nextInstanceId = 0;
  * The Download Center dialog: its `<dialog>`, header and close button around
  * `app-download-center-panel`, which holds the packages, the documents table and the download.
  * Opened by the run report's and the battery run report's **Downloads** and by the Model Comparison
- * launcher's **Open Download Center**; none lends chart actions. The panel's **Open comparison
+ * launcher's **Open Download Center**, and on a saved chat consistency analysis's documents from the
+ * Chat Consistency tab; none lends chart actions. The panel's **Open comparison
  * documents** switches this dialog to the comparison documents about the run or battery run.
  *
  * The panel's nested dialogs stop their own close and cancel events, so this dialog's `close` event
@@ -108,7 +110,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     this.comparisonDocumentsSub?.unsubscribe();
   }
 
-  /** Shows the dialog for a run, a battery run, chosen documents or a library, at the last package and paper used. */
+  /** Shows the dialog for a run, a battery run, chosen documents, a library or a chat consistency analysis, at the last package and paper used. */
   open(context: DownloadCenterContext): void {
     this.context = context;
     this.panel.load(context);
@@ -147,6 +149,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     if (context?.kind === 'library') {
       return context.title || (context.scope.kind === 'subject' ? 'Comparison documents' : 'Report documents');
     }
+    if (context?.kind === 'chatConsistency') {
+      return 'Chat consistency documents';
+    }
     return 'Downloads';
   }
 
@@ -162,6 +167,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       return context.label
         ? `Battery run #${context.batteryRunId} · ${context.label}`
         : `Battery run #${context.batteryRunId}`;
+    }
+    if (context.kind === 'chatConsistency') {
+      return `Chat consistency analysis #${context.analysisId}`;
     }
     if (context.subtitle) {
       return context.subtitle;

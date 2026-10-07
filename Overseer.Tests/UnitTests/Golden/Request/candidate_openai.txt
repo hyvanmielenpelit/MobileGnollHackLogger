@@ -1,0 +1,24 @@
+POST https://api.openai.com/v1/responses
+content-type: application/json; charset=utf-8
+
+{
+  "model": "gpt-6.1-sol",
+  "input": [
+    {
+      "role": "user",
+      "content": "Which of my items is worth reading first, and why?\n\n[System instruction: Do not greet me, unless I greet you first.]"
+    }
+  ],
+  "stream": true,
+  "store": false,
+  "instructions": "You are Overseer, an assistant for the roguelike GnollHack. Answer from the game\u0027s own source code and wiki, name the file you read a fact from, and never invent an item the hero does not carry. Keep the answer to the question that was asked, and say so when a tool returned nothing.\n\nGame Context Snapshot:\nDlvl:3  HP:14(14)  Pw:5(5)  AC:7  Xp:2/24  T:512\nInventory:\na - a blessed \u002B1 quarterstaff (weapon in hands)\nc - 3 fortune cookies\n",
+  "max_output_tokens": 128000,
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "reasoning": {
+    "effort": "medium",
+    "summary": "auto"
+  },
+  "service_tier": "default"
+}

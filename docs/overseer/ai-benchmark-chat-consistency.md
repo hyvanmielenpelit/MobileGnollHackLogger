@@ -1,0 +1,642 @@
+# GnollBench Chat Consistency
+
+GnollBench is the Overseer AI benchmark (Admin → GnollBench). **Chat Consistency** is its eighth
+sub-tab and the method behind it: from GnollBench runs made over time, it judges whether the Overseer
+chat with one model has stayed as good, as fast and as cheap as it was, and which side a change fits —
+ours, the provider's, or our infrastructure.
+
+This document specifies the method as the code implements it. The code is in
+`Overseer/Services/ChatConsistency/` (analysis, statistics, comparability, attribution, ledger),
+`Overseer/Services/Telemetry/` (per-call telemetry), `Overseer/Controllers/AdminChatConsistencyController.cs`
+and the client under `Overseer/ClientApp/src/app/admin/benchmark/chat-consistency-tab/`. The
+agent-facing summary is the `server_chat_consistency` skill.
+
+---
+
+## 1. Aim
+
+The question is always about the **Overseer chat with a given model**, not about the model alone. The
+subject is the whole system a player talks to:
+
+- the model and its configuration (provider, model id, thinking level, reasoning mode and summary,
+  service tier, output cap, parallel execution mode, endpoint);
+- the production chat system prompt;
+- the tools and their guides;
+- the corpora the tools read (knowledge base, wiki, source, their indexes);
+- the agent loop, its budgets and timeouts.
+
+A run measures that system, so a change can come from any of its parts. The analysis first reports
+the **total change** of each measure, then — separately — which side the change fits.
+
+The subject is one **model axis**: the nine candidate keys of
+`BenchmarkCrossModelComparability.ModelAxisKeys`, rendered as `name=value` pairs
+(`ChatConsistencyComparability.ModelAxisKey`). Two runs with different keys are different subjects;
+runs of other subjects serve as controls, never as neighbors in a series.
+
+## 2. The Evidence: GnollBench Runs Only
+
+The analysis reads **stored GnollBench runs and nothing else** — runs with status `Completed`,
+`CompletedWithLimits` or `CompletedWithErrors` (`ChatConsistencyMeasures.UsableStatuses`). It makes no
+model call and spends nothing.
+
+Only a rubric-graded run can show a change of **quality**: production chat traffic carries no rubric
+and no grader, so it can show that a chat got slower or more expensive, but never that it got worse at
+answering. A GnollBench run answers the same items under the production system prompt and tools and
+grades every answer, so quality, speed, work and cost are measured on the same turns.
+
+## 3. Operating Mode
+
+GnollBench runs on the **development computer**: Overseer is started from Visual Studio for a session,
+a run is launched by hand, and the run ends with the session. There is:
+
+- **no background monitoring** and no scheduler — no run is ever started by the system;
+- **no production probes** — the production chat is never sampled or measured by this method.
+
+The consequence is a **scope**. A run samples the chat only at the hours it ran, so every verdict holds
+within the time-of-week strata both periods sampled (§ 8) and says nothing about hours no run covered.
+Every headline ends in that scope, for example *"… within weekdays 08–16 UTC"*.
+
+## 4. Per-Call Telemetry
+
+From `BenchmarkRun.CallTelemetryVersion` 1 (`BenchmarkService.CurrentCallTelemetryVersion`) every
+candidate and grader model call of a run writes one `ModelCallTelemetry` row. `CallTelemetryVersion`
+is **not a harness version**: nothing any model is sent depends on it.
+
+### 4.1 Per call (`ModelCallTelemetry`)
+
+| Group | Fields |
+|-------|--------|
+| Whose call | `Source` (`BenchmarkCandidate`, `BenchmarkGrader`), `GraderRole` (`Assessor`, `CoAssessor`, `SecondOpinion`, `ClaimVerifier`, `Synthesis`), `BenchmarkRunAnswerId` (cascades with the answer), `BenchmarkRunId` (synthesis only), `SystemAiApiConfigurationId`, `CallIndex` |
+| Requested | `Provider`, `RequestedModelId`, `ThinkingLevelSent`, `ReasoningSummarySent`, `ServiceTierRequested`, `MaxOutputTokensSent`, `EndpointKind` (`official` or `custom`) |
+| Served | `ServedModelId`, `ResponseId`, `RequestId`, `ServedServiceTier`, `ServedSpeed`, `FinishReason`, `IsRefusal`, `FallbackModelId`, `HttpVersion` |
+| Before the successful send | `PermitWaitMs`, `BackoffWaitMs`, `FailedAttemptMs`, `AttemptCount`, `Http429Count`, `Http5xxCount`, `StreamErrorRetryCount`, `FinalHttpStatus` |
+| Marks after the send | `HeadersMs`, `ServerProcessingMs`, `FirstEventMs`, `FirstReasoningMs`, `FirstOutputMs`, `FirstToolCallMs`, `LastDeltaMs`, `CompletedMs`, `StreamEndMs` |
+| Visible output | `OutputDeltaCount`, `VisibleOutputChars`, `Last80DecodeSpanMs`, `Last80VisibleChars` |
+| Usage | `InputTokens`, `CachedInputTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` |
+| Other | `RateLimitJson` (the successful attempt's rate-limit headers), `ErrorKind` (`canceled`, `permit_timeout`, `timeout`, `exception`, `stream_error`, `http_429`, `http_5xx`, `http_<status>`) |
+
+Every mark is milliseconds from the send of the **successful** attempt (the last attempt when none
+succeeded); the waits are the time before it. A call that failed for good still writes a row, with
+`ErrorKind` set. Null means "not recorded", never zero.
+
+### 4.2 Per answer and per run
+
+- **`BenchmarkRunAnswer`**: `StartedAtUtc`, `CompletedAtUtc` (the candidate turn's wall-clock bounds),
+  `PermitWaitMs`, `BackoffWaitMs` (Overseer's own waits inside `DurationMs`), `RetryAttemptCount`,
+  `ServedModelId` (the id every reporting call agrees on; null when they disagree) and `ModelCalls`.
+- **`BenchmarkRun`**: `CallTelemetryVersion`, `ServedModelIdsJson` (served model id → candidate call
+  count) and `IsConsistencyAnchor` (§ 7).
+
+### 4.3 Where each mark comes from: ours and the provider's
+
+| Ours — measured by Overseer | The provider's — reported by it |
+|------------------------------|---------------------------------|
+| `StartedAtUtc` of the call and the turn (wall clock) | `ServedModelId`, `ResponseId`, `RequestId` |
+| Permit wait (the request governor, its cooldown included), retry backoff, failed attempts | `ServedServiceTier`, `ServedSpeed` (Anthropic `usage.speed`) |
+| Attempt, HTTP 429, HTTP 5xx and stream-error retry counts; final status and HTTP version | `FinishReason`, `IsRefusal`, `FallbackModelId` |
+| `HeadersMs`, `StreamEndMs`, and the stream milestones stamped by `ProviderCallMeta` | `ServerProcessingMs` (`openai-processing-ms`), `RateLimitJson` |
+| `OutputDeltaCount`, `VisibleOutputChars`, the last-80 % decode span | All token counts |
+
+The milestones (`FirstEventMs` … `CompletedMs`, and the visible-text deltas behind the decode span) are
+Overseer's `Stopwatch` stamps, taken right after the provider adapter reads each stream line and before
+any sanitizer; the events they mark are the provider's. `ProviderResponseHeaders` reads only the request
+id (`x-request-id`, `request-id`, `x-goog-request-id`), `openai-processing-ms`, and the
+`x-ratelimit-*`, `anthropic-ratelimit-*` and `retry-after` headers.
+
+### 4.4 Derived measures
+
+`CallTelemetryMeasures` defines them once for the run report and the analysis:
+
+- **Time to first answer text** — from the turn's start to the final candidate call's first visible
+  output, minus every permit and backoff wait of the turn; failed attempts are provider time and stay
+  in.
+- **Answer streaming rate** — the final candidate call's visible tokens per second over the last 80 %
+  of its visible text deltas; for Anthropic, which counts thinking inside its output tokens, estimated
+  at 4 characters per token and marked estimated.
+- **Net model time** — model time minus the turn's own waits.
+- **Own-wait share** — own waits ÷ model time, over answers with candidate telemetry.
+
+### 4.5 The run report's Timing Decomposition
+
+A run with call telemetry adds a **Timing Decomposition** item to the timing block of the run report's
+*§ 2 Results Summary*: the telemetry version and coverage, time to first answer text (P50, P90), the
+answer streaming rate, Overseer's own waits and retries with the HTTP 429 and 5xx counts, the served
+model ids and tiers, and the own-wait share, which is called dominating above 25 %. The full layout is
+in `ai-benchmark.md` § 5 *Per-Call Telemetry and the Timing Decomposition*.
+
+## 5. Measurement Changes and Overseer Changes
+
+Two runs of one subject can differ in two opposite ways, and the analysis treats them oppositely
+(`ChatConsistencyComparability`):
+
+- A **measurement change** alters how the chat is *measured* — the graders, the scoring, how time or
+  tokens are counted, the prices. It is **bridged or segmented**: runs on either side of it are not
+  compared on the measure it breaks unless something removes the difference.
+- An **Overseer change** alters what the chat *is* — the system prompt, the tool guides, the corpora,
+  the prompt options, the budgets, a harness version that changed candidate input. It **never excludes
+  data**; it becomes a dated **event** that control runs later attribute (§ 6).
+
+### 5.1 Axes and segments
+
+Each measure is segmented on its own **axis**: `Quality`, `SpeedTelemetry`, `SpeedLegacy`, `Work`,
+`Cost`. Walking a subject's runs in start order, every unbridged boundary starts a new segment on the
+axes it breaks; two runs are comparable on an axis when they share its segment.
+
+| Change (`MeasurementChangeKind`) | Detected when | Breaks | Bridged by |
+|---------------------|---------------|--------|------------|
+| `Grading` | an assessor (or panel), co-assessor, second-reader or claim-verifier snapshot or configuration key differs, or the ledger between the two harness versions carries `Grading` | Quality | both runs covered by one common grader (§ 7) |
+| `Scoring` | the scoring method version or the scoring-profile key differs, or the ledger carries `Scoring` | Quality, legacy speed | a rescore under one profile |
+| `Scoring` (speed calibration) | the `SpeedCalibration` key differs | legacy speed | a rescore under one profile |
+| `CandidateTiming` | the ledger carries `CandidateTiming` | legacy speed | never |
+| `CallTelemetry` | two telemetry runs differ in `CallTelemetryVersion` | telemetry speed | never |
+| `CandidateAccounting` | the ledger carries `CandidateAccounting` | work, cost | never |
+| `Pricing` | the pricing snapshot key differs | cost | always: every run is costed at one price card |
+
+A run's harness is its `HarnessVersion` together with a differing `RerunHarnessVersion`; the ledger
+impact between two runs is the union over every pair of their versions, and an unknown version counts
+as every change (§ 14).
+
+**Speed exclusions** never move a boundary. A run that answered questions in parallel
+(`MaxParallelQuestionsUsed` > 1) is left out of both speed axes; a run without call telemetry is left
+out of telemetry speed. Both stay on every other axis.
+
+**Choosing runs.** For each endpoint the analysis keeps the latest segment both periods share and lists
+the runs it left out as a data-quality note. When the periods share no segment, the endpoint is not
+computed and the refusal names the change — for quality, with the advice to re-grade every compared run
+with one assessor. **Relaxed pooling** (a request option) pools across the boundary instead and caps the
+affected grades at Indicated.
+
+### 5.2 Overseer events
+
+`DetectOverseerEvents` walks each series and records an event when one of these run fields changes
+against the subject's latest earlier run that recorded it (a null field is "not recorded" and neither
+starts nor ends an event):
+
+`CandidateSystemPromptSha256`, `ToolGuidesSha256`, `KnowledgeBaseHeadSha`, `WikiHeadSha`,
+`SourceCodeHeadSha`, `CorpusIndexFingerprintsJson`, `CandidatePromptOptionsJson` (compared in canonical
+form), `ToolIterationCapsJson`, `TotalModelCallCapsJson`, `QuestionTimeoutSecondsJson`,
+`MaxToolCallsPerQuestionUsed`, and `HarnessVersion` when the ledger impact between the two runs includes
+`CandidateInput`.
+
+An analysis takes the events between its first baseline and last comparison run, from the target series
+and every control series, one per kind and change.
+
+## 6. Events and Control Runs
+
+An event in the compared span means the subject's change could be ours. A **control run** separates the
+two: a run of **another subject** made under the **same Overseer build**. If the control moved the same
+way, the change fits our side; if the target moved and the control did not, it fits the target's side.
+
+- **Instrument fingerprint** (`OverseerInstrumentFingerprint`): the lower-case hex SHA-256 over exactly
+  the event fields of § 5.2 and the run's harness identity, a null field rendered as `(none)`. Equal
+  fingerprints mean the same Overseer build as far as the candidate is concerned.
+- **Matching** (`MatchControlRuns`): for every target run, the candidate controls of another subject
+  with an identical fingerprint, the same suite (`BenchmarkSuiteIdUsed`, else `BenchmarkSuiteId`, else
+  the suite name) and at least one item in common. Candidate controls are the request's explicit
+  `controlRunIds`, or every other subject's usable run on a target suite in either period. A control
+  enters the period its own start falls in (or the nearer one).
+- **Missing-control notes**: a period without any qualifying control gets one note per suite and
+  build, naming the run that would close the gap — *"No control run for period comparison: make a run of
+  \<model\> (a provider other than \<provider\>) on suite \<suite\> under the same Overseer build as run
+  #N (instrument \<12 hex\>)."* The model is the first of the request's `availableOtherProviderModels`
+  from another provider.
+- **Difference in differences** (`ItemDifferenceInDifferences`): per endpoint and control subject,
+  item-paired (target change) − (control change) with a run-cluster bootstrap (items resampled too,
+  except for the speed endpoints). Each effect records whether the DiD interval includes 0, whether it
+  **separates the target** (excludes 0 on the side of the target's change), whether the control **moved
+  the same way**, and whether it is the **same provider**.
+
+## 7. Common-Grader Re-Grading and Anchors
+
+Graders drift and grader rosters change, so native grades from different dates are a weak basis for a
+quality comparison. Two mechanisms remove that doubt:
+
+- **Common grader.** One assessor re-grades every compared run through the existing assessor
+  calibration (`BenchmarkService.RunAssessorCalibrationAsync`), writing `BenchmarkAssessorCalibration`
+  rows. The analysis uses the calibrations of one assessor snapshot that cover **every target run**
+  without error — the requested `commonGraderSnapshotId`, or automatically the snapshot covering most
+  control runs, then the latest — and the latest calibration per run. P1 then reads the calibration's
+  per-answer quality, and the `Grading` boundary between covered runs is bridged. Control runs it does
+  not cover are left out of the quality DiD. A requested snapshot that does not cover every target run
+  is reported, and native grades are compared.
+- **The re-grade** (`ChatConsistencyRegradeService`) is the method's only spending path. A run is
+  eligible when it is usable, finished its suite, was graded under **scoring method 14**
+  (`BenchmarkAssessmentPrompt.ScoringMethodVersion`) and has its board recorded. The estimate comes
+  first — each run's recorded assessor tokens priced at the chosen assessor's current price, always an
+  estimate — and the job starts only on a request with `confirmed: true`, not while a benchmark run or
+  another re-grade is in progress, and only when the spending guard allows it. One job at a time, at
+  most 200 runs, run by run.
+- **Anchor and grader drift.** A run marked `IsConsistencyAnchor` (several may be) is re-graded by one
+  assessor snapshot on different dates. Its **grader drift** is the latest re-grade's mean quality minus
+  the earliest one's over the answers both graded, from calibrations on at least two distinct UTC days;
+  within ±3 points it passes.
+
+The P1 **Grader stability** check passes when a common grader covers every compared run; otherwise
+it reads the anchor's drift; with neither, it fails — so a quality verdict on native grades without an
+anchor is at most **Indicated**, and the next-run list asks for a re-grade or an anchor.
+
+## 8. Common-Support Time Strata
+
+Provider latency depends on load, and load on the hour. The analysis therefore compares speed only
+**where both periods were sampled**:
+
+- **Twelve strata** (`AssignStratum`): six 4-hour UTC blocks (00–04 … 20–24) on weekdays (indexes 0–5)
+  and the same blocks on Saturday and Sunday UTC (6–11).
+- An answer's stratum comes from its recorded `StartedAtUtc`; without one, a sequential run's answer is
+  estimated at the run start plus the preceding answers' durations, a parallel run's at the run start.
+  Estimated starts are used only for strata, and their count is a data-quality note.
+- **Common support**: only strata present in both periods are used; each contributes its
+  within-stratum shift with **equal weight**, so a change in when the runs were made cannot pose as a
+  change of speed. Observations in strata one period alone sampled are excluded and their share
+  reported.
+- **Scope**: the common strata as text — *weekdays 04–12 UTC; weekends 16–20 UTC*, *(one time stratum)*
+  when only one is shared, *no common time stratum* when none is.
+- **US business hours** are weekdays 14–22 UTC. A common stratum counts as inside them when it is a
+  weekday block overlapping that window (12–16, 16–20 or 20–24 UTC), and outside them otherwise. A
+  change is called **load-independent** only when the common strata include at least one block of each
+  kind.
+
+## 9. Protocol V1
+
+The method is pre-declared (`ChatConsistencyProtocol.V1`) and immutable: any change of a default is a
+new protocol version. The protocol is stored with every analysis (`ProtocolJson`).
+
+| Id | Endpoint | Scale | Margin | Direction | Pairing and statistic |
+|----|----------|-------|--------|-----------|-----------------------|
+| P1 | Quality | difference, index points | ±3 points | higher is better | item-paired quality under the common grader (native grades when none covers every run); mean of per-item differences; two-level bootstrap, runs then items |
+| P2 | Time to first answer text | log ratio | ±15 % | lower is better | net of Overseer's own waits; item-centered log times; Hodges–Lehmann shift per common stratum, equal-weight mean; bootstrap over runs only |
+| P3 | Answer streaming rate | log ratio | ±10 % | higher is better | final candidate call's visible decode rate; as P2 |
+| P4 | Work per turn | log ratio | ±15 % | reported as *more work* / *less work*, never better or worse | total candidate output tokens per item; Hodges–Lehmann of per-item log differences; two-level bootstrap |
+| P5 | Cost per question | log ratio | ±10 % | lower is better | candidate cost per item at **one price card** for every compared run; as P4 |
+
+- **Multiplicity**: α = 0.05 with **Holm's** adjustment across the primary endpoints that produced a
+  p-value; **Benjamini–Hochberg** at a false discovery rate of 0.05 within each secondary family.
+- **p-values**: P1, P4 and P5 use the Wilcoxon signed-rank test on the per-item differences of the
+  period means; P2 and P3 a run-cluster bootstrap p (twice the smaller tail share, each with one added
+  to numerator and denominator, capped at 1). Intervals are bootstrap percentile intervals: 10,000
+  replicates, seed 20261007, every resampling seeded from the protocol.
+- **Items** pair only on an identical question and item revision; a revised item drops out on both
+  sides, and an unrecorded revision pairs only with another unrecorded one. Both are data-quality notes.
+- **Minimum replication**:
+  - P1, P4, P5 — **at least 2 runs per period, on at least 2 distinct UTC days, and at least 20 paired
+    items**;
+  - P2, P3 — **at least 3 runs per period in at least one common stratum**;
+  - fewer, and a decisive verdict is at most **Indicated**.
+- **Other constants**: power 0.8 for the minimum detectable effect; a common stratum enters the
+  across-strata check with at least 2 runs per period; an own-wait share moving by 0.05 is material;
+  an answer passes for the flip rate at quality ≥ 50 without a critical error; grader drift passes
+  within ±3 points.
+- **Price card**: the subject's current configuration pricing, else the latest run's pricing snapshot
+  (or its catalog pricing), applied to every compared run, so a price change never registers as a cost
+  change. Without one, P5 is not computed.
+- **Overrides**: a request may override the margins, α, the bootstrap replicates (200–100,000) and
+  seed, and the minimum paired items, runs, days and speed runs. Each override is recorded and labels
+  the result *V1 with overrides: \<field\> \<from\> → \<to\>*. The wizard offers the margins and α.
+
+## 10. Verdicts and Grades
+
+Each endpoint gets one of **Lakens' four outcomes** against its margin, checked in this order
+(`ChatConsistencyStatistics.Verdict`):
+
+| Verdict | Condition | Label |
+|---------|-----------|-------|
+| Changed | Holm-adjusted p < α and the 95 % interval lies wholly beyond the margin | *degraded* / *improved* (P4: *more work* / *less work*) |
+| Changed, negligible | the 95 % interval excludes 0 but lies inside the margin | *changed, negligible* |
+| Equivalent | the 90 % interval lies inside the margin (TOST) | *equivalent* |
+| Inconclusive | none of the above | *inconclusive* |
+
+An endpoint the data cannot compute is *not computable*, with its reason.
+
+Each decisive verdict carries an **evidence grade**:
+
+- **Established** — publishable: a decisive verdict, every robustness check passed, the minimum sample
+  met, telemetry-grade data, no relaxed pooling.
+- **Indicated** — a decisive verdict with any of: a failed robustness check, legacy data (a run without
+  call telemetry, or P2 on the legacy proxy), a sample below the minimum, relaxed pooling. The reasons
+  are listed.
+- **Not established** — inconclusive or not computable.
+
+Every endpoint also reports its **minimum detectable effect** at α and power 0.8 (from the run-to-run
+spread; *one run per period: run-to-run noise not estimable* when a period has one run) and the runs
+per period that would bring it down to the margin. The **headline** leads every result:
+*"Overseer chat with \<model\>: quality \<verdict\> (\<grade\>); speed …; work …; cost … within
+\<scope\>"*, with any established reliability increase appended.
+
+## 11. Robustness Checks
+
+A check that cannot run is *not assessable* and does not lower the grade; a failed one makes the grade
+Indicated.
+
+| Check | Endpoints | Passes when |
+|-------|-----------|-------------|
+| Leave-one-run-out stability | all | the verdict holds without any one run (Equivalent: inside the margin; a change: the same sign) |
+| Across sampled strata | P2, P3 | the verdict holds in every common stratum with at least 2 runs per period (needs two such strata) |
+| No unexamined own-side explanation | all | restricted to answers without retries the verdict holds; for speed, the own-wait share did not move materially (or the measure is net of it) and parallel runs are excluded |
+| Grader stability | P1 | a common grader covers every run, or the anchor's drift is within ±3 points (§ 7) |
+| Runs on separate days | all | each period has the minimum runs on the minimum distinct days |
+| Served-tier match | all | every answer was served at the requested tier, or the verdict holds restricted to those that were |
+
+## 12. Secondary Families and Reliability
+
+Secondary results are descriptive and adjusted within their family (Benjamini–Hochberg):
+
+- **Quality detail** — the four dimension levels, the critical-error rate (Fisher), and per-item flips
+  against the **null flip rate** between baseline replicates.
+- **Reliability** — terminal failures, timeouts, empty answers, refusals, tool-budget exhaustion
+  (answers), and HTTP 429 and 5xx responses (calls), each with Wilson intervals and Fisher's exact test.
+  An increase is **established** when it is rejected, higher in the comparison and the run minimum is
+  met in both periods; it is added to the headline.
+- **Tool use** — tool calls and model calls per answer, and the share of the eight most used tools.
+- **Reasoning tokens**, **answer length**, **net model time** (with P2 measured gross, own waits left
+  in), the **shift function** (Harrell–Davis deciles, pointwise intervals), the **time-of-day contrast**
+  (per-stratum shifts and US business hours minus other hours), the **difference in differences per
+  control**, and the **implied generation rate** (Theil–Sen slope of decode time on output tokens).
+
+Every result also lists the data-quality notes, the limitations (§ 21), and the **next runs** that
+would resolve an open question — kinds *checkpoint*, *control*, *stratum* and *regrade*, each naming the
+run whose setup to repeat.
+
+## 13. Attribution
+
+Attribution (`ChatConsistencyAttribution`) is a pre-declared decision table. It reports every
+endpoint's **total change first**, then the rows that fire. A row names the **side** a change fits and
+the events and controls behind it; it **never names a mechanism or an intent**. Only an annotation of
+kind *ProviderConfirmedCause* is cited, verbatim with its date and source, as the provider's own
+statement.
+
+| Rule | Side | Fires when |
+|------|------|------------|
+| R1 overseer-change | ours | an endpoint changed, an Overseer event lies in the span, and a matched control moved the same way with a DiD interval including 0 |
+| R2 not-attributable | undetermined | an endpoint changed, an Overseer event lies in the span, and no control qualifies; lists the candidate causes and the missing-control note |
+| R3 declared-snapshot-change | provider | the served model ids differ between the periods |
+| R4 served-configuration | provider | calls were served at another tier than requested, or by a fallback model |
+| R5 model-behavior | provider | work, reasoning tokens, model calls or the tool mix changed, the streaming rate is Equivalent, and the change is isolated |
+| R6 load-related | provider | P2 or P3 changed and the effect differs between strata, or a same-provider control moved with it, or the run-to-run variance exceeds the margin, or 429 / 5xx rates rose |
+| R7 persistent-serving | provider | P3 changed at every decile and in every common stratum with one sign; *provider-wide* when a same-provider control moved too, else *model-specific*; *load-independent* only when the strata cover US business hours and outside them |
+| R8 infrastructure | infrastructure | Overseer's own waits or retries account for the speed change (gross P2 changed and net did not, the own-wait share moved materially, or the change vanishes without retries) |
+| R9 undeclared-change | provider | quality degraded or work changed for the target alone (a DiD separates it), the served model id did not change, and neither our infrastructure nor an Overseer change explains it — *flagged for review* |
+| R10 improvement | provider | quality improved, Established: with a new snapshot, or undeclared |
+| R11 undetermined | undetermined | every endpoint is Inconclusive, a changed endpoint fits no row, or rows of several sides fit one endpoint (*Multiple causes*) |
+
+A provider-side row (R5–R7, R9, R10) needs its endpoint **isolated**: no Overseer event in the span,
+or a control DiD separating the target. Without control runs, a change in a span holding an Overseer
+event stays R2 — which is why control runs matter.
+
+**What "deliberately slower" cannot be.** No row, and no report, can say that a provider slowed a model
+on purpose, or why it got slower. The strongest speed finding is R7: a persistent serving change
+**within the sampled hours**, provider-wide or model-specific, and load-independent only when both
+kinds of hours were sampled. A mechanism appears only as a quoted ProviderConfirmedCause annotation.
+
+## 14. The Harness Impact Ledger
+
+`HarnessImpactLedger` classifies every harness version from 1 to the current
+`BenchmarkAssessmentPrompt.HarnessVersion` by what it changed relative to the version before it:
+
+| Flag | Meaning | Treatment |
+|------|---------|-----------|
+| `CandidateInput` (CI) | what the candidate is sent or allowed: system prompt, tool output, tool guides, budgets, timeouts, request parameters | an Overseer **event**, never a measurement change |
+| `CandidateTiming` (CT) | how candidate time is measured | breaks legacy speed |
+| `Grading` (G) | how answers are graded | breaks native quality; a common grader bridges it |
+| `Scoring` (S) | how grades become scores | breaks native scores; a rescore under one profile bridges it |
+| `CandidateAccounting` (CA) | how candidate tokens or cost are counted from what the provider reported | breaks work and cost; repricing does not resolve it |
+| `ReportingOnly` (R) | reports, UI and storage only | breaks nothing |
+
+`ImpactBetween(a, b)` is the union of the impacts of every version after the lower up to the higher,
+together with the **same-stamp impact** of both ends — what may differ between two runs carrying one
+stamp because the stamp was not moved when the harness was. An unknown, unparseable or unclassified
+version resolves to `Unclassified` (every flag except ReportingOnly), so an unclassified harness bump is
+treated as changing everything until it is entered. The classification is conservative: a version that
+mixes kinds carries every flag that applies, a tool-output change counts as CandidateInput, and a
+version the changelog cannot tell apart is marked conservative.
+
+| Version | Flags | Summary |
+|---------|-------|---------|
+| 1 | Unclassified (conservative) | Baseline harness with no recorded changelog and no predecessor. |
+| 2 | CI, CT, G, S | Per-question tool budget of 25 calls; model-attributable timing; artifacts scrubbed before grading; turn duration removed from the assessor prompt; scoring method 3. |
+| 3 | CI, G, S (conservative) | Per-difficulty-band tool call budgets; recovered artifacts classified apart from transport defects; executed and blocked tool calls reported apart. |
+| 4 | G, S | Critical error needs a verbatim quote (scoring method 5); deduction evidence; optional second-opinion pass; per-question assessor usage recorded. |
+| 5 | CI, G | Four banded per-question caps including the timeout; pre-tool visible text moved to the thought channel; wider narration scrubbing of the graded answer. |
+| 6 | G | Narration strip steps over unrecognized openers and orphan tokens before grading; removal count persisted; report annotations. |
+| 7 | G, S | Unadjudicable claims recorded instead of deducted (scoring method 6); contested verdicts routed to a second reader; second-opinion modes; calibration runs. |
+| 8 | CI, G | Game snapshots: the board reaches the candidate and the graders; AI-generated questions grounded in the board. |
+| 9 | G, S | A deduction below level 6 must name its defect (scoring method 7); unevidenced deductions flagged; claim verifier role introduced. |
+| 10 | G | Unverified-grounded deductions flagged; claim verifier prompt moved to the user turn; stage failures and live progress reported. |
+| 11 | CI, G | Scope-aware budget refusal and remaining-budget warning in tool results; omission is never an Accuracy deduction; blind second opinions; verification before the trigger cascade. |
+| 12 | CI, G; same stamp: CI, CA, G, S | Heading-scoped wiki_search snippets; candidate prompt options and Response Style recorded; blind backfill, shared JSON extractor and substitution guard in grading. |
+| 13 | CI, CA | Per-question tool, iteration and model-call caps flattened to the Advanced figures; long-context, service-tier and scheduled pricing in candidate costing; model calls reported. |
+| 14 | G, S | Completeness scope becomes a grading rule (scoring method 8); synthesis divergence detection; FlaggedPlusSample second opinions; replicate sets. |
+| 15 | CI | get_item_stats macro parsing repaired; per-role grader cost tracking and an Anthropic cache-creation costing fix; HarnessVersion constant re-synchronized. |
+| 16 | R | Run records the GnollHack wiki and source Git HEADs as provenance. |
+| 17 | R | Every tool call persisted with arguments, result and timings; nothing the candidate sees changed. |
+| 18 | CI, G, S, CA; same stamp: CA | wiki_search and nethack_wiki_search result caps, miss payloads and two guides; advisory grading limited to gradeable answers; no speed score for non-gradeable answers; Gemini usage counted once per call. |
+| 19 | CI, G | Two source-tool contracts and guides changed; critical-error quote dispatched to the claim verifier; grading rule that a rubric omission is not an invention. |
+| 20 | CI, G | Three tool guides changed; out-of-rubric Accuracy deduction checked by the claim verifier; verifier rule 3a. |
+| 21 | CI, CT, G, S (conservative) | Terminal provider failures withhold the indices and skip grading; one provider retry policy for every provider, with an unrecorded effect on candidate timing. |
+| 22 | CI, G | wiki_search clamps max_results and the definition matcher finds more definitions; unevidenced-deduction detection reaches level 5; re-run harness recorded. |
+| 23 | CI, G | source_code_view stops at a whole line with a resume hint; get_function_definition falls back to any kind; unevidenced-deduction detector reads named defects. |
+| 24 | CI, G | wiki_search stems English and reports match counts; grading preamble moved to a cacheable system segment; assessed difficulties become a comparability key. |
+| 25 | CI, G | search_definitions miss carries an occurrence probe; assessor preamble rule on out-of-rubric claims; detector vocabulary; synthesis receives supported claims. |
+| 26 | CI, G | Candidate message carries the no-greet instruction; monster_lookup and item_lookup return an exact-title article alone; detectors, verifier basis and difficulty prompt changed. |
+| 27 | CI, G | wiki_search category filter and nethack_wiki_view resolution fixed; the four assessor levels are required; DimensionOutlier routed to a second reader. |
+| 28 | CI, G, S | AD_SAMU flag description changed outside ToolGuidesSha256; verifier rule on resistance magnitude; speed model recalibrated into its own SpeedCalibration key. |
+| 29 | CI, G | Production system prompt delivered as the first system message, so OpenAI candidates receive the prompt and Google and Anthropic candidates the board; delivery probes; verifier receives the board. |
+| 30 | CI, G | wiki_search always returns an article's lead block; every grading path receives the board; contested answers re-graded with the verifier's findings. |
+| 31 | CI, G, S | Scoring method 11; source_code_search filtered-miss hint, wiki_search ranking, flag unions and two guides; accused sentences sent to the claim verifier. |
+| 32 | G | Every grading role reads the whole board ahead of the question; verifier rules 3d and 3e; accused-sentence extraction widened. |
+| 33 | G, S | Scoring method 12; the claim verifier tests the assessor's own sentences; re-run and board-format provenance. |
+| 34 | CI, G, CA | Source tools append a get_function_definition pointer; Gemini output tokens include thinking tokens; citation-liveness and flag rules; verifier rules 3f to 3h. |
+| 35 | CI, G | Source tools mark lines inside #if 0, wiki_search guide and _policy.md changed; flag detector vocabulary; citation notes for unindexed files. |
+| 36 | CI, G | A categorized wiki_search names its best match outside the category; citation notes for file-only and definition-line citations; verifier rule 3i. |
+| 37 | CI, G | wiki_search returns a short article whole and drops the outside-category line; synthesis divergence check; verifier rule 3j. |
+| 38 | CI, G | item_lookup searches the item and artifact paths; minified get_item_stats keeps the failure reason; the claim verifier judges the charged part. |
+| 39 | CI, G | wiki_view names what it cuts and lookup headers name the path; contested verdicts read from the comment and evidence; macro citation notes; verifier rule 3l. |
+| 40 | G, S | Two-family assessor panel whose published score is the panel mean; the second opinion becomes a reference reader; structured synthesis findings. |
+| 41 | CI, G | wiki_view section-miss headings and [Not reachable] notes with five guides; omission detector and citation notes; panel union manifest; verifier budget per item. |
+| 42 | G | Assessor prompt: the rubric's SOURCE line is provenance; definition-line citations; fabrication qualifiers; synthesis list attribution; knowledge-base topic guard. |
+| 43 | CI, G | get_item_stats resolves the unique item named '... of \<name\>' and its guide changed; pronoun context for claims; verifier rule 3m; union manifest de-duplication. |
+| 44 | CI, G | Source-code-reference prompt option recorded and disallowed by default; stats tools trim their inputs; accusedBy and suspectedBy attribution. |
+| 45 | G, S | Scoring method 13: a critical error comes only from the rubric or the board; notAttempted defined; synthesis states how critical errors were resolved. |
+| 46 | G | Rubric-charged Accuracy deductions sent to the claim verifier and RubricContradictedBySource raised; battery report fixes. |
+| 47 | CI, G | Source tool output: DLLEXPORT functions live, search_definitions miss text and definition pointer wording; table-header quotes never anchor; verifier rules 3n and 3o. |
+| 48 | R | Panel verification-cleared sensitivity reported; corpus index fingerprints recorded as provenance. |
+| 49 | CI, G, S | Scoring method 14; _policy.md knowledge-base scope and get_knowledge_article guide changed; claim verifier batches lookups and records per-call usage. |
+| 50 | CI, G | get_item_stats drops trailing words after a unique item name; the claim verifier's parse retry is a separate request with its own budget. |
+| 51 | CI, G | _policy.md retrieved-figures sentence removed; get_item_stats name cleanup; claim verifier retry recorded and asked for every item. |
+| 52 | CI, G | nethack_wiki_view headings notice for an over-cap article; forced-final instruction when the tools run out; one-line macro bodies count in citation liveness. |
+| 53 | G | A member whose charge the verifier upheld is never verification-cleared; the synthesis is told the verdicts on its charges; report fixes. |
+
+**Same-stamp cases.** Harness 12 carries a same-stamp impact of CI, CA, G and S, and harness 18 of
+CA: runs stamped with one of those versions may still differ in those respects, so even two runs with
+equal stamps are segmented there.
+
+**The CandidateAccounting flag** marks versions that changed how the candidate's tokens or cost are
+counted from what the provider reported (13, 18, 34). Work and cost are segmented across them, and no
+repricing removes the break, because the counts themselves differ.
+
+**Classifying a new version.** `HarnessImpactLedgerTests` fails until every version up to the current
+`HarnessVersion` has an entry and the last entry is the current version. The `server_chat_consistency`
+skill says how to classify one.
+
+## 15. Legacy Data
+
+A run without call telemetry (`CallTelemetryVersion` null) is **legacy**. It stays on the quality, work
+and cost axes and is left out of telemetry speed. When any compared run without parallel questions is
+legacy, P2 falls back to the **legacy proxy** — model time per item on the legacy speed axis — and says
+so; P3 needs telemetry and is not computed without it. Any legacy run, or the proxy, makes a decisive
+verdict at most Indicated, and the result counts the legacy runs per period. The timeline draws legacy
+runs as their own series, and the time figure draws the legacy proxy hollow.
+
+## 16. Reproducibility
+
+An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis` row: the request
+periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
+analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
+`ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
+currently 1).
+
+- **`InputSha256`** is the SHA-256 of a canonical serialization of every input: the request, the
+  protocol, each run with the fields and per-answer values the analysis reads (its call telemetry
+  included), the calibrations and anchor calibrations, the annotations and the price card, all in id
+  order.
+- Fixed inputs give fixed results: every resampling is seeded from the protocol, every collection is
+  ordered, and the result JSON excludes the row's id and creation time.
+
+An analysis cannot be deleted while report documents written from it exist.
+
+## 17. The Chat Consistency Tab
+
+Admin → GnollBench → **Chat Consistency** holds four collapsible sections:
+
+- **Timeline** (open by default). Choose the model (*Models with at least one usable benchmark run*)
+  and an optional UTC date range. One figure per measure — quality per run (native and common-grader),
+  time to first answer text (legacy proxy points hollow), answer streaming rate, work per answer, cost
+  per question, reliability, and *Runs and events* with markers for Overseer changes, annotations and
+  served-model changes — each with a *Show data* table. Below, the **Runs** table: per-axis eligibility
+  with the reasons, segment, telemetry, re-grade coverage, anchor, matched controls and served model,
+  and per row *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor* and *Open run report*.
+- **Analyze chat consistency** — the four-step wizard:
+  1. **Subject and periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an
+     annotation*, *Before vs after an Overseer change*, *Confirm on later data*, *Custom dates*) or by
+     hand, as inclusive UTC dates; Protocol V1 with its margins, and *Override the protocol* for the
+     margins and α.
+  2. **Runs** — the baseline and comparison runs (eligible runs preselected), the matched control runs,
+     the common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade* is pressed),
+     *Pool across measurement segment boundaries*, and a preview of the common strata, the Overseer
+     changes in the span and the missing controls. *Analyze* runs and saves the analysis.
+  3. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
+     effects, the attribution grouped by side after the total changes, the next runs (each with
+     *Repeat this run's setup*), the charts, the limitations and data-quality notes, and the identity
+     (analysis id, `InputSha256`, analysis code version).
+  4. **Reports** — the Chat Consistency Report documents (§ 20).
+- **Saved analyses** — every analysis, newest first, with *Open* and *Delete* (refused while report
+  documents exist).
+- **Annotations** — dated notes on the timeline: *Model release*, *Provider statement*, *Provider
+  confirmed a cause*, *Price change*, *Change on our side*, *Other*, for every provider, one provider or
+  one model, with an optional http(s) source. Annotations are added and deleted; they are not edited.
+
+**"Repeat this run's setup"** — in the run table, on the next-run suggestions and in the run report —
+opens Run Benchmark with the run's suite, scoring profile, models and prompt options filled in, and
+notes anything that no longer exists. **It never starts a run**: the operator checks the settings and
+presses Start.
+
+## 18. Detection and Confirmation
+
+Choosing the periods after looking at the timeline is detection: the analysis that found a change was
+pointed at it. The **Confirm on later data** preset re-tests it on data that did not exist then — the
+last saved analysis's baseline against the subject's runs from the day after that analysis was saved —
+and only a change that holds there is confirmed.
+
+## 19. API
+
+`AdminChatConsistencyController`, route `api/admin/benchmark/chat-consistency`, policy `AdminOnly`.
+Refusals are 400 with `{ error }`; JSON is camelCase with enums as strings, except the report-document
+routes, which use the run report-documents contract.
+
+| Method | Route | What it does |
+|--------|-------|--------------|
+| GET | `models` | every model axis with usable runs, run counts and first and last run dates |
+| GET | `timeline?modelKey&from&to` | one point per usable run in the inclusive UTC range, with events and annotations; 400 without `modelKey` or when `from` > `to` |
+| GET | `runs?modelKey&from&to` | the run table, validated alike |
+| POST | `analyses` | runs and saves an analysis; 200 with the result and `analysisId`; 400 for malformed or overlapping periods or a period without a usable run; 499 when the client aborts |
+| GET | `analyses` | every saved analysis, newest first, without the results |
+| GET | `analyses/{id}` | one saved analysis; 404 |
+| DELETE | `analyses/{id}` | 204; 404; 409 while report documents written from it exist |
+| POST | `analyses/{id}/report-documents/estimate` | the report cost estimate with `providerIssueReportAvailable` and `providerIssueReportReason`; no model call |
+| POST | `analyses/{id}/report-documents` | writes the documents; 202 (§ 20) |
+| GET | `analyses/{id}/report-documents/job` | the report job; 200, or 204 when this process knows none |
+| POST | `analyses/{id}/report-documents/cancel` | cancels the report job; 202; 409 when none runs |
+| POST | `regrade/estimate` | the re-grade estimate per run with eligibility; no model call; 400 without runs or over 200 |
+| POST | `regrade` | starts a re-grade; 202 with the job; 400 without `confirmed: true`, for an invalid assessor or ineligible run, while a run or re-grade is in progress, or when the spending guard denies it |
+| GET | `regrade/job` | the current or last re-grade job; 204 when none ran since start-up |
+| POST | `regrade/cancel` | cancels the re-grade; 202; 409 when none runs |
+| PUT | `runs/{id}/anchor` | `{ isAnchor }`; 200 `{ runId, isAnchor }`; 404 |
+| GET | `annotations?provider&modelId` | annotations, oldest first, filtered when a provider is given |
+| POST | `annotations` | adds an annotation; 400 for empty text or text over 1,000 characters, a provider over 64 or model id over 128 characters, an unknown kind, or a source that is not an absolute http(s) URL of at most 512 characters |
+| DELETE | `annotations/{id}` | 204; 404 |
+
+The client calls them through `AdminChatConsistencyService`
+(`Overseer/ClientApp/src/app/services/admin-chat-consistency.service.ts`).
+
+## 20. Chat Consistency Report Documents
+
+A saved analysis can be written up as AI-written report documents, through the report-pack machinery
+(origin `ChatConsistencyReport`, scope `ChatConsistency`, subject key `chat-consistency:<id>`, column
+`ChatConsistencyAnalysisId`). The details — slots, facts, validator rules, figures and file names — are
+in `ai-benchmark-report-pack.md` § 16.
+
+| Audience | For |
+|----------|-----|
+| Executive Summary | is the chat with this model as good as before, for players, with confidence and scope |
+| Report for AI Researchers and Developers | design, coverage, events, results, attribution, robustness, limitations, reproducibility |
+| Internal Improvement Brief | findings for the chat, our changes that helped or hurt, infrastructure, next runs, actions |
+| Provider Issue Report | for the model's provider: the finding, its measurements, the hours observed, what we ruled out, sample request ids and the request |
+
+The **Provider Issue Report** is available only when at least one attribution is **provider-side and
+graded Established or Indicated**; otherwise it is refused with the reason *"No provider-side finding
+graded Established or Indicated in this analysis."* It never names a control model — controls are
+lettered peers — and carries at most 10 candidate-call request ids from the comparison period.
+
+The validator's chat consistency rules **C1–C7** (report-pack rules 22–28) hold the prose to the
+method: a change claim needs the fact that shows it, an intent or mechanism claim needs a
+provider-confirmed cause, a causal claim needs an attribution, *established* needs an Established
+grade, an inconclusive endpoint needs its detectable effect, the document must cite its hours and may
+not claim all hours, and a Provider Issue Report may assert a model or serving change only from a
+provider-side attribution and must list every Overseer event it ruled out. Files are named
+`chat-consistency-<id>_<model>_<kind>_<disclosure>_<peers>`, for example
+`chat-consistency-12_<model>_provider-issue-report_summary_anonymized.pdf`.
+
+## 21. Limits
+
+The analysis records these in every result:
+
+- Runs sample the chat only at the hours they ran; every verdict holds within the stated scope.
+- Attribution names a side, never a mechanism or an intent.
+- Graders never see the candidate's tool results; unless a common grader covers every run, a quality
+  change can reflect grading as well as answers.
+- Control runs are not segmented for measurement changes; a DiD assumes each control was measured alike
+  in both periods.
+- Speed endpoints pair items by centering each answer on its item's mean; that removes item levels but
+  not a change in which items each period sampled at which hour.
+- Cost is computed at one price card, so a price change does not register as a cost change.
+- On the legacy proxy, P2 spans the provider's whole turn, not the wait for the first answer text.
+
+And of the implementation:
+
+- Change-point detection (`ChatConsistencyStatistics.Pelt`) is implemented but not yet wired into the
+  analysis or the timeline; detection is the operator's choice of periods, and confirmation is the
+  *Confirm on later data* preset (§ 18).
+- The analysis passes no rescored-run set to the comparability layer, so a scoring-profile or speed
+  calibration change between the periods always segments.
+- Calibrations, and so the common-grader re-grade, write no call telemetry.
+- GnollBench is not a monitoring service: a verdict is only as current as the last run someone made.
+
+## 22. How to Cite a Finding
+
+Cite a finding with **its hour scope, its grade and its protocol version**, and its analysis id:
+
+> Overseer chat with \<model\>: time to first answer text degraded by 22 % (95 % CI 14 % to 31 %),
+> **Indicated**, within weekdays 08–16 UTC; Protocol V1; analysis #12.
+
+Never drop the scope (*"slower"* without *"within the sampled hours"*), never upgrade an Indicated
+grade to *established*, never cite an Inconclusive endpoint as *no change* — cite its minimum
+detectable effect instead — and never state a cause the attribution table did not name.

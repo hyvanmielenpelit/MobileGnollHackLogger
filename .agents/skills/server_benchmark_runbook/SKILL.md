@@ -1,7 +1,8 @@
 ---
 name: server_benchmark_runbook
 description: >-
-  Mandatory closing deliverable of every Overseer AI benchmark analysis: the Developer Runbook
+  Mandatory closing deliverable of every Overseer AI benchmark (GnollBench) analysis: the
+  Developer Runbook
   (developer_runbook_v<N>.md) that tells the developer exactly what to do next and in which
   order. Read once a benchmark analysis has triaged its findings and before its implementation
   plan is written; read whenever a user asks "what do I do next", "which runs should I make",
@@ -23,6 +24,8 @@ description: >-
 ---
 
 # Developer Runbook: One Numbered Step List, Runs Included
+
+GnollBench is the user's name for the Overseer AI benchmark.
 
 > *Naming: the Second Reader (single-assessor runs) and Reference Reader (panel runs) were called
 > the "second opinion" before 2026-09-27. Database columns, API fields and code identifiers still
@@ -250,7 +253,7 @@ Rules for writing a step:
 
 - **`Needs` names step numbers** (*"Step 6 finished"*), never a description of the order.
 - **Absolute paths** for every file, in a form that can be pasted into a file dialog.
-- **UI labels verbatim, in bold**, in click order: Admin → **AI Benchmark** → **Manage Suites** →
+- **UI labels verbatim, in bold**, in click order: Admin → **GnollBench** → **Manage Suites** →
   … . **Grep each label in the Angular template before writing it** (§ 8 names the files);
   a label recalled from an older round is how a runbook sends someone to a button that moved.
 - **Commands in their own fenced block**, one per block, PowerShell unless stated.
@@ -278,7 +281,7 @@ out in full each time**, never as *"as Step 4"*:
 - [ ] The agent has said it is **finished** — not paused — and the walkthrough exists.
 - [ ] Overseer was stopped and started in Visual Studio **after** the agent finished and after the last change to the NetHack wiki.
 - [ ] At least 10 minutes have passed since the last wiki, source or knowledge-base push — or the start came after it.
-- [ ] Admin → **AI Benchmark** → **Run Benchmark**: selecting the suite shows **no** `Difficulty n/m Assessed` warning.
+- [ ] Admin → **GnollBench** → **Run Benchmark**: selecting the suite shows **no** `Difficulty n/m Assessed` warning.
 - [ ] The suite card shows no `Needs review` badge the round did not expect.
 - [ ] No run is in progress.
 - [ ] Where it applies: Step <n> (<the change this run must not see>) has **NOT** been done.
@@ -412,7 +415,7 @@ identical**:
     tolerates, in milliseconds, from the analysis.
   - *Cost* — **candidate cost per question** from the Model Under Test cost card, never the run
     total, which is mostly grading. Note any price that is promotional or dated.
-- **Read the result in Admin → AI Benchmark → Model Comparison → `Open comparison wizard`.** Open
+- **Read the result in Admin → GnollBench → Model Comparison → `Open comparison wizard`.** Open
   **About** in the wizard's view bar: a model listed under *Not in the charts* was not comparable,
   and the Interactive table shows it with State *Excluded*. The `RUN` step says in advance that this
   must not happen for the set.
@@ -450,6 +453,35 @@ a panel follows them:
 - **Cost**: two grader calls per answer and a second synthesis. Scale the estimate from a panel
   run's own figures when one exists, and say so when it does not.
 
+### Checkpoint and control runs for chat consistency
+
+A GnollBench Chat Consistency analysis (`server_chat_consistency`,
+`docs/overseer/ai-benchmark-chat-consistency.md`) compares one model's runs across two periods, so the
+runs it needs are planned like any other `RUN` step, with these rules:
+
+- **Repeat the setup, never retype it.** The `RUN` step tells the developer to press **Repeat this
+  run's setup** on the run being repeated — in the run report header, in the Chat Consistency run table
+  or on a *Next runs* suggestion of a saved analysis. It fills Run Benchmark with that run's suite,
+  profile, models and prompt options and notes anything that no longer exists; it never starts the run,
+  so the `CHECK` step before it still applies.
+- **Keep a small, rarely edited suite for consistency.** Items pair only on an identical question and
+  revision, so every rubric edit drops that item from the comparison on both sides. Use one suite for the
+  checkpoints and leave its questions alone between them.
+- **Replicate per period.** For quality, work and cost make **at least 2 runs per period, on at least 2
+  different days** (and at least 20 paired items); for speed make **at least 3, at different times of
+  day**, so the periods share a time stratum. Fewer runs cap a verdict at Indicated, and a verdict holds
+  only for the hours sampled.
+- **One control run after an Overseer change.** After any change worth attributing — system prompt, tool
+  guide, corpus, budget, a harness bump with candidate input — make **one run of a model from another
+  provider under the current build**, on the same suite. Without it a change across the event is *not
+  attributable*.
+- **A grader roster change is a measurement change.** Keep the assessor, panel, second reader, claim
+  verifier and scoring profile constant across the runs an analysis compares, or plan a common-grader
+  re-grade of every compared run in the Chat Consistency wizard (scoring method 14 runs only).
+- **The analysis spends nothing; runs and re-grades do.** Running an analysis reads stored runs only.
+  A checkpoint run, a control run and a re-grade all spend; the launcher's projection and the re-grade's
+  estimate dialog show the cost before anything starts, and the `RUN` step quotes them.
+
 ### Cost and time
 
 Every `RUN` step carries an **estimated cost and wall time**, taken from the analysed run's own
@@ -465,7 +497,7 @@ to stop if the projection is more than about twice the estimate.
 - Answers: <the one question this run settles, in a sentence>
 - Needs: Step <n-1> (the CHECK before it)
 - Must not be done yet: Step <j> (<the change this run must not see>)   (or: nothing)
-- Where: Admin -> AI Benchmark -> Run Benchmark -> "New Benchmark Run"
+- Where: Admin -> GnollBench -> Run Benchmark -> "New Benchmark Run"
 
 | Launcher field | Set to | Versus run <R> |
 |---|---|---|
@@ -491,7 +523,7 @@ to stop if the projection is more than about twice the estimate.
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
   parallel mode (from the System AI Config behind each dropdown entry: check the badges);
   Blind Second Reader (forced on in a panel run) and max parallel questions (from the scoring profile: Admin ->
-  AI Benchmark -> Scoring Profiles). Do not edit either between the runs of this round.
+  GnollBench -> Scoring Profiles). Do not edit either between the runs of this round.
 - Predicted comparability with run <R>: <tier>, because <keys> move. <What that means for
   reading the result.>
 - In the first minute, check: the run's manifest shows <HarnessVersion n>, a ToolGuidesSha256
@@ -699,4 +731,5 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 - [`server_rubric_handoff`](../server_rubric_handoff/SKILL.md) — § 6, the import steps a card repeats
 - [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — § 4a, the gate and messages a card repeats
 - [`supported_ai_models`](../supported_ai_models/SKILL.md) — which models may be proposed as candidates
+- [`server_chat_consistency`](../server_chat_consistency/SKILL.md) — verdicts, sides and the hour scope the checkpoint and control runs of § 4 serve
 - [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) — § *Multi-Run Replicate Sets*, § *Comparability Across Runs*

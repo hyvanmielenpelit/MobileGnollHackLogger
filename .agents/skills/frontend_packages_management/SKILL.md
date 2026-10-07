@@ -52,7 +52,7 @@ build-time ones under `devDependencies`, both pinned by `package-lock.json`. Ins
 plan -- `package.json` is the source of truth.
 
 ### Notable Runtime Dependencies
-- **`write-excel-file`** -- the `.xlsx` encoder behind the Admin AI Benchmark cross-model
+- **`write-excel-file`** -- the `.xlsx` encoder behind the Admin GnollBench cross-model
   comparison's table export. Browser-first, MIT, one runtime dependency (`fflate`), and it returns a
   `Blob` when called without `fileName`, which is what the export pipeline needs. It is reached
   through a **dynamic `await import('write-excel-file')`** inside the encoder alone, so it lands in

@@ -35,6 +35,15 @@ export const REPORT_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] = [
 /** A battery-completion document's origin. */
 export const BATTERY_COMPLETION_ORIGIN = BenchmarkReportDocumentOrigin.BatteryCompletion;
 
+/** A chat consistency document's origin. */
+export const CHAT_CONSISTENCY_REPORT_ORIGIN = BenchmarkReportDocumentOrigin.ChatConsistencyReport;
+
+/** The four documents of a saved chat consistency analysis: a run's three, then the Provider Issue Report. */
+export const CHAT_CONSISTENCY_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] = [
+  ...REPORT_DOCUMENT_AUDIENCES,
+  BenchmarkReportAudience.ProviderIssueReport
+];
+
 /** One row of the document list: an audience and its stored document, if any. */
 export interface ReportDocumentRow {
   audience: BenchmarkReportAudience;
@@ -95,9 +104,10 @@ export function reportStatusSnapshotOfJob(job: BenchmarkRunReportJobDto): Report
 }
 
 /**
- * The completion documents of one subject (`run:<id>` or `battery:<id>`) of the given origin, the
- * newest one per audience, in audience order. Report Pack documents about the same subject are left
- * out.
+ * The completion documents of one subject (`run:<id>`, `battery:<id>` or `chat-consistency:<id>`)
+ * of the given origin, the newest one per audience, in audience order: a run's three, and for the
+ * chat consistency origin the Provider Issue Report after them. Documents of any other origin about
+ * the same subject are left out, so a chat consistency document is never a run's or a battery run's.
  */
 export function completionDocumentsOf(
   documents: readonly BenchmarkReportDocumentListItemDto[] | null | undefined,
@@ -107,7 +117,8 @@ export function completionDocumentsOf(
   const newestFirst = (documents ?? [])
     .filter(doc => doc.origin === origin && doc.subjectKey === subjectKey)
     .sort((a, b) => (b.createdAtUtc ?? '').localeCompare(a.createdAtUtc ?? '') || b.id - a.id);
-  return REPORT_DOCUMENT_AUDIENCES
+  const audiences = origin === CHAT_CONSISTENCY_REPORT_ORIGIN ? CHAT_CONSISTENCY_DOCUMENT_AUDIENCES : REPORT_DOCUMENT_AUDIENCES;
+  return audiences
     .map(audience => newestFirst.find(doc => doc.audience === audience))
     .filter((doc): doc is BenchmarkReportDocumentListItemDto => !!doc);
 }

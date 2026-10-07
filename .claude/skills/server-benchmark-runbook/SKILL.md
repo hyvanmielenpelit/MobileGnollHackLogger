@@ -1,7 +1,8 @@
 ---
 name: server-benchmark-runbook
 description: >-
-  Mandatory closing deliverable of every Overseer AI benchmark analysis: the Developer Runbook
+  Mandatory closing deliverable of every Overseer AI benchmark (GnollBench) analysis: the
+  Developer Runbook
   (developer_runbook_v<N>.md) that tells the developer exactly what to do next and in which
   order. Read once a benchmark analysis has triaged its findings and before its implementation
   plan is written; read whenever a user asks "what do I do next", "which runs should I make",

@@ -51,7 +51,7 @@ import {
   reportDocumentFileStem
 } from './download-center-panel.component';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
 const { Summary, Detailed, Full } = BenchmarkReportDisclosure;
 
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
@@ -887,6 +887,20 @@ describe('DownloadCenterPanelComponent', () => {
         .toBe('vs-battery-run-6-group-7-run-5_executive-summary-gemini-flash');
       expect(stem({ peerCount: 1, peerLetters: { 'run:2': 'A' } }, TechnicalReport))
         .toBe('run-1_vs-run-2_gemini-flash_Researcher_Report');
+    });
+
+    it('names a chat consistency document as the server does: chat-consistency-<id>_<model>_<kind>', () => {
+      const chat = {
+        origin: BenchmarkReportDocumentOrigin.ChatConsistencyReport,
+        subjectKey: 'chat-consistency:12',
+        subjectLabel: 'GPT-5.6 Luna (medium)',
+        peerCount: 1,
+        peerLetters: { 'control:a': 'A' }
+      };
+      expect(stem(chat, BenchmarkReportAudience.ProviderIssueReport))
+        .toBe('chat-consistency-12_gpt-5.6-luna-medium_provider-issue-report');
+      expect(stem({ ...chat, chatConsistencyAnalysisId: 14 }, TechnicalReport))
+        .toBe('chat-consistency-14_gpt-5.6-luna-medium_researcher-report');
     });
 
     it('names more than three peers, or peers it cannot spell, by their count and the comparison key', () => {
@@ -1860,6 +1874,126 @@ describe('DownloadCenterPanelComponent', () => {
         expect(content).toBe('=== DIAGNOSTICS of run 101 ===\n');
         http.expectNone(r => r.url === '/api/admin/benchmark/runs/102');
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The chat consistency context
+  // -------------------------------------------------------------------------------------------
+
+  describe('chat consistency context', () => {
+    const CC_CONTEXT: DownloadCenterContext = { kind: 'chatConsistency', analysisId: 12 };
+
+    /** A document of chat consistency analysis 12, with no peers and no comparison. */
+    function ccDoc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
+      return doc(id, audience, {
+        title: audience === ProviderIssueReport ? 'Provider Issue Report: Gemini Flash' : `Chat consistency ${id}: Gemini Flash`,
+        subjectKey: 'chat-consistency:12',
+        subjectRunIds: [101, 102],
+        origin: BenchmarkReportDocumentOrigin.ChatConsistencyReport,
+        scope: BenchmarkReportScope.ChatConsistency,
+        chatConsistencyAnalysisId: 12,
+        comparisonKey: null,
+        comparisonEntryCount: 0,
+        peerCount: 0,
+        peerLetters: {},
+        allowedDisclosures: audience === InternalBrief ? [Full] : [Summary, Detailed, Full],
+        ...overrides
+      });
+    }
+
+    async function persistByDownloading(): Promise<void> {
+      vi.spyOn(downloadCenterIo, 'saveText').mockReturnValue(undefined);
+      vi.spyOn(downloadCenterIo, 'saveBytes').mockReturnValue(undefined);
+      vi.spyOn(downloadCenterIo, 'saveBlob').mockReturnValue(undefined);
+      const done = panel().download();
+      panel().cancelPreparation();
+      await done;
+      await settle();
+    }
+
+    it('lists the analysis\'s documents by its subject and the chat consistency origin', () => {
+      const request = render([ccDoc(31, ExecutiveSummary), ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
+
+      expect(request.request.params.get('subject')).toBe('chat-consistency:12');
+      expect(request.request.params.get('origin')).toBe('chatConsistencyReport');
+      expect(request.request.params.has('comparison')).toBe(false);
+      expect(request.request.params.has('take')).toBe(false);
+      expect(rowKeys()).toEqual(['doc:32', 'doc:31']);
+      expect(panel().rows.every(r => r.kind === 'pack')).toBe(true);
+      http.expectNone(r => r.url.includes('/runs/') || r.url.includes('/batteries/'));
+    });
+
+    it('says when the analysis has no documents yet', () => {
+      render([], CC_CONTEXT);
+
+      expect(text('.dc-empty')).toBe('No documents have been written for this analysis yet.');
+    });
+
+    it('labels the Provider Issue Report row, shareable, and chooses it in the Internal and External packages', () => {
+      render([ccDoc(32, ProviderIssueReport), ccDoc(33, InternalBrief)], CC_CONTEXT);
+
+      const row = panel().rows.find(r => r.key === 'doc:32')!;
+      expect(row.category).toBe('providerIssueReport');
+      expect(row.documentType).toBe('Provider Issue Report');
+      expect(row.internalReason).toBeNull();
+      expect(text('article.dc-card[data-row-key="doc:32"] .dc-card-type')).toBe('Provider Issue Report');
+      expect(text('article.dc-card[data-row-key="doc:32"] .dc-card-title')).toContain('Provider Issue Report: Gemini Flash');
+      expect(panel().stateOf(row)).toEqual({ selected: true, disclosure: Full, naming: BenchmarkReportPeerNaming.Named, formats: ['pdf', 'docx', 'md'] });
+
+      panel().selectPackage('provider');
+      fixture.detectChanges();
+      expect(panel().stateOf(row)).toEqual({ selected: true, disclosure: Summary, naming: BenchmarkReportPeerNaming.Anonymized, formats: ['pdf'] });
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:33')!)).toBe(false);
+    });
+
+    it('migrates stored version-3 settings to version 4, giving the Provider Issue Report its defaults', async () => {
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
+        version: 3,
+        package: 'provider',
+        paper: 'letter',
+        packages: { provider: { executiveSummary: { selected: false } } }
+      }));
+      render([ccDoc(31, ExecutiveSummary), ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
+
+      expect(panel().packageId).toBe('provider');
+      expect(panel().paper).toBe('letter');
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:31')!)).toBe(false);
+      const pir = panel().rows.find(r => r.key === 'doc:32')!;
+      expect(panel().stateOf(pir)).toEqual({ selected: true, disclosure: Summary, naming: BenchmarkReportPeerNaming.Anonymized, formats: ['pdf'] });
+
+      await persistByDownloading();
+
+      const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
+      expect(stored.version).toBe(4);
+      expect(stored.paper).toBe('letter');
+      expect(stored.packages.provider.providerIssueReport)
+        .toEqual({ selected: true, disclosure: Summary, naming: BenchmarkReportPeerNaming.Anonymized, formats: ['pdf'] });
+      // The packages not used keep the migrated default: nothing remembered, so their preset applies.
+      expect(stored.packages.internal.providerIssueReport).toEqual({});
+      expect(stored.packages.custom.providerIssueReport).toEqual({});
+    });
+
+    it('round-trips stored version-4 settings, the Provider Issue Report\'s choice included', async () => {
+      const choice = { selected: true, disclosure: Detailed, naming: BenchmarkReportPeerNaming.Named, formats: ['md'] };
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
+        version: 4,
+        package: 'provider',
+        paper: 'a4',
+        packages: { provider: { providerIssueReport: choice } }
+      }));
+      render([ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
+
+      expect(panel().stateOf(panel().rows.find(r => r.key === 'doc:32')!)).toEqual(choice);
+
+      await persistByDownloading();
+
+      const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
+      expect(stored.version).toBe(4);
+      expect(stored.package).toBe('provider');
+      expect(stored.packages.provider.providerIssueReport).toEqual(choice);
+      // A version-4 object is read as it is: no default is added to a package it does not hold.
+      expect(stored.packages.internal).toBeUndefined();
     });
   });
 

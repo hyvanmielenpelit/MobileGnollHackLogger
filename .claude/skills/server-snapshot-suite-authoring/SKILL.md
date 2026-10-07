@@ -1,7 +1,7 @@
 ---
 name: server-snapshot-suite-authoring
 description: >-
-  Creating an Overseer AI benchmark question suite YAML from a GnollHack AI snapshot — a
+  Creating an Overseer AI benchmark (GnollBench) question suite YAML from a GnollHack AI snapshot — a
   `.ai.html` produced by the game's Export AI Snapshot, or a `.snapshot.txt` downloaded from the
   Snapshot Viewer — in an agent session with the repositories on disk and Overseer not running.
   Covers flattening the snapshot exactly as the server would, choosing how many questions the

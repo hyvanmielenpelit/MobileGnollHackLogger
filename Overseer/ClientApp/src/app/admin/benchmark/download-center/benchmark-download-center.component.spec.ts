@@ -1057,7 +1057,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('migrates version 2, keeping the package, paper and choices but giving the Internal rows the new formats', async () => {
-      expect(STORED_SETTINGS_VERSION).toBe(3);
+      expect(STORED_SETTINGS_VERSION).toBe(4);
       const providerChoice = { selected: true, disclosure: Detailed, naming: Named, formats: ['html'] };
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
         version: 2,
@@ -1088,7 +1088,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(3);
+      expect(stored.version).toBe(4);
       expect(stored.paper).toBe('letter');
       expect(stored.packages.provider.executiveSummary).toEqual(providerChoice);
     });
@@ -1099,7 +1099,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.packageId).toBe('internal');
       wrapper.close();
 
-      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 4, package: 'provider' }));
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 5, package: 'provider' }));
       openRun();
       expect(component.packageId).toBe('internal');
       wrapper.close();
@@ -1118,7 +1118,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(3);
+      expect(stored.version).toBe(4);
       expect(stored.package).toBe('provider');
       expect(stored.paper).toBe('a4');
       expect(stored.packages.provider.executiveSummary).toEqual({ selected: true, disclosure: Detailed, naming: Named, formats: ['md'] });
@@ -2001,6 +2001,27 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const manifest = zip.files['MANIFEST.md'];
       expect(manifest).not.toContain('**Comparison:** Comparison');
       expect(manifestBlock(manifest, 'executive-summary-gpt-model-x')).toContain('- **Comparison:** —\n- **Model:** GPT Model X\n');
+    });
+  });
+
+  describe('chat consistency context', () => {
+    it('titles itself by the analysis and lists its chat consistency documents', () => {
+      const heading = (): string => (host().querySelector('.dialog-title-group h3')?.textContent ?? '').trim();
+      const subtitle = (): string => (host().querySelector('.dialog-title-group .dialog-subtitle')?.textContent ?? '').trim();
+
+      wrapper.open({ kind: 'chatConsistency', analysisId: 12 });
+      const list = expectList('chatConsistencyReport');
+      expect(list.request.params.get('subject')).toBe('chat-consistency:12');
+      list.flush([doc(5, ExecutiveSummary, {
+        subjectKey: 'chat-consistency:12',
+        origin: BenchmarkReportDocumentOrigin.ChatConsistencyReport,
+        chatConsistencyAnalysisId: 12
+      })]);
+      render();
+
+      expect(heading()).toBe('Chat consistency documents');
+      expect(subtitle()).toBe('Chat consistency analysis #12');
+      expect(component.rows.map(r => r.key)).toEqual(['doc:5']);
     });
   });
 

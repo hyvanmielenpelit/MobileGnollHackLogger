@@ -82,9 +82,12 @@ public static class BenchmarkReportLayoutPreview
             Headline = PlaceholderText("headline", Typical(BenchmarkReportPackValidator.HeadlineMaxWords))
         };
 
+        var scope = sheet.IsChatConsistency ? BenchmarkReportScope.ChatConsistency
+            : comparison ? BenchmarkReportScope.Comparison
+            : BenchmarkReportScope.Model;
         foreach (string slot in spec.SlotsFor(comparison || sheet.Peers.Count > 0))
         {
-            int limit = BenchmarkReportPackValidator.SlotMaxWords(audience, slot, comparison) ?? DefaultSlotWords;
+            int limit = BenchmarkReportPackValidator.SlotMaxWords(audience, slot, scope) ?? DefaultSlotWords;
             output.Sections[slot] = PlaceholderText(slot, Typical(limit));
         }
 

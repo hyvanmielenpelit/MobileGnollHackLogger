@@ -19,7 +19,7 @@ description: >-
 # Frontend UI Controls: Buttons, Icon Buttons, Tabs, and Data Tables
 
 This skill is the specification for the control families that make up most of the
-Overseer interface. It exists because the first three had drifted: the AI Benchmark admin tab
+Overseer interface. It exists because the first three had drifted: the GnollBench admin tab
 had re-implemented the button base class from scratch, invented two variant names used nowhere
 else, accumulated three competing icon-button vocabularies, and styled a row of tabs as
 pill buttons.
@@ -48,7 +48,7 @@ produces a control that lies to assistive technology about what it does.
 
 > [!IMPORTANT]
 > **A control that swaps the content below it is a tab, not a button.** This is the rule
-> most often broken here, and it is broken in a way that looks fine. The AI Benchmark
+> most often broken here, and it is broken in a way that looks fine. The GnollBench
 > sub-navigation (`Run Benchmark` / `Run History` / `Manage Suites`) was three
 > `.subnav-btn` pill buttons: rounded corners, a border, a filled active background. They
 > worked, they just told the user they were three independent actions rather than three
@@ -1090,6 +1090,19 @@ treatment with horizontal scroll-snap and scroll-edge indicator support.
 | `.gh-tab` | Each tab button |
 | `.gh-tabs-secondary` | Modifier on the container for a **nested** row — smaller type, tighter spacing, fainter rule, so it reads as subordinate to the row above it |
 | `.gh-tabs-segmented` | Modifier for a small fixed set of views nested under another tab row: equal segments in one rounded track, so it does not read as a second row at the same level |
+| `.gh-tabs-wrap` | Modifier for a row that **wraps onto further lines instead of scrolling**, so every tab stays visible on a narrow screen |
+
+**`.gh-tabs-wrap`** turns off the horizontal scroll and scroll-snap (`flex-wrap: wrap`,
+`overflow-x: visible`, `scroll-snap-type: none`) and lays the tabs out in source order across as many
+lines as the width needs. The rows never reorder: the selected tab stays where it is, it is not moved
+to the line nearest the panel, so a tab's position never depends on which one is selected. The
+keyboard model below is unchanged and stays **linear** — Left/Right step through the `subTabs` order
+and wrap from the last tab to the first, whatever line each sits on; Up and Down are not taken. Use it
+for a row whose tabs are each a destination a user must be able to see at once, where a hidden,
+scrolled-off tab would go unnoticed — the GnollBench sub-tab row (`benchmark.component.html`, with
+`.gh-tabs-secondary`) is the one user. Keep the scrolling row for long or open-ended sets, where a
+wrapped block of tabs would push the panel down by several lines. Render the row from one `@for` over
+the component's tab array, so the wrapped order is always the array's order.
 
 The PDF viewer (`shared/pdf-viewer/pdf-viewer-dialog`) uses `.gh-tabs-segmented` for its disclosure
 versions (`variants`) and, when the request carries `secondaryVariants`, for a second, independent row

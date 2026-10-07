@@ -501,6 +501,29 @@ public class BenchmarkRunAnswer
     [MaxLength(64)]
     public string? ActualServiceTierUsed { get; set; }
 
+    // Wall-clock bounds of the candidate's turn. Null on runs without call telemetry.
+    public DateTime? StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+
+    // Time inside DurationMs spent waiting for Overseer's own request-governor permit, and sleeping
+    // between retries. Ours, never the provider's. Null when not recorded.
+    public long? PermitWaitMs { get; set; }
+    public long? BackoffWaitMs { get; set; }
+
+    // Failed attempts retried across the turn's model calls. Null when not recorded.
+    public int? RetryAttemptCount { get; set; }
+
+    // The model id the provider reported serving the turn's calls; null when not recorded, when no
+    // call reported one, or when the calls disagree.
+    [MaxLength(160)]
+    public string? ServedModelId { get; set; }
+
+    /// <summary>
+    /// One row per model call of this answer, candidate and graders alike, in call order. Empty on
+    /// a run without call telemetry.
+    /// </summary>
+    public List<ModelCallTelemetry> ModelCalls { get; set; } = new();
+
     public string? ToolCallSummary { get; set; }
 
     /// <summary>

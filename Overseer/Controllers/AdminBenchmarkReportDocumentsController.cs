@@ -31,15 +31,16 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
     public const string ComparisonError =
         "The comparison must be a comma-separated list of run:<id> and group:<id> keys, or of battery:<id> keys.";
-    public const string OriginError = "origin must be reportPack, runCompletion or batteryCompletion.";
-    public const string SubjectError = "subject must be one run:<id>, group:<id> or battery:<id> key.";
+    public const string OriginError = "origin must be reportPack, runCompletion, batteryCompletion or chatConsistencyReport.";
+    public const string SubjectError = "subject must be one run:<id>, group:<id>, battery:<id> or chat-consistency:<id> key.";
 
     /// <summary>
     /// Newest first. <paramref name="comparison"/> is the comparison's entry keys
     /// (<c>run:1,run:2,group:4</c>, or <c>battery:7,battery:9</c>), matched against each document's
-    /// stored comparison key; <paramref name="origin"/> is <c>reportPack</c>, <c>runCompletion</c> or
-    /// <c>batteryCompletion</c>; <paramref name="subject"/> is one entry key (<c>run:1</c>,
-    /// <c>group:4</c> or <c>battery:7</c>), matched exactly against each document's subject key;
+    /// stored comparison key; <paramref name="origin"/> is <c>reportPack</c>, <c>runCompletion</c>,
+    /// <c>batteryCompletion</c> or <c>chatConsistencyReport</c>; <paramref name="subject"/> is one entry
+    /// key (<c>run:1</c>, <c>group:4</c>, <c>battery:7</c> or the chat consistency analysis
+    /// <c>chat-consistency:3</c>), matched exactly against each document's subject key;
     /// <paramref name="runId"/> matches a run of the subject, never of a peer; <paramref name="comparisonId"/>
     /// is a numbered comparison, matched against each document's comparison id.
     /// </summary>
@@ -72,6 +73,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             if (string.Equals(origin, "reportPack", StringComparison.OrdinalIgnoreCase)) originFilter = MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin.ReportPack;
             else if (string.Equals(origin, "runCompletion", StringComparison.OrdinalIgnoreCase)) originFilter = MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin.RunCompletion;
             else if (string.Equals(origin, "batteryCompletion", StringComparison.OrdinalIgnoreCase)) originFilter = MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin.BatteryCompletion;
+            else if (string.Equals(origin, "chatConsistencyReport", StringComparison.OrdinalIgnoreCase)) originFilter = MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin.ChatConsistencyReport;
             else return BadRequest(new { error = OriginError });
         }
 
@@ -86,9 +88,21 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         }, subjectKey, ct));
     }
 
-    /// <summary>One <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> or <c>battery:&lt;id&gt;</c> key with a positive id, exactly as written.</summary>
+    /// <summary>
+    /// One <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> or <c>battery:&lt;id&gt;</c> key with a positive
+    /// id, or one <c>chat-consistency:&lt;id&gt;</c> key with a positive <see cref="int"/> analysis id,
+    /// exactly as written.
+    /// </summary>
     private static bool IsEntryKey(string key)
     {
+        const string chatConsistency = "chat-consistency:";
+        if (key.StartsWith(chatConsistency, StringComparison.Ordinal))
+        {
+            return int.TryParse(key.AsSpan(chatConsistency.Length), System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int analysisId)
+                && analysisId > 0;
+        }
+
         foreach (string prefix in new[] { "run:", "group:", "battery:" })
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))

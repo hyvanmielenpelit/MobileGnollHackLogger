@@ -90,6 +90,11 @@ public static class BenchmarkPdfFileNames
         string peers = options.PeerNaming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
         string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
 
+        if (document.Origin == BenchmarkReportDocumentOrigin.ChatConsistencyReport || document.Scope == BenchmarkReportScope.ChatConsistency)
+        {
+            return ChatConsistencyStem(document) + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+        }
+
         if (document.Origin == BenchmarkReportDocumentOrigin.ReportPack
             && BenchmarkPdfDocumentInfo.ComparisonOf(document) is { } comparison)
         {
@@ -194,14 +199,40 @@ public static class BenchmarkPdfFileNames
         return cut.Length == 0 ? slug[..max] : cut;
     }
 
-    /// <summary>A Report Pack document kind in a file name: <c>executive-summary</c>, <c>researcher-report</c> or <c>internal-brief</c>.</summary>
+    /// <summary>
+    /// A document kind in a file name: <c>executive-summary</c>, <c>researcher-report</c>,
+    /// <c>internal-brief</c> or <c>provider-issue-report</c>.
+    /// </summary>
     public static string KindSlug(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => "executive-summary",
         BenchmarkReportAudience.TechnicalReport => "researcher-report",
         BenchmarkReportAudience.InternalBrief => "internal-brief",
+        BenchmarkReportAudience.ProviderIssueReport => "provider-issue-report",
         _ => SafeFileName(audience.ToString())
     };
+
+    /// <summary>
+    /// A chat consistency document's stem: <c>chat-consistency-&lt;analysis id&gt;_&lt;model slug&gt;_&lt;kind&gt;</c>,
+    /// e.g. <c>chat-consistency-12_gpt-5.6-luna_provider-issue-report</c>. The id is the document's
+    /// analysis, else the one its <c>chat-consistency:&lt;id&gt;</c> subject key names; without either the
+    /// stem starts <c>chat-consistency_</c>.
+    /// </summary>
+    public static string ChatConsistencyStem(BenchmarkReportDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        string? id = document.ChatConsistencyAnalysisId?.ToString(CultureInfo.InvariantCulture);
+        string key = document.SubjectKey ?? string.Empty;
+        if (id == null && key.StartsWith(BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix, StringComparison.Ordinal))
+        {
+            string digits = key[BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix.Length..];
+            if (digits.Length > 0 && digits.All(char.IsAsciiDigit)) id = digits;
+        }
+
+        string prefix = id == null ? "chat-consistency" : "chat-consistency-" + id;
+        return prefix + "_" + SafeFileName(document.SubjectLabel) + "_" + KindSlug(document.Audience);
+    }
 
     /// <summary>The most peers a file name lists one by one.</summary>
     private const int MaxNamedPeers = 3;

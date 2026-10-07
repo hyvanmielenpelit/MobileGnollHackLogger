@@ -370,7 +370,7 @@ owner token, only for its own pass.
 
 ### 4.1 The launcher: Run Target
 
-Admin → AI Benchmark → **Run Benchmark**, *Test Setup* fieldset:
+Admin → GnollBench → **Run Benchmark**, *Test Setup* fieldset:
 
 - **Run Target** — a radio group, *Single suite* (the default) or *Battery*. *Battery* replaces the
   *Benchmark Suite* select with a **Battery** select (`#batterySelect`), which lists only runnable

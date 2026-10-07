@@ -1,0 +1,34 @@
+POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse&key=<API_KEY>
+content-type: application/json; charset=utf-8
+
+{
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are Overseer, an assistant for the roguelike GnollHack. Answer from the game\u0027s own source code and wiki, name the file you read a fact from, and never inven"
+      },
+      {
+        "text": "t an item the hero does not carry. Keep the answer to the question that was asked, and say so when a tool returned nothing."
+      },
+      {
+        "text": "Game Context Snapshot:\nDlvl:3  HP:14(14)  Pw:5(5)  AC:7  Xp:2/24  T:512\nInventory:\na - a blessed \u002B1 quarterstaff (weapon in hands)\nc - 3 fortune cookies\n"
+      }
+    ]
+  },
+  "generationConfig": {
+    "maxOutputTokens": 65536,
+    "thinkingConfig": {
+      "thinkingLevel": "MEDIUM"
+    }
+  },
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "Which of my items is worth reading first, and why?\n\n[System instruction: Do not greet me, unless I greet you first.]"
+        }
+      ]
+    }
+  ]
+}

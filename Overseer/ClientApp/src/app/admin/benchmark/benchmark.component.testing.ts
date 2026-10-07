@@ -9,8 +9,9 @@ import {
   AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY, RUN_REPORT_HEADER_STORAGE_KEY, RUN_REPORT_TAB_STORAGE_KEY
 } from './benchmark.component';
 import {
-  AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto, BenchmarkComparisonDto
+  AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto, BenchmarkComparisonDto, BenchmarkRunDetailDto
 } from '../../services/admin-benchmark.service';
+import { SystemAiConfigDto } from '../../services/admin.service';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY } from './run-report-frame/key-figures-image';
@@ -114,6 +115,42 @@ export function buildBatteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {})
     analysisStale: false, analysisHasExcludedMembers: false, postRunWork: 'None', repairingRunIds: [],
     ...overrides
   };
+}
+
+/**
+ * Completed run 55 of suite 1 under profile 1: candidate configuration 2, assessor 1, second reader 2
+ * reading every answer (mode 3), claim verifier 1, no co-assessor or report writer, detailed style with
+ * source code references allowed. Renders in the run report.
+ */
+export function buildRepeatableRun(overrides: Partial<BenchmarkRunDetailDto> = {}): BenchmarkRunDetailDto {
+  return {
+    id: 55, benchmarkSuiteId: 1, suiteName: 'Default Suite',
+    testedModelConfigurationId: 2, testedModelDisplayNameUsed: 'Second Model',
+    testedModelProviderUsed: 'OpenAI', testedModelIdUsed: 'gpt-test', testedModelParallelExecutionModeUsed: 0,
+    assessorModelConfigurationId: 1, assessorModelDisplayNameUsed: 'Test Model',
+    assessorModelProviderUsed: 'Anthropic', assessorModelIdUsed: 'claude-3-5-sonnet',
+    coAssessorModelConfigurationId: null, coAssessorModelDisplayNameUsed: null,
+    secondOpinionAssessorModelConfigurationId: 2, secondOpinionAssessorModelDisplayNameUsed: 'Second Model',
+    secondOpinionModeUsed: 3,
+    claimVerifierModelConfigurationId: 1, claimVerifierDisplayNameUsed: 'Test Model',
+    reportWriterModelConfigurationId: null, reportWriterDisplayName: null,
+    candidatePromptOptionsJson: '{"verboseMode":true,"enableToolUse":true,"allowSourceCodeReferences":true}',
+    startedByUserName: 'admin', status: 'Completed',
+    startedAtUtc: '2026-09-03T06:52:00Z', completedAtUtc: '2026-09-03T07:10:00Z',
+    totalAnswerDurationMs: 900000,
+    scoringProfileId: 1, scoringProfileName: 'Default Intelligence Profile', scoringMethodVersion: 12, harnessVersion: '40',
+    transportDefectAnswerCount: 0, advisoryFlagAnswerCount: 0, scrubbedArtifactAnswerCount: 0,
+    totalDurationMs: 900000, difficultyFallbackUsed: false, speedMeasurementDegraded: false, maxParallelQuestionsUsed: 1,
+    answeredQuestionCount: 0, unansweredQuestionCount: 0, totalQuestionCount: 0, assessmentParseFailed: false,
+    totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheCreationTokens: 0, errorMessage: null,
+    answers: [],
+    ...overrides
+  } as unknown as BenchmarkRunDetailDto;
+}
+
+/** A benchmark-capable configuration like the fixture's own, under another id and name. */
+export function buildBenchmarkConfig(base: SystemAiConfigDto, overrides: Partial<SystemAiConfigDto>): SystemAiConfigDto {
+  return { ...base, ...overrides };
 }
 
 /** What createAdminBenchmarkFixture builds; each spec file keeps them in variables of its own. */

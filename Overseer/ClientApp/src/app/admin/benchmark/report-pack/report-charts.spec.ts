@@ -16,6 +16,7 @@ import { DEFAULT_FIGURE_STYLE, FigureStyle } from '../model-comparison/figure-st
 import {
   BASE_LABEL_PX,
   CHART_STORAGE_NOT_CONFIGURED,
+  CHAT_CONSISTENCY_CHART_FIGURE_KEYS,
   COMPARISON_SCOPE_CHART_PLACEMENTS,
   ComposedReportChart,
   DEFAULT_CHART_LAYOUT_SETTINGS,
@@ -47,6 +48,7 @@ import {
   documentFigureLayout,
   documentLabelSizeRefusal,
   documentTextStyle,
+  isDocumentChartFigureKey,
   isReportChartFigureKey,
   normalizeChartSelection,
   normalizeDocumentChartLayout,
@@ -78,6 +80,16 @@ describe('report-charts', () => {
       expect(REPORT_CHART_FIGURES.map(figure => figure.minModels)).toEqual([2, 2, 2, 3, 2, 2, 2]);
       expect(isReportChartFigureKey('p2-profile')).toBe(true);
       expect(isReportChartFigureKey('p9-nothing')).toBe(false);
+    });
+
+    it('knows the chat consistency figures as document figures, apart from the Report Pack\'s', () => {
+      expect(CHAT_CONSISTENCY_CHART_FIGURE_KEYS).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline']);
+      for (const key of CHAT_CONSISTENCY_CHART_FIGURE_KEYS) {
+        expect(isDocumentChartFigureKey(key), key).toBe(true);
+        expect(isReportChartFigureKey(key), key).toBe(false);
+      }
+      expect(isDocumentChartFigureKey('p1a-quality')).toBe(true);
+      expect(isDocumentChartFigureKey('cc9-nothing')).toBe(false);
     });
 
     it('places each figure in the section the server draws it in', () => {

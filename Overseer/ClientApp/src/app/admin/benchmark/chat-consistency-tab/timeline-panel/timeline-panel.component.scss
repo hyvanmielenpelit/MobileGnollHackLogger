@@ -1,0 +1,191 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  container: cc-timeline / inline-size;
+}
+
+.cc-tl-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@container cc-timeline (min-width: 48rem) {
+  .cc-tl-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+}
+
+.cc-tl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+
+  label {
+    font-weight: 600;
+  }
+}
+
+.cc-tl-range {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+
+  legend {
+    padding: 0;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+  }
+}
+
+.cc-tl-range-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 1rem;
+
+  input[type="date"] {
+    color-scheme: dark;
+  }
+}
+
+.cc-tl-status,
+.cc-tl-announcement {
+  margin: 0;
+  color: var(--nav-color);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.cc-tl-figures {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@container cc-timeline (min-width: 60rem) {
+  .cc-tl-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cc-tl-runs-title {
+  margin-top: 0.5rem;
+}
+
+.cc-tl-empty {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+// The table scrolls inside its own container, never the page.
+.cc-tl-table-scroll {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.cc-run-table {
+  font-size: var(--text-secondary);
+
+  td,
+  th {
+    vertical-align: top;
+  }
+}
+
+.cc-nowrap {
+  white-space: nowrap;
+}
+
+.cc-run-id {
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-run-status {
+  display: block;
+  color: var(--nav-color);
+}
+
+.cc-muted {
+  color: var(--nav-color);
+}
+
+.cc-elig-cell {
+  min-width: 14rem;
+}
+
+.cc-elig-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// A badge carries its state by icon and text; the color only repeats it.
+.cc-elig {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+
+  &.is-eligible {
+    color: var(--score-high-ink);
+    border-color: var(--score-high-border);
+    background: var(--score-high-bg);
+  }
+
+  &.is-excluded {
+    color: var(--score-low-ink);
+    border-color: var(--score-low-border);
+    background: var(--score-low-bg);
+    border-style: dashed;
+  }
+}
+
+.cc-elig-reason {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--nav-color);
+  font-size: var(--text-xs);
+}
+
+.cc-legacy-tag {
+  border-color: var(--score-mid-border);
+  color: var(--score-mid-ink);
+}
+
+.cc-anchor-tag {
+  border-color: var(--border-glass);
+  color: var(--primary-color);
+}
+
+.cc-served {
+  min-width: 10rem;
+  overflow-wrap: anywhere;
+}
+
+.cc-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-width: 12rem;
+}
+
+.cc-tl-legend {
+  margin: 0;
+}

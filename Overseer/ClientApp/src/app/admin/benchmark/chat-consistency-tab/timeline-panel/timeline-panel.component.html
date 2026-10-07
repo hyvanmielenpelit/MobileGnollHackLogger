@@ -1,0 +1,198 @@
+<!--
+  The Timeline: which model, over which UTC dates, then one chart per measure and the run table.
+-->
+<div class="cc-tl-controls">
+  <div class="cc-tl-field cc-tl-model">
+    <label id="cc-tl-model-label">Model</label>
+    <app-model-picker class="cc-subject-model-selector" labelledBy="cc-tl-model-label" describedBy="cc-tl-model-hint"
+                      placeholder="Select a model" [emptyHint]="pickerEmptyHint"
+                      [options]="options" [selectedKey]="selectedKey"
+                      (selectionChange)="selectModel($event.key)"></app-model-picker>
+    <span id="cc-tl-model-hint" class="form-hint">
+      @if (selectedAxis; as axis) {
+        {{ axis.runCount }} {{ axis.runCount === 1 ? 'run' : 'runs' }}, {{ axis.telemetryRunCount }} with call telemetry
+      } @else {
+        Models with at least one usable benchmark run.
+      }
+    </span>
+    @if (axesError) {
+      <p class="gh-field-error cc-tl-axes-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ axesError }}</span>
+      </p>
+    }
+  </div>
+
+  <fieldset class="cc-tl-range">
+    <legend>Dates (UTC)</legend>
+    <div class="cc-tl-range-fields">
+      <div class="cc-tl-field">
+        <label for="cc-tl-from">From</label>
+        <input id="cc-tl-from" type="date" class="gh-input" [value]="fromDay"
+               [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
+               [attr.aria-invalid]="rangeError ? 'true' : null"
+               (change)="onDayChange('from', $event)">
+      </div>
+      <div class="cc-tl-field">
+        <label for="cc-tl-to">To</label>
+        <input id="cc-tl-to" type="date" class="gh-input" [value]="toDay"
+               [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
+               [attr.aria-invalid]="rangeError ? 'true' : null"
+               (change)="onDayChange('to', $event)">
+      </div>
+      @if (fromDay || toDay) {
+        <button type="button" class="btn-ghost cc-tl-range-clear" (click)="clearRange()">Every date</button>
+      }
+    </div>
+    @if (rangeError) {
+      <p id="cc-tl-range-error" class="gh-field-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ rangeError }}</span>
+      </p>
+    }
+  </fieldset>
+</div>
+
+<p class="cc-tl-status" role="status">
+  @if (!selectedKey) {
+    Choose a model to see its runs over time.
+  } @else if (loading) {
+    Loading the timeline…
+  } @else if (timeline) {
+    {{ timeline.points.length }} {{ timeline.points.length === 1 ? 'run' : 'runs' }} of {{ timeline.subject.displayName }} in this range.
+  }
+</p>
+
+@if (timelineError) {
+  <p class="gh-field-error cc-tl-error">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{ timelineError }}</span>
+  </p>
+}
+
+@if (timeline && figures.length > 0) {
+  <div class="cc-tl-figures">
+    @for (figure of figures; track figure.key) {
+      <app-cc-chart-figure [figure]="figure" [figureId]="figureId(figure)"></app-cc-chart-figure>
+    }
+  </div>
+}
+
+@if (selectedKey) {
+  <h4 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs</h4>
+
+  @if (runsError) {
+    <p class="gh-field-error cc-tl-runs-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ runsError }}</span>
+    </p>
+  } @else if (rows.length === 0) {
+    @if (!loading) {
+      <p class="cc-tl-empty">No run of this model in this range.</p>
+    }
+  } @else {
+    <app-table-pager [state]="runTable" [rows]="rows" noun="runs" (changed)="onTableChanged()"></app-table-pager>
+    <div class="gh-datatable-scroll cc-tl-table-scroll">
+      <table class="gh-table gh-datatable cc-run-table" aria-describedby="cc-tl-runs-legend">
+        <caption class="visually-hidden">Runs of the model: start, suite, harness, eligibility per axis, segment, legacy flag, re-grade, anchor, matched control runs, served model and actions.</caption>
+        <thead>
+          <tr>
+            <th app-sort-header [state]="runTable" column="runId" label="Run" (changed)="onTableChanged()"></th>
+            <th app-sort-header [state]="runTable" column="startedAtUtc" label="Started (UTC)" (changed)="onTableChanged()"></th>
+            <th app-sort-header [state]="runTable" column="suite" label="Suite" (changed)="onTableChanged()"></th>
+            <th app-sort-header [state]="runTable" column="harness" label="Harness" (changed)="onTableChanged()"></th>
+            <th scope="col">Eligibility</th>
+            <th scope="col">Segment</th>
+            <th scope="col">Telemetry</th>
+            <th scope="col">Re-grade</th>
+            <th app-sort-header [state]="runTable" column="anchor" label="Anchor" (changed)="onTableChanged()"></th>
+            <th scope="col">Matched controls</th>
+            <th scope="col">Served model</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of runTable.view(rows); track row.runId) {
+            <tr [attr.data-run-id]="row.runId">
+              <th scope="row" class="cc-run-id">#{{ row.runId }}</th>
+              <td class="cc-nowrap">
+                <time [attr.datetime]="row.startedAtUtc">{{ started(row) }}</time>{{ ' ' }}<span class="cc-run-status">{{ status(row) }}</span>
+              </td>
+              <td>{{ row.suiteName }}</td>
+              <td class="cc-nowrap">{{ row.harnessVersion ?? '—' }}</td>
+              <td class="cc-elig-cell">
+                <ul class="cc-elig-list" role="list" [attr.aria-label]="'Eligibility of run #' + row.runId">
+                  @for (axis of axisOrder; track axis) {
+                    @if (eligibilityOf(row, axis); as entry) {
+                      <li class="cc-elig" [class.is-eligible]="entry.eligible" [class.is-excluded]="!entry.eligible" [attr.data-axis]="axis">
+                        @if (entry.eligible) {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        }
+                        <span class="cc-elig-axis">{{ axisLabel(axis) }}</span>
+                        <span class="visually-hidden">{{ entry.eligible ? ': eligible' : ': not eligible' }}</span>
+                      </li>
+                    }
+                  }
+                </ul>
+                @for (excluded of ineligibleReasons(row); track excluded.axis) {
+                  <span class="cc-elig-reason">{{ excluded.axis }}: {{ excluded.reason }}</span>
+                }
+              </td>
+              <td class="cc-nowrap">{{ segment(row) }}</td>
+              <td class="cc-nowrap">
+                @if (row.isLegacy) {
+                  <span class="gh-tag cc-legacy-tag">Legacy</span>
+                } @else {
+                  Recorded
+                }
+              </td>
+              <td>{{ regrade(row) }}</td>
+              <td class="cc-nowrap">
+                @if (row.isAnchor) {
+                  <span class="gh-tag cc-anchor-tag">Anchor</span>
+                } @else {
+                  <span class="cc-muted">—</span>
+                }
+              </td>
+              <td>{{ controls(row) }}</td>
+              <td class="cc-served">{{ served(row) }}</td>
+              <td>
+                <div class="cc-row-actions" role="group" [attr.aria-label]="'Actions for run #' + row.runId">
+                  <button type="button" class="btn-ghost cc-repeat-btn"
+                          [attr.aria-label]="'Repeat this run\'s setup: run #' + row.runId"
+                          (click)="repeatSetup.emit(row.runId)">Repeat this run's setup</button>
+                  <button type="button" class="btn-ghost cc-anchor-btn"
+                          [attr.aria-label]="(row.isAnchor ? 'Unmark anchor: run #' : 'Mark as anchor: run #') + row.runId"
+                          [attr.aria-disabled]="anchorBusy.has(row.runId) ? 'true' : null"
+                          [attr.aria-busy]="anchorBusy.has(row.runId) ? 'true' : null"
+                          (click)="anchorBusy.has(row.runId) || anchorToggle.emit(row)">{{ row.isAnchor ? 'Unmark anchor' : 'Mark as anchor' }}</button>
+                  <button type="button" class="btn-ghost cc-open-report-btn"
+                          [attr.aria-label]="'Open run report: run #' + row.runId"
+                          (click)="openRunReport.emit(row.runId)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    Open run report
+                  </button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <app-table-pager [state]="runTable" [rows]="rows" noun="runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
+    <p id="cc-tl-runs-legend" class="form-hint cc-tl-legend">
+      Eligibility: a check mark means the run can be used on that axis; a cross means it cannot, with the reason under the badges.
+      The anchor is the run a common grader re-grades on different dates to measure grader drift.
+    </p>
+  }
+
+  <p class="cc-tl-announcement" role="status">{{ announcement }}</p>
+  @if (anchorError) {
+    <p class="gh-field-error cc-tl-anchor-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ anchorError }}</span>
+    </p>
+  }
+}

@@ -226,6 +226,7 @@ public class OpenAiResponsesProvider : IAiProvider
         var reasoningSanitizer = new ReasoningTextSanitizer();
         var visibleSanitizer = new ReasoningTextSanitizer();
         bool replayUnavailable = false;
+        var meta = new ProviderCallMeta();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -239,6 +240,7 @@ public class OpenAiResponsesProvider : IAiProvider
                 var dataLine = await reader.ReadLineAsync(cancellationToken);
                 if (dataLine != null && dataLine.StartsWith("data: "))
                 {
+                    long ts = ProviderCallMeta.Now();
                     var dataStr = dataLine.Substring(6).Trim();
                     if (dataStr == "[DONE]") continue;
 
@@ -255,12 +257,21 @@ public class OpenAiResponsesProvider : IAiProvider
                     try
                     {
                         var json = JsonSerializer.Deserialize<JsonElement>(dataStr);
+                        meta.MarkEvent(ts);
 
-                        if (eventType == "response.output_text.delta")
+                        if (eventType == "response.created")
+                        {
+                            if (json.TryGetProperty("response", out var createdResp))
+                            {
+                                ReadResponseIdentity(createdResp, meta);
+                            }
+                        }
+                        else if (eventType == "response.output_text.delta")
                         {
                             if (json.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
                             {
                                 var text = delta.GetString() ?? "";
+                                meta.MarkText(ts, text.Length);
                                 var sanitized = visibleSanitizer.Push(text);
                                 if (!string.IsNullOrEmpty(sanitized))
                                 {
@@ -270,6 +281,7 @@ public class OpenAiResponsesProvider : IAiProvider
                         }
                         else if (eventType == "response.reasoning_summary_text.delta")
                         {
+                            meta.MarkReasoning(ts);
                             if (json.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
                             {
                                 var text = delta.GetString() ?? "";
@@ -286,6 +298,7 @@ public class OpenAiResponsesProvider : IAiProvider
                             {
                                 if (item.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "function_call")
                                 {
+                                    meta.MarkToolCall(ts);
                                     if (item.TryGetProperty("call_id", out var callIdProp) && item.TryGetProperty("name", out var nameProp))
                                     {
                                         var callId = callIdProp.GetString() ?? "";
@@ -293,10 +306,36 @@ public class OpenAiResponsesProvider : IAiProvider
                                         toolCallsInProgress[callId] = (name, new StringBuilder());
                                     }
                                 }
+                                else if (item.TryGetProperty("type", out var addedTypeProp))
+                                {
+                                    var addedType = addedTypeProp.GetString();
+                                    if (addedType == "reasoning")
+                                    {
+                                        meta.MarkReasoning(ts);
+                                    }
+                                    else if (addedType == "refusal")
+                                    {
+                                        meta.IsRefusal = true;
+                                    }
+                                }
+                            }
+                        }
+                        else if (eventType == "response.refusal.delta" || eventType == "response.refusal.done")
+                        {
+                            meta.IsRefusal = true;
+                        }
+                        else if (eventType == "response.content_part.added" || eventType == "response.content_part.done")
+                        {
+                            if (json.TryGetProperty("part", out var part) &&
+                                part.ValueKind == JsonValueKind.Object &&
+                                ReadStringProperty(part, "type") == "refusal")
+                            {
+                                meta.IsRefusal = true;
                             }
                         }
                         else if (eventType == "response.function_call_arguments.delta")
                         {
+                            meta.MarkToolCall(ts);
                             if (json.TryGetProperty("call_id", out var callIdProp) && json.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
                             {
                                 var callId = callIdProp.GetString() ?? "";
@@ -374,6 +413,8 @@ public class OpenAiResponsesProvider : IAiProvider
                         else if (eventType == "response.completed" || eventType == "response.done" || eventType == "response.incomplete")
                         {
                             var respObj = json.TryGetProperty("response", out var rProp) ? rProp : json;
+                            ReadResponseIdentity(respObj, meta);
+                            meta.MarkCompleted(ts);
 
                             var tier = ExtractServiceTierFromBody(respObj);
                             if (tier != null)
@@ -474,6 +515,12 @@ public class OpenAiResponsesProvider : IAiProvider
                             /* The failure carries its code and message inside response.error; the
                                top-level error object is the older shape. The status is the last
                                informative fallback when neither carries a message. */
+                            meta.MarkCompleted(ts);
+                            if (json.TryGetProperty("response", out var failedIdentity))
+                            {
+                                ReadResponseIdentity(failedIdentity, meta);
+                            }
+
                             JsonElement errorObj = default;
                             bool hasError = false;
                             if (json.TryGetProperty("response", out var failedResp) &&
@@ -559,6 +606,8 @@ public class OpenAiResponsesProvider : IAiProvider
         {
             yield return new ChatEvent { Type = "provider_history_discard", Data = "" };
         }
+
+        yield return new ChatEvent { Type = "call_meta", CallMeta = meta };
     }
 
     public object FormatMessage(string role, string text, List<SendMessageAttachment>? imageAttachments)
@@ -768,6 +817,15 @@ public class OpenAiResponsesProvider : IAiProvider
             return ProviderHelper.NormalizeServiceTier(tier.GetString());
         }
         return null;
+    }
+
+    /// <summary>Copies the response's <c>model</c> and <c>id</c> into <paramref name="meta"/> when present.</summary>
+    private static void ReadResponseIdentity(JsonElement responseObj, ProviderCallMeta meta)
+    {
+        var model = ReadStringProperty(responseObj, "model");
+        if (model != null) meta.ServedModelId = model;
+        var id = ReadStringProperty(responseObj, "id");
+        if (id != null) meta.ResponseId = id;
     }
 
     /// <summary>The named property as a non-empty string, or null when it is absent, null or another kind.</summary>

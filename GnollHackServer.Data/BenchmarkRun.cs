@@ -941,5 +941,25 @@ public class BenchmarkRun
     /// </summary>
     public string? PricingSnapshotJson { get; set; }
 
+    /// <summary>
+    /// The version of the per-call telemetry this run recorded in <see cref="ModelCallTelemetry"/>
+    /// and the answer timing columns. Null on a run without it, which is "not recorded". Not a
+    /// harness version: nothing the candidate is sent depends on it.
+    /// </summary>
+    public int? CallTelemetryVersion { get; set; }
+
+    /// <summary>
+    /// The distinct model ids the provider reported serving the candidate's calls, as a JSON object
+    /// of id to call count. Null when telemetry was not recorded or no call reported a model.
+    /// </summary>
+    [MaxLength(1024)]
+    public string? ServedModelIdsJson { get; set; }
+
+    /// <summary>
+    /// The run is a chat consistency grader anchor: re-grading its stored answers with the same
+    /// assessor at different dates measures grader drift.
+    /// </summary>
+    public bool IsConsistencyAnchor { get; set; }
+
     public List<BenchmarkRunAnswer> Answers { get; set; } = new();
 }

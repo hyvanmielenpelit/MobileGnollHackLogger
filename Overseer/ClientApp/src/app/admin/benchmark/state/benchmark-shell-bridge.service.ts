@@ -4,7 +4,8 @@ import { BenchmarkQuestionDto, BenchmarkSuiteDto } from '../../../services/admin
 import { GraderGuideProfile, GraderGuideSection } from '../grader-guide/benchmark-grader-guide.component';
 
 /** The Benchmark tab's sub-tabs, in tab order. */
-export type BenchmarkSubTab = 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison';
+export type BenchmarkSubTab =
+  'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison' | 'chatconsistency';
 
 /** What the shell's confirmation dialog asks; the button defaults to a destructive Delete. */
 export interface BenchmarkConfirmOptions {
@@ -51,6 +52,8 @@ export class BenchmarkShellBridge {
   readonly openComparisonWizard$ = new Subject<ComparisonWizardPreset | null>();
   readonly openBatteryRunReport$ = new Subject<number>();
   readonly runDeleted$ = new Subject<number>();
+  /** A run id whose setup the Run Benchmark launcher takes over. */
+  readonly repeatRunSetup$ = new Subject<number>();
 
   selectSubTab(tab: BenchmarkSubTab): void {
     this.selectSubTab$.next(tab);
@@ -98,5 +101,10 @@ export class BenchmarkShellBridge {
   /** A run was deleted; the run report closes if it shows that run. */
   runDeleted(runId: number): void {
     this.runDeleted$.next(runId);
+  }
+
+  /** Opens Run Benchmark with this run's setup filled in; nothing starts. */
+  repeatRunSetup(runId: number): void {
+    this.repeatRunSetup$.next(runId);
   }
 }

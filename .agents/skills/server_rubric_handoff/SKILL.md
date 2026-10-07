@@ -1,8 +1,8 @@
 ---
 name: server_rubric_handoff
 description: >-
-  Mandatory method for turning a Suite Defect finding from an Overseer AI benchmark analysis
-  into a YAML repair file a human imports in one action with Import Questions from YAML. Covers
+  Mandatory method for turning a Suite Defect finding from an Overseer AI benchmark
+  (GnollBench) analysis into a YAML repair file a human imports in one action with Import Questions from YAML. Covers
   why the agent never edits a rubric itself, how to obtain the current text (Download All as
   YAML from the suite's Manage Questions toolbar, with a database query kept as a fallback for
   the revision and assessed-difficulty fields alone), the pre-flight checks before a replacement
@@ -17,6 +17,8 @@ description: >-
 ---
 
 # Rubric Handoff: Turning a Suite Defect Into a Repair File a Human Can Import
+
+GnollBench is the user's name for the Overseer AI benchmark.
 
 ## 1. Purpose and When It Binds
 
@@ -285,7 +287,7 @@ pending, and the launcher does not warn.
 
 **By import — the default, for the § 4 deliverable:**
 
-1. Admin → **AI Benchmark** → the suite → **Manage Questions** → **Import Questions from YAML** →
+1. Admin → **GnollBench** → the suite → **Manage Questions** → **Import Questions from YAML** →
    upload `agent-rubric-repair-<slug>.yaml`.
 2. **Validate**, then **Review changes**. The review step must list **exactly** the questions the
    handoff names, **all** of them as *replace*, **none** as *create* — a question showing as
@@ -306,7 +308,7 @@ pending, and the launcher does not warn.
 
 **By paste — the § 4b fallback:**
 
-1. Admin → **AI Benchmark** → the suite → the question → **Edit question** (the pencil action
+1. Admin → **GnollBench** → the suite → the question → **Edit question** (the pencil action
    button on the question row).
 2. Select all of **Expected answer criteria** and paste the block from § 4b. Save.
 3. Steps 4–7 above, unchanged.

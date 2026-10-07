@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Telemetry;
 
 public static class BenchmarkReportBuilder
 {
@@ -1518,6 +1519,119 @@ public static class BenchmarkReportBuilder
     private static bool IsAnthropicCandidate(BenchmarkRun run)
         => string.Equals(run.TestedModelSnapshot.Provider?.Trim(), "Anthropic", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Own waits above this share of model time are reported as dominating the run's timing.</summary>
+    public const double OwnWaitDominanceShare = 0.25;
+
+    /// <summary>Milliseconds as seconds with one decimal: 17200 is "17.2 s".</summary>
+    private static string SecondsText(long ms) => $"{Inv(ms / 1000.0, "F1")} s";
+
+    /// <summary>Counts as "`key` ×n", most frequent first, then by key; "not reported" when empty.</summary>
+    private static string CountListText(IEnumerable<KeyValuePair<string, int>> counts)
+    {
+        var items = counts
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => $"`{kv.Key}` ×{Inv(kv.Value, "N0")}")
+            .ToList();
+        return items.Count > 0 ? string.Join(", ", items) : "not reported";
+    }
+
+    /// <summary>
+    /// The served model ids and their call counts: <see cref="BenchmarkRun.ServedModelIdsJson"/> when it
+    /// parses to a non-empty object, otherwise the candidate calls' <see cref="ModelCallTelemetry.ServedModelId"/>.
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> ServedModelIdCounts(BenchmarkRun run, IEnumerable<ModelCallTelemetry> candidateCalls)
+    {
+        if (!string.IsNullOrWhiteSpace(run.ServedModelIdsJson))
+        {
+            try
+            {
+                var stored = JsonSerializer.Deserialize<Dictionary<string, int>>(run.ServedModelIdsJson);
+                if (stored != null && stored.Count > 0)
+                {
+                    return stored;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        return candidateCalls
+            .Where(c => !string.IsNullOrWhiteSpace(c.ServedModelId))
+            .GroupBy(c => c.ServedModelId!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The Timing Decomposition lines of a run with call telemetry, over the answers that carry
+    /// candidate telemetry rows: time to first answer text net of own waits, the answer streaming
+    /// rate, Overseer's own waits and retries, what the provider served, and one interpretation line
+    /// comparing own waits with model time. Definitions are those of <see cref="CallTelemetryMeasures"/>.
+    /// </summary>
+    private static void AppendTimingDecomposition(StringBuilder sb, BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
+    {
+        var covered = answers.Where(CallTelemetryMeasures.HasCandidateTelemetry).ToList();
+        sb.AppendLine($"- **Timing Decomposition:** call telemetry version {Inv(run.CallTelemetryVersion!.Value)}, recorded on {covered.Count} of {answers.Count} answers");
+        if (covered.Count == 0)
+        {
+            return;
+        }
+
+        // A measure some covered answers could not produce says over how many it was taken.
+        string Over(int count) => count < covered.Count ? $" over {count} of {covered.Count} answers" : string.Empty;
+
+        var firstText = covered
+            .Select(CallTelemetryMeasures.TimeToFirstAnswerTextMs)
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .OrderBy(v => v)
+            .ToList();
+        sb.AppendLine(firstText.Count > 0
+            ? $"  - **Time to First Answer Text:** Median (P50) = {SecondsText(MedianMs(firstText))}, P90 = {SecondsText(Percentile(firstText, 0.90))}{Over(firstText.Count)} *(from the start of the turn to the final call's first visible output, net of our own waits)*"
+            : "  - **Time to First Answer Text:** Not recorded — no final call recorded its first visible output.");
+
+        var rates = covered
+            .Select(CallTelemetryMeasures.AnswerStreamingRate)
+            .Where(r => r.HasValue)
+            .Select(r => r!.Value)
+            .ToList();
+        if (rates.Count > 0)
+        {
+            string rateNote = rates.Any(r => r.Estimated)
+                ? $" *(estimated: the provider counts thinking inside its output tokens, so visible tokens are estimated at {Inv(CallTelemetryMeasures.EstimatedCharsPerToken)} characters per token)*"
+                : " *(visible output over the last 80 % of the final call's deltas)*";
+            sb.AppendLine($"  - **Answer Streaming Rate:** Median {Inv(Median(rates.Select(r => r.TokensPerSecond)), "F1")} tokens/s{Over(rates.Count)}{rateNote}");
+        }
+        else
+        {
+            sb.AppendLine("  - **Answer Streaming Rate:** Not recorded — no final call recorded a decode span with its tokens.");
+        }
+
+        var candidateCalls = covered.SelectMany(a => CallTelemetryMeasures.CandidateCalls(a)).ToList();
+        long permitWaitMs = covered.Sum(a => a.PermitWaitMs ?? 0L);
+        long backoffWaitMs = covered.Sum(a => a.BackoffWaitMs ?? 0L);
+        int retryCount = covered.Sum(a => a.RetryAttemptCount ?? 0);
+        int http429Count = candidateCalls.Sum(c => (int)c.Http429Count);
+        int http5xxCount = candidateCalls.Sum(c => (int)c.Http5xxCount);
+        sb.AppendLine($"  - **Own Waits:** permit wait {SecondsText(permitWaitMs)}, retry backoff {SecondsText(backoffWaitMs)}; {Inv(retryCount, "N0")} retried attempt(s); HTTP 429 ×{Inv(http429Count, "N0")}, HTTP 5xx ×{Inv(http5xxCount, "N0")}");
+
+        var servedTiers = candidateCalls
+            .Where(c => !string.IsNullOrWhiteSpace(c.ServedServiceTier))
+            .GroupBy(c => c.ServedServiceTier!, StringComparer.Ordinal)
+            .Select(g => new KeyValuePair<string, int>(g.Key, g.Count()));
+        sb.AppendLine($"  - **Served Model IDs:** {CountListText(ServedModelIdCounts(run, candidateCalls))}");
+        sb.AppendLine($"  - **Served Tiers:** {CountListText(servedTiers)}");
+
+        double? ownWaitShare = CallTelemetryMeasures.OwnWaitShare(covered);
+        if (ownWaitShare.HasValue)
+        {
+            sb.AppendLine(ownWaitShare.Value > OwnWaitDominanceShare
+                ? $"  - *Own waits were {PercentText(ownWaitShare.Value)} of model time; the rate limit, not the provider, dominated.*"
+                : $"  - *Own waits were {PercentText(ownWaitShare.Value)} of model time.*");
+        }
+    }
+
     /// <summary><c>same-family</c> when a grader shares the candidate's provider, otherwise <c>cross-family</c>.</summary>
     private static string FamilyRelation(string? candidateProvider, string? graderProvider)
         => IsSameFamily(candidateProvider, graderProvider) ? "same-family" : "cross-family";
@@ -2710,6 +2824,11 @@ public static class BenchmarkReportBuilder
         if (ttfts.Count > 0)
         {
             sb.AppendLine($"- **Time to First Token:** Median (P50) = {Inv(MedianMs(ttfts), "N0")} ms, P90 = {Inv(Percentile(ttfts, 0.90), "N0")} ms, Max = {Inv(ttfts[^1], "N0")} ms");
+        }
+
+        if (run.CallTelemetryVersion != null)
+        {
+            AppendTimingDecomposition(sb, run, answers);
         }
 
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");

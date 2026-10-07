@@ -1,0 +1,75 @@
+<section class="cc-tab" aria-labelledby="cc-tab-heading">
+  <div class="cc-tab-head">
+    <h3 id="cc-tab-heading">Chat Consistency</h3>
+    <p class="cc-tab-lead">
+      Whether the Overseer chat with one model stayed the same over time: quality, speed, work, cost and reliability,
+      run by run, and a pre-declared comparison of two periods that says what changed and on whose side.
+    </p>
+  </div>
+
+  <details class="gh-disclosure gh-disclosure--section cc-section" id="cc-section-timeline"
+           [open]="open.timeline" (toggle)="onToggle('timeline', $event)">
+    <summary>
+      <span class="gh-disclosure-summary-title gh-section-title">Timeline</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ timelineReadout }}</span>
+    </summary>
+    <div class="gh-disclosure-body">
+      <app-cc-timeline-panel [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"
+                             [selectedKey]="selectedKey" [range]="range"
+                             [timeline]="timeline" [rows]="rows" [loading]="subjectLoading"
+                             [timelineError]="timelineError" [runsError]="runsError"
+                             [anchorBusy]="anchorBusy" [anchorError]="anchorError" [announcement]="announcement"
+                             (modelChange)="selectModel($event)" (rangeChange)="setRange($event)"
+                             (repeatSetup)="repeatSetup($event)" (anchorToggle)="toggleAnchor($event)"
+                             (openRunReport)="openRunReport($event)"></app-cc-timeline-panel>
+    </div>
+  </details>
+
+  <details class="gh-disclosure gh-disclosure--section cc-section" id="cc-section-analyze"
+           [open]="open.analyze" (toggle)="onToggle('analyze', $event)">
+    <summary>
+      <span class="gh-disclosure-summary-title gh-section-title">Analyze chat consistency</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ selectedAxis?.displayName ?? 'Choose a model first' }}</span>
+    </summary>
+    <div class="gh-disclosure-body">
+      <app-cc-analysis-wizard [axis]="selectedAxis" [timeline]="timeline" [rows]="rows" [analyses]="analyses"
+                              [pickerOptions]="workspace.benchmarkPickerOptions"
+                              [pickerConfigs]="workspace.stableBenchmarkCapableConfigs"
+                              [pickerEmptyHint]="workspace.benchmarkPickerEmptyHint"
+                              [anchorBusy]="anchorBusy"
+                              (analysisSaved)="onAnalysisSaved($event)" (runsChanged)="onRunsChanged()"
+                              (anchorToggle)="toggleAnchor($event)" (repeatSetup)="repeatSetup($event)"
+                              (openDocuments)="openDocuments.emit($event)"></app-cc-analysis-wizard>
+    </div>
+  </details>
+
+  <details class="gh-disclosure gh-disclosure--section cc-section" id="cc-section-saved"
+           [open]="open.saved" (toggle)="onToggle('saved', $event)">
+    <summary>
+      <span class="gh-disclosure-summary-title gh-section-title">Saved analyses</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ analyses.length }} saved</span>
+    </summary>
+    <div class="gh-disclosure-body">
+      @if (openError) {
+        <p class="gh-field-error cc-open-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ openError }}</span>
+        </p>
+      }
+      <app-cc-saved-analyses [analyses]="analyses" [axes]="axes" [loading]="analysesLoading" [error]="analysesError"
+                             [openingId]="openingId"
+                             (open)="openAnalysis($event)" (deleted)="onAnalysisDeleted($event)"></app-cc-saved-analyses>
+    </div>
+  </details>
+
+  <details class="gh-disclosure gh-disclosure--section cc-section" id="cc-section-annotations"
+           [open]="open.annotations" (toggle)="onToggle('annotations', $event)">
+    <summary>
+      <span class="gh-disclosure-summary-title gh-section-title">Annotations</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ selectedAxis?.displayName ?? 'Choose a model first' }}</span>
+    </summary>
+    <div class="gh-disclosure-body">
+      <app-cc-annotations-panel [axis]="selectedAxis" (changed)="onAnnotationsChanged()"></app-cc-annotations-panel>
+    </div>
+  </details>
+</section>

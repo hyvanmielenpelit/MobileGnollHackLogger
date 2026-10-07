@@ -46,6 +46,21 @@ public class AgentRunResult
     public List<TokenUsageReport> ModelCallUsages { get; set; } = new();
 
     /// <summary>
+    /// One record per model call of this turn, in the same call order as <see cref="ModelCallUsages"/>,
+    /// with a record for a call that reported no usage too. In memory only; GnollBench persists it.
+    /// </summary>
+    public List<ModelCallRecord> ModelCalls { get; set; } = new();
+
+    /// <summary>Time this turn waited for Overseer's own request-governor permits, summed over its calls.</summary>
+    public long PermitWaitMs { get; set; }
+
+    /// <summary>Time this turn slept between retries, summed over its calls.</summary>
+    public long BackoffWaitMs { get; set; }
+
+    /// <summary>Failed attempts that were retried, summed over the turn's calls.</summary>
+    public int RetryAttemptCount { get; set; }
+
+    /// <summary>
     /// Wall-clock time spent executing tool batches during this turn, summed per batch rather
     /// than per tool: tools within one batch run concurrently, so summing individual tool
     /// durations would over-count. Subtracting this from the turn duration gives the

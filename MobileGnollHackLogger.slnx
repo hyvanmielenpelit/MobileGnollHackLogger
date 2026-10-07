@@ -10,6 +10,7 @@
   <Folder Name="/docs/overseer/">
     <File Path="docs/overseer/adding-ai-models.md" />
     <File Path="docs/overseer/ai-benchmark.md" />
+    <File Path="docs/overseer/ai-benchmark-chat-consistency.md" />
     <File Path="docs/overseer/ai-benchmark-multi-run.md" />
     <File Path="docs/overseer/ai-benchmark-multi-suite.md" />
     <File Path="docs/overseer/ai-benchmark-report-pack.md" />

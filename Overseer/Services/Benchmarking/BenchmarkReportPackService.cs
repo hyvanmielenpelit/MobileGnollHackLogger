@@ -4,17 +4,22 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.ChatConsistency;
 using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
+using StatusCodes = Microsoft.AspNetCore.Http.StatusCodes;
 
 /// <summary>
 /// What a report pack is built from: the comparison, the fact sheet and its content snapshot. For
@@ -703,7 +708,12 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkReportPackService> _logger;
     private readonly BenchmarkReportChartStore? _charts;
+    private readonly IServiceScopeFactory? _scopeFactory;
 
+    /// <param name="scopeFactory">
+    /// Opens the scope a chat consistency job writes in once its request has ended; without one (in
+    /// tests) the job runs on this instance.
+    /// </param>
     public BenchmarkReportPackService(
         ApplicationDbContext db,
         AgentLoopRunner agentLoopRunner,
@@ -715,7 +725,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         BenchmarkReportPackJobManager jobManager,
         IConfiguration configuration,
         ILogger<BenchmarkReportPackService> logger,
-        BenchmarkReportChartStore? charts = null)
+        BenchmarkReportChartStore? charts = null,
+        IServiceScopeFactory? scopeFactory = null)
     {
         _db = db;
         _agentLoopRunner = agentLoopRunner;
@@ -728,6 +739,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         _configuration = configuration;
         _logger = logger;
         _charts = charts;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>One writer turn: the raw reply, the terminal error, and what it cost.</summary>
@@ -800,35 +812,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 return;
             }
 
-            var liveConfig = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == job.WriterConfigId, ct);
-            if (liveConfig == null || !liveConfig.IsEnabled)
+            var (binding, bindFailure) = await BindWriterAsync(job, ct);
+            if (binding == null)
             {
-                FailAll(job, "Writer model configuration not found or disabled.");
+                FailAll(job, bindFailure ?? "Writer model configuration not found or disabled.");
                 return;
             }
-
-            // Every document is written with the settings captured when the job started.
-            var writerSnapshot = job.WriterSnapshotId > 0
-                ? await _db.SystemAiConfigurationSnapshots.FindAsync(new object[] { job.WriterSnapshotId }, ct)
-                : null;
-            if (!SystemAiConfigurationSnapshotStore.TryBind(liveConfig, writerSnapshot, out var config, out var bindError))
-            {
-                FailAll(job, bindError ?? SystemAiConfigurationSnapshotStore.MismatchMessage);
-                return;
-            }
-
-            if (!_endpointPolicy.TryResolveStrict(config!.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var endpointError))
-            {
-                FailAll(job, $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}");
-                return;
-            }
-
-            string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
-            var pricing = _pricingService.Resolve(config);
-            if (pricing == null)
-            {
-                job.AddLog("No price card resolves for the writer; document costs are not recorded.", "warning");
-            }
+            var (config, endpoint, apiKey, pricing) = binding;
 
             int completed = 0;
             int failed = 0;
@@ -889,6 +879,46 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog($"Unexpected failure: {ExceptionDetails.DescribeShort(ex)}", "error");
             job.SetStatus(BenchmarkReportPackJobStatus.Failed);
         }
+    }
+
+    /// <summary>The writer a job writes with: its configuration bound to the job's snapshot, its endpoint, key and price card.</summary>
+    private sealed record WriterBinding(SystemAiApiConfiguration Config, AiEndpointDescriptor Endpoint, string ApiKey, ModelPricing? Pricing);
+
+    /// <summary>
+    /// The job's writer, with the settings captured when the job started; the failure message when its
+    /// configuration is gone or disabled, no longer matches the snapshot, or its endpoint is refused. A
+    /// writer without a price card is logged and kept.
+    /// </summary>
+    private async Task<(WriterBinding? Binding, string? Failure)> BindWriterAsync(BenchmarkReportPackJob job, CancellationToken ct)
+    {
+        var liveConfig = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == job.WriterConfigId, ct);
+        if (liveConfig == null || !liveConfig.IsEnabled)
+        {
+            return (null, "Writer model configuration not found or disabled.");
+        }
+
+        // Every document is written with the settings captured when the job started.
+        var writerSnapshot = job.WriterSnapshotId > 0
+            ? await _db.SystemAiConfigurationSnapshots.FindAsync(new object[] { job.WriterSnapshotId }, ct)
+            : null;
+        if (!SystemAiConfigurationSnapshotStore.TryBind(liveConfig, writerSnapshot, out var config, out var bindError))
+        {
+            return (null, bindError ?? SystemAiConfigurationSnapshotStore.MismatchMessage);
+        }
+
+        if (!_endpointPolicy.TryResolveStrict(config!.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var endpointError))
+        {
+            return (null, $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}");
+        }
+
+        string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
+        var pricing = _pricingService.Resolve(config);
+        if (pricing == null)
+        {
+            job.AddLog("No price card resolves for the writer; document costs are not recorded.", "warning");
+        }
+
+        return (new WriterBinding(config, endpoint!, apiKey, pricing), null);
     }
 
     /// <summary>
@@ -1059,7 +1089,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog($"{name}: {issues.Count} validation issue(s); sending one repair turn.", "warning");
 
             runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
-            runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope) });
+            runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildRepairMessage(issues, prep.Scope) });
 
             var repair = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
             turns.Add(repair);
@@ -1121,8 +1151,11 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             }
         }
 
-        // A warning note (rules 12 to 19 and 21) keeps its text but still marks the document.
-        var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule))
+        // A warning note (rules 12 to 19 and 21) keeps its text but still marks the document, and so does
+        // a chat consistency document-level note (C6 or C7 recorded against the kept text).
+        bool chatConsistency = prep.Scope == BenchmarkReportScope.ChatConsistency;
+        var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule)
+                                    || (chatConsistency && IsChatConsistencyDocumentNote(n)))
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
 
@@ -1136,13 +1169,15 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             PackId = job.PackId,
             Audience = audience,
             Origin = origin,
-            Scope = reportPack ? prep.Scope : BenchmarkReportScope.Model,
+            Scope = reportPack || chatConsistency ? prep.Scope : BenchmarkReportScope.Model,
             ComparisonId = reportPack ? job.ComparisonId : null,
             CoveredEntryKeysJson = reportPack ? BenchmarkReportJson.Serialize(prep.CoveredEntryKeys.ToList()) : null,
             CoveredSetKey = reportPack && prep.CoveredSetKey.Length > 0 ? prep.CoveredSetKey : null,
-            SubjectKey = comparisonScope ? prep.Sheet.SubjectKey : prep.Subject.Key,
+            SubjectKey = comparisonScope || chatConsistency ? prep.Sheet.SubjectKey : prep.Subject.Key,
             SubjectLabel = Truncate(prep.Sheet.SubjectLabel, 256),
-            SubjectRunIdsJson = BenchmarkReportJson.Serialize(prep.SubjectRuns.Select(r => r.Id).ToList()),
+            SubjectRunIdsJson = BenchmarkReportJson.Serialize(chatConsistency
+                ? prep.Sheet.SubjectRunIds.ToList()
+                : prep.SubjectRuns.Select(r => r.Id).ToList()),
             ComparisonRequestJson = BenchmarkReportJson.Serialize(new BenchmarkModelComparisonRequest
             {
                 RunIds = requestRunIds,
@@ -1150,7 +1185,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 BatteryRunIds = requestBatteryRunIds,
                 PricingBasis = job.Request.PricingBasis
             }),
-            ComparisonKey = comparisonKey,
+            ComparisonKey = chatConsistency ? null : comparisonKey,
+            ChatConsistencyAnalysisId = chatConsistency ? prep.Sheet.ChatConsistency?.AnalysisId : null,
             SuiteId = prep.Sheet.SuiteId,
             SuiteName = Truncate(prep.Sheet.SuiteName, 256),
             WriterConfigId = config.Id,
@@ -1338,6 +1374,740 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         return (inputTokens, outputTokens, cost);
     }
 
+    /// <summary>
+    /// A chat consistency note recorded against kept text: C6's "never cites the hours" and C7's
+    /// "ruledOut misses an Overseer event" drop nothing, yet the document carries the shortfall.
+    /// </summary>
+    private static bool IsChatConsistencyDocumentNote(BenchmarkReportValidationNote note)
+        => !note.Dropped && note.Rule is BenchmarkReportPackValidator.ChatHoursRule or BenchmarkReportPackValidator.ChatProviderReportRule;
+
+    // ---------------------------------------------------------------------------------------------
+    // Chat consistency documents
+    // ---------------------------------------------------------------------------------------------
+
+    public const string ChatConsistencyAlreadyWritingMessage = "The reports of this analysis are already being written.";
+    public const string ChatConsistencyAllWrittenMessage = "This analysis already has every AI-written report it can have. Delete one first to write it again.";
+    public const string ChatConsistencyInvalidAudienceMessage =
+        "Only the Executive Summary, the Report for AI Researchers and Developers, the Internal Improvement Brief and the Provider Issue Report are written for a chat consistency analysis.";
+    public const string ChatConsistencyNothingInProgressMessage = "No report writing is in progress for this analysis.";
+    public const string ChatConsistencyAnalysisGoneMessage = "The chat consistency analysis no longer exists.";
+
+    /// <summary>Rough output sizes per chat consistency document, for the estimate's cost only.</summary>
+    private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> ChatConsistencyOutputTokens = new Dictionary<BenchmarkReportAudience, int>
+    {
+        [BenchmarkReportAudience.ExecutiveSummary] = 2500,
+        [BenchmarkReportAudience.TechnicalReport] = 5500,
+        [BenchmarkReportAudience.InternalBrief] = 3500,
+        [BenchmarkReportAudience.ProviderIssueReport] = 4500
+    };
+
+    private enum ChatJobPhase { Queued, Preparing, Writing, Finished }
+
+    /// <summary>One analysis's job, as the Reports step shows it. Mutable fields change under the registry's lock.</summary>
+    private sealed class ChatConsistencyJobState
+    {
+        public required int AnalysisId { get; init; }
+        public required BenchmarkReportPackJob Job { get; init; }
+        public required List<BenchmarkReportAudience> Audiences { get; init; }
+        public string WriterProvider { get; init; } = string.Empty;
+        public string WriterModelId { get; init; } = string.Empty;
+        public string? WriterThinkingLevel { get; init; }
+        public ChatJobPhase Phase { get; set; } = ChatJobPhase.Queued;
+        public BenchmarkRunReportDocumentsStatus Status { get; set; } = BenchmarkRunReportDocumentsStatus.Pending;
+        public string? Message { get; set; }
+        public DateTime QueuedAtUtc { get; set; }
+        public DateTime? SlotAcquiredAtUtc { get; set; }
+        public DateTime? FinishedAtUtc { get; set; }
+        public DateTime? CancelRequestedAtUtc { get; set; }
+        public Task Completion { get; set; } = Task.CompletedTask;
+    }
+
+    /// <summary>The chat consistency jobs this process knows, by analysis id: in memory only, like a run's.</summary>
+    private sealed class ChatConsistencyJobRegistry
+    {
+        public object Lock { get; } = new();
+        public Dictionary<int, ChatConsistencyJobState> Jobs { get; } = new();
+    }
+
+    // Kept beside the report-pack slot the jobs queue for, so the registry lives as long as that singleton.
+    private static readonly ConditionalWeakTable<BenchmarkReportPackJobManager, ChatConsistencyJobRegistry> ChatConsistencyRegistries = new();
+
+    private ChatConsistencyJobRegistry ChatJobs => ChatConsistencyRegistries.GetValue(_jobManager, _ => new ChatConsistencyJobRegistry());
+
+    /// <summary>
+    /// What writing the analysis's documents with the writer would cost, by the Report Pack preview's
+    /// arithmetic over the chat consistency prompt, with the writer's refusal or same-provider warning
+    /// and whether the Provider Issue Report can be written. Makes no model call. 404 for an unknown
+    /// analysis; 400 for a document a chat consistency analysis is not written as. Null or empty
+    /// <paramref name="audiences"/> estimates every document it can still have.
+    /// </summary>
+    public async Task<BenchmarkChatConsistencyReportResult<BenchmarkChatConsistencyReportEstimateDto>> EstimateChatConsistencyDocumentsAsync(
+        int analysisId, long writerConfigId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, CancellationToken ct)
+    {
+        var result = await LoadChatConsistencyAnalysisAsync(analysisId, ct);
+        if (result == null) return new(StatusCodes.Status404NotFound);
+
+        var (requested, invalid) = RequestedChatConsistencyAudiences(audiences);
+        if (invalid) return new(StatusCodes.Status400BadRequest, Error: ChatConsistencyInvalidAudienceMessage);
+
+        var (available, reason) = BenchmarkChatConsistencyReportFacts.ProviderIssueReportAvailability(result);
+        var toEstimate = requested ?? await MissingChatConsistencyAudiencesAsync(analysisId, available, ct);
+
+        var writer = writerConfigId > 0
+            ? await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == writerConfigId, ct)
+            : null;
+        var candidate = ChatConsistencyCandidate(result);
+        var guard = new BenchmarkComplianceGuard(_configuration, _db);
+        var estimate = new BenchmarkChatConsistencyReportEstimateDto
+        {
+            Refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, guard),
+            ProviderIssueReportAvailable = available,
+            ProviderIssueReportReason = reason
+        };
+        if (estimate.Refusal == null
+            && !_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+        {
+            estimate.Refusal = WriterEndpointRefusal(writer, endpointError);
+        }
+        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, guard);
+        if (estimate.Refusal == null && warning != null)
+        {
+            estimate.SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning);
+        }
+
+        int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
+        var pricing = writer != null ? _pricingService.Resolve(writer) : null;
+        IReadOnlyList<string>? requestIds = toEstimate.Contains(BenchmarkReportAudience.ProviderIssueReport)
+            ? await ChatConsistencySampleRequestIdsAsync(result, ct)
+            : null;
+        foreach (var audience in toEstimate)
+        {
+            var sheet = BenchmarkChatConsistencyReportFacts.Build(result, audience, requestIds);
+            var prompt = BenchmarkReportPackPrompt.Build(audience, sheet, ChatConsistencyContent());
+            int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+            int input = (chars + 3) / 4;
+            int output = Math.Min(maxOutputTokens, ChatConsistencyOutputTokens[audience]);
+            estimate.Estimates.Add(new BenchmarkReportPackAudienceEstimateDto
+            {
+                Audience = audience,
+                SubjectKey = sheet.SubjectKey,
+                PromptChars = chars,
+                EstimatedInputTokens = input,
+                EstimatedOutputTokens = output,
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.ComputeCost(pricing, input, output, 0, 0)
+            });
+        }
+        estimate.EstimatedTotalCostUsd = estimate.Estimates.Count == 0 || estimate.Estimates.Any(e => e.EstimatedCostUsd == null)
+            ? null
+            : estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value);
+        return new(StatusCodes.Status200OK, estimate);
+    }
+
+    /// <summary>
+    /// Writes the analysis's requested documents, or every one it can still have when none is named,
+    /// with the writer, in <see cref="BenchmarkReportSlots.ChatConsistencyAudiences"/> order, stored with
+    /// <see cref="BenchmarkReportDocumentOrigin.ChatConsistencyReport"/>. The job queues for the shared
+    /// report-pack slot and runs after this returns 202 with the documents it will write. Refusals, in
+    /// order: unknown analysis (404); a job for it in progress (409); a document a chat consistency
+    /// analysis is not written as (400); the Provider Issue Report while no provider-side finding is
+    /// Established or Indicated (400, with the reason); a requested document already written (409), or
+    /// with none requested, every one written (409); an unusable writer or the model under report (400);
+    /// a writer of the model's provider, unacknowledged (409 with the warning); a refused endpoint (400);
+    /// the spend cap (429).
+    /// </summary>
+    public async Task<BenchmarkChatConsistencyReportResult<WriteRunReportDocumentsResponse>> WriteChatConsistencyDocumentsAsync(
+        int analysisId,
+        long writerConfigId,
+        IReadOnlyCollection<BenchmarkReportAudience>? audiences,
+        bool acknowledgeSameProvider,
+        string? userId,
+        CancellationToken ct)
+    {
+        var result = await LoadChatConsistencyAnalysisAsync(analysisId, ct);
+        if (result == null) return new(StatusCodes.Status404NotFound);
+
+        if (IsChatConsistencyJobActive(analysisId)) return new(StatusCodes.Status409Conflict, Error: ChatConsistencyAlreadyWritingMessage);
+
+        var (requested, invalid) = RequestedChatConsistencyAudiences(audiences);
+        if (invalid) return new(StatusCodes.Status400BadRequest, Error: ChatConsistencyInvalidAudienceMessage);
+
+        var (available, reason) = BenchmarkChatConsistencyReportFacts.ProviderIssueReportAvailability(result);
+        if (requested != null && requested.Contains(BenchmarkReportAudience.ProviderIssueReport) && !available)
+        {
+            return new(StatusCodes.Status400BadRequest, Error: reason ?? BenchmarkChatConsistencyReportFacts.ProviderIssueReportUnavailableReason);
+        }
+
+        var missing = await MissingChatConsistencyAudiencesAsync(analysisId, available, ct);
+        List<BenchmarkReportAudience> toWrite;
+        if (requested == null)
+        {
+            if (missing.Count == 0) return new(StatusCodes.Status409Conflict, Error: ChatConsistencyAllWrittenMessage);
+            toWrite = missing;
+        }
+        else
+        {
+            var written = requested.Where(a => !missing.Contains(a)).ToList();
+            if (written.Count > 0)
+            {
+                return new(StatusCodes.Status409Conflict,
+                    Error: $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again.");
+            }
+            toWrite = requested;
+        }
+
+        var writer = await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == writerConfigId, ct);
+        var candidate = ChatConsistencyCandidate(result);
+        var guard = new BenchmarkComplianceGuard(_configuration, _db);
+        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, guard);
+        if (refusal != null) return new(StatusCodes.Status400BadRequest, Error: refusal);
+
+        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, guard);
+        if (warning != null && !acknowledgeSameProvider)
+        {
+            return new(StatusCodes.Status409Conflict, Error: warning,
+                SameProviderWarning: BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning));
+        }
+
+        if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+        {
+            return new(StatusCodes.Status400BadRequest, Error: WriterEndpointRefusal(writer, endpointError));
+        }
+
+        var (canSpend, denialReason) = await guard.CanSpendAsync(ct: ct);
+        if (!canSpend) return new(StatusCodes.Status429TooManyRequests, Error: denialReason ?? "The benchmark spend guard refused the reports.");
+
+        string subjectKey = BenchmarkChatConsistencyReportFacts.SubjectKeyOf(analysisId);
+        var job = new BenchmarkReportPackJob
+        {
+            SubjectKey = subjectKey,
+            SubjectLabel = BenchmarkChatConsistencyReportFacts.SubjectLabelOf(result),
+            Scope = BenchmarkReportScope.ChatConsistency,
+            SuiteName = string.Join(", ", (result.Baseline?.SuiteNames ?? Array.Empty<string>())
+                .Concat(result.Comparison?.SuiteNames ?? Array.Empty<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.Ordinal)),
+            WriterConfigId = writer.Id,
+            WriterDisplayName = writer.DisplayName ?? writer.ModelId,
+            SameProviderAcknowledged = warning != null,
+            Request = new BenchmarkReportPackRequest
+            {
+                SubjectKey = subjectKey,
+                Scope = BenchmarkReportScope.ChatConsistency,
+                Audiences = toWrite.ToList(),
+                WriterModelConfigurationId = writer.Id,
+                AcknowledgeSameProvider = acknowledgeSameProvider
+            },
+            StartedByUserId = userId,
+            Cts = new CancellationTokenSource(),
+            Documents = toWrite.Select(a => new BenchmarkReportPackDocumentProgress
+            {
+                Audience = a,
+                SubjectKey = subjectKey,
+                SubjectLabel = BenchmarkChatConsistencyReportFacts.SubjectLabelOf(result)
+            }).ToList()
+        };
+        var state = new ChatConsistencyJobState
+        {
+            AnalysisId = analysisId,
+            Job = job,
+            Audiences = toWrite.ToList(),
+            WriterProvider = writer.Provider ?? string.Empty,
+            WriterModelId = writer.ModelId ?? string.Empty,
+            WriterThinkingLevel = writer.ThinkingLevel
+        };
+
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            var now = DateTime.UtcNow;
+            PruneChatJobs(registry, now);
+            if (registry.Jobs.TryGetValue(analysisId, out var existing) && existing.Phase != ChatJobPhase.Finished)
+            {
+                return new(StatusCodes.Status409Conflict, Error: ChatConsistencyAlreadyWritingMessage);
+            }
+            state.QueuedAtUtc = now;
+            registry.Jobs[analysisId] = state;
+        }
+        job.AddLog("Queued for the report writer.");
+
+        // The job outlives the request; it writes in a scope of its own.
+        state.Completion = Task.Run(() => RunChatConsistencyJobInScopeAsync(state));
+
+        return new(StatusCodes.Status202Accepted, new WriteRunReportDocumentsResponse
+        {
+            RunId = analysisId,
+            Status = BenchmarkRunReportDocumentsStatus.Pending,
+            Audiences = toWrite.ToList()
+        });
+    }
+
+    /// <summary>
+    /// The analysis's current or last report-writing job: 200 with its view (its <c>runId</c> the
+    /// analysis id), 204 when this process knows none (none since the last restart, or its finished job
+    /// has expired), 404 for an unknown analysis.
+    /// </summary>
+    public async Task<BenchmarkChatConsistencyReportResult<BenchmarkRunReportJobDto>> GetChatConsistencyJobAsync(int analysisId, CancellationToken ct)
+    {
+        if (!await _db.ChatConsistencyAnalyses.AsNoTracking().AnyAsync(a => a.Id == analysisId, ct)) return new(StatusCodes.Status404NotFound);
+
+        var view = ChatConsistencyJobView(analysisId, DateTime.UtcNow);
+        return view == null ? new(StatusCodes.Status204NoContent) : new(StatusCodes.Status200OK, view);
+    }
+
+    /// <summary>
+    /// Cancels the analysis's report-writing job: 202 with its view once asked; 409 when none is in
+    /// progress; 404 for an unknown analysis. A queued job leaves the queue; a job that is writing keeps
+    /// every document already stored.
+    /// </summary>
+    public async Task<BenchmarkChatConsistencyReportResult<BenchmarkRunReportJobDto>> CancelChatConsistencyJobAsync(int analysisId, CancellationToken ct)
+    {
+        if (!await _db.ChatConsistencyAnalyses.AsNoTracking().AnyAsync(a => a.Id == analysisId, ct)) return new(StatusCodes.Status404NotFound);
+
+        BenchmarkReportPackJob job;
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            if (!registry.Jobs.TryGetValue(analysisId, out var state) || state.Phase == ChatJobPhase.Finished)
+            {
+                return new(StatusCodes.Status409Conflict, Error: ChatConsistencyNothingInProgressMessage);
+            }
+
+            job = state.Job;
+            if (state.CancelRequestedAtUtc == null)
+            {
+                state.CancelRequestedAtUtc = DateTime.UtcNow;
+                job.AddLog("Cancellation requested.", "warning");
+            }
+        }
+
+        // Outside the lock: cancellation callbacks may run the job's continuations inline.
+        try
+        {
+            job.Cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        return new(StatusCodes.Status202Accepted, ChatConsistencyJobView(analysisId, DateTime.UtcNow));
+    }
+
+    /// <summary>The task of the analysis's current or last job; a finished task when this process knows none.</summary>
+    internal Task ChatConsistencyJobCompletion(int analysisId)
+    {
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            return registry.Jobs.TryGetValue(analysisId, out var state) ? state.Completion : Task.CompletedTask;
+        }
+    }
+
+    private bool IsChatConsistencyJobActive(int analysisId)
+    {
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            return registry.Jobs.TryGetValue(analysisId, out var state) && state.Phase != ChatJobPhase.Finished;
+        }
+    }
+
+    /// <summary>
+    /// The job view of the run report contract, with the analysis id in <see cref="BenchmarkRunReportJobDto.RunId"/>
+    /// and the job's own status and message; null when this process knows no job for the analysis.
+    /// </summary>
+    private BenchmarkRunReportJobDto? ChatConsistencyJobView(int analysisId, DateTime nowUtc)
+    {
+        ChatConsistencyJobState state;
+        ChatJobPhase phase;
+        BenchmarkRunReportDocumentsStatus status;
+        string? message;
+        DateTime queuedAt;
+        DateTime? slotAcquiredAt, finishedAt, cancelRequestedAt;
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            PruneChatJobs(registry, nowUtc);
+            if (!registry.Jobs.TryGetValue(analysisId, out var found)) return null;
+            state = found;
+            phase = state.Phase;
+            status = state.Status;
+            message = state.Message;
+            queuedAt = state.QueuedAtUtc;
+            slotAcquiredAt = state.SlotAcquiredAtUtc;
+            finishedAt = state.FinishedAtUtc;
+            cancelRequestedAt = state.CancelRequestedAtUtc;
+        }
+
+        // Outside the lock: the job manager has its own, and neither lock is taken inside the other.
+        var (ahead, running) = _jobManager.QueueInfo(state.Job);
+        bool queued = phase == ChatJobPhase.Queued;
+
+        return new BenchmarkRunReportJobDto
+        {
+            RunId = analysisId,
+            Status = status,
+            Message = message,
+            Phase = phase.ToString(),
+            QueuedAtUtc = queuedAt,
+            SlotAcquiredAtUtc = slotAcquiredAt,
+            FinishedAtUtc = finishedAt,
+            CancelRequestedAtUtc = cancelRequestedAt,
+            JobsAhead = queued ? ahead : null,
+            BlockingJobLabel = queued && running != null && !ReferenceEquals(running, state.Job) ? ChatBlockingLabel(running) : null,
+            Audiences = state.Audiences.ToList(),
+            WriterConfigId = state.Job.WriterConfigId,
+            WriterDisplayName = state.Job.WriterDisplayName,
+            WriterProvider = state.WriterProvider,
+            WriterModelId = state.WriterModelId,
+            WriterThinkingLevel = state.WriterThinkingLevel,
+            Job = state.Job.ToDto(),
+            ServerTimeUtc = nowUtc
+        };
+    }
+
+    /// <summary>The running job that holds the slot, named by its subject: <c>Run #4: …</c>, <c>Chat consistency analysis #7: …</c> or <c>Report Pack: …</c>.</summary>
+    private static string ChatBlockingLabel(BenchmarkReportPackJob running)
+    {
+        string key = running.SubjectKey ?? string.Empty;
+        if (BenchmarkRunReportDocumentService.TryParseSubjectKey(key, out long runId))
+        {
+            return "Run #" + runId.ToString(System.Globalization.CultureInfo.InvariantCulture) + ": " + running.SubjectLabel;
+        }
+        if (key.StartsWith(BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix, StringComparison.Ordinal))
+        {
+            return "Chat consistency analysis #" + key[BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix.Length..] + ": " + running.SubjectLabel;
+        }
+        return "Report Pack: " + running.SubjectLabel;
+    }
+
+    /// <summary>Drops finished jobs older than <see cref="BenchmarkRunReportDocumentService.FinishedJobRetention"/>. The caller holds the lock.</summary>
+    private static void PruneChatJobs(ChatConsistencyJobRegistry registry, DateTime nowUtc)
+    {
+        var expired = registry.Jobs
+            .Where(e => e.Value.Phase == ChatJobPhase.Finished && e.Value.FinishedAtUtc is DateTime finished
+                        && nowUtc - finished >= BenchmarkRunReportDocumentService.FinishedJobRetention)
+            .Select(e => e.Key)
+            .ToList();
+        foreach (int id in expired) registry.Jobs.Remove(id);
+    }
+
+    private void SetChatPhase(ChatConsistencyJobState state, ChatJobPhase phase, BenchmarkRunReportDocumentsStatus? status = null, string? message = null)
+    {
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            if (state.Phase == ChatJobPhase.Finished) return;
+            state.Phase = phase;
+            if (status != null)
+            {
+                state.Status = status.Value;
+                state.Message = message == null || message.Length <= BenchmarkRunReportDocumentService.MaxMessageLength
+                    ? message
+                    : message[..BenchmarkRunReportDocumentService.MaxMessageLength];
+            }
+            if (phase == ChatJobPhase.Preparing) state.SlotAcquiredAtUtc = DateTime.UtcNow;
+            if (phase == ChatJobPhase.Finished) state.FinishedAtUtc = DateTime.UtcNow;
+        }
+    }
+
+    private ChatJobPhase ChatPhaseOf(ChatConsistencyJobState state)
+    {
+        var registry = ChatJobs;
+        lock (registry.Lock)
+        {
+            return state.Phase;
+        }
+    }
+
+    /// <summary>The job in a scope of its own; without a scope factory, on this instance.</summary>
+    private async Task RunChatConsistencyJobInScopeAsync(ChatConsistencyJobState state)
+    {
+        try
+        {
+            if (_scopeFactory == null)
+            {
+                await RunChatConsistencyJobAsync(state);
+                return;
+            }
+
+            using var scope = _scopeFactory.CreateScope();
+            var service = scope.ServiceProvider.GetRequiredService<BenchmarkReportPackService>();
+            await service.RunChatConsistencyJobAsync(state);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The chat consistency documents of analysis {AnalysisId} failed.", state.AnalysisId);
+            if (state.Job.Status == BenchmarkReportPackJobStatus.Running) state.Job.SetStatus(BenchmarkReportPackJobStatus.Failed);
+            SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Failed,
+                "The reports could not be written: " + ExceptionDetails.DescribeShort(ex));
+        }
+    }
+
+    /// <summary>
+    /// Waits for the report-pack slot, checks the spend guard, the writer and the analysis, captures the
+    /// writer's settings, writes the documents and settles the job's status as a run's job settles it.
+    /// </summary>
+    private async Task RunChatConsistencyJobAsync(ChatConsistencyJobState state)
+    {
+        var job = state.Job;
+        try
+        {
+            await _jobManager.WaitForSlotAsync(job, job.Cts.Token);
+            SetChatPhase(state, ChatJobPhase.Preparing);
+
+            var (canSpend, denialReason) = await new BenchmarkComplianceGuard(_configuration, _db).CanSpendAsync(_db);
+            if (!canSpend)
+            {
+                string reason = denialReason ?? "The benchmark spend guard refused the reports.";
+                job.AddLog(reason, "warning");
+                SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Skipped, reason);
+                return;
+            }
+
+            var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == job.WriterConfigId);
+            if (writer == null || !writer.IsEnabled || string.IsNullOrWhiteSpace(writer.EncryptedApiKey))
+            {
+                job.AddLog(BenchmarkRunReportDocumentService.WriterUnavailableMessage, "error");
+                SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Failed, BenchmarkRunReportDocumentService.WriterUnavailableMessage);
+                return;
+            }
+
+            var result = await LoadChatConsistencyAnalysisAsync(state.AnalysisId, CancellationToken.None);
+            if (result == null)
+            {
+                job.AddLog(ChatConsistencyAnalysisGoneMessage, "error");
+                SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Failed, ChatConsistencyAnalysisGoneMessage);
+                return;
+            }
+
+            var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(_db, writer, CancellationToken.None);
+            job.WriterSnapshotId = snapshot.Id;
+
+            job.Cts.Token.ThrowIfCancellationRequested();
+            SetChatPhase(state, ChatJobPhase.Writing, BenchmarkRunReportDocumentsStatus.Writing);
+            job.AddLog($"Writing the chat consistency documents of analysis #{state.AnalysisId.ToString(System.Globalization.CultureInfo.InvariantCulture)} with {job.WriterDisplayName}.");
+
+            await WriteChatConsistencyJobDocumentsAsync(job, result, job.Cts.Token);
+
+            var (status, message) = BenchmarkRunReportDocumentService.OutcomeOf(job);
+            if (status == BenchmarkRunReportDocumentsStatus.Canceled) job.AddLog(message!, "warning");
+            SetChatPhase(state, ChatJobPhase.Finished, status, message);
+        }
+        catch (OperationCanceledException) when (job.Cts.IsCancellationRequested)
+        {
+            bool writing = ChatPhaseOf(state) == ChatJobPhase.Writing;
+            foreach (var d in job.Documents.ToList().Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
+                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing))
+            {
+                job.SetDocumentStatus(d, BenchmarkReportPackDocumentStatus.Canceled);
+            }
+            job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+
+            string message = writing ? BenchmarkRunReportDocumentService.OutcomeOf(job).Message! : BenchmarkRunReportDocumentService.CanceledBeforeWritingMessage;
+            job.AddLog(message, "warning");
+            SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Canceled, message);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The chat consistency documents of analysis {AnalysisId} failed.", state.AnalysisId);
+            SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Failed,
+                "The reports could not be written: " + ExceptionDetails.DescribeShort(ex));
+        }
+        finally
+        {
+            if (job.Status == BenchmarkReportPackJobStatus.Running) job.SetStatus(BenchmarkReportPackJobStatus.Failed);
+            if (ChatPhaseOf(state) != ChatJobPhase.Finished)
+            {
+                SetChatPhase(state, ChatJobPhase.Finished, BenchmarkRunReportDocumentsStatus.Failed, "The reports could not be written.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes every document on the job's list about the analysis, one after another, through the
+    /// Report Pack's own path: one fact sheet per document (the Provider Issue Report's with its sample
+    /// request ids), validation, one repair turn, drops, storage and usage rows. The job must already
+    /// hold the report-pack slot; it ends Completed, CompletedWithErrors, Failed or Canceled.
+    /// </summary>
+    private async Task WriteChatConsistencyJobDocumentsAsync(BenchmarkReportPackJob job, ChatConsistencyAnalysisResult result, CancellationToken ct)
+    {
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
+
+            var (binding, bindFailure) = await BindWriterAsync(job, ct);
+            if (binding == null)
+            {
+                FailAll(job, bindFailure ?? "Writer model configuration not found or disabled.");
+                return;
+            }
+            var (config, endpoint, apiKey, pricing) = binding;
+
+            var (targets, controls) = await ChatConsistencyRunsAsync(result, ct);
+            IReadOnlyList<string>? requestIds = null;
+            var state = new JobState { SeveralSubjects = false };
+
+            int completed = 0;
+            int failed = 0;
+            foreach (var row in job.Documents.ToList())
+            {
+                ct.ThrowIfCancellationRequested();
+                if (row.Audience == BenchmarkReportAudience.ProviderIssueReport)
+                {
+                    requestIds ??= await ChatConsistencySampleRequestIdsAsync(result, ct);
+                }
+
+                var sheet = BenchmarkChatConsistencyReportFacts.Build(result, row.Audience,
+                    row.Audience == BenchmarkReportAudience.ProviderIssueReport ? requestIds : null);
+                var prep = ChatConsistencyPreparation(sheet, targets, controls);
+                if (string.IsNullOrEmpty(row.SubjectKey)) row.SubjectKey = sheet.SubjectKey;
+                if (string.IsNullOrEmpty(row.SubjectLabel)) row.SubjectLabel = sheet.SubjectLabel;
+                job.AddLog($"Fact sheet computed: {sheet.Facts.Count} facts, {sheet.Peers.Count} control models.");
+
+                bool ok = await WriteDocumentAsync(job, row, BenchmarkReportDocumentOrigin.ChatConsistencyReport, prep, state,
+                    config, endpoint, apiKey, pricing, excerptChars: 0, maxOutputTokens, ct);
+                if (ok) completed++; else failed++;
+            }
+
+            job.SetStatus(failed == 0
+                ? BenchmarkReportPackJobStatus.Completed
+                : completed > 0 ? BenchmarkReportPackJobStatus.CompletedWithErrors : BenchmarkReportPackJobStatus.Failed);
+            job.AddLog($"Report pack finished: {completed} document(s) written, {failed} failed.");
+        }
+        catch (OperationCanceledException)
+        {
+            foreach (var d in job.Documents.Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
+                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing).ToList())
+            {
+                job.SetDocumentStatus(d, BenchmarkReportPackDocumentStatus.Canceled);
+            }
+            job.AddLog("Report pack generation was canceled.", "warning");
+            job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Chat consistency report job {JobId} failed.", job.Id);
+            job.AddLog($"Unexpected failure: {ExceptionDetails.DescribeShort(ex)}", "error");
+            job.SetStatus(BenchmarkReportPackJobStatus.Failed);
+        }
+    }
+
+    /// <summary>
+    /// A chat consistency document's preparation: its sheet, an empty content snapshot (the document
+    /// quotes no question), the target runs as the subject's and the control runs as peers.
+    /// </summary>
+    private static BenchmarkReportPackPreparation ChatConsistencyPreparation(
+        BenchmarkReportFactSheet sheet, IReadOnlyList<BenchmarkRun> targets, IReadOnlyList<BenchmarkRun> controls)
+    {
+        var subject = new BenchmarkModelComparisonEntryDto
+        {
+            Key = sheet.SubjectKey,
+            Label = sheet.SubjectLabel,
+            Provider = sheet.SubjectProvider,
+            ModelId = sheet.SubjectModelId,
+            ThinkingLevel = sheet.SubjectThinkingLevel
+        };
+        return new BenchmarkReportPackPreparation
+        {
+            Comparison = new BenchmarkModelComparisonDto(),
+            Subject = subject,
+            Sheet = sheet,
+            Content = ChatConsistencyContent(),
+            Scope = BenchmarkReportScope.ChatConsistency,
+            Covered = new[] { subject },
+            CoveredEntryKeys = new[] { sheet.SubjectKey },
+            SubjectRuns = targets,
+            PeerRuns = controls
+        };
+    }
+
+    /// <summary>The content snapshot of a chat consistency document: empty, since it quotes no question or answer.</summary>
+    private static BenchmarkReportContentSnapshot ChatConsistencyContent() => new() { AnswerExcerptChars = 0 };
+
+    /// <summary>The analysis's target and control runs that still exist, each ascending, for the documents' fingerprint rows.</summary>
+    private async Task<(List<BenchmarkRun> Targets, List<BenchmarkRun> Controls)> ChatConsistencyRunsAsync(ChatConsistencyAnalysisResult result, CancellationToken ct)
+    {
+        var documentRuns = BenchmarkChatConsistencyReportFacts.DocumentRuns(result);
+        var ids = documentRuns.Select(r => r.RunId).Distinct().ToList();
+        var runs = ids.Count == 0
+            ? new Dictionary<long, BenchmarkRun>()
+            : await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().Where(r => ids.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+
+        var targets = documentRuns.Where(r => !r.IsPeer && runs.ContainsKey(r.RunId)).Select(r => runs[r.RunId]).ToList();
+        var targetIds = targets.Select(r => r.Id).ToHashSet();
+        var controls = documentRuns.Where(r => r.IsPeer && runs.ContainsKey(r.RunId) && !targetIds.Contains(r.RunId)).Select(r => runs[r.RunId]).ToList();
+        return (targets, controls);
+    }
+
+    /// <summary>
+    /// The Provider Issue Report's sample request ids: at most ten distinct non-empty provider request
+    /// ids of the candidate calls of the analysis's comparison-period runs, newest first.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ChatConsistencySampleRequestIdsAsync(ChatConsistencyAnalysisResult result, CancellationToken ct)
+    {
+        var runIds = (result.Comparison?.RunIds ?? Array.Empty<long>()).Distinct().ToList();
+        if (runIds.Count == 0) return Array.Empty<string>();
+
+        var ids = await _db.ModelCallTelemetry
+            .AsNoTracking()
+            .Where(m => m.Source == ModelCallSource.BenchmarkCandidate && m.RequestId != null && m.RequestId != string.Empty)
+            .Where(m => (m.BenchmarkRunId != null && runIds.Contains(m.BenchmarkRunId.Value))
+                        || (m.BenchmarkRunAnswer != null && runIds.Contains(m.BenchmarkRunAnswer.BenchmarkRunId)))
+            .OrderByDescending(m => m.StartedAtUtc)
+            .ThenByDescending(m => m.Id)
+            .Select(m => m.RequestId!)
+            .Take(BenchmarkChatConsistencyReportFacts.MaxSampleRequestIds * 20)
+            .ToListAsync(ct);
+        return BenchmarkChatConsistencyReportFacts.SampleOf(ids);
+    }
+
+    /// <summary>The saved analysis with its id, as the chat consistency API returns it; null when there is none.</summary>
+    private Task<ChatConsistencyAnalysisResult?> LoadChatConsistencyAnalysisAsync(int analysisId, CancellationToken ct)
+        => new ChatConsistencyAnalysisService(_db, new ChatConsistencyEvidenceBuilder(_db), NullLogger<ChatConsistencyAnalysisService>.Instance)
+            .GetAnalysisAsync(analysisId, ct);
+
+    /// <summary>
+    /// The documents the analysis has no chat consistency document for, in
+    /// <see cref="BenchmarkReportSlots.ChatConsistencyAudiences"/> order; the Provider Issue Report only
+    /// while it is available.
+    /// </summary>
+    private async Task<List<BenchmarkReportAudience>> MissingChatConsistencyAudiencesAsync(int analysisId, bool providerIssueReportAvailable, CancellationToken ct)
+    {
+        var written = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => d.ChatConsistencyAnalysisId == analysisId && d.Origin == BenchmarkReportDocumentOrigin.ChatConsistencyReport)
+            .Select(d => d.Audience)
+            .Distinct()
+            .ToListAsync(ct);
+        return BenchmarkReportSlots.ChatConsistencyAudiences
+            .Where(a => !written.Contains(a))
+            .Where(a => a != BenchmarkReportAudience.ProviderIssueReport || providerIssueReportAvailable)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The requested documents in <see cref="BenchmarkReportSlots.ChatConsistencyAudiences"/> order, or
+    /// null when none is named; invalid when one is not a chat consistency document.
+    /// </summary>
+    private static (List<BenchmarkReportAudience>? Audiences, bool Invalid) RequestedChatConsistencyAudiences(IReadOnlyCollection<BenchmarkReportAudience>? audiences)
+    {
+        if (audiences == null || audiences.Count == 0) return (null, false);
+        if (audiences.Any(a => !BenchmarkReportSlots.ChatConsistencyAudiences.Contains(a))) return (null, true);
+        return (BenchmarkReportSlots.ChatConsistencyAudiences.Where(audiences.Contains).ToList(), false);
+    }
+
+    /// <summary>A stand-in configuration carrying the analysis subject's provider and model id, for the writer checks.</summary>
+    private static SystemAiApiConfiguration ChatConsistencyCandidate(ChatConsistencyAnalysisResult result) => new()
+    {
+        Provider = result.Subject?.Provider ?? string.Empty,
+        ModelId = result.Subject?.ModelId ?? string.Empty,
+        DisplayName = BenchmarkChatConsistencyReportFacts.SubjectLabelOf(result)
+    };
+
+    private static string WriterEndpointRefusal(SystemAiApiConfiguration writer, string? endpointError)
+        => $"Report writer configuration '{writer.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}";
+
     private static BenchmarkReportDocumentRun Fingerprint(BenchmarkRun run, bool isPeer) => new()
     {
         RunId = run.Id,
@@ -1355,4 +2125,22 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         value ??= string.Empty;
         return value.Length <= max ? value : value[..max];
     }
+}
+
+/// <summary>
+/// What a chat consistency report request answered: its HTTP status, the value of a 200 or 202, the
+/// refusal of any other status, and the same-provider warning of an unacknowledged writer (409).
+/// </summary>
+public sealed record BenchmarkChatConsistencyReportResult<T>(
+    int StatusCode, T? Value = null, string? Error = null, SameProviderWarningDto? SameProviderWarning = null)
+    where T : class;
+
+/// <summary>The run report estimate of a chat consistency analysis, with whether its Provider Issue Report can be written.</summary>
+public class BenchmarkChatConsistencyReportEstimateDto : BenchmarkRunReportEstimateDto
+{
+    /// <summary>At least one provider-side attribution is graded Established or Indicated.</summary>
+    public bool ProviderIssueReportAvailable { get; set; }
+
+    /// <summary>Why the Provider Issue Report cannot be written; null when it can.</summary>
+    public string? ProviderIssueReportReason { get; set; }
 }

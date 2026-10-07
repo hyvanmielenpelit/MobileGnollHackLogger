@@ -1078,7 +1078,7 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:9:0:NotRequested']]);
         expect(notifySpy).toHaveBeenCalledTimes(1);
-        expect(notifySpy).toHaveBeenCalledWith('battery:9:0:NotRequested', 'AI Benchmark', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
+        expect(notifySpy).toHaveBeenCalledWith('battery:9:0:NotRequested', 'GnollBench', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
       });
 
       it('should signal a battery run that stops, but not one that is canceled', () => {
@@ -1159,7 +1159,7 @@ describe('AdminBenchmarkComponent', () => {
 
           expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:8:12:Completed']]);
           expect(notifySpy).toHaveBeenCalledTimes(1);
-          expect(notifySpy).toHaveBeenCalledWith('battery:8:12:Completed', 'AI Benchmark', 'Battery #8 — Core Battery — 2 of 2 suites — Completed');
+          expect(notifySpy).toHaveBeenCalledWith('battery:8:12:Completed', 'GnollBench', 'Battery #8 — Core Battery — 2 of 2 suites — Completed');
         });
 
         it('should signal nothing for a refused Continue alone', () => {

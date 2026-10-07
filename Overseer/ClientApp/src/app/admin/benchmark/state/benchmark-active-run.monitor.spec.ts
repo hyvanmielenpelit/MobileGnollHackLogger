@@ -726,7 +726,7 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       expect(play).toHaveBeenCalledWith('run:5');
       expect(monitor.lastCompletionSoundOutcome).toBe('error');
       expect(notifications.notify).toHaveBeenCalledTimes(1);
-      expect(notifications.notify).toHaveBeenCalledWith('run:5', 'AI Benchmark', expect.stringContaining('Run #5'));
+      expect(notifications.notify).toHaveBeenCalledWith('run:5', 'GnollBench', expect.stringContaining('Run #5'));
     });
   });
 });

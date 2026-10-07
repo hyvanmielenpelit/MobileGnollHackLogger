@@ -1,0 +1,330 @@
+<!--
+  Analyze chat consistency: 1. Subject and periods · 2. Runs · 3. Results · 4. Reports.
+  Only the current step is rendered; its heading takes focus on every step change.
+-->
+<ol class="gh-steps cc-wiz-steps" aria-label="Analysis steps">
+  @for (entry of steps; track entry.step) {
+    <li [attr.aria-current]="step === entry.step ? 'step' : null" [class.is-done]="entry.step < step">
+      <button type="button" class="cc-wiz-step-btn" [attr.data-step]="entry.step"
+              [attr.aria-disabled]="reachable(entry.step) ? null : 'true'"
+              (click)="goTo(entry.step)">
+        <span class="gh-step-number" aria-hidden="true">{{ entry.step }}</span>{{ ' ' }}<span>{{ entry.title }}</span>
+      </button>
+    </li>
+  }
+</ol>
+
+@if (!axis && !result) {
+  <p class="cc-wiz-no-subject">Choose a model in the Timeline above; the analysis is about that model.</p>
+}
+
+@switch (step) {
+  @case (1) {
+    <section class="cc-wiz-step" aria-labelledby="cc-wiz-step-title">
+      <h4 #stepHeading id="cc-wiz-step-title" class="cc-wiz-step-title" tabindex="-1">Step 1 of 4: Subject and periods</h4>
+
+      <dl class="cc-wiz-subject">
+        <div><dt>Model</dt><dd>{{ axis ? axis.displayName + ' (' + axis.provider + ', ' + axis.modelId + ')' : 'None chosen' }}</dd></div>
+        @if (axis) {
+          <div><dt>Runs</dt><dd>{{ axis.runCount }}, from {{ day(axis.firstRunAtUtc) }} to {{ day(axis.lastRunAtUtc) }}</dd></div>
+        }
+      </dl>
+
+      <div class="cc-wiz-field">
+        <label for="cc-wiz-name">Name <span class="cc-optional">Optional</span></label>
+        <input id="cc-wiz-name" type="text" class="gh-input" maxlength="200" [value]="name" (input)="onNameInput($event)">
+      </div>
+
+      <fieldset class="gh-choice cc-wiz-presets">
+        <legend>Periods from a preset</legend>
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="launch" [checked]="preset === 'launch'" [disabled]="!axis"
+                 (change)="choosePreset('launch')">
+          Launch vs last 14 days
+        </label>
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="annotation" [checked]="preset === 'annotation'" [disabled]="!axis"
+                 (change)="choosePreset('annotation')">
+          Before vs after an annotation
+        </label>
+        @if (preset === 'annotation' && annotations.length > 0) {
+          <div class="cc-wiz-preset-pick">
+            <label for="cc-wiz-annotation">Annotation</label>
+            <select id="cc-wiz-annotation" class="gh-input" (change)="onAnnotationPick($event)">
+              @for (annotation of annotations; track annotation.id) {
+                <option [value]="annotation.id" [selected]="annotation.id === presetAnnotationId">{{ annotationLabel(annotation) }}</option>
+              }
+            </select>
+          </div>
+        }
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="event" [checked]="preset === 'event'" [disabled]="!axis"
+                 (change)="choosePreset('event')">
+          Before vs after an Overseer change
+        </label>
+        @if (preset === 'event' && events.length > 0) {
+          <div class="cc-wiz-preset-pick">
+            <label for="cc-wiz-event">Detected change</label>
+            <select id="cc-wiz-event" class="gh-input" (change)="onEventPick($event)">
+              @for (event of events; track $index) {
+                <option [value]="$index" [selected]="$index === presetEventIndex">{{ eventLabel(event) }}</option>
+              }
+            </select>
+          </div>
+        }
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="later" [checked]="preset === 'later'" [disabled]="!axis"
+                 (change)="choosePreset('later')">
+          Confirm on later data
+        </label>
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="custom" [checked]="preset === 'custom'" (change)="choosePreset('custom')">
+          Custom dates
+        </label>
+      </fieldset>
+      <p class="form-hint cc-wiz-preset-note" role="status">{{ presetNote }}</p>
+
+      <fieldset class="cc-wiz-periods">
+        <legend>Periods (UTC dates, inclusive)</legend>
+        <div class="cc-wiz-period">
+          <span class="cc-wiz-period-name" id="cc-wiz-baseline-label">Baseline</span>
+          <label for="cc-wiz-bs" class="visually-hidden">Baseline start</label>
+          <input id="cc-wiz-bs" type="date" class="gh-input" [value]="days.baselineStart" (change)="onDayInput('baselineStart', $event)">
+          <span aria-hidden="true">to</span>
+          <label for="cc-wiz-be" class="visually-hidden">Baseline end</label>
+          <input id="cc-wiz-be" type="date" class="gh-input" [value]="days.baselineEnd" (change)="onDayInput('baselineEnd', $event)">
+        </div>
+        <div class="cc-wiz-period">
+          <span class="cc-wiz-period-name">Comparison</span>
+          <label for="cc-wiz-cs" class="visually-hidden">Comparison start</label>
+          <input id="cc-wiz-cs" type="date" class="gh-input" [value]="days.comparisonStart" (change)="onDayInput('comparisonStart', $event)">
+          <span aria-hidden="true">to</span>
+          <label for="cc-wiz-ce" class="visually-hidden">Comparison end</label>
+          <input id="cc-wiz-ce" type="date" class="gh-input" [value]="days.comparisonEnd" (change)="onDayInput('comparisonEnd', $event)">
+        </div>
+        @if (periodsError) {
+          <p class="gh-field-error cc-wiz-periods-error">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ periodsError }}</span>
+          </p>
+        }
+      </fieldset>
+
+      <h5 class="cc-wiz-sub" id="cc-wiz-protocol-title">Protocol V1</h5>
+      <div class="cc-wiz-table-scroll">
+        <table class="gh-table cc-protocol-table" aria-labelledby="cc-wiz-protocol-title">
+          <thead>
+            <tr><th scope="col">Endpoint</th><th scope="col">Equivalence margin</th></tr>
+          </thead>
+          <tbody>
+            @for (endpoint of protocolEndpoints; track endpoint.id) {
+              <tr>
+                <th scope="row">{{ endpoint.id }} {{ endpoint.name }}</th>
+                <td>±{{ endpoint.margin }} {{ endpoint.unit }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <dl class="cc-wiz-protocol-facts">
+        <div><dt>α</dt><dd>{{ protocol.alpha }}, Holm-adjusted across P1–P5</dd></div>
+        <div><dt>Minimum sample (P1, P4, P5)</dt><dd>{{ protocol.minimumRunsPerPeriod }} runs on {{ protocol.minimumDaysPerPeriod }} days per period, {{ protocol.minimumPairedItems }} paired items</dd></div>
+        <div><dt>Minimum sample (P2, P3)</dt><dd>{{ protocol.minimumSpeedRunsPerStratum }} runs per period in a common time stratum</dd></div>
+      </dl>
+
+      <details class="gh-disclosure cc-wiz-overrides">
+        <summary>Override the protocol</summary>
+        <div class="gh-disclosure-body">
+          <p class="form-hint">Every override is recorded and labels the result as <em>V1 with overrides</em>. Leave a field empty to keep the published value.</p>
+          <div class="cc-wiz-override-grid">
+            @for (endpoint of protocolEndpoints; track endpoint.id) {
+              <div class="cc-wiz-field">
+                <label [for]="'cc-wiz-margin-' + endpoint.id">{{ endpoint.id }} margin ({{ endpoint.unit }})</label>
+                <input [id]="'cc-wiz-margin-' + endpoint.id" type="number" min="0" step="any" class="gh-input"
+                       [attr.placeholder]="endpoint.margin" [value]="marginValue(endpoint.id)"
+                       (input)="onMarginInput(endpoint.id, $event)">
+              </div>
+            }
+            <div class="cc-wiz-field">
+              <label for="cc-wiz-alpha">α</label>
+              <input id="cc-wiz-alpha" type="number" min="0" max="0.5" step="any" class="gh-input"
+                     [attr.placeholder]="protocol.alpha" [value]="alphaOverride" (input)="onAlphaInput($event)">
+            </div>
+          </div>
+          @if (overridesError) {
+            <p class="gh-field-error cc-wiz-overrides-error">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ overridesError }}</span>
+            </p>
+          }
+        </div>
+      </details>
+
+      <div class="cc-wiz-nav">
+        <button type="button" class="btn-gh cc-wiz-next" [attr.aria-disabled]="reachable(2) ? null : 'true'" (click)="next()">Next: Runs</button>
+      </div>
+    </section>
+  }
+
+  @case (2) {
+    <section class="cc-wiz-step" aria-labelledby="cc-wiz-step-title">
+      <h4 #stepHeading id="cc-wiz-step-title" class="cc-wiz-step-title" tabindex="-1">Step 2 of 4: Runs</h4>
+
+      @for (period of periods; track period) {
+        <div class="cc-wiz-table-scroll">
+          <table class="gh-table cc-wiz-runs" [attr.data-period]="period">
+            <caption class="cc-wiz-caption">
+              {{ period === 'baseline' ? 'Baseline' : 'Comparison' }} runs,
+              {{ period === 'baseline' ? days.baselineStart + ' to ' + days.baselineEnd : days.comparisonStart + ' to ' + days.comparisonEnd }}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Use</th>
+                <th scope="col">Run</th>
+                <th scope="col">Started (UTC)</th>
+                <th scope="col">Suite</th>
+                <th scope="col">Eligible</th>
+                <th scope="col">Matched controls</th>
+                <th scope="col">Anchor</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of periodRows(period); track row.runId) {
+                <tr [attr.data-run-id]="row.runId">
+                  <td>
+                    <input type="checkbox" class="cc-wiz-run-check" [checked]="selection(period).has(row.runId)"
+                           [attr.aria-label]="'Include run #' + row.runId + ' in the ' + period"
+                           (change)="toggleRun(period, row.runId, $event)">
+                  </td>
+                  <th scope="row">#{{ row.runId }}</th>
+                  <td class="cc-nowrap">{{ started(row) }}</td>
+                  <td>{{ row.suiteName }}</td>
+                  <td>{{ eligible(row) ? 'Yes' : 'No' }}</td>
+                  <td>{{ controls(row) }}</td>
+                  <td>
+                    <button type="button" class="btn-ghost cc-wiz-anchor-btn"
+                            [attr.aria-label]="(row.isAnchor ? 'Unmark anchor: run #' : 'Mark as anchor: run #') + row.runId"
+                            [attr.aria-disabled]="anchorBusy.has(row.runId) ? 'true' : null"
+                            (click)="anchorBusy.has(row.runId) || anchorToggle.emit(row)">{{ row.isAnchor ? 'Unmark anchor' : 'Mark as anchor' }}</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="7">No run of this model in this period.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <fieldset class="gh-choice cc-wiz-controls">
+        <legend>Matched control runs</legend>
+        @for (id of controlCandidates; track id) {
+          <label class="checkbox-label">
+            <input type="checkbox" class="cc-wiz-control-check" [checked]="controlSelected.has(id)" (change)="toggleControl(id, $event)">
+            Control run #{{ id }}
+          </label>
+        } @empty {
+          <p class="form-hint">No matched control run; the analysis looks for controls among other models' runs itself.</p>
+        }
+      </fieldset>
+
+      <app-cc-regrade-panel [runIds]="regradeRunIds" [pickerOptions]="pickerOptions" [pickerEmptyHint]="pickerEmptyHint"
+                            (finished)="onRegradeFinished()"></app-cc-regrade-panel>
+
+      <label class="checkbox-label align-start cc-wiz-relaxed">
+        <input type="checkbox" id="cc-wiz-relaxed" [checked]="relaxedPooling" aria-describedby="cc-wiz-relaxed-hint" (change)="onRelaxedPooling($event)">
+        <span>
+          Pool across measurement segment boundaries
+          <span id="cc-wiz-relaxed-hint" class="form-hint">Instead of refusing a change of measurement inside the span, the runs are pooled; this caps grades at Indicated.</span>
+        </span>
+      </label>
+
+      <h5 class="cc-wiz-sub">Preview</h5>
+      <dl class="cc-wiz-preview">
+        <div>
+          <dt>Common time strata</dt>
+          <dd class="cc-wiz-strata">{{ commonStrata.length > 0 ? commonStrata.join(', ') : 'None: the periods share no time stratum, so P2 and P3 cannot be computed.' }}</dd>
+        </div>
+        <div>
+          <dt>Overseer changes in the span</dt>
+          <dd class="cc-wiz-events">
+            @if (eventsInSpan.length === 0) {
+              None detected.
+            } @else {
+              <ul>
+                @for (event of eventsInSpan; track $index) {
+                  <li>{{ eventLabel(event) }}</li>
+                }
+              </ul>
+            }
+          </dd>
+        </div>
+        <div>
+          <dt>Missing controls</dt>
+          <dd class="cc-wiz-missing">
+            @if (missingControls.length === 0) {
+              Every selected run has a matched control.
+            } @else {
+              <ul>
+                @for (row of missingControls; track row.runId) {
+                  <li>Run #{{ row.runId }} ({{ row.suiteName }}) has no matched control run.</li>
+                }
+              </ul>
+            }
+          </dd>
+        </div>
+      </dl>
+
+      @if (analyzeBlocked) {
+        <p id="cc-wiz-analyze-blocked" class="form-hint cc-wiz-blocked">{{ analyzeBlocked }}</p>
+      }
+      @if (analyzeError) {
+        <p class="gh-field-error cc-wiz-analyze-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ analyzeError }}</span>
+        </p>
+      }
+      <p class="cc-wiz-analyze-status" role="status">{{ analyzing ? 'Analyzing… this can take a minute.' : '' }}</p>
+
+      <div class="cc-wiz-nav">
+        <button type="button" class="btn-ghost cc-wiz-back" (click)="back()">Back</button>
+        @if (analyzing) {
+          <button type="button" class="btn-ghost btn-ghost-danger cc-wiz-stop" (click)="stopAnalyze()">Stop</button>
+        }
+        <button type="button" class="btn-gh cc-wiz-analyze"
+                [attr.aria-disabled]="analyzeBlocked || analyzing ? 'true' : null"
+                [attr.aria-describedby]="analyzeBlocked ? 'cc-wiz-analyze-blocked' : null"
+                [attr.aria-busy]="analyzing ? 'true' : null"
+                (click)="analyze()">Analyze</button>
+      </div>
+    </section>
+  }
+
+  @case (3) {
+    <section class="cc-wiz-step" aria-labelledby="cc-wiz-step-title">
+      <h4 #stepHeading id="cc-wiz-step-title" class="cc-wiz-step-title" tabindex="-1">Step 3 of 4: Results</h4>
+      @if (result) {
+        <app-cc-results-view [result]="result" [points]="timeline?.points ?? []"
+                             (repeatSetup)="repeatSetup.emit($event)"></app-cc-results-view>
+      }
+      <div class="cc-wiz-nav">
+        <button type="button" class="btn-ghost cc-wiz-back" (click)="back()">Back</button>
+        <button type="button" class="btn-gh cc-wiz-next" (click)="next()">Next: Reports</button>
+      </div>
+    </section>
+  }
+
+  @case (4) {
+    <section class="cc-wiz-step" aria-labelledby="cc-wiz-step-title">
+      <h4 #stepHeading id="cc-wiz-step-title" class="cc-wiz-step-title" tabindex="-1">Step 4 of 4: Reports</h4>
+      @if (result) {
+        <app-cc-reports-step [result]="result" [writerOptions]="pickerOptions" [writerConfigs]="pickerConfigs"
+                             [pickerEmptyHint]="pickerEmptyHint" [points]="timeline?.points ?? []"
+                             (openDocuments)="openDocuments.emit($event)"></app-cc-reports-step>
+      }
+      <div class="cc-wiz-nav">
+        <button type="button" class="btn-ghost cc-wiz-back" (click)="back()">Back</button>
+      </div>
+    </section>
+  }
+}

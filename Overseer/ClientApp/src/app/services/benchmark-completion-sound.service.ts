@@ -48,7 +48,7 @@ export interface BenchmarkCompletionSoundContextStateEvent {
 }
 
 /**
- * The chime the AI Benchmark run tab plays when a run or series finishes. Two playback paths
+ * The chime the GnollBench run tab plays when a run or series finishes. Two playback paths
  * exist side by side:
  *
  * - A Web Audio `AudioContext` with the chime pre-decoded into an `AudioBuffer`, armed by

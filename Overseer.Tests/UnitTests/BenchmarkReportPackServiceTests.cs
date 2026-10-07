@@ -1670,8 +1670,9 @@ public class BenchmarkReportPackServiceTests
     /// A provider that answers each request with the next queued reply. The reply travels in the
     /// request body and <see cref="ReplyEchoHandler"/> sends it back; <see cref="ProviderError"/> makes
     /// the handler answer 400, which the agent loop fails at once instead of retrying with backoff.
+    /// Each request's message history is kept as JSON in <see cref="Requests"/>.
     /// </summary>
-    private sealed class WriterProvider : IAiProvider
+    internal sealed class WriterProvider : IAiProvider
     {
         public const string Name = "ReportWriterTest";
         public const string ProviderError = "__provider_error__";
@@ -1682,6 +1683,7 @@ public class BenchmarkReportPackServiceTests
         public int Calls;
         public ConcurrentQueue<int> MessageCountLog { get; } = new();
         public int[] MessageCounts => MessageCountLog.ToArray();
+        public ConcurrentQueue<string> Requests { get; } = new();
 
         public string ProviderName => Name;
         public IReadOnlyList<string> SupportedServiceTiers => new[] { "default" };
@@ -1694,6 +1696,14 @@ public class BenchmarkReportPackServiceTests
         {
             Interlocked.Increment(ref Calls);
             MessageCountLog.Enqueue(messageHistory.Count);
+            try
+            {
+                Requests.Enqueue(JsonSerializer.Serialize(messageHistory));
+            }
+            catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException or JsonException)
+            {
+                Requests.Enqueue(string.Empty);
+            }
             return new Dictionary<string, object>
             {
                 ["model"] = modelId,
@@ -1737,7 +1747,7 @@ public class BenchmarkReportPackServiceTests
     }
 
     /// <summary>Answers every request with the <c>reply</c> its body carries. Nothing leaves the process.</summary>
-    private sealed class ReplyEchoHandler : HttpMessageHandler
+    internal sealed class ReplyEchoHandler : HttpMessageHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -1750,12 +1760,12 @@ public class BenchmarkReportPackServiceTests
         }
     }
 
-    private sealed class ReplyEchoHttpClientFactory : IHttpClientFactory
+    internal sealed class ReplyEchoHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(new ReplyEchoHandler());
     }
 
-    private sealed class NoClientBridge : IClientToolBridge
+    internal sealed class NoClientBridge : IClientToolBridge
     {
         public bool IsClientConnected => false;
 

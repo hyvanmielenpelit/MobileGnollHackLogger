@@ -212,7 +212,7 @@ Every phase honours `DryRun`: it counts what it would change and changes nothing
 
 ### Report Chart Files (manual only)
 
-The chart images of AI Benchmark report documents live on disk under `Benchmark:ReportPack:ChartsDataLocation`, one folder per document (`<ChartsDataLocation>/<documentId>/`, a `manifest.json` and the PNGs), described in `ai-benchmark-report-pack.md` § 13. They are not part of the full pass. The Database tab's **Clear Report Chart Files** card (`POST /api/admin/maintenance/clear-report-charts`, trigger `Manual:ClearReportCharts`) deletes all of them at once, through the same granular-maintenance runner as the other actions:
+The chart images of GnollBench report documents live on disk under `Benchmark:ReportPack:ChartsDataLocation`, one folder per document (`<ChartsDataLocation>/<documentId>/`, a `manifest.json` and the PNGs), described in `ai-benchmark-report-pack.md` § 13. They are not part of the full pass. The Database tab's **Clear Report Chart Files** card (`POST /api/admin/maintenance/clear-report-charts`, trigger `Manual:ClearReportCharts`) deletes all of them at once, through the same granular-maintenance runner as the other actions:
 
 - It deletes only numeric document folders and the `.staging` folder; anything else in the folder is left alone and named in the log (*"Left alone: …"*), and the root folder itself is never deleted.
 - The result sets `DeletedDiskFolderCount`, `DeletedDiskFileCount` and `ReclaimedDiskBytes`, and the log reads *"[DRY RUN] Would delete N chart folders (M files, X MB), K of them for documents that no longer exist."*, or *"Deleted …"* for a real run. A real run drops the cached chart metrics.

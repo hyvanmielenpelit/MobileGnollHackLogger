@@ -3,6 +3,7 @@ import {
   AdminBenchmarkService,
   BenchmarkSuiteDto,
   BenchmarkScoringProfileDto,
+  BenchmarkRunDetailDto,
   StartBenchmarkRunRequest,
   BenchmarkLastAssessorDto,
   BenchmarkSecondOpinionMode,
@@ -14,9 +15,15 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { Subscription } from 'rxjs';
 import { BenchmarkRunSettings } from '../benchmark.models';
-import { refusalText } from '../benchmark-run-format';
+import { parsePromptOptions, refusalText } from '../benchmark-run-format';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
+
+/** A run whose setup the launcher took over, and each recorded setting it could not take over. */
+export interface BenchmarkRunPrefillResult {
+  runId: number;
+  notes: string[];
+}
 
 /** The Run Benchmark launcher's form, the remembered run settings and the run request it builds. Survives a switch to another sub-tab. */
 @Injectable()
@@ -51,8 +58,10 @@ export class BenchmarkLauncherState implements OnDestroy {
     } else if (suites.length === 0) {
       this.selectedSuiteId = null;
     }
+    this.listsArrived.suite = true;
     this.markRunSettingsApplied('suite');
     this.loadLastAssessor();
+    this.applyPendingPrefill();
   }
 
   /** A remembered profile wins over the default one, but only if it still exists. */
@@ -67,7 +76,9 @@ export class BenchmarkLauncherState implements OnDestroy {
     } else if (profiles.length > 0 && !this.selectedScoringProfileId) {
       this.selectedScoringProfileId = profiles[0].id;
     }
+    this.listsArrived.profile = true;
     this.markRunSettingsApplied('profile');
+    this.applyPendingPrefill();
   }
 
   /**
@@ -80,6 +91,7 @@ export class BenchmarkLauncherState implements OnDestroy {
         this.runTargetKind = 'suite';
       }
       this.markRunSettingsApplied('battery');
+      this.applyPendingPrefill();
       return;
     }
     const pending = this.pendingRunSettings;
@@ -99,6 +111,7 @@ export class BenchmarkLauncherState implements OnDestroy {
     this.markRunSettingsApplied('battery');
     this.clampRunCountToTarget();
     this.refreshReusePreview();
+    this.applyPendingPrefill();
   }
 
   selectedSuiteId: number | null = null;
@@ -312,7 +325,9 @@ export class BenchmarkLauncherState implements OnDestroy {
     // Only counts as applied when there was actually a list to validate against: called from ngOnInit
     // before the systemConfigs input has arrived, this method has done nothing.
     if (benchmarkModels.length > 0) {
+      this.listsArrived.configs = true;
       this.markRunSettingsApplied('configs');
+      this.applyPendingPrefill();
     }
   }
 
@@ -416,6 +431,7 @@ export class BenchmarkLauncherState implements OnDestroy {
 
   /** Reads the stored blob into pendingRunSettings, and restores the fields no loader owns. */
   restoreRunSettings(): void {
+    this.restoreAttempted = true;
     let parsed: unknown;
     try {
       const stored = localStorage.getItem(BenchmarkLauncherState.RUN_SETTINGS_STORAGE_KEY);
@@ -497,6 +513,153 @@ export class BenchmarkLauncherState implements OnDestroy {
       // since made by hand.
       this.pendingRunSettings = null;
     }
+  }
+
+  // --- Repeat a run's setup ---
+  //
+  // Repeat this run's setup copies a finished run's recorded selections into the launcher. It waits
+  // until the remembered settings have been applied, because a loader applying the stored blob later
+  // would overwrite it, and until the lists it validates against are here. A recorded selection that
+  // is gone or no longer qualifies leaves the field as it is and adds a note naming it, so nothing is
+  // substituted silently. Nothing starts.
+
+  /** Whether restoreRunSettings has run. */
+  private restoreAttempted = false;
+
+  /** The lists a prefill validates against that have arrived at least once. */
+  private readonly listsArrived = { suite: false, profile: false, configs: false };
+
+  /** The run whose setup waits for prefillReady. */
+  private pendingPrefillRun: BenchmarkRunDetailDto | null = null;
+
+  /** The last applied prefill, for the note on the Run Benchmark panel; null when there is none to show. */
+  prefillResult: BenchmarkRunPrefillResult | null = null;
+
+  /** The run whose setup is waiting to be applied, or null. */
+  get pendingPrefillRunId(): number | null {
+    return this.pendingPrefillRun?.id ?? null;
+  }
+
+  /**
+   * True once the remembered settings were read and every list-backed part of them applied, and the
+   * suites, profiles and configurations have arrived.
+   */
+  get prefillReady(): boolean {
+    const lists = this.listsArrived;
+    return this.restoreAttempted && this.pendingRunSettings == null
+      && lists.suite && lists.profile && lists.configs;
+  }
+
+  /** Fills the launcher from the run's recorded setup, now or once prefillReady holds. */
+  prefillFromRun(run: BenchmarkRunDetailDto): void {
+    this.prefillResult = null;
+    this.pendingPrefillRun = run;
+    this.applyPendingPrefill();
+  }
+
+  /** Hides the prefill note. A prefill still waiting is kept. */
+  clearPrefillResult(): void {
+    this.prefillResult = null;
+  }
+
+  private applyPendingPrefill(): void {
+    const run = this.pendingPrefillRun;
+    if (!run || !this.prefillReady) return;
+    this.pendingPrefillRun = null;
+    this.prefillResult = { runId: run.id, notes: this.applyRunSetup(run) };
+    this.persistRunSettings();
+    this.loadLastAssessor();
+    this.refreshReusePreview();
+    this.viewSync.notify();
+  }
+
+  /** Copies the run's recorded selections into the form; returns a note per selection it kept back. */
+  private applyRunSetup(run: BenchmarkRunDetailDto): string[] {
+    const notes: string[] = [];
+
+    const suiteId = run.benchmarkSuiteId ?? null;
+    if (suiteId != null && this.workspace.suites.some(s => s.id === suiteId)) {
+      this.selectedSuiteId = suiteId;
+    } else {
+      notes.push(`Benchmark Suite: ${run.suiteName || 'the run\'s suite'} no longer exists, so the selected suite was kept.`);
+    }
+
+    const profileId = run.scoringProfileId ?? null;
+    if (profileId != null && this.workspace.scoringProfiles.some(p => p.id === profileId)) {
+      this.selectedScoringProfileId = profileId;
+    } else if (profileId != null || run.scoringProfileName) {
+      notes.push(`Scoring Profile: ${run.scoringProfileName || `profile #${profileId}`} no longer exists, so the selected profile was kept.`);
+    }
+
+    const capable = this.workspace.benchmarkCapableConfigs;
+    const qualifies = (id: number | null | undefined): id is number => id != null && capable.some(c => c.id === id);
+    const unavailable = (role: string, name: string | null | undefined, id: number | null | undefined): string =>
+      `${role}: ${name || (id != null ? `configuration #${id}` : 'the recorded model')} is no longer available for benchmark runs, so the current choice was kept.`;
+
+    // The model under test and the assessor are required, so a missing one always keeps the current choice.
+    if (qualifies(run.testedModelConfigurationId)) {
+      this.testedConfigId = run.testedModelConfigurationId;
+    } else {
+      notes.push(unavailable('Model Under Test', run.testedModelDisplayNameUsed, run.testedModelConfigurationId));
+    }
+    if (qualifies(run.assessorModelConfigurationId)) {
+      this.assessorConfigId = run.assessorModelConfigurationId;
+    } else {
+      notes.push(unavailable('Assessor', run.assessorModelDisplayNameUsed, run.assessorModelConfigurationId));
+    }
+
+    // An optional role the run did not use is cleared; one it used but that is gone keeps the current choice.
+    const optionalRole = (role: string, id: number | null | undefined, name: string | null | undefined,
+                          assign: (value: number | null) => void): boolean => {
+      if (qualifies(id)) {
+        assign(id);
+        return true;
+      }
+      if (id == null && !name) {
+        assign(null);
+        return true;
+      }
+      notes.push(unavailable(role, name, id));
+      return false;
+    };
+
+    optionalRole('Co-Assessor', run.coAssessorModelConfigurationId, run.coAssessorModelDisplayNameUsed,
+      v => { this.coAssessorConfigId = v; });
+    const secondReaderApplied = optionalRole(run.isPanelRun ? 'Reference Reader' : 'Second Reader',
+      run.secondOpinionAssessorModelConfigurationId, run.secondOpinionAssessorModelDisplayNameUsed,
+      v => { this.secondOpinionConfigId = v; });
+    optionalRole('Claim Verifier', run.claimVerifierModelConfigurationId, run.claimVerifierDisplayNameUsed,
+      v => { this.claimVerifierConfigId = v; });
+    optionalRole('Report Writer', run.reportWriterModelConfigurationId, run.reportWriterDisplayName,
+      v => { this.reportWriterConfigId = v; });
+
+    // Coverage is the run's own only for a single-assessor run with a second reader; a panel run's is
+    // forced, and without a second reader it is inert, so both follow the profile again.
+    if (secondReaderApplied) {
+      const mode = Number(run.secondOpinionModeUsed);
+      this.secondOpinionModeOverride =
+        !run.isPanelRun && this.secondOpinionConfigId != null && this.secondOpinionModeOptions.some(o => o.value === mode)
+          ? mode
+          : null;
+    }
+
+    const options = parsePromptOptions(run.candidatePromptOptionsJson);
+    if (!options) {
+      notes.push('Prompt options: the run recorded none, so Response Style and source code references were kept.');
+    } else {
+      const verbose = options['verboseMode'];
+      if (typeof verbose === 'boolean') {
+        this.candidateVerboseMode = verbose;
+      }
+      const sourceReferences = options['allowSourceCodeReferences'];
+      if (typeof sourceReferences === 'boolean') {
+        this.candidateAllowSourceCodeReferences = sourceReferences;
+      }
+    }
+
+    this.runCount = 1;
+    this.runTargetKind = 'suite';
+    return notes;
   }
 
   // --- Run Execution ---

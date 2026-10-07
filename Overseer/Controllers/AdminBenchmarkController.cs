@@ -4822,8 +4822,11 @@ public class AdminBenchmarkController : ControllerBase
         var run = await _dbContext.BenchmarkRuns
             .Include(r => r.Answers)
                 .ThenInclude(a => a.ToolCalls)
+            .Include(r => r.Answers)
+                .ThenInclude(a => a.ModelCalls)
             .Include(r => r.StartedByUser)
             .Include(r => r.ScoringProfile)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (run == null) return (null, null, null);
@@ -4861,6 +4864,9 @@ public class AdminBenchmarkController : ControllerBase
         var run = await _dbContext.BenchmarkRuns
             .Include(r => r.Answers)
                 .ThenInclude(a => a.ToolCalls)
+            .Include(r => r.Answers)
+                .ThenInclude(a => a.ModelCalls)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(r => r.Id == id);
 
         if (run == null) return (null, null, null);

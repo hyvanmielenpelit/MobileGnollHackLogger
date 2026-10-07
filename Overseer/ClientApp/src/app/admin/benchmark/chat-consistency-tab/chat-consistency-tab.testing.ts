@@ -1,0 +1,414 @@
+/**
+ * Shared builders and fakes of the Chat Consistency specs: records shaped as the server sends them,
+ * with overrides, and the providers a Chat Consistency component needs under TestBed.
+ */
+
+import { EnvironmentProviders, Provider } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideCharts } from 'ng2-charts';
+
+import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
+import { SystemAiConfigDto } from '../../../services/admin.service';
+import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
+import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
+import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
+import {
+  CcAnalysisResult,
+  CcAnalysisSummary,
+  CcAnnotation,
+  CcAttributionResult,
+  CcEndpointResult,
+  CcEvent,
+  CcModelAxis,
+  CcProtocol,
+  CcRegradeEstimate,
+  CcRegradeJob,
+  CcReportEstimate,
+  CcRunRow,
+  CcTimeline,
+  CcTimelinePoint
+} from './chat-consistency.models';
+
+/** The API prefix, spelled out so a spec fails if the service moves it. */
+export const CC_API = '/api/admin/benchmark/chat-consistency';
+
+/** The providers of a Chat Consistency component spec: HTTP testing, charts and the Benchmark state. */
+export function chatConsistencyTestProviders(): (Provider | EnvironmentProviders)[] {
+  return [
+    provideHttpClient(),
+    provideHttpClientTesting(),
+    provideCharts({ registerables: APP_CHART_REGISTRABLES }),
+    BenchmarkShellBridge,
+    BenchmarkViewSync,
+    BenchmarkWorkspaceStore
+  ];
+}
+
+export function ccAxis(overrides: Partial<CcModelAxis> = {}): CcModelAxis {
+  return {
+    key: 'openai/gpt-5|high',
+    displayName: 'GPT-5 high',
+    provider: 'OpenAI',
+    modelId: 'gpt-5',
+    thinkingLevel: 'high',
+    serviceTier: null,
+    runCount: 6,
+    telemetryRunCount: 4,
+    firstRunAtUtc: '2026-09-01T08:00:00Z',
+    lastRunAtUtc: '2026-10-01T08:00:00Z',
+    latestRunId: 106,
+    suiteNames: ['Board Suite'],
+    ...overrides
+  };
+}
+
+export function ccPoint(runId: number, startedAtUtc: string, overrides: Partial<CcTimelinePoint> = {}): CcTimelinePoint {
+  return {
+    runId,
+    startedAtUtc,
+    suiteName: 'Board Suite',
+    suiteId: 5,
+    harnessVersion: '30',
+    status: 'completed',
+    isLegacy: false,
+    isAnchor: false,
+    qualityIndex: 72,
+    nativeMeanQuality: 71.5,
+    commonGraderQuality: [],
+    medianTimeToFirstAnswerTextMs: 2400,
+    medianStreamingRate: 40,
+    streamingRateEstimated: false,
+    medianModelTimeMs: 9000,
+    latencyLabel: 'telemetry',
+    outputTokensPerAnswer: 1200,
+    toolCallsPerAnswer: 3.5,
+    costPerQuestionUsd: 0.015,
+    terminalFailureRate: 0,
+    timeoutRate: 0,
+    emptyAnswerRate: 0,
+    refusalRate: 0,
+    toolBudgetExhaustedRate: 0,
+    servedModelIds: [{ modelId: 'gpt-5-2026-08', callCount: 40 }],
+    strata: ['weekday 08–12 UTC'],
+    strataEstimated: false,
+    answerCount: 20,
+    maxParallelQuestions: 1,
+    ...overrides
+  };
+}
+
+export function ccRunRow(runId: number, startedAtUtc: string, overrides: Partial<CcRunRow> = {}): CcRunRow {
+  return {
+    runId,
+    startedAtUtc,
+    suiteName: 'Board Suite',
+    harnessVersion: '30',
+    scoringMethodVersion: 4,
+    status: 'completed',
+    isLegacy: false,
+    isAnchor: false,
+    eligibility: [
+      { axis: 'quality', eligible: true, segment: 1, reason: null },
+      { axis: 'speedTelemetry', eligible: true, segment: 1, reason: null },
+      { axis: 'speedLegacy', eligible: true, segment: 1, reason: null },
+      { axis: 'work', eligible: true, segment: 1, reason: null },
+      { axis: 'cost', eligible: true, segment: 1, reason: null }
+    ],
+    regradeCoverage: [],
+    matchedControlRunIds: [],
+    servedModelIds: [{ modelId: 'gpt-5-2026-08', callCount: 40 }],
+    ...overrides
+  };
+}
+
+export function ccEvent(overrides: Partial<CcEvent> = {}): CcEvent {
+  return {
+    atUtc: '2026-09-15T00:00:00Z',
+    kind: 'toolGuides',
+    label: 'tool guides edited on 2026-09-15',
+    from: 'abc',
+    to: 'def',
+    runId: 103,
+    previousRunId: 102,
+    subjectKey: 'openai/gpt-5|high',
+    inTargetSeries: true,
+    ...overrides
+  };
+}
+
+export function ccAnnotation(id: number, overrides: Partial<CcAnnotation> = {}): CcAnnotation {
+  return {
+    id,
+    atUtc: '2026-09-20T12:00:00Z',
+    provider: 'OpenAI',
+    modelId: 'gpt-5',
+    kind: 'modelRelease',
+    text: 'New snapshot announced',
+    sourceUrl: null,
+    createdAtUtc: '2026-09-20T13:00:00Z',
+    ...overrides
+  };
+}
+
+/** Six runs of the subject, two a week from 2026-09-01, the third one legacy. */
+export function ccTimeline(overrides: Partial<CcTimeline> = {}): CcTimeline {
+  return {
+    subject: {
+      key: 'openai/gpt-5|high', displayName: 'GPT-5 high', provider: 'OpenAI', modelId: 'gpt-5',
+      thinkingLevel: 'high', serviceTier: null, configurationId: 30
+    },
+    fromUtc: null,
+    toUtc: null,
+    points: [
+      ccPoint(101, '2026-09-01T08:00:00Z', { qualityIndex: 71 }),
+      ccPoint(102, '2026-09-05T08:00:00Z', { qualityIndex: 73 }),
+      ccPoint(103, '2026-09-12T08:00:00Z', {
+        qualityIndex: 74, isLegacy: true, medianTimeToFirstAnswerTextMs: null, medianStreamingRate: null, latencyLabel: 'legacy proxy'
+      }),
+      ccPoint(104, '2026-09-20T08:00:00Z', { qualityIndex: 72 }),
+      ccPoint(105, '2026-09-26T08:00:00Z', { qualityIndex: 71 }),
+      ccPoint(106, '2026-10-01T08:00:00Z', { qualityIndex: 73 })
+    ],
+    events: [ccEvent()],
+    annotations: [ccAnnotation(1)],
+    priceCard: {
+      available: true, source: 'current configuration pricing', runId: null, inputPerMillion: 1.25, outputPerMillion: 10,
+      cachedInputPerMillion: null, cacheWritePerMillion: null, asOf: null
+    },
+    ...overrides
+  };
+}
+
+/** The run table of {@link ccTimeline}: run 103 is legacy and not eligible for telemetry speed. */
+export function ccRunRows(): CcRunRow[] {
+  return [
+    ccRunRow(106, '2026-10-01T08:00:00Z', { matchedControlRunIds: [206] }),
+    ccRunRow(105, '2026-09-26T08:00:00Z', { matchedControlRunIds: [205] }),
+    ccRunRow(104, '2026-09-20T08:00:00Z'),
+    ccRunRow(103, '2026-09-12T08:00:00Z', {
+      isLegacy: true,
+      eligibility: [
+        { axis: 'quality', eligible: true, segment: 1, reason: null },
+        { axis: 'speedTelemetry', eligible: false, segment: null, reason: 'No call telemetry' },
+        { axis: 'speedLegacy', eligible: true, segment: 1, reason: null },
+        { axis: 'work', eligible: true, segment: 1, reason: null },
+        { axis: 'cost', eligible: true, segment: 1, reason: null }
+      ]
+    }),
+    ccRunRow(102, '2026-09-05T08:00:00Z', { matchedControlRunIds: [202] }),
+    ccRunRow(101, '2026-09-01T08:00:00Z', { matchedControlRunIds: [201] })
+  ];
+}
+
+const ENDPOINT_NAMES: Record<string, string> = {
+  P1: 'Quality', P2: 'Time to first answer text', P3: 'Answer streaming rate', P4: 'Work per turn', P5: 'Cost per question'
+};
+
+export function ccEndpoint(id: string, overrides: Partial<CcEndpointResult> = {}): CcEndpointResult {
+  return {
+    id,
+    name: ENDPOINT_NAMES[id] ?? id,
+    unit: id === 'P1' ? 'index points' : 'log ratio',
+    scale: id === 'P1' ? 'difference' : 'logRatio',
+    margin: id === 'P1' ? 3 : 0.14,
+    marginText: id === 'P1' ? '±3 index points' : '±15 %',
+    direction: id === 'P4' ? 'work' : id === 'P1' || id === 'P3' ? 'higherIsBetter' : 'lowerIsBetter',
+    computed: true,
+    notComputedReason: null,
+    estimate: 0.5,
+    estimatePercent: id === 'P1' ? null : 2.1,
+    ci95: { lower: -1, upper: 2 },
+    ci90: { lower: -0.8, upper: 1.8 },
+    ci95Percent: id === 'P1' ? null : { lower: -4, upper: 8 },
+    pValue: 0.4,
+    adjustedPValue: 0.8,
+    pValueMethod: 'bootstrap',
+    verdict: 'equivalent',
+    verdictLabel: 'equivalent',
+    grade: 'established',
+    gradeReasons: [],
+    minimumDetectableEffect: 1.8,
+    minimumDetectableEffectPercent: id === 'P1' ? null : 9,
+    minimumDetectableEffectNote: null,
+    runsPerPeriodForMargin: null,
+    minimumSampleMet: true,
+    minimumSampleDetail: '3 runs on 3 days per period',
+    legacyProxy: false,
+    usesLegacyData: false,
+    commonGrader: false,
+    relaxedPooling: false,
+    baselineRunCount: 3,
+    comparisonRunCount: 3,
+    baselineRunIds: [101, 102, 103],
+    comparisonRunIds: [104, 105, 106],
+    itemCount: 60,
+    strataUsed: [],
+    stratumExcludedShare: null,
+    robustnessChecks: [],
+    ...overrides
+  };
+}
+
+export function ccProtocol(): CcProtocol {
+  return {
+    protocolVersion: 'V1', alpha: 0.05, secondaryFalseDiscoveryRate: 0.05, power: 0.8, bootstrapReplicates: 4000,
+    bootstrapSeed: 1, minimumRunsPerPeriod: 2, minimumDaysPerPeriod: 2, minimumPairedItems: 20, minimumSpeedRunsPerStratum: 3,
+    minimumRunsPerStratumForSignCheck: 2, ownWaitShareMaterialChange: 0.05, flipPassThreshold: 50, graderDriftMargin: 3,
+    usBusinessHourStrata: [3, 4, 5], usBusinessHoursDefinition: 'US business hours are weekdays 14–22 UTC.',
+    endpoints: [], overrides: [], isOverridden: false, label: 'V1'
+  };
+}
+
+export function ccAttribution(side: string, label: string, overrides: Partial<CcAttributionResult> = {}): CcAttributionResult {
+  return {
+    label, side, grade: 'indicated', rule: 'R1', endpoints: ['P2'], eventRefs: [], evidence: `${label} evidence`, ...overrides
+  };
+}
+
+export function ccAnalysisResult(overrides: Partial<CcAnalysisResult> = {}): CcAnalysisResult {
+  return {
+    analysisId: 7,
+    createdAtUtc: '2026-10-02T09:00:00Z',
+    name: 'September check',
+    headline: 'Overseer chat with GPT-5 high: quality equivalent; speed slower; work equivalent; cost equivalent within weekdays 08–12 UTC',
+    headlineReliabilityIncreases: [],
+    subject: ccTimeline().subject,
+    scope: {
+      text: 'weekdays 08–12 UTC', strataIndexes: [2], strataUsed: ['weekday 08–12 UTC'], excludedShare: 0,
+      oneTimeStratum: true, timeOfDayAssessable: false, usBusinessHoursCovered: false, outsideBusinessHoursCovered: true
+    },
+    baseline: {
+      name: 'baseline', startUtc: '2026-09-01T00:00:00Z', endUtc: '2026-09-14T23:59:59.999Z', runIds: [101, 102, 103], runCount: 3,
+      days: ['2026-09-01', '2026-09-05', '2026-09-12'], answerCount: 60, itemCount: 20, suiteNames: ['Board Suite'], legacyRunCount: 1
+    },
+    comparison: {
+      name: 'comparison', startUtc: '2026-09-15T00:00:00Z', endUtc: '2026-10-01T23:59:59.999Z', runIds: [104, 105, 106], runCount: 3,
+      days: ['2026-09-20', '2026-09-26', '2026-10-01'], answerCount: 60, itemCount: 20, suiteNames: ['Board Suite'], legacyRunCount: 0
+    },
+    protocol: ccProtocol(),
+    protocolLabel: 'V1',
+    endpoints: [
+      ccEndpoint('P1'),
+      ccEndpoint('P2', { verdict: 'changedDegraded', verdictLabel: 'degraded', grade: 'indicated', legacyProxy: true, estimatePercent: 18 }),
+      ccEndpoint('P3'),
+      ccEndpoint('P4', { verdictLabel: 'equivalent' }),
+      ccEndpoint('P5')
+    ],
+    secondaryFamilies: [],
+    robustnessChecks: [],
+    reliability: [],
+    events: [ccEvent()],
+    boundaries: [],
+    segments: [],
+    controls: { matches: [], effects: [], missingControls: [], controlRunIds: [] },
+    attribution: {
+      totalChanges: [{ endpointId: 'P2', name: 'Time to first answer text', verdictLabel: 'degraded', grade: 'indicated' }],
+      attributions: [
+        ccAttribution('provider', 'Provider-side latency change'),
+        ccAttribution('ours', 'Tool guides edit'),
+        ccAttribution('undetermined', 'Unexplained work shift', { endpoints: ['P4'] })
+      ]
+    },
+    servedModels: {
+      baseline: [], comparison: [], changed: false, baselineCalls: 0, comparisonCalls: 0, baselineTierMismatchCalls: 0,
+      comparisonTierMismatchCalls: 0, baselineFallbackCalls: 0, comparisonFallbackCalls: 0, baselineServedSpeeds: [],
+      comparisonServedSpeeds: [], servedConfigurationDiffers: false
+    },
+    ownWaits: [],
+    commonGrader: null,
+    graderDrift: [],
+    priceCard: ccTimeline().priceCard,
+    annotations: [],
+    dataQuality: [{ kind: 'legacy', text: 'One baseline run has no call telemetry.' }],
+    limitations: ['Only one time stratum is common to both periods.'],
+    nextRuns: [
+      { kind: 'control', period: 'comparison', endpointId: 'P2', reason: 'No control run in the comparison period.',
+        suggestion: 'Run Claude Opus on Board Suite.', repeatRunId: 205 },
+      { kind: 'regrade', period: 'baseline', endpointId: 'P1', reason: 'Native grades only.',
+        suggestion: 'Re-grade with a common assessor.', repeatRunId: null }
+    ],
+    inputSha256: 'a'.repeat(64),
+    analysisCodeVersion: 1,
+    ...overrides
+  };
+}
+
+export function ccAnalysisSummary(id: number, overrides: Partial<CcAnalysisSummary> = {}): CcAnalysisSummary {
+  return {
+    id,
+    name: `Analysis ${id}`,
+    subjectModelKey: 'openai/gpt-5|high',
+    baselineStartUtc: '2026-09-01T00:00:00Z',
+    baselineEndUtc: '2026-09-14T23:59:59.999Z',
+    comparisonStartUtc: '2026-09-15T00:00:00Z',
+    comparisonEndUtc: '2026-10-01T23:59:59.999Z',
+    protocolVersion: 'V1',
+    relaxedPooling: false,
+    commonGraderSnapshotId: null,
+    headline: 'Overseer chat with GPT-5 high: quality equivalent',
+    inputSha256: 'b'.repeat(64),
+    analysisCodeVersion: 1,
+    createdAtUtc: '2026-10-02T09:00:00Z',
+    reportDocumentCount: 0,
+    ...overrides
+  };
+}
+
+export function ccRegradeEstimate(overrides: Partial<CcRegradeEstimate> = {}): CcRegradeEstimate {
+  return {
+    assessorConfigId: 21,
+    assessorDisplay: 'Claude Opus assessor',
+    assessorRefusal: null,
+    runs: [
+      { runId: 101, eligible: true, refusal: null, gradableAnswerCount: 20, recordedAssessorInputTokens: 1000,
+        recordedAssessorOutputTokens: 200, recordedAssessorCacheReadTokens: 0, recordedAssessorCacheCreationTokens: 0, estimatedCostUsd: 0.4 },
+      { runId: 103, eligible: false, refusal: 'The run has no gradable answers.', gradableAnswerCount: 0, recordedAssessorInputTokens: 0,
+        recordedAssessorOutputTokens: 0, recordedAssessorCacheReadTokens: 0, recordedAssessorCacheCreationTokens: 0, estimatedCostUsd: null }
+    ],
+    eligibleRunCount: 1,
+    estimatedTotalCostUsd: 0.4,
+    pricingAvailable: true,
+    note: 'From the recorded assessor tokens.',
+    ...overrides
+  };
+}
+
+export function ccRegradeJob(overrides: Partial<CcRegradeJob> = {}): CcRegradeJob {
+  return {
+    id: 'job-1', status: 'running', assessorConfigId: 21, assessorDisplay: 'Claude Opus assessor', runIds: [101],
+    total: 1, done: 0, currentRunId: 101, errors: [], startedAtUtc: '2026-10-02T10:00:00Z', completedAtUtc: null,
+    startedByUserName: 'admin', ...overrides
+  };
+}
+
+export function ccReportEstimate(overrides: Partial<CcReportEstimate> = {}): CcReportEstimate {
+  return {
+    estimates: [],
+    estimatedTotalCostUsd: 0.12,
+    refusal: null,
+    sameProviderWarning: null,
+    providerIssueReportAvailable: false,
+    providerIssueReportReason: 'No change attributed to the provider is established or indicated.',
+    ...overrides
+  };
+}
+
+/** A benchmark-capable system configuration, as the workspace store lists them. */
+export function ccConfig(id: number, overrides: Partial<SystemAiConfigDto> = {}): SystemAiConfigDto {
+  return {
+    id,
+    displayName: `Config ${id}`,
+    provider: 'Anthropic',
+    modelId: `claude-${id}`,
+    isEnabled: true,
+    hasApiKey: true,
+    modelRole: 4,
+    ...overrides
+  } as SystemAiConfigDto;
+}
+
+/** Text content with its whitespace collapsed. */
+export function textOf(el: Element | null | undefined): string {
+  return (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+}

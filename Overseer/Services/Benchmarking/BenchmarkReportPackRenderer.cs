@@ -118,9 +118,16 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>).</summary>
     public const int ComparisonReportFormatVersion = 12;
 
+    /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
+    public const int ChatConsistencyReportFormatVersion = 1;
+
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
-    public static int CurrentFormatVersion(BenchmarkReportScope scope)
-        => scope == BenchmarkReportScope.Comparison ? ComparisonReportFormatVersion : ReportFormatVersion;
+    public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch
+    {
+        BenchmarkReportScope.ChatConsistency => ChatConsistencyReportFormatVersion,
+        BenchmarkReportScope.Comparison => ComparisonReportFormatVersion,
+        _ => ReportFormatVersion
+    };
 
     private const string PairedDifferenceNote = "Paired difference: mean per-question difference, subject minus peer, over the questions "
         + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
@@ -199,6 +206,7 @@ public static partial class BenchmarkReportPackRenderer
     public static string BuildTitle(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
+        if (sheet.IsChatConsistency) return BuildChatConsistencyTitle(sheet);
         if (sheet.IsComparison)
         {
             string key = sheet.SubjectKey ?? string.Empty;
@@ -238,6 +246,11 @@ public static partial class BenchmarkReportPackRenderer
         BenchmarkReportFacts.NormalizeSupportLabels(ctx.Sheet);
 
         var sb = new StringBuilder();
+        if (ctx.ChatConsistency)
+        {
+            RenderChatConsistency(sb, ctx);
+            return sb.ToString();
+        }
         if (ctx.Comparison)
         {
             RenderComparison(sb, ctx);
@@ -2253,8 +2266,8 @@ public static partial class BenchmarkReportPackRenderer
         if (fact.Available && JointQualityRank(ctx, fact.Key) is string joint) return joint;
         if (ctx.Anonymized || !fact.Available) return display;
 
-        // A comparison-scope display names its models by letter; a named copy names them by label.
-        if (ctx.Comparison) return NamedLetters(ctx, display);
+        // A comparison-scope or chat consistency display names its models by letter; a named copy names them by label.
+        if (ctx.Comparison || ctx.ChatConsistency) return NamedLetters(ctx, display);
 
         return fact.Key switch
         {
@@ -2378,14 +2391,18 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// One <c>[[figure:&lt;key&gt;]]</c> line, between blank lines, for each chart of
     /// <see cref="BenchmarkReportRenderOptions.Charts"/> placed at <paramref name="anchor"/> in this
-    /// audience, in placement order; nothing without charts or in a stand-alone document.
+    /// audience, in placement order; nothing without charts or in a stand-alone document. A chat
+    /// consistency document plots the model under test over time, so it carries its charts with or
+    /// without control models.
     /// </summary>
     private static void Figures(StringBuilder sb, Context ctx, BenchmarkReportChartAnchor anchor)
     {
         var charts = ctx.Options.Charts;
-        if (ctx.Standalone || charts == null || charts.Count == 0) return;
+        if ((ctx.Standalone && !ctx.ChatConsistency) || charts == null || charts.Count == 0) return;
 
-        var scope = ctx.Comparison ? BenchmarkReportScope.Comparison : BenchmarkReportScope.Model;
+        var scope = ctx.ChatConsistency ? BenchmarkReportScope.ChatConsistency
+            : ctx.Comparison ? BenchmarkReportScope.Comparison
+            : BenchmarkReportScope.Model;
         foreach (string key in BenchmarkReportChartPlacement.KeysAt(ctx.Document.Audience, anchor, scope))
         {
             if (!charts.Any(c => c != null && string.Equals(c.FigureKey, key, StringComparison.Ordinal))) continue;
@@ -2483,10 +2500,15 @@ public static partial class BenchmarkReportPackRenderer
         public required BenchmarkReportWriterOutput Writer { get; init; }
         public required List<BenchmarkReportValidationNote> Notes { get; init; }
 
-        public bool Anonymized => Options.PeerNaming == BenchmarkReportPeerNaming.Anonymized;
+        /// <summary>Peers print by letter: as the options ask, and always in a chat consistency Provider Issue Report.</summary>
+        public bool Anonymized => Options.PeerNaming == BenchmarkReportPeerNaming.Anonymized
+                                  || (ChatConsistency && Document.Audience == BenchmarkReportAudience.ProviderIssueReport);
 
         /// <summary>The sheet is a comparison-scope sheet: every covered model lettered, no subject.</summary>
         public bool Comparison => Sheet.IsComparison;
+
+        /// <summary>The sheet is a chat consistency sheet: one model's chat over two periods, its control models as peers.</summary>
+        public bool ChatConsistency => Sheet.IsChatConsistency;
 
         /// <summary>The sheet has no peers: a stand-alone report.</summary>
         public bool Standalone => Sheet.Peers.Count == 0;

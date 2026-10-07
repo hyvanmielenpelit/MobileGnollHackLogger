@@ -126,7 +126,9 @@ describe('AdminBenchmarkComponent', () => {
 
       const buttons = Array.from(group.querySelectorAll(':scope > button')) as HTMLButtonElement[];
       const names = buttons.map(b => b.getAttribute('aria-label') || (b.textContent || '').replace(/\s+/g, ' ').trim());
-      expect(names).toEqual(['Downloads', 'Re-run', 'View game snapshot of run 55', 'Copy diagnostics of run 55']);
+      expect(names).toEqual([
+        'Downloads', 'Re-run', 'Repeat this run\'s setup', 'View game snapshot of run 55', 'Copy diagnostics of run 55'
+      ]);
       for (const button of buttons) {
         expect(button.getAttribute('type')).toBe('button');
         expect(button.hasAttribute('title'), names[buttons.indexOf(button)]).toBe(false);
@@ -135,10 +137,11 @@ describe('AdminBenchmarkComponent', () => {
       expect(buttons[1].classList.contains('btn-ghost')).toBe(true);
       expect(buttons[1].getAttribute('popovertarget')).toBe('rr-rerun-popover');
       expect(buttons[1].getAttribute('aria-expanded')).toBe('false');
-      expect(buttons[2].classList.contains('action-btn')).toBe(true);
-      expect(buttons[2].getAttribute('interestfor')).toBe('rr-snapshot-tip');
+      expect(buttons[2].classList.contains('btn-ghost')).toBe(true);
       expect(buttons[3].classList.contains('action-btn')).toBe(true);
-      expect(buttons[3].getAttribute('interestfor')).toBe('rr-copy-diagnostics-tip');
+      expect(buttons[3].getAttribute('interestfor')).toBe('rr-snapshot-tip');
+      expect(buttons[4].classList.contains('action-btn')).toBe(true);
+      expect(buttons[4].getAttribute('interestfor')).toBe('rr-copy-diagnostics-tip');
       expect(getComputedStyle(group).display).toBe('grid');
 
       // Close is a dialog control, not a run action: it sits beside the group, not in it.

@@ -1,0 +1,110 @@
+<fieldset class="gh-fieldset cc-regrade">
+  <legend>Re-grade with a common assessor</legend>
+  <p class="gh-fieldset-hint">
+    One assessor re-grades every selected run, so a quality change is not a change of grader. It spends tokens; the
+    cost is estimated first and the re-grade starts only after you confirm it.
+  </p>
+
+  <div class="cc-regrade-row">
+    <div class="cc-regrade-picker">
+      <label id="cc-regrade-assessor-label">Common assessor</label>
+      <app-model-picker class="cc-regrade-assessor-selector" labelledBy="cc-regrade-assessor-label"
+                        [describedBy]="estimateBlocked ? 'cc-regrade-blocked' : null"
+                        placeholder="Select an assessor" [emptyHint]="pickerEmptyHint" [showPrice]="true"
+                        [options]="pickerOptions" [selectedKey]="assessorId"
+                        (selectionChange)="selectAssessor($event.model)"></app-model-picker>
+    </div>
+    <button #estimateButton type="button" class="btn-ghost cc-regrade-estimate-btn"
+            [attr.aria-disabled]="estimateBlocked || estimating ? 'true' : null"
+            [attr.aria-busy]="estimating ? 'true' : null"
+            [attr.aria-describedby]="estimateBlocked ? 'cc-regrade-blocked' : null"
+            (click)="requestEstimate()">{{ estimating ? 'Estimating…' : 'Estimate re-grade' }}</button>
+  </div>
+  <p class="form-hint cc-regrade-count">{{ runIds.length }} {{ runIds.length === 1 ? 'run' : 'runs' }} selected for the re-grade.</p>
+  @if (estimateBlocked) {
+    <p id="cc-regrade-blocked" class="form-hint cc-regrade-blocked">{{ estimateBlocked }}</p>
+  }
+
+  @if (estimateError) {
+    <p class="gh-field-error cc-regrade-estimate-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ estimateError }}</span>
+    </p>
+  }
+
+  @if (job) {
+    <div class="cc-regrade-progress">
+      <progress [attr.max]="job.total || 1" [attr.value]="job.done" [attr.aria-label]="'Re-grade progress, ' + job.done + ' of ' + job.total + ' runs'"></progress>
+      <p class="cc-regrade-progress-text" role="status">{{ progressText }}</p>
+      @if (running) {
+        <button type="button" class="btn-ghost btn-ghost-danger cc-regrade-cancel-btn"
+                [attr.aria-disabled]="canceling ? 'true' : null" (click)="cancelJob()">Cancel re-grade</button>
+      }
+      @if (job.errors.length > 0) {
+        <ul class="cc-regrade-errors">
+          @for (error of job.errors; track error.runId) {
+            <li>Run #{{ error.runId }}: {{ error.message }}</li>
+          }
+        </ul>
+      }
+      @if (cancelError) {
+        <p class="gh-field-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ cancelError }}</span>
+        </p>
+      }
+    </div>
+  }
+</fieldset>
+
+<!-- The confirmation the spend needs: the estimate, then Re-grade or Cancel. -->
+<dialog #confirmDialog class="gh-dialog cc-regrade-dialog" aria-labelledby="cc-regrade-dialog-title"
+        (cancel)="stopNested($event)" (close)="stopNested($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="cc-regrade-dialog-title">Re-grade {{ estimate?.eligibleRunCount ?? 0 }} of {{ estimate?.runs.length ?? 0 }} runs?</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      @if (estimate; as est) {
+        <dl class="cc-regrade-estimate">
+          <div><dt>Assessor</dt><dd>{{ est.assessorDisplay }}</dd></div>
+          <div><dt>Runs re-graded</dt><dd>{{ est.eligibleRunCount }} of {{ est.runs.length }}</dd></div>
+          <div><dt>Estimated cost</dt><dd class="cc-regrade-total">{{ totalText }}</dd></div>
+        </dl>
+        @if (est.note) {
+          <p class="form-hint">{{ est.note }}</p>
+        }
+        @if (est.assessorRefusal) {
+          <p class="gh-field-error cc-regrade-refusal">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ est.assessorRefusal }}</span>
+          </p>
+        }
+        @if (refusedRuns.length > 0) {
+          <p class="cc-regrade-skipped-title">Left out:</p>
+          <ul class="cc-regrade-skipped">
+            @for (run of refusedRuns; track run.runId) {
+              <li>Run #{{ run.runId }}: {{ run.refusal }}</li>
+            }
+          </ul>
+        }
+      }
+      @if (startError) {
+        <p class="gh-field-error cc-regrade-start-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ startError }}</span>
+        </p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cc-regrade-dialog-cancel" (click)="cancelConfirm()">Cancel</button>
+      <button type="button" class="btn-gh cc-regrade-confirm" [disabled]="confirmBlocked"
+              [attr.aria-busy]="starting ? 'true' : null" (click)="confirm()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        Re-grade
+      </button>
+    </div>
+  </div>
+</dialog>

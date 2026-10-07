@@ -888,6 +888,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("Audience")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ChatConsistencyAnalysisId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("ComparisonId")
                         .HasColumnType("int");
 
@@ -1022,6 +1025,8 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("nvarchar(32)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ChatConsistencyAnalysisId");
 
                     b.HasIndex("PackId");
 
@@ -1185,6 +1190,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("BudgetSaturatedAnswerCount")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CallTelemetryVersion")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("CandidateDeliveryVerifiedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -1309,6 +1317,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("HarnessVersion")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<bool>("IsConsistencyAnchor")
+                        .HasColumnType("bit");
 
                     b.Property<string>("KnowledgeBaseHeadSha")
                         .HasMaxLength(40)
@@ -1451,6 +1462,10 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<int>("SecondOpinionSampleCountUsed")
                         .HasColumnType("int");
+
+                    b.Property<string>("ServedModelIdsJson")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
 
                     b.Property<string>("SourceCodeHeadSha")
                         .HasMaxLength(40)
@@ -1745,6 +1760,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("AssessorBoardChars")
                         .HasColumnType("int");
 
+                    b.Property<long?>("BackoffWaitMs")
+                        .HasColumnType("bigint");
+
                     b.Property<long?>("BenchmarkQuestionId")
                         .HasColumnType("bigint");
 
@@ -1860,6 +1878,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("CoAssessorBoardChars")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<int?>("CompletenessLevel")
                         .HasColumnType("int");
 
@@ -1955,6 +1976,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<double?>("PanelQualityScore")
                         .HasColumnType("float");
 
+                    b.Property<long?>("PermitWaitMs")
+                        .HasColumnType("bigint");
+
                     b.Property<int?>("PreviousQualityScore")
                         .HasColumnType("int");
 
@@ -2005,6 +2029,9 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("nvarchar(512)");
 
                     b.Property<int?>("RerunOfStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RetryAttemptCount")
                         .HasColumnType("int");
 
                     b.Property<string>("ReviewComment")
@@ -2060,8 +2087,15 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("ServedModelId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
                     b.Property<int?>("SpeedScore")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("StartedAtUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -2714,6 +2748,125 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("ChatSessionId", "OccurredUtc");
 
                     b.ToTable("ChatAccessAuditLogs");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ChatConsistencyAnalysis", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AnalysisCodeVersion")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("BaselineEndUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("BaselineStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("CommonGraderSnapshotId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ComparisonEndUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ComparisonStartUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ControlRunIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InputSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ProtocolJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProtocolVersion")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<bool>("RelaxedPooling")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("SubjectConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SubjectModelKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("TargetRunIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubjectModelKey", "CreatedAtUtc");
+
+                    b.ToTable("ChatConsistencyAnalyses");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ChatConsistencyAnnotation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("SourceUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AtUtc");
+
+                    b.ToTable("ChatConsistencyAnnotations");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.ChatMessage", b =>
@@ -3420,6 +3573,194 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("StartedUtc");
 
                     b.ToTable("MaintenanceRunLogs");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ModelCallTelemetry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<byte>("AttemptCount")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int>("BackoffWaitMs")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("BenchmarkRunAnswerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("BenchmarkRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("CacheWriteTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CachedInputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CallIndex")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CompletedMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EndpointKind")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("ErrorKind")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("FailedAttemptMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FallbackModelId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<int?>("FinalHttpStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FinishReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int?>("FirstEventMs")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FirstOutputMs")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FirstReasoningMs")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FirstToolCallMs")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("GraderRole")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("HeadersMs")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("Http429Count")
+                        .HasColumnType("tinyint");
+
+                    b.Property<byte>("Http5xxCount")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("HttpVersion")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<int?>("InputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsRefusal")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("Last80DecodeSpanMs")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Last80VisibleChars")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("LastDeltaMs")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("MaxOutputTokensSent")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OutputDeltaCount")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PermitWaitMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RateLimitJson")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ReasoningSummarySent")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ReasoningTokens")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RequestId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("RequestedModelId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ResponseId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("ServedModelId")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("ServedServiceTier")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ServedSpeed")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<int?>("ServerProcessingMs")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ServiceTierRequested")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("StreamEndMs")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("StreamErrorRetryCount")
+                        .HasColumnType("tinyint");
+
+                    b.Property<long?>("SystemAiApiConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ThinkingLevelSent")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("VisibleOutputChars")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BenchmarkRunAnswerId");
+
+                    b.HasIndex("Source", "Provider", "RequestedModelId", "StartedAtUtc");
+
+                    b.ToTable("ModelCallTelemetry");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
@@ -4650,6 +4991,11 @@ namespace GnollHackServer.Data.Migrations
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocument", b =>
                 {
+                    b.HasOne("MobileGnollHackLogger.Data.ChatConsistencyAnalysis", "ChatConsistencyAnalysis")
+                        .WithMany()
+                        .HasForeignKey("ChatConsistencyAnalysisId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("MobileGnollHackLogger.Data.BenchmarkComparison", "Comparison")
                         .WithMany()
                         .HasForeignKey("ComparisonId")
@@ -4659,6 +5005,8 @@ namespace GnollHackServer.Data.Migrations
                         .WithMany()
                         .HasForeignKey("WriterModelSnapshotId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ChatConsistencyAnalysis");
 
                     b.Navigation("Comparison");
 
@@ -4983,6 +5331,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("SystemAiApiConfiguration");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ModelCallTelemetry", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkRunAnswer", "BenchmarkRunAnswer")
+                        .WithMany("ModelCalls")
+                        .HasForeignKey("BenchmarkRunAnswerId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("BenchmarkRunAnswer");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
@@ -5133,6 +5491,8 @@ namespace GnollHackServer.Data.Migrations
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRunAnswer", b =>
                 {
+                    b.Navigation("ModelCalls");
+
                     b.Navigation("ToolCalls");
                 });
 

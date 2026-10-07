@@ -1,9 +1,13 @@
 import { BenchmarkReportAudience, BenchmarkReportDisclosure, BenchmarkReportScope } from '../../../services/admin-benchmark.service';
 import {
+  PROVIDER_ISSUE_REPORT_OPTION,
+  REPORT_DOCUMENT_AUDIENCE_OPTIONS,
   REPORT_DOCUMENT_SCOPES,
   REPORT_PACK_AUDIENCES,
   audienceLabel,
   audienceShortLabel,
+  chatConsistencyAnalysisIdOf,
+  chatConsistencySubjectKey,
   disclosureLabel,
   documentChipClass,
   documentStatusLabel,
@@ -48,6 +52,29 @@ describe('report-document-format', () => {
     expect(reportKindSlug(BenchmarkReportAudience.TechnicalReport)).toBe('researcher-report');
     expect(reportKindSlug(BenchmarkReportAudience.InternalBrief)).toBe('internal-brief');
     expect(reportKindSlug(99 as BenchmarkReportAudience)).toBe('99');
+  });
+
+  it('names the Provider Issue Report and spells its kind, without offering it in the Reports form', () => {
+    expect(audienceLabel(BenchmarkReportAudience.ProviderIssueReport)).toBe('Provider Issue Report');
+    expect(audienceShortLabel(BenchmarkReportAudience.ProviderIssueReport)).toBe('Provider');
+    expect(PROVIDER_ISSUE_REPORT_OPTION.label).toContain(PROVIDER_ISSUE_REPORT_OPTION.shortLabel);
+    expect(reportKindSlug(BenchmarkReportAudience.ProviderIssueReport)).toBe('provider-issue-report');
+    expect(REPORT_PACK_AUDIENCES.some(option => option.audience === BenchmarkReportAudience.ProviderIssueReport)).toBe(false);
+    expect(REPORT_DOCUMENT_AUDIENCE_OPTIONS.map(option => option.audience)).toEqual([
+      BenchmarkReportAudience.ExecutiveSummary,
+      BenchmarkReportAudience.TechnicalReport,
+      BenchmarkReportAudience.InternalBrief,
+      BenchmarkReportAudience.ProviderIssueReport
+    ]);
+  });
+
+  it('builds and reads a chat consistency subject key', () => {
+    expect(chatConsistencySubjectKey(12)).toBe('chat-consistency:12');
+    expect(chatConsistencyAnalysisIdOf('chat-consistency:12')).toBe(12);
+    expect(chatConsistencyAnalysisIdOf('chat-consistency:0')).toBeNull();
+    expect(chatConsistencyAnalysisIdOf('chat-consistency')).toBeNull();
+    expect(chatConsistencyAnalysisIdOf('run:12')).toBeNull();
+    expect(chatConsistencyAnalysisIdOf(null)).toBeNull();
   });
 
   it('tells a document of the whole comparison, a model subset and one model apart, and labels each', () => {

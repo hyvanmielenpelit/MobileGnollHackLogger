@@ -20,6 +20,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Services.Agents;
 using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
+using Overseer.Services.Telemetry;
 
 public class BenchmarkService
 {
@@ -110,6 +111,13 @@ public class BenchmarkService
     internal const int LastMethodRescoreCanApply = 10;
 
     /// <summary>
+    /// The <see cref="BenchmarkRun.CallTelemetryVersion"/> a run stamps when it starts: every candidate
+    /// call, and every grading and synthesis call of the run, writes a <see cref="ModelCallTelemetry"/> row,
+    /// and every answer carries its turn's timing columns. Assessor calibrations write none. Not a harness version: nothing any model is sent depends on it.
+    /// </summary>
+    public const int CurrentCallTelemetryVersion = 1;
+
+    /// <summary>
     /// A provider finish reason cut to the width of
     /// <see cref="BenchmarkRunAnswer.ProviderFinishReason"/>. These are short enumerated tokens on
     /// every provider the harness talks to; the cut is here so an unexpected one is stored rather
@@ -136,11 +144,174 @@ public class BenchmarkService
             .ToListAsync(CancellationToken.None);
 
         BenchmarkRunFinalizer.ApplyTotals(run, answers);
+        await ApplyServedModelIdsAsync(db, run);
 
         if (elapsedMs.HasValue)
         {
             run.TotalDurationMs = elapsedMs.Value;
         }
+    }
+
+    /// <summary>
+    /// Sets <see cref="BenchmarkRun.ServedModelIdsJson"/> from the saved candidate telemetry rows of the
+    /// run's answers. Read from the database rather than from a loaded navigation, so every
+    /// finalization of the run computes it from the same rows.
+    /// </summary>
+    private static async Task ApplyServedModelIdsAsync(ApplicationDbContext db, BenchmarkRun run)
+    {
+        if (run.CallTelemetryVersion == null)
+        {
+            BenchmarkRunFinalizer.ApplyServedModelIds(run, Array.Empty<(string, int)>());
+            return;
+        }
+
+        long runId = run.Id;
+        var counts = await db.ModelCallTelemetry
+            .Where(t => t.Source == ModelCallSource.BenchmarkCandidate
+                        && t.ServedModelId != null
+                        && t.BenchmarkRunAnswer != null
+                        && t.BenchmarkRunAnswer.BenchmarkRunId == runId)
+            .GroupBy(t => t.ServedModelId!)
+            .Select(g => new { ServedModelId = g.Key, CallCount = g.Count() })
+            .ToListAsync(CancellationToken.None);
+
+        BenchmarkRunFinalizer.ApplyServedModelIds(run, counts.Select(c => (c.ServedModelId, c.CallCount)));
+    }
+
+    /// <summary>
+    /// Stamps the candidate turn's wall-clock bounds, its waits and retries, and the model the provider
+    /// reported serving on <paramref name="answer"/>, and attaches one telemetry row per model call to
+    /// it, saved with the answer. The bounds are null for a turn the delivery check refused before the
+    /// agent loop started; the waits and retries are null, "not recorded", when no call was captured.
+    /// </summary>
+    internal static void ApplyCandidateTelemetry(
+        BenchmarkRunAnswer answer,
+        AgentRunResult runResult,
+        long testedConfigId,
+        DateTime? startedAtUtc,
+        DateTime? completedAtUtc)
+    {
+        bool recorded = runResult.ModelCalls.Count > 0;
+        answer.StartedAtUtc = startedAtUtc;
+        answer.CompletedAtUtc = completedAtUtc;
+        answer.PermitWaitMs = recorded ? runResult.PermitWaitMs : null;
+        answer.BackoffWaitMs = recorded ? runResult.BackoffWaitMs : null;
+        answer.RetryAttemptCount = recorded ? runResult.RetryAttemptCount : null;
+        answer.ServedModelId = ModelCallTelemetryWriter.ConsensusServedModelId(runResult.ModelCalls);
+        ModelCallTelemetryWriter.AttachTo(
+            answer, runResult, ModelCallSource.BenchmarkCandidate,
+            new ModelCallLinks(SystemAiApiConfigurationId: testedConfigId));
+    }
+
+    /// <summary>
+    /// Grader telemetry rows for one role's calls, in call order: a repair or retry turn's calls follow
+    /// the first turn's, and <see cref="ModelCallTelemetry.CallIndex"/> counts across them.
+    /// </summary>
+    internal static List<ModelCallTelemetry> MapGraderCalls(
+        IEnumerable<ModelCallRecord> calls, ModelCallGraderRole role, ModelCallLinks links)
+    {
+        var rows = new List<ModelCallTelemetry>();
+        foreach (var call in calls)
+        {
+            var row = ModelCallTelemetryWriter.Map(call, ModelCallSource.BenchmarkGrader, links with { GraderRole = role });
+            row.CallIndex = rows.Count;
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Adds the telemetry rows of one grading role's calls on <paramref name="answer"/> to the context;
+    /// the caller saves. With <paramref name="replace"/> the answer's earlier rows of that role are
+    /// removed first, for a role whose cost columns a new verdict assigns rather than adds to; without
+    /// it the new rows follow the earlier ones, their call index continuing from them.
+    /// </summary>
+    private static async Task AddGraderTelemetryAsync(
+        ApplicationDbContext db,
+        BenchmarkRunAnswer answer,
+        ModelCallGraderRole role,
+        long graderConfigId,
+        bool replace,
+        IEnumerable<ModelCallRecord> calls)
+    {
+        long answerId = answer.Id;
+        int firstCallIndex = 0;
+        if (answerId > 0)
+        {
+            var earlier = db.ModelCallTelemetry
+                .Where(t => t.BenchmarkRunAnswerId == answerId
+                            && t.Source == ModelCallSource.BenchmarkGrader
+                            && t.GraderRole == role);
+            if (replace)
+            {
+                db.ModelCallTelemetry.RemoveRange(await earlier.ToListAsync(CancellationToken.None));
+            }
+            else
+            {
+                firstCallIndex = await earlier.CountAsync(CancellationToken.None);
+            }
+        }
+
+        // A saved answer takes its rows by key, so they are saved whether or not this context tracks
+        // it; an unsaved one takes them through its navigation and saves them with itself.
+        var rows = MapGraderCalls(
+            calls, role,
+            new ModelCallLinks(
+                BenchmarkRunAnswerId: answerId > 0 ? answerId : null,
+                SystemAiApiConfigurationId: graderConfigId));
+        foreach (var row in rows)
+        {
+            row.CallIndex += firstCallIndex;
+        }
+
+        if (answerId > 0)
+        {
+            db.ModelCallTelemetry.AddRange(rows);
+        }
+        else
+        {
+            answer.ModelCalls.AddRange(rows);
+        }
+    }
+
+    /// <summary>
+    /// Adds the telemetry rows of one synthesis to the context, linked to the run alone; the caller
+    /// saves. <paramref name="replace"/> works as it does in <see cref="AddGraderTelemetryAsync"/>,
+    /// over every synthesis row of the run.
+    /// </summary>
+    private static async Task AddSynthesisTelemetryAsync(
+        ApplicationDbContext db,
+        BenchmarkRun run,
+        long graderConfigId,
+        bool replace,
+        IEnumerable<ModelCallRecord> calls)
+    {
+        long runId = run.Id;
+        var earlier = db.ModelCallTelemetry
+            .Where(t => t.BenchmarkRunId == runId
+                        && t.BenchmarkRunAnswerId == null
+                        && t.Source == ModelCallSource.BenchmarkGrader
+                        && t.GraderRole == ModelCallGraderRole.Synthesis);
+        int firstCallIndex = 0;
+        if (replace)
+        {
+            db.ModelCallTelemetry.RemoveRange(await earlier.ToListAsync(CancellationToken.None));
+        }
+        else
+        {
+            firstCallIndex = await earlier.CountAsync(CancellationToken.None);
+        }
+
+        var rows = MapGraderCalls(
+            calls, ModelCallGraderRole.Synthesis,
+            new ModelCallLinks(BenchmarkRunId: runId, SystemAiApiConfigurationId: graderConfigId));
+        foreach (var row in rows)
+        {
+            row.CallIndex += firstCallIndex;
+        }
+
+        db.ModelCallTelemetry.AddRange(rows);
     }
 
     /// <summary>
@@ -467,6 +638,7 @@ public class BenchmarkService
             run.ScoringProfileSnapshotJson = JsonSerializer.Serialize(profile);
             run.ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion;
             run.HarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion;
+            run.CallTelemetryVersion = CurrentCallTelemetryVersion;
 
             // Snapshotted, not read live: the profile can be edited after the run, and the
             // agreement figures below only mean something alongside the coverage that produced
@@ -741,6 +913,7 @@ public class BenchmarkService
 
             var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == run.Id).ToListAsync(CancellationToken.None);
             BenchmarkRunFinalizer.Apply(run, allAnswers);
+            await ApplyServedModelIdsAsync(db, run);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -1024,6 +1197,7 @@ public class BenchmarkService
             // re-run launched hours later would otherwise absorb the interval into it. Its own span
             // is in the two Rerun columns.
             BenchmarkRunFinalizer.Apply(run, allAnswers, preserveCompletedAt: true);
+            await ApplyServedModelIdsAsync(db, run);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -1544,6 +1718,11 @@ public class BenchmarkService
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
 
+        // The turn's wall-clock bounds, stored only when the delivery check below let the request
+        // reach the agent loop.
+        DateTime turnStartedAtUtc = DateTime.UtcNow;
+        bool reachedAgentLoop = false;
+
         string? terminalError = null;
 
         // The provider's own bounded error payload, from the first "error" event that carried one.
@@ -1576,6 +1755,7 @@ public class BenchmarkService
             VerifyCandidateDelivery(
                 run, runRequest.ProviderName, runRequest.AiProvider, runRequest.SeedHistory,
                 runRequest.SegmentedPrompt, systemPrompt, question.OrderIndex);
+            reachedAgentLoop = true;
 
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
@@ -1611,6 +1791,7 @@ public class BenchmarkService
             _runManager.ClearQuestionInFlight(run.Id, question.OrderIndex);
         }
         sw.Stop();
+        DateTime turnCompletedAtUtc = DateTime.UtcNow;
 
         // A provider error that arrived before the cancel keeps its provider classification; only a
         // cancel with no provider error on record is the operator's.
@@ -1743,6 +1924,11 @@ public class BenchmarkService
             ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits)
         };
 
+        ApplyCandidateTelemetry(
+            answer, runResult, testedConfig.Id,
+            reachedAgentLoop ? turnStartedAtUtc : null,
+            reachedAgentLoop ? turnCompletedAtUtc : null);
+
         db.BenchmarkRunAnswers.Add(answer);
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -1833,6 +2019,10 @@ public class BenchmarkService
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
 
+        // See ExecuteSingleQuestionAsync.
+        DateTime turnStartedAtUtc = DateTime.UtcNow;
+        bool reachedAgentLoop = false;
+
         string? terminalError = null;
 
         // See ExecuteSingleQuestionAsync for the terminalErrorDetail and seenErrorTexts contract.
@@ -1853,6 +2043,7 @@ public class BenchmarkService
             VerifyCandidateDelivery(
                 run, runRequest.ProviderName, runRequest.AiProvider, runRequest.SeedHistory,
                 runRequest.SegmentedPrompt, systemPrompt, answer.OrderIndex);
+            reachedAgentLoop = true;
 
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
@@ -1885,6 +2076,7 @@ public class BenchmarkService
             _runManager.ClearQuestionInFlight(run.Id, answer.OrderIndex);
         }
         sw.Stop();
+        DateTime turnCompletedAtUtc = DateTime.UtcNow;
 
         // See ExecuteSingleQuestionAsync for the rule this follows.
         bool canceledByOperator = cancellationToken.IsCancellationRequested && seenErrorTexts.Count == 0;
@@ -2010,6 +2202,29 @@ public class BenchmarkService
         }
 
         answer.ToolCalls = BenchmarkToolCallRecorder.Build(runResult.ToolCalls, toolCallRecordLimits);
+
+        // The replaced attempt's telemetry rows go the same way, through the DbSet for the same
+        // reason: its candidate rows describe a turn the answer no longer holds, and its grader rows
+        // verdicts on that turn's text, which the re-grade that follows replaces.
+        await db.ModelCallTelemetry
+            .Where(t => t.BenchmarkRunAnswerId == answer.Id)
+            .ExecuteDeleteAsync(CancellationToken.None);
+
+        foreach (var stale in db.ChangeTracker.Entries<ModelCallTelemetry>()
+            .Where(e => e.Entity.BenchmarkRunAnswerId == answer.Id)
+            .ToList())
+        {
+            stale.State = EntityState.Detached;
+        }
+
+        // Written on a run without call telemetry too: the rows are real measurements of this turn.
+        // The run's CallTelemetryVersion stays as it was, so such a run is never read as one whose
+        // every answer carries them.
+        answer.ModelCalls = new List<ModelCallTelemetry>();
+        ApplyCandidateTelemetry(
+            answer, runResult, testedConfig.Id,
+            reachedAgentLoop ? turnStartedAtUtc : null,
+            reachedAgentLoop ? turnCompletedAtUtc : null);
 
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -2520,6 +2735,20 @@ public class BenchmarkService
             }
         }
 
+        // Written after both members' calls have returned, so the two concurrent calls never touch
+        // this context. A new verdict replaces its member's earlier rows, as it does its cost columns.
+        if (outcomeA != null)
+        {
+            await AddGraderTelemetryAsync(
+                db, answer, ModelCallGraderRole.Assessor, assessorConfig.Id, replace: true, outcomeA.ModelCalls);
+        }
+
+        if (outcomeB != null)
+        {
+            await AddGraderTelemetryAsync(
+                db, answer, ModelCallGraderRole.CoAssessor, coAssessorConfig!.Id, replace: true, outcomeB.ModelCalls);
+        }
+
         if (isPanelRun)
         {
             ComputePanelScore(answer, run);
@@ -2606,7 +2835,8 @@ public class BenchmarkService
 
     /// <summary>
     /// One member's per-question grading turn, its repair turn included: the parse, the terminal
-    /// error, the result whose usage is recorded, and what both turns consumed together.
+    /// error, the result whose usage is recorded, what both turns consumed together, and both turns'
+    /// model calls in call order.
     /// </summary>
     private sealed record PerQuestionGradingOutcome(
         PerQuestionAssessmentParseResult Parse,
@@ -2616,7 +2846,8 @@ public class BenchmarkService
         int OutputTokens,
         int CacheReadTokens,
         int CacheCreationTokens,
-        long DurationMs);
+        long DurationMs,
+        IReadOnlyList<ModelCallRecord> ModelCalls);
 
     /// <summary>
     /// A per-question grading request for <paramref name="config"/>: the grading instructions, the
@@ -2704,6 +2935,7 @@ public class BenchmarkService
         int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         int cacheReadTokens = runResult.CacheReadTokens;
         int cacheCreationTokens = runResult.CacheCreationTokens;
+        var modelCalls = new List<ModelCallRecord>(runResult.ModelCalls);
 
         // The graded text is passed so an unverifiable critical error is demoted rather than
         // capping the question at 25 on an assertion nobody can check.
@@ -2737,13 +2969,15 @@ public class BenchmarkService
             outputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
             cacheReadTokens += retryResult.CacheReadTokens;
             cacheCreationTokens += retryResult.CacheCreationTokens;
+            modelCalls.AddRange(retryResult.ModelCalls);
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
 
         sw.Stop();
         return new PerQuestionGradingOutcome(
             parseResult, terminalError, runResult,
-            inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, sw.ElapsedMilliseconds);
+            inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, sw.ElapsedMilliseconds,
+            modelCalls);
     }
 
     /// <summary>
@@ -3793,6 +4027,9 @@ public class BenchmarkService
         var sw = Stopwatch.StartNew();
         string? terminalError = null;
 
+        // Every turn's result, the parse retry's included, for the telemetry rows.
+        var verificationTurns = new List<AgentRunResult> { runResult };
+
         try
         {
             // A request that would not carry the board ahead of the question is a verification
@@ -3885,6 +4122,7 @@ public class BenchmarkService
 
                 var retryResult = new AgentRunResult();
                 retryRun = retryResult;
+                verificationTurns.Add(retryResult);
                 try
                 {
                     VerifyClaimVerificationDelivery(retryRequest, run, answer.OrderIndex);
@@ -3989,6 +4227,11 @@ public class BenchmarkService
                 verdictsPersisted = true;
             }
         }
+
+        // Replaces the earlier rows of the role, as the verification replaces its cost columns.
+        await AddGraderTelemetryAsync(
+            db, answer, ModelCallGraderRole.ClaimVerifier, verifierConfig.Id, replace: true,
+            verificationTurns.SelectMany(t => t.ModelCalls));
 
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -4650,10 +4893,12 @@ public class BenchmarkService
             AssessorVerdict verdict;
             EvidenceInformedValidation? validation = null;
             EvidenceInformedRepair? repair = null;
+            var regradeCalls = new List<ModelCallRecord>();
             try
             {
                 var runRequest = BuildAssessorRequest(run, prompt, assessorConfig, assessorApiKey);
                 var firstTurn = await RunAssessorTurnAsync(run, answer, runRequest, regradeCts.Token);
+                regradeCalls.AddRange(firstTurn.ModelCalls);
                 verdict = ToAssessorVerdict(run, answer, firstTurn);
                 if (verdict.Result != null)
                 {
@@ -4674,6 +4919,7 @@ public class BenchmarkService
                     runRequest.SeedHistory.Add(new { role = "user", content = WithdrawnRepairMessage });
 
                     var repairTurn = await RunAssessorTurnAsync(run, answer, runRequest, regradeCts.Token);
+                    regradeCalls.AddRange(repairTurn.ModelCalls);
                     var repaired = ToAssessorVerdict(run, answer, repairTurn);
                     var firstErrors = validation.Errors;
                     if (repaired.Result != null)
@@ -4715,6 +4961,11 @@ public class BenchmarkService
             {
                 answer.AssessorBoardChars = verdict.BoardChars;
             }
+
+            // The assessor's role, beside the primary verdict's rows: its cost is pooled into the
+            // assessment columns above, added rather than assigned.
+            await AddGraderTelemetryAsync(
+                db, answer, ModelCallGraderRole.Assessor, assessorConfig.Id, replace: false, regradeCalls);
 
             try
             {
@@ -5628,7 +5879,7 @@ public class BenchmarkService
             : ((object?)null, (bool?)null);
     }
 
-    /// <summary>One assessor pass over one stored answer: the verdict, and what it cost.</summary>
+    /// <summary>One assessor pass over one stored answer: the verdict, what it cost, and its model calls.</summary>
     private sealed record AssessorVerdict(
         BenchmarkPerQuestionAssessmentResult? Result,
         int InputTokens,
@@ -5638,7 +5889,8 @@ public class BenchmarkService
         int? BoardChars = null,
         string? RawText = null,
         int CacheReadTokens = 0,
-        int CacheCreationTokens = 0);
+        int CacheCreationTokens = 0,
+        IReadOnlyList<ModelCallRecord>? ModelCalls = null);
 
     /// <summary>
     /// Runs the per-question assessor prompt against a stored answer and parses the verdict,
@@ -5693,7 +5945,7 @@ public class BenchmarkService
         return ToAssessorVerdict(run, answer, turn);
     }
 
-    /// <summary>One sent (or probe-refused) grading turn: the model's raw text, the terminal error, and what it cost.</summary>
+    /// <summary>One sent (or probe-refused) grading turn: the model's raw text, the terminal error, what it cost, and its model calls.</summary>
     private sealed record AssessorTurn(
         string? FinalText,
         string? Error,
@@ -5702,7 +5954,8 @@ public class BenchmarkService
         int CacheReadTokens,
         int CacheCreationTokens,
         long DurationMs,
-        bool DeliveryVerified);
+        bool DeliveryVerified,
+        IReadOnlyList<ModelCallRecord> ModelCalls);
 
     /// <summary>The parsed verdict of one turn, with that turn's cost.</summary>
     private static AssessorVerdict ToAssessorVerdict(BenchmarkRun run, BenchmarkRunAnswer answer, AssessorTurn turn)
@@ -5720,7 +5973,8 @@ public class BenchmarkService
             turn.DeliveryVerified ? BenchmarkBoardGuard.BoardCharsSent(run) : null,
             parseResult.RawText ?? turn.FinalText,
             turn.CacheReadTokens,
-            turn.CacheCreationTokens);
+            turn.CacheCreationTokens,
+            turn.ModelCalls);
     }
 
     /// <summary>
@@ -5760,7 +6014,8 @@ public class BenchmarkService
             runResult.CacheReadTokens,
             runResult.CacheCreationTokens,
             sw.ElapsedMilliseconds,
-            deliveryVerified);
+            deliveryVerified,
+            runResult.ModelCalls);
     }
 
     /// <summary>
@@ -6022,6 +6277,12 @@ public class BenchmarkService
         answer.AssessmentInputTokens = (answer.AssessmentInputTokens ?? 0) + verdict.InputTokens;
         answer.AssessmentOutputTokens = (answer.AssessmentOutputTokens ?? 0) + verdict.OutputTokens;
         answer.AssessmentDurationMs = (answer.AssessmentDurationMs ?? 0) + verdict.DurationMs;
+
+        // Recorded under the second-opinion role, where the trial's verdict is stored, beside any
+        // earlier second reading's rows.
+        await AddGraderTelemetryAsync(
+            db, answer, ModelCallGraderRole.SecondOpinion, assessorConfig.Id, replace: false,
+            verdict.ModelCalls ?? Array.Empty<ModelCallRecord>());
 
         try
         {
@@ -6301,6 +6562,7 @@ public class BenchmarkService
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
         string? terminalError = await RunOpinionTurnAsync(runResult);
+        var opinionCalls = new List<ModelCallRecord>(runResult.ModelCalls);
 
         int opinionInputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
         int opinionOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
@@ -6322,6 +6584,7 @@ public class BenchmarkService
 
             var retryResult = new AgentRunResult();
             terminalError = await RunOpinionTurnAsync(retryResult);
+            opinionCalls.AddRange(retryResult.ModelCalls);
 
             opinionInputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
             opinionOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
@@ -6344,6 +6607,10 @@ public class BenchmarkService
         answer.SecondOpinionCacheReadTokens = (answer.SecondOpinionCacheReadTokens ?? 0) + opinionCacheReadTokens;
         answer.SecondOpinionCacheCreationTokens = (answer.SecondOpinionCacheCreationTokens ?? 0) + opinionCacheCreationTokens;
         answer.SecondOpinionDurationMs = (answer.SecondOpinionDurationMs ?? 0) + sw.ElapsedMilliseconds;
+
+        // Added beside earlier readings' rows, as the cost columns above are.
+        await AddGraderTelemetryAsync(
+            db, answer, ModelCallGraderRole.SecondOpinion, secondConfig.Id, replace: false, opinionCalls);
 
         if (!parseResult.Success || parseResult.Result == null)
         {
@@ -6530,6 +6797,10 @@ public class BenchmarkService
         run.TotalSynthesisCacheCreationTokens = outcome.CacheCreationTokens;
         run.TotalSynthesisDurationMs = outcome.DurationMs;
 
+        // Replaced on the same terms as the totals above: the earlier attempt's rows, the
+        // co-assessor's included, go before this attempt's are added.
+        await AddSynthesisTelemetryAsync(db, run, assessorConfig.Id, replace: true, outcome.ModelCalls);
+
         await db.SaveChangesAsync(CancellationToken.None);
 
         try
@@ -6593,6 +6864,8 @@ public class BenchmarkService
         run.TotalCoSynthesisCacheCreationTokens = coOutcome.CacheCreationTokens;
         run.TotalCoSynthesisDurationMs = coOutcome.DurationMs;
 
+        await AddSynthesisTelemetryAsync(db, run, coAssessorConfig.Id, replace: false, coOutcome.ModelCalls);
+
         await db.SaveChangesAsync(CancellationToken.None);
 
         try
@@ -6615,7 +6888,8 @@ public class BenchmarkService
 
     /// <summary>
     /// One synthesis call and, when its reply does not parse, one repair turn: the parse, the result
-    /// whose usage is recorded, the tokens of both turns together, and the first turn's duration.
+    /// whose usage is recorded, the tokens of both turns together, the first turn's duration, and both
+    /// turns' model calls in call order.
     /// </summary>
     private sealed record SynthesisOutcome(
         SynthesisParseResult Parse,
@@ -6624,7 +6898,8 @@ public class BenchmarkService
         int OutputTokens,
         int CacheReadTokens,
         int CacheCreationTokens,
-        long DurationMs);
+        long DurationMs,
+        IReadOnlyList<ModelCallRecord> ModelCalls);
 
     private async Task<SynthesisOutcome> RunSynthesisAsync(
         BenchmarkRun run,
@@ -6690,6 +6965,7 @@ public class BenchmarkService
         int synthesisOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         int synthesisCacheReadTokens = runResult.CacheReadTokens;
         int synthesisCacheCreationTokens = runResult.CacheCreationTokens;
+        var synthesisCalls = new List<ModelCallRecord>(runResult.ModelCalls);
 
         if (!parseResult.Success)
         {
@@ -6704,13 +6980,14 @@ public class BenchmarkService
             synthesisOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
             synthesisCacheReadTokens += retryResult.CacheReadTokens;
             synthesisCacheCreationTokens += retryResult.CacheCreationTokens;
+            synthesisCalls.AddRange(retryResult.ModelCalls);
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
 
         return new SynthesisOutcome(
             parseResult, runResult,
             synthesisInputTokens, synthesisOutputTokens, synthesisCacheReadTokens, synthesisCacheCreationTokens,
-            sw.ElapsedMilliseconds);
+            sw.ElapsedMilliseconds, synthesisCalls);
     }
 
     /// <summary>
@@ -7669,6 +7946,7 @@ public class BenchmarkService
             // preserveCompletedAt: the run's elapsed wall time is the original execution's; the
             // re-run's own span is in the two Rerun columns.
             BenchmarkRunFinalizer.Apply(run, allAnswers, preserveCompletedAt: true);
+            await ApplyServedModelIdsAsync(db, run);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -8395,7 +8673,9 @@ public class BenchmarkService
     /// its instrument recorded in the <c>Rerun*</c> columns. The five original fingerprints and
     /// <see cref="BenchmarkRun.CompletedAtUtc"/> are left alone: they describe the instrument and the
     /// elapsed wall time of the execution that produced the run's other answers, and they are the
-    /// only record that the prompt did not move between two runs.
+    /// only record that the prompt did not move between two runs. So is
+    /// <see cref="BenchmarkRun.CallTelemetryVersion"/>: a run started without call telemetry stays
+    /// without it, though its re-executed answers record theirs.
     /// </summary>
     internal void BeginRerun(BenchmarkRun run, string systemPrompt)
     {

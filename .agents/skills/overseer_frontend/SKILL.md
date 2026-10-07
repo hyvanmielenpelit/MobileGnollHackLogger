@@ -134,7 +134,7 @@ The short version, so you know whether you need it:
   `.btn-gh-cancel`, `.btn-gh-delete`, or `.btn-gh-small`. **Those four are the entire
   vocabulary** — never invent a variant, and never redefine `.btn-gh` in a component
   stylesheet (view encapsulation makes such an override invisible everywhere but that one
-  component, which is how the AI Benchmark tab silently lost its image buttons).
+  component, which is how the GnollBench tab silently lost its image buttons).
   Secondary actions beside one primary are `.btn-ghost`.
 - **An icon on a labelled button is decided case by case, never by default.** The test: if
   you deleted the label, would the glyph still say what the button does? `+ New Profile` and
@@ -212,7 +212,7 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
 - `/models` (`models.component`): AI Model selection and configuration.
 - `/admin` (`admin.component`): System administration (groups, configs, rate limits). Tabs, in
   order: Users, Groups, **API Keys** (`app-admin-api-keys`, the per-provider default keys), System
-  Configs, Database, AI Telemetry, AI Benchmark, Developer Tools.
+  Configs, Database, AI Telemetry, GnollBench, Developer Tools.
 - `/debug-log` (`debug-log.component`): Developer debug logs.
 - `/login` (`login.component`): Authentication entry point.
 
@@ -296,18 +296,71 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#confirmDialog`: Confirm
   - `#changelogDialog`: Changelog
 
-- **Benchmark Component (`admin/benchmark/`, Admin → AI Benchmark)** — the tab opens directly
+- **Benchmark Component (`admin/benchmark/`, Admin → GnollBench)** — the tab opens directly
   with the benchmark tabs, with no brand row above them. `benchmark.component.html` is the shell: the
   sub-tab row, one tab panel per sub-tab, and the dialogs more than one sub-tab opens (the run report,
   the run progress, difficulty assessor and confirm dialogs, the snapshot viewer, the grader guide, the
-  comparison wizard, the multi-run and battery progress dialogs, the Battery Run Report). The Run,
-  History, Manage Suites, Scoring Profiles and Model Comparison sub-tabs are components of their own (`run-tab/`,
-  `history-tab/`, `suites-tab/`, `profiles-tab/`, `comparison-tab/`) holding their own dialogs; Manage
+  comparison wizard, the multi-run and battery progress dialogs, the Battery Run Report). The eight
+  sub-tabs, in the order of `subTabs` in `benchmark.component.ts` (labels from `subTabLabels`), are
+  **Run Benchmark** (`run`), **Run History** (`history`), **Multi-Run Analysis** (`multirun`),
+  **Multi-Suite** (`multisuite`), **Manage Suites** (`suites`), **Scoring Profiles** (`profiles`),
+  **Model Comparison** (`modelcomparison`) and **Chat Consistency** (`chatconsistency`, always last).
+  The row is one `@for` over `subTabs` — an `@switch` supplies each tab's whole `<svg>` — inside
+  `.gh-tabs.gh-tabs-secondary.gh-tabs-wrap`, so it **wraps onto further lines instead of scrolling**
+  and every tab stays visible on a narrow screen; the order never changes and `onTabKeydown` stays
+  linear (`frontend_ui_controls` § 5). The Run,
+  History, Manage Suites, Scoring Profiles, Model Comparison and Chat Consistency sub-tabs are components of their own (`run-tab/`,
+  `history-tab/`, `suites-tab/`, `profiles-tab/`, `comparison-tab/`, `chat-consistency-tab/`) holding their own dialogs; Manage
   Questions and Import Default Suites are `suites-tab/suite-questions-dialog.component.*` and
   `suites-tab/import-default-suites-dialog.component.*`. Their shared state is in `state/` (the
   workspace store, the launcher, the active-run monitor, the difficulty job, the comparison), the
   sub-tabs reach the shell's dialogs through `BenchmarkShellBridge`, and the pure run formatters are
   in `benchmark-run-format.ts`.
+  - **The Chat Consistency tab** (`bm-panel-chatconsistency`, `chat-consistency-tab/`,
+    `app-chat-consistency-tab`) is the client of `docs/overseer/ai-benchmark-chat-consistency.md`; its
+    HTTP calls are all in `services/admin-chat-consistency.service.ts` (`AdminChatConsistencyService`,
+    base `/api/admin/benchmark/chat-consistency`, errors through `ccErrorText`). The shell component
+    owns the chosen model, the date range, the timeline, the run rows, the anchor saves and the saved
+    analyses, and lays out four `details.gh-disclosure.gh-disclosure--section` sections — *Timeline*
+    (open by default), *Analyze chat consistency*, *Saved analyses*, *Annotations* — each with a summary
+    value. The parts, each in its own folder or file:
+    - `timeline-panel/` (`app-cc-timeline-panel`, presentational, with `app-cc-chart-figure`): the model
+      picker, the *Dates (UTC)* range, one figure per measure from `chat-consistency-charts.ts`
+      (Chart.js, each with a *Show data* table), and the **Runs** table (`TableState`, pager above and
+      below) with per-axis eligibility, segment, telemetry, re-grade coverage, anchor, matched controls,
+      served model and the row actions *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor*,
+      *Open run report*.
+    - `analysis-wizard/` (`app-cc-analysis-wizard`): four steps in `ol.gh-steps` (*Subject and periods*,
+      *Runs*, *Results*, *Reports*), only the current one rendered, its heading focused on every step
+      change. Step 1 offers the presets *Launch vs last 14 days*, *Before vs after an annotation*,
+      *Before vs after an Overseer change*, *Confirm on later data* and *Custom dates*, shows Protocol V1
+      and a *Override the protocol* disclosure; step 2 chooses runs and controls, holds
+      `regrade-panel.component.*` (estimate dialog first, `confirmed: true` only from its Re-grade
+      button) and the relaxed-pooling checkbox, previews strata, events and missing controls, and posts
+      the analysis; step 3 is `results-view.component.*`; step 4 is `reports-step.component.*` (the four
+      Chat Consistency Report audiences, the Provider Issue Report enabled only when the estimate says
+      it is available, a same-provider dialog asked on every write, then the charts drawn by
+      `chat-consistency-report-charts.ts` and uploaded).
+    - `saved-analyses/` (`app-cc-saved-analyses`): a card list with *Open* and *Delete*; a delete the
+      server refuses with 409 (report documents exist) shows its reason inside the dialog.
+    - `annotations/` (`app-cc-annotations-panel`): add and delete only; there is no edit.
+    The Reports step opens the Download Center through the shell (`openDocuments` →
+    `openChatConsistencyDownloads`) with the `chatConsistency` context.
+  - **"Repeat this run's setup"** fills Run Benchmark from a stored run and **never starts anything**.
+    It appears in the run report header (`#rr-repeat-setup-btn`), in the Chat Consistency run table and
+    on the Results step's next-run suggestions. Each calls `BenchmarkShellBridge.repeatRunSetup(runId)`,
+    which emits on `repeatRunSetup$`; the shell closes the run report, selects the `run` sub-tab, loads
+    the run and hands it to `BenchmarkLauncherState.prefillFromRun(run)`. The prefill waits until the
+    stored launcher settings have been restored and the suite, profile and configuration lists have
+    arrived (`prefillReady`), so it is applied **after** the restore and overwrites it; it then
+    persists the result as the remembered launcher settings. It sets the suite, scoring profile, Model
+    Under Test, Assessor, the optional roles (cleared when the run had none), Coverage, Response Style
+    and source code references, with `runCount = 1` and a suite target. A suite, profile or
+    configuration that no longer exists or is no longer benchmark-capable keeps the current choice and
+    adds a note (*… no longer exists, so the selected suite was kept.*, *… is no longer available for
+    benchmark runs, so the current choice was kept.*); the `role="status"` block `.bm-prefill-status`
+    above the launcher shows *Set up from run #N* with *Check the settings below, then press Start.
+    Nothing starts on its own.* and the notes. Leaving the Run sub-tab clears it.
   - **The Model Comparison tab** (`bm-panel-modelcomparison`, `comparison-tab/`) is a one-column grid. The hero card
     `.mc-launcher-hero` holds the h3, the lead, then **Open Comparison Wizard** — the page's only
     `.btn-gh`, full size, *compass* glyph — then the *Last comparison* read-out, then a non-exclusive
@@ -788,8 +841,17 @@ To find specific popups, look in the corresponding component's `.html` template:
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
     ones. Every row offers **PDF** first, then **Word** (both rendered server-side, see
     `ai-benchmark-report-pack.md` § 8); the External preset is PDF only and Internal PDF, Word and
-    Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 3, migrated from
-    version 2). Run diagnostics are captured once per download, so the `.txt`, `.pdf` and `.docx` agree.
+    Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 4,
+    `STORED_SETTINGS_VERSION`; versions 2 and 3 are migrated on reading — every package gains the
+    Provider Issue Report row's default choice, `PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE`, an empty choice
+    the package preset fills, and version 2 also loses the Internal package's remembered formats). The
+    **Provider Issue Report** row (`DownloadRowCategory` `providerIssueReport`) exists only for chat
+    consistency documents; the External preset selects it with the Executive Summary and the Report for
+    AI Researchers and Developers, and Internal selects every row. The `chatConsistency` context
+    (`{ kind: 'chatConsistency', analysisId }`, title *Chat consistency documents*, subtitle *Chat
+    consistency analysis #N*) lists the documents of one analysis by subject key
+    `chat-consistency:<id>` and origin `chatConsistencyReport`, and names a file
+    `chat-consistency-<id>_<subject slug>_<kind>` (`provider-issue-report` for the new kind). Run diagnostics are captured once per download, so the `.txt`, `.pdf` and `.docx` agree.
     While a package is prepared, an overlay over the body shows a ring spinner, the step and a progress
     bar. The footer's Cancel appears only while documents are being prepared and cancels the
     preparation without closing; the X and Escape close, and abandon a preparation. It is
@@ -990,7 +1052,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     `ReportJobSource` (`{ getJob(), cancel(), subjectLabel }`) for the battery run; without one the
     dialog builds the run source from `runId`, as before.
 
-- **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
+- **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → GnollBench →
   Run History → Cross-model comparison, step 1)** — single runs, analysis groups and battery results
   on three kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups` / `csp-src-tab-batteries`, *Single
   runs*, *Analysis groups*, *Battery results*), one table per tab, with a pager above and below it. The
@@ -1015,7 +1077,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     Markdown control. Opened by the info button beside a row's *Condition X* badge, and offered
     only where that source actually differs.
 
-- **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
+- **Model Comparison (`model-comparison.component.html`, Admin → GnollBench → Run History →
   Cross-model comparison)** — four steps: *1. Sources · 2. Charts & table · 3. Reports · 4.
   Documents* (`COMPARISON_WIZARD_STEPS`; step 3's summary *Write AI reports that compare the models of
   this comparison.*, step 4's *View, chart, download and delete this comparison's
@@ -1574,7 +1636,7 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 
 ## AI Benchmark Configuration Persistence
 
-In the AI Benchmark tab (`/admin` -> AI Benchmark), the settings in the **New Benchmark Run** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
+In the GnollBench tab (`/admin` -> GnollBench), the settings in the **New Benchmark Run** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
 
 The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds the **Run Target** radio group (*Single suite* / *Battery*, a `role="radiogroup"` fieldset), then Benchmark Suite — or, for a battery, the **Battery** select `#batterySelect` — Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Reader or Reference Reader (with its dependent Coverage) and Claim Verifier, plus the *How the graders work* button that opens the grader guide; *Execution* holds Number of Runs (its click tip lists when one run fits and when several do), then — for a series or a battery — a borderless `fieldset.exec-options` whose `legend#execOptionsCaption` (*Series Options* / *Battery Options*, in the `.field-caption` style) holds *Wait when the run cap blocks the next run* and, for a battery, *Reuse earlier runs*, 0.5 rem apart, then *Completion Alerts*: a `role="group"` captioned by `#completionSignalsCaption`, its (i) directly after the caption in `.exec-heading-row`, two `.checkbox-label` checkboxes and **Test sound**. Launcher field labels and group captions share one heading style (0.875 rem, 600), lighter checkbox text below them. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
 

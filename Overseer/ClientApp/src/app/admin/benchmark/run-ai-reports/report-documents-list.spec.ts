@@ -8,6 +8,8 @@ import {
 } from '../../../services/admin-benchmark.service';
 import {
   BATTERY_COMPLETION_ORIGIN,
+  CHAT_CONSISTENCY_DOCUMENT_AUDIENCES,
+  CHAT_CONSISTENCY_REPORT_ORIGIN,
   REPORT_DOCUMENT_AUDIENCES,
   completionDocumentsOf,
   isReportWriterSameProviderWarning,
@@ -28,7 +30,7 @@ import {
   writtenReportLabels
 } from './report-documents-list';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
 const { NotRequested, Pending, Writing, Completed, Failed, Skipped, Canceled } = BenchmarkRunReportDocumentsStatus;
 
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
@@ -74,6 +76,27 @@ describe('report-documents-list', () => {
     expect(completionDocumentsOf(null, 'battery:7', BATTERY_COMPLETION_ORIGIN)).toEqual([]);
     expect(completionDocumentsOf([doc(6, ExecutiveSummary, { subjectKey: 'run:55', origin: BenchmarkReportDocumentOrigin.RunCompletion })],
       'run:55', BenchmarkReportDocumentOrigin.RunCompletion).map(d => d.id)).toEqual([6]);
+  });
+
+  it('keeps chat consistency documents out of a run\'s documents, and lists an analysis\'s four with the Provider Issue Report', () => {
+    const cc = (id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}) =>
+      doc(id, audience, { subjectKey: 'chat-consistency:12', origin: CHAT_CONSISTENCY_REPORT_ORIGIN, ...overrides });
+    const documents = [
+      cc(21, ProviderIssueReport),
+      cc(22, ExecutiveSummary),
+      cc(23, ExecutiveSummary, { createdAtUtc: '2026-10-01T09:30:00Z' }),
+      cc(24, InternalBrief, { subjectKey: 'chat-consistency:13' }),
+      cc(25, TechnicalReport, { subjectKey: 'run:55' }),
+      doc(26, TechnicalReport, { subjectKey: 'run:55', origin: BenchmarkReportDocumentOrigin.RunCompletion })
+    ];
+
+    expect(CHAT_CONSISTENCY_REPORT_ORIGIN).toBe(BenchmarkReportDocumentOrigin.ChatConsistencyReport);
+    expect(CHAT_CONSISTENCY_DOCUMENT_AUDIENCES).toEqual([...REPORT_DOCUMENT_AUDIENCES, ProviderIssueReport]);
+    expect(completionDocumentsOf(documents, 'chat-consistency:12', CHAT_CONSISTENCY_REPORT_ORIGIN).map(d => d.id)).toEqual([22, 21]);
+    // A run's documents never take one of another origin, even about the same subject key.
+    expect(completionDocumentsOf(documents, 'run:55', BenchmarkReportDocumentOrigin.RunCompletion).map(d => d.id)).toEqual([26]);
+    // A run's three audiences never include the Provider Issue Report.
+    expect(completionDocumentsOf([doc(27, ProviderIssueReport)], 'battery:7', BATTERY_COMPLETION_ORIGIN)).toEqual([]);
   });
 
   it('builds one row per audience, written or not, with the missing and written ones', () => {

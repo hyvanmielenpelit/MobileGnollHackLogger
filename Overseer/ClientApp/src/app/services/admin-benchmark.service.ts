@@ -2685,7 +2685,9 @@ export interface BenchmarkGroupAnalysisDto {
 export enum BenchmarkReportAudience {
   ExecutiveSummary = 1,
   TechnicalReport = 2,
-  InternalBrief = 3
+  InternalBrief = 3,
+  /** A chat consistency finding written for the model's provider; chat consistency documents only. */
+  ProviderIssueReport = 4
 }
 
 /** How much verbatim benchmark content a rendered document prints. */
@@ -2704,11 +2706,15 @@ export enum BenchmarkReportPeerNaming {
   Anonymized = 2
 }
 
-/** Where a stored document came from: Model Comparison's Report Pack, or a run's completion. */
+/**
+ * Where a stored document came from: Model Comparison's Report Pack, a run's or a battery run's
+ * completion, or a saved chat consistency analysis.
+ */
 export enum BenchmarkReportDocumentOrigin {
   ReportPack = 1,
   RunCompletion = 2,
-  BatteryCompletion = 3
+  BatteryCompletion = 3,
+  ChatConsistencyReport = 4
 }
 
 /** Where a run's two AI-written (run-completion) documents stand. */
@@ -3075,12 +3081,15 @@ export interface BenchmarkReportDocumentListItemDto {
   comparisonModelCount?: number | null;
   /** The models the document covers: the subject for a per-model document, every covered entry otherwise. */
   coveredModels?: BenchmarkReportCoveredModelDto[];
+  /** The saved chat consistency analysis a chat consistency document was written from; absent or null otherwise. */
+  chatConsistencyAnalysisId?: number | null;
 }
 
-/** A per-model document (1) or a comparison-scope document (2), as the server sends it. */
+/** A per-model document (1), a comparison-scope document (2) or a chat consistency document (3), as the server sends it. */
 export enum BenchmarkReportScope {
   Model = 1,
   Comparison = 2,
+  ChatConsistency = 3,
 }
 
 /** One model (comparison entry) a document covers. */
@@ -3146,7 +3155,11 @@ export interface ReportDocumentChartLayoutFigure {
 
 /** One chart image for a report document, as `PUT report-documents/{id}/charts` takes it. */
 export interface ReportDocumentChartUpload {
-  /** `p1a-quality`, `p1b-speed`, `p1c-cost`, `p2-profile`, `s1-quality-speed`, `s2-quality-cost` or `s3-speed-cost`. */
+  /**
+   * A Report Pack figure (`p1a-quality`, `p1b-speed`, `p1c-cost`, `p2-profile`, `s1-quality-speed`,
+   * `s2-quality-cost` or `s3-speed-cost`) or a chat consistency one (`cc1-quality`, `cc2-speed`,
+   * `cc3-work` or `cc4-timeline`).
+   */
   figureKey: string;
   naming: ReportDocumentChartNaming;
   title: string;
@@ -3198,14 +3211,14 @@ export interface BenchmarkReportDocumentQuery {
   /** A comparison's entry keys (`run:<id>`, `group:<id>`): the documents written for exactly that set. */
   comparison?: readonly string[] | null;
   origin?: BenchmarkReportDocumentOriginParam | null;
-  /** Documents about exactly this subject: `run:<id>`, `group:<id>` or `battery:<id>`. */
+  /** Documents about exactly this subject: `run:<id>`, `group:<id>`, `battery:<id>` or `chat-consistency:<id>`. */
   subject?: string | null;
   /** Documents of this numbered comparison. */
   comparisonId?: number | null;
 }
 
 /** The list endpoint's `origin` query value. */
-export type BenchmarkReportDocumentOriginParam = 'reportPack' | 'runCompletion' | 'batteryCompletion';
+export type BenchmarkReportDocumentOriginParam = 'reportPack' | 'runCompletion' | 'batteryCompletion' | 'chatConsistencyReport';
 
 /** A text file fetched from the server, with the name its `Content-Disposition` gave it. */
 export interface BenchmarkTextFile {

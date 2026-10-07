@@ -1265,7 +1265,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
       if (body) {
         const hidden = typeof document !== 'undefined' ? document.hidden : false;
         const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
-        const outcome = this.completionNotificationService.notify(key, 'AI Benchmark', body);
+        const outcome = this.completionNotificationService.notify(key, 'GnollBench', body);
         this.recordNotificationAttempt({ atUtc: new Date().toISOString(), key, hidden, focused, outcome });
       }
     }

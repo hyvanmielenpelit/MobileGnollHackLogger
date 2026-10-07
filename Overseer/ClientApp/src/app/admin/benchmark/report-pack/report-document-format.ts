@@ -45,15 +45,35 @@ export function reportScopeLabel(value: string): string {
 
 /**
  * A Report Pack document's kind in a file name, as the server's `BenchmarkPdfFileNames.KindSlug` spells
- * it: `executive-summary`, `researcher-report` or `internal-brief`.
+ * it: `executive-summary`, `researcher-report` or `internal-brief`; `provider-issue-report` for the
+ * Provider Issue Report.
  */
 export function reportKindSlug(audience: BenchmarkReportAudience): string {
   switch (audience) {
     case BenchmarkReportAudience.ExecutiveSummary: return 'executive-summary';
     case BenchmarkReportAudience.TechnicalReport: return 'researcher-report';
     case BenchmarkReportAudience.InternalBrief: return 'internal-brief';
+    case BenchmarkReportAudience.ProviderIssueReport: return 'provider-issue-report';
     default: return safeFileName(BenchmarkReportAudience[audience] ?? String(audience));
   }
+}
+
+/** The subject key prefix of a chat consistency document: `chat-consistency:12`. */
+export const CHAT_CONSISTENCY_SUBJECT_PREFIX = 'chat-consistency:';
+
+/** The subject key of a saved chat consistency analysis's documents. */
+export function chatConsistencySubjectKey(analysisId: number): string {
+  return `${CHAT_CONSISTENCY_SUBJECT_PREFIX}${analysisId}`;
+}
+
+/** The analysis id of a `chat-consistency:<id>` subject key; null for any other key. */
+export function chatConsistencyAnalysisIdOf(subjectKey: string | null | undefined): number | null {
+  const match = /^chat-consistency:([0-9]+)$/.exec(subjectKey ?? '');
+  if (!match) {
+    return null;
+  }
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 /** How many documents the `all` scope asks for: the list endpoint's maximum. */
@@ -93,12 +113,27 @@ export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
   }
 ];
 
+/** The document a chat consistency analysis writes for the model's provider; the Reports form never offers it. */
+export const PROVIDER_ISSUE_REPORT_OPTION: ReportPackAudienceOption = {
+  audience: BenchmarkReportAudience.ProviderIssueReport,
+  label: 'Provider Issue Report',
+  shortLabel: 'Provider',
+  description: 'For the model’s provider: a chat consistency finding, its evidence, and the request to the provider.',
+  checkedByDefault: false
+};
+
+/** Every type a stored document can be, in list order: the Reports form's three, then the Provider Issue Report. */
+export const REPORT_DOCUMENT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [
+  ...REPORT_PACK_AUDIENCES,
+  PROVIDER_ISSUE_REPORT_OPTION
+];
+
 export function audienceLabel(audience: BenchmarkReportAudience): string {
-  return REPORT_PACK_AUDIENCES.find(option => option.audience === audience)?.label ?? 'Report document';
+  return REPORT_DOCUMENT_AUDIENCE_OPTIONS.find(option => option.audience === audience)?.label ?? 'Report document';
 }
 
 export function audienceShortLabel(audience: BenchmarkReportAudience): string {
-  return REPORT_PACK_AUDIENCES.find(option => option.audience === audience)?.shortLabel ?? 'Document';
+  return REPORT_DOCUMENT_AUDIENCE_OPTIONS.find(option => option.audience === audience)?.shortLabel ?? 'Document';
 }
 
 export function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {
