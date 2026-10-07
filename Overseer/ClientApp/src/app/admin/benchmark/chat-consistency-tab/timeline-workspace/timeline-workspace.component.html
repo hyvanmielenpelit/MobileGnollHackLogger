@@ -1,0 +1,521 @@
+<div #workspace class="gh-fig-workspace cc-tl-workspace" [class.is-collapsed]="sidebarCollapsed"
+     [style.--gh-fig-sidebar-width]="sidebarWidth + 'px'">
+
+  <!-- ===========================================================================================
+       THE SETTINGS SIDEBAR: Data · Events · Annotations · Download. Collapsed by its toggle in the
+       view bar, which stays rendered outside it; resized by the handle on its right edge.
+       =========================================================================================== -->
+  <aside id="cc-tl-sidebar" class="gh-fig-sidebar cc-tl-sidebar" aria-label="Timeline settings" [hidden]="sidebarCollapsed">
+    <div #sideTabs class="gh-tabs gh-tabs-secondary gh-fig-sidebar-tabs" role="tablist" aria-label="Settings sections">
+      @for (tab of sidebarTabs; track tab.id; let i = $index) {
+        <button type="button" role="tab" class="gh-tab"
+                [id]="'cc-tl-side-tab-' + tab.id"
+                [attr.aria-controls]="'cc-tl-side-panel-' + tab.id"
+                [attr.aria-selected]="sidebarTab === tab.id"
+                [attr.tabindex]="sidebarTab === tab.id ? 0 : -1"
+                (keydown)="onSidebarTabKeydown($event, i)"
+                (click)="selectSidebarTab(tab.id)">{{ tab.label }}</button>
+      }
+    </div>
+
+    @switch (sidebarTab) {
+      @case ('data') {
+        <div class="gh-fig-side-panel" role="tabpanel" id="cc-tl-side-panel-data"
+             aria-labelledby="cc-tl-side-tab-data" tabindex="0">
+          <p class="cc-tl-hint cc-tl-readout">{{ readout }}</p>
+
+          <fieldset class="gh-fieldset cc-tl-group">
+            <legend>Charts</legend>
+            <div class="cc-tl-checklist-actions">
+              <button type="button" class="btn-link cc-tl-all-figures" (click)="showAllFigures()">All<span class="visually-hidden"> charts</span></button>
+              <button type="button" class="btn-link cc-tl-no-figures" (click)="showNoFigures()">None<span class="visually-hidden"> of the charts</span></button>
+            </div>
+            @for (entry of figureKeys; track entry.key) {
+              <label class="checkbox-label">
+                <input type="checkbox" [id]="'cc-tl-show-' + entry.key" [checked]="isFigureShown(entry.key)"
+                       (change)="setFigureShown(entry.key, $any($event.target).checked)">
+                Show {{ entry.title }}
+              </label>
+            }
+          </fieldset>
+
+          <fieldset class="gh-fieldset cc-tl-group">
+            <legend>Series</legend>
+            @for (group of seriesGroups; track group.key) {
+              <fieldset class="cc-tl-series">
+                <legend>{{ group.title }}</legend>
+                @for (series of group.series; track series.id) {
+                  <label class="checkbox-label">
+                    <input type="checkbox" [id]="seriesDomId(series.id)" [checked]="isSeriesShown(series.id)"
+                           (change)="setSeriesShown(series.id, $any($event.target).checked)">
+                    {{ series.label }}
+                  </label>
+                }
+              </fieldset>
+            } @empty {
+              <p class="cc-tl-hint">No shown chart draws more than one series.</p>
+            }
+          </fieldset>
+
+          <fieldset class="gh-fieldset cc-tl-group">
+            <legend>Value axes</legend>
+            <label class="checkbox-label">
+              <input type="checkbox" id="cc-tl-zero-baseline" [checked]="zeroBaseline"
+                     (change)="setZeroBaseline($any($event.target).checked)">
+              Start the quality axis at zero
+            </label>
+          </fieldset>
+        </div>
+      }
+
+      @case ('events') {
+        <div class="gh-fig-side-panel" role="tabpanel" id="cc-tl-side-panel-events"
+             aria-labelledby="cc-tl-side-tab-events" tabindex="0">
+          <fieldset class="gh-fieldset cc-tl-group">
+            <legend>Show on the charts</legend>
+            @for (option of markerKindOptions; track option.kind) {
+              <label class="checkbox-label">
+                <input type="checkbox" [id]="'cc-tl-marker-' + option.kind" [checked]="isMarkerKindShown(option.kind)"
+                       (change)="setMarkerKindShown(option.kind, $any($event.target).checked)">
+                {{ option.label }}
+              </label>
+            }
+          </fieldset>
+
+          <fieldset class="gh-fieldset cc-tl-group">
+            <legend>Overseer change kinds</legend>
+            @for (change of kindSummary; track change.kind) {
+              <label class="checkbox-label">
+                <input type="checkbox" [id]="'cc-tl-kind-' + change.kind" [checked]="isEventKindShown(change.kind)"
+                       (change)="setEventKindShown(change.kind, $any($event.target).checked)">
+                {{ change.label }} <span class="cc-tl-count">({{ change.count }})</span>
+              </label>
+            } @empty {
+              <p class="cc-tl-hint">No Overseer change in this range.</p>
+            }
+          </fieldset>
+
+          <app-cc-event-list id="cc-tl-events" class="cc-tl-events" tabindex="-1" role="region" aria-label="Event list"
+                             [style.--cc-ev-sticky-top]="tabBarHeight + 'px'"
+                             [days]="eventDays" idPrefix="cc-tl-ev" [dayHeadingLevel]="5"
+                             [hiddenCount]="hiddenEventItems"></app-cc-event-list>
+        </div>
+      }
+
+      @case ('download') {
+        <!-- Settings only: each chart downloads from its tile or from Single chart, all of them from All charts. -->
+        <div class="gh-fig-side-panel" role="tabpanel" id="cc-tl-side-panel-download"
+             aria-labelledby="cc-tl-side-tab-download" tabindex="0">
+          <!-- The title is bound as a property so the host carries no `title` attribute. -->
+          <app-export-size-section [title]="'Chart size'" idPrefix="cc-export"
+                                   [settings]="chartSize" [defaults]="defaultChartSize"
+                                   [displayDensity]="displayDensity" [open]="chartSizeOpen"
+                                   [textSizeHint]="textSizeHint" errorNoun="chart"
+                                   (settingsChange)="onChartSizeChange($event)"
+                                   (openChange)="onChartSizeOpenChange($event)"
+                                   (reset)="resetChartSize()"></app-export-size-section>
+
+          <app-export-format-section idPrefix="cc-image-format"
+                                     [format]="imageFormat" [webpQuality]="webpQuality"
+                                     [defaultQuality]="defaultWebpQuality"
+                                     [open]="imageFormatOpen" [note]="formatNote"
+                                     (formatChange)="onImageFormatChange($event)"
+                                     (qualityChange)="onWebpQualityChange($event)"
+                                     (openChange)="onImageFormatOpenChange($event)"
+                                     (reset)="resetImageFormat()"></app-export-format-section>
+
+          <fieldset class="gh-choice cc-tl-theme">
+            <legend>Theme</legend>
+            <label class="gh-radio">
+              <input type="radio" name="cc-tl-image-theme" id="cc-tl-image-theme-screen" value="screen"
+                     [checked]="imageTheme === 'screen'" (change)="setImageTheme('screen')">
+              As shown (dark)
+            </label>
+            <label class="gh-radio">
+              <input type="radio" name="cc-tl-image-theme" id="cc-tl-image-theme-print" value="print"
+                     [checked]="imageTheme === 'print'" (change)="setImageTheme('print')">
+              Light, for print
+            </label>
+          </fieldset>
+
+          <p class="cc-tl-hint">The image is the plot alone, without its title, caption or marker list. Download one chart from its tile or from Single chart, or all of them at once from All charts.</p>
+
+          @if (sizeError) {
+            <p class="gh-field-error cc-tl-size-error" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ sizeError }}</span>
+            </p>
+          }
+        </div>
+      }
+    }
+
+    <!-- Kept once shown, so a save in progress and an unsaved draft survive a tab switch. -->
+    @if (annotationsMounted) {
+      <div class="gh-fig-side-panel" role="tabpanel" id="cc-tl-side-panel-annotations"
+           aria-labelledby="cc-tl-side-tab-annotations" tabindex="0" [hidden]="sidebarTab !== 'annotations'">
+        <app-cc-annotations-panel [axis]="axis" (changed)="annotationsChanged.emit()"></app-cc-annotations-panel>
+      </div>
+    }
+  </aside>
+
+  <!-- In its own grid column between the sidebar and the main area; its line is the only divider. -->
+  @if (!sidebarCollapsed) {
+    <app-pane-resizer class="gh-fig-resizer" controls="cc-tl-sidebar" label="Resize timeline settings sidebar"
+                      [value]="sidebarWidth" [min]="SIDEBAR_WIDTH_MIN" [max]="sidebarWidthMax"
+                      [defaultValue]="SIDEBAR_WIDTH_DEFAULT"
+                      (pointerdown)="measureSidebarWidthMax()" (focusin)="measureSidebarWidthMax()"
+                      (valueChange)="onSidebarWidthChange($event)"
+                      (valueCommit)="onSidebarWidthCommit($event)"></app-pane-resizer>
+  }
+
+  <div class="gh-fig-main">
+    <div class="gh-fig-bar">
+      <!-- A disclosure: the name stays constant and aria-expanded carries the state. -->
+      <button type="button" class="action-btn cc-tl-sidebar-toggle" aria-label="Timeline settings"
+              [attr.aria-expanded]="!sidebarCollapsed" aria-controls="cc-tl-sidebar"
+              interestfor="cc-tl-tip-sidebar" style="anchor-name: --cc-tl-tip-sidebar"
+              (click)="toggleSidebar()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="cc-tl-tip-sidebar"
+           style="position-anchor: --cc-tl-tip-sidebar">{{ sidebarCollapsed ? 'Show settings' : 'Hide settings' }}</div>
+
+      <div class="gh-tabs gh-tabs-secondary gh-fig-tabs" role="tablist" aria-label="Timeline views">
+        @for (tab of viewTabs; track tab.id; let i = $index) {
+          <button type="button" role="tab" class="gh-tab"
+                  [id]="'cc-tl-view-tab-' + tab.id"
+                  [attr.aria-controls]="'cc-tl-view-panel-' + tab.id"
+                  [attr.aria-selected]="view === tab.id"
+                  [attr.tabindex]="view === tab.id ? 0 : -1"
+                  (keydown)="onViewTabKeydown($event, i)"
+                  (click)="selectView(tab.id)">
+            @if (tab.id === 'all') {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            } @else {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            }
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+    </div>
+
+    @if (error) {
+      <p class="gh-field-error cc-tl-state" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ error }}</span>
+      </p>
+    } @else if (loading) {
+      <p class="cc-tl-state cc-tl-loading" role="status">
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+        Loading the timeline…
+      </p>
+    } @else if (!axis && !timeline) {
+      <p class="cc-tl-state">Choose a model in step 1 to see its timeline.</p>
+    }
+
+    <!-- The outcome of the last copy or download. -->
+    <p class="cc-tl-status" role="status">{{ exportStatus }}</p>
+
+    @if (timeline) {
+      <div class="gh-fig-panels">
+        @if (view === 'all') {
+          <div class="gh-fig-panel cc-tl-panel" role="tabpanel" tabindex="0"
+               id="cc-tl-view-panel-all" aria-labelledby="cc-tl-view-tab-all"
+               aria-describedby="cc-tl-all-hint" aria-keyshortcuts="+ - 0"
+               (keydown)="onPanelKeydown($event)">
+            <!-- A group, not role="toolbar": a toolbar's arrow-key model would fight the slider's. -->
+            <div class="gh-fig-toolbar gh-fig-all-toolbar">
+              <div class="gh-fig-toolbar-group gh-fig-toolbar-zoom" role="group" aria-label="Zoom of all charts">
+                <button type="button" class="action-btn" aria-label="Zoom all charts out"
+                        [attr.aria-disabled]="canZoomOut ? null : 'true'"
+                        interestfor="cc-tl-tip-all-zoom-out" style="anchor-name: --cc-tl-tip-all-zoom-out"
+                        (click)="zoomOut()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                  </svg>
+                </button>
+                <label class="gh-zoom-label" for="cc-tl-all-zoom">Zoom</label>
+                <input id="cc-tl-all-zoom" type="range" class="gh-zoom-slider"
+                       min="0" [max]="sliderSteps" step="1" [value]="sliderValue"
+                       [attr.aria-valuetext]="zoomValueText"
+                       (input)="onSliderInput(+$any($event.target).value)">
+                <button type="button" class="action-btn" aria-label="Zoom all charts in"
+                        [attr.aria-disabled]="canZoomIn ? null : 'true'"
+                        interestfor="cc-tl-tip-all-zoom-in" style="anchor-name: --cc-tl-tip-all-zoom-in"
+                        (click)="zoomIn()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    <line x1="11" y1="8" x2="11" y2="14"></line>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                  </svg>
+                </button>
+                <output class="gh-range-value gh-zoom-value" for="cc-tl-all-zoom" aria-hidden="true">{{ zoomLabel }}</output>
+                <button type="button" class="action-btn cc-tl-fit-width" aria-label="Fit width"
+                        interestfor="cc-tl-tip-all-fit-width" style="anchor-name: --cc-tl-tip-all-fit-width"
+                        (click)="fitWidth()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="7 8 3 12 7 16"></polyline>
+                    <polyline points="17 8 21 12 17 16"></polyline>
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                  </svg>
+                </button>
+                <button type="button" class="action-btn cc-tl-fit-height" aria-label="Fit height"
+                        interestfor="cc-tl-tip-all-fit-height" style="anchor-name: --cc-tl-tip-all-fit-height"
+                        (click)="fitHeight()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- aria-disabled, not disabled, so the tooltip naming the reason stays reachable;
+                   downloadAllCharts() refuses on its own. -->
+              <div class="gh-fig-toolbar-group gh-fig-toolbar-export">
+                <button type="button" class="action-btn cc-tl-download-all" aria-label="Download all charts"
+                        [attr.aria-disabled]="downloadAllBlockReason ? 'true' : null"
+                        interestfor="cc-tl-tip-download-all" style="anchor-name: --cc-tl-tip-download-all"
+                        (click)="downloadAllCharts()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <line x1="8" y1="3" x2="8" y2="13"></line>
+                    <polyline points="5 10 8 13 11 10"></polyline>
+                    <line x1="16" y1="3" x2="16" y2="13"></line>
+                    <polyline points="13 10 16 13 19 10"></polyline>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-zoom-out"
+                 style="position-anchor: --cc-tl-tip-all-zoom-out">Zoom out (−)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-zoom-in"
+                 style="position-anchor: --cc-tl-tip-all-zoom-in">Zoom in (+)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-fit-width"
+                 style="position-anchor: --cc-tl-tip-all-fit-width">Fit the charts to the width</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-fit-height"
+                 style="position-anchor: --cc-tl-tip-all-fit-height">Fit one chart's height to the view (0)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-download-all"
+                 style="position-anchor: --cc-tl-tip-download-all">{{ downloadAllTooltip }}</div>
+
+            <!-- One column of tiles. Only tiles near the view draw a canvas; the rest keep their box. -->
+            <div #viewport class="gh-fig-viewport cc-tl-viewport">
+              @if (figures.length === 0) {
+                <p class="cc-tl-empty">No chart is shown. Choose charts under Data.</p>
+              } @else {
+                <div class="cc-tl-tiles">
+                  @for (figure of figures; track figure.key) {
+                    <div #tile class="gh-fig-tile cc-tl-tile" [attr.data-figure]="figure.key">
+                      <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-' + figure.key"
+                                           [boxWidth]="boxWidth" [boxHeight]="boxHeight"
+                                           [deviceRatio]="deviceRatio" [render]="isNear(figure.key)"
+                                           (showEvents)="onShowEvents()"></app-cc-chart-figure>
+                      <!-- Shown while the tile is hovered or holds focus, and always without hover; all
+                           three are tab stops, and the tile itself is not focusable. The handlers
+                           refuse on their own while the buttons are aria-disabled. -->
+                      <div class="gh-fig-tile-actions">
+                        <button type="button" class="action-btn cc-tl-copy"
+                                [attr.aria-label]="'Copy ' + figure.title + ' to the clipboard'"
+                                [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
+                                [attr.interestfor]="tipId('copy', figure.key)"
+                                [attr.style]="'anchor-name: --' + tipId('copy', figure.key)"
+                                (click)="copyChart(figure)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        </button>
+                        <button type="button" class="action-btn cc-tl-download"
+                                [attr.aria-label]="'Download ' + figure.title"
+                                [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
+                                [attr.interestfor]="tipId('download', figure.key)"
+                                [attr.style]="'anchor-name: --' + tipId('download', figure.key)"
+                                (click)="downloadChart(figure)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                          </svg>
+                        </button>
+                        <button type="button" class="action-btn cc-tl-open"
+                                [attr.aria-label]="'Open ' + figure.title + ' in Single view'"
+                                [attr.interestfor]="tipId('single', figure.key)"
+                                [attr.style]="'anchor-name: --' + tipId('single', figure.key)"
+                                (click)="openInSingle(figure.key)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                          </svg>
+                        </button>
+                      </div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('copy', figure.key)"
+                           [attr.style]="'position-anchor: --' + tipId('copy', figure.key)">{{ copyTooltip(figure) }}</div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('download', figure.key)"
+                           [attr.style]="'position-anchor: --' + tipId('download', figure.key)">{{ downloadTooltip(figure) }}</div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('single', figure.key)"
+                           [attr.style]="'position-anchor: --' + tipId('single', figure.key)">Open in Single view</div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+            <p id="cc-tl-all-hint" class="visually-hidden">Every shown chart in one column. Plus and minus zoom
+              them all, and 0 fits one chart's height to the view. Zoom changes only this view; the downloads
+              keep the chart size.</p>
+          </div>
+        } @else {
+          <div class="gh-fig-panel cc-tl-panel" role="tabpanel" tabindex="0"
+               id="cc-tl-view-panel-single" aria-labelledby="cc-tl-view-tab-single"
+               aria-describedby="cc-tl-single-hint" aria-keyshortcuts="+ - 0 1"
+               (keydown)="onPanelKeydown($event)">
+            <!-- Groups, not role="toolbar": a toolbar's arrow-key model would fight the slider's. -->
+            <div class="gh-fig-toolbar">
+              <div class="gh-fig-toolbar-group gh-fig-toolbar-figure-group" role="group" aria-label="Chart">
+                <button type="button" class="action-btn" aria-label="Previous chart"
+                        [attr.aria-disabled]="figures.length > 1 ? null : 'true'"
+                        interestfor="cc-tl-tip-single-prev" style="anchor-name: --cc-tl-tip-single-prev"
+                        (click)="stepSingleFigure(-1)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </button>
+                <label class="visually-hidden" for="cc-tl-single-figure">Chart</label>
+                <select id="cc-tl-single-figure" class="gh-input gh-fig-figure-select"
+                        (change)="selectSingleFigure($any($event.target).value)">
+                  @for (figure of figures; track figure.key) {
+                    <option [value]="figure.key" [selected]="figure.key === singleFigure?.key">{{ figure.title }}</option>
+                  }
+                </select>
+                <button type="button" class="action-btn" aria-label="Next chart"
+                        [attr.aria-disabled]="figures.length > 1 ? null : 'true'"
+                        interestfor="cc-tl-tip-single-next" style="anchor-name: --cc-tl-tip-single-next"
+                        (click)="stepSingleFigure(1)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="gh-fig-toolbar-group gh-fig-toolbar-zoom" role="group" aria-label="Zoom of the chart">
+                <button type="button" class="action-btn" aria-label="Zoom the chart out"
+                        [attr.aria-disabled]="canZoomOut ? null : 'true'"
+                        interestfor="cc-tl-tip-single-zoom-out" style="anchor-name: --cc-tl-tip-single-zoom-out"
+                        (click)="zoomOut()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                  </svg>
+                </button>
+                <input id="cc-tl-single-zoom" type="range" class="gh-zoom-slider"
+                       min="0" [max]="sliderSteps" step="1" [value]="sliderValue"
+                       aria-label="Chart zoom" [attr.aria-valuetext]="zoomValueText"
+                       (input)="onSliderInput(+$any($event.target).value)">
+                <button type="button" class="action-btn" aria-label="Zoom the chart in"
+                        [attr.aria-disabled]="canZoomIn ? null : 'true'"
+                        interestfor="cc-tl-tip-single-zoom-in" style="anchor-name: --cc-tl-tip-single-zoom-in"
+                        (click)="zoomIn()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    <line x1="11" y1="8" x2="11" y2="14"></line>
+                    <line x1="8" y1="11" x2="14" y2="11"></line>
+                  </svg>
+                </button>
+                <output class="gh-range-value gh-zoom-value" for="cc-tl-single-zoom" aria-hidden="true">{{ zoomLabel }}</output>
+                <button type="button" class="action-btn cc-tl-fit-screen" aria-label="Fit to screen"
+                        interestfor="cc-tl-tip-single-fit" style="anchor-name: --cc-tl-tip-single-fit"
+                        (click)="fitScreen()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                  </svg>
+                </button>
+                <button type="button" class="action-btn cc-tl-actual-size" aria-label="Actual size, 100 percent"
+                        interestfor="cc-tl-tip-single-actual" style="anchor-name: --cc-tl-tip-single-actual"
+                        (click)="actualSize()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="4 8 6 6 6 18"></polyline>
+                    <polyline points="16 8 18 6 18 18"></polyline>
+                    <line x1="12" y1="9" x2="12" y2="9.01"></line>
+                    <line x1="12" y1="15" x2="12" y2="15.01"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- aria-disabled, not disabled, so both stay focusable; the handlers refuse on their own. -->
+              <div class="gh-fig-toolbar-group gh-fig-toolbar-export" role="group" aria-label="Export this chart">
+                <button type="button" class="action-btn cc-tl-copy"
+                        [attr.aria-label]="'Copy ' + (singleFigure?.title ?? 'chart') + ' to the clipboard'"
+                        [attr.aria-disabled]="chartBlockReason(singleFigure) ? 'true' : null"
+                        interestfor="cc-tl-tip-single-copy" style="anchor-name: --cc-tl-tip-single-copy"
+                        (click)="copyChart(singleFigure)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+                <button type="button" class="action-btn cc-tl-download"
+                        [attr.aria-label]="'Download ' + (singleFigure?.title ?? 'chart')"
+                        [attr.aria-disabled]="chartBlockReason(singleFigure) ? 'true' : null"
+                        interestfor="cc-tl-tip-single-download" style="anchor-name: --cc-tl-tip-single-download"
+                        (click)="downloadChart(singleFigure)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-prev"
+                 style="position-anchor: --cc-tl-tip-single-prev">Previous chart</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-next"
+                 style="position-anchor: --cc-tl-tip-single-next">Next chart</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-zoom-out"
+                 style="position-anchor: --cc-tl-tip-single-zoom-out">Zoom out (−)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-zoom-in"
+                 style="position-anchor: --cc-tl-tip-single-zoom-in">Zoom in (+)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-fit"
+                 style="position-anchor: --cc-tl-tip-single-fit">Fit to screen (0)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-actual"
+                 style="position-anchor: --cc-tl-tip-single-actual">Actual size, 100 % (1)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-copy"
+                 style="position-anchor: --cc-tl-tip-single-copy">{{ copyTooltip(singleFigure) }}</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-download"
+                 style="position-anchor: --cc-tl-tip-single-download">{{ downloadTooltip(singleFigure) }}</div>
+
+            <div #viewport class="gh-fig-viewport cc-tl-viewport">
+              @if (singleFigure; as figure) {
+                <div class="gh-fig-tile cc-tl-tile" [attr.data-figure]="figure.key">
+                  <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-single-' + figure.key"
+                                       [boxWidth]="boxWidth" [boxHeight]="boxHeight"
+                                       [deviceRatio]="deviceRatio"
+                                       (showEvents)="onShowEvents()"></app-cc-chart-figure>
+                </div>
+              } @else {
+                <p class="cc-tl-empty">No chart is shown. Choose charts under Data.</p>
+              }
+            </div>
+            <p id="cc-tl-single-hint" class="visually-hidden">One chart. Plus and minus zoom it, 0 fits it to the
+              screen and 1 shows it at 100 %, the layout of its download. Zoom changes only this view; the
+              downloads keep the chart size.</p>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

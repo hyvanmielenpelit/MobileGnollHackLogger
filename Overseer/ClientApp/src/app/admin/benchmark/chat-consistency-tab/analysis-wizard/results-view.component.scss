@@ -218,12 +218,6 @@
   gap: 1rem;
 }
 
-@container cc-results (min-width: 60rem) {
-  .cc-res-figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 .cc-res-list {
   margin: 0;
   padding-inline-start: 1.25rem;

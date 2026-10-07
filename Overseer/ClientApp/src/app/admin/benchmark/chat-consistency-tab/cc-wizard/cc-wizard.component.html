@@ -1,0 +1,148 @@
+<!--
+  THE CHAT CONSISTENCY WIZARD
+
+  The whole content of the full-screen dialog the tab declares: header, step tabs, step panels and
+  footer. The tab supplies only the <dialog> element and the showModal() / close() wiring.
+-->
+<div class="dialog-content flex-col gh-wizard cc-wizard">
+
+  <div class="dialog-header gh-wizard-header">
+    <div class="dialog-title-group">
+      <h3 #wizardTitle id="cc-wizard-title" tabindex="-1">Chat consistency</h3>
+      <p class="dialog-subtitle cc-wizard-subtitle">{{ subtitle }}</p>
+    </div>
+    <div class="cc-wizard-header-actions">
+      <!-- Steps 1 and 2 show the subject's runs; the later steps work on a chosen selection. -->
+      @if (step <= 2) {
+        <button type="button" class="action-btn cc-wizard-reload" (click)="onReload()"
+                aria-label="Reload the runs of the model"
+                [attr.aria-disabled]="reloadBlocked ? 'true' : null"
+                interestfor="cc-tip-reload"
+                style="anchor-name: --cc-tip-reload">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="cc-tip-reload"
+             style="position-anchor: --cc-tip-reload">Reload runs</div>
+      }
+      <!-- Disabled while a chart export runs or report charts are attached: closing would strand a
+           half-written batch. -->
+      <button type="button" class="btn-icon-action cc-wizard-close" aria-label="Close chat consistency"
+              [disabled]="closeBlocked" (click)="onCloseClick()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="gh-wizard-tabbar">
+    <div class="gh-tabs gh-tabs-secondary gh-wizard-steps cc-wizard-steps" role="tablist"
+         aria-label="Chat consistency steps">
+      @for (entry of steps; track entry.step; let i = $index) {
+        <!-- aria-disabled, never disabled: a disabled tab leaves the focus order and hides that the
+             step exists. The reason it cannot be opened is its description. -->
+        <button type="button" role="tab" class="gh-tab"
+                [id]="'cc-step-tab-' + entry.step"
+                [attr.aria-controls]="panelId(entry.step)"
+                [attr.aria-selected]="step === entry.step"
+                [attr.aria-disabled]="!isStepReachable(entry.step)"
+                [attr.aria-describedby]="isStepReachable(entry.step) ? null : 'cc-step-blocked-' + entry.step"
+                [attr.tabindex]="step === entry.step ? 0 : -1"
+                (keydown)="onStepKeydown($event, i)"
+                (click)="goToStep(entry.step)">
+          {{ entry.step }}. {{ entry.title }}
+        </button>
+      }
+    </div>
+    @for (entry of steps; track entry.step) {
+      @if (stepBlockedReason(entry.step); as reason) {
+        <span class="visually-hidden" [id]="'cc-step-blocked-' + entry.step">{{ reason }}</span>
+      }
+    }
+  </div>
+
+  <div class="dialog-body gh-wizard-body">
+
+    @if (isVisited(1)) {
+      <section class="gh-wizard-step cc-wizard-step" role="tabpanel" tabindex="0"
+               id="cc-step-panel-1" aria-labelledby="cc-step-tab-1" [hidden]="step !== 1"
+               [attr.aria-busy]="loading || axesLoading ? 'true' : null">
+        <h4 class="gh-section-title cc-wizard-heading" id="cc-step-heading-1" tabindex="-1">{{ stepTitles[1] }}</h4>
+        <app-cc-model-step [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"
+                           [selectedKey]="selectedKey" [range]="range"
+                           [timeline]="timeline" [rows]="rows" [loading]="loading"
+                           [timelineError]="timelineError" [runsError]="runsError"
+                           [anchorBusy]="anchorBusy" [anchorError]="anchorError" [announcement]="announcement"
+                           (modelChange)="modelChange.emit($event)" (rangeChange)="rangeChange.emit($event)"
+                           (repeatSetup)="repeatSetup.emit($event)" (anchorToggle)="anchorToggle.emit($event)"
+                           (openRunReport)="openRunReport.emit($event)"></app-cc-model-step>
+      </section>
+    }
+
+    <!-- Edge to edge, as Model Comparison's figures step: the workspace's sidebar and panels scroll,
+         the step itself does not. -->
+    @if (isVisited(2)) {
+      <section class="gh-wizard-step gh-fig-host cc-wizard-step-timeline" role="tabpanel" tabindex="0"
+               id="cc-step-panel-2" aria-labelledby="cc-step-tab-2" [hidden]="step !== 2">
+        <h4 class="gh-section-title cc-wizard-heading cc-wizard-fig-heading" id="cc-step-heading-2" tabindex="-1">{{ stepTitles[2] }}</h4>
+        <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="timelineError"
+                                   (annotationsChanged)="annotationsChanged.emit()"
+                                   (exportingChange)="onExportingChange()"></app-cc-timeline-workspace>
+      </section>
+    }
+
+    <!-- Steps 3–6 are one analysis component, its state shared between them; the panel is labelled
+         by the tab of the step it shows. -->
+    @if (analysisMounted) {
+      <section class="gh-wizard-step cc-wizard-step cc-wizard-step-analysis" role="tabpanel" tabindex="0"
+               id="cc-step-panel-analysis" [attr.aria-labelledby]="'cc-step-tab-' + analysisWizardStep"
+               [hidden]="step < 3">
+        <h4 class="gh-section-title cc-wizard-heading" id="cc-step-heading-analysis" tabindex="-1">{{ stepTitles[analysisWizardStep] }}</h4>
+        <app-cc-analysis-wizard [axis]="axis" [timeline]="timeline" [rows]="rows" [analyses]="analyses"
+                                [pickerOptions]="pickerOptions" [pickerConfigs]="pickerConfigs"
+                                [pickerEmptyHint]="pickerEmptyHint" [anchorBusy]="anchorBusy"
+                                [step]="analysisStep"
+                                (analysisSaved)="onAnalysisSaved($event)" (runsChanged)="runsChanged.emit()"
+                                (anchorToggle)="anchorToggle.emit($event)" (repeatSetup)="repeatSetup.emit($event)"
+                                (openDocuments)="openDocuments.emit($event)"
+                                (stateChange)="onAnalysisStateChange()"></app-cc-analysis-wizard>
+      </section>
+    }
+  </div>
+
+  <div class="dialog-footer gh-wizard-nav">
+    <button type="button" class="btn-gh btn-gh-cancel cc-wizard-previous"
+            [disabled]="!canGoPrevious" (click)="previousStep()">Previous</button>
+
+    <p class="gh-wizard-position" aria-live="polite">
+      Step {{ step }} of {{ steps.length }} — {{ stepTitles[step] }}
+      @if (nextBlockedReason) {
+        <span class="gh-wizard-blocked" id="cc-next-blocked">{{ nextBlockedReason }}</span>
+      }
+    </p>
+
+    <!-- aria-disabled rather than disabled, so the reason stays reachable. Genuinely disabled while a
+         chart export runs, and on step 6, where it is Close, while report charts are attached. -->
+    <div class="gh-wizard-nav-actions">
+      @if (analyzing) {
+        <button type="button" class="btn-gh btn-gh-cancel cc-wizard-stop" (click)="stopAnalyze()">Stop Analysis</button>
+      }
+      <button type="button" class="btn-gh cc-wizard-next"
+              [attr.aria-disabled]="!canGoNext"
+              [attr.aria-busy]="step === 4 && analyzing ? 'true' : null"
+              [disabled]="workspaceExporting || (step === 6 && closeBlocked)"
+              aria-describedby="cc-next-blocked"
+              (click)="nextStep()">
+        @if (step === 4 && analyzing) {
+          <span class="gh-spinner-small" aria-hidden="true"></span>
+        }
+        {{ nextLabel }}
+      </button>
+    </div>
+  </div>
+</div>

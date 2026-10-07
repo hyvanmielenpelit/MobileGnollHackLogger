@@ -1,0 +1,180 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.cc-ev-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.cc-ev-summary,
+.cc-ev-empty {
+  margin: 0;
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-ev-day {
+  min-width: 0;
+}
+
+// The day stays in view while its items scroll. The ground is opaque so items pass beneath it;
+// a host with a sticky bar of its own sets the offset.
+.cc-ev-day-heading {
+  position: sticky;
+  top: var(--cc-ev-sticky-top, 0);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.375rem;
+  margin: 0 0 0.25rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border-glass);
+  background: var(--cc-ev-surface, rgb(16, 16, 16));
+  font-family: inherit;
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--font-color);
+}
+
+.cc-ev-date {
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-ev-weekday,
+.cc-ev-count {
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+  font-weight: 400;
+}
+
+// A thin rail down the day's items.
+.cc-ev-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.25rem 0 0.25rem 0.5rem;
+  border-inline-start: 1px solid var(--border-glass);
+  list-style: none;
+}
+
+.cc-ev-item {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  column-gap: 0.5rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.cc-ev-tag-cell {
+  padding-top: 0.125rem;
+}
+
+.cc-ev-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+
+  p {
+    margin: 0;
+  }
+}
+
+.cc-ev-title {
+  font-weight: 600;
+  text-wrap: pretty;
+}
+
+.cc-ev-meta {
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-ev-text {
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.cc-ev-source {
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.cc-ev-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-ev-change {
+  gap: 0.25rem;
+  border-color: var(--border-glass);
+  color: var(--font-color);
+  font-weight: 600;
+}
+
+.cc-ev-change-count {
+  color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
+}
+
+// A compact disclosure: no frame, a small summary.
+.cc-ev-details {
+  border: 0;
+  border-radius: 0;
+  background: none;
+
+  > summary {
+    inline-size: fit-content;
+    padding: 0.125rem 0;
+    gap: 0.375rem;
+    font-size: var(--text-secondary);
+    color: var(--nav-color);
+
+    &:hover {
+      color: var(--primary-color);
+    }
+  }
+}
+
+.cc-ev-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-ev-subject {
+  overflow-wrap: anywhere;
+}
+
+.cc-ev-value {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  overflow-wrap: anywhere;
+}
+
+.cc-ev-none {
+  color: var(--nav-color);
+  font-style: italic;
+}

@@ -103,6 +103,30 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
   `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It
   is global; do not copy it into a component.
+- Shared since 2026-10-07, and not to be copied back into a component:
+  - **`gh-wizard*`** — the full-screen wizard frame (`.dialog-content.gh-wizard`,
+    `.dialog-header.gh-wizard-header`, `.gh-wizard-alert`, `-tabbar`, `-steps`, `-meta`, `-body`,
+    `-step`, `-nav`, `-position`, `-blocked`, `-busy`, `-nav-actions`), shared by the Model Comparison
+    wizard and the Chat Consistency wizard.
+  - **`gh-fig-*`** — the figure workspace: `.gh-fig-host` (the edge-to-edge step that holds it),
+    `.gh-fig-workspace` (sidebar width `--gh-fig-sidebar-width`), `-resizer`, `-sidebar`,
+    `-sidebar-tabs`, `-side-panel`, `-main`, `-bar`, `-tabs`, `-panels`, `-panel`, `-viewport`,
+    `.gh-fig-tile*` (a tile and its hover-or-focus action cluster), `.gh-fig-toolbar*` (the toolbar row
+    and its zoom, figure and export groups), `.gh-fig-all-toolbar` and `.gh-fig-figure-select`, with
+    the zoom controls `.gh-zoom-*` (`-label`, `-slider`, `-value`) and the read-out `.gh-range-value`;
+    shared by Model Comparison step 2 and the Chat Consistency Timeline step. Model Comparison keeps its
+    `mc-` classes beside them, which its specs query.
+  - **`bm-launcher*`** — the launcher page of a benchmark sub-tab whose task is a full-screen wizard
+    (`.bm-launcher`, `-hero`, `-lead`, `-actions`, `-last`, `-state`, `-howto`, `-steps`,
+    `-step-number`, `-library`), shared by the Model Comparison and Chat Consistency launchers.
+  - **`.cc-marker-tag`** (`.is-event`, `.is-annotation`, `.is-served`, which differ by border style as
+    well as color) — the Chat Consistency marker pill, shared by the chart figure, the event list and the
+    Runs and controls preview.
+
+  `.mc-fig-sidebar label` and `.mc-fig-sidebar .checkbox-label` deliberately stay in
+  `model-comparison.component.scss`: a global form would reach the labels inside the sidebar's child
+  components, which style their own. Chat Consistency scopes its own the same way (`.cc-tl-sidebar` in
+  `timeline-workspace.component.scss`).
 
 ### Typography
 - **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
@@ -319,31 +343,91 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **The Chat Consistency tab** (`bm-panel-chatconsistency`, `chat-consistency-tab/`,
     `app-chat-consistency-tab`) is the client of `docs/overseer/ai-benchmark-chat-consistency.md`; its
     HTTP calls are all in `services/admin-chat-consistency.service.ts` (`AdminChatConsistencyService`,
-    base `/api/admin/benchmark/chat-consistency`, errors through `ccErrorText`). The shell component
+    base `/api/admin/benchmark/chat-consistency`, errors through `ccErrorText`). The tab component
     owns the chosen model, the date range, the timeline, the run rows, the anchor saves and the saved
-    analyses, and lays out four `details.gh-disclosure.gh-disclosure--section` sections — *Timeline*
-    (open by default), *Analyze chat consistency*, *Saved analyses*, *Annotations* — each with a summary
-    value. The parts, each in its own folder or file:
-    - `timeline-panel/` (`app-cc-timeline-panel`, presentational, with `app-cc-chart-figure`): the model
-      picker, the *Dates (UTC)* range, one figure per measure from `chat-consistency-charts.ts`
-      (Chart.js, each with a *Show data* table), and the **Runs** table (`TableState`, pager above and
-      below) with per-axis eligibility, segment, telemetry, re-grade coverage, anchor, matched controls,
-      served model and the row actions *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor*,
-      *Open run report*.
-    - `analysis-wizard/` (`app-cc-analysis-wizard`): four steps in `ol.gh-steps` (*Subject and periods*,
-      *Runs*, *Results*, *Reports*), only the current one rendered, its heading focused on every step
-      change. Step 1 offers the presets *Launch vs last 14 days*, *Before vs after an annotation*,
-      *Before vs after an Overseer change*, *Confirm on later data* and *Custom dates*, shows Protocol V1
-      and a *Override the protocol* disclosure; step 2 chooses runs and controls, holds
+    analyses, and performs the run actions the wizard asks for. It is a **launcher page**
+    (`section.bm-launcher.cc-launcher`) plus a **six-step wizard in a full-screen dialog**
+    (`dialog.gh-dialog.gh-dialog-fullscreen.cc-wizard-dialog`, `showModal()`, no `closedby="any"`),
+    modeled on the Model Comparison wizard. The state lives as long as the tab component, so a GnollBench
+    sub-tab switch loses the model, the step and an analysis in progress (`ngOnDestroy` closes an open
+    wizard). The parts, each in its own folder or file:
+    - **The launcher** (`chat-consistency-tab.component.*`): the hero with the gold `.btn-gh` **Open Chat
+      Consistency Wizard** (*compass*, `#cc-open-wizard`), a *Current model* read-out while a model is
+      chosen (model, runs, dates, latest analysis; the wizard owns the choice), the non-exclusive
+      *How chat consistency works* disclosure listing `CC_WIZARD_STEPS` under the wizard's own titles
+      (open on the first visit, then as left, in `localStorage['overseer.benchmark.chatConsistency.launcher']`,
+      `{ version: 1, howItWorksOpen }`), and below it `saved-analyses/` (`app-cc-saved-analyses`): a card
+      list with *Open* and *Delete*; a delete the server refuses with 409 (report documents exist) shows
+      its reason inside the dialog. **Open** fetches the analysis, switches the subject to its model,
+      opens the wizard and calls `CcWizardComponent.showResult`, which mounts the analysis component
+      before handing it the result and selects step 5.
+    - `cc-wizard/` (`app-cc-wizard`): the whole dialog content in the global `gh-wizard*` frame —
+      header (`#cc-wizard-title`, a subtitle *model · N runs · dates*, the icon-only **Reload runs**
+      `.action-btn` with *rotate* on steps 1–2, `aria-disabled` while loading or without a model, and the
+      close `.btn-icon-action`), the step tabs *1. Model · 2. Timeline · 3. Periods · 4. Runs and controls
+      · 5. Results · 6. Reports* (`frontend_ui_controls` §5, a tab that cannot be opened is `aria-disabled`
+      and described by its reason), the step panels, and the footer (*Previous*, *Step N of 6 — title*
+      with the reason Next is blocked, *Next* / **Analyze** on step 4 / *Close* on step 6, and *Stop
+      Analysis* while analyzing). Reachability: step 1 always; 2 and 3 a model; 4 valid periods and
+      overrides; 5 and 6 a result. Every step is mounted on its first visit and then kept, hidden;
+      `wizardMounted` on the tab is never reset, so reopening keeps everything. `closeBlocked` — a chart
+      export running or the Reports step's `chartsAttaching` — disables the close button and Close and
+      makes the tab refuse Escape (`onWizardCancel`). Closing reloads the saved analyses. *Repeat this
+      run's setup* closes the wizard first; *Open run report* and the Download Center are shell dialogs
+      opened after it, so they show above it.
+    - `model-step/` (`app-cc-model-step`, step 1): the model picker (field capped at 32 rem) and the
+      *From (UTC)* / *To (UTC)* dates on one subgrid row of labels, controls and hints from 44 rem, *Every
+      date*, and the **Runs** table (`TableState`, pager above and below) with per-axis eligibility,
+      segment, telemetry, re-grade coverage, anchor, matched controls, served model and the row actions
+      *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor*, *Open run report*.
+    - `timeline-workspace/` (`app-cc-timeline-workspace`, step 2, in a `.gh-fig-host` step): the global
+      `gh-fig-*` workspace — a sidebar (`#cc-tl-sidebar`, 18–40 rem, at most half the workspace, 26 rem
+      by default, `app-pane-resizer`, width as `--gh-fig-sidebar-width`; collapsed by the view bar's
+      toggle) with the tabs **Data** (charts, series, *Start the quality axis at zero*), **Events**
+      (marker kinds, Overseer change kinds with composite counts, and `app-cc-event-list`), **Annotations**
+      (`annotations/`, `app-cc-annotations-panel`: add and delete only; there is no edit) and
+      **Download** (`app-export-size-section` *Chart size*, id prefix `cc-export`;
+      `app-export-format-section`, id prefix `cc-image-format`; the theme radios *As shown (dark)* /
+      *Light, for print*); and the views **All charts** (one column of `app-cc-chart-figure` tiles, a
+      canvas only within one viewport height of view, each tile's Copy / Download / Open in Single view
+      cluster; toolbar zoom, **Fit width**, **Fit height**, **Download all**) and **Single chart**
+      (Previous / select / Next, zoom, **Fit to screen**, **Actual size**, Copy, Download). Zoom is
+      `cc-chart-zoom.ts`: it **resizes the live Chart.js charts**, never a bitmap — at 1 the box is
+      `layoutBoxFor` of the chart size (`ccChartBox`; density ignored), so text keeps its size and every
+      run keeps its tooltip; the range is 25 % (lower where a fit is) to 400 %, the slider applies once per
+      frame, and a chart canvas is capped at 8 M device pixels (`ccCanvasRatio`). Keys on a view panel,
+      outside form fields and without Ctrl / ⌘ / Alt: `+` / `=`, `-`, `0` (Fit height in All, Fit to
+      screen in Single) and `1` (100 %, Single only). Exports are `cc-chart-export.ts`
+      (`ccExportLayout`, the plot-only layout through `bitmapRefusal`; `ccChartFilename`,
+      `ccChartArchiveFilename`; `ccExportTheme`, the screen theme on `#101010` or the print theme)
+      through Model Comparison's `renderPlotOffscreen`, `encodeFigureImage`, `copyImageToClipboard` and
+      `buildFigureArchive`: Download in the chosen PNG or WebP, Copy always PNG, Download all one file
+      or a ZIP. `exporting` is emitted as `exportingChange` for the close guard. Stored per browser in
+      `try/catch`: `overseer.benchmark.chatConsistency.timeline` (`{ version: 1, … }`: sidebar, view,
+      charts, series, markers, hidden event kinds, zero baseline, theme, format, WebP quality, section
+      open states, Single chart), and `overseer.benchmark.chatConsistency.chartSize`, apart from Model
+      Comparison's `figureSize`.
+    - `chat-consistency-events.ts`: `groupOverseerEvents` groups the timeline's Overseer events into
+      **composite events** — one per UTC day and harness version, tagged `E1`… in time order — for the
+      chart markers, the event list, the Runs and controls preview and the *Before vs after an Overseer
+      change* preset; presentation only, the server's analysis is unchanged. It also builds the
+      served-model changes (`S1`…), the tagged annotations (`A1`…) and the day list `buildEventDays`; a
+      filter drops items, never renumbers them. `event-list/` (`app-cc-event-list`) renders that list,
+      sticky day headings, chips per kind and a *Details* disclosure per composite; it is in the
+      Timeline's Events tab and on Results.
+    - `analysis-wizard/` (`app-cc-analysis-wizard`, steps 3–6): one component shared by the four
+      steps, its `step` input chosen by the wizard, which draws the step bar, headings and footer. Step 3
+      offers the presets *Launch vs last 14 days*, *Before vs after an annotation*, *Before vs after an
+      Overseer change* (a select of composite events), *Confirm on later data* and *Custom dates*, shows
+      Protocol V1 and a *Override the protocol* disclosure; step 4 chooses runs and controls, holds
       `regrade-panel.component.*` (estimate dialog first, `confirmed: true` only from its Re-grade
-      button) and the relaxed-pooling checkbox, previews strata, events and missing controls, and posts
-      the analysis; step 3 is `results-view.component.*`; step 4 is `reports-step.component.*` (the four
-      Chat Consistency Report audiences, the Provider Issue Report enabled only when the estimate says
-      it is available, a same-provider dialog asked on every write, then the charts drawn by
-      `chat-consistency-report-charts.ts` and uploaded).
-    - `saved-analyses/` (`app-cc-saved-analyses`): a card list with *Open* and *Delete*; a delete the
-      server refuses with 409 (report documents exist) shows its reason inside the dialog.
-    - `annotations/` (`app-cc-annotations-panel`): add and delete only; there is no edit.
+      button) and the relaxed-pooling checkbox, previews strata, composite events and missing controls,
+      and posts the analysis from the footer's Analyze; step 5 is `results-view.component.*` (one column
+      of charts, then *Events in the analyzed span* as an `app-cc-event-list`); step 6 is
+      `reports-step.component.*` (the four Chat Consistency Report audiences, the Provider Issue Report
+      enabled only when the estimate says it is available, a same-provider dialog asked on every write,
+      then the charts drawn by `chat-consistency-report-charts.ts` and uploaded;
+      `CC_REPORT_CHART_VERSION` 2 marks charts drawn with composite events).
     The Reports step opens the Download Center through the shell (`openDocuments` →
     `openChatConsistencyDownloads`) with the `chatConsistency` context.
   - **"Repeat this run's setup"** fills Run Benchmark from a stored run and **never starts anything**.
@@ -1401,7 +1485,14 @@ To find specific popups, look in the corresponding component's `.html` template:
       downloads are; table views — *Table format* (Excel, CSV, TSV, Markdown, JSON, HTML, Image),
       *Table image size* (`app-export-size-section` with *Fit the table*, id prefix
       `mc-table-image`, the *Fit the table* size shown as information in custom mode), the same
-      *Image format* and a scope line.
+      *Image format* and a scope line. `app-export-size-section` and `app-export-format-section`
+      (`model-comparison/`) have three hosts: this tab, the key-figures chooser of the run report
+      dialogs, and the Chat Consistency Timeline's *Download* tab (id prefixes `cc-export` and
+      `cc-image-format`), which keeps its own storage keys —
+      `overseer.benchmark.chatConsistency.chartSize` for the chart size, beside
+      `overseer.benchmark.chatConsistency.timeline` for the workspace layout and the format, and
+      `overseer.benchmark.chatConsistency.launcher` for the launcher — so a change in one never moves
+      another.
   - **Toolbar rows**, one per view, each ending in a right-aligned group of icon-only
     `.action-btn`s: *All charts* — zoom, then **Download all charts** (the *download-all* glyph,
     two arrows into one tray); *Single chart* — figure picker, zoom, **Copy** and **Download**;

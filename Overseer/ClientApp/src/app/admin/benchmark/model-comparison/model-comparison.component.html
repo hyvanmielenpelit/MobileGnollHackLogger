@@ -5,9 +5,9 @@
   step tabs, step panel and footer — so the wizard's chrome is not split across two files. The host
   supplies only the <dialog> element and the showModal() / close() wiring.
 -->
-<div class="dialog-content flex-col mc-wizard">
+<div class="dialog-content flex-col mc-wizard gh-wizard">
 
-  <div class="dialog-header mc-wizard-header">
+  <div class="dialog-header mc-wizard-header gh-wizard-header">
     <div class="dialog-title-group">
       <h3 #wizardHeading id="mc-wizard-title" tabindex="-1">Cross-model comparison</h3>
       <!-- The numbered comparison, once identify has answered; without an answer the header has no number. -->
@@ -53,13 +53,13 @@
   <!-- The fetch error sits above the step tabs, so a failed comparison is visible from any step
        rather than only from the one that happened to be open when it failed. -->
   @if (error) {
-    <div class="alert alert-warning mc-wizard-alert" role="alert">
+    <div class="alert alert-warning mc-wizard-alert gh-wizard-alert" role="alert">
       <div class="alert-content"><div class="alert-body">{{ error }}</div></div>
     </div>
   }
 
-  <div class="mc-wizard-tabbar">
-    <div class="gh-tabs gh-tabs-secondary mc-wizard-steps" role="tablist"
+  <div class="mc-wizard-tabbar gh-wizard-tabbar">
+    <div class="gh-tabs gh-tabs-secondary mc-wizard-steps gh-wizard-steps" role="tablist"
          aria-label="Model comparison steps">
       @for (wizardStep of steps; track wizardStep; let i = $index) {
         <!-- aria-disabled, never disabled: a disabled tab leaves the focus order and hides the fact
@@ -85,7 +85,7 @@
 
     <!-- About and Recompute, on step 2 only: they concern the computed comparison's charts and table. -->
     @if (step === 2 && comparison) {
-      <div class="mc-wizard-meta">
+      <div class="mc-wizard-meta gh-wizard-meta">
         <!-- The badge counts the caveats inside, so they are never silently hidden behind the button. -->
         <button type="button" class="btn-ghost mc-about-trigger" id="mc-about-trigger" (click)="openAbout()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
@@ -117,7 +117,7 @@
     }
   </div>
 
-  <div class="dialog-body mc-wizard-body">
+  <div class="dialog-body mc-wizard-body gh-wizard-body">
 
     <!--
       STEP 1 USES [hidden]; STEP 2 USES @if. THE ASYMMETRY IS DELIBERATE.
@@ -132,14 +132,14 @@
     <!-- The picker's own checkboxes stay live while a request is in flight: a selection changed
          mid-flight is already handled by the host's token guard. `aria-busy` is what says the
          result of the current one is still pending. -->
-    <div class="mc-step" role="tabpanel" tabindex="0"
+    <div class="mc-step gh-wizard-step" role="tabpanel" tabindex="0"
          id="mc-step-panel-1" aria-labelledby="mc-step-tab-1" [hidden]="step !== 1"
          [attr.aria-busy]="loading">
       <ng-content></ng-content>
     </div>
 
     @if (step === 2) {
-      <div class="mc-step mc-step--figures" role="tabpanel" tabindex="0"
+      <div class="mc-step mc-step--figures gh-wizard-step gh-fig-host" role="tabpanel" tabindex="0"
            id="mc-step-panel-2" aria-labelledby="mc-step-tab-2">
 
         <!-- The set-level caveats repeat in All charts and in the Interactive table, compactly:
@@ -220,7 +220,7 @@
              disabled, so both stay focusable with the reason in their tooltips; the handlers refuse
              on their own. -->
         <ng-template #tableExportGroup>
-          <div class="mc-preview-group mc-table-export" role="group" aria-label="Export the table">
+          <div class="mc-preview-group mc-table-export gh-fig-toolbar-group gh-fig-toolbar-export" role="group" aria-label="Export the table">
             <button type="button" class="action-btn mc-table-copy"
                     [attr.aria-label]="copyTableName"
                     [attr.aria-disabled]="canExportTable ? null : 'true'"
@@ -250,7 +250,7 @@
                style="position-anchor: --mc-tip-table-download">{{ downloadTableTooltip }}</div>
         </ng-template>
 
-        <div #figWorkspace class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed"
+        <div #figWorkspace class="mc-fig-workspace gh-fig-workspace" [class.is-collapsed]="sidebarCollapsed"
              [style.--mc-sidebar-width]="sidebarWidth + 'px'">
 
           <!-- ===================================================================================
@@ -261,9 +261,9 @@
                so no tab holds a setting that does not apply to the view it is shown with. Collapsed by its toggle in the view bar,
                which stays rendered outside it; resized by the handle on its right edge.
                =================================================================================== -->
-          <aside id="mc-fig-sidebar" class="mc-fig-sidebar" aria-label="Comparison settings"
+          <aside id="mc-fig-sidebar" class="mc-fig-sidebar gh-fig-sidebar" aria-label="Comparison settings"
                  [hidden]="sidebarCollapsed">
-            <div class="gh-tabs gh-tabs-secondary mc-fig-sidebar-tabs" role="tablist"
+            <div class="gh-tabs gh-tabs-secondary mc-fig-sidebar-tabs gh-fig-sidebar-tabs" role="tablist"
                  aria-label="Settings sections">
               @for (tab of visibleSidebarTabs; track tab.id; let i = $index) {
                 <button type="button" role="tab" class="gh-tab"
@@ -277,7 +277,7 @@
             </div>
 
             @if (effectiveSidebarTab === 'data') {
-              <div class="mc-side-panel mc-data-panel" role="tabpanel" id="mc-side-panel-data"
+              <div class="mc-side-panel gh-fig-side-panel mc-data-panel" role="tabpanel" id="mc-side-panel-data"
                    aria-labelledby="mc-side-tab-data" tabindex="0">
                 <p class="mc-field-hint">
                   @if (isPairedView(effectiveFigureTab)) {
@@ -526,7 +526,7 @@
 
             @if (effectiveSidebarTab === 'theme') {
               <!-- Theme, background, fonts and borders: every chart and the table image. -->
-              <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-theme"
+              <div class="mc-side-panel gh-fig-side-panel" role="tabpanel" id="mc-side-panel-theme"
                    aria-labelledby="mc-side-tab-theme" tabindex="0">
                 <app-figure-style-panel kind="appearance" [figureStyle]="figureStyle"
                                         [fontLoadStatus]="fontLoadStatus"
@@ -535,7 +535,7 @@
             }
 
             @if (effectiveSidebarTab === 'charts') {
-              <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-charts"
+              <div class="mc-side-panel gh-fig-side-panel" role="tabpanel" id="mc-side-panel-charts"
                    aria-labelledby="mc-side-tab-charts" tabindex="0">
                 <!-- The family tabs swap the control set below in place, so they are tabs; the segmented look
                      keeps them apart from the sidebar's own tab row above. -->
@@ -571,7 +571,7 @@
 
             @if (effectiveSidebarTab === 'table') {
               <!-- The columns of every table output, and the table image's row style. -->
-              <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-table"
+              <div class="mc-side-panel gh-fig-side-panel" role="tabpanel" id="mc-side-panel-table"
                    aria-labelledby="mc-side-tab-table" tabindex="0">
                 <app-table-settings-panel [columns]="tableColumns" [empty]="columnEmptyKeys"
                                           [tableStyle]="figureStyle.table"
@@ -584,7 +584,7 @@
             @if (effectiveSidebarTab === 'download') {
               <!-- Visible labels, not `visually-hidden` ones. The content follows the view group; the
                    Image format section is the same one, over the same state, in both. -->
-              <div class="mc-side-panel mc-download-panel" role="tabpanel" id="mc-side-panel-download"
+              <div class="mc-side-panel gh-fig-side-panel mc-download-panel" role="tabpanel" id="mc-side-panel-download"
                    aria-labelledby="mc-side-tab-download" tabindex="0">
                 @if (isChartView(effectiveFigureTab)) {
                   <app-export-size-section title="Chart size" idPrefix="mc-export"
@@ -644,7 +644,7 @@
           <!-- In its own grid column between the sidebar and the main area; its line is the only
                divider between them. -->
           @if (!sidebarCollapsed) {
-            <app-pane-resizer class="mc-fig-resizer" controls="mc-fig-sidebar" label="Resize settings sidebar"
+            <app-pane-resizer class="mc-fig-resizer gh-fig-resizer" controls="mc-fig-sidebar" label="Resize settings sidebar"
                               [value]="sidebarWidth" [min]="SIDEBAR_WIDTH_MIN" [max]="sidebarWidthMax"
                               [defaultValue]="SIDEBAR_WIDTH_DEFAULT"
                               (pointerdown)="measureSidebarWidthMax()" (focusin)="measureSidebarWidthMax()"
@@ -652,8 +652,8 @@
                               (valueCommit)="onSidebarWidthCommit($event)"></app-pane-resizer>
           }
 
-          <div class="mc-fig-main">
-            <div class="mc-fig-bar">
+          <div class="mc-fig-main gh-fig-main">
+            <div class="mc-fig-bar gh-fig-bar">
               <!-- A disclosure: the name stays constant and aria-expanded carries the state. Every
                    view has a sidebar, so the toggle is in every view. -->
               <button type="button" class="action-btn mc-fig-sidebar-toggle" aria-label="Comparison settings"
@@ -671,7 +671,7 @@
               <!-- Each visible label is the tab's whole accessible name. A chart view's tab stays
                    focusable while nothing can be charted — aria-disabled, never disabled — and is
                    described by the line that says why. -->
-              <div class="gh-tabs gh-tabs-secondary mc-fig-tabs" role="tablist" aria-label="Comparison views">
+              <div class="gh-tabs gh-tabs-secondary mc-fig-tabs gh-fig-tabs" role="tablist" aria-label="Comparison views">
                 @for (tab of figureTabs; track tab.id; let i = $index) {
                   <button type="button" role="tab" class="gh-tab"
                           [id]="'mc-fig-tab-' + tab.id"
@@ -734,16 +734,16 @@
             <!-- The chart views and the Table preview show images composed by the export pipeline,
                  and none renders a live chart, so what the page shows is the file a download writes.
                  Measured for P1's bar orientation. -->
-            <div class="mc-fig-panels" #chartsHost>
+            <div class="mc-fig-panels gh-fig-panels" #chartsHost>
               @if (effectiveFigureTab === 'all') {
-                <div class="mc-fig-panel mc-fig-panel--all" role="tabpanel" tabindex="0"
+                <div class="mc-fig-panel gh-fig-panel mc-fig-panel--all" role="tabpanel" tabindex="0"
                      id="mc-fig-panel-all" aria-labelledby="mc-fig-tab-all"
                      aria-describedby="mc-all-hint" aria-keyshortcuts="+ - 0"
                      (keydown)="onAllPanelKeydown($event)">
                   <!-- The Single toolbar's zoom controls, without pan: the viewport scrolls natively. A
                        group, not role="toolbar": a toolbar's arrow-key model would fight the slider's. -->
-                  <div class="mc-preview-toolbar mc-all-toolbar">
-                    <div class="mc-preview-group mc-all-zoom" role="group" aria-label="Zoom of all figures">
+                  <div class="mc-preview-toolbar mc-all-toolbar gh-fig-toolbar gh-fig-all-toolbar">
+                    <div class="mc-preview-group mc-all-zoom gh-fig-toolbar-group gh-fig-toolbar-zoom" role="group" aria-label="Zoom of all figures">
                       <button type="button" class="action-btn" aria-label="Zoom all figures out"
                               [attr.aria-disabled]="canZoomAllOut ? null : 'true'"
                               interestfor="mc-tip-all-zoom-out" style="anchor-name: --mc-tip-all-zoom-out"
@@ -754,8 +754,8 @@
                           <line x1="8" y1="11" x2="14" y2="11"></line>
                         </svg>
                       </button>
-                      <label class="mc-all-zoom-label" for="mc-all-zoom">Zoom</label>
-                      <input id="mc-all-zoom" type="range" class="mc-preview-zoom-slider"
+                      <label class="mc-all-zoom-label gh-zoom-label" for="mc-all-zoom">Zoom</label>
+                      <input id="mc-all-zoom" type="range" class="mc-preview-zoom-slider gh-zoom-slider"
                              min="0" [max]="previewSliderSteps" step="1" [value]="allSliderValue"
                              [attr.aria-valuetext]="allZoomValueText"
                              (input)="onAllSliderInput(+$any($event.target).value)">
@@ -770,7 +770,7 @@
                           <line x1="8" y1="11" x2="14" y2="11"></line>
                         </svg>
                       </button>
-                      <output class="mc-range-value mc-preview-zoom-value" for="mc-all-zoom" aria-hidden="true">{{ allZoomLabel }}</output>
+                      <output class="mc-range-value mc-preview-zoom-value gh-range-value gh-zoom-value" for="mc-all-zoom" aria-hidden="true">{{ allZoomLabel }}</output>
                       <button type="button" class="action-btn" aria-label="Fit height"
                               interestfor="mc-tip-all-fit" style="anchor-name: --mc-tip-all-fit"
                               (click)="fitAllHeight()">
@@ -782,7 +782,7 @@
 
                     <!-- The only Download all control. aria-disabled, not disabled, so the tooltip
                          naming the reason stays reachable; downloadAllFigures() refuses on its own. -->
-                    <div class="mc-preview-group mc-all-export">
+                    <div class="mc-preview-group mc-all-export gh-fig-toolbar-group gh-fig-toolbar-export">
                       <button type="button" class="action-btn mc-all-download-all" aria-label="Download all charts"
                               [attr.aria-disabled]="canExport ? null : 'true'"
                               interestfor="mc-tip-download-all" style="anchor-name: --mc-tip-download-all"
@@ -822,13 +822,13 @@
                        composed figure at the chart size; its box is that size at the All zoom. The
                        viewport carries the transparent-background backdrop colour, which the canvases
                        inherit. -->
-                  <div class="mc-all-viewport" #allViewport [attr.style]="figureBackdropStyle">
+                  <div class="mc-all-viewport gh-fig-viewport" #allViewport [attr.style]="figureBackdropStyle">
                     @if (exportSizeError) {
                       <p class="mc-export-error">{{ exportSizeError }}</p>
                     } @else {
                       <div class="mc-all-grid">
                         @for (card of exportableCards; track card.id; let i = $index) {
-                          <div #allTile class="mc-all-tile" role="group" tabindex="0"
+                          <div #allTile class="mc-all-tile gh-fig-tile" role="group" tabindex="0"
                                [attr.data-figure-id]="card.id" [attr.aria-label]="card.title"
                                aria-describedby="mc-all-tile-hint"
                                [class.is-deferred]="i >= allTilesPerRow"
@@ -847,7 +847,7 @@
                                  tab stops, the only keyboard route to them here. Open is out of the tab
                                  order: the tile itself takes focus and opens on Enter. The handlers
                                  refuse on their own while nothing can be exported. -->
-                            <div class="mc-all-tile-actions">
+                            <div class="mc-all-tile-actions gh-fig-tile-actions">
                               <button type="button" class="action-btn mc-all-copy"
                                       [attr.aria-label]="'Copy ' + card.title + ' to the clipboard'"
                                       [attr.aria-disabled]="canExport ? null : 'true'"
@@ -916,14 +916,14 @@
               <!-- One stage for the Single chart and the Table preview: one set of zoom and pan
                    handlers, and each view opens with its own view state. -->
               @if (stageViewShown) {
-                <div class="mc-fig-panel mc-fig-panel--single" role="tabpanel" tabindex="0"
+                <div class="mc-fig-panel gh-fig-panel mc-fig-panel--single" role="tabpanel" tabindex="0"
                      [id]="'mc-fig-panel-' + effectiveFigureTab"
                      [attr.aria-labelledby]="'mc-fig-tab-' + effectiveFigureTab">
                   <!-- Groups, not role="toolbar": a toolbar's arrow-key model would fight the
                        slider's. Zoom and position are this view's alone and never reach an export. -->
-                  <div class="mc-preview-toolbar">
+                  <div class="mc-preview-toolbar gh-fig-toolbar">
                     @if (effectiveFigureTab === 'single') {
-                      <div class="mc-preview-group mc-preview-figure-group" role="group" aria-label="Figure">
+                      <div class="mc-preview-group mc-preview-figure-group gh-fig-toolbar-group gh-fig-toolbar-figure-group" role="group" aria-label="Figure">
                         <button type="button" class="action-btn" aria-label="Previous figure"
                                 interestfor="mc-tip-fig-prev" style="anchor-name: --mc-tip-fig-prev"
                                 (click)="previewPrevious()">
@@ -932,7 +932,7 @@
                           </svg>
                         </button>
                         <label class="visually-hidden" for="mc-preview-figure">Figure</label>
-                        <select id="mc-preview-figure" class="gh-input mc-preview-figure"
+                        <select id="mc-preview-figure" class="gh-input mc-preview-figure gh-fig-figure-select"
                                 [ngModel]="previewCardId" [ngModelOptions]="{ standalone: true }"
                                 (ngModelChange)="selectPreviewCard($event)">
                           @for (card of exportableCards; track card.id) {
@@ -952,7 +952,7 @@
                       <p class="mc-preview-label">Comparison table</p>
                     }
 
-                    <div class="mc-preview-group mc-preview-zoom" role="group" aria-label="Preview zoom">
+                    <div class="mc-preview-group mc-preview-zoom gh-fig-toolbar-group gh-fig-toolbar-zoom" role="group" aria-label="Preview zoom">
                       <button type="button" class="action-btn" aria-label="Zoom the preview out"
                               [attr.aria-disabled]="canZoomPreviewOut ? null : 'true'"
                               interestfor="mc-tip-zoom-out"
@@ -964,7 +964,7 @@
                           <line x1="8" y1="11" x2="14" y2="11"></line>
                         </svg>
                       </button>
-                      <input id="mc-preview-zoom" type="range" class="mc-preview-zoom-slider"
+                      <input id="mc-preview-zoom" type="range" class="mc-preview-zoom-slider gh-zoom-slider"
                              min="0" [max]="previewSliderSteps" step="1" [value]="previewSliderValue"
                              aria-label="Preview zoom" [attr.aria-valuetext]="previewZoomValueText"
                              aria-describedby="mc-preview-view-hint"
@@ -981,7 +981,7 @@
                           <line x1="8" y1="11" x2="14" y2="11"></line>
                         </svg>
                       </button>
-                      <output class="mc-range-value mc-preview-zoom-value" for="mc-preview-zoom" aria-hidden="true">{{ previewZoomLabel }}</output>
+                      <output class="mc-range-value mc-preview-zoom-value gh-range-value gh-zoom-value" for="mc-preview-zoom" aria-hidden="true">{{ previewZoomLabel }}</output>
                       <button type="button" class="action-btn" aria-label="Fit to screen"
                               interestfor="mc-tip-zoom-fit" style="anchor-name: --mc-tip-zoom-fit"
                               (click)="fitPreviewToScreen()">
@@ -1012,7 +1012,7 @@
                     @if (effectiveFigureTab === 'single') {
                       <!-- aria-disabled, not disabled, so both stay focusable; the handlers refuse on
                            their own while nothing can be exported. -->
-                      <div class="mc-preview-group mc-preview-export" role="group" aria-label="Export this figure">
+                      <div class="mc-preview-group mc-preview-export gh-fig-toolbar-group gh-fig-toolbar-export" role="group" aria-label="Export this figure">
                         <button type="button" class="action-btn"
                                 [attr.aria-label]="'Copy ' + (previewCard?.title ?? 'figure') + ' to the clipboard'"
                                 [attr.aria-disabled]="canExport ? null : 'true'"
@@ -1112,11 +1112,11 @@
                      application's own dark UI, because it is the working view; the themed
                      appearance belongs to the image. Its own scroller, so the view bar stays put.
                      =================================================================================== -->
-                <div class="mc-fig-panel mc-fig-panel--table" role="tabpanel" id="mc-fig-panel-table"
+                <div class="mc-fig-panel gh-fig-panel mc-fig-panel--table" role="tabpanel" id="mc-fig-panel-table"
                      aria-labelledby="mc-fig-tab-table" tabindex="0">
                   <section class="mc-section" aria-labelledby="mc-table-heading">
                     <!-- Sticky, so Copy table and Download table stay reachable while the table scrolls. -->
-                    <div class="mc-preview-toolbar mc-table-toolbar">
+                    <div class="mc-preview-toolbar mc-table-toolbar gh-fig-toolbar">
                       <div class="mc-table-title">
                         <h4 id="mc-table-heading" class="mc-preview-label">Comparison table</h4>
                         <app-info-tip tipId="mc-table-about-tip" subject="Comparison table">Every entry is listed here, charted or not. Point at a State badge to see why.</app-info-tip>
@@ -1633,7 +1633,7 @@
                    view scrolls inside the panel.
                    =================================================================================== -->
               @if (pairedViewMounted) {
-                <div class="mc-fig-panel mc-fig-panel--paired" role="tabpanel" id="mc-fig-panel-paired"
+                <div class="mc-fig-panel gh-fig-panel mc-fig-panel--paired" role="tabpanel" id="mc-fig-panel-paired"
                      aria-labelledby="mc-fig-tab-paired" tabindex="0"
                      [attr.hidden]="effectiveFigureTab !== 'paired' ? '' : null">
                   <app-paired-tests-view [comparison]="comparison" [pricingBasis]="chartPricingBasis"
@@ -1656,7 +1656,7 @@
       live until the page does.
     -->
     @if (visited3) {
-      <div class="mc-step mc-step--reports" role="tabpanel" tabindex="0"
+      <div class="mc-step mc-step--reports gh-wizard-step" role="tabpanel" tabindex="0"
            id="mc-step-panel-3" aria-labelledby="mc-step-tab-3" [hidden]="step !== 3">
         <app-report-pack-panel [context]="reportPackContext"
                                [comparisonId]="currentComparison?.id ?? null"
@@ -1679,7 +1679,7 @@
     }
 
     @if (visited4) {
-      <div class="mc-step mc-step--documents" role="tabpanel" tabindex="0"
+      <div class="mc-step mc-step--documents gh-wizard-step" role="tabpanel" tabindex="0"
            id="mc-step-panel-4" aria-labelledby="mc-step-tab-4" [hidden]="step !== 4">
         <p class="form-hint mc-documents-note">{{ documentsNote }}</p>
         <app-download-center-panel idPrefix="mc-dc"
@@ -1802,17 +1802,17 @@
     </div>
   }
 
-  <div class="dialog-footer mc-wizard-nav">
+  <div class="dialog-footer mc-wizard-nav gh-wizard-nav">
     <button type="button" class="btn-gh btn-gh-cancel"
             [disabled]="!canGoPrevious" (click)="previousStep()">Previous</button>
 
-    <p class="mc-wizard-position" aria-live="polite">
+    <p class="mc-wizard-position gh-wizard-position" aria-live="polite">
       Step {{ step }} of {{ steps.length }} — {{ stepTitles[step] }}
       @if (nextBlockedReason) {
-        <span class="mc-wizard-blocked" id="mc-next-blocked">{{ nextBlockedReason }}</span>
+        <span class="mc-wizard-blocked gh-wizard-blocked" id="mc-next-blocked">{{ nextBlockedReason }}</span>
       }
       @if (refetchStatus) {
-        <span class="mc-wizard-busy"><span class="gh-spinner-small" aria-hidden="true"></span>{{ refetchStatus }}</span>
+        <span class="mc-wizard-busy gh-wizard-busy"><span class="gh-spinner-small" aria-hidden="true"></span>{{ refetchStatus }}</span>
       }
     </p>
 
@@ -1823,7 +1823,7 @@
          while charts are drawn and uploaded.
          While the comparison is being computed it carries the spinner and aria-busy, and stays
          aria-disabled for the same reason it is at every other blocked moment. -->
-    <div class="mc-wizard-nav-actions">
+    <div class="mc-wizard-nav-actions gh-wizard-nav-actions">
       @if (comparing) {
         <button #cancelCompareButton type="button" class="btn-gh btn-gh-cancel"
                 (click)="onCancelCompare()">Cancel Comparison</button>

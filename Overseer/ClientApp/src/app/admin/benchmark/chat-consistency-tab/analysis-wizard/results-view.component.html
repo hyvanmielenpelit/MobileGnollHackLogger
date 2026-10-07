@@ -126,9 +126,12 @@
 <h5 class="cc-res-heading">Charts</h5>
 <div class="cc-res-figures">
   @for (figure of figures; track figure.key) {
-    <app-cc-chart-figure [figure]="figure" [figureId]="figureId(figure)"></app-cc-chart-figure>
+    <app-cc-chart-figure [figure]="figure" [figureId]="figureId(figure)" [boxHeight]="figureBoxHeight"></app-cc-chart-figure>
   }
 </div>
+
+<h5 class="cc-res-heading">Events in the analyzed span</h5>
+<app-cc-event-list [days]="eventDays" idPrefix="cc-res-ev" [dayHeadingLevel]="6"></app-cc-event-list>
 
 <h5 class="cc-res-heading">Limitations</h5>
 @if (result.limitations.length > 0) {

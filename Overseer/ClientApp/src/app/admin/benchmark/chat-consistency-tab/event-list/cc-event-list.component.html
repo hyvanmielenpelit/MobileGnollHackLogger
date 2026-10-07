@@ -1,0 +1,110 @@
+<!--
+  The event list: a summary line, then one section per UTC day, oldest first. Tags (E1, A1, S1) are
+  those of the chart markers; the filters drop items and never renumber them.
+-->
+<ng-template #dayHeadingContent let-view>
+  <time class="cc-ev-date" [attr.datetime]="view.day">{{ view.day }}</time>{{ ' ' }}<span class="cc-ev-weekday">{{ view.weekday }}</span>{{ ' ' }}<span class="cc-ev-count">· {{ view.count }}</span>
+</ng-template>
+
+<div class="cc-ev-list">
+  @if (views.length === 0 && hiddenCount === 0) {
+    <p class="cc-ev-empty" [id]="summaryId">No Overseer change, annotation or served-model change in this range.</p>
+  } @else {
+    <p class="cc-ev-summary" [id]="summaryId">{{ summary }}</p>
+  }
+
+  @for (view of views; track view.day) {
+    <section class="cc-ev-day" [attr.aria-labelledby]="view.headingId" [attr.data-day]="view.day">
+      @switch (dayHeadingLevel) {
+        @case (6) {
+          <h6 class="cc-ev-day-heading" [id]="view.headingId">
+            <ng-container [ngTemplateOutlet]="dayHeadingContent" [ngTemplateOutletContext]="{ $implicit: view }"></ng-container>
+          </h6>
+        }
+        @default {
+          <h5 class="cc-ev-day-heading" [id]="view.headingId">
+            <ng-container [ngTemplateOutlet]="dayHeadingContent" [ngTemplateOutletContext]="{ $implicit: view }"></ng-container>
+          </h5>
+        }
+      }
+
+      <ol class="cc-ev-items" role="list">
+        @for (row of view.rows; track row.id) {
+          <li class="cc-ev-item" [id]="row.id" [attr.data-kind]="row.kind" [attr.data-tag]="row.tag">
+            <span class="cc-ev-tag-cell">
+              <span [class]="'cc-marker-tag is-' + row.kind">{{ row.tag }}</span>
+            </span>
+
+            <div class="cc-ev-body">
+              @if (row.kind === 'event') {
+                <p class="cc-ev-title">{{ row.title }}</p>
+                @if (row.meta) {
+                  <p class="cc-ev-meta">{{ row.meta }}</p>
+                }
+                @if (row.chips.length > 0) {
+                  <ul class="cc-ev-changes" role="list" [attr.aria-label]="'Changes in ' + row.tag">
+                    @for (chip of row.chips; track chip.kind) {
+                      <li class="gh-tag cc-ev-change" [attr.data-change-kind]="chip.kind">
+                        {{ chip.label }}
+                        @if (chip.count > 1) {
+                          <span class="cc-ev-change-count" aria-hidden="true">×{{ chip.count }}</span><span class="visually-hidden">, {{ chip.count }} runs</span>
+                        }
+                      </li>
+                    }
+                  </ul>
+                }
+                @if (row.details.length > 0) {
+                  <details class="gh-disclosure cc-ev-details">
+                    <summary>Details</summary>
+                    <ul class="cc-ev-detail-list" role="list">
+                      @for (detail of row.details; track $index) {
+                        <li class="cc-ev-detail">
+                          {{ detail.run }}@if (detail.subject) { in <span class="cc-ev-subject">{{ detail.subject }}</span>} — {{ detail.label }}:
+                          @if (detail.from; as from) {
+                            <span class="cc-ev-value" [class.is-cut]="from.cut">{{ from.text }}</span>
+                          } @else {
+                            <span class="cc-ev-none">none</span>
+                          }
+                          →
+                          @if (detail.to; as to) {
+                            <span class="cc-ev-value" [class.is-cut]="to.cut">{{ to.text }}</span>
+                          } @else {
+                            <span class="cc-ev-none">none</span>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  </details>
+                }
+              } @else if (row.kind === 'annotation') {
+                <p class="cc-ev-title">{{ row.title }}</p>
+                <p class="cc-ev-text">{{ row.text }}</p>
+                <p class="cc-ev-meta">
+                  @if (row.time) {
+                    {{ row.time }} ·
+                  }
+                  {{ row.scope }}
+                </p>
+                @if (row.source; as source) {
+                  <p class="cc-ev-source">
+                    Source:
+                    @if (row.sourceIsLink) {
+                      <a [href]="source" target="_blank" rel="noopener noreferrer">{{ source }}</a>
+                    } @else {
+                      {{ source }}
+                    }
+                  </p>
+                }
+              } @else {
+                <p class="cc-ev-title">Served model changed</p>
+                <p class="cc-ev-meta cc-ev-served">
+                  <span class="cc-ev-value">{{ row.from }}</span> → <span class="cc-ev-value">{{ row.to }}</span> · {{ row.run }}@if (row.time) { · {{ row.time }} }
+                </p>
+              }
+            </div>
+          </li>
+        }
+      </ol>
+    </section>
+  }
+</div>

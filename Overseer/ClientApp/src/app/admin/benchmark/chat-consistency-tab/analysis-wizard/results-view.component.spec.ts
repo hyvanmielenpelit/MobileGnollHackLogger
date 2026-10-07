@@ -1,7 +1,16 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { MINUS } from '../chat-consistency-format';
-import { ccAnalysisResult, ccEndpoint, ccTimeline, chatConsistencyTestProviders, textOf } from '../chat-consistency-tab.testing';
+import {
+  ccAnalysisResult,
+  ccEndpoint,
+  ccEventAnnotations,
+  ccEventPoints,
+  ccOverseerEvents,
+  ccTimeline,
+  chatConsistencyTestProviders,
+  textOf
+} from '../chat-consistency-tab.testing';
 import { CcResultsViewComponent, endpointNotes } from './results-view.component';
 
 describe('CcResultsViewComponent', () => {
@@ -76,6 +85,87 @@ describe('CcResultsViewComponent', () => {
     expect(textOf(el.querySelector('.cc-res-list'))).toBe('Only one time stratum is common to both periods.');
     expect(textOf(el.querySelector('.cc-res-identity'))).toContain('#7');
     expect(textOf(el.querySelector('.cc-sha'))).toBe('a'.repeat(64));
+  });
+
+  it('draws the figures in one column, each in a 352 px box, even when wide', () => {
+    document.body.appendChild(el);
+    try {
+      el.style.inlineSize = '1280px';
+      const figures = Array.from(el.querySelectorAll<HTMLElement>('.cc-res-figures > app-cc-chart-figure'));
+      expect(figures.length).toBe(6);
+      const boxes = figures.map(figure => figure.getBoundingClientRect());
+      expect(new Set(boxes.map(box => Math.round(box.left))).size).toBe(1);
+      for (let i = 1; i < boxes.length; i++) {
+        expect(boxes[i].top).toBeGreaterThan(boxes[i - 1].top);
+      }
+      const columns = getComputedStyle(el.querySelector('.cc-res-figures')!).gridTemplateColumns.trim().split(/\s+/);
+      expect(columns.length).toBe(1);
+      for (const figure of figures) {
+        expect(figure.querySelector<HTMLElement>('.cc-chart-box')!.style.blockSize).toBe('352px');
+      }
+    } finally {
+      el.remove();
+    }
+  });
+
+  it('sums up each figure\'s markers in one line instead of a marker list', () => {
+    expect(el.querySelector('.cc-marker-list')).toBeNull();
+    expect(el.querySelector('.cc-marker')).toBeNull();
+    const figures = Array.from(el.querySelectorAll<HTMLElement>('figure.cc-figure'));
+    expect(figures.length).toBe(6);
+    for (const figure of figures) {
+      const key = figure.getAttribute('data-figure');
+      const lines = figure.querySelectorAll('p.cc-figure-markers');
+      expect(lines.length).toBe(1);
+      expect(textOf(lines[0])).toBe('Markers: E1 (Overseer change)');
+      expect(textOf(lines[0].querySelector('.cc-marker-tag.is-event'))).toBe('E1');
+      // The results do not listen for Show events: the event list is on the same page.
+      expect(figure.querySelector('.cc-figure-show-events')).toBeNull();
+      // The markers stay available to assistive technology, as the canvas's description.
+      const hidden = figure.querySelector<HTMLElement>(`ul#cc-res-fig-${key}-markers`)!;
+      expect(hidden.classList).toContain('visually-hidden');
+      const canvas = figure.querySelector('canvas');
+      if (canvas) {
+        expect(canvas.getAttribute('aria-describedby')).toBe(hidden.id);
+      }
+    }
+  });
+
+  it('lists the events in the analyzed span once, after the charts, with level-6 day headings', () => {
+    const lists = Array.from(el.querySelectorAll<HTMLElement>('app-cc-event-list'));
+    expect(lists.length).toBe(1);
+    const heading = lists[0].previousElementSibling as HTMLElement;
+    expect(heading.tagName).toBe('H5');
+    expect(heading.classList).toContain('cc-res-heading');
+    expect(textOf(heading)).toBe('Events in the analyzed span');
+    const figures = el.querySelector('.cc-res-figures')!;
+    expect(figures.compareDocumentPosition(lists[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(textOf(el.querySelector('#cc-res-ev-summary'))).toBe('1 Overseer change on 1 day');
+    const dayHeading = el.querySelector<HTMLElement>('#cc-res-ev-day-2026-09-15')!;
+    expect(dayHeading.tagName).toBe('H6');
+    expect(lists[0].querySelector('h5')).toBeNull();
+    expect(textOf(el.querySelector('#cc-res-ev-item-E1 .cc-ev-title'))).toBe('Changes under harness 30');
+  });
+
+  it('builds the event list from the result\'s events and annotations over the analysis\'s runs only', () => {
+    const base = ccAnalysisResult();
+    fixture.componentRef.setInput('result', ccAnalysisResult({
+      events: ccOverseerEvents(),
+      annotations: ccEventAnnotations(),
+      baseline: { ...base.baseline, runIds: [201, 202, 203] },
+      // Run 205 is not analyzed, so its served-model change (S2) is not listed.
+      comparison: { ...base.comparison, runIds: [204, 206] }
+    }));
+    fixture.componentRef.setInput('points', ccEventPoints());
+    fixture.detectChanges();
+
+    expect(textOf(el.querySelector('#cc-res-ev-summary'))).toBe('4 Overseer changes on 4 days · 2 annotations · 1 served-model change');
+    const days = Array.from(el.querySelectorAll('app-cc-event-list section.cc-ev-day')).map(day => day.getAttribute('data-day'));
+    expect(days).toEqual(['2026-09-02', '2026-09-03', '2026-09-05', '2026-09-09', '2026-09-10']);
+    const tags = Array.from(el.querySelectorAll('app-cc-event-list li.cc-ev-item')).map(item => item.getAttribute('data-tag'));
+    expect(tags).toEqual(['A1', 'E1', 'E2', 'A2', 'S1', 'E3', 'E4']);
+    expect(el.querySelectorAll('app-cc-event-list h6.cc-ev-day-heading').length).toBe(5);
   });
 
   it('notes the common grader and relaxed pooling', () => {

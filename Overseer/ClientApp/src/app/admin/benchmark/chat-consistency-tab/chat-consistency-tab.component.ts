@@ -14,13 +14,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subscription, forkJoin } from 'rxjs';
 
 import { AdminChatConsistencyService, ccErrorText } from '../../../services/admin-chat-consistency.service';
-import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
-import { CcAnalysisWizardComponent } from './analysis-wizard/analysis-wizard.component';
-import { CcAnnotationsPanelComponent } from './annotations/annotations-panel.component';
-import { endOfUtcDay, startOfUtcDay } from './chat-consistency-format';
+import { CC_WIZARD_STEPS, CcWizardComponent, CcWizardStep } from './cc-wizard/cc-wizard.component';
+import { endOfUtcDay, formatInteger, formatUtcDate, plural, startOfUtcDay, utcMillis } from './chat-consistency-format';
 import {
   CcAnalysisResult,
   CcAnalysisSummary,
@@ -29,24 +28,27 @@ import {
   CcRunRow,
   CcTimeline
 } from './chat-consistency.models';
+import { CcDayRange } from './model-step/model-step.component';
 import { CcSavedAnalysesComponent } from './saved-analyses/saved-analyses.component';
-import { CcDayRange, CcTimelinePanelComponent } from './timeline-panel/timeline-panel.component';
 
-/** The tab's sections, each a native disclosure. */
-export type CcSection = 'timeline' | 'analyze' | 'saved' | 'annotations';
+/** Where the launcher's *How chat consistency works* state is kept, per browser. */
+export const CC_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.chatConsistency.launcher';
+
+/** The version of the stored launcher record; a record of another version reads as none. */
+const CC_LAUNCHER_STORAGE_VERSION = 1;
 
 /**
  * The Chat Consistency sub-tab: whether the Overseer chat with one model stayed the same over time.
- * The Timeline shows the model's runs and their eligibility; *Analyze chat consistency* compares two
- * periods under Protocol V1 and writes its reports; the saved analyses and the annotations follow.
+ * A launcher page — what the view does, the current model, how it works and the saved analyses —
+ * opens the six-step wizard in a full-screen dialog.
  *
- * It owns the subject, the date range and their data, and performs the run actions the sections ask
+ * It owns the subject, the date range and their data, and performs the run actions the wizard asks
  * for: anchors through the API, *Repeat this run's setup* and *Open run report* through the shell.
  */
 @Component({
   selector: 'app-chat-consistency-tab',
   standalone: true,
-  imports: [CcTimelinePanelComponent, CcAnalysisWizardComponent, CcSavedAnalysesComponent, CcAnnotationsPanelComponent],
+  imports: [CcWizardComponent, CcSavedAnalysesComponent],
   templateUrl: './chat-consistency-tab.component.html',
   styleUrls: ['./chat-consistency-tab.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -55,15 +57,25 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   private readonly service = inject(AdminChatConsistencyService);
   private readonly bridge = inject(BenchmarkShellBridge);
   private readonly cdr = inject(ChangeDetectorRef);
-  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   readonly workspace = inject(BenchmarkWorkspaceStore);
 
   /** The Download Center on an analysis's documents. */
   @Output() readonly openDocuments = new EventEmitter<CcOpenDocumentsRequest>();
 
-  @ViewChild(CcAnalysisWizardComponent) wizard?: CcAnalysisWizardComponent;
+  @ViewChild('wizardDialog') wizardDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild(CcWizardComponent) wizard?: CcWizardComponent;
 
-  readonly open: Record<CcSection, boolean> = { timeline: true, analyze: false, saved: false, annotations: false };
+  /** The wizard's steps, which the launcher lists under the same titles as the wizard's step tabs. */
+  readonly wizardSteps = CC_WIZARD_STEPS;
+
+  /**
+   * The wizard's content exists: set on the first opening and never reset, so reopening keeps the
+   * step, the tables' sort and page, the charts and an analysis in progress.
+   */
+  wizardMounted = false;
+
+  /** Whether *How chat consistency works* is open; null until the stored state is read. */
+  howItWorksOpen: boolean | null = null;
 
   axes: CcModelAxis[] = [];
   axesLoading = false;
@@ -100,11 +112,15 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.restoreHowItWorks();
     this.loadAxes();
     this.loadAnalyses();
   }
 
   ngOnDestroy(): void {
+    // A sub-tab switch must not leave a modal behind.
+    const dialog = this.wizardDialog?.nativeElement;
+    if (dialog?.open) dialog.close();
     for (const sub of [this.axesSub, this.subjectSub, this.analysesSub, this.openSub, ...this.anchorSubs.values()]) {
       sub?.unsubscribe();
     }
@@ -114,16 +130,134 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     return this.axes.find(axis => axis.key === this.selectedKey) ?? null;
   }
 
-  /** The Timeline summary's read-out while the section is closed. */
-  get timelineReadout(): string {
+  // --- Launcher read-outs ---
+
+  /** `6 runs, 4 with call telemetry`, over every date, and how many fall in the chosen dates. */
+  get currentRunsText(): string {
     const axis = this.selectedAxis;
-    if (!axis) return 'No model chosen';
-    const count = this.timeline?.points.length ?? axis.runCount;
-    return `${axis.displayName} · ${count} ${count === 1 ? 'run' : 'runs'}`;
+    if (!axis) return '';
+    const all = `${plural(axis.runCount, 'run')}, ${formatInteger(axis.telemetryRunCount)} with call telemetry`;
+    const ranged = this.range.fromDay || this.range.toDay;
+    return ranged && this.timeline ? `${all} · ${formatInteger(this.timeline.points.length)} in the chosen dates` : all;
   }
 
-  onToggle(section: CcSection, event: Event): void {
-    this.open[section] = (event.target as HTMLDetailsElement).open;
+  get currentDatesText(): string {
+    const { fromDay, toDay } = this.range;
+    if (fromDay && toDay) return `${fromDay} to ${toDay}`;
+    if (fromDay) return `From ${fromDay}`;
+    if (toDay) return `Until ${toDay}`;
+    return 'Every date';
+  }
+
+  /** The newest saved analysis of the current model. */
+  get latestAnalysis(): CcAnalysisSummary | null {
+    const key = this.selectedKey;
+    if (!key) return null;
+    let latest: CcAnalysisSummary | null = null;
+    for (const analysis of this.analyses) {
+      if (analysis.subjectModelKey !== key) continue;
+      if (!latest || utcMillis(analysis.createdAtUtc) > utcMillis(latest.createdAtUtc)) latest = analysis;
+    }
+    return latest;
+  }
+
+  savedDay(analysis: CcAnalysisSummary): string {
+    return formatUtcDate(analysis.createdAtUtc);
+  }
+
+  // --- How chat consistency works ---
+
+  /**
+   * Reads the disclosure state once. With no stored record it opens, and records it closed, so only
+   * the first visit shows it open unless the operator leaves it that way.
+   */
+  private restoreHowItWorks(): void {
+    let stored: string | null;
+    try {
+      stored = localStorage.getItem(CC_LAUNCHER_STORAGE_KEY);
+    } catch {
+      this.howItWorksOpen = true;
+      return;
+    }
+    let record: { version?: unknown; howItWorksOpen?: unknown } | null = null;
+    if (stored !== null) {
+      try {
+        record = JSON.parse(stored) as { version?: unknown; howItWorksOpen?: unknown } | null;
+      } catch {
+        record = null;
+      }
+    }
+    if (!record || record.version !== CC_LAUNCHER_STORAGE_VERSION) {
+      this.howItWorksOpen = true;
+      this.persistHowItWorks(false);
+      return;
+    }
+    this.howItWorksOpen = record.howItWorksOpen === true;
+  }
+
+  /**
+   * The disclosure's native toggle. Setting [open] from the binding fires it too, so a state that
+   * matches the field is the binding's own echo and is not stored.
+   */
+  onHowItWorksToggle(event: Event): void {
+    const open = (event.target as HTMLDetailsElement).open;
+    if (open === this.howItWorksOpen) return;
+    this.howItWorksOpen = open;
+    this.persistHowItWorks(open);
+  }
+
+  private persistHowItWorks(open: boolean): void {
+    try {
+      localStorage.setItem(CC_LAUNCHER_STORAGE_KEY, JSON.stringify({ version: CC_LAUNCHER_STORAGE_VERSION, howItWorksOpen: open }));
+    } catch {
+      // Storage throws in private-browsing modes; a forgotten disclosure state is not worth reporting.
+    }
+  }
+
+  // --- The wizard dialog ---
+
+  /** Opens the wizard on the given step, or where it was left. */
+  openWizard(step?: CcWizardStep): void {
+    this.wizardMounted = true;
+    // The dialog's @if content has to exist before showModal(), or an empty dialog opens.
+    this.cdr.detectChanges();
+    const dialog = this.wizardDialog?.nativeElement;
+    if (dialog && !dialog.open) dialog.showModal();
+    // The anchor-positioning polyfill does not observe DOM mutations, and the wizard's tooltips were
+    // behind the @if until now.
+    refreshAnchorPositioning();
+    if (step !== undefined) {
+      this.wizard?.goToStep(step);
+    } else {
+      // showModal() would otherwise focus the close button.
+      this.wizard?.focusHeading();
+    }
+  }
+
+  closeWizard(): void {
+    // close() fires the dialog's (close) event, so the state is handled in one place.
+    const dialog = this.wizardDialog?.nativeElement;
+    if (dialog?.open) dialog.close();
+  }
+
+  /**
+   * Escape, which reaches the dialog as (cancel) before (close). Refused while a chart export runs
+   * or report charts are attached. A `cancel` does not bubble, so one from a nested dialog never
+   * arrives here; the target check keeps that so for a synthetic one.
+   */
+  onWizardCancel(event: Event): void {
+    if (event.target !== this.wizardDialog?.nativeElement) return;
+    if (this.wizard?.closeBlocked) event.preventDefault();
+  }
+
+  /**
+   * Nothing is torn down: the mounted content is what reopening preserves. The saved analyses are read
+   * again, since the Reports step may have written documents from one of them.
+   */
+  onWizardClose(event: Event): void {
+    if (event.target !== this.wizardDialog?.nativeElement) return;
+    this.loadAnalyses();
+    this.cdr.markForCheck();
   }
 
   // --- Loading ---
@@ -213,10 +347,21 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   // --- Run actions ---
 
+  /**
+   * Switches to Run Benchmark, so the wizard closes first. Refused while a chart export or a report
+   * chart attachment runs, which the switch would tear down.
+   */
   repeatSetup(runId: number): void {
+    if (this.wizard?.closeBlocked) {
+      this.announcement = 'Wait for the chart export or the report charts to finish, then repeat the setup.';
+      this.cdr.markForCheck();
+      return;
+    }
+    this.closeWizard();
     this.bridge.repeatRunSetup(runId);
   }
 
+  /** The run report is a shell dialog opened after the wizard, so it shows above it. */
   openRunReport(runId: number): void {
     this.bridge.viewRunDetail(runId);
   }
@@ -264,9 +409,10 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   onAnalysisSaved(result: CcAnalysisResult): void {
     this.loadAnalyses();
     this.announcement = result.analysisId !== null ? `Analysis #${result.analysisId} was saved.` : '';
+    this.cdr.markForCheck();
   }
 
-  /** Opens a saved analysis on its results, switching the subject to its model first. */
+  /** Opens a saved analysis in the wizard on its results, switching the subject to its model first. */
   openAnalysis(id: number): void {
     this.openingId = id;
     this.openError = null;
@@ -278,10 +424,9 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
         if (result.subject.key && result.subject.key !== this.selectedKey) {
           this.selectModel(result.subject.key);
         }
-        this.open.analyze = true;
-        this.cdr.detectChanges();
+        // Renders the wizard with the new subject before the result is handed to it.
+        this.openWizard();
         this.wizard?.showResult(result);
-        this.host.nativeElement.querySelector('#cc-section-analyze')?.scrollIntoView({ block: 'start' });
         this.cdr.markForCheck();
       },
       error: err => {

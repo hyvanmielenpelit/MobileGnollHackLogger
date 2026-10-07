@@ -1,0 +1,40 @@
+// The frame is the global `gh-wizard*` and `gh-fig-host` rules in `styles.scss`; what follows is the
+// Chat Consistency wizard's own.
+
+:host {
+  // A flex item of the full-screen dialog's column, so `.gh-wizard` inside fills it.
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cc-wizard-header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+// A step's heading sits close to the content it names; the frame's gap separates larger blocks.
+.cc-wizard-step {
+  gap: 12px;
+}
+
+.cc-wizard-heading {
+  flex-shrink: 0;
+}
+
+// The Timeline step has no padding of its own, so its heading carries the step's inset, and the
+// workspace takes the rest of the height.
+.cc-wizard-step-timeline {
+  > .cc-wizard-fig-heading {
+    margin: 12px 24px 10px;
+  }
+
+  > app-cc-timeline-workspace {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+}

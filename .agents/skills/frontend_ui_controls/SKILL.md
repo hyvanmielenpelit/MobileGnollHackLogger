@@ -198,14 +198,16 @@ you already read the label, it is noise; drop it.
 | play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs) | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
-| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
+| refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Reports step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card) | "A file arrives on your disk" |
-| download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
-| download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
-| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step) | "Copies to the clipboard" — nothing is saved to disk |
-| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
+| download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Timeline step) | "This one image arrives on your disk" |
+| download-all (two arrows into one tray) | Download all charts (the *All charts* toolbar of Model Comparison and of the Chat Consistency Timeline step) | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Timeline step) | "Copies to the clipboard" — nothing is saved to disk |
+| maximize (Feather: four corner brackets) | **Fit to screen** (*Single chart*) and **Fit height** (*All charts*), icon-only, in Model Comparison and the Chat Consistency Timeline step | "Fit the view to the space" — the zoom that makes the chart fill the view |
+| fit-width (a two-headed horizontal arrow: Feather geometry `<polyline points="7 8 3 12 7 16">`, `<polyline points="17 8 21 12 17 16">`, `<line x1="3" y1="12" x2="21" y2="12">`) | **Fit width** (icon-only, the *All charts* toolbar of the Chat Consistency Timeline step) | "Stretch to the width" — the one fit that fills across only, told apart from *maximize*, which fits the height or the whole chart |
+| eye | Open in Single view (Model Comparison and each Chat Consistency Timeline tile), the Chat Consistency Timeline step's **Single chart** view tab, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
 | more (three dots in a row) | **More actions** (icon-only, each Report Pack row of the Download Center in the Model Comparison wizard's Documents step; opens a §4f action popover with *Update charts* and *Remove charts*) | "More actions are behind this" — the row keeps its frequent actions as visible icon buttons and puts the rarer, worded ones in the popover |
 | external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
@@ -214,7 +216,7 @@ you already read the label, it is noise; drop it.
 | zap | Generate Questions, **Generate** (the Model Comparison wizard's Reports step) and its **Write Anyway** confirmation, **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
-| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard) | A guided route through several steps: the wizard finds the way, the admin follows it |
+| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard), **Open Chat Consistency Wizard** (the Chat Consistency launcher) | A guided route through several steps: the wizard finds the way, the admin follows it |
 | award (a medal over two ribbon tails) | **Leaderboard** (`.btn-ghost`, first in each battery card's actions on the Multi-Suite tab) | "Rankings": it opens the ranked results of the battery's definition |
 | columns (two columns side by side) | **Paired tests** (the Model Comparison wizard's fifth step-2 view tab) | Two models side by side, compared on the same questions |
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
@@ -432,6 +434,20 @@ series progress dialogs; **Re-run under current instrument**, **Recompute analys
 anyway (marks the group cross-condition)* are text-only.*
 
 *Changed 2026-10-06 (Model Comparison step 3): **Preview layout** left the chart picker's *Layout* disclosure for the sidebar's action row, beside **Generate**. Both are gold `.btn-gh`, Generate last; they stack at the default sidebar width and sit side by side from about 34 rem. Preview layout keeps* eye *and gains a* chevron *state glyph: it is a §4f trigger whose popover lists the three document types (*Executive Summary · 2 charts*), each `aria-disabled` with its reason when no chart is chosen for it.*
+
+*Changed 2026-10-07 (Chat Consistency wizard): the Chat Consistency tab became a launcher page and a
+six-step wizard in a full-screen dialog. The launcher's **Open Chat Consistency Wizard** takes*
+compass*, like Open Comparison Wizard, and is the page's only `.btn-gh`. The wizard's header adds an
+icon-only **Reload runs** (*rotate*, steps 1 and 2, `aria-disabled` while the runs load or no model is
+chosen) beside the close `.btn-icon-action`. The Timeline step reuses Model Comparison's step-2
+controls: the view tabs **All charts** (*grid*) and **Single chart** (*eye*); each All-charts tile's
+Copy, Download and Open in Single view (*copy*, *download*, *eye*), shown while the tile is hovered or
+holds focus; the *All charts* toolbar's zoom, **Fit height** (*maximize*) and **Download all**
+(*download-all*); the *Single chart* toolbar's zoom, **Fit to screen** (*maximize*), **Actual size**
+(the 1:1 glyph), **Copy** and **Download**. One glyph is new, *fit-width*, a two-headed horizontal arrow
+for the *All charts* toolbar's **Fit width**, meaning "stretch to the width"; no other control uses it.
+Copy and Download are `aria-disabled` with their reason as the tooltip while an export runs, the chart
+size is refused or the chart has nothing to draw.*
 
 **Leave the icon off when the label is already the whole message:**
 

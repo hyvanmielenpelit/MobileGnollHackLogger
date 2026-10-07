@@ -181,6 +181,16 @@ form), `ToolIterationCapsJson`, `TotalModelCallCapsJson`, `QuestionTimeoutSecond
 An analysis takes the events between its first baseline and last comparison run, from the target series
 and every control series, one per kind and change.
 
+**For display, the tab groups them.** The timeline, the Results step and the *Before vs after an
+Overseer change* preset show **composite events** (`groupOverseerEvents`, client-side): every Overseer
+event of one UTC day under one harness version is one composite, and a harness change starts a new
+one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
+changed with the number of runs that showed each. The grouping is presentation only: the analysis still
+takes the events one per kind and change, as above. Report charts are drawn the same way, and
+`CC_REPORT_CHART_VERSION` (2, in `chat-consistency-report-charts.ts`) enters their settings hash, so newly
+drawn report charts are told apart from those drawn before the grouping; documents already written keep
+their charts. An `E` number in an older report therefore need not match the one the tab shows today.
+
 ## 6. Events and Control Runs
 
 An event in the compared span means the subject's change could be ours. A **control run** separates the
@@ -505,39 +515,113 @@ An analysis cannot be deleted while report documents written from it exist.
 
 ## 17. The Chat Consistency Tab
 
-Admin → GnollBench → **Chat Consistency** holds four collapsible sections:
+Admin → GnollBench → **Chat Consistency** is a launcher page; the work is done in the **Chat
+Consistency wizard**, six steps in a full-screen dialog.
 
-- **Timeline** (open by default). Choose the model (*Models with at least one usable benchmark run*)
-  and an optional UTC date range. One figure per measure — quality per run (native and common-grader),
-  time to first answer text (legacy proxy points hollow), answer streaming rate, work per answer, cost
-  per question, reliability, and *Runs and events* with markers for Overseer changes, annotations and
-  served-model changes — each with a *Show data* table. Below, the **Runs** table: per-axis eligibility
-  with the reasons, segment, telemetry, re-grade coverage, anchor, matched controls and served model,
-  and per row *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor* and *Open run report*.
-- **Analyze chat consistency** — the four-step wizard:
-  1. **Subject and periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an
-     annotation*, *Before vs after an Overseer change*, *Confirm on later data*, *Custom dates*) or by
-     hand, as inclusive UTC dates; Protocol V1 with its margins, and *Override the protocol* for the
-     margins and α.
-  2. **Runs** — the baseline and comparison runs (eligible runs preselected), the matched control runs,
-     the common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade* is pressed),
-     *Pool across measurement segment boundaries*, and a preview of the common strata, the Overseer
-     changes in the span and the missing controls. *Analyze* runs and saves the analysis.
-  3. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
-     effects, the attribution grouped by side after the total changes, the next runs (each with
-     *Repeat this run's setup*), the charts, the limitations and data-quality notes, and the identity
-     (analysis id, `InputSha256`, analysis code version).
-  4. **Reports** — the Chat Consistency Report documents (§ 20).
+### 17.1 The launcher
+
+- **Open Chat Consistency Wizard** opens the wizard where it was left, on step 1 the first time.
+- **Current model**, while a model is chosen: the model, its runs (all, with call telemetry, and in the
+  chosen dates), the dates and the latest saved analysis. It is a read-out; the wizard makes the choice.
+- **How chat consistency works**, a disclosure listing the six steps under the wizard's own titles,
+  open on the first visit and afterwards as the operator left it.
 - **Saved analyses** — every analysis, newest first, with *Open* and *Delete* (refused while report
-  documents exist).
+  documents exist). *Open* switches to the analysis's model when it is another and opens the wizard on
+  **Results**.
+
+### 17.2 The wizard
+
+A header names the model, its run count and the dates, with *Reload runs* on steps 1 and 2 and a close
+button. Under it, the step tabs; at the bottom, *Previous*, the step position with the reason the next
+step is unavailable, and *Next* — *Analyze* on step 4, *Close* on step 6.
+
+1. **Model** — the model (*Models with at least one usable benchmark run*) and an optional UTC date
+   range (*Every date* clears it), then the **Runs** table: per-axis eligibility with the reasons,
+   segment, telemetry, re-grade coverage, anchor, matched controls and served model, and per row
+   *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor* and *Open run report*.
+2. **Timeline** — the chart workspace (§ 17.3).
+3. **Periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an annotation*,
+   *Before vs after an Overseer change*, which offers the composite events of § 5.2, *Confirm on later
+   data*, *Custom dates*) or by hand, as inclusive UTC dates; Protocol V1 with its margins, and
+   *Override the protocol* for the margins and α.
+4. **Runs and controls** — the baseline and comparison runs (eligible runs preselected), the matched
+   control runs, the common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade*
+   is pressed), *Pool across measurement segment boundaries*, and a preview of the common strata, the
+   composite Overseer events in the span and the missing controls. *Analyze* runs and saves the
+   analysis and moves to Results; *Stop Analysis* stops it.
+5. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
+   effects, the attribution grouped by side after the total changes, the next runs (each with *Repeat
+   this run's setup*), the charts, the events in the analyzed span as an event list (§ 17.3), the
+   limitations and data-quality notes, and the identity (analysis id, `InputSha256`, analysis code
+   version).
+6. **Reports** — the Chat Consistency Report documents (§ 20).
+
+Step 1 is always open; steps 2 and 3 need a model, step 4 valid periods and overrides, and steps 5 and 6
+a result, analyzed or opened from the saved analyses. A step that cannot be opened stays in the tab row,
+marked unavailable, with its reason. Each step is kept once shown, so closing and reopening the wizard,
+or changing step, keeps a table's sort and page, the chart zoom and an analysis in progress. **Escape
+and the close buttons are refused while a chart export runs or while the Reports step attaches report
+charts**, since closing would strand a half-written batch. The model, the step and the analysis live as
+long as the tab: switching to another GnollBench sub-tab loses them.
+
+### 17.3 The Timeline step
+
+A settings sidebar — resizable from 18 to 40 rem (at most half the workspace, 26 rem by default) and
+collapsible from the view bar — beside two views of the live charts. There is one chart per measure:
+quality per run (native and common-grader), time to first answer text (legacy proxy points hollow),
+answer streaming rate, work per answer, cost per question, reliability, and *Runs and events*. Each draws
+its markers — composite Overseer events `E<n>`, annotations `A<n>` and served-model changes `S<n>`,
+their tags staggered in a band above the plot — names them under the chart, and has a *Show data*
+table.
+
+The sidebar has four tabs:
+
+- **Data** — which charts are shown, which series of the charts that draw more than one, and *Start the
+  quality axis at zero*.
+- **Events** — which markers the charts show (*Overseer changes*, *Annotations*, *Served-model
+  changes*), which Overseer change kinds (each with the number of composite events holding it), and the
+  **event list**: one section per UTC day, oldest first. A composite event shows its title (*Harness 26 →
+  27*, *Changes under harness 27*), its runs and UTC times, the kinds that changed, each with its run
+  count, and a *Details* disclosure with every field change, from → to; an annotation shows its text,
+  scope and source; a served-model change shows the old and new model and the run. The filters hide
+  items from the charts and the list together and never renumber them. A chart's *Show events* opens
+  this tab.
 - **Annotations** — dated notes on the timeline: *Model release*, *Provider statement*, *Provider
   confirmed a cause*, *Price change*, *Change on our side*, *Other*, for every provider, one provider or
   one model, with an optional http(s) source. Annotations are added and deleted; they are not edited.
+- **Download** — *Chart size*, *Image format* and the theme, *As shown (dark)* or *Light, for print*.
+
+The two views are **All charts**, every shown chart in one column, each tile with **Copy**, **Download**
+and **Open in Single view**, and a toolbar with the zoom, *Fit width*, *Fit height* and **Download all**;
+and **Single chart**, one chart with *Previous chart*, a chart select and *Next chart*, the zoom, *Fit
+to screen*, *Actual size* (100 %), **Copy** and **Download**. All charts opens at *Fit width*, Single
+chart at *Fit to screen*.
+
+**Zoom resizes the live charts; it does not scale a picture.** Zooming in gives a chart more room — a
+longer time axis and a taller value axis — at the same text size, and every run keeps its hover tooltip.
+At 100 % a chart's box is the download's layout box for the chosen chart size, so the page and the file
+agree there. The chart size's aspect ratio and text size therefore shape the charts on screen too; its
+pixel density changes only the file. The zoom reaches from 25 % (lower where a fit needs it) to 400 %.
+In a view, outside a form field and without Ctrl, ⌘ or Alt, `+` or `=` zooms in, `-` zooms out, `0`
+fits (one chart's height in All charts, the screen in Single chart) and, in Single chart, `1` is 100 %.
+
+**The image is the plot alone** — without its title, caption or marker list — in the chosen theme, with
+the series and markers the sidebar shows. **Download** writes PNG or WebP (quality 75–100) at a size
+preset, grouped by aspect ratio (16:9, 16:10, 4:3, 3:2, 1:1, 21:9 and print), or at a custom width and
+height, with a pixel density and a text size: the controls of Model Comparison. A browser that cannot
+encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image type clipboards take.
+**Download all** writes every shown chart — one ZIP when there is more than one — and names the charts
+it skipped for having nothing to draw. The files are
+`chat-consistency_<model key>_<chart>_<yyyyMMdd_HHmmss>.<png|webp>` and
+`chat-consistency_<model key>_charts_<yyyyMMdd_HHmmss>.zip`. The workspace layout, the chart choices and
+the download settings are kept per browser.
+
+### 17.4 Repeat this run's setup
 
 **"Repeat this run's setup"** — in the run table, on the next-run suggestions and in the run report —
 opens Run Benchmark with the run's suite, scoring profile, models and prompt options filled in, and
 notes anything that no longer exists. **It never starts a run**: the operator checks the settings and
-presses Start.
+presses Start. From the wizard it switches sub-tab, so it closes the wizard first.
 
 ## 18. Detection and Confirmation
 

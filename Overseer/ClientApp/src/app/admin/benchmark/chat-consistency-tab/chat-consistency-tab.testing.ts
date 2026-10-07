@@ -125,7 +125,7 @@ export function ccRunRow(runId: number, startedAtUtc: string, overrides: Partial
 export function ccEvent(overrides: Partial<CcEvent> = {}): CcEvent {
   return {
     atUtc: '2026-09-15T00:00:00Z',
-    kind: 'toolGuides',
+    kind: 'ToolGuidesSha256',
     label: 'tool guides edited on 2026-09-15',
     from: 'abc',
     to: 'def',
@@ -199,6 +199,76 @@ export function ccRunRows(): CcRunRow[] {
     ccRunRow(102, '2026-09-05T08:00:00Z', { matchedControlRunIds: [202] }),
     ccRunRow(101, '2026-09-01T08:00:00Z', { matchedControlRunIds: [201] })
   ];
+}
+
+// --- Composite events ---
+//
+// Runs 201–206 under harnesses 27, 28 and 29; runs 297–299 detected events but have no timeline
+// point. The events group into four composites:
+//   E1  2026-09-03, harness 27: System prompt (run 202), Knowledge base (runs 202 and 203).
+//   E2  2026-09-05, harness 28: the bump 27 → 28 and Tool guides, both on run 204.
+//   E3  2026-09-09, harness 29: Wiki on run 298 (no point, unknown harness), then the bump
+//       28 → `29 (re-run 30)` on run 299 (no point), which gives the day's group its harness.
+//   E4  2026-09-10, harness 29: Source code on run 206, then Corpus index on run 297 (no point,
+//       unknown harness), which joins the day's earliest group.
+// The dominant served model changes at run 204 (S1, 2026-09-05 08:00, the same instant as E2) and
+// at run 205 (S2); run 206 reports none. Annotation A1 (2026-09-02) has a non-URL source, A2
+// (2026-09-05 08:00, the same instant as E2 and S1) an `https:` one.
+
+/** The timeline points of the composite-event fixture: runs 201–206, harness 27 → 28 → 29. */
+export function ccEventPoints(): CcTimelinePoint[] {
+  const served = (modelId: string) => [{ modelId, callCount: 40 }];
+  return [
+    ccPoint(201, '2026-09-01T08:00:00Z', { harnessVersion: '27', servedModelIds: served('gpt-5-2026-08') }),
+    ccPoint(202, '2026-09-03T08:00:00Z', { harnessVersion: '27', servedModelIds: served('gpt-5-2026-08') }),
+    ccPoint(203, '2026-09-03T14:00:00Z', { harnessVersion: '27', servedModelIds: served('gpt-5-2026-08') }),
+    ccPoint(204, '2026-09-05T08:00:00Z', {
+      harnessVersion: '28', servedModelIds: [{ modelId: 'gpt-5-2026-08', callCount: 5 }, { modelId: 'gpt-5-2026-09', callCount: 35 }]
+    }),
+    ccPoint(205, '2026-09-08T08:00:00Z', { harnessVersion: '28', servedModelIds: served('gpt-5-2026-08') }),
+    ccPoint(206, '2026-09-10T08:00:00Z', { harnessVersion: '29', servedModelIds: [] })
+  ];
+}
+
+/** The Overseer events of the composite-event fixture, deliberately out of time order. */
+export function ccOverseerEvents(): CcEvent[] {
+  const change = (runId: number, previousRunId: number, atUtc: string, kind: string, label: string, from: string, to: string) =>
+    ccEvent({ runId, previousRunId, atUtc, kind, label, from, to });
+  return [
+    change(206, 205, '2026-09-10T08:00:00Z', 'SourceCodeHeadSha', 'source code updated on 2026-09-10', 'src1', 'src2'),
+    change(203, 202, '2026-09-03T14:00:00Z', 'KnowledgeBaseHeadSha', 'knowledge base updated on 2026-09-03', 'kb2', 'kb3'),
+    change(299, 298, '2026-09-09T10:00:00Z', 'HarnessVersion', 'harness 28 → 29 (re-run 30)', '28', '29 (re-run 30)'),
+    change(204, 203, '2026-09-05T08:00:00Z', 'ToolGuidesSha256', 'tool guides edited on 2026-09-05', 'tg1', 'tg2'),
+    change(202, 201, '2026-09-03T08:00:00Z', 'KnowledgeBaseHeadSha', 'knowledge base updated on 2026-09-03', 'kb1', 'kb2'),
+    change(297, 206, '2026-09-10T12:00:00Z', 'CorpusIndexFingerprintsJson', 'corpus index rebuilt on 2026-09-10', 'ix1', 'ix2'),
+    change(204, 203, '2026-09-05T08:00:00Z', 'HarnessVersion', 'harness 27 → 28', '27', '28'),
+    change(298, 206, '2026-09-09T09:00:00Z', 'WikiHeadSha', 'wiki updated on 2026-09-09', 'wk1', 'wk2'),
+    change(202, 201, '2026-09-03T08:00:00Z', 'CandidateSystemPromptSha256', 'system prompt edited on 2026-09-03', 'sp1', 'sp2')
+  ];
+}
+
+/** The annotations of the composite-event fixture, later one first: A2 has an `https:` source, A1 a non-URL one. */
+export function ccEventAnnotations(): CcAnnotation[] {
+  return [
+    ccAnnotation(12, {
+      atUtc: '2026-09-05T08:00:00Z', kind: 'modelRelease', text: 'gpt-5-2026-09 snapshot released',
+      sourceUrl: 'https://example.com/release-notes', createdAtUtc: '2026-09-05T09:00:00Z'
+    }),
+    ccAnnotation(11, {
+      atUtc: '2026-09-02T12:00:00Z', kind: 'providerStatement', text: 'Provider reported elevated latency',
+      sourceUrl: 'status page, 2 September', createdAtUtc: '2026-09-02T13:00:00Z'
+    })
+  ];
+}
+
+/** {@link ccTimeline} with the composite-event fixture's points, events and annotations. */
+export function ccEventTimeline(overrides: Partial<CcTimeline> = {}): CcTimeline {
+  return ccTimeline({
+    points: ccEventPoints(),
+    events: ccOverseerEvents(),
+    annotations: ccEventAnnotations(),
+    ...overrides
+  });
 }
 
 const ENDPOINT_NAMES: Record<string, string> = {

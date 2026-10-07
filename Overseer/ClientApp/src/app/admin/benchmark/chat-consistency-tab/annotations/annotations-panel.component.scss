@@ -77,7 +77,8 @@
 
 .cc-ann-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  // Never wider than its container, so the form fits the timeline sidebar at its 18 rem minimum.
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
   gap: 0.75rem;
 }
 

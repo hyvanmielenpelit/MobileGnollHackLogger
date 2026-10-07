@@ -1,10 +1,19 @@
 import {
+  CC_FIGURE_KEYS,
+  CC_FIGURE_SERIES,
   CC_PRINT_THEME,
   CC_REPORT_FIGURES,
+  CC_TAG_GAP,
+  CC_TAG_MAX_ROWS,
+  CC_TAG_ROW_HEIGHT,
   CcChartPoint,
+  CcFigure,
+  CcFigureInput,
   analysisBands,
   buildCcFigures,
   buildMarkers,
+  ccTagBandHeight,
+  ccTagRows,
   costFigure,
   dominantCommonGrader,
   dominantServedModel,
@@ -16,8 +25,17 @@ import {
   timelineOverviewFigure,
   workFigure
 } from './chat-consistency-charts';
+import { CcMarkerFilter, CcMarkerKind, eventGroupLabel, groupOverseerEvents } from './chat-consistency-events';
 import { CC_REPORT_FIGURE_KEYS } from './chat-consistency.models';
-import { ccAnnotation, ccEvent, ccPoint, ccTimeline } from './chat-consistency-tab.testing';
+import {
+  ccAnnotation,
+  ccEvent,
+  ccEventAnnotations,
+  ccEventPoints,
+  ccOverseerEvents,
+  ccPoint,
+  ccTimeline
+} from './chat-consistency-tab.testing';
 
 const at = (iso: string) => Date.parse(iso);
 
@@ -112,7 +130,7 @@ describe('chat-consistency-charts', () => {
   });
 
   describe('markers', () => {
-    it('numbers events, annotations and served-model changes separately, in time order', () => {
+    it('numbers composite events, annotations and served-model changes separately, in time order', () => {
       const points = [
         ccPoint(1, '2026-09-01T00:00:00Z', { servedModelIds: [{ modelId: 'a', callCount: 10 }] }),
         ccPoint(2, '2026-09-02T00:00:00Z', { servedModelIds: [{ modelId: 'a', callCount: 3 }, { modelId: 'b', callCount: 9 }] }),
@@ -120,15 +138,53 @@ describe('chat-consistency-charts', () => {
       ];
       expect(dominantServedModel(points[1])).toBe('b');
       const markers = buildMarkers(points,
-        [ccEvent({ atUtc: '2026-09-02T12:00:00Z', label: 'later' }), ccEvent({ atUtc: '2026-09-01T12:00:00Z', label: 'earlier' })],
+        [
+          ccEvent({ atUtc: '2026-09-02T12:00:00Z', runId: 2, kind: 'WikiHeadSha' }),
+          ccEvent({ atUtc: '2026-09-01T12:00:00Z', runId: 1, kind: 'ToolGuidesSha256' })
+        ],
         [ccAnnotation(1, { atUtc: '2026-09-02T00:00:00Z', kind: 'priceChange', text: 'Price cut' })]);
-      expect(markers.map(m => `${m.tag} ${m.label}`)).toEqual([
-        'E1 Overseer change: earlier',
-        'E2 Overseer change: later',
-        'A1 Price change: Price cut',
-        'S1 Served model changed from a to b (run #2)'
+      expect(markers.map(m => `${m.kind} ${m.tag} ${m.label}`)).toEqual([
+        'event E1 Changes under harness 30 on 2026-09-01: Tool guides',
+        'event E2 Changes under harness 30 on 2026-09-02: Wiki',
+        'annotation A1 Price change: Price cut',
+        'served S1 Served model changed from a to b (run #2)'
       ]);
+      expect(markers[0].x).toBe(at('2026-09-01T12:00:00Z'));
       expect(markers[3].x).toBe(at('2026-09-02T00:00:00Z'));
+    });
+
+    it('draws one event marker per composite, at its earliest event, labeled with the group label', () => {
+      const points = ccEventPoints();
+      const groups = groupOverseerEvents(ccOverseerEvents(), points);
+      const markers = buildMarkers(points, ccOverseerEvents(), ccEventAnnotations());
+      const events = markers.filter(m => m.kind === 'event');
+      expect(events.length).toBe(4);
+      expect(events.map(m => m.tag)).toEqual(['E1', 'E2', 'E3', 'E4']);
+      expect(events.map(m => m.label)).toEqual(groups.map(eventGroupLabel));
+      expect(events.map(m => m.x)).toEqual(groups.map(g => at(g.atUtc)));
+      expect(events[0].label).toBe('Changes under harness 27 on 2026-09-03: System prompt, Knowledge base (2 runs)');
+      expect(markers.map(m => m.tag)).toEqual(['E1', 'E2', 'E3', 'E4', 'A1', 'A2', 'S1', 'S2']);
+    });
+
+    it('drops filtered markers without renumbering the rest', () => {
+      const points = ccEventPoints();
+      const tags = (filter: CcMarkerFilter) => buildMarkers(points, ccOverseerEvents(), ccEventAnnotations(), filter).map(m => m.tag);
+      expect(tags({ kinds: new Set<CcMarkerKind>(['event', 'served']), hiddenEventKinds: new Set(['ToolGuidesSha256', 'HarnessVersion']) }))
+        .toEqual(['E1', 'E3', 'E4', 'S1', 'S2']);
+      expect(tags({ kinds: new Set<CcMarkerKind>(['annotation']), hiddenEventKinds: new Set() })).toEqual(['A1', 'A2']);
+      expect(tags({ kinds: new Set<CcMarkerKind>(), hiddenEventKinds: new Set() })).toEqual([]);
+    });
+
+    it('applies the figure input’s marker filter, while the overview still counts every marker', () => {
+      const eventInput: CcFigureInput = { points: ccEventPoints(), events: ccOverseerEvents(), annotations: ccEventAnnotations() };
+      const filtered: CcFigureInput = {
+        ...eventInput, markerFilter: { kinds: new Set<CcMarkerKind>(['annotation']), hiddenEventKinds: new Set() }
+      };
+      expect(qualityFigure(filtered).markers.map(m => m.tag)).toEqual(['A1', 'A2']);
+      const overview = timelineOverviewFigure(filtered);
+      expect(overview.markers.map(m => m.tag)).toEqual(['A1', 'A2']);
+      expect(overview.takeaway).toBe('6 runs, 4 Overseer changes, 2 annotations and 2 served-model changes in this range.');
+      expect(overview.takeaway).toBe(timelineOverviewFigure(eventInput).takeaway);
     });
 
     it('attaches the overlay plugin and turns animation off for reduced motion', () => {
@@ -160,5 +216,147 @@ describe('chat-consistency-charts', () => {
       { startUtc: '2026-09-01T00:00:00Z', endUtc: '2026-09-14T23:59:59.999Z' },
       { startUtc: '2026-09-15T00:00:00Z', endUtc: 'bad' });
     expect(bands).toEqual([{ name: 'Baseline', start: at('2026-09-01T00:00:00Z'), end: at('2026-09-14T23:59:59.999Z') }]);
+  });
+
+  describe('figure keys and series ids', () => {
+    const grader = { snapshotId: 5, display: 'Opus', calibrationId: 50, calibratedAtUtc: '2026-09-10T00:00:00Z', meanQuality: 70, itemCount: 20 };
+    // Every series has a value: a common grader, an estimated streaming rate and a legacy run.
+    const full: CcFigureInput = {
+      points: [
+        ccPoint(1, '2026-09-01T00:00:00Z', { commonGraderQuality: [grader] }),
+        ccPoint(2, '2026-09-02T00:00:00Z', { streamingRateEstimated: true }),
+        ccPoint(3, '2026-09-03T00:00:00Z', {
+          isLegacy: true, medianTimeToFirstAnswerTextMs: null, medianStreamingRate: null, latencyLabel: 'legacy proxy'
+        })
+      ]
+    };
+
+    it('lists the figure keys and titles in buildCcFigures order', () => {
+      const figures = buildCcFigures(input);
+      expect(CC_FIGURE_KEYS.map(entry => entry.key)).toEqual(figures.map(f => f.key));
+      expect(CC_FIGURE_KEYS.map(entry => entry.title)).toEqual(figures.map(f => f.title));
+    });
+
+    it('gives every drawn dataset the series id CC_FIGURE_SERIES lists for its figure', () => {
+      for (const figure of buildCcFigures(full)) {
+        expect(figure.config!.data.datasets.map(ds => ds.seriesId), figure.key)
+          .toEqual(CC_FIGURE_SERIES[figure.key].map(series => series.id));
+      }
+      expect(Object.keys(CC_FIGURE_SERIES)).toEqual(CC_FIGURE_KEYS.map(entry => entry.key));
+    });
+  });
+
+  describe('hidden series', () => {
+    it('leaves a hidden series out of the drawing but not out of the table or the takeaway', () => {
+      const shown = reliabilityFigure(input);
+      const hidden = reliabilityFigure(input, { hiddenSeries: new Set(['reliability.timeoutRate', 'reliability.refusalRate']) });
+      expect(hidden.config!.data.datasets.map(ds => ds.seriesId))
+        .toEqual(['reliability.terminalFailureRate', 'reliability.emptyAnswerRate', 'reliability.toolBudgetExhaustedRate']);
+      expect(hidden.table).toEqual(shown.table);
+      expect(hidden.takeaway).toBe(shown.takeaway);
+    });
+
+    it('removes the tool-call axis with the tool-call series', () => {
+      const shown = workFigure(input);
+      const hidden = workFigure(input, { hiddenSeries: new Set(['work.tools']) });
+      expect(hidden.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tokens']);
+      expect(hidden.config!.options.scales!['y1']).toBeUndefined();
+      expect(hidden.table).toEqual(shown.table);
+      expect(hidden.table.columns).toContain('Tool calls per answer');
+      expect(hidden.takeaway).toBe(shown.takeaway);
+
+      const tokensHidden = workFigure(input, { hiddenSeries: new Set(['work.tokens']) });
+      expect(tokensHidden.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tools']);
+      expect(tokensHidden.config!.options.scales!['y1']).toBeDefined();
+    });
+
+    it('draws nothing when every series of a figure is hidden, and still describes the data', () => {
+      const every = new Set(Object.values(CC_FIGURE_SERIES).flat().map(series => series.id));
+      const shown = buildCcFigures(input);
+      const hidden = buildCcFigures(input, { hiddenSeries: every });
+      expect(hidden.map(f => f.config)).toEqual(shown.map(() => null));
+      expect(hidden.map(f => f.takeaway)).toEqual(shown.map(f => f.takeaway));
+      expect(hidden.map(f => f.table)).toEqual(shown.map(f => f.table));
+      expect(qualityFigure(input, { hiddenSeries: new Set(['quality.native']) }).config).toBeNull();
+    });
+  });
+
+  describe('zero baseline', () => {
+    type ValueAxis = { beginAtZero?: boolean; min?: number; max?: number } | undefined;
+    const axis = (figure: CcFigure, id: 'y' | 'y1'): ValueAxis => figure.config!.options.scales![id] as unknown as ValueAxis;
+    const bounds = (figure: CcFigure) => (['y', 'y1'] as const).map(id => {
+      const scale = axis(figure, id);
+      return scale ? { beginAtZero: scale.beginAtZero, min: scale.min, max: scale.max } : null;
+    });
+
+    it('starts the quality axis at zero only when asked', () => {
+      expect(axis(qualityFigure(input), 'y')!.beginAtZero).toBe(false);
+      expect(axis(qualityFigure(input, { zeroBaseline: false }), 'y')!.beginAtZero).toBe(false);
+      expect(axis(qualityFigure(input, { zeroBaseline: true }), 'y')!.beginAtZero).toBe(true);
+    });
+
+    it('leaves the other figures’ value axes unchanged', () => {
+      const plain = buildCcFigures(input).filter(f => f.key !== 'quality');
+      const zero = buildCcFigures(input, { zeroBaseline: true }).filter(f => f.key !== 'quality');
+      expect(zero.map(bounds)).toEqual(plain.map(bounds));
+      // Every value axis but the overview's fixed one already starts at zero.
+      for (const figure of plain.filter(f => f.key !== 'timeline')) {
+        expect(axis(figure, 'y')!.beginAtZero, figure.key).toBe(true);
+      }
+      expect(axis(workFigure(input), 'y1')!.beginAtZero).toBe(true);
+    });
+  });
+
+  describe('staggered tag rows', () => {
+    it('lays no tags into no rows and no band', () => {
+      expect(ccTagRows([])).toEqual({ rows: 0, row: [] });
+      expect(ccTagBandHeight(0)).toBe(0);
+    });
+
+    it('keeps tags in one row while each clears the previous one by the gap', () => {
+      expect(CC_TAG_GAP).toBe(4);
+      // The second tag begins exactly 4 px after the first ends.
+      expect(ccTagRows([{ center: 10, width: 20 }, { center: 34, width: 20 }])).toEqual({ rows: 1, row: [0, 0] });
+      // 3 px is too close.
+      expect(ccTagRows([{ center: 10, width: 20 }, { center: 33, width: 20 }])).toEqual({ rows: 2, row: [0, 1] });
+    });
+
+    it('puts each tag into the first row where it fits, in order of position, and reports the row per input tag', () => {
+      expect(ccTagRows([{ center: 10, width: 20 }, { center: 25, width: 20 }, { center: 40, width: 20 }]))
+        .toEqual({ rows: 2, row: [0, 1, 0] });
+      // Given right to left, the rows still follow the positions.
+      expect(ccTagRows([{ center: 25, width: 20 }, { center: 10, width: 20 }])).toEqual({ rows: 2, row: [1, 0] });
+    });
+
+    it('uses at most three rows, then the row whose last tag ends earliest', () => {
+      expect(CC_TAG_MAX_ROWS).toBe(3);
+      // Rows end at 30, 16 and 18 when the fourth tag (12–20) arrives: row 1 ends earliest.
+      expect(ccTagRows([
+        { center: 10, width: 40 },
+        { center: 12, width: 8 },
+        { center: 14, width: 8 },
+        { center: 16, width: 8 }
+      ])).toEqual({ rows: 3, row: [0, 1, 2, 1] });
+      // On a tie the lowest row wins.
+      const same = { center: 10, width: 20 };
+      expect(ccTagRows([same, same, same, same])).toEqual({ rows: 3, row: [0, 1, 2, 0] });
+    });
+
+    it('honors a lower row limit', () => {
+      const same = { center: 10, width: 20 };
+      expect(ccTagRows([same, same, same], 2)).toEqual({ rows: 2, row: [0, 1, 0] });
+      expect(ccTagRows([same, same], 0)).toEqual({ rows: 1, row: [0, 0] });
+    });
+
+    it('reserves 16 px per row and a 4 px gap above them', () => {
+      expect(CC_TAG_ROW_HEIGHT).toBe(16);
+      expect(ccTagBandHeight(1)).toBe(20);
+      expect(ccTagBandHeight(2)).toBe(36);
+      expect(ccTagBandHeight(3)).toBe(52);
+    });
+
+    it('reserves the tag rows in their own layout box, leaving the chart padding alone', () => {
+      expect(qualityFigure(input).config!.options.layout!.padding).toEqual({ top: 4, right: 8 });
+    });
   });
 });

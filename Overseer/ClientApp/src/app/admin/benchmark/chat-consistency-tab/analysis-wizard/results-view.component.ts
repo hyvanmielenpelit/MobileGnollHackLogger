@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 
 import { CcFigure, analysisBands, buildCcFigure, prefersReducedMotion } from '../chat-consistency-charts';
+import { CcEventDay, buildEventDays, groupOverseerEvents, servedModelChanges } from '../chat-consistency-events';
 import {
   endpointEstimateText,
   endpointMdeText,
@@ -16,7 +17,8 @@ import {
   CcNextRun,
   CcTimelinePoint
 } from '../chat-consistency.models';
-import { CcChartFigureComponent } from '../timeline-panel/cc-chart-figure.component';
+import { CcEventListComponent } from '../event-list/cc-event-list.component';
+import { CcChartFigureComponent } from '../timeline-workspace/cc-chart-figure.component';
 
 /** The attribution groups, in the order the results show them. */
 export const CC_ATTRIBUTION_GROUPS: readonly { readonly side: string; readonly title: string }[] = [
@@ -45,14 +47,15 @@ export function endpointNotes(endpoint: CcEndpointResult): string[] {
 }
 
 /**
- * Step 3 of the analysis: the verdict on the chat first, then the verdict table, the attribution
- * cards by side, the next runs that would resolve what is open, the charts over the analysis's runs,
- * the limitations and data quality, and the analysis's identity.
+ * The Results step of the analysis: the verdict on the chat first, then the verdict table, the
+ * attribution cards by side, the next runs that would resolve what is open, the charts over the
+ * analysis's runs in one column, the events in the analyzed span, the limitations and data quality,
+ * and the analysis's identity.
  */
 @Component({
   selector: 'app-cc-results-view',
   standalone: true,
-  imports: [CcChartFigureComponent],
+  imports: [CcChartFigureComponent, CcEventListComponent],
   templateUrl: './results-view.component.html',
   styleUrls: ['./results-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -65,19 +68,26 @@ export class CcResultsViewComponent implements OnChanges {
   @Output() readonly repeatSetup = new EventEmitter<number>();
 
   readonly groups = CC_ATTRIBUTION_GROUPS;
+  /** The CSS height of each chart box. */
+  readonly figureBoxHeight = 352;
   figures: CcFigure[] = [];
+  /** The composite events, annotations and served-model changes of the analysis, by day, tagged as on the charts. */
+  eventDays: CcEventDay[] = [];
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['result'] || changes['points']) {
       const ids = new Set([...this.result.baseline.runIds, ...this.result.comparison.runIds]);
+      const points = this.points.filter(point => ids.has(point.runId));
       const input = {
-        points: this.points.filter(point => ids.has(point.runId)),
+        points,
         events: this.result.events,
         annotations: this.result.annotations,
         bands: analysisBands(this.result.baseline, this.result.comparison)
       };
       const options = { reducedMotion: prefersReducedMotion() };
       this.figures = RESULT_FIGURES.map(key => buildCcFigure(key, input, options));
+      this.eventDays = buildEventDays(
+        groupOverseerEvents(this.result.events, points), this.result.annotations, servedModelChanges(points));
     }
   }
 

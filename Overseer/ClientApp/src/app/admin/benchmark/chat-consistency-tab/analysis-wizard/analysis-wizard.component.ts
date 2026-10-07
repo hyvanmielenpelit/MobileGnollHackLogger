@@ -2,7 +2,6 @@ import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
-  ElementRef,
   EventEmitter,
   Input,
   OnChanges,
@@ -25,16 +24,17 @@ import {
   formatUtcDateTime,
   isRunEligible,
   isUtcDateInput,
+  plural,
   startOfUtcDay,
   utcMillis,
   withinUtcDays
 } from '../chat-consistency-format';
+import { CC_HARNESS_EVENT_KIND, CcEventGroup, groupOverseerEvents } from '../chat-consistency-events';
 import {
   CcAnalysisRequest,
   CcAnalysisResult,
   CcAnalysisSummary,
   CcAnnotation,
-  CcEvent,
   CcModelAxis,
   CcOpenDocumentsRequest,
   CcProtocolOverrides,
@@ -46,15 +46,8 @@ import { CcRegradePanelComponent } from './regrade-panel.component';
 import { CcReportsStepComponent } from './reports-step.component';
 import { CcResultsViewComponent } from './results-view.component';
 
-export type CcWizardStep = 1 | 2 | 3 | 4;
-
-/** The wizard's steps, in order. */
-export const CC_WIZARD_STEPS: readonly { readonly step: CcWizardStep; readonly title: string }[] = [
-  { step: 1, title: 'Subject and periods' },
-  { step: 2, title: 'Runs' },
-  { step: 3, title: 'Results' },
-  { step: 4, title: 'Reports' }
-];
+/** The analysis steps the outer wizard shows through this component, in order. */
+export type CcAnalysisStep = 'periods' | 'runs' | 'results' | 'reports';
 
 /** Protocol V1's primary endpoints as the server publishes them (`ChatConsistencyProtocol.V1`). */
 export const CC_PROTOCOL_V1_ENDPOINTS: readonly {
@@ -149,10 +142,13 @@ export function periodsRefusal(days: CcPeriodDays): string {
 }
 
 /**
- * *Analyze chat consistency*: four steps over one subject. Step 1 sets the periods, from a preset or
- * by hand, and shows Protocol V1 with its overrides; step 2 chooses the runs and the controls, offers
- * the common-grader re-grade and previews what the analysis will see; step 3 shows the saved result;
- * step 4 writes its reports. Focus moves to the step's heading on every step change.
+ * The analysis steps of the Chat Consistency wizard over one subject, without navigation of their
+ * own: the outer wizard chooses the step through `step` and draws the step bar, headings and footer.
+ * *Periods* sets the periods, from a preset or by hand, and shows Protocol V1 with its overrides;
+ * *Runs and controls* chooses the runs and the controls, offers the common-grader re-grade and
+ * previews what the analysis will see; *Results* shows the saved result; *Reports* writes its
+ * reports. A step's body is mounted on its first visit and afterwards kept, hidden while another
+ * step shows, so a re-grade, a chart attachment, the charts and the scroll survive a step change.
  */
 @Component({
   selector: 'app-cc-analysis-wizard',
@@ -175,26 +171,29 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   @Input() pickerConfigs: readonly SystemAiConfigDto[] = [];
   @Input() pickerEmptyHint: string | null = null;
   @Input() anchorBusy: ReadonlySet<number> = new Set<number>();
+  /** The step whose body shows. */
+  @Input() step: CcAnalysisStep = 'periods';
 
   @Output() readonly analysisSaved = new EventEmitter<CcAnalysisResult>();
   @Output() readonly runsChanged = new EventEmitter<void>();
   @Output() readonly anchorToggle = new EventEmitter<CcRunRow>();
   @Output() readonly repeatSetup = new EventEmitter<number>();
   @Output() readonly openDocuments = new EventEmitter<CcOpenDocumentsRequest>();
+  /** The state the outer wizard reads (errors, blocked reason, analyzing, result) may have changed. */
+  @Output() readonly stateChange = new EventEmitter<void>();
 
-  @ViewChild('stepHeading') stepHeading?: ElementRef<HTMLElement>;
+  @ViewChild(CcReportsStepComponent) reportsStep?: CcReportsStepComponent;
 
-  readonly steps = CC_WIZARD_STEPS;
   readonly protocolEndpoints = CC_PROTOCOL_V1_ENDPOINTS;
   readonly protocol = CC_PROTOCOL_V1;
   readonly periods = ['baseline', 'comparison'] as const;
 
-  step: CcWizardStep = 1;
   name = '';
   days: CcPeriodDays = { baselineStart: '', baselineEnd: '', comparisonStart: '', comparisonEnd: '' };
   preset: CcPreset = 'custom';
   presetAnnotationId: number | null = null;
-  presetEventIndex: number | null = null;
+  /** The key of the composite event the *Before vs after an Overseer change* preset is around. */
+  presetEventGroupKey: string | null = null;
   presetNote = '';
 
   /** The margin overrides as typed, by endpoint id: index points for P1, percent for the others. */
@@ -212,8 +211,12 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   result: CcAnalysisResult | null = null;
 
   private analyzeSub: Subscription | null = null;
+  /** The steps whose bodies have been shown, and so stay mounted. */
+  private readonly visitedSteps = new Set<CcAnalysisStep>();
+  private groupsCache: { timeline: CcTimeline | null; groups: CcEventGroup[] } | null = null;
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['step']) this.visitedSteps.add(this.step);
     const axisChange = changes['axis'];
     if (axisChange && axisChange.previousValue?.key !== this.axis?.key) {
       // A saved result just opened for this subject is kept; any other subject starts over.
@@ -221,13 +224,24 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
         this.resetForSubject();
       }
     }
+    if (changes['rows'] && this.step === 'runs') this.preselectRuns();
   }
 
   ngOnDestroy(): void {
     this.analyzeSub?.unsubscribe();
   }
 
-  // --- Navigation ---
+  // --- Steps ---
+
+  /** A step's body is rendered while it shows and, once shown, kept mounted and hidden. */
+  isMounted(step: CcAnalysisStep): boolean {
+    return step === this.step || this.visitedSteps.has(step);
+  }
+
+  /** The Reports step is drawing and uploading report charts; closing the wizard would strand them. */
+  get chartsAttaching(): boolean {
+    return this.reportsStep?.chartState === 'attaching';
+  }
 
   get periodsError(): string {
     return periodsRefusal(this.days);
@@ -248,30 +262,15 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return '';
   }
 
-  reachable(step: CcWizardStep): boolean {
+  reachable(step: CcAnalysisStep): boolean {
     switch (step) {
-      case 1: return true;
-      case 2: return !!this.axis && !this.periodsError && !this.overridesError;
+      case 'periods': return true;
+      case 'runs': return !!this.axis && !this.periodsError && !this.overridesError;
       default: return this.result !== null;
     }
   }
 
-  goTo(step: CcWizardStep): void {
-    if (step === this.step || !this.reachable(step)) return;
-    if (step === 2) this.preselect();
-    this.step = step;
-    this.focusHeading();
-  }
-
-  next(): void {
-    if (this.step < 4) this.goTo((this.step + 1) as CcWizardStep);
-  }
-
-  back(): void {
-    if (this.step > 1) this.goTo((this.step - 1) as CcWizardStep);
-  }
-
-  /** Opens a saved analysis on its results. */
+  /** Loads a saved analysis, for the outer wizard to show on its results. */
   showResult(result: CcAnalysisResult): void {
     this.analyzeSub?.unsubscribe();
     this.analyzing = false;
@@ -291,24 +290,31 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.replaceSelection(this.comparisonSelected, result.comparison.runIds);
     this.replaceSelection(this.controlSelected, result.controls.controlRunIds);
     this.selectionKey = this.periodKey;
-    this.step = 3;
-    this.focusHeading();
+    this.changed();
   }
 
-  private focusHeading(): void {
-    this.cdr.detectChanges();
-    this.stepHeading?.nativeElement.focus();
+  /** Marks the view for check and tells the outer wizard its state may have changed. */
+  private changed(): void {
+    this.cdr.markForCheck();
+    this.stateChange.emit();
   }
 
-  // --- Step 1: subject and periods ---
+  // --- Periods ---
 
-  /** The annotations and events the before-and-after presets list. */
+  /** The annotations the *Before vs after an annotation* preset lists. */
   get annotations(): readonly CcAnnotation[] {
     return this.timeline?.annotations ?? [];
   }
 
-  get events(): readonly CcEvent[] {
-    return this.timeline?.events ?? [];
+  /** The timeline's Overseer events grouped into composite events, oldest first; recomputed per timeline. */
+  get eventGroups(): readonly CcEventGroup[] {
+    const timeline = this.timeline;
+    let cache = this.groupsCache;
+    if (!cache || cache.timeline !== timeline) {
+      cache = { timeline, groups: groupOverseerEvents(timeline?.events ?? [], timeline?.points ?? []) };
+      this.groupsCache = cache;
+    }
+    return cache.groups;
   }
 
   /** The most recent saved analysis of this subject: the last look *Confirm on later data* starts after. */
@@ -340,14 +346,14 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
         break;
       }
       case 'event': {
-        const index = this.presetEventIndex ?? 0;
-        const event = this.events[index];
-        if (!event) {
+        const groups = this.eventGroups;
+        const group = groups.find(g => g.key === this.presetEventGroupKey) ?? groups[0];
+        if (!group) {
           this.presetNote = 'No Overseer change was detected in the timeline range.';
           break;
         }
-        this.presetEventIndex = index;
-        this.days = aroundPreset(axis, event.atUtc);
+        this.presetEventGroupKey = group.key;
+        this.days = aroundPreset(axis, group.atUtc);
         break;
       }
       case 'later': {
@@ -361,7 +367,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
         break;
       }
     }
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   onAnnotationPick(event: Event): void {
@@ -370,7 +376,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   }
 
   onEventPick(event: Event): void {
-    this.presetEventIndex = Number((event.target as HTMLSelectElement).value);
+    this.presetEventGroupKey = (event.target as HTMLSelectElement).value;
     this.choosePreset('event');
   }
 
@@ -378,7 +384,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.days = { ...this.days, [field]: (event.target as HTMLInputElement).value };
     this.preset = 'custom';
     this.presetNote = '';
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   onNameInput(event: Event): void {
@@ -391,12 +397,12 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
 
   onMarginInput(id: string, event: Event): void {
     this.marginOverrides = { ...this.marginOverrides, [id]: (event.target as HTMLInputElement).value };
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   onAlphaInput(event: Event): void {
     this.alphaOverride = (event.target as HTMLInputElement).value;
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   day(value: string): string {
@@ -407,11 +413,20 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return `${formatUtcDate(annotation.atUtc)}: ${annotation.text}`;
   }
 
-  eventLabel(event: CcEvent): string {
-    return `${formatUtcDate(event.atUtc)}: ${event.label}`;
+  /** A composite event as the preset lists it: `E2 · 2026-10-04 · Harness 27 → 28 (5 changes)`, counting its kinds. */
+  eventGroupOption(group: CcEventGroup): string {
+    return `${group.tag} · ${group.day} · ${group.title} (${plural(group.changes.length, 'change')})`;
   }
 
-  // --- Step 2: runs ---
+  /** A composite event's kinds as the preview lists them, `System prompt ×3, Tool guides`; the harness is left out when the title names it. */
+  eventGroupChanges(group: CcEventGroup): string {
+    return group.changes
+      .filter(change => !(group.harnessChange && change.kind === CC_HARNESS_EVENT_KIND))
+      .map(change => change.count > 1 ? `${change.label} ×${change.count}` : change.label)
+      .join(', ');
+  }
+
+  // --- Runs and controls ---
 
   private get periodKey(): string {
     const d = this.days;
@@ -427,14 +442,20 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
       .sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc));
   }
 
-  /** The eligible runs of each period, and every matched control, the first time the periods reach step 2. */
-  private preselect(): void {
+  /**
+   * Selects the eligible runs of each period and every matched control, the first time these periods
+   * reach *Runs and controls*; the outer wizard calls it on entering that step.
+   */
+  preselectRuns(): void {
     const key = this.periodKey;
     if (key === this.selectionKey) return;
+    // Runs still loading: chosen when they arrive (ngOnChanges).
+    if (this.rows.length === 0) return;
     this.selectionKey = key;
     this.replaceSelection(this.baselineSelected, this.periodRows('baseline').filter(isRunEligible).map(row => row.runId));
     this.replaceSelection(this.comparisonSelected, this.periodRows('comparison').filter(isRunEligible).map(row => row.runId));
     this.replaceSelection(this.controlSelected, this.controlCandidates);
+    this.changed();
   }
 
   private replaceSelection(set: Set<number>, ids: readonly number[]): void {
@@ -449,17 +470,17 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   toggleRun(period: 'baseline' | 'comparison', runId: number, event: Event): void {
     const set = this.selection(period);
     if ((event.target as HTMLInputElement).checked) set.add(runId); else set.delete(runId);
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   toggleControl(runId: number, event: Event): void {
     if ((event.target as HTMLInputElement).checked) this.controlSelected.add(runId); else this.controlSelected.delete(runId);
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   onRelaxedPooling(event: Event): void {
     this.relaxedPooling = (event.target as HTMLInputElement).checked;
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   /** The control runs matched to any run of either period, ascending. */
@@ -488,9 +509,9 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return [...baseline].filter(stratum => comparison.has(stratum)).sort();
   }
 
-  /** The Overseer changes detected between the baseline's start and the comparison's end. */
-  get eventsInSpan(): CcEvent[] {
-    return this.events.filter(event => withinUtcDays(event.atUtc, this.days.baselineStart, this.days.comparisonEnd));
+  /** The composite Overseer events between the baseline's start and the comparison's end. */
+  get eventGroupsInSpan(): CcEventGroup[] {
+    return this.eventGroups.filter(group => withinUtcDays(group.atUtc, this.days.baselineStart, this.days.comparisonEnd));
   }
 
   /** Selected target runs without a matched control run. */
@@ -501,7 +522,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   }
 
   get analyzeBlocked(): string {
-    if (!this.axis) return 'Choose a model in the Timeline first.';
+    if (!this.axis) return 'Choose a model in step 1 first.';
     if (this.periodsError) return this.periodsError;
     if (this.overridesError) return this.overridesError;
     if (this.baselineSelected.size === 0) return 'Select at least one baseline run.';
@@ -521,7 +542,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return isRunEligible(row);
   }
 
-  /** The request step 2's Analyze sends. */
+  /** The request Analyze sends. */
   buildRequest(): CcAnalysisRequest | null {
     const axis = this.axis;
     if (!axis || this.analyzeBlocked) return null;
@@ -563,20 +584,20 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     if (!request || this.analyzing) return;
     this.analyzing = true;
     this.analyzeError = null;
-    this.cdr.markForCheck();
+    this.changed();
     this.analyzeSub?.unsubscribe();
     this.analyzeSub = this.service.analyze(request).subscribe({
       next: result => {
         this.analyzing = false;
         this.result = result;
-        this.step = 3;
+        this.changed();
+        // The outer wizard moves to Results on this.
         this.analysisSaved.emit(result);
-        this.focusHeading();
       },
       error: err => {
         this.analyzing = false;
         this.analyzeError = ccErrorText(err, 'The analysis could not be run.');
-        this.cdr.markForCheck();
+        this.changed();
       }
     });
   }
@@ -586,7 +607,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.analyzeSub?.unsubscribe();
     this.analyzeSub = null;
     this.analyzing = false;
-    this.cdr.markForCheck();
+    this.changed();
   }
 
   onRegradeFinished(): void {
@@ -600,10 +621,9 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.analyzing = false;
     this.analyzeError = null;
     this.result = null;
-    this.step = 1;
     this.name = '';
     this.presetAnnotationId = null;
-    this.presetEventIndex = null;
+    this.presetEventGroupKey = null;
     this.marginOverrides = {};
     this.alphaOverride = '';
     this.relaxedPooling = false;
@@ -617,6 +637,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     } else {
       this.preset = 'custom';
       this.presetNote = '';
+      this.changed();
     }
   }
 }

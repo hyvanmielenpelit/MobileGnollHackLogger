@@ -1,26 +1,38 @@
-<figure class="cc-figure" [attr.data-figure]="figure.key" [attr.aria-labelledby]="figureId + '-title'">
+<figure class="cc-figure" [class.is-fixed-width]="boxWidth !== null" [style.inline-size.px]="boxWidth"
+        [attr.data-figure]="figure.key" [attr.aria-labelledby]="figureId + '-title'">
   <figcaption class="cc-figure-caption">
     <span class="cc-figure-title" [id]="figureId + '-title'">{{ figure.title }}</span>
     <span class="cc-figure-takeaway" [id]="figureId + '-takeaway'">{{ figure.takeaway }}</span>
   </figcaption>
 
   @if (chartData) {
-    <div class="cc-chart-box">
-      <canvas baseChart role="img" [attr.aria-label]="figure.altText"
-              [type]="chartType" [data]="chartData" [options]="chartOptions" [plugins]="chartPlugins"></canvas>
+    <div class="cc-chart-box" [style.inline-size.px]="boxWidth" [style.block-size.px]="boxHeight">
+      @if (render) {
+        <canvas baseChart role="img" [attr.aria-label]="figure.altText"
+                [attr.aria-describedby]="figure.markers.length > 0 ? markersId : null"
+                [type]="chartType" [data]="chartData" [options]="chartOptions" [plugins]="chartPlugins"></canvas>
+      }
     </div>
   } @else {
     <p class="cc-figure-empty">Nothing to chart in this range.</p>
   }
 
   @if (figure.markers.length > 0) {
-    <ul class="cc-marker-list" [attr.aria-label]="'Markers on ' + figure.title">
+    <ul class="visually-hidden" [id]="markersId" [attr.aria-label]="'Markers on ' + figure.title">
       @for (marker of figure.markers; track marker.tag) {
-        <li class="cc-marker" [attr.data-kind]="marker.kind">
-          <span [class]="'cc-marker-tag is-' + marker.kind">{{ marker.tag }}</span>{{ ' ' }}<span class="cc-marker-label">{{ marker.label }}</span>
-        </li>
+        <li>{{ marker.tag }}: {{ marker.label }}</li>
       }
     </ul>
+
+    <!-- The spaces and punctuation are pieces of their own: whitespace-only template text is dropped. -->
+    <p class="cc-figure-markers">
+      @for (piece of markerPieces; track $index) {
+        <span [class]="piece.className">{{ piece.text }}</span>
+      }
+      @if (showEvents.observed) {
+        <button type="button" class="btn-link cc-figure-show-events" (click)="showEvents.emit()">Show events</button>
+      }
+    </p>
   }
 
   <details class="gh-disclosure cc-figure-data">

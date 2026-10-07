@@ -1,0 +1,129 @@
+// The workspace fills the step that hosts it (`.gh-fig-host`); the `gh-fig-*` rules are global.
+:host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+// This template's own labels only; the size and format sections style theirs.
+.cc-tl-sidebar {
+  label {
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+
+  // A checkbox and its text are one row; the column gap already separates it from the fields.
+  .checkbox-label {
+    margin: 0;
+  }
+}
+
+.cc-tl-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #898781;
+}
+
+.cc-tl-readout {
+  font-size: 12px;
+  color: var(--nav-color);
+}
+
+.cc-tl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cc-tl-checklist-actions {
+  display: flex;
+  gap: 12px;
+}
+
+// One chart's series, nested under the Series group without a second frame.
+.cc-tl-series {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+
+  & + & {
+    margin-top: 6px;
+  }
+
+  > legend {
+    margin-bottom: 2px;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--font-color);
+  }
+}
+
+.cc-tl-count {
+  color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
+}
+
+// The event list keeps its day headings under the sticky sidebar tab row.
+.cc-tl-events {
+  scroll-margin-top: var(--cc-ev-sticky-top, 44px);
+  --cc-ev-surface: rgb(16, 16, 16);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.cc-tl-state {
+  margin: 12px 24px 0;
+}
+
+.cc-tl-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--nav-color);
+}
+
+.cc-tl-status {
+  margin: 8px 24px 0;
+  font-size: 12px;
+  color: #c3c2b7;
+
+  // Collapsed but rendered while empty, so the live region is in the accessibility tree before its
+  // first message.
+  &:empty {
+    margin: 0;
+  }
+}
+
+// The vertical scrollbar's gutter is always reserved, so a scrollbar that a zoom brings or takes
+// away never changes the width the charts are fitted to.
+.cc-tl-viewport {
+  scrollbar-gutter: stable;
+}
+
+.cc-tl-tiles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.cc-tl-tile {
+  flex: none;
+  max-inline-size: none;
+}
+
+.cc-tl-empty {
+  margin: 0;
+  color: var(--nav-color);
+  font-style: italic;
+}

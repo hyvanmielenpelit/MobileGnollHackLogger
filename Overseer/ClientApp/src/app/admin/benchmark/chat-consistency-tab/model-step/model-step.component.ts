@@ -14,7 +14,6 @@ import { ModelPickerComponent, ModelPickerOption } from '../../../../shared/mode
 import { SortHeaderComponent } from '../../../../shared/data-table/sort-header.component';
 import { TableState } from '../../../../shared/data-table/table-state';
 import { TablePagerComponent } from '../../../../shared/data-table/table-pager.component';
-import { CcFigure, buildCcFigures, prefersReducedMotion } from '../chat-consistency-charts';
 import {
   axisText,
   controlRunsText,
@@ -27,7 +26,6 @@ import {
   utcMillis
 } from '../chat-consistency-format';
 import { CC_AXES, CcAxis, CcAxisEligibility, CcModelAxis, CcRunRow, CcTimeline } from '../chat-consistency.models';
-import { CcChartFigureComponent } from './cc-chart-figure.component';
 
 /** A model axis as the picker renders it. */
 export interface CcAxisPickerModel {
@@ -54,19 +52,19 @@ export function axisPickerOptions(axes: readonly CcModelAxis[]): ModelPickerOpti
 }
 
 /**
- * The Timeline section: the subject and the date range, a chart per measure over the range, and the
- * run table with each run's eligibility per axis and its row actions. Presentational: the tab loads
- * the data and performs the actions this panel asks for.
+ * Step 1 of the Chat Consistency wizard: the subject and the UTC date range in one row, then the run
+ * table with each run's eligibility per axis and its row actions. Presentational: the host loads the
+ * data and performs the actions this step asks for.
  */
 @Component({
-  selector: 'app-cc-timeline-panel',
+  selector: 'app-cc-model-step',
   standalone: true,
-  imports: [ModelPickerComponent, SortHeaderComponent, TablePagerComponent, CcChartFigureComponent],
-  templateUrl: './timeline-panel.component.html',
-  styleUrls: ['./timeline-panel.component.scss'],
+  imports: [ModelPickerComponent, SortHeaderComponent, TablePagerComponent],
+  templateUrl: './model-step.component.html',
+  styleUrls: ['./model-step.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class CcTimelinePanelComponent implements OnChanges {
+export class CcModelStepComponent implements OnChanges {
   private readonly cdr = inject(ChangeDetectorRef);
 
   @Input() axes: readonly CcModelAxis[] = [];
@@ -102,7 +100,6 @@ export class CcTimelinePanelComponent implements OnChanges {
   });
 
   options: ModelPickerOption<CcAxisPickerModel>[] = [];
-  figures: CcFigure[] = [];
   fromDay = '';
   toDay = '';
   rangeError: string | null = null;
@@ -110,13 +107,6 @@ export class CcTimelinePanelComponent implements OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['axes']) {
       this.options = axisPickerOptions(this.axes);
-    }
-    if (changes['timeline']) {
-      this.figures = this.timeline
-        ? buildCcFigures(
-          { points: this.timeline.points, events: this.timeline.events, annotations: this.timeline.annotations },
-          { reducedMotion: prefersReducedMotion() })
-        : [];
     }
     if (changes['range']) {
       this.fromDay = this.range.fromDay;
@@ -127,6 +117,11 @@ export class CcTimelinePanelComponent implements OnChanges {
 
   get selectedAxis(): CcModelAxis | null {
     return this.axes.find(axis => axis.key === this.selectedKey) ?? null;
+  }
+
+  /** The chosen model's name for the runs heading: the axis list's, else the loaded timeline's. */
+  get selectedName(): string {
+    return this.selectedAxis?.displayName ?? this.timeline?.subject.displayName ?? 'the model';
   }
 
   get pickerEmptyHint(): string {
@@ -204,9 +199,5 @@ export class CcTimelinePanelComponent implements OnChanges {
 
   served(row: CcRunRow): string {
     return servedModelsText(row.servedModelIds);
-  }
-
-  figureId(figure: CcFigure): string {
-    return `cc-tl-fig-${figure.key}`;
   }
 }

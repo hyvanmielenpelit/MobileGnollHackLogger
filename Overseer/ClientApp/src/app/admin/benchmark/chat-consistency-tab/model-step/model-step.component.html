@@ -1,56 +1,57 @@
 <!--
-  The Timeline: which model, over which UTC dates, then one chart per measure and the run table.
+  Step 1: which model, over which UTC dates, then the run table. From 44rem the fields share one
+  subgrid row of labels, controls and hints, so the date inputs sit level with the picker.
 -->
-<div class="cc-tl-controls">
-  <div class="cc-tl-field cc-tl-model">
-    <label id="cc-tl-model-label">Model</label>
-    <app-model-picker class="cc-subject-model-selector" labelledBy="cc-tl-model-label" describedBy="cc-tl-model-hint"
+<div class="cc-model-fields">
+  <div class="cc-model-field cc-model-field--model">
+    <label id="cc-tl-model-label" class="cc-model-label">Model</label>
+    <app-model-picker class="cc-subject-model-selector cc-model-picker" labelledBy="cc-tl-model-label" describedBy="cc-tl-model-hint"
                       placeholder="Select a model" [emptyHint]="pickerEmptyHint"
                       [options]="options" [selectedKey]="selectedKey"
                       (selectionChange)="selectModel($event.key)"></app-model-picker>
-    <span id="cc-tl-model-hint" class="form-hint">
-      @if (selectedAxis; as axis) {
-        {{ axis.runCount }} {{ axis.runCount === 1 ? 'run' : 'runs' }}, {{ axis.telemetryRunCount }} with call telemetry
-      } @else {
-        Models with at least one usable benchmark run.
-      }
-    </span>
-    @if (axesError) {
-      <p class="gh-field-error cc-tl-axes-error">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        <span>{{ axesError }}</span>
-      </p>
-    }
-  </div>
-
-  <fieldset class="cc-tl-range">
-    <legend>Dates (UTC)</legend>
-    <div class="cc-tl-range-fields">
-      <div class="cc-tl-field">
-        <label for="cc-tl-from">From</label>
-        <input id="cc-tl-from" type="date" class="gh-input" [value]="fromDay"
-               [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
-               [attr.aria-invalid]="rangeError ? 'true' : null"
-               (change)="onDayChange('from', $event)">
-      </div>
-      <div class="cc-tl-field">
-        <label for="cc-tl-to">To</label>
-        <input id="cc-tl-to" type="date" class="gh-input" [value]="toDay"
-               [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
-               [attr.aria-invalid]="rangeError ? 'true' : null"
-               (change)="onDayChange('to', $event)">
-      </div>
-      @if (fromDay || toDay) {
-        <button type="button" class="btn-ghost cc-tl-range-clear" (click)="clearRange()">Every date</button>
+    <div class="cc-model-hints">
+      <span id="cc-tl-model-hint" class="form-hint">
+        @if (selectedAxis; as axis) {
+          {{ axis.runCount }} {{ axis.runCount === 1 ? 'run' : 'runs' }}, {{ axis.telemetryRunCount }} with call telemetry
+        } @else {
+          Models with at least one usable benchmark run.
+        }
+      </span>
+      @if (axesError) {
+        <p class="gh-field-error cc-tl-axes-error">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ axesError }}</span>
+        </p>
       }
     </div>
-    @if (rangeError) {
-      <p id="cc-tl-range-error" class="gh-field-error">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        <span>{{ rangeError }}</span>
-      </p>
-    }
-  </fieldset>
+  </div>
+
+  <div class="cc-model-field cc-model-field--from">
+    <label for="cc-tl-from" class="cc-model-label">From (UTC)</label>
+    <input id="cc-tl-from" type="date" class="gh-input cc-model-date" [value]="fromDay"
+           [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
+           [attr.aria-invalid]="rangeError ? 'true' : null"
+           (change)="onDayChange('from', $event)">
+  </div>
+
+  <div class="cc-model-field cc-model-field--to">
+    <label for="cc-tl-to" class="cc-model-label">To (UTC)</label>
+    <input id="cc-tl-to" type="date" class="gh-input cc-model-date" [value]="toDay"
+           [attr.aria-describedby]="rangeError ? 'cc-tl-range-error' : null"
+           [attr.aria-invalid]="rangeError ? 'true' : null"
+           (change)="onDayChange('to', $event)">
+  </div>
+
+  @if (fromDay || toDay) {
+    <button type="button" class="btn-ghost cc-tl-range-clear cc-model-clear" (click)="clearRange()">Every date</button>
+  }
+
+  @if (rangeError) {
+    <p id="cc-tl-range-error" class="gh-field-error cc-model-range-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ rangeError }}</span>
+    </p>
+  }
 </div>
 
 <p class="cc-tl-status" role="status">
@@ -70,16 +71,8 @@
   </p>
 }
 
-@if (timeline && figures.length > 0) {
-  <div class="cc-tl-figures">
-    @for (figure of figures; track figure.key) {
-      <app-cc-chart-figure [figure]="figure" [figureId]="figureId(figure)"></app-cc-chart-figure>
-    }
-  </div>
-}
-
 @if (selectedKey) {
-  <h4 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs</h4>
+  <h5 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs of {{ selectedName }}</h5>
 
   @if (runsError) {
     <p class="gh-field-error cc-tl-runs-error">

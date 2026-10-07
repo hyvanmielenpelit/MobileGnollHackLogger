@@ -9,15 +9,15 @@
   reports library below the hero card is a list of documents already written, not a
   comparison control: it selects nothing and changes nothing the wizard owns.
 -->
-<div class="mc-launcher">
-  <div class="mc-launcher-hero">
+<div class="mc-launcher bm-launcher">
+  <div class="mc-launcher-hero bm-launcher-hero">
     <h3>Cross-model comparison</h3>
-    <p class="mc-launcher-lead">
+    <p class="mc-launcher-lead bm-launcher-lead">
       Compare AI models side by side on quality, speed and cost, using the benchmark runs of one
       suite or the results of one battery.
     </p>
 
-    <div class="mc-launcher-actions">
+    <div class="mc-launcher-actions bm-launcher-actions">
       <button type="button" class="btn-gh" (click)="bridge.openComparisonWizard()">
         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
         Open Comparison Wizard
@@ -28,9 +28,9 @@
          here: this panel holds no control that could change one, and a labelled read-out beside
          no selector reads as a control that has stopped working. -->
     @if (comparison.comparison) {
-      <section class="mc-launcher-last" aria-labelledby="mc-launcher-last-heading">
+      <section class="mc-launcher-last bm-launcher-last" aria-labelledby="mc-launcher-last-heading">
         <h4 id="mc-launcher-last-heading">Last comparison</h4>
-        <dl class="mc-launcher-state">
+        <dl class="mc-launcher-state bm-launcher-state">
           <!-- A comparison of battery results spans several suites, so it names its battery instead. -->
           @if (comparison.comparison.subjectKind === 'Batteries') {
             <div>
@@ -70,17 +70,17 @@
 
     <!-- Non-exclusive (no name), so it never closes another disclosure. Open on the first visit,
          then as the operator last left it. -->
-    <details class="gh-disclosure mc-launcher-howto"
+    <details class="gh-disclosure mc-launcher-howto bm-launcher-howto"
              [open]="comparison.comparisonHowItWorksOpen ?? false"
              (toggle)="comparison.onComparisonHowItWorksToggle($event)">
       <summary>How the comparison works</summary>
       <div class="gh-disclosure-body">
         <!-- A static list, not `.gh-steps`: that class is a live stepper keyed on
              `aria-current="step"`, which nothing here is. The titles are the wizard's own. -->
-        <ol class="mc-launcher-steps">
+        <ol class="mc-launcher-steps bm-launcher-steps">
           @for (s of comparisonWizardSteps; track s.step) {
             <li>
-              <span class="mc-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
+              <span class="mc-launcher-step-number bm-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
               <span><strong>{{ s.title }}</strong> — {{ s.summary }}</span>
             </li>
           }
@@ -107,7 +107,7 @@
 
   <!-- Rendered only inside this tab's @if, so it counts the documents when the tab is shown, not
        on page load, and afresh on every showing; the reload token covers the wizard closing. -->
-  <div class="mc-launcher-library">
+  <div class="mc-launcher-library bm-launcher-library">
     <app-report-documents-launcher idPrefix="mcl" [reloadToken]="comparison.comparisonReportsReloadToken">
     </app-report-documents-launcher>
   </div>

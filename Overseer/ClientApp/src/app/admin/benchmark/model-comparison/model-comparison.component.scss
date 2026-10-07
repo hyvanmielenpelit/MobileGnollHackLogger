@@ -569,10 +569,10 @@
    THE WIZARD SHELL
 
    This component is the whole content of a full-screen dialog, so it owns the header /
-   step-tabs / panel / footer column. The dialog element, its viewport sizing and its
-   top-layer transition all come from `.gh-dialog-fullscreen` in `styles.scss`, and the
-   button, tab, tooltip, table and pager treatments from the same file; none of them is
-   redefined here.
+   step-tabs / panel / footer column, which the global `gh-wizard*` rules lay out. The dialog
+   element, its viewport sizing and its top-layer transition all come from
+   `.gh-dialog-fullscreen` in `styles.scss`, and the button, tab, tooltip, table and pager
+   treatments from the same file; none of them is redefined here.
 
    The height chain is what makes the step panel the scroller rather than the dialog the
    clipper: the host fills the dialog's flex column, `.mc-wizard` fills the host, and
@@ -592,51 +592,9 @@
   --toast-top: 92px;
 }
 
-.mc-wizard {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  padding: 0;
-}
-
-/* Pinned to the top of the wizard column and above the step panel in the stacking order, so a
-   chart or a table header scrolled under it cannot show through. */
+/* The markup carries the global `gh-wizard*` classes beside its `mc-` ones; what follows is Model
+   Comparison's own. */
 .mc-wizard-header {
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 12;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin: 0;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  background: rgba(16, 16, 16, 0.98);
-
-  .dialog-title-group {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 1.25rem;
-  }
-
-  .dialog-subtitle {
-    margin: 0;
-    font-size: 13px;
-    color: #8b8b90;
-  }
-
   /* Comparison #12 — name, then its Rename button; a long name wraps rather than pushing the button out. */
   .mc-identity {
     display: flex;
@@ -658,77 +616,10 @@
   }
 }
 
-/* The fetch state, between the header and the step tabs: a failed comparison has to be
-   visible from whichever step happened to be open when it failed. */
-.mc-wizard-alert {
-  flex-shrink: 0;
-  margin: 12px 24px 0;
-}
-
-/* The step tabs, and on step 2 About and Recompute at the row's end. Pinned under the header; the
-   background is the dialog's own ground, which a pinned row needs so scrolled content does not read
-   through it. One rule line under the whole row, as under `.mc-fig-bar`; the tab row drops its own. */
-.mc-wizard-tabbar {
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 11;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(16, 16, 16, 0.98);
-}
-
-.mc-wizard-steps {
-  flex: 1 1 auto;
-  min-width: 0;
-  border-bottom: none;
-}
-
-.mc-wizard-meta {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.mc-wizard-body {
-  flex: 1;
-  min-height: 0;
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-}
-
-/* The only scroller in the dialog. `overscroll-behavior: contain` stops a wheel gesture that
-   reaches the end of a long list from chaining into the page behind the dialog. Step 2 hands
-   scrolling to its sidebar and its panels, so its view bar never scrolls away. */
-.mc-step {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 16px 24px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-
-  /* `display: flex` above is an author declaration and outranks the user-agent `[hidden]`
-     rule, so step 1 — hidden rather than destroyed, to keep the picker's table state — needs
-     this to disappear. */
-  &[hidden] {
-    display: none;
-  }
-}
-
+/* Step 2 hosts the global figure workspace (`.gh-fig-host`); its container carries both the
+   `mc-fig` and the `gh-fig` name. */
 .mc-step--figures {
-  overflow: hidden;
-  padding: 0;
-  gap: 0;
-  container: mc-fig / inline-size;
+  container: mc-fig gh-fig / inline-size;
 }
 
 /* Step 3: the Report Pack panel fills the step, which scrolls whatever the panel does not. */
@@ -874,60 +765,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-/* Pinned to the bottom of the wizard column: Previous, the step read-out and Next stay reachable
-   from any scroll position in the step panel. */
-.mc-wizard-nav {
-  flex-shrink: 0;
-  position: sticky;
-  bottom: 0;
-  z-index: 12;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 0;
-  padding: 12px 24px;
-  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  background: rgba(16, 16, 16, 0.98);
-}
-
-.mc-wizard-position {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  font-size: 13px;
-  color: #a1a1aa;
-}
-
-/* Why Next is unavailable, as visible text rather than as a disabled button with no
-   explanation. Referenced by aria-describedby from Next and from every unreachable step tab. */
-.mc-wizard-blocked {
-  display: block;
-  margin-top: 2px;
-  color: var(--primary-color);
-}
-
-/* The busy state of a refetch from step 2, where Close is not blocked and carries no spinner.
-   On a line of its own under the step position, centred like it. */
-.mc-wizard-busy {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-/* Cancel Comparison and Next, kept together at the footer's end. */
-.mc-wizard-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 /* On step 2 the notices are a reminder beside the export controls, not the primary reading. */
@@ -1140,51 +977,15 @@
 
 /* --- Step 2's workspace: settings sidebar, view bar, the chart views and the table views --- */
 
-/* The sidebar and the main area side by side, collapsing to one column on the workspace's own
-   width rather than the viewport's: the wizard is already narrower than the window on a split
-   screen. The `mc-fig` container is the step panel, because a container query cannot restyle the
-   container itself. Collapsing the sidebar is an instant reflow, not a transition — every animated
-   frame would re-fit the All tiles or the Single stage. The sidebar's width is the resizer's
-   `--mc-sidebar-width`, kept between 18 rem and half the workspace; the resizer has a 12 px
-   column of its own between the sidebar and the main area. */
+/* The workspace, sidebar, view bar, panels, toolbars and All tiles are laid out by the global
+   `gh-fig-*` rules in `styles.scss`. The sidebar's width is the resizer's `--mc-sidebar-width`,
+   handed to the global grid here. */
 .mc-fig-workspace {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: clamp(18rem, var(--mc-sidebar-width, 26rem), 50%) 12px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  /* The view tabs' and the sidebar tabs' top inset, so the two rows' rules line up. */
-  --mc-tabs-inset-top: 6px;
-
-  &.is-collapsed {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  --gh-fig-sidebar-width: var(--mc-sidebar-width, 26rem);
 }
 
-/* Its own 12px column between the sidebar and the main area: never over either, and its line
-   is the only divider. */
-.mc-fig-resizer {
-  grid-column: 2;
-  grid-row: 1;
-}
-
+/* Scoped to this component's own labels: the sidebar's child components style theirs. */
 .mc-fig-sidebar {
-  grid-column: 1;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 16px 16px;
-
-  /* `display: flex` above outranks the user-agent `[hidden]` rule. */
-  &[hidden] {
-    display: none;
-  }
-
   label {
     font-size: 13px;
     color: #c3c2b7;
@@ -1193,30 +994,6 @@
   /* A checkbox and its text are one row; the column gap already separates it from the fields. */
   .checkbox-label {
     margin: 0;
-  }
-}
-
-/* The sidebar's tab strip stays put while the panel under it scrolls with the sidebar.
-   Opaque, in the wizard's own ground like `.mc-wizard-steps`, so the scrolled panel does not show
-   through. */
-.mc-fig-sidebar-tabs {
-  flex: none;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding-top: var(--mc-tabs-inset-top);
-  background: rgba(16, 16, 16, 0.98);
-}
-
-.mc-side-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
   }
 }
 
@@ -1254,27 +1031,7 @@
   outline-offset: 2px;
 }
 
-/* A zoom read-out beside its slider. */
-.mc-range-value {
-  min-width: 4em;
-  text-align: right;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  color: #d4d4d8;
-}
-
-/* The view bar above whichever view is shown, and the line saying why nothing is charted where
-   that applies, each in a row of its own so neither scrolls; the panels take the rest. The last
-   column: the third beside the sidebar, the only one while it is collapsed. */
-.mc-fig-main {
-  grid-column: -2 / -1;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
+/* The line under the view bar saying why nothing is charted, where that applies. */
 .mc-fig-unavailable {
   flex: none;
   margin: 0;
@@ -1283,54 +1040,10 @@
   color: var(--primary-color);
 }
 
-/* One rule line under the whole bar, in the secondary tab row's colour; the tab row drops its own.
-   No vertical padding, so the buttons centre on the bar's full height. */
-.mc-fig-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 0 24px 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-
-  .action-btn {
-    margin-left: 0;
-  }
-}
-
-/* The bar's tallest item: the top padding sets the bar's height and keeps the underline on its
-   bottom border. */
-.mc-fig-tabs {
-  border-bottom: none;
-  min-width: 0;
-  padding-top: var(--mc-tabs-inset-top);
-}
-
-/* Every panel fills the same box; each scrolls inside its own viewport or, for the table, itself. */
-.mc-fig-panels {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
+/* Each panel is a global `.gh-fig-panel`; its container carries both the `mc-panel` and the
+   `gh-fig-panel` name. */
 .mc-fig-panel {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  padding: 16px 24px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  /* The toolbar rows wrap on the panel's own width. */
-  container: mc-panel / inline-size;
-
-  /* The author display outranks the user-agent [hidden] rule. */
-  &[hidden] { display: none; }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-  }
+  container-name: mc-panel gh-fig-panel;
 }
 
 /* The Interactive table scrolls vertically as a panel of its own, so the view bar stays put; the
@@ -1350,17 +1063,6 @@
 
 /* --- The All tab --- */
 
-/* Ruled off from the notes and tiles under it, in the view bar's rule color. */
-.mc-all-toolbar {
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.mc-all-toolbar .mc-all-zoom-label {
-  font-size: 13px;
-  color: #c3c2b7;
-}
-
 /* The set's caveats above the tiles, bounded so a long list never leaves the tiles no height. */
 .mc-all-notices {
   flex: none;
@@ -1377,20 +1079,6 @@
   }
 }
 
-/* The scroller the tiles wrap in. Its padding is `ALL_VIEWPORT_PADDING` in the component, which
-   Fit height subtracts; it has no border, so its border box is what the component measures. The
-   ground matches the Single stage's, so a figure's own background shows where it ends. */
-.mc-all-viewport {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 16px;
-  border-radius: 8px;
-  background: #0f0f0f;
-  scrollbar-color: var(--border-glass) transparent;
-}
-
 /* The gap is `ALL_TILE_GAP` in the component, which counts the tiles in the first row. */
 .mc-all-grid {
   display: flex;
@@ -1399,9 +1087,9 @@
   gap: 16px;
 }
 
-/* The component states the tile's box in CSS px: the figure's export size at the All zoom. */
+/* The component states the tile's box in CSS px: the figure's export size at the All zoom. Its
+   positioning, and its actions, are the global `.gh-fig-tile` rules. */
 .mc-all-tile {
-  position: relative;
   flex: none;
   cursor: zoom-in;
 
@@ -1423,45 +1111,6 @@
   height: 100%;
 }
 
-/* Copy, Download and Open over the tile's top right corner, clear of the figure's title, which
-   starts at the left. Shown while the tile is hovered or holds focus, and always on a device without
-   hover; opacity only, so the buttons stay in the tab order and focusing one reveals them. */
-.mc-all-tile-actions {
-  position: absolute;
-  inset-block-start: 8px;
-  inset-inline-end: 8px;
-  display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-
-  .action-btn {
-    margin: 0;
-    background: rgba(15, 15, 15, 0.8);
-
-    &[aria-disabled="true"] {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-  }
-}
-
-.mc-all-tile:is(:hover, :focus-within) .mc-all-tile-actions {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .mc-all-tile-actions {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mc-all-tile-actions {
-    transition: none;
-  }
-}
-
 .mc-all-refusal {
   position: absolute;
   inset: 0;
@@ -1478,108 +1127,10 @@
   border-radius: 6px;
 }
 
-/* --- The Single chart and the Table preview; the toolbar's groups also lay out the All tab's zoom --- */
+/* --- The Single chart and the Table preview --- */
 
-/* Figure (or the table's label), zoom and export groups on one line, the export group at the end;
-   wraps only on a narrow panel. */
-.mc-preview-toolbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 8px 16px;
-}
-
-@container mc-panel (max-width: 44rem) {
-  .mc-preview-toolbar {
-    flex-wrap: wrap;
-  }
-
-  /* The figure picker takes the first line, so zoom and export always share the second. */
-  .mc-preview-toolbar .mc-preview-figure-group {
-    flex-basis: 100%;
-  }
-}
-
-.mc-preview-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-/* The toolbars' icon buttons and the step row's: spaced by their row's gap, and dimmed while they
-   refuse. */
-.mc-preview-group,
-.mc-wizard-meta {
-  .action-btn {
-    margin-left: 0;
-
-    &[aria-disabled="true"] {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-
-    &[aria-disabled="true"]:hover {
-      background: rgba(255, 255, 255, 0.05);
-      border-color: var(--border-glass);
-      color: #ccc;
-    }
-  }
-}
-
-/* The Single chart's Previous, figure picker and Next: never shrinks and never wraps, so Next stays
-   beside the picker. */
-.mc-preview-figure-group {
-  flex: none;
-  flex-wrap: nowrap;
-}
-
-/* Each view's export group, at its toolbar row's end. */
-.mc-preview-export,
-.mc-all-export,
-.mc-table-export {
-  flex: none;
-  flex-wrap: nowrap;
-  margin-inline-start: auto;
-}
-
-/* The zoom groups are the only groups on the row that shrink: the slider gives way first. */
-.mc-preview-zoom,
-.mc-all-zoom {
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-wrap: nowrap;
-}
-
-/* Seven figure titles, the longest of which is a full sentence fragment; bounded against the
-   panel's width so the select never sets the toolbar's. */
-.mc-preview-figure {
-  width: auto;
-  min-width: 12rem;
-  max-width: 32cqw;
-  text-overflow: ellipsis;
-}
-
-.mc-preview-zoom-slider {
-  flex: 1 1 60px;
-  min-width: 60px;
-  max-width: 220px;
-  margin: 0;
-  accent-color: var(--primary-color);
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 3px;
-  }
-}
-
-/* As wide as its text, never less than "800%"; in Fit mode the slider shrinks to make room. */
-.mc-preview-zoom-value {
-  min-inline-size: 4.5em;
-  white-space: nowrap;
-  text-align: left;
-}
+/* The toolbars, their groups and the zoom controls are the global `gh-fig-toolbar*` and `gh-zoom-*`
+   rules. */
 
 /* The Table preview's toolbar names what it shows where the Single chart has its figure picker. */
 .mc-preview-label {
@@ -1671,28 +1222,4 @@
 .mc-all-canvas.is-transparent-figure,
 .mc-preview-canvas.is-transparent-figure {
   background: var(--mc-figure-backdrop, repeating-conic-gradient(#8a8a8a 0 25%, #bdbdbd 0 50%) 0 0 / 16px 16px);
-}
-
-/* Controls first, then the figures: a reader on a narrow screen is still configuring a size, and
-   figures above the controls would push every one of them below the fold. */
-@container mc-fig (max-width: 860px) {
-  .mc-fig-workspace {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .mc-fig-sidebar {
-    max-block-size: 40dvh;
-    border-bottom: 1px solid var(--border-glass);
-  }
-
-  .mc-fig-main {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  /* The sidebar is stacked above the views here, so there is no width to adjust. */
-  .mc-fig-resizer {
-    display: none;
-  }
 }

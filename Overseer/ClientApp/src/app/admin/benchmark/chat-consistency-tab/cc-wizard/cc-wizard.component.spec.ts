@@ -1,0 +1,474 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpTestingController } from '@angular/common/http/testing';
+
+import { CcAnalysisResult } from '../chat-consistency.models';
+import { CC_API, ccAnalysisResult, ccAxis, ccRunRows, chatConsistencyTestProviders, textOf } from '../chat-consistency-tab.testing';
+import { CcWizardComponent } from './cc-wizard.component';
+
+/** Every Chat Consistency storage key, cleared around each test. */
+const STORAGE_KEYS = [
+  'overseer.benchmark.chatConsistency.timeline',
+  'overseer.benchmark.chatConsistency.chartSize',
+  'overseer.benchmark.chatConsistency.launcher'
+];
+
+const STEP_LABELS = ['1. Model', '2. Timeline', '3. Periods', '4. Runs and controls', '5. Results', '6. Reports'];
+
+function clearStorage(): void {
+  for (const key of STORAGE_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Nothing stored.
+    }
+  }
+}
+
+/**
+ * The wizard shell. The steps it mounts make requests of their own (the re-grade job on step 4, the
+ * report job and documents on step 6); they are left unanswered, so `verify()` is not called here.
+ */
+describe('CcWizardComponent', () => {
+  let fixture: ComponentFixture<CcWizardComponent>;
+  let wizard: CcWizardComponent;
+  let el: HTMLElement;
+  let http: HttpTestingController;
+
+  beforeEach(async () => {
+    clearStorage();
+    await TestBed.configureTestingModule({
+      imports: [CcWizardComponent],
+      providers: chatConsistencyTestProviders()
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(CcWizardComponent);
+    wizard = fixture.componentInstance;
+    el = fixture.nativeElement as HTMLElement;
+    fixture.componentRef.setInput('axes', [ccAxis()]);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    clearStorage();
+  });
+
+  // --- Helpers ---
+
+  function chooseModel(): void {
+    fixture.componentRef.setInput('selectedKey', 'openai/gpt-5|high');
+    fixture.componentRef.setInput('rows', ccRunRows());
+    fixture.detectChanges();
+  }
+
+  /** Renders, then again after the shell's microtask re-check that follows the analysis component's `stateChange`. */
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await new Promise<void>(resolve => setTimeout(resolve));
+    fixture.detectChanges();
+  }
+
+  const tab = (step: number): HTMLButtonElement => el.querySelector<HTMLButtonElement>(`#cc-step-tab-${step}`)!;
+  const tabs = (): HTMLButtonElement[] =>
+    Array.from(el.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Chat consistency steps"] [role="tab"]'));
+  const next = (): HTMLButtonElement => el.querySelector<HTMLButtonElement>('.cc-wizard-next')!;
+  const previous = (): HTMLButtonElement => el.querySelector<HTMLButtonElement>('.cc-wizard-previous')!;
+  const closeButton = (): HTMLButtonElement => el.querySelector<HTMLButtonElement>('.cc-wizard-close')!;
+  const panel = (id: string): HTMLElement | null => el.querySelector<HTMLElement>(`#${id}`);
+
+  function press(target: Element, key: string): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    target.dispatchEvent(event);
+    fixture.detectChanges();
+    return event;
+  }
+
+  function analyzeRequests() {
+    return http.match(r => r.method === 'POST' && r.url === `${CC_API}/analyses`);
+  }
+
+  // --- Step tabs ---
+
+  it('renders six step tabs; without a model only Model opens, and every other tab is described by its reason', () => {
+    expect(textOf(el.querySelector('#cc-wizard-title'))).toBe('Chat consistency');
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('Choose a model, then follow the steps');
+
+    expect(tabs().map(entry => textOf(entry))).toEqual(STEP_LABELS);
+    expect(tabs().map(entry => entry.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false', 'false']);
+    expect(tabs().map(entry => entry.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
+    expect(tabs().map(entry => entry.getAttribute('aria-disabled'))).toEqual(['false', 'true', 'true', 'true', 'true', 'true']);
+    expect(tab(1).hasAttribute('aria-describedby')).toBe(false);
+    expect(el.querySelector('#cc-step-blocked-1')).toBeNull();
+    for (const step of [2, 3, 4, 5, 6]) {
+      expect(tab(step).getAttribute('aria-describedby')).toBe(`cc-step-blocked-${step}`);
+      expect(el.querySelector(`#cc-step-blocked-${step}`)!.classList).toContain('visually-hidden');
+    }
+    expect([2, 3, 4, 5, 6].map(step => textOf(el.querySelector(`#cc-step-blocked-${step}`)))).toEqual([
+      'Choose a model first.',
+      'Choose a model first.',
+      'Choose a model first.',
+      'Analyze first, or open a saved analysis.',
+      'Analyze first, or open a saved analysis.'
+    ]);
+    expect(tab(1).getAttribute('aria-controls')).toBe('cc-step-panel-1');
+    expect(tab(2).getAttribute('aria-controls')).toBe('cc-step-panel-2');
+    expect([3, 4, 5, 6].map(step => tab(step).getAttribute('aria-controls'))).toEqual(Array(4).fill('cc-step-panel-analysis'));
+
+    // A blocked tab does not open.
+    tab(2).click();
+    fixture.detectChanges();
+    expect(wizard.step).toBe(1);
+
+    expect(textOf(next())).toBe('Next: Timeline');
+    expect(next().getAttribute('aria-disabled')).toBe('true');
+    expect(next().getAttribute('aria-describedby')).toBe('cc-next-blocked');
+    expect(textOf(el.querySelector('#cc-next-blocked'))).toBe('Choose a model first.');
+    expect(previous().disabled).toBe(true);
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 1 of 6 — Model');
+  });
+
+  it('with a model, opens Timeline and Periods, waits for the periods before Runs and controls, and names the model', () => {
+    chooseModel();
+
+    expect(tabs().map(entry => entry.getAttribute('aria-disabled'))).toEqual(['false', 'false', 'false', 'true', 'true', 'true']);
+    expect(textOf(el.querySelector('#cc-step-blocked-4'))).toBe('Choose the periods first.');
+    expect(el.querySelector('#cc-step-blocked-2')).toBeNull();
+    expect(next().getAttribute('aria-disabled')).toBe('false');
+    expect(el.querySelector('#cc-next-blocked')).toBeNull();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · every date');
+
+    fixture.componentRef.setInput('range', { fromDay: '2026-09-10', toDay: '' });
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · from 2026-09-10');
+  });
+
+  it('moves between the tabs with Left / Right (wrapping) and Home / End, keeping focus on the tabs', () => {
+    chooseModel();
+    tab(1).focus();
+
+    const right = press(tab(1), 'ArrowRight');
+    expect(right.defaultPrevented).toBe(true);
+    expect(wizard.step).toBe(2);
+    expect(tab(2).getAttribute('aria-selected')).toBe('true');
+    expect(tab(2).getAttribute('tabindex')).toBe('0');
+    expect(document.activeElement).toBe(tab(2));
+
+    press(tab(2), 'ArrowLeft');
+    expect(wizard.step).toBe(1);
+    expect(document.activeElement).toBe(tab(1));
+
+    // Focus reaches a step that refuses to open, so its reason is read; the step stays.
+    press(tab(1), 'ArrowLeft');
+    expect(document.activeElement).toBe(tab(6));
+    expect(wizard.step).toBe(1);
+    expect(tab(1).getAttribute('aria-selected')).toBe('true');
+
+    press(tab(6), 'Home');
+    expect(document.activeElement).toBe(tab(1));
+    press(tab(1), 'End');
+    expect(document.activeElement).toBe(tab(6));
+    expect(wizard.step).toBe(1);
+    press(tab(6), 'ArrowRight');
+    expect(document.activeElement).toBe(tab(1));
+
+    const other = press(tab(1), 'Enter');
+    expect(other.defaultPrevented).toBe(false);
+  });
+
+  it('focuses the step heading on a tab click, Next and Previous', async () => {
+    chooseModel();
+
+    tab(2).click();
+    fixture.detectChanges();
+    expect(document.activeElement?.id).toBe('cc-step-heading-2');
+    expect(textOf(el.querySelector('#cc-step-heading-2'))).toBe('Timeline');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(3);
+    expect(document.activeElement?.id).toBe('cc-step-heading-analysis');
+    expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Periods');
+
+    previous().click();
+    await settle();
+    expect(wizard.step).toBe(2);
+    expect(document.activeElement?.id).toBe('cc-step-heading-2');
+  });
+
+  // --- Footer ---
+
+  it('labels Next for each step, Analyze on step 4 and Close on step 6', async () => {
+    chooseModel();
+    expect(textOf(next())).toBe('Next: Timeline');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(2);
+    expect(textOf(next())).toBe('Next: Periods');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(3);
+    expect(textOf(next())).toBe('Next: Runs and controls');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(4);
+    expect(textOf(next())).toBe('Analyze');
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 4 of 6 — Runs and controls');
+
+    wizard.showResult(ccAnalysisResult());
+    await settle();
+    expect(wizard.step).toBe(5);
+    expect(textOf(next())).toBe('Next: Reports');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(6);
+    expect(textOf(next())).toBe('Close');
+    expect(next().getAttribute('aria-disabled')).toBe('false');
+    expect(previous().disabled).toBe(false);
+
+    previous().click();
+    await settle();
+    expect(wizard.step).toBe(5);
+  });
+
+  it('runs Analyze, abandons it with Stop Analysis, and moves to Results once an analysis is saved', async () => {
+    chooseModel();
+    const saved: CcAnalysisResult[] = [];
+    wizard.analysisSaved.subscribe(result => saved.push(result));
+
+    tab(3).click();
+    fixture.detectChanges();
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(4);
+    expect(textOf(next())).toBe('Analyze');
+    expect(next().getAttribute('aria-disabled')).toBe('false');
+    expect(el.querySelector('.cc-wizard-stop')).toBeNull();
+
+    next().click();
+    await settle();
+    const first = analyzeRequests();
+    expect(first.length).toBe(1);
+    expect(first[0].request.body.baselineRunIds).toEqual([101, 102, 103]);
+    expect(first[0].request.body.comparisonRunIds).toEqual([104, 105, 106]);
+    const stop = el.querySelector<HTMLButtonElement>('.cc-wizard-stop')!;
+    expect(textOf(stop)).toBe('Stop Analysis');
+    expect(next().getAttribute('aria-busy')).toBe('true');
+    expect(next().getAttribute('aria-disabled')).toBe('true');
+    expect(next().querySelector('.gh-spinner-small')).not.toBeNull();
+    expect(el.querySelector('#cc-next-blocked')).toBeNull();
+
+    stop.click();
+    await settle();
+    expect(first[0].cancelled).toBe(true);
+    expect(el.querySelector('.cc-wizard-stop')).toBeNull();
+    expect(next().getAttribute('aria-busy')).toBeNull();
+    expect(wizard.step).toBe(4);
+    expect(saved).toEqual([]);
+
+    next().click();
+    await settle();
+    const second = analyzeRequests();
+    expect(second.length).toBe(1);
+    second[0].flush(ccAnalysisResult());
+    await settle();
+
+    expect(saved.map(result => result.analysisId)).toEqual([7]);
+    expect(wizard.step).toBe(5);
+    expect(tab(5).getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement?.id).toBe('cc-step-heading-analysis');
+    expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Results');
+  });
+
+  it('stays on the current step when an analysis finishes after the user left Runs and controls', async () => {
+    chooseModel();
+    tab(3).click();
+    fixture.detectChanges();
+    tab(1).click();
+    await settle();
+
+    wizard.onAnalysisSaved(ccAnalysisResult());
+    await settle();
+    expect(wizard.step).toBe(1);
+    expect(tab(1).getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('names an invalid period as the reason Runs and controls is blocked', async () => {
+    chooseModel();
+    tab(3).click();
+    await settle();
+    expect(tab(4).getAttribute('aria-disabled')).toBe('false');
+
+    const end = el.querySelector<HTMLInputElement>('#cc-wiz-ce')!;
+    end.value = '2026-09-10';
+    end.dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(tab(4).getAttribute('aria-disabled')).toBe('true');
+    expect(textOf(el.querySelector('#cc-step-blocked-4'))).toBe('The comparison must not end before it starts.');
+    expect(textOf(el.querySelector('#cc-next-blocked'))).toBe('The comparison must not end before it starts.');
+    expect(next().getAttribute('aria-disabled')).toBe('true');
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(3);
+  });
+
+  // --- Mounting ---
+
+  it('keeps every visited step mounted and hidden, and creates the analysis component once', async () => {
+    chooseModel();
+    expect(panel('cc-step-panel-2')).toBeNull();
+    expect(el.querySelector('app-cc-analysis-wizard')).toBeNull();
+
+    tab(2).click();
+    fixture.detectChanges();
+    tab(3).click();
+    await settle();
+    const analysis = wizard.analysis;
+    expect(analysis).toBeDefined();
+    expect(analysis!.step).toBe('periods');
+    next().click();
+    await settle();
+    expect(analysis!.step).toBe('runs');
+    expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-4');
+
+    tab(1).click();
+    fixture.detectChanges();
+    expect(panel('cc-step-panel-1')!.hidden).toBe(false);
+    expect(panel('cc-step-panel-2')!.hidden).toBe(true);
+    expect(panel('cc-step-panel-analysis')!.hidden).toBe(true);
+    expect(el.querySelectorAll('app-cc-model-step').length).toBe(1);
+    expect(el.querySelectorAll('app-cc-timeline-workspace').length).toBe(1);
+    expect(el.querySelectorAll('app-cc-analysis-wizard').length).toBe(1);
+
+    tab(3).click();
+    await settle();
+    expect(wizard.analysis).toBe(analysis);
+    expect(el.querySelectorAll('app-cc-analysis-wizard').length).toBe(1);
+    expect(panel('cc-step-panel-analysis')!.hidden).toBe(false);
+    expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-3');
+    expect(panel('cc-step-panel-1')!.hidden).toBe(true);
+    expect(panel('cc-step-panel-2')!.hidden).toBe(true);
+  });
+
+  it('showResult mounts the analysis component with the result and selects Results', async () => {
+    chooseModel();
+    expect(el.querySelector('app-cc-analysis-wizard')).toBeNull();
+
+    wizard.showResult(ccAnalysisResult());
+    await settle();
+
+    expect(el.querySelectorAll('app-cc-analysis-wizard').length).toBe(1);
+    expect(wizard.step).toBe(5);
+    expect(wizard.analysis!.result?.analysisId).toBe(7);
+    expect(wizard.analysis!.step).toBe('results');
+    expect(tab(5).getAttribute('aria-selected')).toBe('true');
+    expect(tab(5).getAttribute('aria-disabled')).toBe('false');
+    expect(tab(6).getAttribute('aria-disabled')).toBe('false');
+    // Results is reached without passing the Timeline step.
+    expect(panel('cc-step-panel-2')).toBeNull();
+    expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-5');
+    expect(document.activeElement?.id).toBe('cc-step-heading-analysis');
+    expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Results');
+  });
+
+  // --- Header ---
+
+  it('offers Reload runs on steps 1 and 2 only, unavailable without a model and while loading', () => {
+    let reloads = 0;
+    wizard.reload.subscribe(() => reloads++);
+    const reload = (): HTMLButtonElement | null => el.querySelector<HTMLButtonElement>('.cc-wizard-reload');
+
+    expect(reload()!.getAttribute('aria-label')).toBe('Reload the runs of the model');
+    expect(reload()!.getAttribute('aria-disabled')).toBe('true');
+    reload()!.click();
+    expect(reloads).toBe(0);
+
+    chooseModel();
+    expect(reload()!.getAttribute('aria-disabled')).toBeNull();
+
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges();
+    expect(reload()!.getAttribute('aria-disabled')).toBe('true');
+    reload()!.click();
+    expect(reloads).toBe(0);
+
+    fixture.componentRef.setInput('loading', false);
+    fixture.detectChanges();
+    reload()!.click();
+    expect(reloads).toBe(1);
+
+    tab(2).click();
+    fixture.detectChanges();
+    expect(reload()).not.toBeNull();
+    tab(3).click();
+    fixture.detectChanges();
+    expect(reload()).toBeNull();
+  });
+
+  it('disables the close button and the footer while the Timeline step exports', () => {
+    chooseModel();
+    let closes = 0;
+    wizard.closeRequested.subscribe(() => closes++);
+    expect(closeButton().getAttribute('aria-label')).toBe('Close chat consistency');
+
+    tab(2).click();
+    fixture.detectChanges();
+    const workspace = wizard.timelineWorkspace!;
+    workspace.exporting = true;
+    workspace.exportingChange.emit(true);
+    fixture.detectChanges();
+
+    expect(wizard.closeBlocked).toBe(true);
+    expect(closeButton().disabled).toBe(true);
+    expect(next().disabled).toBe(true);
+    expect(el.querySelector('.cc-wizard-reload')!.getAttribute('aria-disabled')).toBe('true');
+    wizard.onCloseClick();
+    expect(closes).toBe(0);
+
+    workspace.exporting = false;
+    workspace.exportingChange.emit(false);
+    fixture.detectChanges();
+    expect(closeButton().disabled).toBe(false);
+    expect(next().disabled).toBe(false);
+    closeButton().click();
+    expect(closes).toBe(1);
+  });
+
+  it('disables the close button and the footer Close while the Reports step attaches charts', async () => {
+    chooseModel();
+    let closes = 0;
+    wizard.closeRequested.subscribe(() => closes++);
+    wizard.showResult(ccAnalysisResult());
+    await settle();
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(6);
+    expect(textOf(next())).toBe('Close');
+
+    const reports = wizard.analysis!.reportsStep!;
+    expect(reports).toBeDefined();
+    reports.chartState = 'attaching';
+    wizard.analysis!.stateChange.emit();
+    await settle();
+
+    expect(wizard.analysis!.chartsAttaching).toBe(true);
+    expect(wizard.closeBlocked).toBe(true);
+    expect(closeButton().disabled).toBe(true);
+    expect(next().disabled).toBe(true);
+    wizard.nextStep();
+    wizard.onCloseClick();
+    expect(closes).toBe(0);
+
+    reports.chartState = 'idle';
+    wizard.analysis!.stateChange.emit();
+    await settle();
+    expect(closeButton().disabled).toBe(false);
+    expect(next().disabled).toBe(false);
+    next().click();
+    expect(closes).toBe(1);
+  });
+});

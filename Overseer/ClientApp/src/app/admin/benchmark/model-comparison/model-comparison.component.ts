@@ -533,7 +533,7 @@ function sortKeyOf(raw: string | number | boolean | null): string | number | nul
   return typeof raw === 'boolean' ? (raw ? 1 : 0) : raw;
 }
 
-/** The All tab's scroller padding, in CSS px; `.mc-all-viewport` in the stylesheet matches it. */
+/** The All tab's scroller padding, in CSS px; the global `.gh-fig-viewport` in `styles.scss` matches it. */
 const ALL_VIEWPORT_PADDING = 16;
 
 /** The All tab's gap between tiles, in CSS px; `.mc-all-grid` matches it. */
