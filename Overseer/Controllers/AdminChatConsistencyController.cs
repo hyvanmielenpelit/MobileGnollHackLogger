@@ -53,31 +53,57 @@ public class AdminChatConsistencyController : ControllerBase
 
     // --- Model axes, timeline and run table ------------------------------------------------------
 
-    /// <summary>Every model axis with usable runs, with run counts and the dates of its first and last run.</summary>
+    /// <summary>Every model axis with usable runs, with run counts and the dates of its first and last run; 499 when the client aborts.</summary>
     [HttpGet("models")]
     public async Task<IActionResult> ListModels(CancellationToken ct)
-        => Payload(await _evidence.ListModelAxesAsync(ct));
+    {
+        try
+        {
+            return Payload(await _evidence.ListModelAxesAsync(ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
 
     /// <summary>
     /// One point per usable run of <paramref name="modelKey"/> between <paramref name="from"/> and
     /// <paramref name="to"/> (inclusive, either optional, UTC), with the subject's events and
-    /// annotations. 400 without a model key or when <paramref name="from"/> is after <paramref name="to"/>.
+    /// annotations. 400 without a model key or when <paramref name="from"/> is after <paramref name="to"/>;
+    /// 499 when the client aborts.
     /// </summary>
     [HttpGet("timeline")]
     public async Task<IActionResult> Timeline([FromQuery] string? modelKey, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
     {
         var (fromUtc, toUtc, invalid) = ValidateRange(modelKey, from, to);
         if (invalid != null) return invalid;
-        return Payload(await _evidence.GetTimelineAsync(modelKey!, fromUtc, toUtc, ct));
+
+        try
+        {
+            return Payload(await _evidence.GetTimelineAsync(modelKey!, fromUtc, toUtc, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
-    /// <summary>The run table of <paramref name="modelKey"/> over the range, validated as <see cref="Timeline"/> is.</summary>
+    /// <summary>The run table of <paramref name="modelKey"/> over the range, validated as <see cref="Timeline"/> is; 499 when the client aborts.</summary>
     [HttpGet("runs")]
     public async Task<IActionResult> Runs([FromQuery] string? modelKey, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
     {
         var (fromUtc, toUtc, invalid) = ValidateRange(modelKey, from, to);
         if (invalid != null) return invalid;
-        return Payload(await _evidence.GetRunTableAsync(modelKey!, fromUtc, toUtc, ct));
+
+        try
+        {
+            return Payload(await _evidence.GetRunTableAsync(modelKey!, fromUtc, toUtc, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     // --- Analyses --------------------------------------------------------------------------------

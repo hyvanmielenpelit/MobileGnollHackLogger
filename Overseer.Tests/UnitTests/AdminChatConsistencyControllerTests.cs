@@ -285,6 +285,19 @@ public class AdminChatConsistencyControllerTests
     }
 
     [Fact]
+    public async Task ModelsTimelineAndRunsAnswer499WhenTheClientAborts()
+    {
+        using var h = new Harness();
+        string key = Seed(h.Db);
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.ListModels(aborted.Token)).StatusCode);
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.Timeline(key, null, null, aborted.Token)).StatusCode);
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.Runs(key, null, null, aborted.Token)).StatusCode);
+    }
+
+    [Fact]
     public void ToUtcConvertsALocalTimeAndTakesAnUnspecifiedTimeAsUtc()
     {
         var local = new DateTime(2026, 9, 15, 12, 0, 0, DateTimeKind.Local);
