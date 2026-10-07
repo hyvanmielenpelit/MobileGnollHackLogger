@@ -56,88 +56,95 @@ namespace Overseer.Controllers
 
             // Read envelope completely into memory, enforcing size limit
             using var ms = new MemoryStream();
-            await Request.Body.CopyToAsync(ms, HttpContext.RequestAborted);
-            if (ms.Length > MaxPayloadSize)
-            {
-                return StatusCode(413, "Payload Too Large");
-            }
-
-            var envelopeBytes = ms.ToArray();
-            if (envelopeBytes.Length == 0)
-            {
-                return BadRequest("Empty payload.");
-            }
-
-            // Sentry envelope format: header\n item1_header\n item1_payload\n ...
-            // We must parse the envelope header byte-by-byte to avoid corrupting binary payloads (like Session Replays)
-            int newlineIndex = Array.IndexOf(envelopeBytes, (byte)'\n');
-            if (newlineIndex == -1)
-            {
-                return BadRequest("Invalid envelope format.");
-            }
-
-            var headerJson = Encoding.UTF8.GetString(envelopeBytes, 0, newlineIndex);
-            
             try
             {
-                var headerObj = JsonNode.Parse(headerJson) as JsonObject;
-                if (headerObj == null)
+                await Request.Body.CopyToAsync(ms, HttpContext.RequestAborted);
+                if (ms.Length > MaxPayloadSize)
+                {
+                    return StatusCode(413, "Payload Too Large");
+                }
+
+                var envelopeBytes = ms.ToArray();
+                if (envelopeBytes.Length == 0)
+                {
+                    return BadRequest("Empty payload.");
+                }
+
+                // Sentry envelope format: header\n item1_header\n item1_payload\n ...
+                // We must parse the envelope header byte-by-byte to avoid corrupting binary payloads (like Session Replays)
+                int newlineIndex = Array.IndexOf(envelopeBytes, (byte)'\n');
+                if (newlineIndex == -1)
+                {
+                    return BadRequest("Invalid envelope format.");
+                }
+
+                var headerJson = Encoding.UTF8.GetString(envelopeBytes, 0, newlineIndex);
+            
+                try
+                {
+                    var headerObj = JsonNode.Parse(headerJson) as JsonObject;
+                    if (headerObj == null)
+                    {
+                        return BadRequest("Invalid envelope header JSON.");
+                    }
+                
+                    // SSRF Mitigation: Construct the upstream URL purely from the server's securely stored DSN.
+                    var upstreamUrl = $"{dsnUri.Scheme}://{dsnUri.Host}/api/{projectId}/envelope/";
+
+                    // Rewrite the envelope header with the backend's real DSN and public key
+                    headerObj["dsn"] = dsnString;
+                    var publicKey = dsnUri.UserInfo?.Split(':')[0];
+                    if (!string.IsNullOrEmpty(publicKey))
+                    {
+                        headerObj["public_key"] = publicKey;
+                    }
+
+                    var newHeaderBytes = Encoding.UTF8.GetBytes(headerObj.ToJsonString());
+                
+                    // Reconstruct envelope: new header + \n + remaining bytes
+                    var remainingEnvelopeSpan = envelopeBytes.AsSpan(newlineIndex + 1);
+                    var newPayload = new byte[newHeaderBytes.Length + 1 + remainingEnvelopeSpan.Length];
+                    Buffer.BlockCopy(newHeaderBytes, 0, newPayload, 0, newHeaderBytes.Length);
+                    newPayload[newHeaderBytes.Length] = (byte)'\n';
+                    remainingEnvelopeSpan.CopyTo(newPayload.AsSpan(newHeaderBytes.Length + 1));
+
+                    var client = _httpClientFactory.CreateClient("SentryTunnel");
+                    var request = new HttpRequestMessage(HttpMethod.Post, upstreamUrl);
+                
+                    // Forward the client IP for accurate user location parsing by Sentry
+                    if (HttpContext.Connection.RemoteIpAddress != null)
+                    {
+                        request.Headers.TryAddWithoutValidation("X-Forwarded-For", HttpContext.Connection.RemoteIpAddress.ToString());
+                    }
+
+                    // Append Sentry authentication header
+                    if (!string.IsNullOrEmpty(publicKey))
+                    {
+                        request.Headers.TryAddWithoutValidation("X-Sentry-Auth", $"Sentry sentry_version=7, sentry_client=sentry.dotnet.tunnel/1.0, sentry_key={publicKey}");
+                    }
+
+                    var requestContent = new ByteArrayContent(newPayload);
+                    requestContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-sentry-envelope");
+                    request.Content = requestContent;
+
+                    var response = await client.SendAsync(request);
+                
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorBody = await response.Content.ReadAsStringAsync();
+                        _logger.LogWarning("Upstream Sentry returned {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
+                    }
+
+                    return StatusCode((int)response.StatusCode);
+                }
+                catch (JsonException)
                 {
                     return BadRequest("Invalid envelope header JSON.");
                 }
-                
-                // SSRF Mitigation: Construct the upstream URL purely from the server's securely stored DSN.
-                var upstreamUrl = $"{dsnUri.Scheme}://{dsnUri.Host}/api/{projectId}/envelope/";
-
-                // Rewrite the envelope header with the backend's real DSN and public key
-                headerObj["dsn"] = dsnString;
-                var publicKey = dsnUri.UserInfo?.Split(':')[0];
-                if (!string.IsNullOrEmpty(publicKey))
-                {
-                    headerObj["public_key"] = publicKey;
-                }
-
-                var newHeaderBytes = Encoding.UTF8.GetBytes(headerObj.ToJsonString());
-                
-                // Reconstruct envelope: new header + \n + remaining bytes
-                var remainingEnvelopeSpan = envelopeBytes.AsSpan(newlineIndex + 1);
-                var newPayload = new byte[newHeaderBytes.Length + 1 + remainingEnvelopeSpan.Length];
-                Buffer.BlockCopy(newHeaderBytes, 0, newPayload, 0, newHeaderBytes.Length);
-                newPayload[newHeaderBytes.Length] = (byte)'\n';
-                remainingEnvelopeSpan.CopyTo(newPayload.AsSpan(newHeaderBytes.Length + 1));
-
-                var client = _httpClientFactory.CreateClient("SentryTunnel");
-                var request = new HttpRequestMessage(HttpMethod.Post, upstreamUrl);
-                
-                // Forward the client IP for accurate user location parsing by Sentry
-                if (HttpContext.Connection.RemoteIpAddress != null)
-                {
-                    request.Headers.TryAddWithoutValidation("X-Forwarded-For", HttpContext.Connection.RemoteIpAddress.ToString());
-                }
-
-                // Append Sentry authentication header
-                if (!string.IsNullOrEmpty(publicKey))
-                {
-                    request.Headers.TryAddWithoutValidation("X-Sentry-Auth", $"Sentry sentry_version=7, sentry_client=sentry.dotnet.tunnel/1.0, sentry_key={publicKey}");
-                }
-
-                var requestContent = new ByteArrayContent(newPayload);
-                requestContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-sentry-envelope");
-                request.Content = requestContent;
-
-                var response = await client.SendAsync(request);
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorBody = await response.Content.ReadAsStringAsync();
-                    _logger.LogWarning("Upstream Sentry returned {StatusCode}: {ErrorBody}", response.StatusCode, errorBody);
-                }
-
-                return StatusCode((int)response.StatusCode);
             }
-            catch (JsonException)
+            catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
             {
-                return BadRequest("Invalid envelope header JSON.");
+                return StatusCode(StatusCodes.Status499ClientClosedRequest);
             }
         }
     }

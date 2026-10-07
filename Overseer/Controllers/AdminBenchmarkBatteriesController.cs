@@ -82,55 +82,76 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetBatteries(CancellationToken ct)
     {
-        var batteries = await _db.BenchmarkBatteries
-            .AsNoTracking()
-            .Include(b => b.Suites)
-            .Include(b => b.CreatedByUser)
-            .OrderBy(b => b.Name)
-            .ToListAsync(ct);
+        try
+        {
+            var batteries = await _db.BenchmarkBatteries
+                .AsNoTracking()
+                .Include(b => b.Suites)
+                .Include(b => b.CreatedByUser)
+                .OrderBy(b => b.Name)
+                .ToListAsync(ct);
 
-        return Ok(await BuildBatteryDtosAsync(batteries, ct));
+            return Ok(await BuildBatteryDtosAsync(batteries, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("{id:long}")]
     public async Task<IActionResult> GetBattery(long id, CancellationToken ct)
     {
-        var dto = await GetBatteryDtoAsync(id, ct);
-        return dto == null ? NotFound() : Ok(dto);
+        try
+        {
+            var dto = await GetBatteryDtoAsync(id, ct);
+            return dto == null ? NotFound() : Ok(dto);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPost]
     public async Task<IActionResult> CreateBattery([FromBody] CreateBenchmarkBatteryRequest request, CancellationToken ct)
     {
-        string? nameError = await NameErrorAsync(request.Name, excludeId: null, ct);
-        if (nameError != null) return BadRequest(nameError);
-
-        var (rows, rowsError) = await ResolveSuiteRowsAsync(request, ct);
-        if (rowsError != null) return BadRequest(rowsError);
-
-        DateTime now = DateTime.UtcNow;
-        var battery = new BenchmarkBattery
+        try
         {
-            Name = request.Name.Trim(),
-            Description = NormalizeDescription(request.Description),
-            WeightingScheme = request.WeightingScheme,
-            Revision = 1,
-            CreatedByUserId = CurrentUserId(),
-            CreatedAtUtc = now,
-            ModifiedAtUtc = now,
-            Suites = rows!
-        };
+            string? nameError = await NameErrorAsync(request.Name, excludeId: null, ct);
+            if (nameError != null) return BadRequest(nameError);
 
-        var errors = BenchmarkBatteryDefinition.Validate(battery);
-        if (errors.Count > 0) return BadRequest(string.Join(" ", errors));
+            var (rows, rowsError) = await ResolveSuiteRowsAsync(request, ct);
+            if (rowsError != null) return BadRequest(rowsError);
 
-        battery.DefinitionSha256 = BenchmarkBatteryDefinition.ComputeSha256(battery);
+            DateTime now = DateTime.UtcNow;
+            var battery = new BenchmarkBattery
+            {
+                Name = request.Name.Trim(),
+                Description = NormalizeDescription(request.Description),
+                WeightingScheme = request.WeightingScheme,
+                Revision = 1,
+                CreatedByUserId = CurrentUserId(),
+                CreatedAtUtc = now,
+                ModifiedAtUtc = now,
+                Suites = rows!
+            };
 
-        _db.BenchmarkBatteries.Add(battery);
-        await _db.SaveChangesAsync(ct);
+            var errors = BenchmarkBatteryDefinition.Validate(battery);
+            if (errors.Count > 0) return BadRequest(string.Join(" ", errors));
 
-        var dto = await GetBatteryDtoAsync(battery.Id, ct);
-        return dto == null ? NotFound() : Ok(dto);
+            battery.DefinitionSha256 = BenchmarkBatteryDefinition.ComputeSha256(battery);
+
+            _db.BenchmarkBatteries.Add(battery);
+            await _db.SaveChangesAsync(ct);
+
+            var dto = await GetBatteryDtoAsync(battery.Id, ct);
+            return dto == null ? NotFound() : Ok(dto);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -142,45 +163,52 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     [HttpPut("{id:long}")]
     public async Task<IActionResult> UpdateBattery(long id, [FromBody] UpdateBenchmarkBatteryRequest request, CancellationToken ct)
     {
-        var battery = await _db.BenchmarkBatteries
-            .Include(b => b.Suites)
-            .FirstOrDefaultAsync(b => b.Id == id, ct);
-        if (battery == null) return NotFound();
-
-        string? nameError = await NameErrorAsync(request.Name, excludeId: id, ct);
-        if (nameError != null) return BadRequest(nameError);
-
-        var (desired, rowsError) = await ResolveSuiteRowsAsync(request, ct);
-        if (rowsError != null) return BadRequest(rowsError);
-
-        var errors = BenchmarkBatteryDefinition.Validate(
-            request.WeightingScheme,
-            desired!.Select(s => (s.BenchmarkSuiteId, s.SuiteName, s.CustomWeight)).ToList());
-        if (errors.Count > 0) return BadRequest(string.Join(" ", errors));
-
-        var current = battery.Suites.OrderBy(s => s.OrderIndex).ThenBy(s => s.Id).ToList();
-        bool definitionChanged = battery.WeightingScheme != request.WeightingScheme
-            || !current.Select(s => (s.BenchmarkSuiteId, s.CustomWeight))
-                .SequenceEqual(desired!.Select(s => (s.BenchmarkSuiteId, s.CustomWeight)));
-
-        if (definitionChanged)
+        try
         {
-            ApplySuiteRows(battery, current, desired!);
-            battery.WeightingScheme = request.WeightingScheme;
-            battery.Revision++;
-            battery.DefinitionSha256 = BenchmarkBatteryDefinition.ComputeSha256(
+            var battery = await _db.BenchmarkBatteries
+                .Include(b => b.Suites)
+                .FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (battery == null) return NotFound();
+
+            string? nameError = await NameErrorAsync(request.Name, excludeId: id, ct);
+            if (nameError != null) return BadRequest(nameError);
+
+            var (desired, rowsError) = await ResolveSuiteRowsAsync(request, ct);
+            if (rowsError != null) return BadRequest(rowsError);
+
+            var errors = BenchmarkBatteryDefinition.Validate(
                 request.WeightingScheme,
-                desired!.Select(s => (s.BenchmarkSuiteId!.Value, s.CustomWeight)));
+                desired!.Select(s => (s.BenchmarkSuiteId, s.SuiteName, s.CustomWeight)).ToList());
+            if (errors.Count > 0) return BadRequest(string.Join(" ", errors));
+
+            var current = battery.Suites.OrderBy(s => s.OrderIndex).ThenBy(s => s.Id).ToList();
+            bool definitionChanged = battery.WeightingScheme != request.WeightingScheme
+                || !current.Select(s => (s.BenchmarkSuiteId, s.CustomWeight))
+                    .SequenceEqual(desired!.Select(s => (s.BenchmarkSuiteId, s.CustomWeight)));
+
+            if (definitionChanged)
+            {
+                ApplySuiteRows(battery, current, desired!);
+                battery.WeightingScheme = request.WeightingScheme;
+                battery.Revision++;
+                battery.DefinitionSha256 = BenchmarkBatteryDefinition.ComputeSha256(
+                    request.WeightingScheme,
+                    desired!.Select(s => (s.BenchmarkSuiteId!.Value, s.CustomWeight)));
+            }
+
+            battery.Name = request.Name.Trim();
+            battery.Description = NormalizeDescription(request.Description);
+            battery.ModifiedAtUtc = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync(ct);
+
+            var dto = await GetBatteryDtoAsync(battery.Id, ct);
+            return dto == null ? NotFound() : Ok(dto);
         }
-
-        battery.Name = request.Name.Trim();
-        battery.Description = NormalizeDescription(request.Description);
-        battery.ModifiedAtUtc = DateTime.UtcNow;
-
-        await _db.SaveChangesAsync(ct);
-
-        var dto = await GetBatteryDtoAsync(battery.Id, ct);
-        return dto == null ? NotFound() : Ok(dto);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -190,40 +218,54 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> DeleteBattery(long id, CancellationToken ct)
     {
-        var battery = await _db.BenchmarkBatteries
-            .Include(b => b.Suites)
-            .FirstOrDefaultAsync(b => b.Id == id, ct);
-        if (battery == null) return NotFound();
-
-        if (await _db.BenchmarkBatteryRuns.AnyAsync(r => r.BenchmarkBatteryId == id && ActiveStatuses.Contains(r.Status), ct))
+        try
         {
-            return Conflict("Cannot delete this battery while one of its battery runs is in progress.");
+            var battery = await _db.BenchmarkBatteries
+                .Include(b => b.Suites)
+                .FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (battery == null) return NotFound();
+
+            if (await _db.BenchmarkBatteryRuns.AnyAsync(r => r.BenchmarkBatteryId == id && ActiveStatuses.Contains(r.Status), ct))
+            {
+                return Conflict("Cannot delete this battery while one of its battery runs is in progress.");
+            }
+
+            // ClientSetNull is NO ACTION in the database: the reference is cleared on loaded rows.
+            var batteryRuns = await _db.BenchmarkBatteryRuns.Where(r => r.BenchmarkBatteryId == id).ToListAsync(ct);
+            foreach (var batteryRun in batteryRuns) batteryRun.BenchmarkBatteryId = null;
+
+            _db.BenchmarkBatterySuites.RemoveRange(battery.Suites);
+            _db.BenchmarkBatteries.Remove(battery);
+            await _db.SaveChangesAsync(ct);
+
+            return Ok();
         }
-
-        // ClientSetNull is NO ACTION in the database: the reference is cleared on loaded rows.
-        var batteryRuns = await _db.BenchmarkBatteryRuns.Where(r => r.BenchmarkBatteryId == id).ToListAsync(ct);
-        foreach (var batteryRun in batteryRuns) batteryRun.BenchmarkBatteryId = null;
-
-        _db.BenchmarkBatterySuites.RemoveRange(battery.Suites);
-        _db.BenchmarkBatteries.Remove(battery);
-        await _db.SaveChangesAsync(ct);
-
-        return Ok();
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>Hides a battery from the launcher, or shows it again (<c>{ "archived": false }</c>).</summary>
     [HttpPost("{id:long}/archive")]
     public async Task<IActionResult> ArchiveBattery(long id, [FromBody] ArchiveBenchmarkBatteryRequest? request, CancellationToken ct)
     {
-        var battery = await _db.BenchmarkBatteries.FirstOrDefaultAsync(b => b.Id == id, ct);
-        if (battery == null) return NotFound();
+        try
+        {
+            var battery = await _db.BenchmarkBatteries.FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (battery == null) return NotFound();
 
-        battery.IsArchived = request?.Archived ?? true;
-        battery.ModifiedAtUtc = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+            battery.IsArchived = request?.Archived ?? true;
+            battery.ModifiedAtUtc = DateTime.UtcNow;
+            await _db.SaveChangesAsync(ct);
 
-        var dto = await GetBatteryDtoAsync(id, ct);
-        return dto == null ? NotFound() : Ok(dto);
+            var dto = await GetBatteryDtoAsync(id, ct);
+            return dto == null ? NotFound() : Ok(dto);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     private static string? NormalizeDescription(string? description)
@@ -459,63 +501,85 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     [HttpGet("runs")]
     public async Task<IActionResult> GetBatteryRuns([FromQuery] long? batteryId, [FromQuery] int? take, CancellationToken ct)
     {
-        var query = _db.BenchmarkBatteryRuns
-            .AsNoTracking()
-            .Include(r => r.StartedByUser)
-            .AsQueryable();
-
-        if (batteryId.HasValue)
+        try
         {
-            query = query.Where(r => r.BenchmarkBatteryId == batteryId.Value);
+            var query = _db.BenchmarkBatteryRuns
+                .AsNoTracking()
+                .Include(r => r.StartedByUser)
+                .AsQueryable();
+
+            if (batteryId.HasValue)
+            {
+                query = query.Where(r => r.BenchmarkBatteryId == batteryId.Value);
+            }
+
+            int limit = Math.Clamp(take ?? DefaultRunListSize, 1, MaxRunListSize);
+
+            var batteryRuns = await query
+                .OrderByDescending(r => r.StartedAtUtc)
+                .ThenByDescending(r => r.Id)
+                .Take(limit)
+                .ToListAsync(ct);
+
+            return Ok(await BuildRunDtosAsync(batteryRuns, ct));
         }
-
-        int limit = Math.Clamp(take ?? DefaultRunListSize, 1, MaxRunListSize);
-
-        var batteryRuns = await query
-            .OrderByDescending(r => r.StartedAtUtc)
-            .ThenByDescending(r => r.Id)
-            .Take(limit)
-            .ToListAsync(ct);
-
-        return Ok(await BuildRunDtosAsync(batteryRuns, ct));
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
-    /// <summary>Starts a battery run. 202 with <c>{ batteryRunId }</c>; refusals map as a series start's do.</summary>
+    /// <summary>Starts a battery run. 202 with <c>{ batteryRunId }</c>; refusals map as a series start's do; 499 when the client aborts.</summary>
     [HttpPost("runs")]
     public async Task<IActionResult> StartBatteryRun([FromBody] StartBenchmarkBatteryRunRequest request, CancellationToken ct)
     {
-        var result = await _orchestrator.StartAsync(request, CurrentUserId(), ct);
-        return StartResultToActionResult(result);
+        try
+        {
+            var result = await _orchestrator.StartAsync(request, CurrentUserId(), ct);
+            return StartResultToActionResult(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// The battery run this process is driving, else the newest one that is live or stopped. Returns
-    /// <c>204 No Content</c> when there is nothing to show, so the client can poll it cheaply.
+    /// <c>204 No Content</c> when there is nothing to show, so the client can poll it cheaply; 499 when
+    /// the client aborts.
     /// </summary>
     [HttpGet("runs/active")]
     public async Task<IActionResult> GetActiveBatteryRun(
         CancellationToken ct,
         [FromServices] BenchmarkRunCostEstimator? costEstimator = null)
     {
-        long? id = _orchestrator.ActiveBatteryRunId;
-
-        if (id == null)
+        try
         {
-            id = await _db.BenchmarkBatteryRuns
-                .Where(r => r.Status == BenchmarkRunSeriesStatus.Running
-                            || r.Status == BenchmarkRunSeriesStatus.WaitingForCap
-                            || r.Status == BenchmarkRunSeriesStatus.Pending
-                            || r.Status == BenchmarkRunSeriesStatus.Stopped)
-                .OrderByDescending(r => r.StartedAtUtc)
-                .ThenByDescending(r => r.Id)
-                .Select(r => (long?)r.Id)
-                .FirstOrDefaultAsync(ct);
+            long? id = _orchestrator.ActiveBatteryRunId;
+
+            if (id == null)
+            {
+                id = await _db.BenchmarkBatteryRuns
+                    .Where(r => r.Status == BenchmarkRunSeriesStatus.Running
+                                || r.Status == BenchmarkRunSeriesStatus.WaitingForCap
+                                || r.Status == BenchmarkRunSeriesStatus.Pending
+                                || r.Status == BenchmarkRunSeriesStatus.Stopped)
+                    .OrderByDescending(r => r.StartedAtUtc)
+                    .ThenByDescending(r => r.Id)
+                    .Select(r => (long?)r.Id)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            if (id == null) return NoContent();
+
+            var dto = await GetRunDtoAsync(id.Value, ct, includeLiveFigures: true, costEstimator);
+            return dto == null ? NoContent() : Ok(dto);
         }
-
-        if (id == null) return NoContent();
-
-        var dto = await GetRunDtoAsync(id.Value, ct, includeLiveFigures: true, costEstimator);
-        return dto == null ? NoContent() : Ok(dto);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -528,35 +592,56 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         CancellationToken ct,
         [FromServices] BenchmarkRunCostEstimator? costEstimator = null)
     {
-        var dto = await GetRunDtoAsync(id, ct, includeLiveFigures: true, costEstimator);
-        return dto == null ? NotFound() : Ok(dto);
+        try
+        {
+            var dto = await GetRunDtoAsync(id, ct, includeLiveFigures: true, costEstimator);
+            return dto == null ? NotFound() : Ok(dto);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>Cancels a battery run and its in-flight member. A finished one cannot be canceled.</summary>
     [HttpPost("runs/{id:long}/cancel")]
     public async Task<IActionResult> CancelBatteryRun(long id, CancellationToken ct)
     {
-        var status = await _db.BenchmarkBatteryRuns
-            .Where(r => r.Id == id)
-            .Select(r => (BenchmarkRunSeriesStatus?)r.Status)
-            .FirstOrDefaultAsync(ct);
-
-        if (status == null) return NotFound();
-
-        if (status is BenchmarkRunSeriesStatus.Completed or BenchmarkRunSeriesStatus.Cancelled or BenchmarkRunSeriesStatus.Failed)
+        try
         {
-            return BadRequest($"A {status} battery run cannot be canceled.");
-        }
+            var status = await _db.BenchmarkBatteryRuns
+                .Where(r => r.Id == id)
+                .Select(r => (BenchmarkRunSeriesStatus?)r.Status)
+                .FirstOrDefaultAsync(ct);
 
-        bool canceled = await _orchestrator.CancelAsync(id, ct);
-        return canceled ? Ok() : NotFound();
+            if (status == null) return NotFound();
+
+            if (status is BenchmarkRunSeriesStatus.Completed or BenchmarkRunSeriesStatus.Cancelled or BenchmarkRunSeriesStatus.Failed)
+            {
+                return BadRequest($"A {status} battery run cannot be canceled.");
+            }
+
+            bool canceled = await _orchestrator.CancelAsync(id, ct);
+            return canceled ? Ok() : NotFound();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPost("runs/{id:long}/resume")]
     public async Task<IActionResult> ResumeBatteryRun(long id, [FromBody] ResumeBenchmarkBatteryRunRequest? request, CancellationToken ct)
     {
-        var result = await _orchestrator.ResumeAsync(id, request?.Mode ?? BenchmarkBatteryResumeMode.Continue, ct);
-        return StartResultToActionResult(result);
+        try
+        {
+            var result = await _orchestrator.ResumeAsync(id, request?.Mode ?? BenchmarkBatteryResumeMode.Continue, ct);
+            return StartResultToActionResult(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -564,7 +649,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     /// any report job of it is canceled. With <c>deleteMembers=true</c>
     /// each member run, superseded ones included, is deleted through the single-run delete, except a
     /// run that also serves another battery run, which is kept. 204 on success; 404 for an unknown
-    /// battery run; 409 while it is driven or live, or while a member run to delete is in flight.
+    /// battery run; 409 while it is driven or live, or while a member run to delete is in flight; 499
+    /// when the client aborts.
     /// </summary>
     [HttpDelete("runs/{id:long}")]
     public async Task<IActionResult> DeleteBatteryRun(
@@ -573,85 +659,108 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         CancellationToken ct = default,
         [FromServices] BenchmarkBatteryReportDocumentService? documents = null)
     {
-        var batteryRun = await _db.BenchmarkBatteryRuns
-            .Include(r => r.Members)
-            .FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (batteryRun == null) return NotFound();
-
-        if (_orchestrator.IsDriving(id) || ActiveStatuses.Contains(batteryRun.Status))
+        try
         {
-            return Conflict("Cannot delete a battery run while it is in progress.");
-        }
+            var batteryRun = await _db.BenchmarkBatteryRuns
+                .Include(r => r.Members)
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (batteryRun == null) return NotFound();
 
-        var memberRunIds = new List<long>();
-        if (deleteMembers)
-        {
-            var ownRunIds = batteryRun.Members.Select(m => m.BenchmarkRunId).Distinct().ToList();
-            var sharedRunIds = await _db.BenchmarkBatteryRunMembers
-                .Where(m => ownRunIds.Contains(m.BenchmarkRunId) && m.BenchmarkBatteryRunId != id)
-                .Select(m => m.BenchmarkRunId)
-                .Distinct()
-                .ToListAsync(ct);
-            memberRunIds = ownRunIds.Except(sharedRunIds).OrderBy(runId => runId).ToList();
-
-            if (_runManager.CurrentRunId is long current && memberRunIds.Contains(current))
+            if (_orchestrator.IsDriving(id) || ActiveStatuses.Contains(batteryRun.Status))
             {
-                return Conflict("Cannot delete a member run while it is running.");
+                return Conflict("Cannot delete a battery run while it is in progress.");
             }
+
+            var memberRunIds = new List<long>();
+            if (deleteMembers)
+            {
+                var ownRunIds = batteryRun.Members.Select(m => m.BenchmarkRunId).Distinct().ToList();
+                var sharedRunIds = await _db.BenchmarkBatteryRunMembers
+                    .Where(m => ownRunIds.Contains(m.BenchmarkRunId) && m.BenchmarkBatteryRunId != id)
+                    .Select(m => m.BenchmarkRunId)
+                    .Distinct()
+                    .ToListAsync(ct);
+                memberRunIds = ownRunIds.Except(sharedRunIds).OrderBy(runId => runId).ToList();
+
+                if (_runManager.CurrentRunId is long current && memberRunIds.Contains(current))
+                {
+                    return Conflict("Cannot delete a member run while it is running.");
+                }
+            }
+
+            // Tracked, so the cascade reaches the analyses on providers that apply it to loaded rows only.
+            await _db.BenchmarkBatteryAnalyses.Where(a => a.BenchmarkBatteryRunId == id).LoadAsync(ct);
+
+            _db.BenchmarkBatteryRuns.Remove(batteryRun);
+            await _db.SaveChangesAsync(ct);
+
+            // The battery-completion documents and their charts, and any report job of this battery run.
+            if (documents != null)
+            {
+                await documents.SettleAfterDeleteAsync(id, ct);
+            }
+
+            foreach (long runId in memberRunIds)
+            {
+                await AdminBenchmarkController.TryDeleteRunAsync(_db, _runManager, runId, ct);
+            }
+
+            return NoContent();
         }
-
-        // Tracked, so the cascade reaches the analyses on providers that apply it to loaded rows only.
-        await _db.BenchmarkBatteryAnalyses.Where(a => a.BenchmarkBatteryRunId == id).LoadAsync(ct);
-
-        _db.BenchmarkBatteryRuns.Remove(batteryRun);
-        await _db.SaveChangesAsync(ct);
-
-        // The battery-completion documents and their charts, and any report job of this battery run.
-        if (documents != null)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await documents.SettleAfterDeleteAsync(id, ct);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        foreach (long runId in memberRunIds)
-        {
-            await AdminBenchmarkController.TryDeleteRunAsync(_db, _runManager, runId, ct);
-        }
-
-        return NoContent();
     }
 
     /// <summary>
     /// Which slots earlier runs would fill for a start request not yet sent: the start's own body,
     /// judged against the fingerprints a start would record now. Creates and spends nothing. 200 with
-    /// the preview; 404 for an unknown battery; 400 for a request that cannot be judged.
+    /// the preview; 404 for an unknown battery; 400 for a request that cannot be judged; 499 when the
+    /// client aborts.
     /// </summary>
     [HttpPost("runs/reuse-preview")]
     public async Task<IActionResult> PreviewBatteryReuse([FromBody] StartBenchmarkBatteryRunRequest request, CancellationToken ct)
     {
-        var result = await _orchestrator.PreviewReuseAsync(request, ct);
-        return result.Succeeded ? Ok(result.Preview) : AttachResultToActionResult(result);
+        try
+        {
+            var result = await _orchestrator.PreviewReuseAsync(request, ct);
+            return result.Succeeded ? Ok(result.Preview) : AttachResultToActionResult(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// Attaches an existing run to one slot of a battery run. 200 with the updated battery run; 404
     /// for an unknown battery run or run; 409 while it is running or in a state that takes no run;
-    /// 400 with the reason when the run or the slot does not qualify.
+    /// 400 with the reason when the run or the slot does not qualify; 499 when the client aborts.
     /// </summary>
     [HttpPost("runs/{id:long}/members")]
     public async Task<IActionResult> AttachBatteryMember(long id, [FromBody] BenchmarkBatteryAttachDto request, CancellationToken ct)
     {
         if (request == null) return BadRequest("The slot and the run are missing from the request.");
 
-        var result = await _orchestrator.AttachAsync(id, request.SuiteIndex, request.Round, request.RunId, ct);
-        if (!result.Succeeded) return AttachResultToActionResult(result);
+        try
+        {
+            var result = await _orchestrator.AttachAsync(id, request.SuiteIndex, request.Round, request.RunId, ct);
+            if (!result.Succeeded) return AttachResultToActionResult(result);
 
-        var dto = await GetRunDtoAsync(id, ct);
-        return dto == null ? NotFound() : Ok(dto);
+            var dto = await GetRunDtoAsync(id, ct);
+            return dto == null ? NotFound() : Ok(dto);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// The runs that may be attached to one slot, newest first, each with whether it qualifies and,
-    /// when not, why. 404 for an unknown battery run; 400 for a slot outside the grid.
+    /// when not, why. 404 for an unknown battery run; 400 for a slot outside the grid; 499 when the
+    /// client aborts.
     /// </summary>
     [HttpGet("runs/{id:long}/members/candidates")]
     public async Task<IActionResult> GetBatteryAttachCandidates(
@@ -660,8 +769,15 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         [FromQuery] int round,
         CancellationToken ct)
     {
-        var result = await _orchestrator.GetAttachCandidatesAsync(id, suiteIndex, round, ct);
-        return result.Succeeded ? Ok(result.Candidates) : AttachResultToActionResult(result);
+        try
+        {
+            var result = await _orchestrator.GetAttachCandidatesAsync(id, suiteIndex, round, ct);
+            return result.Succeeded ? Ok(result.Candidates) : AttachResultToActionResult(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>The refusals of attach, candidates and preview: 404 not found, 409 wrong state, 400 not eligible.</summary>
@@ -1515,7 +1631,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     /// persisted, paired against <c>compareWithBatteryRunId</c> when given; an unpaired analysis the
     /// reconcile has just computed is returned instead of a second one. Last, the battery-completion
     /// documents are scheduled when they are due. 400 with the explanation when the members do not
-    /// form one composite or the comparison is not eligible.
+    /// form one composite or the comparison is not eligible; 499 when the client aborts.
     /// </summary>
     [HttpPost("runs/{id:long}/analysis")]
     public async Task<IActionResult> AnalyseBatteryRun(
@@ -1524,54 +1640,68 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         CancellationToken ct,
         [FromServices] BenchmarkBatteryReportDocumentService? documents = null)
     {
-        var status = await _db.BenchmarkBatteryRuns
-            .Where(r => r.Id == id)
-            .Select(r => (BenchmarkRunSeriesStatus?)r.Status)
-            .FirstOrDefaultAsync(ct);
-        if (status == null) return NotFound();
-
-        DateTime reconcileStartedAtUtc = DateTime.UtcNow;
-        bool finished = status is BenchmarkRunSeriesStatus.Stopped or BenchmarkRunSeriesStatus.CompletedWithErrors
-                        && await _orchestrator.ReconcileBatteryRunAsync(id, ct);
-
-        BenchmarkBatteryAnalysis? analysis = null;
-        if (finished && request?.CompareWithBatteryRunId == null)
+        try
         {
-            var latest = await _analysisService.GetLatestAsync(id, ct);
-            if (latest != null && latest.ComparedWithBatteryRunId == null && latest.ComputedAtUtc >= reconcileStartedAtUtc)
-            {
-                analysis = latest;
-            }
-        }
+            var status = await _db.BenchmarkBatteryRuns
+                .Where(r => r.Id == id)
+                .Select(r => (BenchmarkRunSeriesStatus?)r.Status)
+                .FirstOrDefaultAsync(ct);
+            if (status == null) return NotFound();
 
-        if (analysis == null)
-        {
-            var (computed, _, _, error) = await _analysisService.AnalyseAsync(
-                id, CurrentUserId(), request?.CompareWithBatteryRunId, ct);
+            DateTime reconcileStartedAtUtc = DateTime.UtcNow;
+            bool finished = status is BenchmarkRunSeriesStatus.Stopped or BenchmarkRunSeriesStatus.CompletedWithErrors
+                            && await _orchestrator.ReconcileBatteryRunAsync(id, ct);
 
-            if (computed == null)
+            BenchmarkBatteryAnalysis? analysis = null;
+            if (finished && request?.CompareWithBatteryRunId == null)
             {
-                return BadRequest(error ?? "The battery run could not be analyzed.");
+                var latest = await _analysisService.GetLatestAsync(id, ct);
+                if (latest != null && latest.ComparedWithBatteryRunId == null && latest.ComputedAtUtc >= reconcileStartedAtUtc)
+                {
+                    analysis = latest;
+                }
             }
 
-            analysis = computed;
+            if (analysis == null)
+            {
+                var (computed, _, _, error) = await _analysisService.AnalyseAsync(
+                    id, CurrentUserId(), request?.CompareWithBatteryRunId, ct);
+
+                if (computed == null)
+                {
+                    return BadRequest(error ?? "The battery run could not be analyzed.");
+                }
+
+                analysis = computed;
+            }
+
+            // Its own gates refuse a battery run with no writer, no complete and current analysis, or documents already written.
+            _ = documents?.ScheduleIfDue(id);
+
+            var dto = await BuildAnalysisDtoAsync(analysis, ct);
+            return dto == null ? NotFound() : Ok(dto);
         }
-
-        // Its own gates refuse a battery run with no writer, no complete and current analysis, or documents already written.
-        _ = documents?.ScheduleIfDue(id);
-
-        var dto = await BuildAnalysisDtoAsync(analysis, ct);
-        return dto == null ? NotFound() : Ok(dto);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("runs/{id:long}/analysis")]
     public async Task<IActionResult> GetBatteryRunAnalysis(long id, CancellationToken ct)
     {
-        var analysis = await _analysisService.GetLatestAsync(id, ct);
-        if (analysis == null) return NoContent();
+        try
+        {
+            var analysis = await _analysisService.GetLatestAsync(id, ct);
+            if (analysis == null) return NoContent();
 
-        var dto = await BuildAnalysisDtoAsync(analysis, ct);
-        return dto == null ? NoContent() : Ok(dto);
+            var dto = await BuildAnalysisDtoAsync(analysis, ct);
+            return dto == null ? NoContent() : Ok(dto);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     private async Task<BenchmarkBatteryAnalysisDto?> BuildAnalysisDtoAsync(BenchmarkBatteryAnalysis analysis, CancellationToken ct)
@@ -1626,87 +1756,94 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     [HttpGet("runs/{id:long}/report")]
     public async Task<IActionResult> GetBatteryRunReport(long id, CancellationToken ct)
     {
-        var batteryRun = await _db.BenchmarkBatteryRuns
-            .AsNoTracking()
-            .Include(r => r.Members)
-            .FirstOrDefaultAsync(r => r.Id == id, ct);
-
-        if (batteryRun == null) return NotFound();
-
-        var analysis = await _analysisService.GetLatestAsync(id, ct);
-        if (analysis == null)
+        try
         {
-            return BadRequest("This battery run has no analysis yet. Compute the analysis before downloading a report.");
-        }
+            var batteryRun = await _db.BenchmarkBatteryRuns
+                .AsNoTracking()
+                .Include(r => r.Members)
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
 
-        var result = BenchmarkBatteryAnalysisService.DeserializeResult(analysis);
-        if (result == null)
+            if (batteryRun == null) return NotFound();
+
+            var analysis = await _analysisService.GetLatestAsync(id, ct);
+            if (analysis == null)
+            {
+                return BadRequest("This battery run has no analysis yet. Compute the analysis before downloading a report.");
+            }
+
+            var result = BenchmarkBatteryAnalysisService.DeserializeResult(analysis);
+            if (result == null)
+            {
+                return BadRequest("The stored analysis could not be read, so no report can be produced.");
+            }
+
+            var definition = TryReadDefinition(batteryRun.DefinitionJson);
+            if (definition == null)
+            {
+                return BadRequest("The battery run's stored definition cannot be read, so no report can be produced.");
+            }
+
+            long[] memberRunIds = BenchmarkBatteryLeaderboardService.ReadMemberRunIds(analysis);
+
+            var memberRuns = await _db.BenchmarkRuns
+                .AsNoTracking()
+                .Where(r => memberRunIds.Contains(r.Id))
+                .OrderBy(r => r.StartedAtUtc)
+                .ThenBy(r => r.Id)
+                .ToListAsync(ct);
+
+            await BenchmarkSeriesOrchestrator.HydrateItemRevisionsAsync(_db, memberRuns, ct);
+
+            // Each analysed run in the suite its membership names, at its first round.
+            var suiteIndexByRun = batteryRun.Members
+                .Where(m => !m.Superseded)
+                .GroupBy(m => m.BenchmarkRunId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(m => m.Round).First().SuiteIndex);
+
+            var bySuite = memberRuns
+                .Where(r => suiteIndexByRun.ContainsKey(r.Id))
+                .GroupBy(r => suiteIndexByRun[r.Id])
+                .OrderBy(g => g.Key)
+                .Select(g => (SuiteIndex: g.Key, Runs: (IReadOnlyList<BenchmarkRun>)g.ToList()))
+                .ToList();
+
+            BenchmarkBatteryComparabilityResult? comparability = bySuite.Count > 0
+                ? BenchmarkBatteryComparability.Resolve(bySuite)
+                : null;
+
+            var comparison = BenchmarkBatteryAnalysisService.DeserializeComparison(analysis);
+            string? comparisonLabel = null;
+            if (comparison != null && analysis.ComparedWithBatteryRunId.HasValue)
+            {
+                string? baselineName = await _db.BenchmarkBatteryRuns
+                    .Where(r => r.Id == analysis.ComparedWithBatteryRunId.Value)
+                    .Select(r => r.BatteryName)
+                    .FirstOrDefaultAsync(ct);
+                comparisonLabel = baselineName == null
+                    ? $"battery run #{analysis.ComparedWithBatteryRunId.Value}"
+                    : $"battery run #{analysis.ComparedWithBatteryRunId.Value} ({baselineName})";
+            }
+
+            var answerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(_db, memberRunIds, withRefutedSentences: true, ct);
+            var graders = await _analysisService.LoadGradersAsync(batteryRun, memberRuns, ct);
+            var earlierRuns = await _analysisService.LoadEarlierRunsAsync(batteryRun, ct);
+            string markdown = BenchmarkBatteryReportBuilder.BuildMarkdownReport(
+                batteryRun, definition, result, analysis, memberRuns, comparability, comparison, comparisonLabel,
+                GetOverseerVersion(), answerOutcomes, graders, earlierRuns);
+
+            string? modelName = memberRuns
+                .Select(r => r.TestedModelSnapshot.Label())
+                .FirstOrDefault(label => !string.IsNullOrWhiteSpace(label));
+
+            string filename = BenchmarkBatteryReportBuilder.BuildFileName(
+                batteryRun.BatteryName, modelName, batteryRun.RunsPerSuite, analysis.ComputedAtUtc);
+
+            return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return BadRequest("The stored analysis could not be read, so no report can be produced.");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        var definition = TryReadDefinition(batteryRun.DefinitionJson);
-        if (definition == null)
-        {
-            return BadRequest("The battery run's stored definition cannot be read, so no report can be produced.");
-        }
-
-        long[] memberRunIds = BenchmarkBatteryLeaderboardService.ReadMemberRunIds(analysis);
-
-        var memberRuns = await _db.BenchmarkRuns
-            .AsNoTracking()
-            .Where(r => memberRunIds.Contains(r.Id))
-            .OrderBy(r => r.StartedAtUtc)
-            .ThenBy(r => r.Id)
-            .ToListAsync(ct);
-
-        await BenchmarkSeriesOrchestrator.HydrateItemRevisionsAsync(_db, memberRuns, ct);
-
-        // Each analysed run in the suite its membership names, at its first round.
-        var suiteIndexByRun = batteryRun.Members
-            .Where(m => !m.Superseded)
-            .GroupBy(m => m.BenchmarkRunId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.Round).First().SuiteIndex);
-
-        var bySuite = memberRuns
-            .Where(r => suiteIndexByRun.ContainsKey(r.Id))
-            .GroupBy(r => suiteIndexByRun[r.Id])
-            .OrderBy(g => g.Key)
-            .Select(g => (SuiteIndex: g.Key, Runs: (IReadOnlyList<BenchmarkRun>)g.ToList()))
-            .ToList();
-
-        BenchmarkBatteryComparabilityResult? comparability = bySuite.Count > 0
-            ? BenchmarkBatteryComparability.Resolve(bySuite)
-            : null;
-
-        var comparison = BenchmarkBatteryAnalysisService.DeserializeComparison(analysis);
-        string? comparisonLabel = null;
-        if (comparison != null && analysis.ComparedWithBatteryRunId.HasValue)
-        {
-            string? baselineName = await _db.BenchmarkBatteryRuns
-                .Where(r => r.Id == analysis.ComparedWithBatteryRunId.Value)
-                .Select(r => r.BatteryName)
-                .FirstOrDefaultAsync(ct);
-            comparisonLabel = baselineName == null
-                ? $"battery run #{analysis.ComparedWithBatteryRunId.Value}"
-                : $"battery run #{analysis.ComparedWithBatteryRunId.Value} ({baselineName})";
-        }
-
-        var answerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(_db, memberRunIds, withRefutedSentences: true, ct);
-        var graders = await _analysisService.LoadGradersAsync(batteryRun, memberRuns, ct);
-        var earlierRuns = await _analysisService.LoadEarlierRunsAsync(batteryRun, ct);
-        string markdown = BenchmarkBatteryReportBuilder.BuildMarkdownReport(
-            batteryRun, definition, result, analysis, memberRuns, comparability, comparison, comparisonLabel,
-            GetOverseerVersion(), answerOutcomes, graders, earlierRuns);
-
-        string? modelName = memberRuns
-            .Select(r => r.TestedModelSnapshot.Label())
-            .FirstOrDefault(label => !string.IsNullOrWhiteSpace(label));
-
-        string filename = BenchmarkBatteryReportBuilder.BuildFileName(
-            batteryRun.BatteryName, modelName, batteryRun.RunsPerSuite, analysis.ComputedAtUtc);
-
-        return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
     }
 
     /// <summary>The running build, formatted as the run report's version line shows it.</summary>
@@ -1736,102 +1873,109 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             return BadRequest("A definition hash is required.");
         }
 
-        string hash = definitionSha256.Trim().ToLowerInvariant();
+        try
+        {
+            string hash = definitionSha256.Trim().ToLowerInvariant();
 
-        var heads = await _db.BenchmarkBatteryAnalyses
-            .AsNoTracking()
-            .Where(a => a.DefinitionSha256 == hash)
-            .Select(a => new { a.Id, a.BenchmarkBatteryRunId, a.ComputedAtUtc })
-            .ToListAsync(ct);
-
-        var latestIds = heads
-            .GroupBy(a => a.BenchmarkBatteryRunId)
-            .Select(g => g.OrderByDescending(a => a.ComputedAtUtc).ThenByDescending(a => a.Id).First().Id)
-            .ToList();
-
-        var analyses = latestIds.Count == 0
-            ? new List<BenchmarkBatteryAnalysis>()
-            : await _db.BenchmarkBatteryAnalyses
+            var heads = await _db.BenchmarkBatteryAnalyses
                 .AsNoTracking()
-                .Where(a => latestIds.Contains(a.Id))
+                .Where(a => a.DefinitionSha256 == hash)
+                .Select(a => new { a.Id, a.BenchmarkBatteryRunId, a.ComputedAtUtc })
                 .ToListAsync(ct);
 
-        var batteryRunIds = analyses.Select(a => a.BenchmarkBatteryRunId).Distinct().ToList();
-        var batteryRuns = await _db.BenchmarkBatteryRuns
-            .AsNoTracking()
-            .Where(r => batteryRunIds.Contains(r.Id))
-            .ToListAsync(ct);
-        var batteryRunById = batteryRuns.ToDictionary(r => r.Id);
+            var latestIds = heads
+                .GroupBy(a => a.BenchmarkBatteryRunId)
+                .Select(g => g.OrderByDescending(a => a.ComputedAtUtc).ThenByDescending(a => a.Id).First().Id)
+                .ToList();
 
-        var state = await LoadMemberStateAsync(batteryRunIds, ct);
-        var configLabels = await LoadConfigurationLabelsAsync(batteryRuns, ct);
-        var identities = await _leaderboard.LoadIdentitiesAsync(batteryRuns, IdentityRunIds(batteryRuns, state), ct);
+            var analyses = latestIds.Count == 0
+                ? new List<BenchmarkBatteryAnalysis>()
+                : await _db.BenchmarkBatteryAnalyses
+                    .AsNoTracking()
+                    .Where(a => latestIds.Contains(a.Id))
+                    .ToListAsync(ct);
 
-        var rows = analyses
-            .Where(a => batteryRunById.ContainsKey(a.BenchmarkBatteryRunId))
-            .Select(a => ToLeaderboardRow(
-                a,
-                batteryRunById[a.BenchmarkBatteryRunId],
-                state,
-                configLabels,
-                identities.TryGetValue(a.BenchmarkBatteryRunId, out var identity) ? identity : null))
-            .ToList();
+            var batteryRunIds = analyses.Select(a => a.BenchmarkBatteryRunId).Distinct().ToList();
+            var batteryRuns = await _db.BenchmarkBatteryRuns
+                .AsNoTracking()
+                .Where(r => batteryRunIds.Contains(r.Id))
+                .ToListAsync(ct);
+            var batteryRunById = batteryRuns.ToDictionary(r => r.Id);
 
-        var ranked = rows
-            .Where(r => BenchmarkBatteryLeaderboardService.IsRanked(r.Complete, r.ComparabilityClassSha256, r.OverallIndex))
-            .ToList();
-        var rankedIds = new HashSet<long>(ranked.Select(r => r.BatteryRunId));
+            var state = await LoadMemberStateAsync(batteryRunIds, ct);
+            var configLabels = await LoadConfigurationLabelsAsync(batteryRuns, ct);
+            var identities = await _leaderboard.LoadIdentitiesAsync(batteryRuns, IdentityRunIds(batteryRuns, state), ct);
 
-        var classes = ranked
-            .GroupBy(r => r.ComparabilityClassSha256!, StringComparer.Ordinal)
-            .Select(g => new BenchmarkBatteryLeaderboardClassDto
+            var rows = analyses
+                .Where(a => batteryRunById.ContainsKey(a.BenchmarkBatteryRunId))
+                .Select(a => ToLeaderboardRow(
+                    a,
+                    batteryRunById[a.BenchmarkBatteryRunId],
+                    state,
+                    configLabels,
+                    identities.TryGetValue(a.BenchmarkBatteryRunId, out var identity) ? identity : null))
+                .ToList();
+
+            var ranked = rows
+                .Where(r => BenchmarkBatteryLeaderboardService.IsRanked(r.Complete, r.ComparabilityClassSha256, r.OverallIndex))
+                .ToList();
+            var rankedIds = new HashSet<long>(ranked.Select(r => r.BatteryRunId));
+
+            var classes = ranked
+                .GroupBy(r => r.ComparabilityClassSha256!, StringComparer.Ordinal)
+                .Select(g => new BenchmarkBatteryLeaderboardClassDto
+                {
+                    ComparabilityClassSha256 = g.Key,
+                    HarnessVersion = g.OrderByDescending(r => r.ComputedAtUtc).First().HarnessVersion,
+                    ScoringMethodVersion = g.OrderByDescending(r => r.ComputedAtUtc).First().ScoringMethodVersion,
+                    Rows = g.OrderByDescending(r => r.OverallIndex).ThenBy(r => r.BatteryRunId).ToList()
+                })
+                .OrderByDescending(c => c.Rows.Max(r => r.ComputedAtUtc))
+                .ToList();
+
+            if (classes.Count >= 2)
             {
-                ComparabilityClassSha256 = g.Key,
-                HarnessVersion = g.OrderByDescending(r => r.ComputedAtUtc).First().HarnessVersion,
-                ScoringMethodVersion = g.OrderByDescending(r => r.ComputedAtUtc).First().ScoringMethodVersion,
-                Rows = g.OrderByDescending(r => r.OverallIndex).ThenBy(r => r.BatteryRunId).ToList()
-            })
-            .OrderByDescending(c => c.Rows.Max(r => r.ComputedAtUtc))
-            .ToList();
+                var representatives = classes.ToDictionary(
+                    c => c.ComparabilityClassSha256,
+                    c => analyses.First(a => a.Id == c.Rows.OrderByDescending(r => r.ComputedAtUtc).First().AnalysisId));
+                var distinguishing = await _leaderboard.DistinguishingKeysAsync(representatives, ct);
+                foreach (var cls in classes)
+                {
+                    cls.DistinguishingKeys = distinguishing.TryGetValue(cls.ComparabilityClassSha256, out var keys) ? keys : new List<string>();
+                }
+            }
 
-        if (classes.Count >= 2)
-        {
-            var representatives = classes.ToDictionary(
-                c => c.ComparabilityClassSha256,
-                c => analyses.First(a => a.Id == c.Rows.OrderByDescending(r => r.ComputedAtUtc).First().AnalysisId));
-            var distinguishing = await _leaderboard.DistinguishingKeysAsync(representatives, ct);
             foreach (var cls in classes)
             {
-                cls.DistinguishingKeys = distinguishing.TryGetValue(cls.ComparabilityClassSha256, out var keys) ? keys : new List<string>();
+                cls.Label = ClassLabel(cls.HarnessVersion, cls.ScoringMethodVersion, cls.DistinguishingKeys);
             }
+
+            var battery = await _db.BenchmarkBatteries
+                .AsNoTracking()
+                .Where(b => b.DefinitionSha256 == hash)
+                .OrderByDescending(b => b.ModifiedAtUtc)
+                .Select(b => new { b.Id, b.Name })
+                .FirstOrDefaultAsync(ct);
+
+            var newestRun = batteryRuns.OrderByDescending(r => r.StartedAtUtc).ThenByDescending(r => r.Id).FirstOrDefault();
+
+            return Ok(new BenchmarkBatteryLeaderboardDto
+            {
+                DefinitionSha256 = hash,
+                BatteryId = battery?.Id ?? newestRun?.BenchmarkBatteryId,
+                BatteryName = battery?.Name ?? newestRun?.BatteryName,
+                Classes = classes,
+                Incomplete = rows
+                    .Where(r => !rankedIds.Contains(r.BatteryRunId))
+                    .OrderByDescending(r => r.ComputedAtUtc)
+                    .ThenByDescending(r => r.BatteryRunId)
+                    .ToList()
+            });
         }
-
-        foreach (var cls in classes)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            cls.Label = ClassLabel(cls.HarnessVersion, cls.ScoringMethodVersion, cls.DistinguishingKeys);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        var battery = await _db.BenchmarkBatteries
-            .AsNoTracking()
-            .Where(b => b.DefinitionSha256 == hash)
-            .OrderByDescending(b => b.ModifiedAtUtc)
-            .Select(b => new { b.Id, b.Name })
-            .FirstOrDefaultAsync(ct);
-
-        var newestRun = batteryRuns.OrderByDescending(r => r.StartedAtUtc).ThenByDescending(r => r.Id).FirstOrDefault();
-
-        return Ok(new BenchmarkBatteryLeaderboardDto
-        {
-            DefinitionSha256 = hash,
-            BatteryId = battery?.Id ?? newestRun?.BenchmarkBatteryId,
-            BatteryName = battery?.Name ?? newestRun?.BatteryName,
-            Classes = classes,
-            Incomplete = rows
-                .Where(r => !rankedIds.Contains(r.BatteryRunId))
-                .OrderByDescending(r => r.ComputedAtUtc)
-                .ThenByDescending(r => r.BatteryRunId)
-                .ToList()
-        });
     }
 
     private static BenchmarkBatteryLeaderboardRowDto ToLeaderboardRow(

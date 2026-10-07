@@ -68,43 +68,50 @@ public class PrivacyController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        /* The decryptor closes over the scoped ContentProtectionService, so each value decrypts
-           under its own session's DEK. A value that is not an envelope passes through unchanged,
-           which is what makes an upgraded conversation -- legitimately part plaintext, part
-           ciphertext -- export correctly rather than half-garbled. */
-        var conversations = await ChatDataExport.BuildAsync(
-            _dbContext,
-            userId,
-            decrypt: (session, stored) => _contentProtection.Decrypt(session, stored),
-            cancellationToken: cancellationToken);
-
-        bool written = await ChatAccessAudit.RecordAsync(
-            _dbContext,
-            ChatAccessAction.Export,
-            actorUserId: userId,
-            actorUserName: User.Identity?.Name,
-            actorWasAdmin: _configuration.IsAdmin(User.Identity?.Name),
-            subjectUserId: userId,
-            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
-            detail: $"{conversations.Count} conversations, decrypted",
-            cancellationToken: cancellationToken);
-
-        if (!written)
+        try
         {
-            _logger?.LogWarning("Could not record an Export audit entry for user {UserId}.", userId);
+            /* The decryptor closes over the scoped ContentProtectionService, so each value decrypts
+               under its own session's DEK. A value that is not an envelope passes through unchanged,
+               which is what makes an upgraded conversation -- legitimately part plaintext, part
+               ciphertext -- export correctly rather than half-garbled. */
+            var conversations = await ChatDataExport.BuildAsync(
+                _dbContext,
+                userId,
+                decrypt: (session, stored) => _contentProtection.Decrypt(session, stored),
+                cancellationToken: cancellationToken);
+
+            bool written = await ChatAccessAudit.RecordAsync(
+                _dbContext,
+                ChatAccessAction.Export,
+                actorUserId: userId,
+                actorUserName: User.Identity?.Name,
+                actorWasAdmin: _configuration.IsAdmin(User.Identity?.Name),
+                subjectUserId: userId,
+                ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+                detail: $"{conversations.Count} conversations, decrypted",
+                cancellationToken: cancellationToken);
+
+            if (!written)
+            {
+                _logger?.LogWarning("Could not record an Export audit entry for user {UserId}.", userId);
+            }
+
+            var payload = new Dictionary<string, object?>
+            {
+                ["conversationsNote"] = ChatDataExport.DescribeExport(canDecrypt: true),
+                ["conversations"] = conversations
+            };
+
+            Response.Headers["Content-Disposition"] = "attachment; filename=OverseerConversations.json";
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+
+            return new FileContentResult(
+                JsonSerializer.SerializeToUtf8Bytes(payload, new JsonSerializerOptions { WriteIndented = true }),
+                "application/json");
         }
-
-        var payload = new Dictionary<string, object?>
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            ["conversationsNote"] = ChatDataExport.DescribeExport(canDecrypt: true),
-            ["conversations"] = conversations
-        };
-
-        Response.Headers["Content-Disposition"] = "attachment; filename=OverseerConversations.json";
-        Response.Headers["X-Content-Type-Options"] = "nosniff";
-
-        return new FileContentResult(
-            JsonSerializer.SerializeToUtf8Bytes(payload, new JsonSerializerOptions { WriteIndented = true }),
-            "application/json");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 }

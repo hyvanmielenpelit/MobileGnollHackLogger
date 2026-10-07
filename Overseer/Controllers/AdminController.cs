@@ -362,69 +362,76 @@ public class AdminController : ControllerBase
         if (!endpointCheck.IsValid)
             return BadRequest(endpointCheck.Error);
 
-        var orderIndex = await _dbContext.SystemAiApiConfigurations.AnyAsync() 
-            ? await _dbContext.SystemAiApiConfigurations.MaxAsync(c => c.OrderIndex) + 1 
-            : 0;
-
-        var config = new SystemAiApiConfiguration
+        try
         {
-            DisplayName = request.DisplayName,
-            DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode),
-            Provider = request.Provider,
-            ModelId = request.ModelId,
-            ConfidentialityPosture = newPosture,
-            ConfidentialityNote = request.ConfidentialityNote,
-            PostureAgreementRef = request.PostureAgreementRef,
-            PostureVerifiedUtc = request.PostureVerifiedUtc,
-            DataRegion = request.DataRegion,
-            BaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl.Trim(),
-            CustomHeadersJson = string.IsNullOrWhiteSpace(request.CustomHeadersJson) ? null : request.CustomHeadersJson,
-            ApiVersion = string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion.Trim(),
-            ThinkingLevel = request.ThinkingLevel,
-            ReasoningMode = request.ReasoningMode,
-            ReasoningSummary = request.ReasoningSummary,
-            ServiceTier = request.ServiceTier,
-            MaxInputTokens = request.MaxInputTokens,
-            MaxOutputTokens = request.MaxOutputTokens,
-            IsEnabled = request.IsEnabled,
-            IsSystemWide = request.IsSystemWide,
-            MaxDailyChatRequests = request.MaxDailyChatRequests,
-            MaxMonthlyChatRequests = request.MaxMonthlyChatRequests,
-            MaxTotalChatRequests = request.MaxTotalChatRequests,
-            MaxDailyTitleRequests = request.MaxDailyTitleRequests,
-            MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests,
-            MaxTotalTitleRequests = request.MaxTotalTitleRequests,
-            MaxDailyChatTokens = request.MaxDailyChatTokens,
-            MaxMonthlyChatTokens = request.MaxMonthlyChatTokens,
-            MaxTotalChatTokens = request.MaxTotalChatTokens,
-            MaxDailyTitleTokens = request.MaxDailyTitleTokens,
-            MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
-            MaxTotalTitleTokens = request.MaxTotalTitleTokens,
-            ModelRole = request.ModelRole,
-            ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode,
-            OrderIndex = orderIndex,
-            Note = request.Note,
-            PricingMode = normalizedPricingMode,
-            InputPricePerMillion = request.InputPricePerMillion,
-            OutputPricePerMillion = request.OutputPricePerMillion,
-            CachedInputPricePerMillion = request.CachedInputPricePerMillion,
-            UseDefaultApiKey = request.UseDefaultApiKey
-        };
+            var orderIndex = await _dbContext.SystemAiApiConfigurations.AnyAsync() 
+                ? await _dbContext.SystemAiApiConfigurations.MaxAsync(c => c.OrderIndex) + 1 
+                : 0;
 
-        if (request.UseDefaultApiKey)
-        {
-            if (!await SystemDefaultApiKeyService.ApplyDefaultKeyAsync(_dbContext, _cryptoService, config, ct))
-                return BadRequest(NoDefaultKeyMessage(config.Provider));
+            var config = new SystemAiApiConfiguration
+            {
+                DisplayName = request.DisplayName,
+                DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode),
+                Provider = request.Provider,
+                ModelId = request.ModelId,
+                ConfidentialityPosture = newPosture,
+                ConfidentialityNote = request.ConfidentialityNote,
+                PostureAgreementRef = request.PostureAgreementRef,
+                PostureVerifiedUtc = request.PostureVerifiedUtc,
+                DataRegion = request.DataRegion,
+                BaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl.Trim(),
+                CustomHeadersJson = string.IsNullOrWhiteSpace(request.CustomHeadersJson) ? null : request.CustomHeadersJson,
+                ApiVersion = string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion.Trim(),
+                ThinkingLevel = request.ThinkingLevel,
+                ReasoningMode = request.ReasoningMode,
+                ReasoningSummary = request.ReasoningSummary,
+                ServiceTier = request.ServiceTier,
+                MaxInputTokens = request.MaxInputTokens,
+                MaxOutputTokens = request.MaxOutputTokens,
+                IsEnabled = request.IsEnabled,
+                IsSystemWide = request.IsSystemWide,
+                MaxDailyChatRequests = request.MaxDailyChatRequests,
+                MaxMonthlyChatRequests = request.MaxMonthlyChatRequests,
+                MaxTotalChatRequests = request.MaxTotalChatRequests,
+                MaxDailyTitleRequests = request.MaxDailyTitleRequests,
+                MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests,
+                MaxTotalTitleRequests = request.MaxTotalTitleRequests,
+                MaxDailyChatTokens = request.MaxDailyChatTokens,
+                MaxMonthlyChatTokens = request.MaxMonthlyChatTokens,
+                MaxTotalChatTokens = request.MaxTotalChatTokens,
+                MaxDailyTitleTokens = request.MaxDailyTitleTokens,
+                MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens,
+                MaxTotalTitleTokens = request.MaxTotalTitleTokens,
+                ModelRole = request.ModelRole,
+                ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode,
+                OrderIndex = orderIndex,
+                Note = request.Note,
+                PricingMode = normalizedPricingMode,
+                InputPricePerMillion = request.InputPricePerMillion,
+                OutputPricePerMillion = request.OutputPricePerMillion,
+                CachedInputPricePerMillion = request.CachedInputPricePerMillion,
+                UseDefaultApiKey = request.UseDefaultApiKey
+            };
+
+            if (request.UseDefaultApiKey)
+            {
+                if (!await SystemDefaultApiKeyService.ApplyDefaultKeyAsync(_dbContext, _cryptoService, config, ct))
+                    return BadRequest(NoDefaultKeyMessage(config.Provider));
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ApiKey))
+            {
+                EncryptApiKey(config, request.ApiKey);
+            }
+
+            _dbContext.SystemAiApiConfigurations.Add(config);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { id = config.Id });
         }
-        else if (!string.IsNullOrWhiteSpace(request.ApiKey))
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            EncryptApiKey(config, request.ApiKey);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        _dbContext.SystemAiApiConfigurations.Add(config);
-        await _dbContext.SaveChangesAsync();
-
-        return Ok(new { id = config.Id });
     }
 
     [HttpPut("systemconfigs/{id}")]
@@ -463,84 +470,91 @@ public class AdminController : ControllerBase
         if (!endpointCheck.IsValid)
             return BadRequest(endpointCheck.Error);
 
-        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
-        if (config == null) return NotFound();
-
-        bool wasUsingDefaultKey = config.UseDefaultApiKey;
-
-        config.DisplayName = request.DisplayName;
-        config.DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode);
-        config.Provider = request.Provider;
-        config.ModelId = request.ModelId;
-        config.ConfidentialityPosture = updatedPosture;
-        config.ConfidentialityNote = request.ConfidentialityNote;
-        config.PostureAgreementRef = request.PostureAgreementRef;
-        /* Assigned unconditionally, clearing included: withdrawing verification is a thing an
-           operator must be able to do, and a null that silently kept the old date would leave
-           a green badge standing on an agreement that has lapsed. */
-        config.PostureVerifiedUtc = request.PostureVerifiedUtc;
-        config.DataRegion = request.DataRegion;
-        config.BaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl.Trim();
-        config.CustomHeadersJson = string.IsNullOrWhiteSpace(request.CustomHeadersJson) ? null : request.CustomHeadersJson;
-        config.ApiVersion = string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion.Trim();
-        config.ThinkingLevel = request.ThinkingLevel;
-        config.ReasoningMode = request.ReasoningMode;
-        config.ReasoningSummary = request.ReasoningSummary;
-        config.ServiceTier = request.ServiceTier;
-        config.MaxInputTokens = request.MaxInputTokens;
-        config.MaxOutputTokens = request.MaxOutputTokens;
-        config.IsEnabled = request.IsEnabled;
-        config.IsSystemWide = request.IsSystemWide;
-        config.MaxDailyChatRequests = request.MaxDailyChatRequests;
-        config.MaxMonthlyChatRequests = request.MaxMonthlyChatRequests;
-        config.MaxTotalChatRequests = request.MaxTotalChatRequests;
-        config.MaxDailyTitleRequests = request.MaxDailyTitleRequests;
-        config.MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests;
-        config.MaxTotalTitleRequests = request.MaxTotalTitleRequests;
-        config.MaxDailyChatTokens = request.MaxDailyChatTokens;
-        config.MaxMonthlyChatTokens = request.MaxMonthlyChatTokens;
-        config.MaxTotalChatTokens = request.MaxTotalChatTokens;
-        config.MaxDailyTitleTokens = request.MaxDailyTitleTokens;
-        config.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
-        config.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
-        config.ModelRole = request.ModelRole;
-        config.ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode;
-        config.Note = request.Note;
-        config.PricingMode = normalizedPricingMode;
-        config.InputPricePerMillion = request.InputPricePerMillion;
-        config.OutputPricePerMillion = request.OutputPricePerMillion;
-        config.CachedInputPricePerMillion = request.CachedInputPricePerMillion;
-        config.UseDefaultApiKey = request.UseDefaultApiKey;
-
-        if (request.UseDefaultApiKey)
+        try
         {
-            // A fresh copy of the default key of the provider the configuration now has.
-            if (!await SystemDefaultApiKeyService.ApplyDefaultKeyAsync(_dbContext, _cryptoService, config, ct))
-                return BadRequest(NoDefaultKeyMessage(config.Provider));
-        }
-        else if (wasUsingDefaultKey)
-        {
-            // The copied default key never stays behind as a custom key.
-            if (string.IsNullOrWhiteSpace(request.ApiKey))
-                ClearApiKey(config);
-            else
-                EncryptApiKey(config, request.ApiKey);
-        }
-        else if (request.ApiKey != null)
-        {
-            if (string.IsNullOrWhiteSpace(request.ApiKey))
+            var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
+            if (config == null) return NotFound();
+
+            bool wasUsingDefaultKey = config.UseDefaultApiKey;
+
+            config.DisplayName = request.DisplayName;
+            config.DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode);
+            config.Provider = request.Provider;
+            config.ModelId = request.ModelId;
+            config.ConfidentialityPosture = updatedPosture;
+            config.ConfidentialityNote = request.ConfidentialityNote;
+            config.PostureAgreementRef = request.PostureAgreementRef;
+            /* Assigned unconditionally, clearing included: withdrawing verification is a thing an
+               operator must be able to do, and a null that silently kept the old date would leave
+               a green badge standing on an agreement that has lapsed. */
+            config.PostureVerifiedUtc = request.PostureVerifiedUtc;
+            config.DataRegion = request.DataRegion;
+            config.BaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl.Trim();
+            config.CustomHeadersJson = string.IsNullOrWhiteSpace(request.CustomHeadersJson) ? null : request.CustomHeadersJson;
+            config.ApiVersion = string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion.Trim();
+            config.ThinkingLevel = request.ThinkingLevel;
+            config.ReasoningMode = request.ReasoningMode;
+            config.ReasoningSummary = request.ReasoningSummary;
+            config.ServiceTier = request.ServiceTier;
+            config.MaxInputTokens = request.MaxInputTokens;
+            config.MaxOutputTokens = request.MaxOutputTokens;
+            config.IsEnabled = request.IsEnabled;
+            config.IsSystemWide = request.IsSystemWide;
+            config.MaxDailyChatRequests = request.MaxDailyChatRequests;
+            config.MaxMonthlyChatRequests = request.MaxMonthlyChatRequests;
+            config.MaxTotalChatRequests = request.MaxTotalChatRequests;
+            config.MaxDailyTitleRequests = request.MaxDailyTitleRequests;
+            config.MaxMonthlyTitleRequests = request.MaxMonthlyTitleRequests;
+            config.MaxTotalTitleRequests = request.MaxTotalTitleRequests;
+            config.MaxDailyChatTokens = request.MaxDailyChatTokens;
+            config.MaxMonthlyChatTokens = request.MaxMonthlyChatTokens;
+            config.MaxTotalChatTokens = request.MaxTotalChatTokens;
+            config.MaxDailyTitleTokens = request.MaxDailyTitleTokens;
+            config.MaxMonthlyTitleTokens = request.MaxMonthlyTitleTokens;
+            config.MaxTotalTitleTokens = request.MaxTotalTitleTokens;
+            config.ModelRole = request.ModelRole;
+            config.ParallelExecutionMode = (MobileGnollHackLogger.Data.ParallelExecutionMode)request.ParallelExecutionMode;
+            config.Note = request.Note;
+            config.PricingMode = normalizedPricingMode;
+            config.InputPricePerMillion = request.InputPricePerMillion;
+            config.OutputPricePerMillion = request.OutputPricePerMillion;
+            config.CachedInputPricePerMillion = request.CachedInputPricePerMillion;
+            config.UseDefaultApiKey = request.UseDefaultApiKey;
+
+            if (request.UseDefaultApiKey)
             {
-                ClearApiKey(config);
+                // A fresh copy of the default key of the provider the configuration now has.
+                if (!await SystemDefaultApiKeyService.ApplyDefaultKeyAsync(_dbContext, _cryptoService, config, ct))
+                    return BadRequest(NoDefaultKeyMessage(config.Provider));
             }
-            else
+            else if (wasUsingDefaultKey)
             {
-                EncryptApiKey(config, request.ApiKey);
+                // The copied default key never stays behind as a custom key.
+                if (string.IsNullOrWhiteSpace(request.ApiKey))
+                    ClearApiKey(config);
+                else
+                    EncryptApiKey(config, request.ApiKey);
             }
+            else if (request.ApiKey != null)
+            {
+                if (string.IsNullOrWhiteSpace(request.ApiKey))
+                {
+                    ClearApiKey(config);
+                }
+                else
+                {
+                    EncryptApiKey(config, request.ApiKey);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok();
         }
-
-        await _dbContext.SaveChangesAsync();
-
-        return Ok();
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPost("systemconfigs/{id}/reset")]
@@ -586,10 +600,17 @@ public class AdminController : ControllerBase
     [HttpGet("systemconfigs/{id}/deletion-check")]
     public async Task<IActionResult> GetSystemConfigDeletionCheck(long id, CancellationToken ct)
     {
-        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { id }, ct);
-        if (config == null) return NotFound();
+        try
+        {
+            var config = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { id }, ct);
+            if (config == null) return NotFound();
 
-        return Ok(await _usageGuard.CheckDeletionAsync(config, ct));
+            return Ok(await _usageGuard.CheckDeletionAsync(config, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>

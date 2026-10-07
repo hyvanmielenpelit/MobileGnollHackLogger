@@ -466,115 +466,123 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// written for this comparison and subject and not named in <c>replaceDocumentIds</c> (409); spend
     /// cap (429); same provider, unacknowledged (409 with the warning); a job already running (409 with
     /// its state). Comparison scope: see <see cref="StartComparisonAsync"/>. The comparison is numbered
-    /// before the job starts, so every document it writes belongs to it.
+    /// before the job starts, so every document it writes belongs to it. A request the client aborts is
+    /// a 499.
     /// </summary>
     [HttpPost("report-packs")]
     public async Task<IActionResult> Start([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
     {
-        if (request == null) return BadRequest(new { error = "A request body is required." });
-        if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
-        if (request.Scope == BenchmarkReportScope.Comparison) return await StartComparisonAsync(request, ct);
-
-        var keys = request.ModelSubjectKeys();
-        string firstKey = keys.Count > 0 ? keys[0] : request.SubjectKey ?? string.Empty;
-        var (comparison, firstSubject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(_comparisonService, SubjectRequest(request, firstKey), ct);
-        if (refusal != null) return BadRequest(new { error = refusal });
-
-        var subjects = new List<BenchmarkModelComparisonEntryDto> { firstSubject! };
-        foreach (string key in keys.Skip(1))
+        try
         {
-            var (subject, subjectRefusal) = BenchmarkReportPackPreparation.SubjectOf(comparison!, key);
-            if (subjectRefusal != null) return BadRequest(new { error = subjectRefusal });
-            subjects.Add(subject!);
-        }
-        if (subjects.Any(s => !BenchmarkReportPackPreparation.HasPeers(comparison!, s)))
-        {
-            return BadRequest(new { error = BenchmarkReportPackPreparation.PeerlessReportRefusal });
-        }
+            if (request == null) return BadRequest(new { error = "A request body is required." });
+            if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
+            if (request.Scope == BenchmarkReportScope.Comparison) return await StartComparisonAsync(request, ct);
 
-        var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
-        string? writerRefusal = subjects.Select(s => WriterRefusal(writer, s)).FirstOrDefault(r => r != null);
-        if (writerRefusal != null) return BadRequest(new { error = writerRefusal });
+            var keys = request.ModelSubjectKeys();
+            string firstKey = keys.Count > 0 ? keys[0] : request.SubjectKey ?? string.Empty;
+            var (comparison, firstSubject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(_comparisonService, SubjectRequest(request, firstKey), ct);
+            if (refusal != null) return BadRequest(new { error = refusal });
 
-        var audiences = RequestedReportAudiences(request);
-        if (audiences.Count == 0) return BadRequest(new { error = "Choose at least one document to write." });
+            var subjects = new List<BenchmarkModelComparisonEntryDto> { firstSubject! };
+            foreach (string key in keys.Skip(1))
+            {
+                var (subject, subjectRefusal) = BenchmarkReportPackPreparation.SubjectOf(comparison!, key);
+                if (subjectRefusal != null) return BadRequest(new { error = subjectRefusal });
+                subjects.Add(subject!);
+            }
+            if (subjects.Any(s => !BenchmarkReportPackPreparation.HasPeers(comparison!, s)))
+            {
+                return BadRequest(new { error = BenchmarkReportPackPreparation.PeerlessReportRefusal });
+            }
 
-        if (ContextWindowOf(writer) != null)
-        {
-            int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-            var estimates = new List<BenchmarkReportPackAudienceEstimateDto>();
+            var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
+            string? writerRefusal = subjects.Select(s => WriterRefusal(writer, s)).FirstOrDefault(r => r != null);
+            if (writerRefusal != null) return BadRequest(new { error = writerRefusal });
+
+            var audiences = RequestedReportAudiences(request);
+            if (audiences.Count == 0) return BadRequest(new { error = "Choose at least one document to write." });
+
+            if (ContextWindowOf(writer) != null)
+            {
+                int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
+                var estimates = new List<BenchmarkReportPackAudienceEstimateDto>();
+                foreach (var subject in subjects)
+                {
+                    var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+                        _db, _comparisonService, SubjectRequest(request, subject.Key), excerptChars, ct, _configuration, comparison);
+                    if (prep == null) return BadRequest(new { error = prepRefusal });
+                    estimates.AddRange(EstimateAudiences(prep, writer, audiences, subject.Key));
+                }
+                if (ContextWindowRefusal(estimates, writer) is string contextRefusal) return BadRequest(new { error = contextRefusal });
+            }
+
+            var replaceIds = (request.ReplaceDocumentIds ?? new List<long>()).Distinct().ToList();
+            string comparisonKey = ComparisonKeyOf(request);
+            var replaceRefusal = await ReplaceRefusalAsync(replaceIds, audiences, comparisonKey,
+                d => d.Scope == BenchmarkReportScope.Model && subjects.Any(s => s.Key == d.SubjectKey), ct);
+            if (replaceRefusal != null) return BadRequest(new { error = replaceRefusal });
+
             foreach (var subject in subjects)
             {
-                var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-                    _db, _comparisonService, SubjectRequest(request, subject.Key), excerptChars, ct, _configuration, comparison);
-                if (prep == null) return BadRequest(new { error = prepRefusal });
-                estimates.AddRange(EstimateAudiences(prep, writer, audiences, subject.Key));
-            }
-            if (ContextWindowRefusal(estimates, writer) is string contextRefusal) return BadRequest(new { error = contextRefusal });
-        }
-
-        var replaceIds = (request.ReplaceDocumentIds ?? new List<long>()).Distinct().ToList();
-        string comparisonKey = ComparisonKeyOf(request);
-        var replaceRefusal = await ReplaceRefusalAsync(replaceIds, audiences, comparisonKey,
-            d => d.Scope == BenchmarkReportScope.Model && subjects.Any(s => s.Key == d.SubjectKey), ct);
-        if (replaceRefusal != null) return BadRequest(new { error = replaceRefusal });
-
-        foreach (var subject in subjects)
-        {
-            var written = (await WrittenDocumentsAsync(subject.Key, request, ct))
-                .FirstOrDefault(d => audiences.Contains(d.Audience) && !replaceIds.Contains(d.DocumentId));
-            if (written != null)
-            {
-                return Conflict(new
+                var written = (await WrittenDocumentsAsync(subject.Key, request, ct))
+                    .FirstOrDefault(d => audiences.Contains(d.Audience) && !replaceIds.Contains(d.DocumentId));
+                if (written != null)
                 {
-                    error = $"The {BenchmarkReportRenderService.AudienceName(written.Audience)} about {subject.Label} is already written for this comparison. "
-                        + "Delete it in step 4 to write it again."
+                    return Conflict(new
+                    {
+                        error = $"The {BenchmarkReportRenderService.AudienceName(written.Audience)} about {subject.Label} is already written for this comparison. "
+                            + "Delete it in step 4 to write it again."
+                    });
+                }
+            }
+
+            var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
+            if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+
+            var sameProvider = subjects.FirstOrDefault(s => _complianceGuard.IsSameProvider(writer!.Provider, s.Provider));
+            if (sameProvider != null && !request.AcknowledgeSameProvider)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, new SameProviderWarningDto
+                {
+                    SameProvider = true,
+                    Provider = sameProvider.Provider,
+                    TestedModelDisplayName = sameProvider.Label,
+                    AssessorModelDisplayName = writer!.DisplayName,
+                    Message = BenchmarkReportPackPreparation.SameProviderWarning(sameProvider, writer)
                 });
             }
-        }
 
-        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
-        if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
-
-        var sameProvider = subjects.FirstOrDefault(s => _complianceGuard.IsSameProvider(writer!.Provider, s.Provider));
-        if (sameProvider != null && !request.AcknowledgeSameProvider)
-        {
-            return StatusCode(StatusCodes.Status409Conflict, new SameProviderWarningDto
+            var running = _jobManager.Current;
+            if (running != null && running.Status == BenchmarkReportPackJobStatus.Running)
             {
-                SameProvider = true,
-                Provider = sameProvider.Provider,
-                TestedModelDisplayName = sameProvider.Label,
-                AssessorModelDisplayName = writer!.DisplayName,
-                Message = BenchmarkReportPackPreparation.SameProviderWarning(sameProvider, writer)
-            });
-        }
+                return StatusCode(StatusCodes.Status409Conflict, running.ToDto());
+            }
 
-        var running = _jobManager.Current;
-        if (running != null && running.Status == BenchmarkReportPackJobStatus.Running)
+            string startedByUserId = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var (numbered, identityError) = await _comparisonIdentity.EnsureAsync(
+                request.RunIds, request.GroupIds, request.BatteryRunIds, string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId, ct);
+            if (numbered == null) return BadRequest(new { error = identityError ?? "The comparison could not be numbered." });
+
+            var job = NewJob(request, writer!, sameProvider != null, startedByUserId, numbered.Id, await SnapshotIdAsync(writer!, ct));
+            job.Scope = BenchmarkReportScope.Model;
+            job.SubjectKey = subjects[0].Key;
+            job.SubjectLabel = subjects[0].Label;
+            job.SuiteId = subjects[0].SuiteId;
+            job.SuiteName = subjects[0].SuiteName ?? subjects[0].BatteryName ?? string.Empty;
+            job.Request.Scope = BenchmarkReportScope.Model;
+            job.Request.SubjectKey = subjects[0].Key;
+            job.Request.SubjectKeys = subjects.Select(s => s.Key).ToList();
+            job.Request.Audiences = audiences;
+            job.Documents = subjects
+                .SelectMany(s => audiences.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a, SubjectKey = s.Key, SubjectLabel = s.Label }))
+                .ToList();
+
+            return Launch(job);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return StatusCode(StatusCodes.Status409Conflict, running.ToDto());
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        string startedByUserId = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var (numbered, identityError) = await _comparisonIdentity.EnsureAsync(
-            request.RunIds, request.GroupIds, request.BatteryRunIds, string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId, ct);
-        if (numbered == null) return BadRequest(new { error = identityError ?? "The comparison could not be numbered." });
-
-        var job = NewJob(request, writer!, sameProvider != null, startedByUserId, numbered.Id, await SnapshotIdAsync(writer!, ct));
-        job.Scope = BenchmarkReportScope.Model;
-        job.SubjectKey = subjects[0].Key;
-        job.SubjectLabel = subjects[0].Label;
-        job.SuiteId = subjects[0].SuiteId;
-        job.SuiteName = subjects[0].SuiteName ?? subjects[0].BatteryName ?? string.Empty;
-        job.Request.Scope = BenchmarkReportScope.Model;
-        job.Request.SubjectKey = subjects[0].Key;
-        job.Request.SubjectKeys = subjects.Select(s => s.Key).ToList();
-        job.Request.Audiences = audiences;
-        job.Documents = subjects
-            .SelectMany(s => audiences.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a, SubjectKey = s.Key, SubjectLabel = s.Label }))
-            .ToList();
-
-        return Launch(job);
     }
 
     /// <summary>
@@ -735,7 +743,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// or Writing (409); a requested document that is not a run-completion document (400); a requested
     /// document already written (409), or with none requested, every one written (409); an unusable writer or
     /// the model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
-    /// warning); a refused endpoint (400); the spend cap (429).
+    /// warning); a refused endpoint (400); the spend cap (429). A request the client aborts is a 499.
     /// </summary>
     [HttpPost("runs/{runId:long}/report-documents")]
     public async Task<IActionResult> WriteRunReportDocuments(long runId, [FromBody] WriteRunReportDocumentsRequest request, CancellationToken ct)
@@ -743,114 +751,136 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (request == null) return BadRequest(new { error = "A request body is required." });
         if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
-        var run = await _db.BenchmarkRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run == null) return NotFound();
-
-        if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
+        try
         {
-            return BadRequest(new { error = NoSynthesisMessage });
-        }
+            var run = await _db.BenchmarkRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
 
-        if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || _runReportDocuments.IsActive(runId))
-        {
-            return Conflict(new { error = "The reports of this run are already being written." });
-        }
-
-        var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
-        if (invalidAudience != null) return invalidAudience;
-
-        var missing = await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
-        List<BenchmarkReportAudience> toWrite;
-        if (requested == null)
-        {
-            if (missing.Count == 0)
+            if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
             {
-                return Conflict(new { error = AllWrittenMessage });
+                return BadRequest(new { error = NoSynthesisMessage });
             }
-            toWrite = missing;
-        }
-        else
-        {
-            var written = requested.Where(a => !missing.Contains(a)).ToList();
-            if (written.Count > 0)
+
+            if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || _runReportDocuments.IsActive(runId))
             {
-                return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
+                return Conflict(new { error = "The reports of this run are already being written." });
             }
-            toWrite = requested;
+
+            var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
+            if (invalidAudience != null) return invalidAudience;
+
+            var missing = await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
+            List<BenchmarkReportAudience> toWrite;
+            if (requested == null)
+            {
+                if (missing.Count == 0)
+                {
+                    return Conflict(new { error = AllWrittenMessage });
+                }
+                toWrite = missing;
+            }
+            else
+            {
+                var written = requested.Where(a => !missing.Contains(a)).ToList();
+                if (written.Count > 0)
+                {
+                    return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
+                }
+                toWrite = requested;
+            }
+
+            var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
+            var candidate = BenchmarkRunReportDocumentService.CandidateIdentity(run);
+            string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard);
+            if (refusal != null) return BadRequest(new { error = refusal });
+
+            string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
+            if (warning != null && !request.AcknowledgeSameProvider)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning));
+            }
+
+            if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+            {
+                return BadRequest(new { error = EndpointRefusal(writer, endpointError) });
+            }
+
+            var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
+            if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+
+            run.ReportWriterModelConfigurationId = writer.Id;
+            run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
+            run.ReportDocumentsMessage = null;
+            await _db.SaveChangesAsync(ct);
+
+            string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!_runReportDocuments.TryStart(runId, userId, toWrite, request.AcknowledgeSameProvider, out _))
+            {
+                return Conflict(new { error = "The reports of this run are already being written." });
+            }
+
+            return Accepted(new WriteRunReportDocumentsResponse
+            {
+                RunId = runId,
+                Status = BenchmarkRunReportDocumentsStatus.Pending,
+                Audiences = toWrite.ToList()
+            });
         }
-
-        var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
-        var candidate = BenchmarkRunReportDocumentService.CandidateIdentity(run);
-        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard);
-        if (refusal != null) return BadRequest(new { error = refusal });
-
-        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
-        if (warning != null && !request.AcknowledgeSameProvider)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return StatusCode(StatusCodes.Status409Conflict, BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning));
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
-        {
-            return BadRequest(new { error = EndpointRefusal(writer, endpointError) });
-        }
-
-        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
-        if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
-
-        run.ReportWriterModelConfigurationId = writer.Id;
-        run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
-        run.ReportDocumentsMessage = null;
-        await _db.SaveChangesAsync(ct);
-
-        string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!_runReportDocuments.TryStart(runId, userId, toWrite, request.AcknowledgeSameProvider, out _))
-        {
-            return Conflict(new { error = "The reports of this run are already being written." });
-        }
-
-        return Accepted(new WriteRunReportDocumentsResponse
-        {
-            RunId = runId,
-            Status = BenchmarkRunReportDocumentsStatus.Pending,
-            Audiences = toWrite.ToList()
-        });
     }
 
     /// <summary>
     /// The run's current or last run-completion job: 200 with its view, 204 when this process knows
     /// none for the run (none since the last restart, or its finished job has expired), 404 for an
-    /// unknown run.
+    /// unknown run, 499 when the client aborts.
     /// </summary>
     [HttpGet("runs/{runId:long}/report-documents/job")]
     public async Task<IActionResult> GetRunReportJob(long runId, CancellationToken ct)
     {
         if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
-        var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run == null) return NotFound();
+        try
+        {
+            var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
 
-        var view = RunJobView(run);
-        return view == null ? NoContent() : Ok(view);
+            var view = RunJobView(run);
+            return view == null ? NoContent() : Ok(view);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// Cancels the run's run-completion job: 202 with its view once asked; 409 when no job for the run
-    /// is in progress; 404 for an unknown run. Documents written before the cancellation are kept.
+    /// is in progress; 404 for an unknown run; 499 when the client aborts. Documents written before the
+    /// cancellation are kept.
     /// </summary>
     [HttpPost("runs/{runId:long}/report-documents/cancel")]
     public async Task<IActionResult> CancelRunReportJob(long runId, CancellationToken ct)
     {
         if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
-        var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run == null) return NotFound();
-
-        if (_runReportDocuments.TryCancel(runId) != BenchmarkRunReportDocumentService.CancelOutcome.Requested)
+        try
         {
-            return Conflict(new { error = "No report writing is in progress for this run." });
+            var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
+
+            if (_runReportDocuments.TryCancel(runId) != BenchmarkRunReportDocumentService.CancelOutcome.Requested)
+            {
+                return Conflict(new { error = "No report writing is in progress for this run." });
+            }
+            return Accepted(RunJobView(run));
         }
-        return Accepted(RunJobView(run));
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -920,27 +950,34 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <summary>
     /// Deletes one of the run's own run-completion documents and settles the run's documents status.
     /// 404 when the run or the document is unknown, or the document is not this run's run-completion
-    /// document; 409 while the run's documents are being written.
+    /// document; 409 while the run's documents are being written; 499 when the client aborts.
     /// </summary>
     [HttpDelete("runs/{runId:long}/report-documents/{documentId:long}")]
     public async Task<IActionResult> DeleteRunReportDocument(long runId, long documentId, CancellationToken ct)
     {
-        var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run == null) return NotFound();
-
-        string subjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(runId);
-        bool isRunDocument = await _db.BenchmarkReportDocuments
-            .AsNoTracking()
-            .IgnoreAutoIncludes()
-            .AnyAsync(d => d.Id == documentId && d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.RunCompletion, ct);
-        if (!isRunDocument) return NotFound();
-
-        if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || (_runReportDocuments?.IsActive(runId) ?? false))
+        try
         {
-            return Conflict(new { error = "Wait for the writing to finish, or cancel it, before deleting a report." });
-        }
+            var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
 
-        return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
+            string subjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(runId);
+            bool isRunDocument = await _db.BenchmarkReportDocuments
+                .AsNoTracking()
+                .IgnoreAutoIncludes()
+                .AnyAsync(d => d.Id == documentId && d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.RunCompletion, ct);
+            if (!isRunDocument) return NotFound();
+
+            if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || (_runReportDocuments?.IsActive(runId) ?? false))
+            {
+                return Conflict(new { error = "Wait for the writing to finish, or cancel it, before deleting a report." });
+            }
+
+            return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("report-packs/jobs/{jobId}")]

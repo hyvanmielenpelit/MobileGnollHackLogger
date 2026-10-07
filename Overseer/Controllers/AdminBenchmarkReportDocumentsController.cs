@@ -77,15 +77,22 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             else return BadRequest(new { error = OriginError });
         }
 
-        return Ok(await _renderService.ListAsync(new BenchmarkReportDocumentListFilter
+        try
         {
-            SuiteId = suiteId,
-            RunId = runId,
-            ComparisonKey = comparisonKey,
-            ComparisonId = comparisonId,
-            Origin = originFilter,
-            Take = take
-        }, subjectKey, ct));
+            return Ok(await _renderService.ListAsync(new BenchmarkReportDocumentListFilter
+            {
+                SuiteId = suiteId,
+                RunId = runId,
+                ComparisonKey = comparisonKey,
+                ComparisonId = comparisonId,
+                Origin = originFilter,
+                Take = take
+            }, subjectKey, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -118,8 +125,15 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
     [HttpGet("report-documents/{id:long}")]
     public async Task<IActionResult> Get(long id, CancellationToken ct)
     {
-        var detail = await _renderService.GetAsync(id, ct);
-        return detail == null ? NotFound() : Ok(detail);
+        try
+        {
+            var detail = await _renderService.GetAsync(id, ct);
+            return detail == null ? NotFound() : Ok(detail);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -133,11 +147,18 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         var (options, invalid) = ParseRenderOptions(disclosure, peers);
         if (invalid != null) return invalid;
 
-        var (markdown, notFound, refusal) = await _renderService.RenderAsync(id, options!, ct);
-        if (notFound) return NotFound();
-        if (refusal != null) return BadRequest(new { error = refusal });
+        try
+        {
+            var (markdown, notFound, refusal) = await _renderService.RenderAsync(id, options!, ct);
+            if (notFound) return NotFound();
+            if (refusal != null) return BadRequest(new { error = refusal });
 
-        return Content(markdown!, "text/markdown; charset=utf-8");
+            return Content(markdown!, "text/markdown; charset=utf-8");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -159,28 +180,35 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var charts = await _renderService.LoadRenderChartsAsync(id, options!.PeerNaming, ct);
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!, charts), ct);
-        if (notFound) return NotFound();
-        if (refusal != null) return BadRequest(new { error = refusal });
-
-        if (BenchmarkPdfRenderer.IsTooLarge(markdown))
+        try
         {
-            return StatusCode(413, new { error = BenchmarkPdfRenderer.TooLargeMessage(markdown!.Length) });
+            var charts = await _renderService.LoadRenderChartsAsync(id, options!.PeerNaming, ct);
+            var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!, charts), ct);
+            if (notFound) return NotFound();
+            if (refusal != null) return BadRequest(new { error = refusal });
+
+            if (BenchmarkPdfRenderer.IsTooLarge(markdown))
+            {
+                return StatusCode(413, new { error = BenchmarkPdfRenderer.TooLargeMessage(markdown!.Length) });
+            }
+
+            var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, pdfPaper);
+            var layout = _renderService.ReadRenderLayout(id);
+            byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct, charts, layout), ct);
+            string name = BenchmarkPdfFileNames.ForReportDocument(document!, options!);
+
+            if (inline)
+            {
+                // No download name on the result, so ASP.NET adds no attachment disposition of its own.
+                Response.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline") { FileNameStar = name }.ToString();
+                return File(pdf, "application/pdf");
+            }
+            return File(pdf, "application/pdf", name);
         }
-
-        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, pdfPaper);
-        var layout = _renderService.ReadRenderLayout(id);
-        byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct, charts, layout), ct);
-        string name = BenchmarkPdfFileNames.ForReportDocument(document!, options!);
-
-        if (inline)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // No download name on the result, so ASP.NET adds no attachment disposition of its own.
-            Response.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline") { FileNameStar = name }.ToString();
-            return File(pdf, "application/pdf");
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-        return File(pdf, "application/pdf", name);
     }
 
     /// <summary>
@@ -199,47 +227,80 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var charts = await _renderService.LoadRenderChartsAsync(id, options!.PeerNaming, ct);
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!, charts), ct);
-        if (notFound) return NotFound();
-        if (refusal != null) return BadRequest(new { error = refusal });
-
-        if (BenchmarkWordRenderer.IsTooLarge(markdown))
+        try
         {
-            return StatusCode(413, new { error = BenchmarkWordRenderer.TooLargeMessage(markdown!.Length) });
+            var charts = await _renderService.LoadRenderChartsAsync(id, options!.PeerNaming, ct);
+            var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!, charts), ct);
+            if (notFound) return NotFound();
+            if (refusal != null) return BadRequest(new { error = refusal });
+
+            if (BenchmarkWordRenderer.IsTooLarge(markdown))
+            {
+                return StatusCode(413, new { error = BenchmarkWordRenderer.TooLargeMessage(markdown!.Length) });
+            }
+
+            var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, wordPaper);
+            var layout = _renderService.ReadRenderLayout(id);
+            byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct, charts, layout), ct);
+
+            return File(docx, BenchmarkWordRenderer.ContentType, BenchmarkPdfFileNames.ForReportDocument(document!, options!, "docx"));
         }
-
-        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, wordPaper);
-        var layout = _renderService.ReadRenderLayout(id);
-        byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct, charts, layout), ct);
-
-        return File(docx, BenchmarkWordRenderer.ContentType, BenchmarkPdfFileNames.ForReportDocument(document!, options!, "docx"));
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpDelete("report-documents/{id:long}")]
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
-        => await _renderService.DeleteAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try
+        {
+            return await _renderService.DeleteAsync(id, ct) ? NoContent() : NotFound();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
 
     /// <summary>
     /// Replaces the document's whole chart set with the uploaded PNGs, named and anonymized variants of
     /// each figure, and the figures' layout (<c>layout</c>; a body without one stores none). 200 with the
     /// stored set's summary; 400 for a document without peers, for chart storage that is not configured,
-    /// for any chart refused and for an invalid layout; 404 for an unknown document.
+    /// for any chart refused and for an invalid layout; 404 for an unknown document; 499 when the client
+    /// aborts.
     /// </summary>
     [HttpPut("report-documents/{id:long}/charts")]
     [RequestSizeLimit(40_000_000)]
     public async Task<IActionResult> PutCharts(long id, [FromBody] PutReportDocumentChartsRequest? request, CancellationToken ct)
     {
-        var (summary, notFound, refusal) = await _renderService.SetChartsAsync(id, request, ct);
-        if (notFound) return NotFound(new { error = "Report document not found." });
-        if (refusal != null) return BadRequest(new { error = refusal });
-        return Ok(summary);
+        try
+        {
+            var (summary, notFound, refusal) = await _renderService.SetChartsAsync(id, request, ct);
+            if (notFound) return NotFound(new { error = "Report document not found." });
+            if (refusal != null) return BadRequest(new { error = refusal });
+            return Ok(summary);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
-    /// <summary>Deletes the document's charts: 204, or 404 for an unknown document.</summary>
+    /// <summary>Deletes the document's charts: 204, 404 for an unknown document, or 499 when the client aborts.</summary>
     [HttpDelete("report-documents/{id:long}/charts")]
     public async Task<IActionResult> DeleteCharts(long id, CancellationToken ct)
-        => await _renderService.DeleteChartsAsync(id, ct) ? NoContent() : NotFound();
+    {
+        try
+        {
+            return await _renderService.DeleteChartsAsync(id, ct) ? NoContent() : NotFound();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
 
     /// <summary>
     /// The disclosure (<c>summary</c>, <c>detailed</c>, <c>full</c>) and peer naming (<c>named</c>,

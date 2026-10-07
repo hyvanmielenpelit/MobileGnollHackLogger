@@ -27,20 +27,34 @@ public class AdminDefaultApiKeysController : ControllerBase
     [HttpGet("")]
     public async Task<IActionResult> GetStatus(CancellationToken ct)
     {
-        return Ok(await _service.GetStatusAsync(ct));
+        try
+        {
+            return Ok(await _service.GetStatusAsync(ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPut("{provider}")]
     public async Task<IActionResult> Save(string provider, [FromBody] SaveDefaultApiKeyRequest request, CancellationToken ct)
     {
-        var outcome = await _service.SaveAsync(provider, request?.ApiKey, request?.SaveUnverified ?? false, ct);
-        return outcome.Kind switch
+        try
         {
-            DefaultApiKeySaveKind.Saved => Ok(outcome.Result),
-            DefaultApiKeySaveKind.Invalid => BadRequest(ApiKeyRefusalDto.From(outcome.Validation!)),
-            DefaultApiKeySaveKind.Unverifiable => Conflict(ApiKeyRefusalDto.From(outcome.Validation!)),
-            _ => BadRequest(new { message = outcome.Error })
-        };
+            var outcome = await _service.SaveAsync(provider, request?.ApiKey, request?.SaveUnverified ?? false, ct);
+            return outcome.Kind switch
+            {
+                DefaultApiKeySaveKind.Saved => Ok(outcome.Result),
+                DefaultApiKeySaveKind.Invalid => BadRequest(ApiKeyRefusalDto.From(outcome.Validation!)),
+                DefaultApiKeySaveKind.Unverifiable => Conflict(ApiKeyRefusalDto.From(outcome.Validation!)),
+                _ => BadRequest(new { message = outcome.Error })
+            };
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPost("{provider}/verify")]
@@ -51,23 +65,37 @@ public class AdminDefaultApiKeysController : ControllerBase
             return BadRequest(new { message = SystemDefaultApiKeyService.UnsupportedProviderMessage(provider) });
         }
 
-        var status = await _service.VerifyAgainAsync(canonical, ct);
-        if (status == null)
+        try
         {
-            return NotFound(new { message = $"There is no default {canonical} key." });
+            var status = await _service.VerifyAgainAsync(canonical, ct);
+            if (status == null)
+            {
+                return NotFound(new { message = $"There is no default {canonical} key." });
+            }
+            return Ok(new DefaultApiKeyVerifyResultDto { Status = status });
         }
-        return Ok(new DefaultApiKeyVerifyResultDto { Status = status });
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("{provider}/deletion-check")]
     public async Task<IActionResult> GetDeletionCheck(string provider, CancellationToken ct)
     {
-        var check = await _service.GetDeletionCheckAsync(provider, ct);
-        if (check == null)
+        try
         {
-            return BadRequest(new { message = SystemDefaultApiKeyService.UnsupportedProviderMessage(provider) });
+            var check = await _service.GetDeletionCheckAsync(provider, ct);
+            if (check == null)
+            {
+                return BadRequest(new { message = SystemDefaultApiKeyService.UnsupportedProviderMessage(provider) });
+            }
+            return Ok(check);
         }
-        return Ok(check);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpDelete("{provider}")]
@@ -78,11 +106,18 @@ public class AdminDefaultApiKeysController : ControllerBase
             return BadRequest(new { message = SystemDefaultApiKeyService.UnsupportedProviderMessage(provider) });
         }
 
-        var disabledCount = await _service.DeleteAsync(canonical, ct);
-        if (disabledCount == null)
+        try
         {
-            return NotFound(new { message = $"There is no default {canonical} key." });
+            var disabledCount = await _service.DeleteAsync(canonical, ct);
+            if (disabledCount == null)
+            {
+                return NotFound(new { message = $"There is no default {canonical} key." });
+            }
+            return Ok(new DefaultApiKeyDeleteResultDto { DisabledCount = disabledCount.Value });
         }
-        return Ok(new DefaultApiKeyDeleteResultDto { DisabledCount = disabledCount.Value });
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 }

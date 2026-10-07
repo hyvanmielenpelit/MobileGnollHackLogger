@@ -368,7 +368,7 @@ public class SettingsController : ControllerBase
     /// Checks the key with its provider and stores it according to the key-save contract:
     /// a rejected key is refused (400), an unverifiable one is refused (409) unless
     /// <see cref="SaveApiKeyRequest.SaveUnverified"/> is set, in which case it is stored as
-    /// not verified. Save Anyway runs the check again.
+    /// not verified; 499 when the client aborts. Save Anyway runs the check again.
     /// </summary>
     [HttpPut("apikeys")]
     public async Task<IActionResult> SaveApiKey(
@@ -386,28 +386,35 @@ public class SettingsController : ControllerBase
         if (string.IsNullOrEmpty(apiKey))
             return BadRequest(new { message = "An API key is required." });
 
-        var check = await validator.ValidateAsync(provider, apiKey, ct);
-
-        if (check.Verdict == ApiKeyVerdict.Invalid)
-            return BadRequest(ApiKeyRefusalDto.From(check));
-
-        if (check.Verdict == ApiKeyVerdict.Unverifiable && !request.SaveUnverified)
-            return Conflict(ApiKeyRefusalDto.From(check));
-
-        var (status, message) = check.Verdict switch
+        try
         {
-            ApiKeyVerdict.Unverifiable => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified, DescribeCheck(check)),
-            ApiKeyVerdict.ValidWithWarning => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, check.Message),
-            _ => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, (string?)null)
-        };
+            var check = await validator.ValidateAsync(provider, apiKey, ct);
 
-        var entry = await _settingsService.SaveApiKeyForProviderAsync(userId, provider, apiKey, status, message);
+            if (check.Verdict == ApiKeyVerdict.Invalid)
+                return BadRequest(ApiKeyRefusalDto.From(check));
 
-        return Ok(new
+            if (check.Verdict == ApiKeyVerdict.Unverifiable && !request.SaveUnverified)
+                return Conflict(ApiKeyRefusalDto.From(check));
+
+            var (status, message) = check.Verdict switch
+            {
+                ApiKeyVerdict.Unverifiable => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified, DescribeCheck(check)),
+                ApiKeyVerdict.ValidWithWarning => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, check.Message),
+                _ => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, (string?)null)
+            };
+
+            var entry = await _settingsService.SaveApiKeyForProviderAsync(userId, provider, apiKey, status, message);
+
+            return Ok(new
+            {
+                verification = ToVerificationDto(entry),
+                warning = check.Verdict == ApiKeyVerdict.ValidWithWarning ? check.Message : null
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            verification = ToVerificationDto(entry),
-            warning = check.Verdict == ApiKeyVerdict.ValidWithWarning ? check.Message : null
-        });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -426,26 +433,33 @@ public class SettingsController : ControllerBase
         if (!TryMatchProvider(provider, out var matchedProvider, out var providerError))
             return BadRequest(new { message = providerError });
 
-        var apiKey = await _settingsService.GetDecryptedApiKeyForProviderAsync(userId, matchedProvider);
-        if (string.IsNullOrEmpty(apiKey))
-            return NotFound(new { message = $"No {matchedProvider} key is stored." });
-
-        var check = await validator.ValidateAsync(matchedProvider, apiKey, ct);
-
-        var (status, message) = check.Verdict switch
+        try
         {
-            ApiKeyVerdict.Valid => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, (string?)null),
-            ApiKeyVerdict.ValidWithWarning => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, check.Message),
-            ApiKeyVerdict.Invalid => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified,
-                $"{matchedProvider} now rejects this key. " + DescribeCheck(check)),
-            _ => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified, DescribeCheck(check))
-        };
+            var apiKey = await _settingsService.GetDecryptedApiKeyForProviderAsync(userId, matchedProvider);
+            if (string.IsNullOrEmpty(apiKey))
+                return NotFound(new { message = $"No {matchedProvider} key is stored." });
 
-        var entry = await _settingsService.SetApiKeyVerificationAsync(userId, matchedProvider, status, message);
-        if (entry == null)
-            return NotFound(new { message = $"No {matchedProvider} key is stored." });
+            var check = await validator.ValidateAsync(matchedProvider, apiKey, ct);
 
-        return Ok(new { verification = ToVerificationDto(entry) });
+            var (status, message) = check.Verdict switch
+            {
+                ApiKeyVerdict.Valid => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, (string?)null),
+                ApiKeyVerdict.ValidWithWarning => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, check.Message),
+                ApiKeyVerdict.Invalid => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified,
+                    $"{matchedProvider} now rejects this key. " + DescribeCheck(check)),
+                _ => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified, DescribeCheck(check))
+            };
+
+            var entry = await _settingsService.SetApiKeyVerificationAsync(userId, matchedProvider, status, message);
+            if (entry == null)
+                return NotFound(new { message = $"No {matchedProvider} key is stored." });
+
+            return Ok(new { verification = ToVerificationDto(entry) });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     private static string DescribeCheck(ApiKeyValidationResult check)

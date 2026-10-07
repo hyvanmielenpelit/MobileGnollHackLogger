@@ -695,64 +695,72 @@ public class AdminBenchmarkController : ControllerBase
 
     /// <summary>
     /// Attaches a board built from an uploaded .snapshot.txt or raw HTML dump to this suite. A
-    /// suite that already has a snapshot is refused with 409 unless the replacement is confirmed.
+    /// suite that already has a snapshot is refused with 409 unless the replacement is confirmed;
+    /// 499 when the client aborts.
     /// </summary>
     [HttpPost("suites/{id}/snapshot")]
     public async Task<IActionResult> UploadSuiteSnapshot(long id, [FromBody] UploadSuiteSnapshotRequest request, CancellationToken ct)
     {
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.Questions)
-            .Include(s => s.GameSnapshot)
-            .FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (suite == null) return NotFound();
-
-        if (suite.GameSnapshotId != null && !request.ReplaceExisting)
-        {
-            return Conflict(new { error = "This suite already has a snapshot. Confirm the replacement to upload a new one." });
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            return BadRequest(new { error = "Snapshot name is required." });
-        }
-        if (string.IsNullOrWhiteSpace(request.Content))
-        {
-            return BadRequest(new { error = "Snapshot content is required." });
-        }
-        if (request.Content.Length > MaxSuiteSnapshotUploadChars)
-        {
-            return BadRequest(new { error = $"Snapshot content must be at most {MaxSuiteSnapshotUploadChars:N0} characters." });
-        }
-
-        bool isHtml;
-        switch (request.ContentKind ?? "Auto")
-        {
-            case "Html": isHtml = true; break;
-            case "Text": isHtml = false; break;
-            case "Auto": isHtml = LooksLikeHtml(request.Content); break;
-            default:
-                return BadRequest(new { error = "Content kind must be Auto, Text or Html." });
-        }
-
-        var meta = new BoardMetadata(
-            request.Name.Trim(),
-            request.Notes?.Trim(),
-            request.SourceGnollHackVersion?.Trim(),
-            DateTime.UtcNow);
-
         try
         {
-            var board = await _snapshotImporter.CreateForSuiteAsync(suite, request.Content, isHtml, meta, request.ReplaceExisting, ct);
-            return Ok(new CaptureBenchmarkSnapshotResponse
+            var suite = await _dbContext.BenchmarkSuites
+                .Include(s => s.Questions)
+                .Include(s => s.GameSnapshot)
+                .FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (suite == null) return NotFound();
+
+            if (suite.GameSnapshotId != null && !request.ReplaceExisting)
             {
-                Board = ToSnapshotDto(board, suite.Id, suite.Name),
-                Suite = ToSuiteDto(suite),
-                BoardFactsCheck = BenchmarkBoardFactsChecker.Check(board.SanitizedText, suite.Questions)
-            });
+                return Conflict(new { error = "This suite already has a snapshot. Confirm the replacement to upload a new one." });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Name))
+            {
+                return BadRequest(new { error = "Snapshot name is required." });
+            }
+            if (string.IsNullOrWhiteSpace(request.Content))
+            {
+                return BadRequest(new { error = "Snapshot content is required." });
+            }
+            if (request.Content.Length > MaxSuiteSnapshotUploadChars)
+            {
+                return BadRequest(new { error = $"Snapshot content must be at most {MaxSuiteSnapshotUploadChars:N0} characters." });
+            }
+
+            bool isHtml;
+            switch (request.ContentKind ?? "Auto")
+            {
+                case "Html": isHtml = true; break;
+                case "Text": isHtml = false; break;
+                case "Auto": isHtml = LooksLikeHtml(request.Content); break;
+                default:
+                    return BadRequest(new { error = "Content kind must be Auto, Text or Html." });
+            }
+
+            var meta = new BoardMetadata(
+                request.Name.Trim(),
+                request.Notes?.Trim(),
+                request.SourceGnollHackVersion?.Trim(),
+                DateTime.UtcNow);
+
+            try
+            {
+                var board = await _snapshotImporter.CreateForSuiteAsync(suite, request.Content, isHtml, meta, request.ReplaceExisting, ct);
+                return Ok(new CaptureBenchmarkSnapshotResponse
+                {
+                    Board = ToSnapshotDto(board, suite.Id, suite.Name),
+                    Suite = ToSuiteDto(suite),
+                    BoardFactsCheck = BenchmarkBoardFactsChecker.Check(board.SanitizedText, suite.Questions)
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
         }
-        catch (ArgumentException ex)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
     }
 
@@ -903,84 +911,91 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(addDenial);
         }
 
-        if (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == name))
-        {
-            string baseName = name + " (Imported)";
-            string candidate = baseName;
-            int counter = 1;
-            while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == candidate))
-            {
-                counter++;
-                candidate = $"{name} (Imported {counter})";
-            }
-            name = candidate;
-            if (name.Length > 128)
-            {
-                return BadRequest("Suite name must be at most 128 characters, including the \" (Imported)\" suffix added because the name is already taken.");
-            }
-        }
-
-        var now = DateTime.UtcNow;
-        var suite = new BenchmarkSuite
-        {
-            Name = name,
-            Description = request.Description?.Trim(),
-            GameSnapshotId = null,
-            DefaultSuiteKey = null,
-            CreatedAtUtc = now,
-            ModifiedAtUtc = now
-        };
-
-        int order = 1;
-        foreach (var item in request.Questions)
-        {
-            suite.Questions.Add(new BenchmarkQuestion
-            {
-                OrderIndex = order++,
-                QuestionText = item.QuestionText!.Trim(),
-                Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
-                ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
-                IsGenerated = false,
-                CreatedAtUtc = now,
-                ModifiedAtUtc = now
-            });
-        }
-
-        _dbContext.BenchmarkSuites.Add(suite);
-
-        if (request.Snapshot == null)
-        {
-            await _dbContext.SaveChangesAsync(ct);
-            return Ok(ToSuiteDto(suite));
-        }
-
-        var meta = new BoardMetadata(
-            snapshotName!,
-            NullIfBlank(request.Snapshot.Notes?.Trim()) ?? "Imported with suite YAML.",
-            NullIfBlank(request.Snapshot.SourceGnollHackVersion?.Trim()),
-            request.Snapshot.CapturedAtUtc ?? now);
-
         try
         {
-            // The one save covers the suite, its questions and the board.
-            await _snapshotImporter.AttachOrCreateForSuiteAsync(
-                suite,
-                request.Snapshot.Text,
-                LooksLikeHtml(request.Snapshot.Text),
-                meta,
-                BenchmarkSnapshotImporter.YamlImportCaptureMethod,
-                ct);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (DbUpdateException)
-        {
-            return Conflict(new { error = "The snapshot was attached to another suite a moment ago. Import again." });
-        }
+            if (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == name))
+            {
+                string baseName = name + " (Imported)";
+                string candidate = baseName;
+                int counter = 1;
+                while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == candidate))
+                {
+                    counter++;
+                    candidate = $"{name} (Imported {counter})";
+                }
+                name = candidate;
+                if (name.Length > 128)
+                {
+                    return BadRequest("Suite name must be at most 128 characters, including the \" (Imported)\" suffix added because the name is already taken.");
+                }
+            }
 
-        return Ok(ToSuiteDto(suite));
+            var now = DateTime.UtcNow;
+            var suite = new BenchmarkSuite
+            {
+                Name = name,
+                Description = request.Description?.Trim(),
+                GameSnapshotId = null,
+                DefaultSuiteKey = null,
+                CreatedAtUtc = now,
+                ModifiedAtUtc = now
+            };
+
+            int order = 1;
+            foreach (var item in request.Questions)
+            {
+                suite.Questions.Add(new BenchmarkQuestion
+                {
+                    OrderIndex = order++,
+                    QuestionText = item.QuestionText!.Trim(),
+                    Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
+                    ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
+                    IsGenerated = false,
+                    CreatedAtUtc = now,
+                    ModifiedAtUtc = now
+                });
+            }
+
+            _dbContext.BenchmarkSuites.Add(suite);
+
+            if (request.Snapshot == null)
+            {
+                await _dbContext.SaveChangesAsync(ct);
+                return Ok(ToSuiteDto(suite));
+            }
+
+            var meta = new BoardMetadata(
+                snapshotName!,
+                NullIfBlank(request.Snapshot.Notes?.Trim()) ?? "Imported with suite YAML.",
+                NullIfBlank(request.Snapshot.SourceGnollHackVersion?.Trim()),
+                request.Snapshot.CapturedAtUtc ?? now);
+
+            try
+            {
+                // The one save covers the suite, its questions and the board.
+                await _snapshotImporter.AttachOrCreateForSuiteAsync(
+                    suite,
+                    request.Snapshot.Text,
+                    LooksLikeHtml(request.Snapshot.Text),
+                    meta,
+                    BenchmarkSnapshotImporter.YamlImportCaptureMethod,
+                    ct);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (DbUpdateException)
+            {
+                return Conflict(new { error = "The snapshot was attached to another suite a moment ago. Import again." });
+            }
+
+            return Ok(ToSuiteDto(suite));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     // --- Questions CRUD ---
@@ -1417,7 +1432,7 @@ public class AdminBenchmarkController : ControllerBase
     /// Drafts a suite description with an explicitly selected model and returns it with its timing,
     /// usage, cost and log. Nothing is written to the suite: the operator edits the draft and saves
     /// it through the ordinary suite update. A cancelled or failed generation still returns 200 so
-    /// the client can show its diagnostics.
+    /// the client can show its diagnostics; 499 when the client aborts.
     /// </summary>
     [HttpPost("suites/{id}/description-generation")]
     public async Task<IActionResult> GenerateSuiteDescription(
@@ -1431,30 +1446,37 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = "A generator model must be selected." });
         }
 
-        bool suiteExists = await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct);
-        if (!suiteExists) return NotFound();
-
-        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
-        if (!canSpend)
-        {
-            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
-        }
-
-        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userId)) userId = null;
-
         try
         {
-            var result = await descriptionService.GenerateAsync(id, request, userId, ct);
-            return Ok(result);
+            bool suiteExists = await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct);
+            if (!suiteExists) return NotFound();
+
+            var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+            if (!canSpend)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+            }
+
+            string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) userId = null;
+
+            try
+            {
+                var result = await descriptionService.GenerateAsync(id, request, userId, ct);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
         }
-        catch (KeyNotFoundException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return NotFound();
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
     }
 
@@ -1611,117 +1633,124 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("suites/{suiteId}/questions/import")]
     public async Task<IActionResult> ImportQuestions(long suiteId, [FromBody] ImportBenchmarkQuestionsRequest request, CancellationToken ct)
     {
-        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.Id == suiteId, ct);
-        if (suite == null) return NotFound();
-
-        if (request?.Items == null || request.Items.Count == 0)
+        try
         {
-            return BadRequest("No questions to import.");
-        }
+            var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.Id == suiteId, ct);
+            if (suite == null) return NotFound();
 
-        var questions = await _dbContext.BenchmarkQuestions
-            .Where(q => q.BenchmarkSuiteId == suiteId)
-            .ToListAsync(ct);
-        var byId = questions.ToDictionary(q => q.Id);
-
-        var seenIds = new HashSet<long>();
-        foreach (var item in request.Items)
-        {
-            if (item.QuestionId is long id)
+            if (request?.Items == null || request.Items.Count == 0)
             {
-                if (!byId.ContainsKey(id))
+                return BadRequest("No questions to import.");
+            }
+
+            var questions = await _dbContext.BenchmarkQuestions
+                .Where(q => q.BenchmarkSuiteId == suiteId)
+                .ToListAsync(ct);
+            var byId = questions.ToDictionary(q => q.Id);
+
+            var seenIds = new HashSet<long>();
+            foreach (var item in request.Items)
+            {
+                if (item.QuestionId is long id)
                 {
-                    return BadRequest($"Question {id} does not belong to suite {suiteId}.");
+                    if (!byId.ContainsKey(id))
+                    {
+                        return BadRequest($"Question {id} does not belong to suite {suiteId}.");
+                    }
+                    if (!seenIds.Add(id))
+                    {
+                        return BadRequest($"Question {id} appears more than once in the import.");
+                    }
+                    if (item.QuestionText != null && string.IsNullOrWhiteSpace(item.QuestionText))
+                    {
+                        return BadRequest($"Question {id}: question text must not be blank.");
+                    }
                 }
-                if (!seenIds.Add(id))
+                else if (string.IsNullOrWhiteSpace(item.QuestionText))
                 {
-                    return BadRequest($"Question {id} appears more than once in the import.");
-                }
-                if (item.QuestionText != null && string.IsNullOrWhiteSpace(item.QuestionText))
-                {
-                    return BadRequest($"Question {id}: question text must not be blank.");
+                    return BadRequest("Question text is required for a new question.");
                 }
             }
-            else if (string.IsNullOrWhiteSpace(item.QuestionText))
+
+            int createCount = request.Items.Count(i => i.QuestionId == null);
+            if (createCount > 0)
             {
-                return BadRequest("Question text is required for a new question.");
-            }
-        }
-
-        int createCount = request.Items.Count(i => i.QuestionId == null);
-        if (createCount > 0)
-        {
-            var (canAdd, addDenial) = await _complianceGuard.CanAddQuestionsAsync(suiteId, createCount, ct: ct);
-            if (!canAdd)
-            {
-                return BadRequest(addDenial);
-            }
-        }
-
-        var now = DateTime.UtcNow;
-        int created = 0, replaced = 0, unchanged = 0;
-        int nextOrder = (questions.Count == 0 ? 0 : questions.Max(q => q.OrderIndex)) + 1;
-
-        foreach (var item in request.Items)
-        {
-            if (item.QuestionId is long id)
-            {
-                var q = byId[id];
-                string newText = item.QuestionText?.Trim() ?? q.QuestionText;
-                var newDifficulty = item.Difficulty ?? q.Difficulty;
-                string? newPoints = item.ReplaceExpectedPoints ? NullIfBlank(item.ExpectedPoints?.Trim()) : q.ExpectedPoints;
-
-                if (q.QuestionText != newText || q.Difficulty != newDifficulty || q.ExpectedPoints != newPoints)
+                var (canAdd, addDenial) = await _complianceGuard.CanAddQuestionsAsync(suiteId, createCount, ct: ct);
+                if (!canAdd)
                 {
-                    q.QuestionText = newText;
-                    q.Difficulty = newDifficulty;
-                    q.ExpectedPoints = newPoints;
-                    BenchmarkQuestionAssessment.Clear(q);
-                    q.ModifiedAtUtc = now;
-                    replaced++;
+                    return BadRequest(addDenial);
+                }
+            }
+
+            var now = DateTime.UtcNow;
+            int created = 0, replaced = 0, unchanged = 0;
+            int nextOrder = (questions.Count == 0 ? 0 : questions.Max(q => q.OrderIndex)) + 1;
+
+            foreach (var item in request.Items)
+            {
+                if (item.QuestionId is long id)
+                {
+                    var q = byId[id];
+                    string newText = item.QuestionText?.Trim() ?? q.QuestionText;
+                    var newDifficulty = item.Difficulty ?? q.Difficulty;
+                    string? newPoints = item.ReplaceExpectedPoints ? NullIfBlank(item.ExpectedPoints?.Trim()) : q.ExpectedPoints;
+
+                    if (q.QuestionText != newText || q.Difficulty != newDifficulty || q.ExpectedPoints != newPoints)
+                    {
+                        q.QuestionText = newText;
+                        q.Difficulty = newDifficulty;
+                        q.ExpectedPoints = newPoints;
+                        BenchmarkQuestionAssessment.Clear(q);
+                        q.ModifiedAtUtc = now;
+                        replaced++;
+                    }
+                    else
+                    {
+                        unchanged++;
+                    }
                 }
                 else
                 {
-                    unchanged++;
+                    _dbContext.BenchmarkQuestions.Add(new BenchmarkQuestion
+                    {
+                        BenchmarkSuiteId = suiteId,
+                        OrderIndex = nextOrder++,
+                        QuestionText = item.QuestionText!.Trim(),
+                        Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
+                        ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
+                        IsGenerated = false,
+                        CreatedAtUtc = now,
+                        ModifiedAtUtc = now
+                    });
+                    created++;
                 }
             }
-            else
+
+            if (created > 0 || replaced > 0)
             {
-                _dbContext.BenchmarkQuestions.Add(new BenchmarkQuestion
-                {
-                    BenchmarkSuiteId = suiteId,
-                    OrderIndex = nextOrder++,
-                    QuestionText = item.QuestionText!.Trim(),
-                    Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
-                    ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
-                    IsGenerated = false,
-                    CreatedAtUtc = now,
-                    ModifiedAtUtc = now
-                });
-                created++;
+                suite.ModifiedAtUtc = now;
+                await _dbContext.SaveChangesAsync(ct);
             }
+
+            var result = await _dbContext.BenchmarkQuestions
+                .Where(q => q.BenchmarkSuiteId == suiteId)
+                .OrderBy(q => q.OrderIndex)
+                .Select(q => ToQuestionDto(q))
+                .ToListAsync(ct);
+
+            return Ok(new ImportBenchmarkQuestionsResult
+            {
+                CreatedCount = created,
+                ReplacedCount = replaced,
+                UnchangedCount = unchanged,
+                Questions = result,
+                BoardFactsCheck = await CheckBoardFactsAsync(suiteId, ct)
+            });
         }
-
-        if (created > 0 || replaced > 0)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            suite.ModifiedAtUtc = now;
-            await _dbContext.SaveChangesAsync(ct);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        var result = await _dbContext.BenchmarkQuestions
-            .Where(q => q.BenchmarkSuiteId == suiteId)
-            .OrderBy(q => q.OrderIndex)
-            .Select(q => ToQuestionDto(q))
-            .ToListAsync(ct);
-
-        return Ok(new ImportBenchmarkQuestionsResult
-        {
-            CreatedCount = created,
-            ReplacedCount = replaced,
-            UnchangedCount = unchanged,
-            Questions = result,
-            BoardFactsCheck = await CheckBoardFactsAsync(suiteId, ct)
-        });
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrEmpty(value) ? null : value;
@@ -1733,8 +1762,15 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("suites/{id}/board-facts-check")]
     public async Task<IActionResult> GetBoardFactsCheck(long id, CancellationToken ct)
     {
-        if (!await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct)) return NotFound();
-        return Ok(await CheckBoardFactsAsync(id, ct));
+        try
+        {
+            if (!await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct)) return NotFound();
+            return Ok(await CheckBoardFactsAsync(id, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>Null when the suite has no board.</summary>
@@ -1761,51 +1797,65 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("questions/{id}/review")]
     public async Task<IActionResult> ReviewQuestion(long id, [FromBody] ReviewBenchmarkQuestionRequest? request, CancellationToken ct)
     {
-        var question = await _dbContext.BenchmarkQuestions.FirstOrDefaultAsync(q => q.Id == id, ct);
-        if (question == null) return NotFound();
-
-        bool markReviewed = request?.Reviewed ?? true;
-        if (markReviewed)
+        try
         {
-            question.ReviewedAtRevision = question.ItemRevision;
-            question.ReviewedAtUtc = DateTime.UtcNow;
-            question.ReviewedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var question = await _dbContext.BenchmarkQuestions.FirstOrDefaultAsync(q => q.Id == id, ct);
+            if (question == null) return NotFound();
+
+            bool markReviewed = request?.Reviewed ?? true;
+            if (markReviewed)
+            {
+                question.ReviewedAtRevision = question.ItemRevision;
+                question.ReviewedAtUtc = DateTime.UtcNow;
+                question.ReviewedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            }
+            else
+            {
+                question.ReviewedAtRevision = null;
+                question.ReviewedAtUtc = null;
+                question.ReviewedByUserId = null;
+            }
+
+            question.ModifiedAtUtc = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(ct);
+
+            return Ok(ToQuestionDto(question));
         }
-        else
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            question.ReviewedAtRevision = null;
-            question.ReviewedAtUtc = null;
-            question.ReviewedByUserId = null;
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        question.ModifiedAtUtc = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(ct);
-
-        return Ok(ToQuestionDto(question));
     }
 
     [HttpPost("suites/{id}/review-all")]
     public async Task<IActionResult> ReviewAllQuestions(long id, CancellationToken ct)
     {
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.Questions)
-            .Include(s => s.GameSnapshot)
-            .FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (suite == null) return NotFound();
-
-        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        int count = 0;
-        foreach (var q in suite.Questions.Where(q => q.IsGenerated && (q.ReviewedAtRevision == null || q.ReviewedAtRevision != q.ItemRevision)))
+        try
         {
-            q.ReviewedAtRevision = q.ItemRevision;
-            q.ReviewedAtUtc = DateTime.UtcNow;
-            q.ReviewedByUserId = userId;
-            q.ModifiedAtUtc = DateTime.UtcNow;
-            count++;
-        }
+            var suite = await _dbContext.BenchmarkSuites
+                .Include(s => s.Questions)
+                .Include(s => s.GameSnapshot)
+                .FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (suite == null) return NotFound();
 
-        await _dbContext.SaveChangesAsync(ct);
-        return Ok(new { reviewedCount = count, suite = ToSuiteDto(suite) });
+            string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            int count = 0;
+            foreach (var q in suite.Questions.Where(q => q.IsGenerated && (q.ReviewedAtRevision == null || q.ReviewedAtRevision != q.ItemRevision)))
+            {
+                q.ReviewedAtRevision = q.ItemRevision;
+                q.ReviewedAtUtc = DateTime.UtcNow;
+                q.ReviewedByUserId = userId;
+                q.ModifiedAtUtc = DateTime.UtcNow;
+                count++;
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+            return Ok(new { reviewedCount = count, suite = ToSuiteDto(suite) });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     // --- Benchmark Game Snapshots API ---
@@ -1825,74 +1875,81 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("snapshots/attached/{sessionId:long}")]
     public async Task<IActionResult> GetAttachedSnapshotInfo(long sessionId, CancellationToken ct)
     {
-        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId, ct);
-        if (session == null)
+        try
         {
-            return NotFound(new { error = "Session not found." });
-        }
-
-        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        if (session.AspNetUserId != userId)
-        {
-            return Forbid();
-        }
-
-        // Refused on the same terms as SaveAttachedSnapshot, so the dialog can say why up front.
-        if (session.IsConfidential)
-        {
-            return Conflict(new { error = ConfidentialImportRefusal });
-        }
-
-        var info = new AttachedSnapshotInfoDto { SessionId = sessionId };
-
-        var snapshotMessage = await LoadLatestSnapshotMessageAsync(sessionId, ct);
-        if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
-        {
-            return Ok(info);
-        }
-
-        // The same normalization and truncation the save applies, so Sha256 is comparable with a stored board's.
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(
-            ChatService.StripGameSnapshotPrefix(snapshotMessage.Content));
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            return Ok(info);
-        }
-
-        var (boardText, sha256) = BenchmarkSnapshotImporter.PrepareBoardText(normalized);
-        info.HasSnapshot = true;
-        info.CharCount = boardText.Length;
-        info.Sha256 = sha256;
-        info.CapturedAtUtc = snapshotMessage.TimestampUtc;
-        info.DetectedGnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings);
-
-        var boards = await _dbContext.BenchmarkGameSnapshots
-            .Where(b => b.SourceChatSessionId == sessionId)
-            .OrderByDescending(b => b.CreatedAtUtc)
-            .Select(b => new { b.Id, b.Name, b.Sha256, b.CapturedAtUtc })
-            .ToListAsync(ct);
-
-        var boardIds = boards.Select(b => b.Id).ToList();
-        var suiteMap = await _dbContext.BenchmarkSuites
-            .Where(s => s.GameSnapshotId != null && boardIds.Contains(s.GameSnapshotId.Value))
-            .Select(s => new { s.GameSnapshotId, s.Id, s.Name })
-            .ToDictionaryAsync(s => s.GameSnapshotId!.Value, s => new { s.Id, s.Name }, ct);
-
-        foreach (var b in boards)
-        {
-            suiteMap.TryGetValue(b.Id, out var suite);
-            info.ExistingBoards.Add(new AttachedSnapshotExistingBoardDto
+            var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+            if (session == null)
             {
-                Id = b.Id,
-                Name = b.Name,
-                SuiteId = suite?.Id,
-                SuiteName = suite?.Name,
-                CapturedAtUtc = b.CapturedAtUtc,
-                IsIdentical = string.Equals(b.Sha256, sha256, StringComparison.OrdinalIgnoreCase)
-            });
-        }
+                return NotFound(new { error = "Session not found." });
+            }
 
-        return Ok(info);
+            string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            if (session.AspNetUserId != userId)
+            {
+                return Forbid();
+            }
+
+            // Refused on the same terms as SaveAttachedSnapshot, so the dialog can say why up front.
+            if (session.IsConfidential)
+            {
+                return Conflict(new { error = ConfidentialImportRefusal });
+            }
+
+            var info = new AttachedSnapshotInfoDto { SessionId = sessionId };
+
+            var snapshotMessage = await LoadLatestSnapshotMessageAsync(sessionId, ct);
+            if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
+            {
+                return Ok(info);
+            }
+
+            // The same normalization and truncation the save applies, so Sha256 is comparable with a stored board's.
+            string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(
+                ChatService.StripGameSnapshotPrefix(snapshotMessage.Content));
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return Ok(info);
+            }
+
+            var (boardText, sha256) = BenchmarkSnapshotImporter.PrepareBoardText(normalized);
+            info.HasSnapshot = true;
+            info.CharCount = boardText.Length;
+            info.Sha256 = sha256;
+            info.CapturedAtUtc = snapshotMessage.TimestampUtc;
+            info.DetectedGnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings);
+
+            var boards = await _dbContext.BenchmarkGameSnapshots
+                .Where(b => b.SourceChatSessionId == sessionId)
+                .OrderByDescending(b => b.CreatedAtUtc)
+                .Select(b => new { b.Id, b.Name, b.Sha256, b.CapturedAtUtc })
+                .ToListAsync(ct);
+
+            var boardIds = boards.Select(b => b.Id).ToList();
+            var suiteMap = await _dbContext.BenchmarkSuites
+                .Where(s => s.GameSnapshotId != null && boardIds.Contains(s.GameSnapshotId.Value))
+                .Select(s => new { s.GameSnapshotId, s.Id, s.Name })
+                .ToDictionaryAsync(s => s.GameSnapshotId!.Value, s => new { s.Id, s.Name }, ct);
+
+            foreach (var b in boards)
+            {
+                suiteMap.TryGetValue(b.Id, out var suite);
+                info.ExistingBoards.Add(new AttachedSnapshotExistingBoardDto
+                {
+                    Id = b.Id,
+                    Name = b.Name,
+                    SuiteId = suite?.Id,
+                    SuiteName = suite?.Name,
+                    CapturedAtUtc = b.CapturedAtUtc,
+                    IsIdentical = string.Equals(b.Sha256, sha256, StringComparison.OrdinalIgnoreCase)
+                });
+            }
+
+            return Ok(info);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPost("snapshots/from-session")]
@@ -1903,59 +1960,66 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = "Snapshot name is required." });
         }
 
-        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == request.SessionId, ct);
-        if (session == null)
-        {
-            return NotFound(new { error = "Session not found." });
-        }
-
-        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        if (session.AspNetUserId != userId)
-        {
-            return Forbid();
-        }
-
-        /* Importing copies the session's content into a benchmark board, which is shared
-           material an administrator and every later benchmark run can read. A confidential
-           session's content does not go there, and this is the route that would take it --
-           BenchmarkGameSnapshot.SourceChatSessionId is the link it would leave behind. */
-        if (session.IsConfidential)
-        {
-            return Conflict(new { error = ConfidentialImportRefusal });
-        }
-
-        var snapshotMessage = await LoadLatestSnapshotMessageAsync(session.Id, ct);
-
-        if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
-        {
-            return Conflict(new { error = "This chat has no attached game snapshot. Attach one first with Attach Game Snapshot." });
-        }
-
-        string strippedContent = ChatService.StripGameSnapshotPrefix(snapshotMessage.Content);
-
-        // An administrator's entry wins; otherwise the version the game client reported for this chat.
-        string? version = ClientSettingsReader.CapGnollHackVersion(request.SourceGnollHackVersion)
-            ?? ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings);
-
-        var meta = new BoardMetadata(
-            request.Name.Trim(),
-            request.Notes?.Trim(),
-            version,
-            snapshotMessage.TimestampUtc,
-            request.SessionId);
-
         try
         {
-            var (board, suite) = await _snapshotImporter.FromSessionAttachmentAsync(strippedContent, meta, ct);
-            return Ok(new CaptureBenchmarkSnapshotResponse
+            var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == request.SessionId, ct);
+            if (session == null)
             {
-                Board = ToSnapshotDto(board, suite.Id, suite.Name),
-                Suite = ToSuiteDto(suite)
-            });
+                return NotFound(new { error = "Session not found." });
+            }
+
+            string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            if (session.AspNetUserId != userId)
+            {
+                return Forbid();
+            }
+
+            /* Importing copies the session's content into a benchmark board, which is shared
+               material an administrator and every later benchmark run can read. A confidential
+               session's content does not go there, and this is the route that would take it --
+               BenchmarkGameSnapshot.SourceChatSessionId is the link it would leave behind. */
+            if (session.IsConfidential)
+            {
+                return Conflict(new { error = ConfidentialImportRefusal });
+            }
+
+            var snapshotMessage = await LoadLatestSnapshotMessageAsync(session.Id, ct);
+
+            if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
+            {
+                return Conflict(new { error = "This chat has no attached game snapshot. Attach one first with Attach Game Snapshot." });
+            }
+
+            string strippedContent = ChatService.StripGameSnapshotPrefix(snapshotMessage.Content);
+
+            // An administrator's entry wins; otherwise the version the game client reported for this chat.
+            string? version = ClientSettingsReader.CapGnollHackVersion(request.SourceGnollHackVersion)
+                ?? ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings);
+
+            var meta = new BoardMetadata(
+                request.Name.Trim(),
+                request.Notes?.Trim(),
+                version,
+                snapshotMessage.TimestampUtc,
+                request.SessionId);
+
+            try
+            {
+                var (board, suite) = await _snapshotImporter.FromSessionAttachmentAsync(strippedContent, meta, ct);
+                return Ok(new CaptureBenchmarkSnapshotResponse
+                {
+                    Board = ToSnapshotDto(board, suite.Id, suite.Name),
+                    Suite = ToSuiteDto(suite)
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
         }
-        catch (ArgumentException ex)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
     }
 
@@ -1990,47 +2054,58 @@ public class AdminBenchmarkController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("snapshots")]
     public async Task<IActionResult> GetSnapshots(CancellationToken ct)
     {
-        var boards = await _dbContext.BenchmarkGameSnapshots
-            .OrderByDescending(s => s.CreatedAtUtc)
-            .Select(s => new BenchmarkGameSnapshotDto
-            {
-                Id = s.Id,
-                Name = s.Name,
-                DigestText = s.DigestText,
-                CharCount = s.CharCount,
-                Sha256 = s.Sha256,
-                CaptureMethod = s.CaptureMethod,
-                SourceGnollHackVersion = s.SourceGnollHackVersion,
-                SnapshotFormatVersion = s.SnapshotFormatVersion,
-                BoardHeaderTimestamp = s.BoardHeaderTimestamp,
-                Notes = s.Notes,
-                SourceChatSessionId = s.SourceChatSessionId,
-                CapturedAtUtc = s.CapturedAtUtc,
-                CreatedAtUtc = s.CreatedAtUtc,
-                ModifiedAtUtc = s.ModifiedAtUtc
-            })
-            .ToListAsync(ct);
-
-        var suiteMap = await _dbContext.BenchmarkSuites
-            .Where(s => s.GameSnapshotId != null)
-            .Select(s => new { s.GameSnapshotId, s.Id, s.Name })
-            .ToDictionaryAsync(s => s.GameSnapshotId!.Value, s => new { s.Id, s.Name }, ct);
-
-        foreach (var b in boards)
+        try
         {
-            if (suiteMap.TryGetValue(b.Id, out var sw))
-            {
-                b.SuiteId = sw.Id;
-                b.SuiteName = sw.Name;
-            }
-        }
+            var boards = await _dbContext.BenchmarkGameSnapshots
+                .OrderByDescending(s => s.CreatedAtUtc)
+                .Select(s => new BenchmarkGameSnapshotDto
+                {
+                    Id = s.Id,
+                    Name = s.Name,
+                    DigestText = s.DigestText,
+                    CharCount = s.CharCount,
+                    Sha256 = s.Sha256,
+                    CaptureMethod = s.CaptureMethod,
+                    SourceGnollHackVersion = s.SourceGnollHackVersion,
+                    SnapshotFormatVersion = s.SnapshotFormatVersion,
+                    BoardHeaderTimestamp = s.BoardHeaderTimestamp,
+                    Notes = s.Notes,
+                    SourceChatSessionId = s.SourceChatSessionId,
+                    CapturedAtUtc = s.CapturedAtUtc,
+                    CreatedAtUtc = s.CreatedAtUtc,
+                    ModifiedAtUtc = s.ModifiedAtUtc
+                })
+                .ToListAsync(ct);
 
-        return Ok(boards);
+            var suiteMap = await _dbContext.BenchmarkSuites
+                .Where(s => s.GameSnapshotId != null)
+                .Select(s => new { s.GameSnapshotId, s.Id, s.Name })
+                .ToDictionaryAsync(s => s.GameSnapshotId!.Value, s => new { s.Id, s.Name }, ct);
+
+            foreach (var b in boards)
+            {
+                if (suiteMap.TryGetValue(b.Id, out var sw))
+                {
+                    b.SuiteId = sw.Id;
+                    b.SuiteName = sw.Name;
+                }
+            }
+
+            return Ok(boards);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -2057,171 +2132,220 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = "Captured snapshot flattened to empty text. A dump that flattens to nothing is a capture failure, not a valid snapshot." });
         }
 
-        var (board, owner) = await _snapshotImporter.FindIdenticalAsync(sha256, ct);
-        return Ok(new MatchSnapshotResult
+        try
         {
-            Sha256 = sha256,
-            CharCount = text.Length,
-            Truncated = truncated,
-            IsHtml = isHtml,
-            Match = board == null ? null : new MatchedSnapshotDto
+            var (board, owner) = await _snapshotImporter.FindIdenticalAsync(sha256, ct);
+            return Ok(new MatchSnapshotResult
             {
-                Id = board.Id,
-                Name = board.Name,
-                SuiteId = owner?.Id,
-                SuiteName = owner?.Name
-            }
-        });
+                Sha256 = sha256,
+                CharCount = text.Length,
+                Truncated = truncated,
+                IsHtml = isHtml,
+                Match = board == null ? null : new MatchedSnapshotDto
+                {
+                    Id = board.Id,
+                    Name = board.Name,
+                    SuiteId = owner?.Id,
+                    SuiteName = owner?.Name
+                }
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("snapshots/{id}")]
     public async Task<IActionResult> GetSnapshot(long id, [FromQuery] bool includeText = false, CancellationToken ct = default)
     {
-        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (board == null) return NotFound();
+        try
+        {
+            var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (board == null) return NotFound();
 
-        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
-        var dto = ToSnapshotDto(board, suite?.Id, suite?.Name);
-        if (!includeText)
-        {
-            dto.SanitizedText = null;
+            var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+            var dto = ToSnapshotDto(board, suite?.Id, suite?.Name);
+            if (!includeText)
+            {
+                dto.SanitizedText = null;
+            }
+            else
+            {
+                /* The YAML exporter writes this text and this hash into one snapshot block, so the
+                   hash and the count describe the text beside them rather than whatever the stored
+                   columns were computed over. The row itself is left alone: GameSnapshotSha256Used
+                   on every finished run is the hash the answers were graded against. */
+                string text = dto.SanitizedText?.Replace("\r\n", "\n").Replace('\r', '\n') ?? string.Empty;
+                dto.SanitizedText = text;
+                dto.Sha256 = BenchmarkSnapshotImporter.PrepareBoardText(text).Sha256;
+                dto.CharCount = text.Length;
+            }
+            return Ok(dto);
         }
-        else
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            /* The YAML exporter writes this text and this hash into one snapshot block, so the
-               hash and the count describe the text beside them rather than whatever the stored
-               columns were computed over. The row itself is left alone: GameSnapshotSha256Used
-               on every finished run is the hash the answers were graded against. */
-            string text = dto.SanitizedText?.Replace("\r\n", "\n").Replace('\r', '\n') ?? string.Empty;
-            dto.SanitizedText = text;
-            dto.Sha256 = BenchmarkSnapshotImporter.PrepareBoardText(text).Sha256;
-            dto.CharCount = text.Length;
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-        return Ok(dto);
     }
 
     [HttpGet("snapshots/{id}/text")]
     public async Task<IActionResult> DownloadSnapshotText(long id, CancellationToken ct)
     {
-        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (board == null) return NotFound();
+        try
+        {
+            var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (board == null) return NotFound();
 
-        string safeName = string.Join("_", board.Name.Split(Path.GetInvalidFileNameChars()));
-        return File(
-            System.Text.Encoding.UTF8.GetBytes(board.SanitizedText),
-            "text/plain; charset=utf-8",
-            $"{safeName}.snapshot.txt");
+            string safeName = string.Join("_", board.Name.Split(Path.GetInvalidFileNameChars()));
+            return File(
+                System.Text.Encoding.UTF8.GetBytes(board.SanitizedText),
+                "text/plain; charset=utf-8",
+                $"{safeName}.snapshot.txt");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpPut("snapshots/{id}")]
     public async Task<IActionResult> UpdateSnapshot(long id, [FromBody] UpdateBenchmarkGameSnapshotRequest request, CancellationToken ct)
     {
-        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (board == null) return NotFound();
-
-        if (!string.IsNullOrWhiteSpace(request.Name) && request.Name.Trim() != board.Name)
+        try
         {
-            string newName = request.Name.Trim();
-            bool nameExists = await _dbContext.BenchmarkGameSnapshots.AnyAsync(s => s.Name == newName && s.Id != id, ct);
-            if (nameExists)
+            var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (board == null) return NotFound();
+
+            if (!string.IsNullOrWhiteSpace(request.Name) && request.Name.Trim() != board.Name)
             {
-                return Conflict(new { error = $"A benchmark snapshot named '{newName}' already exists." });
+                string newName = request.Name.Trim();
+                bool nameExists = await _dbContext.BenchmarkGameSnapshots.AnyAsync(s => s.Name == newName && s.Id != id, ct);
+                if (nameExists)
+                {
+                    return Conflict(new { error = $"A benchmark snapshot named '{newName}' already exists." });
+                }
+                board.Name = newName;
             }
-            board.Name = newName;
-        }
 
-        if (request.Notes != null)
+            if (request.Notes != null)
+            {
+                board.Notes = request.Notes.Trim();
+            }
+
+            if (request.DigestText != null)
+            {
+                board.DigestText = request.DigestText.Trim().Length > BenchmarkSnapshotDigestBuilder.MaxDigestChars
+                    ? request.DigestText.Trim()[..BenchmarkSnapshotDigestBuilder.MaxDigestChars]
+                    : request.DigestText.Trim();
+            }
+
+            if (request.SourceGnollHackVersion != null)
+            {
+                board.SourceGnollHackVersion = request.SourceGnollHackVersion.Trim();
+            }
+
+            board.ModifiedAtUtc = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(ct);
+
+            var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+            return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            board.Notes = request.Notes.Trim();
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        if (request.DigestText != null)
-        {
-            board.DigestText = request.DigestText.Trim().Length > BenchmarkSnapshotDigestBuilder.MaxDigestChars
-                ? request.DigestText.Trim()[..BenchmarkSnapshotDigestBuilder.MaxDigestChars]
-                : request.DigestText.Trim();
-        }
-
-        if (request.SourceGnollHackVersion != null)
-        {
-            board.SourceGnollHackVersion = request.SourceGnollHackVersion.Trim();
-        }
-
-        board.ModifiedAtUtc = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(ct);
-
-        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
-        return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
     }
 
     [HttpPut("snapshots/{id}/text")]
     public async Task<IActionResult> UpdateSnapshotText(long id, [FromBody] UpdateBenchmarkGameSnapshotTextRequest request, CancellationToken ct)
     {
-        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (board == null) return NotFound();
-
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(request.Text ?? string.Empty);
-        if (string.IsNullOrWhiteSpace(normalized))
+        try
         {
-            return BadRequest(new { error = "Snapshot text must not be empty." });
+            var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (board == null) return NotFound();
+
+            string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(request.Text ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return BadRequest(new { error = "Snapshot text must not be empty." });
+            }
+
+            if (request.ExpectedSha256 != null && !string.Equals(request.ExpectedSha256, board.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return Conflict(new { error = "The snapshot text was changed by someone else since it was loaded. Reload the snapshot and reapply your edit." });
+            }
+
+            var (finalText, sha256) = BenchmarkSnapshotImporter.PrepareBoardText(normalized);
+
+            board.SanitizedText = finalText;
+            board.CharCount = finalText.Length;
+            board.Sha256 = sha256;
+            board.DigestText = BenchmarkSnapshotDigestBuilder.Build(finalText);
+            BenchmarkSnapshotHeaderParser.ApplyTo(board, finalText, textReplaced: true);
+            board.ModifiedAtUtc = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(ct);
+
+            // At most one suite owns a snapshot (unique filtered index on GameSnapshotId).
+            var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+            return Ok(new UpdateBenchmarkSnapshotTextResponse
+            {
+                Snapshot = ToSnapshotDto(board, suite?.Id, suite?.Name),
+                BoardFactsCheck = suite == null ? null : await CheckBoardFactsAsync(suite.Id, ct)
+            });
         }
-
-        if (request.ExpectedSha256 != null && !string.Equals(request.ExpectedSha256, board.Sha256, StringComparison.OrdinalIgnoreCase))
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return Conflict(new { error = "The snapshot text was changed by someone else since it was loaded. Reload the snapshot and reapply your edit." });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        var (finalText, sha256) = BenchmarkSnapshotImporter.PrepareBoardText(normalized);
-
-        board.SanitizedText = finalText;
-        board.CharCount = finalText.Length;
-        board.Sha256 = sha256;
-        board.DigestText = BenchmarkSnapshotDigestBuilder.Build(finalText);
-        BenchmarkSnapshotHeaderParser.ApplyTo(board, finalText, textReplaced: true);
-        board.ModifiedAtUtc = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(ct);
-
-        // At most one suite owns a snapshot (unique filtered index on GameSnapshotId).
-        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
-        return Ok(new UpdateBenchmarkSnapshotTextResponse
-        {
-            Snapshot = ToSnapshotDto(board, suite?.Id, suite?.Name),
-            BoardFactsCheck = suite == null ? null : await CheckBoardFactsAsync(suite.Id, ct)
-        });
     }
 
     /// <summary>Rebuilds the digest from the board's own text. The board text is never touched.</summary>
     [HttpPost("snapshots/{id}/regenerate-digest")]
     public async Task<IActionResult> RegenerateSnapshotDigest(long id, CancellationToken ct)
     {
-        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (board == null) return NotFound();
+        try
+        {
+            var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (board == null) return NotFound();
 
-        board.DigestText = BenchmarkSnapshotDigestBuilder.Build(board.SanitizedText);
-        board.ModifiedAtUtc = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(ct);
+            board.DigestText = BenchmarkSnapshotDigestBuilder.Build(board.SanitizedText);
+            board.ModifiedAtUtc = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync(ct);
 
-        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
-        return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+            var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+            return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpDelete("snapshots/{id}")]
     public async Task<IActionResult> DeleteSnapshot(long id, CancellationToken ct)
     {
-        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
-        if (board == null) return NotFound();
-
-        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
-        if (suite != null)
+        try
         {
-            suite.GameSnapshotId = null;
-            suite.ModifiedAtUtc = DateTime.UtcNow;
+            var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (board == null) return NotFound();
+
+            var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+            if (suite != null)
+            {
+                suite.GameSnapshotId = null;
+                suite.ModifiedAtUtc = DateTime.UtcNow;
+            }
+
+            _dbContext.BenchmarkGameSnapshots.Remove(board);
+            await _dbContext.SaveChangesAsync(ct);
+
+            return NoContent();
         }
-
-        _dbContext.BenchmarkGameSnapshots.Remove(board);
-        await _dbContext.SaveChangesAsync(ct);
-
-        return NoContent();
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     // --- Question Generation Jobs API ---
@@ -2234,69 +2358,76 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = "At least one question band must have count greater than zero." });
         }
 
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.GameSnapshot)
-            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
-        if (suite == null) return NotFound(new { error = "Suite not found." });
-        if (suite.GameSnapshot == null)
+        try
         {
-            return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Question generation requires a game snapshot." });
-        }
-
-        var conflict = CheckConflictingBenchmarkJob(suite.Id, "question generation");
-        if (conflict != null) return conflict;
-
-        int totalToGenerate = request.SimpleCount + request.IntermediateCount + request.AdvancedCount;
-        var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(suite.Id, totalToGenerate);
-        if (!canAdd)
-        {
-            return BadRequest(new { error = complianceMsg });
-        }
-
-        var (generatorConfig, generatorError) = await ResolveGeneratorAsync(request.GeneratorModelConfigurationId, ct);
-        if (generatorError != null) return generatorError;
-
-        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var cts = new CancellationTokenSource();
-
-        var job = new BenchmarkGenerationJob
-        {
-            SuiteId = suite.Id,
-            SuiteName = suite.Name,
-            GeneratorConfigId = generatorConfig!.Id,
-            GeneratorDisplayName = generatorConfig.DisplayName,
-            GeneratorProvider = generatorConfig.Provider,
-            GeneratorModelId = generatorConfig.ModelId,
-            GeneratorThinkingLevel = generatorConfig.ThinkingLevel,
-            GeneratorReasoningMode = generatorConfig.ReasoningMode,
-            GeneratorServiceTier = generatorConfig.ServiceTier,
-            GameSnapshotId = suite.GameSnapshotId,
-            GameSnapshotName = suite.GameSnapshot.Name,
-            Instructions = request.Instructions?.Trim() ?? string.Empty,
-            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
-            Cts = cts,
-            Items = new List<BenchmarkGenerationJobItem>
+            var suite = await _dbContext.BenchmarkSuites
+                .Include(s => s.GameSnapshot)
+                .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+            if (suite == null) return NotFound(new { error = "Suite not found." });
+            if (suite.GameSnapshot == null)
             {
-                new() { Difficulty = BenchmarkDifficulty.Simple, RequestedCount = request.SimpleCount, Status = request.SimpleCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped },
-                new() { Difficulty = BenchmarkDifficulty.Intermediate, RequestedCount = request.IntermediateCount, Status = request.IntermediateCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped },
-                new() { Difficulty = BenchmarkDifficulty.Advanced, RequestedCount = request.AdvancedCount, Status = request.AdvancedCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped }
+                return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Question generation requires a game snapshot." });
             }
-        };
 
-        if (!_generationJobManager.TryStart(job, out var existingJob))
-        {
-            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            var conflict = CheckConflictingBenchmarkJob(suite.Id, "question generation");
+            if (conflict != null) return conflict;
+
+            int totalToGenerate = request.SimpleCount + request.IntermediateCount + request.AdvancedCount;
+            var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(suite.Id, totalToGenerate);
+            if (!canAdd)
+            {
+                return BadRequest(new { error = complianceMsg });
+            }
+
+            var (generatorConfig, generatorError) = await ResolveGeneratorAsync(request.GeneratorModelConfigurationId, ct);
+            if (generatorError != null) return generatorError;
+
+            string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var cts = new CancellationTokenSource();
+
+            var job = new BenchmarkGenerationJob
+            {
+                SuiteId = suite.Id,
+                SuiteName = suite.Name,
+                GeneratorConfigId = generatorConfig!.Id,
+                GeneratorDisplayName = generatorConfig.DisplayName,
+                GeneratorProvider = generatorConfig.Provider,
+                GeneratorModelId = generatorConfig.ModelId,
+                GeneratorThinkingLevel = generatorConfig.ThinkingLevel,
+                GeneratorReasoningMode = generatorConfig.ReasoningMode,
+                GeneratorServiceTier = generatorConfig.ServiceTier,
+                GameSnapshotId = suite.GameSnapshotId,
+                GameSnapshotName = suite.GameSnapshot.Name,
+                Instructions = request.Instructions?.Trim() ?? string.Empty,
+                StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
+                Cts = cts,
+                Items = new List<BenchmarkGenerationJobItem>
+                {
+                    new() { Difficulty = BenchmarkDifficulty.Simple, RequestedCount = request.SimpleCount, Status = request.SimpleCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped },
+                    new() { Difficulty = BenchmarkDifficulty.Intermediate, RequestedCount = request.IntermediateCount, Status = request.IntermediateCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped },
+                    new() { Difficulty = BenchmarkDifficulty.Advanced, RequestedCount = request.AdvancedCount, Status = request.AdvancedCount > 0 ? BenchmarkGenerationItemStatus.Pending : BenchmarkGenerationItemStatus.Skipped }
+                }
+            };
+
+            if (!_generationJobManager.TryStart(job, out var existingJob))
+            {
+                return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            }
+
+            // The job outlives the request; nothing request-scoped may be used past this point.
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
+                await svc.RunGenerationAsync(job.Id, cts.Token);
+            });
+
+            return Accepted(new { jobId = job.Id });
         }
-
-        // The job outlives the request; nothing request-scoped may be used past this point.
-        _ = Task.Run(async () =>
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
-            await svc.RunGenerationAsync(job.Id, cts.Token);
-        });
-
-        return Accepted(new { jobId = job.Id });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("question-generations/{jobId}")]
@@ -2357,58 +2488,65 @@ public class AdminBenchmarkController : ControllerBase
             bands.Add(band);
         }
 
-        long generatorConfigId = request.GeneratorModelConfigurationId ?? previous.GeneratorConfigId;
-        var (generatorConfig, generatorError) = await ResolveGeneratorAsync(generatorConfigId, ct);
-        if (generatorError != null) return generatorError;
-
-        string instructions = request.Instructions != null ? request.Instructions.Trim() : previous.Instructions;
-        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-
-        BenchmarkGenerationJob job;
         try
         {
-            job = BenchmarkGenerationJob.CreateRetry(
-                previous,
-                bands,
-                request.DiscardExisting,
-                ToGeneratorSelection(generatorConfig!),
-                instructions,
-                string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId);
+            long generatorConfigId = request.GeneratorModelConfigurationId ?? previous.GeneratorConfigId;
+            var (generatorConfig, generatorError) = await ResolveGeneratorAsync(generatorConfigId, ct);
+            if (generatorError != null) return generatorError;
+
+            string instructions = request.Instructions != null ? request.Instructions.Trim() : previous.Instructions;
+            string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+            BenchmarkGenerationJob job;
+            try
+            {
+                job = BenchmarkGenerationJob.CreateRetry(
+                    previous,
+                    bands,
+                    request.DiscardExisting,
+                    ToGeneratorSelection(generatorConfig!),
+                    instructions,
+                    string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+
+            var conflict = CheckConflictingBenchmarkJob(job.SuiteId, "question generation retry");
+            if (conflict != null) return conflict;
+
+            int requestedGrowth = job.Items.Sum(i => i.RequestedCount);
+            int discardedCount = job.Items.Sum(i => i.QuestionIdsToDiscard.Count);
+            var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(job.SuiteId, Math.Max(0, requestedGrowth - discardedCount));
+            if (!canAdd)
+            {
+                return BadRequest(new { error = complianceMsg });
+            }
+
+            job.Cts = new CancellationTokenSource();
+
+            if (!_generationJobManager.TryStart(job, out var existingJob))
+            {
+                return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            }
+
+            var cts = job.Cts;
+
+            // The job outlives the request; nothing request-scoped may be used past this point.
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
+                await svc.RunGenerationAsync(job.Id, cts.Token);
+            });
+
+            return Accepted(new { jobId = job.Id });
         }
-        catch (ArgumentException ex)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        var conflict = CheckConflictingBenchmarkJob(job.SuiteId, "question generation retry");
-        if (conflict != null) return conflict;
-
-        int requestedGrowth = job.Items.Sum(i => i.RequestedCount);
-        int discardedCount = job.Items.Sum(i => i.QuestionIdsToDiscard.Count);
-        var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(job.SuiteId, Math.Max(0, requestedGrowth - discardedCount));
-        if (!canAdd)
-        {
-            return BadRequest(new { error = complianceMsg });
-        }
-
-        job.Cts = new CancellationTokenSource();
-
-        if (!_generationJobManager.TryStart(job, out var existingJob))
-        {
-            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
-        }
-
-        var cts = job.Cts;
-
-        // The job outlives the request; nothing request-scoped may be used past this point.
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
-            await svc.RunGenerationAsync(job.Id, cts.Token);
-        });
-
-        return Accepted(new { jobId = job.Id });
     }
 
     [HttpPost("question-generations/regenerate")]
@@ -2433,80 +2571,87 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = "Scope must be 'Rubric' or 'Question'." });
         }
 
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.GameSnapshot)
-            .Include(s => s.Questions)
-            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
-        if (suite == null) return NotFound(new { error = "Suite not found." });
-        if (suite.GameSnapshot == null)
-        {
-            return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Question regeneration requires a game snapshot." });
-        }
-
-        var idSet = new HashSet<long>(request.QuestionIds);
-        var targetQuestions = suite.Questions.Where(q => idSet.Contains(q.Id)).ToList();
-        if (targetQuestions.Count != idSet.Count)
-        {
-            return BadRequest(new { error = "One or more selected questions are not in this suite." });
-        }
-
-        var conflict = CheckConflictingBenchmarkJob(suite.Id, "question regeneration");
-        if (conflict != null) return conflict;
-
-        var (generatorConfig, generatorError) = await ResolveGeneratorAsync(request.GeneratorModelConfigurationId, ct);
-        if (generatorError != null) return generatorError;
-
-        string instructions = request.Instructions?.Trim() ?? string.Empty;
-        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-
-        var targets = targetQuestions
-            .OrderBy(q => q.OrderIndex)
-            .Select(q => (q.Id, q.OrderIndex, q.Difficulty, q.QuestionText))
-            .ToList();
-
-        BenchmarkGenerationJob job;
         try
         {
-            job = BenchmarkGenerationJob.CreateRegeneration(
-                suite.Id,
-                suite.Name,
-                suite.GameSnapshotId,
-                suite.GameSnapshot.Name,
-                targets,
-                kind,
-                ToGeneratorSelection(generatorConfig!),
-                instructions,
-                string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId);
+            var suite = await _dbContext.BenchmarkSuites
+                .Include(s => s.GameSnapshot)
+                .Include(s => s.Questions)
+                .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+            if (suite == null) return NotFound(new { error = "Suite not found." });
+            if (suite.GameSnapshot == null)
+            {
+                return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Question regeneration requires a game snapshot." });
+            }
+
+            var idSet = new HashSet<long>(request.QuestionIds);
+            var targetQuestions = suite.Questions.Where(q => idSet.Contains(q.Id)).ToList();
+            if (targetQuestions.Count != idSet.Count)
+            {
+                return BadRequest(new { error = "One or more selected questions are not in this suite." });
+            }
+
+            var conflict = CheckConflictingBenchmarkJob(suite.Id, "question regeneration");
+            if (conflict != null) return conflict;
+
+            var (generatorConfig, generatorError) = await ResolveGeneratorAsync(request.GeneratorModelConfigurationId, ct);
+            if (generatorError != null) return generatorError;
+
+            string instructions = request.Instructions?.Trim() ?? string.Empty;
+            string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+            var targets = targetQuestions
+                .OrderBy(q => q.OrderIndex)
+                .Select(q => (q.Id, q.OrderIndex, q.Difficulty, q.QuestionText))
+                .ToList();
+
+            BenchmarkGenerationJob job;
+            try
+            {
+                job = BenchmarkGenerationJob.CreateRegeneration(
+                    suite.Id,
+                    suite.Name,
+                    suite.GameSnapshotId,
+                    suite.GameSnapshot.Name,
+                    targets,
+                    kind,
+                    ToGeneratorSelection(generatorConfig!),
+                    instructions,
+                    string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+
+            var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(suite.Id, 0);
+            if (!canAdd)
+            {
+                return BadRequest(new { error = complianceMsg });
+            }
+
+            job.Cts = new CancellationTokenSource();
+
+            if (!_generationJobManager.TryStart(job, out var existingJob))
+            {
+                return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            }
+
+            var cts = job.Cts;
+
+            // The job outlives the request; nothing request-scoped may be used past this point.
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
+                await svc.RunGenerationAsync(job.Id, cts.Token);
+            });
+
+            return Accepted(new { jobId = job.Id });
         }
-        catch (ArgumentException ex)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(suite.Id, 0);
-        if (!canAdd)
-        {
-            return BadRequest(new { error = complianceMsg });
-        }
-
-        job.Cts = new CancellationTokenSource();
-
-        if (!_generationJobManager.TryStart(job, out var existingJob))
-        {
-            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
-        }
-
-        var cts = job.Cts;
-
-        // The job outlives the request; nothing request-scoped may be used past this point.
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
-            await svc.RunGenerationAsync(job.Id, cts.Token);
-        });
-
-        return Accepted(new { jobId = job.Id });
     }
 
     /// <summary>Looks up a generator model configuration and checks it is usable, or returns the error response to send back.</summary>
@@ -2532,82 +2677,89 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("rubric-checks")]
     public async Task<IActionResult> StartRubricCheck([FromBody] StartRubricCheckRequest request, CancellationToken ct)
     {
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.GameSnapshot)
-            .Include(s => s.Questions)
-            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
-        if (suite == null) return NotFound(new { error = "Suite not found." });
-        if (suite.GameSnapshot == null)
+        try
         {
-            return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Rubric verification requires a game snapshot." });
-        }
-
-        var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric verification");
-        if (conflict != null) return conflict;
-
-        var checkerConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.CheckerModelConfigurationId }, ct);
-        if (checkerConfig == null || !checkerConfig.IsEnabled)
-        {
-            return BadRequest(new { error = "Checker model configuration not found or disabled." });
-        }
-        if (string.IsNullOrWhiteSpace(checkerConfig.EncryptedApiKey))
-        {
-            return BadRequest(new { error = "Checker model configuration has no API key." });
-        }
-
-        List<BenchmarkQuestion> targetQuestions;
-        string scopeType = "suite";
-        if (request.QuestionIds != null && request.QuestionIds.Count > 0)
-        {
-            scopeType = "questions";
-            var idSet = new HashSet<long>(request.QuestionIds);
-            targetQuestions = suite.Questions.Where(q => idSet.Contains(q.Id)).OrderBy(q => q.OrderIndex).ToList();
-        }
-        else
-        {
-            targetQuestions = suite.Questions.OrderBy(q => q.OrderIndex).ToList();
-        }
-
-        if (targetQuestions.Count == 0)
-        {
-            return BadRequest(new { error = "No questions found to check." });
-        }
-
-        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var cts = new CancellationTokenSource();
-
-        var job = new BenchmarkRubricCheckJob
-        {
-            SuiteId = suite.Id,
-            SuiteName = suite.Name,
-            Scope = scopeType,
-            CheckerConfigId = checkerConfig.Id,
-            CheckerDisplayName = checkerConfig.DisplayName,
-            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
-            Cts = cts,
-            Items = targetQuestions.Select(q => new BenchmarkRubricCheckJobItem
+            var suite = await _dbContext.BenchmarkSuites
+                .Include(s => s.GameSnapshot)
+                .Include(s => s.Questions)
+                .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+            if (suite == null) return NotFound(new { error = "Suite not found." });
+            if (suite.GameSnapshot == null)
             {
-                QuestionId = q.Id,
-                OrderIndex = q.OrderIndex,
-                QuestionTextExcerpt = q.QuestionText.Length <= 160 ? q.QuestionText : q.QuestionText.Substring(0, 160) + "...",
-                Status = BenchmarkRubricCheckItemStatus.Pending
-            }).ToList()
-        };
+                return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Rubric verification requires a game snapshot." });
+            }
 
-        if (!_rubricCheckJobManager.TryStart(job, out var existingJob))
-        {
-            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric verification");
+            if (conflict != null) return conflict;
+
+            var checkerConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.CheckerModelConfigurationId }, ct);
+            if (checkerConfig == null || !checkerConfig.IsEnabled)
+            {
+                return BadRequest(new { error = "Checker model configuration not found or disabled." });
+            }
+            if (string.IsNullOrWhiteSpace(checkerConfig.EncryptedApiKey))
+            {
+                return BadRequest(new { error = "Checker model configuration has no API key." });
+            }
+
+            List<BenchmarkQuestion> targetQuestions;
+            string scopeType = "suite";
+            if (request.QuestionIds != null && request.QuestionIds.Count > 0)
+            {
+                scopeType = "questions";
+                var idSet = new HashSet<long>(request.QuestionIds);
+                targetQuestions = suite.Questions.Where(q => idSet.Contains(q.Id)).OrderBy(q => q.OrderIndex).ToList();
+            }
+            else
+            {
+                targetQuestions = suite.Questions.OrderBy(q => q.OrderIndex).ToList();
+            }
+
+            if (targetQuestions.Count == 0)
+            {
+                return BadRequest(new { error = "No questions found to check." });
+            }
+
+            string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var cts = new CancellationTokenSource();
+
+            var job = new BenchmarkRubricCheckJob
+            {
+                SuiteId = suite.Id,
+                SuiteName = suite.Name,
+                Scope = scopeType,
+                CheckerConfigId = checkerConfig.Id,
+                CheckerDisplayName = checkerConfig.DisplayName,
+                StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
+                Cts = cts,
+                Items = targetQuestions.Select(q => new BenchmarkRubricCheckJobItem
+                {
+                    QuestionId = q.Id,
+                    OrderIndex = q.OrderIndex,
+                    QuestionTextExcerpt = q.QuestionText.Length <= 160 ? q.QuestionText : q.QuestionText.Substring(0, 160) + "...",
+                    Status = BenchmarkRubricCheckItemStatus.Pending
+                }).ToList()
+            };
+
+            if (!_rubricCheckJobManager.TryStart(job, out var existingJob))
+            {
+                return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            }
+
+            // The job outlives the request; nothing request-scoped may be used past this point.
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricCheckService>();
+                await svc.RunRubricCheckAsync(job.Id, cts.Token);
+            });
+
+            return Accepted(new { jobId = job.Id });
         }
-
-        // The job outlives the request; nothing request-scoped may be used past this point.
-        _ = Task.Run(async () =>
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricCheckService>();
-            await svc.RunRubricCheckAsync(job.Id, cts.Token);
-        });
-
-        return Accepted(new { jobId = job.Id });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("rubric-checks/{jobId}")]
@@ -2649,101 +2801,108 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("rubric-gap-author")]
     public async Task<IActionResult> StartRubricGapAuthor([FromBody] StartRubricGapAuthorRequest request, CancellationToken ct)
     {
-        var suite = await _dbContext.BenchmarkSuites
-            .Include(s => s.Questions)
-            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
-        if (suite == null) return NotFound(new { error = "Suite not found." });
-
-        var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric gap authoring");
-        if (conflict != null) return conflict;
-
-        var authorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.AuthorModelConfigurationId }, ct);
-        if (authorConfig == null || !authorConfig.IsEnabled)
+        try
         {
-            return BadRequest(new { error = "Author model configuration not found or disabled." });
-        }
-        if (string.IsNullOrWhiteSpace(authorConfig.EncryptedApiKey))
-        {
-            return BadRequest(new { error = "Author model configuration has no API key." });
-        }
-        if ((authorConfig.ModelRole & 4) != 4)
-        {
-            return BadRequest(new { error = "Author model configuration is not enabled for the benchmarking role." });
-        }
+            var suite = await _dbContext.BenchmarkSuites
+                .Include(s => s.Questions)
+                .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+            if (suite == null) return NotFound(new { error = "Suite not found." });
 
-        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
-        if (!canSpend)
-        {
-            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
-        }
+            var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric gap authoring");
+            if (conflict != null) return conflict;
 
-        var (samples, _) = await LoadUnverifiedClaimSamplesAsync(suite.Id, ct);
-        var eligible = BenchmarkRubricGapAuthorService.BuildEligibleClusters(samples);
-
-        if (request.ClusterKeys != null && request.ClusterKeys.Count > 0)
-        {
-            var wanted = new HashSet<string>(request.ClusterKeys, StringComparer.Ordinal);
-            eligible = eligible.Where(e => wanted.Contains(e.Evidence.ClusterKey)).ToList();
-        }
-
-        if (eligible.Count == 0)
-        {
-            return BadRequest(new
+            var authorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.AuthorModelConfigurationId }, ct);
+            if (authorConfig == null || !authorConfig.IsEnabled)
             {
-                error = "No eligible rubric gap clusters. A cluster is eligible only when a claim verifier checked it and returned Supported with a citation."
-            });
-        }
-
-        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        var cts = new CancellationTokenSource();
-
-        var authorSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(_dbContext, authorConfig, ct);
-
-        var job = new BenchmarkRubricGapAuthorJob
-        {
-            SuiteId = suite.Id,
-            SuiteName = suite.Name,
-            AuthorConfigId = authorConfig.Id,
-            AuthorDisplayName = authorConfig.DisplayName,
-            AuthorSnapshotId = authorSnapshot.Id,
-            Instructions = string.IsNullOrWhiteSpace(request.Instructions) ? null : request.Instructions.Trim(),
-            StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
-            Cts = cts,
-            Drafts = eligible.Select(e =>
+                return BadRequest(new { error = "Author model configuration not found or disabled." });
+            }
+            if (string.IsNullOrWhiteSpace(authorConfig.EncryptedApiKey))
             {
-                var question = suite.Questions.FirstOrDefault(q => q.Id == e.Cluster.QuestionId);
-                string text = question?.QuestionText ?? string.Empty;
-                return new BenchmarkRubricGapAuthorDraft
+                return BadRequest(new { error = "Author model configuration has no API key." });
+            }
+            if ((authorConfig.ModelRole & 4) != 4)
+            {
+                return BadRequest(new { error = "Author model configuration is not enabled for the benchmarking role." });
+            }
+
+            var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+            if (!canSpend)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+            }
+
+            var (samples, _) = await LoadUnverifiedClaimSamplesAsync(suite.Id, ct);
+            var eligible = BenchmarkRubricGapAuthorService.BuildEligibleClusters(samples);
+
+            if (request.ClusterKeys != null && request.ClusterKeys.Count > 0)
+            {
+                var wanted = new HashSet<string>(request.ClusterKeys, StringComparer.Ordinal);
+                eligible = eligible.Where(e => wanted.Contains(e.Evidence.ClusterKey)).ToList();
+            }
+
+            if (eligible.Count == 0)
+            {
+                return BadRequest(new
                 {
-                    ClusterKey = e.Evidence.ClusterKey,
-                    QuestionId = e.Cluster.QuestionId,
-                    QuestionOrderIndex = e.Cluster.QuestionOrderIndex,
-                    QuestionTextExcerpt = text.Length <= 160 ? text : text.Substring(0, 160) + "...",
-                    Claims = e.Cluster.Claims.ToList(),
-                    ModelFamilies = e.Cluster.ModelFamilies.ToList(),
-                    Occurrences = e.Cluster.Occurrences,
-                    ClusterVerdict = e.Cluster.Verdict,
-                    Status = BenchmarkRubricGapAuthorDraftStatus.Pending
-                };
-            }).ToList()
-        };
+                    error = "No eligible rubric gap clusters. A cluster is eligible only when a claim verifier checked it and returned Supported with a citation."
+                });
+            }
 
-        if (!_rubricGapAuthorJobManager.TryStart(job, out var existingJob))
-        {
-            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var cts = new CancellationTokenSource();
+
+            var authorSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(_dbContext, authorConfig, ct);
+
+            var job = new BenchmarkRubricGapAuthorJob
+            {
+                SuiteId = suite.Id,
+                SuiteName = suite.Name,
+                AuthorConfigId = authorConfig.Id,
+                AuthorDisplayName = authorConfig.DisplayName,
+                AuthorSnapshotId = authorSnapshot.Id,
+                Instructions = string.IsNullOrWhiteSpace(request.Instructions) ? null : request.Instructions.Trim(),
+                StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
+                Cts = cts,
+                Drafts = eligible.Select(e =>
+                {
+                    var question = suite.Questions.FirstOrDefault(q => q.Id == e.Cluster.QuestionId);
+                    string text = question?.QuestionText ?? string.Empty;
+                    return new BenchmarkRubricGapAuthorDraft
+                    {
+                        ClusterKey = e.Evidence.ClusterKey,
+                        QuestionId = e.Cluster.QuestionId,
+                        QuestionOrderIndex = e.Cluster.QuestionOrderIndex,
+                        QuestionTextExcerpt = text.Length <= 160 ? text : text.Substring(0, 160) + "...",
+                        Claims = e.Cluster.Claims.ToList(),
+                        ModelFamilies = e.Cluster.ModelFamilies.ToList(),
+                        Occurrences = e.Cluster.Occurrences,
+                        ClusterVerdict = e.Cluster.Verdict,
+                        Status = BenchmarkRubricGapAuthorDraftStatus.Pending
+                    };
+                }).ToList()
+            };
+
+            if (!_rubricGapAuthorJobManager.TryStart(job, out var existingJob))
+            {
+                return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+            }
+
+            var evidenceByKey = eligible.ToDictionary(e => e.Evidence.ClusterKey, e => e.Evidence, StringComparer.Ordinal);
+
+            // The job outlives the request; nothing request-scoped may be used past this point.
+            _ = Task.Run(async () =>
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricGapAuthorService>();
+                await svc.RunRubricGapAuthorAsync(job.Id, evidenceByKey, cts.Token);
+            });
+
+            return Accepted(new { jobId = job.Id });
         }
-
-        var evidenceByKey = eligible.ToDictionary(e => e.Evidence.ClusterKey, e => e.Evidence, StringComparer.Ordinal);
-
-        // The job outlives the request; nothing request-scoped may be used past this point.
-        _ = Task.Run(async () =>
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            using var scope = _scopeFactory.CreateScope();
-            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricGapAuthorService>();
-            await svc.RunRubricGapAuthorAsync(job.Id, evidenceByKey, cts.Token);
-        });
-
-        return Accepted(new { jobId = job.Id });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("rubric-gap-author/{jobId}")]
@@ -2791,70 +2950,77 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = "The accepted rubric text is required." });
         }
 
-        var question = await _dbContext.BenchmarkQuestions.FindAsync(new object[] { id }, ct);
-        if (question == null) return NotFound();
-
-        BenchmarkRubricGapAuthorDraft? draft = null;
-        BenchmarkRubricGapAuthorJob? job = null;
-        if (!string.IsNullOrWhiteSpace(request.JobId) && !string.IsNullOrWhiteSpace(request.ClusterKey))
+        try
         {
-            job = _rubricGapAuthorJobManager.TryGet(request.JobId!);
-            draft = job?.TryGetDraft(request.ClusterKey!);
-            if (draft != null && draft.QuestionId != question.Id)
+            var question = await _dbContext.BenchmarkQuestions.FindAsync(new object[] { id }, ct);
+            if (question == null) return NotFound();
+
+            BenchmarkRubricGapAuthorDraft? draft = null;
+            BenchmarkRubricGapAuthorJob? job = null;
+            if (!string.IsNullOrWhiteSpace(request.JobId) && !string.IsNullOrWhiteSpace(request.ClusterKey))
             {
-                return BadRequest(new { error = "That draft belongs to a different question." });
+                job = _rubricGapAuthorJobManager.TryGet(request.JobId!);
+                draft = job?.TryGetDraft(request.ClusterKey!);
+                if (draft != null && draft.QuestionId != question.Id)
+                {
+                    return BadRequest(new { error = "That draft belongs to a different question." });
+                }
             }
+
+            string acceptedText = request.AcceptedText.Trim();
+            string draftText = draft?.ProposedText?.Trim() ?? string.Empty;
+
+            string existing = question.ExpectedPoints ?? string.Empty;
+            question.ExpectedPoints = string.IsNullOrWhiteSpace(existing)
+                ? acceptedText
+                : existing.TrimEnd() + Environment.NewLine + acceptedText;
+
+            // A rubric edit is a content change, so the same clear-and-bump the question editor performs
+            // applies here: an edited question is a different item and its statistics must not straddle
+            // the rewrite.
+            BenchmarkQuestionAssessment.Clear(question);
+            question.ModifiedAtUtc = DateTime.UtcNow;
+
+            var suite = await _dbContext.BenchmarkSuites.FindAsync(new object[] { question.BenchmarkSuiteId }, ct);
+            if (suite != null) suite.ModifiedAtUtc = DateTime.UtcNow;
+
+            string acceptedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+            var acceptance = new BenchmarkRubricAdditionAcceptance
+            {
+                BenchmarkQuestionId = question.Id,
+                ItemRevisionAfter = question.ItemRevision,
+                AcceptedText = acceptedText,
+                DraftText = draftText,
+                AcceptedVerbatim = draftText.Length > 0 && string.Equals(draftText, acceptedText, StringComparison.Ordinal),
+                Citation = draft?.Citation,
+                ClusterClaim = draft?.Claims.FirstOrDefault(),
+                AuthorModelConfigurationId = job?.AuthorConfigId,
+                AuthorModelSnapshotId = job != null && job.AuthorSnapshotId > 0 ? job.AuthorSnapshotId : null,
+                AcceptedByUserId = string.IsNullOrEmpty(acceptedByUserId) ? null : acceptedByUserId,
+                AcceptedAtUtc = DateTime.UtcNow
+            };
+            _dbContext.BenchmarkRubricAdditionAcceptances.Add(acceptance);
+
+            await _dbContext.SaveChangesAsync(ct);
+
+            return Ok(new RubricAdditionAcceptanceDto
+            {
+                Id = acceptance.Id,
+                QuestionId = question.Id,
+                QuestionOrderIndex = question.OrderIndex,
+                ItemRevisionAfter = acceptance.ItemRevisionAfter,
+                AcceptedVerbatim = acceptance.AcceptedVerbatim,
+                Citation = acceptance.Citation,
+                AuthorModelDisplayName = job?.AuthorDisplayName,
+                AcceptedAtUtc = acceptance.AcceptedAtUtc,
+                ExpectedPoints = question.ExpectedPoints
+            });
         }
-
-        string acceptedText = request.AcceptedText.Trim();
-        string draftText = draft?.ProposedText?.Trim() ?? string.Empty;
-
-        string existing = question.ExpectedPoints ?? string.Empty;
-        question.ExpectedPoints = string.IsNullOrWhiteSpace(existing)
-            ? acceptedText
-            : existing.TrimEnd() + Environment.NewLine + acceptedText;
-
-        // A rubric edit is a content change, so the same clear-and-bump the question editor performs
-        // applies here: an edited question is a different item and its statistics must not straddle
-        // the rewrite.
-        BenchmarkQuestionAssessment.Clear(question);
-        question.ModifiedAtUtc = DateTime.UtcNow;
-
-        var suite = await _dbContext.BenchmarkSuites.FindAsync(new object[] { question.BenchmarkSuiteId }, ct);
-        if (suite != null) suite.ModifiedAtUtc = DateTime.UtcNow;
-
-        string acceptedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-
-        var acceptance = new BenchmarkRubricAdditionAcceptance
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            BenchmarkQuestionId = question.Id,
-            ItemRevisionAfter = question.ItemRevision,
-            AcceptedText = acceptedText,
-            DraftText = draftText,
-            AcceptedVerbatim = draftText.Length > 0 && string.Equals(draftText, acceptedText, StringComparison.Ordinal),
-            Citation = draft?.Citation,
-            ClusterClaim = draft?.Claims.FirstOrDefault(),
-            AuthorModelConfigurationId = job?.AuthorConfigId,
-            AuthorModelSnapshotId = job != null && job.AuthorSnapshotId > 0 ? job.AuthorSnapshotId : null,
-            AcceptedByUserId = string.IsNullOrEmpty(acceptedByUserId) ? null : acceptedByUserId,
-            AcceptedAtUtc = DateTime.UtcNow
-        };
-        _dbContext.BenchmarkRubricAdditionAcceptances.Add(acceptance);
-
-        await _dbContext.SaveChangesAsync(ct);
-
-        return Ok(new RubricAdditionAcceptanceDto
-        {
-            Id = acceptance.Id,
-            QuestionId = question.Id,
-            QuestionOrderIndex = question.OrderIndex,
-            ItemRevisionAfter = acceptance.ItemRevisionAfter,
-            AcceptedVerbatim = acceptance.AcceptedVerbatim,
-            Citation = acceptance.Citation,
-            AuthorModelDisplayName = job?.AuthorDisplayName,
-            AcceptedAtUtc = acceptance.AcceptedAtUtc,
-            ExpectedPoints = question.ExpectedPoints
-        });
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     // --- Runs API ---
@@ -4671,11 +4837,18 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (run, markdown, filename) = await BuildRunReportAsync(id);
-        if (run == null) return NotFound();
+        try
+        {
+            var (run, markdown, filename) = await BuildRunReportAsync(id);
+            if (run == null) return NotFound();
 
-        var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), pdfPaper);
-        return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
+            var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), pdfPaper);
+            return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>The run report as a Word document on <c>a4</c> (the default) or <c>letter</c> paper; always internal.</summary>
@@ -4687,11 +4860,18 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (run, markdown, filename) = await BuildRunReportAsync(id);
-        if (run == null) return NotFound();
+        try
+        {
+            var (run, markdown, filename) = await BuildRunReportAsync(id);
+            if (run == null) return NotFound();
 
-        var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), wordPaper);
-        return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
+            var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), wordPaper);
+            return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -4719,11 +4899,18 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (run, markdown, filename) = await BuildToolCallLogAsync(id);
-        if (run == null) return NotFound();
+        try
+        {
+            var (run, markdown, filename) = await BuildToolCallLogAsync(id);
+            if (run == null) return NotFound();
 
-        var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, pdfPaper);
-        return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
+            var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, pdfPaper);
+            return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>The tool-call log as a Word document on <c>a4</c> (the default) or <c>letter</c> paper; always internal.</summary>
@@ -4735,17 +4922,24 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (run, markdown, filename) = await BuildToolCallLogAsync(id);
-        if (run == null) return NotFound();
+        try
+        {
+            var (run, markdown, filename) = await BuildToolCallLogAsync(id);
+            if (run == null) return NotFound();
 
-        var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, wordPaper);
-        return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
+            var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, wordPaper);
+            return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// The run diagnostics text the client captured, as a tagged PDF. The text is rendered and
     /// returned, never stored or logged. 404 for an unknown run, 400 for empty text or a capture
-    /// time that is not an ISO 8601 time.
+    /// time that is not an ISO 8601 time; 499 when the client aborts.
     /// </summary>
     [HttpPost("runs/{id}/diagnostics/pdf")]
     [RequestSizeLimit(4_000_000)]
@@ -4757,23 +4951,30 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var run = await _dbContext.BenchmarkRuns
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (run == null) return NotFound();
-
-        if (request == null || string.IsNullOrWhiteSpace(request.Text))
+        try
         {
-            return BadRequest(new { error = "text must not be empty." });
-        }
-        if (!BenchmarkRunDiagnosticsPdfRequest.TryParseCapturedAt(request.CapturedAtUtc, out DateTime capturedAtUtc))
-        {
-            return BadRequest(new { error = "capturedAtUtc must be an ISO 8601 time." });
-        }
+            var run = await _dbContext.BenchmarkRuns
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (run == null) return NotFound();
 
-        var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), pdfPaper);
-        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.pdf";
-        return await PdfFileAsync(request.Text, plainText: true, info, filename, ct);
+            if (request == null || string.IsNullOrWhiteSpace(request.Text))
+            {
+                return BadRequest(new { error = "text must not be empty." });
+            }
+            if (!BenchmarkRunDiagnosticsPdfRequest.TryParseCapturedAt(request.CapturedAtUtc, out DateTime capturedAtUtc))
+            {
+                return BadRequest(new { error = "capturedAtUtc must be an ISO 8601 time." });
+            }
+
+            var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), pdfPaper);
+            string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.pdf";
+            return await PdfFileAsync(request.Text, plainText: true, info, filename, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -4790,23 +4991,30 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var run = await _dbContext.BenchmarkRuns
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (run == null) return NotFound();
-
-        if (request == null || string.IsNullOrWhiteSpace(request.Text))
+        try
         {
-            return BadRequest(new { error = "text must not be empty." });
-        }
-        if (!BenchmarkRunDiagnosticsPdfRequest.TryParseCapturedAt(request.CapturedAtUtc, out DateTime capturedAtUtc))
-        {
-            return BadRequest(new { error = "capturedAtUtc must be an ISO 8601 time." });
-        }
+            var run = await _dbContext.BenchmarkRuns
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (run == null) return NotFound();
 
-        var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), wordPaper);
-        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.docx";
-        return await WordFileAsync(request.Text, plainText: true, info, filename, ct);
+            if (request == null || string.IsNullOrWhiteSpace(request.Text))
+            {
+                return BadRequest(new { error = "text must not be empty." });
+            }
+            if (!BenchmarkRunDiagnosticsPdfRequest.TryParseCapturedAt(request.CapturedAtUtc, out DateTime capturedAtUtc))
+            {
+                return BadRequest(new { error = "capturedAtUtc must be an ISO 8601 time." });
+            }
+
+            var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), wordPaper);
+            string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.docx";
+            return await WordFileAsync(request.Text, plainText: true, info, filename, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -6008,11 +6216,18 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkModelComparisonService comparisonService,
         CancellationToken ct)
     {
-        var (result, error) = await comparisonService.CompareAsync(request, ct);
+        try
+        {
+            var (result, error) = await comparisonService.CompareAsync(request, ct);
 
-        return result == null
-            ? BadRequest(error ?? "The comparison could not be computed.")
-            : Ok(result);
+            return result == null
+                ? BadRequest(error ?? "The comparison could not be computed.")
+                : Ok(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -6030,7 +6245,14 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkComparabilityIndexService indexService,
         CancellationToken ct)
     {
-        return await BuildComparabilityIndexAsync(request, indexService, ct);
+        try
+        {
+            return await BuildComparabilityIndexAsync(request, indexService, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -6043,7 +6265,14 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkComparabilityIndexService indexService,
         CancellationToken ct)
     {
-        return await BuildComparabilityIndexAsync(request, indexService, ct);
+        try
+        {
+            return await BuildComparabilityIndexAsync(request, indexService, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     private async Task<IActionResult> BuildComparabilityIndexAsync(
@@ -6067,7 +6296,7 @@ public class AdminBenchmarkController : ControllerBase
     /// entries and degrade flags are exactly the wizard's. Read-only arithmetic over stored data.
     ///
     /// <para>400 for a request mixing battery results with runs or groups, for fewer than two comparable
-    /// entries, and for All pairs above twelve comparable entries.</para>
+    /// entries, and for All pairs above twelve comparable entries; 499 when the client aborts.</para>
     /// </summary>
     [HttpPost("model-comparison/paired")]
     public async Task<IActionResult> PostPairedComparison(
@@ -6075,11 +6304,18 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkPairedTestsService pairedTests,
         CancellationToken ct)
     {
-        var (result, error) = await pairedTests.CompareAsync(request, ct);
+        try
+        {
+            var (result, error) = await pairedTests.CompareAsync(request, ct);
 
-        return result == null
-            ? BadRequest(error ?? "The paired tests could not be computed.")
-            : Ok(result);
+            return result == null
+                ? BadRequest(error ?? "The paired tests could not be computed.")
+                : Ok(result);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -6093,18 +6329,26 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkPairedTestsService pairedTests,
         CancellationToken ct)
     {
-        var (result, error, notFound) = await pairedTests.CompareBatteriesAsync(request, ct);
+        try
+        {
+            var (result, error, notFound) = await pairedTests.CompareBatteriesAsync(request, ct);
 
-        if (result != null) return Ok(result);
-        return notFound
-            ? NotFound(error ?? "Battery run not found.")
-            : BadRequest(error ?? "The paired test could not be computed.");
+            if (result != null) return Ok(result);
+            return notFound
+                ? NotFound(error ?? "Battery run not found.")
+                : BadRequest(error ?? "The paired test could not be computed.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// The single-run report's Paired Test tab: this run (the treatment) against another finished run on
     /// the same suite, named as a model comparison, a verification of a change or a replicate. 400 when
-    /// the pair is not comparable, a run has not finished, or the suites differ.
+    /// the pair is not comparable, a run has not finished, or the suites differ; 499 when the client
+    /// aborts.
     /// </summary>
     [HttpPost("runs/{id:long}/paired-comparison")]
     public async Task<IActionResult> PostRunPairedComparison(
@@ -6113,12 +6357,19 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkPairedTestsService pairedTests,
         CancellationToken ct)
     {
-        var (result, error, notFound) = await pairedTests.CompareRunsAsync(id, request, ct);
+        try
+        {
+            var (result, error, notFound) = await pairedTests.CompareRunsAsync(id, request, ct);
 
-        if (result != null) return Ok(result);
-        return notFound
-            ? NotFound(error ?? "Run not found.")
-            : BadRequest(error ?? "The paired test could not be computed.");
+            if (result != null) return Ok(result);
+            return notFound
+                ? NotFound(error ?? "Run not found.")
+                : BadRequest(error ?? "The paired test could not be computed.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -6132,11 +6383,18 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkPairedTestsService pairedTests,
         CancellationToken ct)
     {
-        var (result, error, notFound) = await pairedTests.ClassifyRunsAsync(id, request, ct);
+        try
+        {
+            var (result, error, notFound) = await pairedTests.ClassifyRunsAsync(id, request, ct);
 
-        if (result != null) return Ok(result);
-        return notFound
-            ? NotFound(error ?? "Run not found.")
-            : BadRequest(error ?? "The runs could not be classified.");
+            if (result != null) return Ok(result);
+            return notFound
+                ? NotFound(error ?? "Run not found.")
+                : BadRequest(error ?? "The runs could not be classified.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 }

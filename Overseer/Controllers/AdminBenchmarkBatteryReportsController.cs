@@ -80,7 +80,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     /// requested document that is not a battery-completion document (400); a requested document
     /// already written (409), or with none requested, every one written (409); an unusable writer or the
     /// model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
-    /// warning); a refused endpoint (400); the spend cap (429).
+    /// warning); a refused endpoint (400); the spend cap (429). A request the client aborts is a 499.
     /// </summary>
     [HttpPost]
     public async Task<IActionResult> Write(long batteryRunId, [FromBody] WriteRunReportDocumentsRequest request, CancellationToken ct)
@@ -88,113 +88,134 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
         if (request == null) return BadRequest(new { error = "A request body is required." });
         if (_batteryReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
-        var source = await BenchmarkBatteryReportDocumentService.LoadSourceAsync(_db, batteryRunId, ct);
-        if (source == null) return NotFound();
-
-        string? subjectRefusal = BenchmarkBatteryReportDocumentService.SubjectRefusal(source);
-        if (subjectRefusal != null) return BadRequest(new { error = subjectRefusal });
-
-        var batteryRun = await _db.BenchmarkBatteryRuns.IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
-        if (batteryRun == null) return NotFound();
-
-        if (BenchmarkRunReportDocumentService.IsInProgress(batteryRun.ReportDocumentsStatus) || _batteryReportDocuments.IsActive(batteryRunId))
+        try
         {
-            return Conflict(new { error = AlreadyWritingMessage });
-        }
+            var source = await BenchmarkBatteryReportDocumentService.LoadSourceAsync(_db, batteryRunId, ct);
+            if (source == null) return NotFound();
 
-        var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
-        if (invalidAudience != null) return invalidAudience;
+            string? subjectRefusal = BenchmarkBatteryReportDocumentService.SubjectRefusal(source);
+            if (subjectRefusal != null) return BadRequest(new { error = subjectRefusal });
 
-        var missing = await BenchmarkBatteryReportDocumentService.MissingAudiencesAsync(_db, batteryRunId, ct);
-        List<BenchmarkReportAudience> toWrite;
-        if (requested == null)
-        {
-            if (missing.Count == 0) return Conflict(new { error = AllWrittenMessage });
-            toWrite = missing;
-        }
-        else
-        {
-            var written = requested.Where(a => !missing.Contains(a)).ToList();
-            if (written.Count > 0)
+            var batteryRun = await _db.BenchmarkBatteryRuns.IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
+            if (batteryRun == null) return NotFound();
+
+            if (BenchmarkRunReportDocumentService.IsInProgress(batteryRun.ReportDocumentsStatus) || _batteryReportDocuments.IsActive(batteryRunId))
             {
-                return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
+                return Conflict(new { error = AlreadyWritingMessage });
             }
-            toWrite = requested;
+
+            var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
+            if (invalidAudience != null) return invalidAudience;
+
+            var missing = await BenchmarkBatteryReportDocumentService.MissingAudiencesAsync(_db, batteryRunId, ct);
+            List<BenchmarkReportAudience> toWrite;
+            if (requested == null)
+            {
+                if (missing.Count == 0) return Conflict(new { error = AllWrittenMessage });
+                toWrite = missing;
+            }
+            else
+            {
+                var written = requested.Where(a => !missing.Contains(a)).ToList();
+                if (written.Count > 0)
+                {
+                    return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
+                }
+                toWrite = requested;
+            }
+
+            var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
+            var candidate = BenchmarkBatteryReportDocumentService.CandidateIdentity(source);
+            string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard);
+            if (refusal != null) return BadRequest(new { error = refusal });
+
+            string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
+            if (warning != null && !request.AcknowledgeSameProvider)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning));
+            }
+
+            if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+            {
+                return BadRequest(new { error = EndpointRefusal(writer, endpointError) });
+            }
+
+            var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
+            if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+
+            batteryRun.ReportWriterModelConfigurationId = writer.Id;
+            batteryRun.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
+            batteryRun.ReportDocumentsMessage = null;
+            await _db.SaveChangesAsync(ct);
+
+            string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!_batteryReportDocuments.TryStart(batteryRunId, userId, toWrite, request.AcknowledgeSameProvider, out _))
+            {
+                return Conflict(new { error = AlreadyWritingMessage });
+            }
+
+            return Accepted(new WriteRunReportDocumentsResponse
+            {
+                RunId = batteryRunId,
+                Status = BenchmarkRunReportDocumentsStatus.Pending,
+                Audiences = toWrite.ToList()
+            });
         }
-
-        var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
-        var candidate = BenchmarkBatteryReportDocumentService.CandidateIdentity(source);
-        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard);
-        if (refusal != null) return BadRequest(new { error = refusal });
-
-        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
-        if (warning != null && !request.AcknowledgeSameProvider)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            return StatusCode(StatusCodes.Status409Conflict, BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning));
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
-        {
-            return BadRequest(new { error = EndpointRefusal(writer, endpointError) });
-        }
-
-        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
-        if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
-
-        batteryRun.ReportWriterModelConfigurationId = writer.Id;
-        batteryRun.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
-        batteryRun.ReportDocumentsMessage = null;
-        await _db.SaveChangesAsync(ct);
-
-        string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!_batteryReportDocuments.TryStart(batteryRunId, userId, toWrite, request.AcknowledgeSameProvider, out _))
-        {
-            return Conflict(new { error = AlreadyWritingMessage });
-        }
-
-        return Accepted(new WriteRunReportDocumentsResponse
-        {
-            RunId = batteryRunId,
-            Status = BenchmarkRunReportDocumentsStatus.Pending,
-            Audiences = toWrite.ToList()
-        });
     }
 
     /// <summary>
     /// The battery run's current or last battery-completion job: 200 with its view, 204 when this
     /// process knows none for it (none since the last restart, or its finished job has expired), 404
-    /// for an unknown battery run.
+    /// for an unknown battery run, 499 when the client aborts.
     /// </summary>
     [HttpGet("job")]
     public async Task<IActionResult> GetJob(long batteryRunId, CancellationToken ct)
     {
         if (_batteryReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
-        var batteryRun = await _db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
-        if (batteryRun == null) return NotFound();
+        try
+        {
+            var batteryRun = await _db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
+            if (batteryRun == null) return NotFound();
 
-        var view = JobView(batteryRun);
-        return view == null ? NoContent() : Ok(view);
+            var view = JobView(batteryRun);
+            return view == null ? NoContent() : Ok(view);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
     /// Cancels the battery run's battery-completion job: 202 with its view once asked; 409 when no job
-    /// for it is in progress; 404 for an unknown battery run. Documents written before the cancellation
-    /// are kept.
+    /// for it is in progress; 404 for an unknown battery run; 499 when the client aborts. Documents
+    /// written before the cancellation are kept.
     /// </summary>
     [HttpPost("cancel")]
     public async Task<IActionResult> Cancel(long batteryRunId, CancellationToken ct)
     {
         if (_batteryReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
 
-        var batteryRun = await _db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
-        if (batteryRun == null) return NotFound();
-
-        if (_batteryReportDocuments.TryCancel(batteryRunId) != BenchmarkRunReportDocumentService.CancelOutcome.Requested)
+        try
         {
-            return Conflict(new { error = NothingInProgressMessage });
+            var batteryRun = await _db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
+            if (batteryRun == null) return NotFound();
+
+            if (_batteryReportDocuments.TryCancel(batteryRunId) != BenchmarkRunReportDocumentService.CancelOutcome.Requested)
+            {
+                return Conflict(new { error = NothingInProgressMessage });
+            }
+            return Accepted(JobView(batteryRun));
         }
-        return Accepted(JobView(batteryRun));
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -270,27 +291,34 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     /// Deletes one of the battery run's own battery-completion documents and settles the battery run's
     /// documents status. 404 when the battery run or the document is unknown, or the document is not
     /// this battery run's battery-completion document; 409 while the battery run's documents are
-    /// being written.
+    /// being written; 499 when the client aborts.
     /// </summary>
     [HttpDelete("{documentId:long}")]
     public async Task<IActionResult> DeleteDocument(long batteryRunId, long documentId, CancellationToken ct)
     {
-        var batteryRun = await _db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
-        if (batteryRun == null) return NotFound();
-
-        string subjectKey = BenchmarkBatteryReportDocumentService.SubjectKeyOf(batteryRunId);
-        bool isBatteryDocument = await _db.BenchmarkReportDocuments
-            .AsNoTracking()
-            .IgnoreAutoIncludes()
-            .AnyAsync(d => d.Id == documentId && d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion, ct);
-        if (!isBatteryDocument) return NotFound();
-
-        if (BenchmarkRunReportDocumentService.IsInProgress(batteryRun.ReportDocumentsStatus) || (_batteryReportDocuments?.IsActive(batteryRunId) ?? false))
+        try
         {
-            return Conflict(new { error = DeleteWhileWritingMessage });
-        }
+            var batteryRun = await _db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
+            if (batteryRun == null) return NotFound();
 
-        return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
+            string subjectKey = BenchmarkBatteryReportDocumentService.SubjectKeyOf(batteryRunId);
+            bool isBatteryDocument = await _db.BenchmarkReportDocuments
+                .AsNoTracking()
+                .IgnoreAutoIncludes()
+                .AnyAsync(d => d.Id == documentId && d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion, ct);
+            if (!isBatteryDocument) return NotFound();
+
+            if (BenchmarkRunReportDocumentService.IsInProgress(batteryRun.ReportDocumentsStatus) || (_batteryReportDocuments?.IsActive(batteryRunId) ?? false))
+            {
+                return Conflict(new { error = DeleteWhileWritingMessage });
+            }
+
+            return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
