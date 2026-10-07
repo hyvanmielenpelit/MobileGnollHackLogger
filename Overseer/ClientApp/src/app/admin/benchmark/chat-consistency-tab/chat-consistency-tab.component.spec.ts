@@ -195,17 +195,17 @@ describe('ChatConsistencyTabComponent', () => {
     chooseModelInWizard();
 
     const step = dialog().querySelector('#cc-step-panel-1')!;
-    expect(textOf(step.querySelector('.cc-tl-status'))).toBe('6 runs of GPT-5 high in this range.');
-    expect(step.querySelectorAll('.cc-run-table tbody tr').length).toBe(6);
+    expect(textOf(step.querySelector('.cc-tl-status'))).toBe('6 runs of GPT-5 high in these dates.');
+    expect(step.querySelectorAll('.cc-run-card').length).toBe(6);
     // Newest first by default.
-    expect(step.querySelector('.cc-run-table tbody tr')!.getAttribute('data-run-id')).toBe('106');
-    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · every date');
+    expect(step.querySelector('.cc-run-card')!.getAttribute('data-run-id')).toBe('106');
+    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · All dates');
 
     expect(textOf(el.querySelector('.cc-launcher-current h4'))).toBe('Current model');
     expect(currentFacts()).toEqual([
       ['Model', 'GPT-5 high'],
       ['Runs', '6 runs, 4 with call telemetry'],
-      ['Dates', 'Every date'],
+      ['Dates', 'All dates'],
       ['Latest analysis', '#7 · saved 2026-10-02']
     ]);
 
@@ -217,10 +217,100 @@ describe('ChatConsistencyTabComponent', () => {
     expect(textOf(figures[0].querySelector('figcaption'))).toContain('Quality held between 71 and 74 across 6 runs.');
   });
 
-  it('reads the range again as UTC day bounds', () => {
+  /** Chooses a preset in step 1's Dates select. */
+  function choosePreset(value: string): void {
+    const select = dialog().querySelector<HTMLSelectElement>('#cc-tl-range')!;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  }
+
+  /** Answers the timeline and run requests of the subject, returning their `from` and `to` parameters. */
+  function answerSubject(rows = ccRunRows()): { from: string | null; to: string | null } {
+    const timeline = http.expectOne(r => r.url === `${CC_API}/timeline`);
+    const runs = http.expectOne(r => r.url === `${CC_API}/runs`);
+    const bounds = { from: timeline.request.params.get('from'), to: timeline.request.params.get('to') };
+    expect(runs.request.params.get('from')).toBe(bounds.from);
+    expect(runs.request.params.get('to')).toBe(bounds.to);
+    timeline.flush(ccTimeline());
+    runs.flush(rows);
+    fixture.detectChanges();
+    return bounds;
+  }
+
+  describe('rolling date presets', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('reads the runs since the preset\'s window, and Reload runs moves the window to now', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-07T12:00:00Z'));
+      createTab();
+      openWizard();
+      chooseModelInWizard();
+
+      choosePreset('7d');
+      expect(answerSubject()).toEqual({ from: '2026-09-30T12:00:00.000Z', to: null });
+      expect(currentFacts()[2]).toEqual(['Dates', 'Last 7 days']);
+      expect(currentFacts()[1]).toEqual(['Runs', '6 runs, 4 with call telemetry · 6 in the chosen dates']);
+      expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · Last 7 days');
+
+      vi.setSystemTime(new Date('2026-10-07T15:30:00Z'));
+      dialog().querySelector<HTMLButtonElement>('.cc-wizard-reload')!.click();
+      fixture.detectChanges();
+      expect(answerSubject()).toEqual({ from: '2026-09-30T15:30:00.000Z', to: null });
+
+      choosePreset('1y');
+      expect(answerSubject()).toEqual({ from: '2025-10-07T15:30:00.000Z', to: null });
+
+      choosePreset('all');
+      expect(answerSubject()).toEqual({ from: null, to: null });
+    });
+  });
+
+  it('counts the runs in the analysis on the launcher, and clears the selection for a new model or a saved analysis', () => {
     createTab();
     openWizard();
     chooseModelInWizard();
+    const tab = fixture.componentInstance;
+
+    dialog().querySelector<HTMLInputElement>('#cc-run-104-include')!.click();
+    fixture.detectChanges();
+    expect([...tab.scope.leftOut]).toEqual([104]);
+    expect(currentFacts()[1]).toEqual(['Runs', '6 runs, 4 with call telemetry · 5 in the analysis']);
+    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · All dates · 5 in the analysis');
+
+    // A reload that no longer lists the left-out run drops it, and says so.
+    dialog().querySelector<HTMLButtonElement>('.cc-wizard-reload')!.click();
+    fixture.detectChanges();
+    answerSubject(ccRunRows().filter(row => row.runId !== 104));
+    expect(tab.scope.leftOut.size).toBe(0);
+    expect(textOf(dialog().querySelector('.cc-tl-announcement'))).toBe('Left-out run #104 is no longer listed and was dropped from the selection.');
+
+    dialog().querySelector<HTMLInputElement>('#cc-run-105-include')!.click();
+    fixture.detectChanges();
+    expect(tab.scope.leftOut.size).toBe(1);
+    el.querySelector<HTMLButtonElement>('.cc-analysis-card[data-analysis-id="7"] .cc-analysis-open')!.click();
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
+    fixture.detectChanges();
+    expect(tab.scope.leftOut.size).toBe(0);
+    expect(tab.announcement).toBe('The run selection in step 1 was cleared to show the saved analysis.');
+
+    tab.setScope({ firstRunId: 102, lastRunId: null, leftOut: new Set<number>() });
+    tab.selectModel('anthropic/claude');
+    expect(tab.scope.firstRunId).toBeNull();
+    http.match(r => r.url === `${CC_API}/timeline` || r.url === `${CC_API}/runs`).forEach(request => request.flush([]));
+  });
+
+  it('reads custom dates as UTC day bounds', () => {
+    createTab();
+    openWizard();
+    chooseModelInWizard();
+
+    choosePreset('custom');
+    expect(fixture.componentInstance.range).toEqual({ preset: 'custom', fromDay: '', toDay: '', anchorUtc: null });
+    // An empty custom range reads every date again.
+    answerSubject();
 
     const from = dialog().querySelector<HTMLInputElement>('#cc-tl-from')!;
     from.value = '2026-09-10';
@@ -251,8 +341,7 @@ describe('ChatConsistencyTabComponent', () => {
     runs.flush(ccRunRows());
     fixture.detectChanges();
     expect(currentFacts()[2]).toEqual(['Dates', '2026-09-10 to 2026-09-30']);
-    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · 2026-09-10 to 2026-09-30');
-  });
+    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · 2026-09-10 to 2026-09-30');  });
 
   it('opens a saved analysis in the wizard on Results, switching to its model', () => {
     createTab();
@@ -428,8 +517,8 @@ describe('ChatConsistencyTabComponent', () => {
       openAtCall.push(dialog().open);
     });
     const report = vi.spyOn(bridge, 'viewRunDetail').mockImplementation(() => undefined);
-    const row = (runId: number): HTMLTableRowElement =>
-      dialog().querySelector<HTMLTableRowElement>(`.cc-run-table tr[data-run-id="${runId}"]`)!;
+    const row = (runId: number): HTMLElement =>
+      dialog().querySelector<HTMLElement>(`.cc-run-card[data-run-id="${runId}"]`)!;
 
     row(104).querySelector<HTMLButtonElement>('.cc-open-report-btn')!.click();
     expect(report).toHaveBeenCalledWith(104);
@@ -452,7 +541,7 @@ describe('ChatConsistencyTabComponent', () => {
     const repeat = vi.spyOn(bridge, 'repeatRunSetup').mockImplementation(() => undefined);
     Object.defineProperty(wizard, 'closeBlocked', { configurable: true, get: () => true });
 
-    dialog().querySelector<HTMLButtonElement>('.cc-run-table tr[data-run-id="105"] .cc-repeat-btn')!.click();
+    dialog().querySelector<HTMLButtonElement>('.cc-run-card[data-run-id="105"] .cc-repeat-btn')!.click();
     fixture.detectChanges();
     expect(repeat).not.toHaveBeenCalled();
     expect(dialog().open).toBe(true);

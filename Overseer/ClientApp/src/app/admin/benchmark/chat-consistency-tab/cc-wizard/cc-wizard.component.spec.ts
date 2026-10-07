@@ -135,11 +135,40 @@ describe('CcWizardComponent', () => {
     expect(el.querySelector('#cc-step-blocked-2')).toBeNull();
     expect(next().getAttribute('aria-disabled')).toBe('false');
     expect(el.querySelector('#cc-next-blocked')).toBeNull();
-    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · every date');
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · All dates');
 
-    fixture.componentRef.setInput('range', { fromDay: '2026-09-10', toDay: '' });
+    fixture.componentRef.setInput('range', { preset: 'custom', fromDay: '2026-09-10', toDay: '', anchorUtc: null });
     fixture.detectChanges();
-    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · from 2026-09-10');
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · From 2026-09-10');
+
+    fixture.componentRef.setInput('range', { preset: '30d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T00:00:00.000Z' });
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · Last 30 days');
+  });
+
+  it('counts the runs in the analysis in the subtitle and hands the scoped runs to the steps', () => {
+    chooseModel();
+    const scope = { firstRunId: 102, lastRunId: 105, leftOut: new Set([104]) };
+    fixture.componentRef.setInput('scope', scope);
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · All dates · 3 in the analysis');
+
+    expect(wizard.scopedRows.map(row => row.runId)).toEqual([102, 103, 105]);
+    expect([...wizard.notAnalyzed]).toEqual([[101, 'beforeSpan'], [104, 'leftOut'], [106, 'afterSpan']]);
+    expect(wizard.analysisSpan).toEqual({ first: '2026-09-05', last: '2026-09-26' });
+    expect(wizard.scopedRows).toBe(wizard.scopedRows);
+
+    tab(3).click();
+    fixture.detectChanges();
+    expect(wizard.analysis!.rows.map(row => row.runId)).toEqual([102, 103, 105]);
+    expect(wizard.analysis!.allRows.length).toBe(6);
+    expect(wizard.analysis!.span).toEqual({ first: '2026-09-05', last: '2026-09-26' });
+    expect(wizard.analysis!.scopeKey).toBe('102|105|104');
+
+    tab(2).click();
+    fixture.detectChanges();
+    expect(wizard.timelineWorkspace!.notAnalyzed).toBe(wizard.notAnalyzed);
+    expect(wizard.timelineWorkspace!.rangeLabel).toBe('All dates');
   });
 
   it('moves between the tabs with Left / Right (wrapping) and Home / End, keeping focus on the tabs', () => {

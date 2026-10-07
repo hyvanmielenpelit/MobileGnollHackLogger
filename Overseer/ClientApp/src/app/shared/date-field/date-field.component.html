@@ -1,0 +1,82 @@
+<div class="gh-date-field" [attr.style]="'anchor-name: --' + inputId + '-field'">
+  <input type="text" class="gh-input gh-date-field-input" [id]="inputId"
+         inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="YYYY-MM-DD"
+         [value]="value" [readOnly]="readonly"
+         [attr.aria-describedby]="describedByIds"
+         [attr.aria-invalid]="invalid ? 'true' : null"
+         (change)="onInputChange($event)">
+  <button type="button" class="action-btn gh-date-field-btn" [id]="inputId + '-cal-btn'"
+          [attr.aria-label]="'Choose ' + label + ' on a calendar'"
+          aria-haspopup="dialog"
+          [attr.aria-expanded]="open"
+          [attr.aria-disabled]="readonly ? 'true' : null"
+          [attr.popovertarget]="readonly ? null : calendarId"
+          [attr.interestfor]="inputId + '-cal-tip'"
+          [attr.style]="'anchor-name: --' + inputId + '-cal-btn'"
+          (click)="onButtonClick($event)">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+  </button>
+</div>
+<span class="visually-hidden" [id]="inputId + '-format'">Format: year-month-day, for example 2026-10-07.</span>
+<div popover="hint" class="gh-tooltip" [id]="inputId + '-cal-tip'"
+     [attr.style]="'position-anchor: --' + inputId + '-cal-btn'">Open calendar</div>
+
+<div popover="auto" role="dialog" aria-modal="false" class="gh-calendar" [id]="calendarId"
+     [attr.aria-labelledby]="inputId + '-cal-name ' + inputId + '-cal-title'"
+     [attr.style]="'position-anchor: --' + inputId + '-field'"
+     (toggle)="onToggle($event)" (keydown)="onCalendarKeydown($event)" (focusout)="onCalendarFocusOut($event)">
+  <span class="visually-hidden" [id]="inputId + '-cal-name'">{{ label }}</span>
+  <div class="gh-calendar-head">
+    <button type="button" class="action-btn" [id]="inputId + '-cal-prev'" aria-label="Previous month"
+            [attr.interestfor]="inputId + '-cal-prev-tip'"
+            [attr.style]="'anchor-name: --' + inputId + '-cal-prev'"
+            (click)="stepMonth(-1)">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="inputId + '-cal-prev-tip'"
+         [attr.style]="'position-anchor: --' + inputId + '-cal-prev'">Previous month</div>
+    <h2 class="gh-calendar-title" [id]="inputId + '-cal-title'" aria-live="polite">{{ title }}</h2>
+    <button type="button" class="action-btn" [id]="inputId + '-cal-next'" aria-label="Next month"
+            [attr.interestfor]="inputId + '-cal-next-tip'"
+            [attr.style]="'anchor-name: --' + inputId + '-cal-next'"
+            (click)="stepMonth(1)">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="inputId + '-cal-next-tip'"
+         [attr.style]="'position-anchor: --' + inputId + '-cal-next'">Next month</div>
+  </div>
+
+  <table role="grid" class="gh-calendar-grid" [attr.aria-labelledby]="inputId + '-cal-title'"
+         (keydown)="onGridKeydown($event)">
+    <thead>
+      <tr>
+        @for (weekday of weekdays; track weekday.name) {
+          <th scope="col" [attr.abbr]="weekday.name">{{ weekday.short }}</th>
+        }
+      </tr>
+    </thead>
+    <tbody>
+      @for (week of weeks; track $index) {
+        <tr>
+          @for (cell of week; track cell.day) {
+            <td [attr.aria-selected]="cell.day === selectedDay ? 'true' : null">
+              <button type="button" class="gh-calendar-day" [class.is-outside-month]="!cell.inMonth"
+                      [attr.data-day]="cell.day"
+                      [attr.tabindex]="cell.day === focusedDay ? 0 : -1"
+                      [attr.aria-label]="cell.label"
+                      [attr.aria-current]="cell.day === today ? 'date' : null"
+                      [attr.aria-disabled]="isDisabled(cell.day) ? 'true' : null"
+                      (click)="pick(cell.day)">{{ cell.date }}</button>
+            </td>
+          }
+        </tr>
+      }
+    </tbody>
+  </table>
+
+  <div class="gh-calendar-foot">
+    <button type="button" class="btn-link" [attr.aria-disabled]="todayAllowed ? null : 'true'"
+            (click)="pickToday()">Today<span class="visually-hidden"> for {{ label }}</span></button>
+    <button type="button" class="btn-link" (click)="clear()">Clear<span class="visually-hidden"> {{ label }}</span></button>
+  </div>
+</div>

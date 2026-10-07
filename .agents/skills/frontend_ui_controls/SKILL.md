@@ -223,6 +223,8 @@ you already read the label, it is noise; drop it.
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
 | chevron | Show / Hide Model Reasoning; the state glyph that ends a §4f trigger (**Re-run**, **Actions**, step 3's **Preview layout**) | A **state** indicator: which way it points says whether the section or popover is open |
+| chevron-left / chevron-right (Feather *chevron-left* `<polyline points="15 18 9 12 15 6">`, *chevron-right* `<polyline points="9 18 15 12 9 6">`) | **Previous figure** / **Next figure** (icon-only, Model Comparison's *Single chart* toolbar), **Previous chart** / **Next chart** (icon-only, the Chat Consistency Timeline step's *Single chart* toolbar), **Previous month** / **Next month** (icon-only, the header of `app-date-field`'s calendar, §4h) | **Previous / next** in a sequence: the item before or after this one, of the same kind. Never a state indicator — that is the down/up *chevron* above |
+| calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*) | Decorative, `aria-hidden`, never a button: the field's label names it, and the glyph says only "type to find" |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}* |
 
@@ -455,6 +457,21 @@ reason through `describedBy`. The Chat Consistency wizard's step 1 uses it while
 report charts are attached: the picker is `aria-disabled`, the date inputs are `readonly` rather than
 `disabled` so they keep their place in the focus order (§6), and *Every date* is `aria-disabled`, each
 described by one visible reason line.*
+
+*Changed 2026-10-07 (Chat Consistency step 1 runs): two glyphs are new. The icon-only button that
+opens the glass calendar of the shared date field `app-date-field` (§4h) takes* calendar*, and the
+calendar's header reuses* chevron-left */* chevron-right *for **Previous month** / **Next month**.
+Those two now have their own row, meaning previous / next in a sequence, as Model Comparison's
+**Previous / Next figure** and the Chat Consistency Timeline's **Previous / Next chart** already used
+them. Step 1 of the Chat Consistency wizard replaced its From / To date inputs and Every date with a
+**Dates** select (All dates, rolling Last N days, Last year, Custom) and two `app-date-field`s, and its
+12-column **Runs** table with the fourth §8h card list under a §8i selection band. Each card's **First
+run** / **Last run** are text `.btn-ghost` toggles with `aria-pressed` and a leading* check *glyph only
+while pressed (the state, not the action); Open run report is an icon-only* eye*, and More actions an
+icon-only* more *§4f trigger holding Repeat this run's setup and Mark as anchor / Unmark anchor. While
+locked, the Dates select is `aria-disabled` and writes its stored value back on `change`, and the date
+fields are `readonly` with their calendar buttons `aria-disabled`, all focusable and described by the
+reason.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1101,6 +1118,108 @@ a line under the row that the button's `aria-describedby` points at. Never `[dis
 reason, and never silently absent while it is visible by the table above. An action whose visibility
 condition does not hold is left out, because there is nothing to repair.
 
+### 4h. Date fields: `app-date-field`
+
+A calendar date is entered with `app-date-field` from `app/shared/date-field/`: a `YYYY-MM-DD` text
+field with an icon-only calendar button at its end that opens a **glass calendar** popover. It
+implements the WAI-ARIA APG *Date Picker Dialog*, non-modal because the calendar is a light-dismiss
+popover that usually sits inside a modal `<dialog>`. **Never a bare `<input type="date">` in new
+UI.** The Chat Consistency wizard's step 1 (*From (UTC)* / *To (UTC)*) and step 3 (the four period
+dates) are the first users; other screens' native date inputs (AI Telemetry, Config Analytics, the AI
+model form, the annotation's date-time) predate it and move over when next touched.
+
+```html
+<label for="cc-tl-from" class="cc-model-label">From (UTC)</label>
+<app-date-field inputId="cc-tl-from" label="From (UTC)" [value]="fromDay" [max]="toDay"
+                [readonly]="!!lockedReason" [invalid]="!!rangeError" [describedBy]="dateDescribedBy"
+                (valueChange)="onDayChange('from', $event)"></app-date-field>
+```
+
+| Input / output | Meaning |
+|---|---|
+| `inputId` (required) | The input's `id`, unique in the document. Every other id derives from it — `{inputId}-cal-btn`, `-cal` (the popover), `-cal-name`, `-cal-title`, `-cal-prev`, `-cal-next`, `-format`, the tooltips — and so do the anchor names `--{inputId}-field` and `--{inputId}-cal-btn` |
+| `label` | The visible label's text, as the host's `<label>` shows it. It names the button *Choose {label} on a calendar*, the calendar dialog (a visually hidden `{inputId}-cal-name` before the month title) and the footer buttons' hidden completions |
+| `value` | `YYYY-MM-DD` or `''`; **the host owns it** and feeds it back |
+| `min` / `max` | Optional `YYYY-MM-DD` bounds, inclusive; anything else is no bound. Days outside are `aria-disabled` in the calendar. A pair of fields bounds each other (`[max]="toDay"` on From, `[min]="fromDay"` on To) |
+| `describedBy` | Further ids for the input's `aria-describedby`, after the field's own format hint — the host's error line and lock reason |
+| `invalid` | Sets `aria-invalid="true"` on the input |
+| `readonly` | The input is `readonly`; the button stays focusable, is `aria-disabled`, has no `popovertarget` and opens nothing; an open calendar closes |
+| `valueChange` | Emitted on the input's `change` (Enter or leaving the field), a day picked in the calendar, **Today** and **Clear** — **never per keystroke** |
+
+**The host keeps its own `<label for="{inputId}">`, the value and its validation.** The field
+validates nothing: the host checks the emitted text (`isUtcDateInput`) and shows its own
+`.gh-field-error`, passed in through `describedBy` and `invalid`.
+
+- **The input**: `type="text"`, `inputmode="numeric"`, `autocomplete="off"`, `spellcheck="false"`,
+  placeholder `YYYY-MM-DD`, classes `gh-input gh-date-field-input`, described first by the visually
+  hidden `{inputId}-format` (*Format: year-month-day, for example 2026-10-07.*). On `change` the text is
+  trimmed, and `2026-9-5`, `2026/9/5` and `2026.9.5` are written `2026-09-05` when that is a real day;
+  anything else is emitted trimmed, as typed, for the host to refuse.
+- **The calendar button**: an icon-only `.action-btn` with the *calendar* glyph (§3a), 30 px square
+  inside the input's end padding (`.gh-date-field-btn`, placed absolutely in the positioned
+  `.gh-date-field`), `aria-haspopup="dialog"`, `aria-expanded` bound from the popover's `toggle` event
+  (the polyfill does not set it), `popovertarget`, and the hint tooltip *Open calendar* (§4.2).
+- **The calendar**: `<div popover="auto" role="dialog" aria-modal="false" class="gh-calendar">`,
+  `aria-labelledby` the hidden label name and the month title, so it reads *From (UTC), October 2026*.
+  It is anchored under the field by explicit names on both ends via `[attr.style]` (§4.2 items 3–4),
+  with the §4f fallback chain and a `.gh-anchor-native` rule; `refreshAnchorPositioning()` runs on open.
+  - **Header**: icon-only **Previous month** / **Next month** `.action-btn`s (*chevron-left* /
+    *chevron-right*, each with a hint tooltip of the same words) around the title
+    `<h2 id="{inputId}-cal-title" aria-live="polite">October 2026</h2>`; focus stays on the button and
+    the title announces the month.
+  - **Grid**: `<table role="grid">` labeled by the title, Sunday first (US English), headers
+    `<th scope="col" abbr="Sunday">Su</th>`, six weeks with the neighboring months' days dimmed
+    (`.is-outside-month`) and operable. One `<button type="button" class="gh-calendar-day">` per cell
+    with a **roving `tabindex`**, `aria-label` *Wednesday, October 7, 2026*, `aria-current="date"` on
+    today (UTC) and `aria-disabled="true"` outside `min` / `max`; the chosen day's `<td>` carries
+    `aria-selected="true"`.
+  - **Footer**: text-only `.btn-link` **Today** and **Clear**, whose visually hidden completions read
+    *Today for {label}* and *Clear {label}*, so pairs in one form have distinct names (§4.1). Today is
+    `aria-disabled` while today lies outside `min` / `max`.
+- **Keyboard** on the grid: Left / Right ±1 day, Up / Down ±7 days, Home / End the week's Sunday /
+  Saturday, PageUp / PageDown ±1 month and Shift+PageUp / Shift+PageDown ±1 year (both clamped to the
+  month's end: January 31 + PageDown is February 28 or 29), Enter or Space chooses the day and closes.
+  A key with Alt, Ctrl or ⌘ is left alone. A disabled day cannot be chosen.
+- **Escape** anywhere in the calendar closes the calendar only (`preventDefault()` and
+  `stopPropagation()`), so the `<dialog>` around it stays open (§4f). **Tab out of the calendar closes
+  it**; a click outside light-dismisses it.
+- **Focus**: on open, the chosen day, else today, else the nearest enabled day (`min` or `max`); after
+  a choice, Today, Clear or Escape, the calendar button.
+- **All dates are UTC calendar days**, computed in `date-calendar.ts` (`monthGrid`, `moveDay`,
+  `clampDay`, `addMonths`, `addYears`, `dayLabel`, `monthTitle`, `dayInRange`, `normalizeDayInput`,
+  `todayUtc`) from UTC fields only, so a day never shifts with the reader's time zone.
+- **Polyfills**: `ensureOverlayPolyfills()` in `ngOnInit`. The component is `OnPush`; drive its specs
+  through real clicks and key events.
+
+**Styles** — global in `styles.scss`, beside `.gh-action-popover` (§7); the component SCSS is
+`:host` layout only:
+
+- `.gh-date-field` (the positioned flex wrapper), `.gh-date-field-input` (40 px end padding for the
+  button, tabular figures), `.gh-date-field > .gh-date-field-btn` (placement only; two classes, so it
+  outranks `.action-btn`'s own size).
+- `.gh-calendar`, the **glass** surface: `background: rgba(20, 20, 20, 0.72)`, `backdrop-filter:
+  blur(14px) saturate(140%)` (with `-webkit-`), `1px solid var(--border-glass)`, radius 10 px, the
+  shared popover shadow plus `inset 0 1px 0 rgba(255, 255, 255, 0.06)`, capped to the viewport and
+  scrolling. Without backdrop-filter support it falls back to the opaque `rgba(20, 20, 20, 0.97)` the
+  other popovers use, since an unblurred translucent panel would show the page through it.
+- `.gh-calendar-head`, `.gh-calendar-title` (gold Cinzel), `.gh-calendar-grid`, `.gh-calendar-foot`.
+- `.gh-calendar-day`: 2.25 rem square, Lato, tabular figures; hover a faint gold tint; the chosen day
+  (`td[aria-selected="true"] > .gh-calendar-day`) `var(--primary-color)` with dark ink and bold weight;
+  today a gold inset ring (dark inside the gold when also chosen); outside-month days in `--nav-color`;
+  `[aria-disabled="true"]` muted and struck through. **The states key off ARIA**, never a parallel
+  class (`.is-outside-month` is the one exception: no ARIA state fits it).
+- A 2 px `--primary-color` `:focus-visible` ring, offset 2 px.
+- The entry animation (fade and 4 px rise) under `:is(:popover-open, .\:popover-open)` with
+  `@starting-style`; none under `prefers-reduced-motion: reduce`.
+- `@media (forced-colors: active)`: the surface `Canvas` with a `CanvasText` border, the chosen day
+  `Highlight` / `HighlightText`, today an outline in `CanvasText`, a disabled day `GrayText`.
+
+**Why not style the native picker.** The calendar of `<input type="date">` is drawn by the browser
+outside the page: CSS reaches only `color-scheme` and, in Chromium, the indicator icon. No property
+gives it a translucent, blurred, gold-accented surface, and its typed format follows the browser's
+locale rather than the `YYYY-MM-DD` the rest of the application shows. So the calendar is our own,
+while the text field stays a real `<input>` and typing keeps working.
+
 ---
 
 ## 5. Tabs
@@ -1554,7 +1673,8 @@ never receive it.
 
 The Download Center's documents (`app-download-center-panel`) are the first card list; **Run
 History** (`history-tab/`, `#bm-panel-history`) is the second; the **Multi-Suite** tab's battery
-definitions (`app-benchmark-batteries`) are the third. Use one **when every row is a
+definitions (`app-benchmark-batteries`) are the third; the **Chat Consistency wizard's step 1 runs**
+(`app-cc-model-step`, 2026-10-07) are the fourth. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1626,9 +1746,10 @@ active while its string is non-blank. `setSort(column, direction)` serves a Sort
 options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
 
 **`CardListState` — the state every card list shares** (`shared/data-table/card-list-state.ts`). All
-three card lists build on it: the Download Center behind a private `list` getter (built on first use,
+four card lists build on it: the Download Center behind a private `list` getter (built on first use,
 because its `idPrefix` is an input), Run History as `historyList`, the batteries tab as `list`
-(`idPrefix: 'bb'`, `overseer.benchmark.batteries.view`). **A further card list uses it too, rather than
+(`idPrefix: 'bb'`, `overseer.benchmark.batteries.view`), and the Chat Consistency runs as `list`
+(`idPrefix: 'cc-runs'`, `overseer.benchmark.chatConsistency.runs.view`). **A further card list uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
@@ -1756,6 +1877,36 @@ as Run History's are; and its suite table shows four rows, the rest in a hidden 
 link-style **Show all K suites** / **Show fewer** (`aria-expanded`, `aria-controls`, focus stays on it), so
 a card is never taller than four suite rows unless asked.
 
+**The Chat Consistency wizard's step 1 runs** are the fourth list (2026-10-07): a 12-column **Runs**
+table that overflowed the wizard dialog sideways became full-width cards, one per run, newest first,
+under a §8i selection band. It shows how a card list carries **a selection that is not a filter**:
+
+- **The checkbox is the analysis choice, not a list selection.** Top left, `#cc-run-{id}-include`,
+  named *Include run #{id} in the analysis*, its `<label>` the suite name inside the title
+  `h6#cc-run-{id}-title[tabindex=-1]` (the section heading is the `h5` *Runs of {model}*). A run
+  outside the span the **First run** / **Last run** marks bound is unchecked and `aria-disabled` —
+  focusable, its click refused with `preventDefault()` — and described by a visible line (*Before the
+  first run (#21)*), never `disabled` (§6). Checked cards have the gold border and tint; left-out and
+  outside-span cards a dashed gray one.
+- **Marks are `aria-pressed` toggles in the actions group** (*Actions for run #{id}*): **First run** and
+  **Last run** `.btn-ghost`s named *Use run #{id} as the first run of the analysis*, a leading check
+  glyph and a gold border while pressed; then the icon-only *Open run report* (*eye*) and *More
+  actions* (*more*, a §4f popover *Run actions for run #{id}*).
+- **The kicker carries every state as a word**: `#id` · status · *Harness N* · *Legacy* / *Recorded* ·
+  *Anchor* · *First run* / *Last run* (gold) · *Left out* (dashed), separated by an `aria-hidden` dot and
+  a visually hidden comma; then a meta line with `<time datetime>` and *Served: …*.
+- **Grid** in the `cc-run-cards` inline-size container: `"select head actions" / "select elig elig" /
+  "select facts facts"`; the actions under the head below 48 rem, one column below 30 rem. The facts are
+  a `dl` in `minmax(9rem, 1fr)` columns that line up down the list.
+- **Filter bar**: search (*#id, suite, harness, status or served model*), Sort by (*Newest first*,
+  *Oldest first*, *Suite (A–Z)*, *Harness*), facets *Suite*, *Harness*, *Telemetry*, *In the analysis*
+  (*Included*, *Left out*, *Before the first run*, *After the last run*) and *Eligibility*, with
+  `noun="runs"`. The *In the analysis* counts depend on the selection, so **the scope object goes in
+  `memoDeps`**, or the counts go stale.
+- **The filters never change the selection.** The band says so in one always-visible hint (*The filters
+  below change what is shown, not what is analyzed. The saved analysis records this selection.*), and
+  the spec pins that filtering emits no scope change.
+
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with
 scroll snapping), `.gh-facet-btn` / `.gh-facet-count` / `.gh-facet-chevron`, `.gh-facet-popover` /
@@ -1788,6 +1939,24 @@ drop it without scrolling back: the Model Comparison wizard's step 1 band (`.mc-
   one run, analysis group or battery result.*), as a disabled reason (§6).
 - Notices about the selection sit under the chips in a sibling `aria-live="polite"` list, never inside
   the `role="status"` label, which would double-announce.
+
+**The second band: the Chat Consistency wizard's step 1** (`.cc-scope-band`, 2026-10-07), above its
+run cards' filter bar (§8h), `role="region"` labeled by `#cc-scope-label`. It sums up which runs the
+analysis uses rather than a pick from tables, and so differs from the reference in three ways:
+
+- **The label is never empty**: by default *Runs in the analysis — all 19 runs in these dates*, and
+  with a selection *Runs in the analysis — 15 of 19 runs in these dates · from #21 (2026-09-20) to #93
+  (2026-10-05) · 2 left out*. Nothing chosen means every run, not nothing.
+- **The chips** are *First: #21*, *Last: #93* and one *Left out: #45* per left-out run up to six, then a
+  `.btn-link` **+N more** that sets the *In the analysis* facet to *Left out*. The remove buttons are
+  named *Remove the first-run mark from run #21* / *Include run #45 again*, with the hint tooltips
+  *Remove the first-run mark* / *Include again*. **Clear selection (N)** counts the marks plus the
+  left-out runs. Focus after a removal and after Clear selection follows the rules above.
+- **The empty state is a warning, not an invitation**: with every run left out, an amber
+  `alert-warning` *No run is left in the analysis. Check at least one run.* The always-visible hint
+  under the chips says the filters change what is shown, not what is analyzed. A selection helper's
+  note (*Run #40 is after the last run, so the last run was cleared.*) goes to the sibling polite
+  `.cc-scope-note`, never into the label.
 
 ---
 
@@ -1855,6 +2024,17 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Availability comes from the `run-repair-actions.ts` gate, never a template condition of its own;
       a refused action is `aria-disabled` with its visible reason, never `[disabled]` and never enabled.
 
+**Date fields**
+- [ ] Every calendar-date entry in new UI is `app-date-field` (§4h); no bare `<input type="date">`.
+- [ ] Each field's `inputId` is unique in the document, the host keeps its own `<label for>` and
+      passes the same text as `label`, and a pair of fields bounds each other with `min` / `max`.
+- [ ] The host owns the value and its validation: it checks the emitted text, shows its own
+      `.gh-field-error`, and passes that id through `describedBy` and the state through `invalid`.
+- [ ] A locked field is `readonly` (its calendar button `aria-disabled` and focusable), never
+      `disabled`.
+- [ ] Escape closes only the calendar inside an enclosing `<dialog>`; date math stays in
+      `date-calendar.ts`, on UTC fields.
+
 **Pane resizers**
 - [ ] A user-resizable pane uses `app-pane-resizer` (§4d), named for the pane, with `aria-controls`
       pointing at it, and the width is persisted on `valueCommit` only.
@@ -1914,6 +2094,11 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Exactly one polite live region: the list's status line.
 - [ ] A selection band (§8i) leads its chip row with **Clear selection (N)**, moves focus to its
       `tabindex="-1"` label after it, and shows one visible empty-state message.
+- [ ] Where the cards carry a choice that is not a filter (the Chat Consistency runs), the search and
+      the facets never change it, the band says so, and a facet that counts by that choice has it in
+      `memoDeps`.
+- [ ] A checkbox that cannot be changed for a reason is `aria-disabled`, refuses the click, and is
+      described by a visible reason line.
 
 **All controls**
 - [ ] Visible `:focus-visible` ring; no unreplaced `outline: none`.

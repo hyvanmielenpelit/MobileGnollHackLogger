@@ -19,7 +19,9 @@ import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import { CC_WIZARD_STEPS, CcWizardComponent, CcWizardStep } from './cc-wizard/cc-wizard.component';
-import { endOfUtcDay, formatInteger, formatUtcDate, plural, startOfUtcDay, utcMillis } from './chat-consistency-format';
+import { formatInteger, formatUtcDate, plural, utcMillis } from './chat-consistency-format';
+import { CC_ALL_DATES, CcDateRange, ccAnchorRange, ccDateRangeText, ccRangeBounds } from './chat-consistency-range';
+import { CC_EMPTY_SCOPE, CcRunScope, pruneScope, scopeIsDefault, scopeRuns } from './chat-consistency-scope';
 import {
   CcAnalysisResult,
   CcAnalysisSummary,
@@ -28,7 +30,6 @@ import {
   CcRunRow,
   CcTimeline
 } from './chat-consistency.models';
-import { CcDayRange } from './model-step/model-step.component';
 import { CcSavedAnalysesComponent } from './saved-analyses/saved-analyses.component';
 
 /** Where the launcher's *How chat consistency works* state is kept, per browser. */
@@ -86,7 +87,9 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   axesError: string | null = null;
 
   selectedKey: string | null = null;
-  range: CcDayRange = { fromDay: '', toDay: '' };
+  range: CcDateRange = CC_ALL_DATES;
+  /** The runs of step 1 the analysis uses: the first and last run marks and the runs left out. */
+  scope: CcRunScope = CC_EMPTY_SCOPE;
   timeline: CcTimeline | null = null;
   rows: CcRunRow[] = [];
   subjectLoading = false;
@@ -145,21 +148,25 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   // --- Launcher read-outs ---
 
-  /** `6 runs, 4 with call telemetry`, over every date, and how many fall in the chosen dates. */
+  /**
+   * `6 runs, 4 with call telemetry`, over every date, how many fall in the chosen dates, and how many
+   * of those the analysis uses when step 1 narrows them.
+   */
   get currentRunsText(): string {
     const axis = this.selectedAxis;
     if (!axis) return '';
-    const all = `${plural(axis.runCount, 'run')}, ${formatInteger(axis.telemetryRunCount)} with call telemetry`;
-    const ranged = this.range.fromDay || this.range.toDay;
-    return ranged && this.timeline ? `${all} · ${formatInteger(this.timeline.points.length)} in the chosen dates` : all;
+    let text = `${plural(axis.runCount, 'run')}, ${formatInteger(axis.telemetryRunCount)} with call telemetry`;
+    if (this.range.preset !== 'all' && this.timeline) {
+      text += ` · ${formatInteger(this.timeline.points.length)} in the chosen dates`;
+    }
+    if (!scopeIsDefault(this.scope)) {
+      text += ` · ${formatInteger(scopeRuns(this.rows, this.scope).length)} in the analysis`;
+    }
+    return text;
   }
 
   get currentDatesText(): string {
-    const { fromDay, toDay } = this.range;
-    if (fromDay && toDay) return `${fromDay} to ${toDay}`;
-    if (fromDay) return `From ${fromDay}`;
-    if (toDay) return `Until ${toDay}`;
-    return 'Every date';
+    return ccDateRangeText(this.range);
   }
 
   /** The newest saved analysis of the current model. */
@@ -342,23 +349,38 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.selectedKey = key;
     this.timeline = null;
     this.rows = [];
+    this.scope = CC_EMPTY_SCOPE;
     this.anchorError = null;
     this.announcement = '';
     this.loadSubject();
   }
 
-  setRange(range: CcDayRange): void {
+  setRange(range: CcDateRange): void {
     this.range = range;
     this.loadSubject();
   }
 
-  /** The timeline and the run table of the subject over the range, together. */
+  /** The step-1 run selection changed. */
+  setScope(scope: CcRunScope): void {
+    this.scope = scope;
+    this.cdr.markForCheck();
+  }
+
+  /** Reload runs: a rolling preset moves to now first. */
+  reloadSubject(): void {
+    this.range = ccAnchorRange(this.range, new Date());
+    this.loadSubject();
+  }
+
+  /**
+   * The timeline and the run table of the subject over the range, together. Marks and left-out runs
+   * that no longer appear among the rows are dropped from the selection, and the drop is announced.
+   */
   loadSubject(): void {
     const key = this.selectedKey;
     this.subjectSub?.unsubscribe();
     if (!key) return;
-    const from = this.range.fromDay ? startOfUtcDay(this.range.fromDay) : null;
-    const to = this.range.toDay ? endOfUtcDay(this.range.toDay) : null;
+    const { fromUtc: from, toUtc: to } = ccRangeBounds(this.range);
     this.subjectLoading = true;
     this.timelineError = null;
     this.runsError = null;
@@ -372,6 +394,9 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
         this.subjectLoading = false;
         this.timeline = timeline;
         this.rows = rows;
+        const pruned = pruneScope(this.scope, rows);
+        this.scope = pruned.scope;
+        if (pruned.note) this.announcement = pruned.note;
         this.cdr.markForCheck();
       },
       error: err => {
@@ -451,7 +476,10 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Opens a saved analysis in the wizard on its results, switching the subject to its model first. */
+  /**
+   * Opens a saved analysis in the wizard on its results, switching the subject to its model first. The
+   * step-1 run selection is cleared, since the analysis carries its own record of the runs it used.
+   */
   openAnalysis(id: number): void {
     this.openingId = id;
     this.openError = null;
@@ -460,8 +488,13 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.openSub = this.service.getAnalysis(id).subscribe({
       next: result => {
         this.openingId = null;
+        const hadSelection = !scopeIsDefault(this.scope);
         if (result.subject.key && result.subject.key !== this.selectedKey) {
           this.selectModel(result.subject.key);
+        }
+        if (hadSelection) {
+          this.scope = CC_EMPTY_SCOPE;
+          this.announcement = 'The run selection in step 1 was cleared to show the saved analysis.';
         }
         // Renders the wizard with the new subject before the result is handed to it.
         this.openWizard();

@@ -26,6 +26,7 @@ import {
   CcRegradeJob,
   CcReportEstimate,
   CcRunRow,
+  CcRunSelectionView,
   CcTimeline,
   CcTimelinePoint
 } from './chat-consistency.models';
@@ -199,6 +200,32 @@ export function ccRunRows(): CcRunRow[] {
     ccRunRow(102, '2026-09-05T08:00:00Z', { matchedControlRunIds: [202] }),
     ccRunRow(101, '2026-09-01T08:00:00Z', { matchedControlRunIds: [201] })
   ];
+}
+
+/** `count` runs #1001 onward, one a day from 2026-08-01, newest first; for the card list's batches. */
+export function ccManyRunRows(count: number): CcRunRow[] {
+  return Array.from({ length: count }, (_, index) => {
+    const day = new Date(Date.UTC(2026, 7, 1 + index, 8)).toISOString();
+    return ccRunRow(1001 + index, day, { suiteName: index % 2 === 0 ? 'Board Suite' : 'Wiki Suite' });
+  }).reverse();
+}
+
+/** A step-1 selection as the analysis request records it. */
+export function ccRunSelectionView(overrides: Partial<CcRunSelectionView> = {}): CcRunSelectionView {
+  return {
+    recorded: true,
+    rangeLabel: 'Last 30 days',
+    rangeFromUtc: '2026-09-07T09:00:00.000Z',
+    rangeToUtc: null,
+    firstRunId: 102,
+    lastRunId: null,
+    leftOutRunIds: [104],
+    unanalyzedRuns: [
+      { runId: 104, period: 'comparison', startedAtUtc: '2026-09-20T08:00:00Z', reason: 'leftOut' },
+      { runId: 105, period: 'comparison', startedAtUtc: '2026-09-26T08:00:00Z', reason: 'notSelected' }
+    ],
+    ...overrides
+  };
 }
 
 // --- Composite events ---

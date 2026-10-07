@@ -363,6 +363,12 @@ public sealed class ChatConsistencyEvidence
     /// <summary>What the load had to leave out, and why.</summary>
     public IReadOnlyList<ChatConsistencyNote> Notes { get; init; } = Array.Empty<ChatConsistencyNote>();
 
+    /// <summary>
+    /// Usable runs of the subject inside a period that are not target runs, each with why, ordered by start,
+    /// then id. Empty unless the request gave both periods' runs explicitly.
+    /// </summary>
+    public IReadOnlyList<ChatConsistencyUnanalyzedRun> UnanalyzedRuns { get; init; } = Array.Empty<ChatConsistencyUnanalyzedRun>();
+
     public IEnumerable<BenchmarkRun> TargetRuns => BaselineRuns.Concat(ComparisonRuns);
 
     /// <summary>The measurement segmentation of target and control runs, with grading bridged for <paramref name="commonGraderCovers"/>.</summary>
@@ -487,6 +493,14 @@ public class ChatConsistencyEvidenceBuilder
                 .ToList();
         }
 
+        var unanalyzed = explicitBaseline != null && explicitComparison != null
+            ? await ClassifyUnanalyzedAsync(
+                request,
+                headers.Where(r => Usable(r) && keyOf[r.Id] == request.SubjectModelKey && !targetIds.Contains(r.Id)),
+                notes,
+                ct)
+            : new List<ChatConsistencyUnanalyzedRun>();
+
         var full = await LoadFullAsync(targetIds.Concat(controlIds).ToList(), includeTelemetry: true, ct);
         var byId = full.ToDictionary(r => r.Id);
         var baseline = Ordered(baselineIds.Where(byId.ContainsKey).Select(id => byId[id]));
@@ -538,8 +552,84 @@ public class ChatConsistencyEvidenceBuilder
             LegacyRunIds = baseline.Concat(comparison).Concat(controls).Where(r => !r.CallTelemetryVersion.HasValue).Select(r => r.Id).OrderBy(i => i).ToList(),
             PriceCard = priceCard,
             Pricing = pricing,
-            Notes = notes
+            Notes = notes,
+            UnanalyzedRuns = unanalyzed
         };
+    }
+
+    /// <summary>
+    /// The <paramref name="candidates"/> inside a period (the baseline's window first), each with the
+    /// first reason of <see cref="ChatConsistencyUnanalyzedReasons.All"/> that applies, ordered by start,
+    /// then id. A first or last run of the selection that is not found is ignored with a
+    /// <c>runSelection</c> note.
+    /// </summary>
+    private async Task<List<ChatConsistencyUnanalyzedRun>> ClassifyUnanalyzedAsync(
+        ChatConsistencyAnalysisRequest request, IEnumerable<BenchmarkRun> candidates, List<ChatConsistencyNote> notes, CancellationToken ct)
+    {
+        var selection = request.RunSelection;
+        var leftOut = (selection?.LeftOutRunIds ?? Array.Empty<long>()).ToHashSet();
+        var markIds = new[] { selection?.FirstRunId, selection?.LastRunId }
+            .Where(i => i.HasValue)
+            .Select(i => i!.Value)
+            .Distinct()
+            .ToList();
+        var markStarts = markIds.Count == 0
+            ? new Dictionary<long, DateTime>()
+            : (await _db.BenchmarkRuns.AsNoTracking()
+                    .Where(r => markIds.Contains(r.Id))
+                    .Select(r => new { r.Id, r.StartedAtUtc })
+                    .ToListAsync(ct))
+                .ToDictionary(r => r.Id, r => r.StartedAtUtc);
+
+        (DateTime Start, long Id)? Mark(long? id, string which)
+        {
+            if (!id.HasValue) return null;
+            if (markStarts.TryGetValue(id.Value, out var start)) return (start, id.Value);
+            notes.Add(Note("runSelection", "The " + which + " run of the selection, #" + Inv(id.Value) + ", was not found."));
+            return null;
+        }
+
+        var first = Mark(selection?.FirstRunId, "first");
+        var last = Mark(selection?.LastRunId, "last");
+
+        static int Order(BenchmarkRun run, (DateTime Start, long Id) mark)
+        {
+            int byStart = run.StartedAtUtc.CompareTo(mark.Start);
+            return byStart != 0 ? byStart : run.Id.CompareTo(mark.Id);
+        }
+
+        string Reason(BenchmarkRun run)
+        {
+            if (leftOut.Contains(run.Id)) return ChatConsistencyUnanalyzedReasons.LeftOut;
+            if ((selection?.RangeFromUtc is DateTime rangeFrom && run.StartedAtUtc < rangeFrom)
+                || (selection?.RangeToUtc is DateTime rangeTo && run.StartedAtUtc > rangeTo))
+            {
+                return ChatConsistencyUnanalyzedReasons.OutsideDateRange;
+            }
+
+            if (first is { } f && Order(run, f) < 0) return ChatConsistencyUnanalyzedReasons.BeforeFirstRun;
+            if (last is { } l && Order(run, l) > 0) return ChatConsistencyUnanalyzedReasons.AfterLastRun;
+            return ChatConsistencyUnanalyzedReasons.NotSelected;
+        }
+
+        var list = new List<ChatConsistencyUnanalyzedRun>();
+        foreach (var run in candidates.OrderBy(r => r.StartedAtUtc).ThenBy(r => r.Id))
+        {
+            string? period = run.StartedAtUtc >= request.BaselineStartUtc && run.StartedAtUtc <= request.BaselineEndUtc ? "baseline"
+                : run.StartedAtUtc >= request.ComparisonStartUtc && run.StartedAtUtc <= request.ComparisonEndUtc ? "comparison"
+                : null;
+            if (period == null) continue;
+
+            list.Add(new ChatConsistencyUnanalyzedRun
+            {
+                RunId = run.Id,
+                Period = period,
+                StartedAtUtc = ChatConsistencyMeasures.AsUtc(run.StartedAtUtc),
+                Reason = Reason(run)
+            });
+        }
+
+        return list;
     }
 
     /// <summary>

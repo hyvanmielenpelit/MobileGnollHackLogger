@@ -9,10 +9,25 @@
  * annotations and served-model changes as labeled markers, their tags staggered in a band above the
  * plot. A legacy latency proxy is drawn with hollow points and a dashed line, so it is told apart by
  * shape as well as by its legend label. Every dataset carries a stable series id (`seriesId`).
+ *
+ * Runs not in the analysis (`CcFigureInput.notAnalyzed`) are drawn as gray crosses joined by gray,
+ * dotted segments, and named in the caption, the tooltip and the data table; without that map the
+ * datasets carry no scriptable options.
  */
 
-import { layouts } from 'chart.js';
-import type { Chart, ChartData, ChartDataset, ChartOptions, LayoutItem, Plugin, TooltipItem } from 'chart.js';
+import { Chart, layouts } from 'chart.js';
+import type {
+  ChartData,
+  ChartDataset,
+  ChartOptions,
+  LayoutItem,
+  LegendItem,
+  Plugin,
+  PointStyle,
+  ScriptableContext,
+  ScriptableLineSegmentContext,
+  TooltipItem
+} from 'chart.js';
 
 import {
   CcAnnotation,
@@ -164,6 +179,8 @@ export interface CcFigureInput {
   harnessPoints?: readonly CcTimelinePoint[];
   /** Composite events whose tags the markers reuse. */
   eventNumbering?: readonly CcEventGroup[];
+  /** Run id → why the run is not in the analysis; absent or empty draws every run alike. */
+  notAnalyzed?: ReadonlyMap<number, string>;
 }
 
 /** How `buildMarkers` groups and numbers the events, beyond the drawn points. */
@@ -585,10 +602,30 @@ function xRange(series: readonly CcChartPoint[][], markers: readonly CcChartMark
   return { min: min - pad, max: max + pad };
 }
 
+/** The runs not in the analysis and the plain point look of each drawn dataset, for the legend. */
+interface NotAnalyzedMarks {
+  notAnalyzed: ReadonlyMap<number, string>;
+  looks: readonly PointLook[];
+}
+
+/**
+ * The legend items with each dataset's plain point look: the default items take the look of the
+ * first point, which can be a run not in the analysis.
+ */
+function plainPointLegend(looks: readonly PointLook[]): (chart: Chart) => LegendItem[] {
+  return chart => Chart.defaults.plugins.legend.labels.generateLabels(chart).map((item): LegendItem => {
+    const look = item.datasetIndex === undefined ? undefined : looks[item.datasetIndex];
+    return look
+      ? { ...item, pointStyle: 'circle', fillStyle: look.pointBackgroundColor, strokeStyle: look.pointBorderColor, lineWidth: look.pointBorderWidth }
+      : item;
+  });
+}
+
 function chartOptions(
   theme: CcChartTheme,
   reducedMotion: boolean,
   range: { min: number; max: number } | null,
+  marks: NotAnalyzedMarks | null,
   y: AxisSpec,
   y1?: AxisSpec
 ): ChartOptions<'line'> {
@@ -627,7 +664,14 @@ function chartOptions(
       } : {})
     },
     plugins: {
-      legend: { labels: { color: theme.text, font: { family: theme.fontFamily, size: 12 }, usePointStyle: true } },
+      legend: {
+        labels: {
+          color: theme.text,
+          font: { family: theme.fontFamily, size: 12 },
+          usePointStyle: true,
+          ...(marks ? { generateLabels: plainPointLegend(marks.looks) } : {})
+        }
+      },
       tooltip: {
         callbacks: {
           title: (items: TooltipItem<'line'>[]) => {
@@ -637,7 +681,9 @@ function chartOptions(
           label: (item: TooltipItem<'line'>) => {
             const raw = item.raw as CcChartPoint;
             const format = item.dataset.yAxisID === 'y1' && y1 ? y1.format : y.format;
-            return `${item.dataset.label}: ${raw.y === null ? '—' : format(raw.y)}`;
+            const text = `${item.dataset.label}: ${raw.y === null ? '—' : format(raw.y)}`;
+            const reason = marks?.notAnalyzed.get(raw.runId);
+            return reason === undefined ? text : `${text} — not in the analysis (${reason})`;
           }
         }
       }
@@ -656,6 +702,23 @@ interface DatasetSpec {
   yAxisID?: 'y' | 'y1';
 }
 
+/** A dataset's own point look; a hollow point is filled with the page. */
+interface PointLook {
+  pointBackgroundColor: string;
+  pointBorderColor: string;
+  pointBorderWidth: number;
+  pointRadius: number;
+}
+
+function pointLook(spec: DatasetSpec, theme: CcChartTheme): PointLook {
+  return {
+    pointBackgroundColor: spec.hollow ? (theme.background ?? 'rgba(0, 0, 0, 0)') : spec.color,
+    pointBorderColor: spec.color,
+    pointBorderWidth: spec.hollow ? 2 : 1,
+    pointRadius: 3.5
+  };
+}
+
 function dataset(spec: DatasetSpec, theme: CcChartTheme): CcChartDataset {
   return {
     seriesId: spec.id,
@@ -664,16 +727,47 @@ function dataset(spec: DatasetSpec, theme: CcChartTheme): CcChartDataset {
     yAxisID: spec.yAxisID ?? 'y',
     borderColor: spec.color,
     backgroundColor: spec.hollow ? (theme.background ?? 'rgba(0, 0, 0, 0)') : spec.color,
-    pointBackgroundColor: spec.hollow ? (theme.background ?? 'rgba(0, 0, 0, 0)') : spec.color,
-    pointBorderColor: spec.color,
-    pointBorderWidth: spec.hollow ? 2 : 1,
-    pointRadius: 3.5,
+    ...pointLook(spec, theme),
     pointHoverRadius: 5,
     borderWidth: 1.5,
     borderDash: spec.hollow ? [4, 4] : [],
     spanGaps: false,
     tension: 0
   };
+}
+
+/**
+ * `dataset` with each run of `notAnalyzed` drawn as a gray, unfilled, rotated cross, and each
+ * segment touching one gray and dotted; the other points keep the dataset's own look, and the other
+ * segments its line.
+ */
+function markedDataset(
+  spec: DatasetSpec,
+  theme: CcChartTheme,
+  notAnalyzed: ReadonlyMap<number, string>
+): CcChartDataset {
+  const look = pointLook(spec, theme);
+  const marked = (point: CcChartPoint | undefined) => point !== undefined && notAnalyzed.has(point.runId);
+  const at = (ctx: ScriptableContext<'line'>) => marked(ctx.raw as CcChartPoint | undefined);
+  const segmentAt = (ctx: ScriptableLineSegmentContext) =>
+    marked(spec.data[ctx.p0DataIndex]) || marked(spec.data[ctx.p1DataIndex]);
+  return {
+    ...dataset(spec, theme),
+    pointStyle: (ctx: ScriptableContext<'line'>): PointStyle => at(ctx) ? 'crossRot' : 'circle',
+    pointBackgroundColor: (ctx: ScriptableContext<'line'>) => at(ctx) ? 'rgba(0, 0, 0, 0)' : look.pointBackgroundColor,
+    pointBorderColor: (ctx: ScriptableContext<'line'>) => at(ctx) ? theme.muted : look.pointBorderColor,
+    pointBorderWidth: (ctx: ScriptableContext<'line'>) => at(ctx) ? 2 : look.pointBorderWidth,
+    pointRadius: (ctx: ScriptableContext<'line'>) => at(ctx) ? 4.5 : look.pointRadius,
+    segment: {
+      borderColor: (ctx: ScriptableLineSegmentContext) => segmentAt(ctx) ? theme.muted : undefined,
+      borderDash: (ctx: ScriptableLineSegmentContext) => segmentAt(ctx) ? [2, 3] : undefined
+    }
+  };
+}
+
+/** The input's runs not in the analysis; null when the map is absent or empty. */
+function notAnalyzedOf(input: CcFigureInput): ReadonlyMap<number, string> | null {
+  return input.notAnalyzed && input.notAnalyzed.size > 0 ? input.notAnalyzed : null;
 }
 
 function config(
@@ -690,11 +784,38 @@ function config(
   const bands = input.bands ?? [];
   const range = xRange(drawn.map(spec => spec.data), markers, bands);
   const secondAxis = drawn.some(spec => spec.yAxisID === 'y1') ? y1 : undefined;
+  const notAnalyzed = notAnalyzedOf(input);
+  const marks = notAnalyzed ? { notAnalyzed, looks: drawn.map(spec => pointLook(spec, theme)) } : null;
   return {
     type: 'line',
-    data: { datasets: drawn.map(spec => dataset(spec, theme)) },
-    options: chartOptions(theme, options.reducedMotion ?? false, range, y, secondAxis),
+    data: { datasets: drawn.map(spec => notAnalyzed ? markedDataset(spec, theme, notAnalyzed) : dataset(spec, theme)) },
+    options: chartOptions(theme, options.reducedMotion ?? false, range, marks, y, secondAxis),
     plugins: [ccOverlayPlugin(markers, bands, theme, range)]
+  };
+}
+
+/**
+ * The caption sentence on the plotted runs not in the analysis, with its leading space: the runs
+ * with a value in any of `series`, drawn or hidden. Empty when there are none.
+ */
+function notAnalyzedNote(input: CcFigureInput, series: readonly (readonly CcChartPoint[])[]): string {
+  const notAnalyzed = notAnalyzedOf(input);
+  if (!notAnalyzed) return '';
+  const runs = new Set(series.flat().filter(point => point.y !== null && notAnalyzed.has(point.runId)).map(point => point.runId));
+  if (runs.size === 0) return '';
+  return ` ${plural(runs.size, 'run')} not in the analysis ${runs.size === 1 ? 'is drawn as a gray cross' : 'are drawn as gray crosses'}.`;
+}
+
+/** `table` with a last column *In the analysis* while runs are marked; its rows are `points`'. */
+function withInclusionColumn(table: CcFigureTable, points: readonly CcTimelinePoint[], input: CcFigureInput): CcFigureTable {
+  const notAnalyzed = notAnalyzedOf(input);
+  if (!notAnalyzed) return table;
+  return {
+    columns: [...table.columns, 'In the analysis'],
+    rows: table.rows.map((cells, i) => {
+      const reason = notAnalyzed.get(points[i].runId);
+      return [...cells, reason === undefined ? 'Yes' : `No — ${reason}`];
+    })
   };
 }
 
@@ -751,6 +872,7 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
   if (grader && nativeValues.length > 0 && commonValues.length > 0) {
     takeaway += ` ${plural(commonValues.length, 'run')} also ${commonValues.length === 1 ? 'has' : 'have'} a common-grader figure.`;
   }
+  takeaway += notAnalyzedNote(input, [native, common]);
 
   const datasets: DatasetSpec[] = [seriesSpec('quality', 'quality.native', native, theme.series[0])];
   if (grader) datasets.push(seriesSpec('quality', 'quality.common', common, theme.series[1], { label: commonLabel }));
@@ -763,12 +885,12 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
     altText: `Quality per run. ${takeaway}`,
     config: config(datasets, input, markers, options,
       { title: 'Quality (0–100)', format: value => formatFixed(value, 0), beginAtZero: options.zeroBaseline ?? false }),
-    table: {
+    table: withInclusionColumn({
       columns,
       rows: points.map((point, i) => grader
         ? row(point, formatFixed(native[i].y, 0), formatFixed(common[i].y, 1))
         : row(point, formatFixed(native[i].y, 0)))
-    },
+    }, points, input),
     markers
   };
 }
@@ -799,6 +921,7 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
       takeaway += ` ${plural(proxyValues.length, 'legacy run')} ${proxyValues.length === 1 ? 'is' : 'are'} drawn hollow as the legacy proxy.`;
     }
   }
+  takeaway += notAnalyzedNote(input, [telemetry, proxy]);
   return {
     key: 'ttfat',
     title: figureTitle('ttfat'),
@@ -808,11 +931,11 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
       seriesSpec('ttfat', 'ttfat.telemetry', telemetry, theme.series[0]),
       seriesSpec('ttfat', 'ttfat.proxy', proxy, theme.series[3], { hollow: true })
     ], input, markers, options, { title: 'Median time', format: formatMs, beginAtZero: true }),
-    table: {
+    table: withInclusionColumn({
       columns: ['Run', 'Started', 'Time to first answer text', 'Legacy proxy', 'Measure'],
       rows: points.map((point, i) => row(point, formatMs(telemetry[i].y), formatMs(proxy[i].y),
         point.latencyLabel || (point.isLegacy ? 'legacy proxy' : 'telemetry')))
-    },
+    }, points, input),
     markers
   };
 }
@@ -837,6 +960,7 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
       : `The answer streaming rate ranged from ${min} to ${max} across ${plural(values.length, 'run')}.`;
     if (legacy > 0) takeaway += ` ${plural(legacy, 'legacy run')} recorded no rate.`;
   }
+  takeaway += notAnalyzedNote(input, [measured, estimated]);
   return {
     key: 'rate',
     title: figureTitle('rate'),
@@ -846,10 +970,10 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
       seriesSpec('rate', 'rate.measured', measured, theme.series[1]),
       seriesSpec('rate', 'rate.estimated', estimated, theme.series[1], { hollow: true })
     ], input, markers, options, { title: 'Tokens per second', format: value => formatFixed(value, 0), beginAtZero: true }),
-    table: {
+    table: withInclusionColumn({
       columns: ['Run', 'Started', 'Streaming rate', 'Estimated'],
       rows: points.map(point => row(point, formatTokenRate(point.medianStreamingRate), point.streamingRateEstimated ? 'Yes' : 'No'))
-    },
+    }, points, input),
     markers
   };
 }
@@ -874,9 +998,9 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     parts.push(`tool calls per answer from ${min} to ${max}`);
   }
   const count = Math.max(tokenValues.length, toolValues.length);
-  const takeaway = parts.length === 0
+  const takeaway = (parts.length === 0
     ? 'No run in this range has a work figure.'
-    : `Across ${plural(count, 'run')}, ${parts.join('; ')}.`;
+    : `Across ${plural(count, 'run')}, ${parts.join('; ')}.`) + notAnalyzedNote(input, [tokens, tools]);
   return {
     key: 'work',
     title: figureTitle('work'),
@@ -888,10 +1012,10 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     ], input, markers, options,
     { title: 'Output tokens', format: formatInteger, beginAtZero: true },
     { title: 'Tool calls', format: value => formatFixed(value, 1), beginAtZero: true }),
-    table: {
+    table: withInclusionColumn({
       columns: ['Run', 'Started', 'Output tokens per answer', 'Tool calls per answer'],
       rows: points.map((point, i) => row(point, formatInteger(tokens[i].y), formatFixed(tools[i].y, 1)))
-    },
+    }, points, input),
     markers
   };
 }
@@ -912,6 +1036,7 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     const { min, max } = rangeText(values, formatUsd);
     takeaway = `Cost per question ranged from ${min} to ${max} across ${plural(values.length, 'run')}, at one price card.`;
   }
+  takeaway += notAnalyzedNote(input, [cost]);
   return {
     key: 'cost',
     title: figureTitle('cost'),
@@ -919,10 +1044,10 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     altText: `Cost per question per run. ${takeaway}`,
     config: config([seriesSpec('cost', 'cost.cost', cost, theme.series[5])], input, markers, options,
       { title: 'USD per question', format: formatUsd, beginAtZero: true }),
-    table: {
+    table: withInclusionColumn({
       columns: ['Run', 'Started', 'Cost per question'],
       rows: points.map((point, i) => row(point, formatUsd(cost[i].y)))
-    },
+    }, points, input),
     markers
   };
 }
@@ -949,11 +1074,12 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
     }
   }
   const counted = points.filter(point => RELIABILITY_RATES.some(rate => ccNumber(point[rate.key] as number | string | null) !== null)).length;
-  const takeaway = counted === 0
+  const takeaway = (counted === 0
     ? 'No run in this range has reliability figures.'
     : worst === null
       ? `No terminal failures, timeouts, empty answers, refusals or exhausted tool budgets in ${plural(counted, 'run')}.`
-      : `The highest rate was ${worst.label.toLowerCase()} at ${formatFixed(worst.value, 1)} % in run #${worst.runId}, across ${plural(counted, 'run')}.`;
+      : `The highest rate was ${worst.label.toLowerCase()} at ${formatFixed(worst.value, 1)} % in run #${worst.runId}, across ${plural(counted, 'run')}.`)
+    + notAnalyzedNote(input, series.map(rate => rate.data));
   return {
     key: 'reliability',
     title: figureTitle('reliability'),
@@ -962,11 +1088,11 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
     config: config(series.map((rate, i) =>
       seriesSpec('reliability', `reliability.${rate.key}`, rate.data, theme.series[i % theme.series.length])),
       input, markers, options, { title: 'Share of answers (%)', format: value => `${formatFixed(value, 0)} %`, beginAtZero: true }),
-    table: {
+    table: withInclusionColumn({
       columns: ['Run', 'Started', ...RELIABILITY_RATES.map(rate => rate.label)],
       rows: points.map(point => row(point,
         ...RELIABILITY_RATES.map(rate => formatFractionPercent(point[rate.key] as number | string | null))))
-    },
+    }, points, input),
     markers
   };
 }
@@ -985,10 +1111,10 @@ export function timelineOverviewFigure(input: CcFigureInput, options: CcChartOpt
   const telemetry = seriesOf(points, point => point.isLegacy ? null : 1);
   const legacy = seriesOf(points, point => point.isLegacy ? 1 : null);
   const count = (kind: CcMarkerKind) => every.filter(marker => marker.kind === kind).length;
-  const takeaway = points.length === 0
+  const takeaway = (points.length === 0
     ? 'No run in this range.'
     : `${plural(points.length, 'run')}, ${plural(count('event'), 'Overseer change')}, ${plural(count('annotation'), 'annotation')} `
-      + `and ${plural(count('served'), 'served-model change')} in this range.`;
+      + `and ${plural(count('served'), 'served-model change')} in this range.`) + notAnalyzedNote(input, [telemetry, legacy]);
   const built = config([
     seriesSpec('timeline', 'timeline.telemetry', telemetry, theme.series[0]),
     seriesSpec('timeline', 'timeline.legacy', legacy, theme.series[3], { hollow: true })
@@ -1008,10 +1134,10 @@ export function timelineOverviewFigure(input: CcFigureInput, options: CcChartOpt
     takeaway,
     altText: `Runs, Overseer changes, annotations and served-model changes over time. ${takeaway}`,
     config: built,
-    table: {
+    table: withInclusionColumn({
       columns: ['Run', 'Started', 'Suite', 'Measure', 'Served model'],
       rows: points.map(point => row(point, point.suiteName, point.isLegacy ? 'legacy' : 'telemetry', dominantServedModel(point) ?? '—'))
-    },
+    }, points, input),
     markers
   };
 }

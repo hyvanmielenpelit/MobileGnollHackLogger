@@ -1,11 +1,17 @@
+import { Chart } from 'chart.js';
+import type { ChartConfiguration } from 'chart.js';
+
+import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
   CC_PRINT_THEME,
   CC_REPORT_FIGURES,
+  CC_SCREEN_THEME,
   CC_TAG_GAP,
   CC_TAG_MAX_ROWS,
   CC_TAG_ROW_HEIGHT,
+  CcChartDataset,
   CcChartPoint,
   CcFigure,
   CcFigureInput,
@@ -396,6 +402,172 @@ describe('chat-consistency-charts', () => {
 
     it('reserves the tag rows in their own layout box, leaving the chart padding alone', () => {
       expect(qualityFigure(input).config!.options.layout!.padding).toEqual({ top: 4, right: 8 });
+    });
+  });
+
+  describe('runs not in the analysis', () => {
+    // Runs 101–106 in time order: run 101 lies before the first run and run 104 is left out.
+    const notAnalyzed = new Map<number, string>([[101, 'before the first run'], [104, 'left out in step 1']]);
+    const marked: CcFigureInput = { ...input, notAnalyzed };
+    const muted = CC_SCREEN_THEME.muted;
+
+    type PointOption = (ctx: { raw: unknown; dataIndex: number }) => unknown;
+    type SegmentOption = (ctx: { type: 'segment'; p0DataIndex: number; p1DataIndex: number; datasetIndex: number }) => unknown;
+    const POINT_OPTIONS = ['pointStyle', 'pointBackgroundColor', 'pointBorderColor', 'pointRadius', 'pointBorderWidth'];
+    /** The scriptable point options of point `i`, resolved as Chart.js would, in `POINT_OPTIONS` order. */
+    const pointLook = (ds: CcChartDataset, i: number) => POINT_OPTIONS.map(name =>
+      ((ds as unknown as Record<string, PointOption>)[name])({ raw: ds.data[i], dataIndex: i }));
+    /** A scriptable segment option of the segment from point `i` to point `i + 1`. */
+    const segmentOption = (ds: CcChartDataset, name: 'borderColor' | 'borderDash', i: number) =>
+      ((ds.segment as unknown as Record<string, SegmentOption>)[name])({ type: 'segment', p0DataIndex: i, p1DataIndex: i + 1, datasetIndex: 0 });
+
+    it('draws each run not in the analysis as an unfilled gray cross and every other run as before', () => {
+      const ds = qualityFigure(marked).config!.data.datasets[0];
+      const cross = ['crossRot', 'rgba(0, 0, 0, 0)', muted, 4.5, 2];
+      const plain = ['circle', CC_SCREEN_THEME.series[0], CC_SCREEN_THEME.series[0], 3.5, 1];
+      expect([0, 1, 2, 3, 4, 5].map(i => pointLook(ds, i))).toEqual([cross, plain, plain, cross, plain, plain]);
+      // The data, and so the scales and gaps, are unchanged.
+      expect(ds.data).toEqual(qualityFigure(input).config!.data.datasets[0].data);
+    });
+
+    it('keeps the hollow legacy look on a run in the analysis', () => {
+      const figure = timeToFirstAnswerFigure({ ...input, notAnalyzed: new Map([[101, 'left out in step 1']]) }, { theme: CC_PRINT_THEME });
+      const proxy = figure.config!.data.datasets[1];
+      // Run 103, the legacy proxy, stays hollow on the print page; run 101 is a cross in every dataset.
+      expect(pointLook(proxy, 2)).toEqual(['circle', '#ffffff', CC_PRINT_THEME.series[3], 3.5, 2]);
+      expect(pointLook(proxy, 0)).toEqual(['crossRot', 'rgba(0, 0, 0, 0)', CC_PRINT_THEME.muted, 4.5, 2]);
+      expect(proxy.borderDash).toEqual([4, 4]);
+    });
+
+    it('draws the segments touching a run not in the analysis gray and dotted, and leaves the others to the dataset', () => {
+      const ds = qualityFigure(marked).config!.data.datasets[0];
+      // Segments 101–102, 103–104 and 104–105 touch a marked run.
+      expect([0, 1, 2, 3, 4].map(i => segmentOption(ds, 'borderDash', i))).toEqual([[2, 3], undefined, [2, 3], [2, 3], undefined]);
+      expect([0, 1, 2, 3, 4].map(i => segmentOption(ds, 'borderColor', i))).toEqual([muted, undefined, muted, muted, undefined]);
+      expect(ds.borderDash).toEqual([]);
+      expect(ds.borderColor).toBe(CC_SCREEN_THEME.series[0]);
+    });
+
+    it('counts the plotted runs not in the analysis in the takeaway and the alt text', () => {
+      expect(qualityFigure(marked).takeaway)
+        .toBe('Quality held between 71 and 74 across 6 runs. 2 runs not in the analysis are drawn as gray crosses.');
+      const one = qualityFigure({ ...input, notAnalyzed: new Map([[104, 'left out in step 1']]) });
+      expect(one.takeaway).toBe('Quality held between 71 and 74 across 6 runs. 1 run not in the analysis is drawn as a gray cross.');
+      expect(one.altText).toBe(`Quality per run. ${one.takeaway}`);
+
+      // Run 103 has no streaming rate, so the rate figure does not draw it; its legacy proxy is drawn.
+      const legacy: CcFigureInput = { ...input, notAnalyzed: new Map([[103, 'after the last run']]) };
+      expect(streamingRateFigure(legacy).takeaway).toBe(streamingRateFigure(input).takeaway);
+      expect(timeToFirstAnswerFigure(legacy).takeaway).toBe(
+        'Median time to first answer text ranged from 2.4 s to 2.4 s across 5 telemetry runs. 1 legacy run is drawn hollow as the legacy proxy.'
+        + ' 1 run not in the analysis is drawn as a gray cross.');
+      // A run outside the drawn points adds nothing.
+      expect(qualityFigure({ ...input, notAnalyzed: new Map([[999, 'left out in step 1']]) }).takeaway)
+        .toBe(qualityFigure(input).takeaway);
+      expect(timelineOverviewFigure(marked).takeaway)
+        .toBe('6 runs, 1 Overseer change, 1 annotation and 0 served-model changes in this range. 2 runs not in the analysis are drawn as gray crosses.');
+    });
+
+    it('names the reason in the tooltip of a run not in the analysis', () => {
+      const config = qualityFigure(marked).config!;
+      const ds = config.data.datasets[0];
+      const label = config.options.plugins!.tooltip!.callbacks!.label as unknown as (item: unknown) => string;
+      expect(label({ raw: ds.data[3], dataset: ds })).toBe('Quality Index (native grades): 72 — not in the analysis (left out in step 1)');
+      expect(label({ raw: ds.data[0], dataset: ds })).toBe('Quality Index (native grades): 71 — not in the analysis (before the first run)');
+      expect(label({ raw: ds.data[1], dataset: ds })).toBe('Quality Index (native grades): 73');
+    });
+
+    it('adds an In the analysis column to every data table', () => {
+      const table = qualityFigure(marked).table;
+      expect(table.columns).toEqual(['Run', 'Started', 'Quality Index (native)', 'In the analysis']);
+      expect(table.rows.map(cells => cells[cells.length - 1]))
+        .toEqual(['No — before the first run', 'Yes', 'Yes', 'No — left out in step 1', 'Yes', 'Yes']);
+      expect(table.rows[0].slice(0, 3)).toEqual(qualityFigure(input).table.rows[0]);
+      for (const figure of buildCcFigures(marked)) {
+        expect(figure.table.columns[figure.table.columns.length - 1], figure.key).toBe('In the analysis');
+      }
+    });
+
+    it('keeps the series ids, markers and overlay plugin', () => {
+      const plain = buildCcFigures(input);
+      buildCcFigures(marked).forEach((figure, i) => {
+        expect(figure.config!.data.datasets.map(ds => ds.seriesId), figure.key).toEqual(plain[i].config!.data.datasets.map(ds => ds.seriesId));
+        expect(figure.markers, figure.key).toEqual(plain[i].markers);
+        expect(figure.config!.plugins.map(p => p.id), figure.key).toEqual(['ccOverlay']);
+      });
+    });
+
+    it('draws every figure exactly as before with an empty map', () => {
+      const plain = buildCcFigures(input);
+      buildCcFigures({ ...input, notAnalyzed: new Map() }).forEach((figure, i) => {
+        expect(figure.config!.data.datasets, figure.key).toEqual(plain[i].config!.data.datasets);
+        expect(figure.takeaway, figure.key).toBe(plain[i].takeaway);
+        expect(figure.altText, figure.key).toBe(plain[i].altText);
+        expect(figure.table, figure.key).toEqual(plain[i].table);
+        expect(figure.config!.options.plugins!.legend!.labels!.generateLabels, figure.key).toBeUndefined();
+      });
+      for (const ds of plain.flatMap(figure => figure.config!.data.datasets)) {
+        expect(Object.values(ds).some(value => typeof value === 'function'), ds.seriesId).toBe(false);
+        expect(ds.segment, ds.seriesId).toBeUndefined();
+      }
+      // The dataset options without a map.
+      const native = plain[0].config!.data.datasets[0];
+      expect(native).toEqual({
+        seriesId: 'quality.native',
+        label: 'Quality Index (native grades)',
+        data: native.data,
+        yAxisID: 'y',
+        borderColor: CC_SCREEN_THEME.series[0],
+        backgroundColor: CC_SCREEN_THEME.series[0],
+        pointBackgroundColor: CC_SCREEN_THEME.series[0],
+        pointBorderColor: CC_SCREEN_THEME.series[0],
+        pointBorderWidth: 1,
+        pointRadius: 3.5,
+        pointHoverRadius: 5,
+        borderWidth: 1.5,
+        borderDash: [],
+        spanGaps: false,
+        tension: 0
+      });
+    });
+
+    describe('on a chart', () => {
+      let chart: Chart | null = null;
+
+      beforeAll(() => {
+        Chart.register(...APP_CHART_REGISTRABLES);
+      });
+
+      afterEach(() => {
+        const canvas = chart?.canvas;
+        chart?.destroy();
+        canvas?.remove();
+        chart = null;
+      });
+
+      function mount(figure: CcFigure): Chart {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 320;
+        document.body.appendChild(canvas);
+        chart = new Chart(canvas, {
+          ...figure.config!,
+          options: { ...figure.config!.options, responsive: false, animation: false }
+        } as unknown as ChartConfiguration);
+        return chart;
+      }
+
+      it('resolves the cross on the marked point and keeps each legend item in its dataset’s own look', () => {
+        // Run 101, the first point of both datasets, is not in the analysis.
+        const drawn = mount(timeToFirstAnswerFigure(marked));
+        const points = drawn.getDatasetMeta(0).data.map(point => point.options as Record<string, unknown>);
+        expect([points[0]['pointStyle'], points[0]['radius'], points[0]['borderColor']]).toEqual(['crossRot', 4.5, muted]);
+        expect([points[1]['pointStyle'], points[1]['radius'], points[1]['borderColor']]).toEqual(['circle', 3.5, CC_SCREEN_THEME.series[0]]);
+        expect(drawn.legend!.legendItems!.map(item => [item.text, item.pointStyle, item.fillStyle, item.strokeStyle, item.lineWidth])).toEqual([
+          ['Time to first answer text (telemetry)', 'circle', CC_SCREEN_THEME.series[0], CC_SCREEN_THEME.series[0], 1],
+          ['Model time per answer (legacy proxy)', 'circle', 'rgba(0, 0, 0, 0)', CC_SCREEN_THEME.series[3], 2]
+        ]);
+      });
     });
   });
 });

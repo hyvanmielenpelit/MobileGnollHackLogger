@@ -8,6 +8,7 @@ import {
   ccEventAnnotations,
   ccEventPoints,
   ccOverseerEvents,
+  ccRunSelectionView,
   ccTimeline,
   chatConsistencyTestProviders,
   textOf
@@ -212,5 +213,53 @@ describe('CcResultsViewComponent', () => {
       .toEqual(['Graded by a common grader.', 'Pooled across a measurement segment boundary.']);
     expect(endpointNotes(ccEndpoint('P3', { computed: false, notComputedReason: 'No common stratum.' })))
       .toEqual(['No common stratum.']);
+  });
+
+  describe('the run selection', () => {
+    const section = () => el.querySelector<HTMLElement>('.cc-res-selection');
+
+    it('is absent for an analysis saved before the selection was recorded', () => {
+      expect(section()).toBeNull();
+      fixture.componentRef.setInput('result', ccAnalysisResult({
+        runSelection: ccRunSelectionView({ recorded: false, rangeLabel: null, firstRunId: null, leftOutRunIds: [], unanalyzedRuns: [] })
+      }));
+      fixture.detectChanges();
+      expect(section()).toBeNull();
+    });
+
+    it('shows the recorded dates, marks and left-out runs, and the runs not analyzed by reason, before the limitations', () => {
+      fixture.componentRef.setInput('result', ccAnalysisResult({ runSelection: ccRunSelectionView() }));
+      fixture.detectChanges();
+      const facts = Array.from(section()!.querySelectorAll('.cc-res-selection-facts > div'))
+        .map(row => [textOf(row.querySelector('dt')), textOf(row.querySelector('dd'))]);
+      expect(facts).toEqual([
+        ['Dates', 'Last 30 days · 2026-09-07 09:00 UTC to the last run'],
+        ['First run', '#102'],
+        ['Last run', 'none'],
+        ['Left out in step 1', '#104']
+      ]);
+      expect(Array.from(section()!.querySelectorAll('.cc-res-unanalyzed li')).map(item => textOf(item)))
+        .toEqual(['Left out in step 1: #104 (comparison)', 'Not selected in step 4: #105 (comparison)']);
+      const headings = Array.from(el.querySelectorAll('.cc-res-heading')).map(heading => textOf(heading));
+      expect(headings.indexOf('Run selection')).toBe(headings.indexOf('Limitations') - 1);
+    });
+
+    it('says when every usable run in the periods was analyzed', () => {
+      fixture.componentRef.setInput('result', ccAnalysisResult({ runSelection: ccRunSelectionView({ unanalyzedRuns: [] }) }));
+      fixture.detectChanges();
+      expect(textOf(section()!.querySelector('.cc-res-all-analyzed'))).toBe('Every usable run of the model in the periods was analyzed.');
+    });
+
+    it('lists the unanalyzed runs of a request without a recorded selection', () => {
+      fixture.componentRef.setInput('result', ccAnalysisResult({
+        runSelection: ccRunSelectionView({
+          recorded: false,
+          unanalyzedRuns: [{ runId: 105, period: 'comparison', startedAtUtc: '2026-09-26T08:00:00Z', reason: 'notSelected' }]
+        })
+      }));
+      fixture.detectChanges();
+      expect(section()!.querySelector('.cc-res-selection-facts')).toBeNull();
+      expect(textOf(section()!.querySelector('.cc-res-unanalyzed'))).toBe('Not selected in step 4: #105 (comparison)');
+    });
   });
 });

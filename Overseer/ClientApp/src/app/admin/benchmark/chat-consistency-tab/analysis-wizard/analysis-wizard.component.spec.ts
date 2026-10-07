@@ -383,7 +383,11 @@ describe('CcAnalysisWizardComponent', () => {
         comparisonRunIds: [104, 105, 106],
         relaxedPooling: false,
         controlRunIds: [202, 205, 206],
-        protocolOverrides: { margins: { P2: 0.2 } }
+        protocolOverrides: { margins: { P2: 0.2 } },
+        // Every request records the step-1 selection, the default one included.
+        runSelection: {
+          rangeLabel: 'All dates', rangeFromUtc: null, rangeToUtc: null, firstRunId: null, lastRunId: null, leftOutRunIds: []
+        }
       });
 
       // A second Analyze while one is in flight sends nothing.
@@ -447,6 +451,76 @@ describe('CcAnalysisWizardComponent', () => {
       expect(post.cancelled).toBe(true);
       expect(component.analyzing).toBe(false);
       expect(textOf(el.querySelector('.cc-wiz-analyze-status'))).toBe('');
+    });
+  });
+
+  describe('the step-1 selection', () => {
+    /** Runs 102–105 in the analysis, 104 left out; the host passes the scoped rows and every row. */
+    function narrow(): void {
+      const all = ccRunRows();
+      const scope = { firstRunId: 102, lastRunId: 105, leftOut: new Set([104]) };
+      fixture.componentRef.setInput('allRows', all);
+      fixture.componentRef.setInput('rows', all.filter(row => [102, 103, 105].includes(row.runId)));
+      fixture.componentRef.setInput('scope', scope);
+      fixture.componentRef.setInput('range', { preset: '30d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T12:00:00.000Z' });
+      fixture.componentRef.setInput('span', { first: '2026-09-05', last: '2026-09-26' });
+      fixture.componentRef.setInput('scopeKey', '102|105|104');
+      fixture.detectChanges();
+    }
+
+    it('says which runs the presets span: every run in the dates, then the runs chosen in step 1', () => {
+      expect(textOf(el.querySelector('.cc-wiz-span-note'))).toBe('Presets use every run in the dates: #101 (2026-09-01) to #106 (2026-10-01), 6 runs.');
+      narrow();
+      expect(textOf(el.querySelector('.cc-wiz-span-note'))).toBe('Presets use the runs chosen in step 1: #102 (2026-09-05) to #105 (2026-09-26), 3 runs.');
+    });
+
+    it('re-applies the preset over the span, and keeps dates typed by hand', () => {
+      narrow();
+      expect(component.days).toEqual({
+        baselineStart: '2026-09-05', baselineEnd: '2026-09-12', comparisonStart: '2026-09-13', comparisonEnd: '2026-09-26'
+      });
+      expect(launchPreset(ccAxis(), { first: '2026-09-05', last: '2026-09-26' })).toEqual(component.days);
+
+      setDay('cc-wiz-ce', '2026-09-30');
+      fixture.componentRef.setInput('span', { first: '2026-09-01', last: '2026-10-01' });
+      fixture.detectChanges();
+      expect(component.preset).toBe('custom');
+      expect(component.days.comparisonEnd).toBe('2026-09-30');
+    });
+
+    it('preselects again when the selection changes, and names the left-out runs in the periods', () => {
+      goToRuns();
+      component.preselectRuns();
+      fixture.detectChanges();
+      expect(checked('comparison')).toEqual(['104', '105', '106']);
+
+      narrow();
+      expect(checked('baseline')).toEqual(['102', '103']);
+      expect(checked('comparison')).toEqual(['105']);
+      const preview = Array.from(el.querySelectorAll('.cc-wiz-preview > div')).find(row => textOf(row.querySelector('dt')) === 'Left out in step 1');
+      expect(textOf(preview!.querySelector('dd'))).toBe('#104');
+    });
+
+    it('records the selection in the request', () => {
+      narrow();
+      goToRuns();
+      component.preselectRuns();
+      expect(component.buildRequest()!.runSelection).toEqual({
+        rangeLabel: 'Last 30 days',
+        rangeFromUtc: '2026-09-07T12:00:00.000Z',
+        rangeToUtc: null,
+        firstRunId: 102,
+        lastRunId: 105,
+        leftOutRunIds: [104]
+      });
+    });
+
+    it('takes the period dates from the shared date fields', () => {
+      const field = el.querySelector('app-date-field #cc-wiz-bs');
+      expect(field).not.toBeNull();
+      setDay('cc-wiz-bs', '2026-9-3');
+      expect(component.days.baselineStart).toBe('2026-09-03');
+      expect(component.preset).toBe('custom');
     });
   });
 

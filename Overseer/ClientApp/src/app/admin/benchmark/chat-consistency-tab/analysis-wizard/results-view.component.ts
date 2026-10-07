@@ -15,7 +15,9 @@ import {
   CcAttributionResult,
   CcEndpointResult,
   CcNextRun,
-  CcTimelinePoint
+  CcRunSelectionView,
+  CcTimelinePoint,
+  CcUnanalyzedReason
 } from '../chat-consistency.models';
 import { CcEventListComponent } from '../event-list/cc-event-list.component';
 import { CcChartFigureComponent } from '../timeline-workspace/cc-chart-figure.component';
@@ -26,6 +28,15 @@ export const CC_ATTRIBUTION_GROUPS: readonly { readonly side: string; readonly t
   { side: 'provider', title: 'Provider' },
   { side: 'infrastructure', title: 'Infrastructure' },
   { side: 'undetermined', title: 'Undetermined' }
+];
+
+/** Why a usable run in the periods was not analyzed, in the order the server classifies it. */
+export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReason; readonly label: string }[] = [
+  { reason: 'leftOut', label: 'Left out in step 1' },
+  { reason: 'outsideDateRange', label: 'Outside the step-1 dates' },
+  { reason: 'beforeFirstRun', label: 'Before the first run' },
+  { reason: 'afterLastRun', label: 'After the last run' },
+  { reason: 'notSelected', label: 'Not selected in step 4' }
 ];
 
 /** The figures the results draw over the analysis's runs. */
@@ -127,6 +138,42 @@ export class CcResultsViewComponent implements OnChanges {
 
   dateTime(value: string | null): string {
     return formatUtcDateTime(value);
+  }
+
+  /** The recorded run selection; null for an analysis saved before it was recorded, with nothing to show. */
+  get runSelection(): CcRunSelectionView | null {
+    const selection = this.result.runSelection;
+    return selection && (selection.recorded || selection.unanalyzedRuns.length > 0) ? selection : null;
+  }
+
+  /** `2026-09-01 00:00 UTC to the last run`, the UTC bounds of the step-1 dates; empty when both are open. */
+  rangeBoundsText(selection: CcRunSelectionView): string {
+    if (!selection.rangeFromUtc && !selection.rangeToUtc) return '';
+    const from = selection.rangeFromUtc ? formatUtcDateTime(selection.rangeFromUtc) : 'the first run';
+    const to = selection.rangeToUtc ? formatUtcDateTime(selection.rangeToUtc) : 'the last run';
+    return `${from} to ${to}`;
+  }
+
+  runMark(runId: number | null): string {
+    return runId === null ? 'none' : `#${runId}`;
+  }
+
+  leftOutText(selection: CcRunSelectionView): string {
+    return selection.leftOutRunIds.length > 0 ? selection.leftOutRunIds.map(id => `#${id}`).join(', ') : 'none';
+  }
+
+  /** The unanalyzed runs by reason, in the server's reason order: `#45 (baseline), #51 (comparison)`. */
+  unanalyzedGroups(selection: CcRunSelectionView): { reason: string; label: string; runs: string }[] {
+    return CC_UNANALYZED_REASONS
+      .map(({ reason, label }) => ({
+        reason,
+        label,
+        runs: selection.unanalyzedRuns
+          .filter(run => run.reason === reason)
+          .map(run => `#${run.runId} (${run.period})`)
+          .join(', ')
+      }))
+      .filter(group => group.runs !== '');
   }
 
   nextRunTitle(next: CcNextRun): string {

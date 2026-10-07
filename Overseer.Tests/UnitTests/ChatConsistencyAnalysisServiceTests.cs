@@ -3,6 +3,8 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -43,6 +45,9 @@ public class ChatConsistencyAnalysisServiceTests
         public bool ToolGuidesChange { get; init; } = true;
         public bool Controls { get; init; } = true;
         public double ComparisonDurationFactor { get; init; } = 1.0;
+
+        /// <summary>Six more runs of the subject inside the periods, #5–#10, for the run-selection tests.</summary>
+        public bool SelectionRuns { get; init; }
     }
 
     private static DbContextOptions<ApplicationDbContext> NewOptions(string name, InMemoryDatabaseRoot root)
@@ -188,6 +193,16 @@ public class ChatConsistencyAnalysisServiceTests
             runs.Add(Run(14, ComparisonDay2.AddHours(1), control, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gemini-control-001"));
         }
 
+        if (scenario.SelectionRuns)
+        {
+            runs.Add(Run(5, new DateTime(2026, 9, 3, 9, 0, 0, DateTimeKind.Utc), subject, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"));
+            runs.Add(Run(6, new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc), subject, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"));
+            runs.Add(Run(7, new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc), subject, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"));
+            runs.Add(Run(8, new DateTime(2026, 9, 17, 9, 0, 0, DateTimeKind.Utc), subject, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"));
+            runs.Add(Run(9, new DateTime(2026, 9, 14, 9, 0, 0, DateTimeKind.Utc), subject, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"));
+            runs.Add(Run(10, new DateTime(2026, 9, 15, 12, 0, 0, DateTimeKind.Utc), subject, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"));
+        }
+
         db.BenchmarkRuns.AddRange(runs);
         db.SaveChanges();
         return ChatConsistencyComparability.ModelAxisKey(runs[0]);
@@ -202,6 +217,27 @@ public class ChatConsistencyAnalysisServiceTests
         ComparisonStartUtc = new DateTime(2026, 9, 14, 0, 0, 0, DateTimeKind.Utc),
         ComparisonEndUtc = new DateTime(2026, 9, 21, 0, 0, 0, DateTimeKind.Utc)
     };
+
+    /// <summary>The request with runs #1–#2 as the baseline and #3–#4 as the comparison, and <paramref name="selection"/>.</summary>
+    private static ChatConsistencyAnalysisRequest ExplicitRequest(string subjectKey, ChatConsistencyRunSelection? selection) => Request(subjectKey) with
+    {
+        BaselineRunIds = new long[] { 1, 2 },
+        ComparisonRunIds = new long[] { 3, 4 },
+        RunSelection = selection
+    };
+
+    /// <summary>A step-1 selection: September, from run #1 to run #4, with <paramref name="leftOut"/> unchecked.</summary>
+    private static ChatConsistencyRunSelection Selection(params long[] leftOut) => new()
+    {
+        RangeLabel = "2026-09-01 to 2026-09-30",
+        RangeFromUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+        RangeToUtc = new DateTime(2026, 9, 30, 23, 59, 59, DateTimeKind.Utc),
+        FirstRunId = 1,
+        LastRunId = 4,
+        LeftOutRunIds = leftOut
+    };
+
+    private const string RunSelectionLimitationStart = "The operator chose the runs: ";
 
     private static ChatConsistencyEndpointResult EndpointOf(ChatConsistencyAnalysisResult result, string id)
         => result.Endpoints.Single(e => e.Id == id);
@@ -437,6 +473,236 @@ public class ChatConsistencyAnalysisServiceTests
         var deleted = await service.DeleteAnalysisAsync(id, TestContext.Current.CancellationToken);
         Assert.True(deleted.Deleted);
         Assert.Empty(db.ChatConsistencyAnalyses.ToList());
+    }
+
+    // --- Run selection ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TheRunSelectionClassifiesEveryUsableRunNotAnalyzedInBothPeriods()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, SelectionRuns = true });
+
+        var result = await Service(db).AnalyzeAsync(ExplicitRequest(key, Selection(10, 5, 10)), TestContext.Current.CancellationToken);
+
+        Assert.Equal(new long[] { 1, 2 }, result.Baseline.RunIds);
+        Assert.Equal(new long[] { 3, 4 }, result.Comparison.RunIds);
+
+        var selection = result.RunSelection;
+        Assert.True(selection.Recorded);
+        Assert.Equal("2026-09-01 to 2026-09-30", selection.RangeLabel);
+        Assert.Equal(new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), selection.RangeFromUtc);
+        Assert.Equal(new DateTime(2026, 9, 30, 23, 59, 59, DateTimeKind.Utc), selection.RangeToUtc);
+        Assert.Equal(1L, selection.FirstRunId);
+        Assert.Equal(4L, selection.LastRunId);
+        Assert.Equal(new long[] { 5, 10 }, selection.LeftOutRunIds);
+
+        // #6 is both outside the dates and before the first run: the first matching reason wins.
+        Assert.Equal(
+            new[]
+            {
+                (6L, "baseline", ChatConsistencyUnanalyzedReasons.OutsideDateRange),
+                (7L, "baseline", ChatConsistencyUnanalyzedReasons.BeforeFirstRun),
+                (5L, "baseline", ChatConsistencyUnanalyzedReasons.LeftOut),
+                (9L, "comparison", ChatConsistencyUnanalyzedReasons.NotSelected),
+                (10L, "comparison", ChatConsistencyUnanalyzedReasons.LeftOut),
+                (8L, "comparison", ChatConsistencyUnanalyzedReasons.AfterLastRun)
+            },
+            selection.UnanalyzedRuns.Select(u => (u.RunId, u.Period, u.Reason)).ToList());
+        Assert.Equal(new DateTime(2026, 8, 31, 9, 0, 0, DateTimeKind.Utc), selection.UnanalyzedRuns[0].StartedAtUtc);
+
+        var note = Assert.Single(result.DataQuality, n => n.Kind == "runSelection");
+        Assert.Equal(
+            "6 usable runs of the model inside the periods were not analyzed — left out in step 1: #5 (baseline), #10 (comparison); "
+            + "outside the step-1 dates: #6 (baseline); before the first run: #7 (baseline); after the last run: #8 (comparison); "
+            + "not selected in step 4: #9 (comparison).",
+            note.Text);
+
+        string limitation = Assert.Single(result.Limitations, l => l.StartsWith(RunSelectionLimitationStart, StringComparison.Ordinal));
+        Assert.Equal(
+            "The operator chose the runs: 6 usable runs of the model inside the periods were not analyzed (see the run selection). "
+            + "The verdicts hold for the analyzed runs; leaving runs out after looking at the timeline can bias them.",
+            limitation);
+        Assert.DoesNotContain(
+            BenchmarkReportPackValidator.ChatIntentWords.Concat(BenchmarkReportPackValidator.ChatMechanismWords),
+            word => limitation.Contains(word, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ExplicitRunsWithoutASelectionListTheOthersAsNotSelected()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { SelectionRuns = true });
+
+        var result = await Service(db).AnalyzeAsync(ExplicitRequest(key, null), TestContext.Current.CancellationToken);
+
+        var selection = result.RunSelection;
+        Assert.False(selection.Recorded);
+        Assert.Null(selection.RangeLabel);
+        Assert.Null(selection.FirstRunId);
+        Assert.Empty(selection.LeftOutRunIds);
+        Assert.Equal(new long[] { 6, 7, 5, 9, 10, 8 }, selection.UnanalyzedRuns.Select(u => u.RunId).ToList());
+        Assert.All(selection.UnanalyzedRuns, u => Assert.Equal(ChatConsistencyUnanalyzedReasons.NotSelected, u.Reason));
+
+        var note = Assert.Single(result.DataQuality, n => n.Kind == "runSelection");
+        Assert.Equal(
+            "6 usable runs of the model inside the periods were not analyzed — not selected in step 4: #6 (baseline), #7 (baseline), "
+            + "#5 (baseline), #9 (comparison), #10 (comparison), #8 (comparison).",
+            note.Text);
+        Assert.Single(result.Limitations, l => l.StartsWith(RunSelectionLimitationStart, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WithoutExplicitRunsEveryUsableRunIsAnalyzedAndNoneIsListed()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { SelectionRuns = true });
+        var request = Request(key) with { RunSelection = new ChatConsistencyRunSelection { RangeLabel = "All dates" } };
+
+        var result = await Service(db).AnalyzeAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new long[] { 6, 7, 1, 2, 5 }, result.Baseline.RunIds);
+        Assert.Equal(new long[] { 9, 3, 10, 4, 8 }, result.Comparison.RunIds);
+        Assert.True(result.RunSelection.Recorded);
+        Assert.Equal("All dates", result.RunSelection.RangeLabel);
+        Assert.Empty(result.RunSelection.UnanalyzedRuns);
+        Assert.DoesNotContain(result.DataQuality, n => n.Kind == "runSelection");
+        Assert.DoesNotContain(result.Limitations, l => l.StartsWith(RunSelectionLimitationStart, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AMarkWhoseRunIsNotFoundIsIgnoredWithANote()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { SelectionRuns = true });
+        var selection = new ChatConsistencyRunSelection { FirstRunId = 999, LastRunId = 4 };
+
+        var result = await Service(db).AnalyzeAsync(ExplicitRequest(key, selection), TestContext.Current.CancellationToken);
+
+        Assert.Contains(result.DataQuality, n => n.Kind == "runSelection" && n.Text == "The first run of the selection, #999, was not found.");
+        Assert.Equal(
+            new[]
+            {
+                (6L, ChatConsistencyUnanalyzedReasons.NotSelected),
+                (7L, ChatConsistencyUnanalyzedReasons.NotSelected),
+                (5L, ChatConsistencyUnanalyzedReasons.NotSelected),
+                (9L, ChatConsistencyUnanalyzedReasons.NotSelected),
+                (10L, ChatConsistencyUnanalyzedReasons.NotSelected),
+                (8L, ChatConsistencyUnanalyzedReasons.AfterLastRun)
+            },
+            result.RunSelection.UnanalyzedRuns.Select(u => (u.RunId, u.Reason)).ToList());
+    }
+
+    [Fact]
+    public void AMalformedOrContradictoryRunSelectionIsRefused()
+    {
+        var request = Request("subject") with { BaselineRunIds = new long[] { 1, 2 }, ComparisonRunIds = new long[] { 3, 45 } };
+
+        void Refused(ChatConsistencyRunSelection selection, string message)
+        {
+            var refusal = Assert.Throws<ChatConsistencyRequestException>(() => ChatConsistencyAnalysisService.Validate(request with { RunSelection = selection }));
+            Assert.Equal(message, refusal.Message);
+        }
+
+        Refused(new ChatConsistencyRunSelection { RangeLabel = new string('x', 65) }, "The run selection's date label is at most 64 characters.");
+        Refused(
+            new ChatConsistencyRunSelection
+            {
+                RangeFromUtc = new DateTime(2026, 9, 30, 0, 0, 0, DateTimeKind.Utc),
+                RangeToUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            "The run selection's dates end before they start.");
+        Refused(
+            new ChatConsistencyRunSelection { LeftOutRunIds = Enumerable.Range(1000, 5001).Select(i => (long)i).ToList() },
+            "The run selection leaves out at most 5,000 runs.");
+        Refused(new ChatConsistencyRunSelection { LeftOutRunIds = new long[] { 2 } }, "Run #2 is left out in step 1 but selected for the baseline.");
+        Refused(new ChatConsistencyRunSelection { LeftOutRunIds = new long[] { 45 } }, "Run #45 is left out in step 1 but selected for the comparison.");
+
+        // At the limits, the selection is accepted.
+        ChatConsistencyAnalysisService.Validate(request with
+        {
+            RunSelection = new ChatConsistencyRunSelection
+            {
+                RangeLabel = new string('x', 64),
+                LeftOutRunIds = Enumerable.Range(1000, 5000).Select(i => (long)i).ToList()
+            }
+        });
+    }
+
+    [Fact]
+    public async Task ARefusedRunSelectionSavesNothing()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario());
+
+        var refusal = await Assert.ThrowsAsync<ChatConsistencyRequestException>(
+            () => Service(db).AnalyzeAsync(ExplicitRequest(key, Selection(3)), TestContext.Current.CancellationToken));
+
+        Assert.Equal("Run #3 is left out in step 1 but selected for the comparison.", refusal.Message);
+        Assert.Empty(db.ChatConsistencyAnalyses.ToList());
+    }
+
+    [Fact]
+    public async Task AnalysesDifferingOnlyInTheLeftOutRunsHaveDifferentFingerprints()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, SelectionRuns = true });
+        var service = Service(db);
+
+        var first = await service.AnalyzeAsync(ExplicitRequest(key, Selection(5)), TestContext.Current.CancellationToken);
+        var again = await service.AnalyzeAsync(ExplicitRequest(key, Selection(5)), TestContext.Current.CancellationToken);
+        var other = await service.AnalyzeAsync(ExplicitRequest(key, Selection(5, 10)), TestContext.Current.CancellationToken);
+
+        Assert.Equal(first.InputSha256, again.InputSha256);
+        Assert.NotEqual(first.InputSha256, other.InputSha256);
+        Assert.Equal(first.Headline, other.Headline);
+    }
+
+    [Fact]
+    public async Task ASavedAnalysisRoundTripsItsRunSelection()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, SelectionRuns = true });
+        var service = Service(db);
+
+        var result = await service.AnalyzeAsync(ExplicitRequest(key, Selection(10, 5)), TestContext.Current.CancellationToken);
+        var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
+        Assert.Contains("\"runSelection\":{\"recorded\":true,", row.ResultJson);
+
+        var reloaded = await service.GetAnalysisAsync(row.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(reloaded);
+        Assert.True(reloaded!.RunSelection.Recorded);
+        Assert.Equal(new long[] { 5, 10 }, reloaded.RunSelection.LeftOutRunIds);
+        Assert.Equal(DateTimeKind.Utc, reloaded.RunSelection.RangeFromUtc!.Value.Kind);
+        Assert.Equal(6, reloaded.RunSelection.UnanalyzedRuns.Count);
+        Assert.Equal(
+            JsonSerializer.Serialize(result.RunSelection, ChatConsistencyJson.Options),
+            JsonSerializer.Serialize(reloaded.RunSelection, ChatConsistencyJson.Options));
+    }
+
+    [Fact]
+    public async Task AStoredResultWithoutARunSelectionReadsAsNotRecorded()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, SelectionRuns = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(ExplicitRequest(key, Selection(5)), TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
+        var json = JsonNode.Parse(row.ResultJson)!.AsObject();
+        Assert.True(json.Remove("runSelection"));
+        row.ResultJson = json.ToJsonString();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var reloaded = await service.GetAnalysisAsync(row.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(reloaded);
+        Assert.Equal(result.Headline, reloaded!.Headline);
+        Assert.False(reloaded.RunSelection.Recorded);
+        Assert.Null(reloaded.RunSelection.RangeLabel);
+        Assert.Empty(reloaded.RunSelection.LeftOutRunIds);
+        Assert.Empty(reloaded.RunSelection.UnanalyzedRuns);
     }
 
     // --- Re-grade --------------------------------------------------------------------------------

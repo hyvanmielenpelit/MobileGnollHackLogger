@@ -86,6 +86,7 @@ import {
   servedModelChanges
 } from '../chat-consistency-events';
 import { formatUtcDate } from '../chat-consistency-format';
+import { CC_INCLUSION_TEXT, CcRunInclusion } from '../chat-consistency-scope';
 import { CcModelAxis, CcTimeline } from '../chat-consistency.models';
 import { CcEventListComponent } from '../event-list/cc-event-list.component';
 import { CcChartFigureComponent } from './cc-chart-figure.component';
@@ -150,6 +151,8 @@ export interface CcTimelineLayout {
   readonly markerKinds: readonly CcMarkerKind[];
   readonly hiddenEventKinds: readonly string[];
   readonly zeroBaseline: boolean;
+  /** Runs not in the analysis are drawn as gray crosses with dotted segments. */
+  readonly markNotAnalyzed: boolean;
   readonly imageTheme: CcImageTheme;
   readonly imageFormat: FigureExportFormat;
   readonly webpQuality: WebpQuality;
@@ -175,6 +178,7 @@ export function defaultTimelineLayout(): CcTimelineLayout {
     markerKinds: MARKER_KINDS,
     hiddenEventKinds: [],
     zeroBaseline: false,
+    markNotAnalyzed: true,
     imageTheme: 'screen',
     imageFormat: 'png',
     webpQuality: DEFAULT_WEBP_QUALITY,
@@ -214,6 +218,7 @@ export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
       ?? fallback.markerKinds,
     hiddenEventKinds: listOf<string>(record['hiddenEventKinds'], item => item !== '') ?? fallback.hiddenEventKinds,
     zeroBaseline: flag('zeroBaseline', fallback.zeroBaseline),
+    markNotAnalyzed: flag('markNotAnalyzed', fallback.markNotAnalyzed),
     imageTheme: oneOf<CcImageTheme>('imageTheme', ['screen', 'print'], fallback.imageTheme),
     imageFormat: oneOf<FigureExportFormat>('imageFormat', ['png', 'webp'], fallback.imageFormat),
     webpQuality: oneOf<WebpQuality>('webpQuality', WEBP_QUALITY_OPTIONS, fallback.webpQuality),
@@ -317,6 +322,10 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   @Input() timeline: CcTimeline | null = null;
   @Input() loading = false;
   @Input() error: string | null = null;
+  /** The runs of the timeline that are not in the analysis, with why; null or empty when every run is. */
+  @Input() notAnalyzed: ReadonlyMap<number, CcRunInclusion> | null = null;
+  /** The step-1 dates as step 1 names them, for the readout; the timeline's bounds when empty. */
+  @Input() rangeLabel = '';
 
   /** An annotation was added or deleted; the host reads the timeline again. */
   @Output() readonly annotationsChanged = new EventEmitter<void>();
@@ -365,6 +374,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   markerKinds = new Set<CcMarkerKind>(this.stored.markerKinds);
   hiddenEventKinds = new Set<string>(this.stored.hiddenEventKinds);
   zeroBaseline = this.stored.zeroBaseline;
+  markNotAnalyzed = this.stored.markNotAnalyzed;
   imageTheme: CcImageTheme = this.stored.imageTheme;
   imageFormat: FigureExportFormat = this.stored.imageFormat;
   webpQuality: WebpQuality = this.stored.webpQuality;
@@ -441,6 +451,9 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       this.rebuildFigures();
       this.rebuildEvents();
       this.scheduleMeasure();
+    } else if (changes['notAnalyzed']) {
+      this.rebuildFigures();
+      this.scheduleMeasure();
     }
     if (changes['axis'] && !changes['axis'].firstChange && changes['axis'].previousValue?.key !== this.axis?.key) {
       this.exportStatus = '';
@@ -483,13 +496,31 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   private figureInput(): CcFigureInput | null {
     const timeline = this.timeline;
     if (!timeline) return null;
-    return {
+    const input: CcFigureInput = {
       points: timeline.points,
       events: timeline.events,
       annotations: timeline.annotations,
       markerFilter: this.markerFilter
     };
+    const notAnalyzed = this.markNotAnalyzed ? this.notAnalyzedText() : null;
+    return notAnalyzed ? { ...input, notAnalyzed } : input;
   }
+
+  /** `notAnalyzed` as the charts take it, run id to reason text; null when empty. Kept per input map. */
+  private notAnalyzedText(): ReadonlyMap<number, string> | null {
+    const source = this.notAnalyzed;
+    if (!source || source.size === 0) return null;
+    if (this.notAnalyzedMemo?.source !== source) {
+      const text = new Map<number, string>();
+      for (const [runId, inclusion] of source) {
+        if (inclusion !== 'included') text.set(runId, CC_INCLUSION_TEXT[inclusion]);
+      }
+      this.notAnalyzedMemo = { source, text };
+    }
+    return this.notAnalyzedMemo.text.size > 0 ? this.notAnalyzedMemo.text : null;
+  }
+
+  private notAnalyzedMemo: { source: ReadonlyMap<number, CcRunInclusion>; text: ReadonlyMap<number, string> } | null = null;
 
   /** The keys of the shown charts, in chart order. */
   get shownKeys(): CcFigureKey[] {
@@ -542,11 +573,12 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.hiddenEventItems = Math.max(0, this.totalEventItems - eventItemCount(this.eventDays));
   }
 
-  /** `GPT-5.6 Luna (max) · every date · change in step 1`. */
+  /** `GPT-5.6 Luna (max) · Last 30 days · change in step 1`. */
   get readout(): string {
     const name = this.axis?.displayName ?? this.timeline?.subject.displayName ?? null;
     if (name === null) return 'No model chosen · choose one in step 1';
-    return `${name} · ${ccRangeText(this.timeline?.fromUtc, this.timeline?.toUtc)} · change in step 1`;
+    const range = this.rangeLabel || ccRangeText(this.timeline?.fromUtc, this.timeline?.toUtc);
+    return `${name} · ${range} · change in step 1`;
   }
 
   // --- Sidebar ---
@@ -650,6 +682,11 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   setZeroBaseline(on: boolean): void {
     this.zeroBaseline = on;
+    this.afterFigureSettings();
+  }
+
+  setMarkNotAnalyzed(on: boolean): void {
+    this.markNotAnalyzed = on;
     this.afterFigureSettings();
   }
 
@@ -1332,6 +1369,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       markerKinds: MARKER_KINDS.filter(kind => this.markerKinds.has(kind)),
       hiddenEventKinds: [...this.hiddenEventKinds],
       zeroBaseline: this.zeroBaseline,
+      markNotAnalyzed: this.markNotAnalyzed,
       imageTheme: this.imageTheme,
       imageFormat: this.imageFormat,
       webpQuality: this.webpQuality,

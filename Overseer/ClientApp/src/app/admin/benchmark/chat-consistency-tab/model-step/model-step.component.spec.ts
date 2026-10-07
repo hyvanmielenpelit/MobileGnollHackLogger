@@ -1,15 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import { CC_ALL_DATES, CcDateRange } from '../chat-consistency-range';
+import { CC_EMPTY_SCOPE, CcRunScope } from '../chat-consistency-scope';
 import { CcRunRow } from '../chat-consistency.models';
 import {
   ccAxis,
+  ccManyRunRows,
   ccRunRow,
   ccRunRows,
   ccTimeline,
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
-import { CcDayRange, CcModelStepComponent, axisPickerOptions } from './model-step.component';
+import { CC_RUNS_VIEW_STORAGE_KEY, CcModelStepComponent, axisPickerOptions } from './model-step.component';
 
 describe('CcModelStepComponent', () => {
   let fixture: ComponentFixture<CcModelStepComponent>;
@@ -17,6 +20,7 @@ describe('CcModelStepComponent', () => {
   let el: HTMLElement;
 
   beforeEach(async () => {
+    try { localStorage.removeItem(CC_RUNS_VIEW_STORAGE_KEY); } catch { /* storage unavailable */ }
     await TestBed.configureTestingModule({
       imports: [CcModelStepComponent],
       providers: chatConsistencyTestProviders()
@@ -30,7 +34,7 @@ describe('CcModelStepComponent', () => {
 
   afterEach(() => fixture.destroy());
 
-  /** The chosen model with its timeline and run table, as the host passes them. */
+  /** The chosen model with its timeline and runs, as the host passes them. */
   function withModel(rows: CcRunRow[] = ccRunRows()): void {
     fixture.componentRef.setInput('selectedKey', 'openai/gpt-5|high');
     fixture.componentRef.setInput('timeline', ccTimeline());
@@ -38,10 +42,27 @@ describe('CcModelStepComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Feeds the selection back as the host would. */
+  function hostScope(): CcRunScope[] {
+    const scopes: CcRunScope[] = [];
+    component.scopeChange.subscribe(scope => {
+      scopes.push(scope);
+      fixture.componentRef.setInput('scope', scope);
+    });
+    return scopes;
+  }
+
   function openPicker(): HTMLElement[] {
     el.querySelector<HTMLButtonElement>('.cc-subject-model-selector .selector-trigger')!.click();
     fixture.detectChanges();
     return Array.from(el.querySelectorAll<HTMLElement>('.cc-subject-model-selector [role="option"]'));
+  }
+
+  function choosePreset(value: string): void {
+    const select = el.querySelector<HTMLSelectElement>('#cc-tl-range')!;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
   }
 
   function setDay(id: 'cc-tl-from' | 'cc-tl-to', value: string): void {
@@ -51,25 +72,23 @@ describe('CcModelStepComponent', () => {
     fixture.detectChanges();
   }
 
-  const row = (runId: number): HTMLTableRowElement =>
-    el.querySelector<HTMLTableRowElement>(`.cc-run-table tr[data-run-id="${runId}"]`)!;
+  const card = (runId: number): HTMLElement => el.querySelector<HTMLElement>(`.cc-run-card[data-run-id="${runId}"]`)!;
+  const cardIds = (): string[] => Array.from(el.querySelectorAll('.cc-run-card')).map(item => item.getAttribute('data-run-id')!);
+  const checkbox = (runId: number) => el.querySelector<HTMLInputElement>(`#cc-run-${runId}-include`)!;
 
   describe('the fields', () => {
-    it('labels the picker Model and the dates From (UTC) and To (UTC), without a legend', () => {
+    it('labels the picker Model and the select Dates, with no custom dates until Custom', () => {
       expect(textOf(el.querySelector('#cc-tl-model-label'))).toBe('Model');
       const trigger = el.querySelector<HTMLButtonElement>('.cc-subject-model-selector .selector-trigger')!;
       expect(trigger.getAttribute('aria-labelledby')!.split(' ')[0]).toBe('cc-tl-model-label');
       expect(trigger.getAttribute('aria-describedby')).toBe('cc-tl-model-hint');
       expect(textOf(el.querySelector('#cc-tl-model-hint'))).toBe('Models with at least one usable benchmark run.');
 
-      expect(textOf(el.querySelector('label[for="cc-tl-from"]'))).toBe('From (UTC)');
-      expect(textOf(el.querySelector('label[for="cc-tl-to"]'))).toBe('To (UTC)');
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-from')!.type).toBe('date');
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-to')!.type).toBe('date');
+      expect(textOf(el.querySelector('label[for="cc-tl-range"]'))).toBe('Dates');
+      expect(el.querySelector<HTMLSelectElement>('#cc-tl-range')!.value).toBe('all');
+      expect(el.querySelector('#cc-tl-from')).toBeNull();
+      expect(el.querySelector('#cc-tl-to')).toBeNull();
       expect(el.querySelector('legend')).toBeNull();
-      expect(el.querySelector('fieldset')).toBeNull();
-      // No bound is set, so there is nothing for Every date to clear.
-      expect(el.querySelector('.cc-tl-range-clear')).toBeNull();
     });
 
     it('offers only the models that have runs, and asks for the one chosen', () => {
@@ -105,94 +124,97 @@ describe('CcModelStepComponent', () => {
       expect(openPicker()).toEqual([]);
       expect(textOf(el.querySelector('.cc-subject-model-selector .empty-dropdown-hint'))).toBe('The models could not be loaded.');
     });
-
-    it('says the models are loading in the empty list', () => {
-      fixture.componentRef.setInput('axes', []);
-      fixture.componentRef.setInput('axesLoading', true);
-      fixture.detectChanges();
-      openPicker();
-      expect(textOf(el.querySelector('.cc-subject-model-selector .empty-dropdown-hint'))).toBe('Loading the models…');
-    });
   });
 
-  describe('the date range', () => {
-    let ranges: CcDayRange[];
+  describe('the dates', () => {
+    let ranges: CcDateRange[];
 
     beforeEach(() => {
       ranges = [];
       component.rangeChange.subscribe(range => ranges.push(range));
     });
 
-    it('applies a valid bound at once and offers Every date while a bound is set', () => {
-      setDay('cc-tl-from', '2026-09-10');
-      expect(ranges).toEqual([{ fromDay: '2026-09-10', toDay: '' }]);
-      expect(el.querySelector('#cc-tl-range-error')).toBeNull();
-      const clear = el.querySelector<HTMLButtonElement>('.cc-tl-range-clear')!;
-      expect(textOf(clear)).toBe('Every date');
-      expect(clear.classList).toContain('btn-ghost');
+    afterEach(() => vi.useRealTimers());
 
-      setDay('cc-tl-to', '2026-09-30');
-      expect(ranges).toEqual([{ fromDay: '2026-09-10', toDay: '' }, { fromDay: '2026-09-10', toDay: '2026-09-30' }]);
+    it('offers the eleven presets in order', () => {
+      const options = Array.from(el.querySelectorAll<HTMLOptionElement>('#cc-tl-range option'));
+      expect(options.map(option => option.value)).toEqual(['all', '1d', '3d', '7d', '14d', '28d', '30d', '90d', '180d', '1y', 'custom']);
+      expect(options.map(option => textOf(option))).toEqual([
+        'All dates', 'Last 1 day', 'Last 3 days', 'Last 7 days', 'Last 14 days', 'Last 28 days', 'Last 30 days',
+        'Last 90 days', 'Last 180 days', 'Last year', 'Custom'
+      ]);
     });
 
-    it('explains a reversed range on both inputs and does not apply it', () => {
-      setDay('cc-tl-from', '2026-09-10');
-      setDay('cc-tl-to', '2026-09-05');
-      expect(ranges).toEqual([{ fromDay: '2026-09-10', toDay: '' }]);
-      expect(textOf(el.querySelector('#cc-tl-range-error'))).toBe('The start date must not be after the end date.');
-      for (const id of ['cc-tl-from', 'cc-tl-to']) {
-        const input = el.querySelector<HTMLInputElement>(`#${id}`)!;
-        expect(input.getAttribute('aria-invalid')).toBe('true');
-        expect(input.getAttribute('aria-describedby')).toBe('cc-tl-range-error');
-      }
+    it('asks for a rolling preset anchored now, and names the anchor under the select', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-07T14:05:00Z'));
+      choosePreset('7d');
+      expect(ranges).toEqual([{ preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T14:05:00.000Z' }]);
 
-      setDay('cc-tl-to', '2026-09-12');
-      expect(el.querySelector('#cc-tl-range-error')).toBeNull();
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-from')!.hasAttribute('aria-invalid')).toBe(false);
-      expect(ranges[ranges.length - 1]).toEqual({ fromDay: '2026-09-10', toDay: '2026-09-12' });
-    });
-
-    it('explains a date that is not a complete calendar date', () => {
-      // A date input never holds such a value; the handler is reached with one directly.
-      component.onDayChange('from', { target: { value: '2026-9-1' } } as unknown as Event);
+      fixture.componentRef.setInput('range', ranges[0]);
       fixture.detectChanges();
-      expect(textOf(el.querySelector('#cc-tl-range-error'))).toBe('Enter the dates as complete calendar dates.');
-      expect(ranges).toEqual([]);
+      expect(textOf(el.querySelector('#cc-tl-range-hint'))).toBe('Since 2026-09-30 14:05 UTC · Reload runs moves it to now');
+      expect(el.querySelector('#cc-tl-range')!.getAttribute('aria-describedby')).toBe('cc-tl-range-hint');
     });
 
-    it('clears both bounds and the error with Every date', () => {
-      setDay('cc-tl-from', '2026-09-10');
-      setDay('cc-tl-to', '2026-09-05');
-      el.querySelector<HTMLButtonElement>('.cc-tl-range-clear')!.click();
+    it('asks for every date again with All dates', () => {
+      fixture.componentRef.setInput('range', { preset: '30d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T00:00:00.000Z' });
       fixture.detectChanges();
-
-      expect(ranges[ranges.length - 1]).toEqual({ fromDay: '', toDay: '' });
-      expect(el.querySelector('#cc-tl-range-error')).toBeNull();
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-from')!.value).toBe('');
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-to')!.value).toBe('');
-      expect(el.querySelector('.cc-tl-range-clear')).toBeNull();
+      choosePreset('all');
+      expect(ranges).toEqual([CC_ALL_DATES]);
     });
 
-    it('shows the range the host passes, and drops a pending error with it', () => {
-      setDay('cc-tl-from', '2026-09-10');
-      setDay('cc-tl-to', '2026-09-05');
-      fixture.componentRef.setInput('range', { fromDay: '2026-09-01', toDay: '2026-09-30' });
+    it('shows the custom dates prefilled from the rolling window with Custom', () => {
+      fixture.componentRef.setInput('range', { preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T14:05:00.000Z' });
       fixture.detectChanges();
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-from')!.value).toBe('2026-09-01');
-      expect(el.querySelector<HTMLInputElement>('#cc-tl-to')!.value).toBe('2026-09-30');
-      expect(el.querySelector('#cc-tl-range-error')).toBeNull();
-      expect(el.querySelector('.cc-tl-range-clear')).not.toBeNull();
+      choosePreset('custom');
+      expect(ranges).toEqual([{ preset: 'custom', fromDay: '2026-09-30', toDay: '2026-10-07', anchorUtc: null }]);
+      expect(textOf(el.querySelector('label[for="cc-tl-from"]'))).toBe('From (UTC)');
+      expect(textOf(el.querySelector('label[for="cc-tl-to"]'))).toBe('To (UTC)');
+      expect(el.querySelector<HTMLInputElement>('#cc-tl-from')!.value).toBe('2026-09-30');
+      expect(el.querySelector<HTMLInputElement>('#cc-tl-to')!.value).toBe('2026-10-07');
+    });
+
+    describe('custom', () => {
+      beforeEach(() => {
+        fixture.componentRef.setInput('range', { preset: 'custom', fromDay: '', toDay: '', anchorUtc: null });
+        fixture.detectChanges();
+      });
+
+      it('applies a valid bound at once', () => {
+        setDay('cc-tl-from', '2026-09-10');
+        expect(ranges).toEqual([{ preset: 'custom', fromDay: '2026-09-10', toDay: '', anchorUtc: null }]);
+        setDay('cc-tl-to', '2026-9-30');
+        expect(ranges[1]).toEqual({ preset: 'custom', fromDay: '2026-09-10', toDay: '2026-09-30', anchorUtc: null });
+      });
+
+      it('explains a reversed range on both fields and does not apply it', () => {
+        setDay('cc-tl-from', '2026-09-10');
+        setDay('cc-tl-to', '2026-09-05');
+        expect(ranges.length).toBe(1);
+        expect(textOf(el.querySelector('#cc-tl-range-error'))).toBe('The start date must not be after the end date.');
+        for (const id of ['cc-tl-from', 'cc-tl-to']) {
+          const input = el.querySelector<HTMLInputElement>(`#${id}`)!;
+          expect(input.getAttribute('aria-invalid')).toBe('true');
+          expect(input.getAttribute('aria-describedby')).toContain('cc-tl-range-error');
+        }
+
+        setDay('cc-tl-to', '2026-09-12');
+        expect(el.querySelector('#cc-tl-range-error')).toBeNull();
+        expect(ranges[ranges.length - 1]).toEqual({ preset: 'custom', fromDay: '2026-09-10', toDay: '2026-09-12', anchorUtc: null });
+      });
+
+      it('explains a date that is not a complete calendar date', () => {
+        setDay('cc-tl-from', 'next week');
+        expect(textOf(el.querySelector('#cc-tl-range-error'))).toBe('Enter the dates as complete calendar dates, YYYY-MM-DD.');
+        expect(ranges).toEqual([]);
+      });
     });
   });
 
   describe('the lock', () => {
     const REASON = 'The model and the dates are locked while the charts export.';
-    let ranges: CcDayRange[];
-    let chosen: string[];
-
-    const trigger = () => el.querySelector<HTMLButtonElement>('.cc-subject-model-selector .selector-trigger')!;
-    const day = (id: 'cc-tl-from' | 'cc-tl-to') => el.querySelector<HTMLInputElement>(`#${id}`)!;
-    const clear = () => el.querySelector<HTMLButtonElement>('.cc-tl-range-clear')!;
+    let ranges: CcDateRange[];
 
     function lock(reason: string): void {
       fixture.componentRef.setInput('lockedReason', reason);
@@ -201,66 +223,49 @@ describe('CcModelStepComponent', () => {
 
     beforeEach(() => {
       ranges = [];
-      chosen = [];
       component.rangeChange.subscribe(range => ranges.push(range));
-      component.modelChange.subscribe(key => chosen.push(key));
-      fixture.componentRef.setInput('range', { fromDay: '2026-09-01', toDay: '2026-09-30' });
+      fixture.componentRef.setInput('range', { preset: 'custom', fromDay: '2026-09-01', toDay: '2026-09-30', anchorUtc: null });
       lock(REASON);
     });
 
-    it('shows the reason and describes the locked picker and dates with it', () => {
+    it('shows the reason and describes the locked picker, select and date fields with it', () => {
       const reason = el.querySelector<HTMLElement>('#cc-tl-lock-reason')!;
       expect(textOf(reason)).toBe(REASON);
-      expect(reason.classList).toContain('form-hint');
+      const trigger = el.querySelector<HTMLButtonElement>('.cc-subject-model-selector .selector-trigger')!;
+      expect(trigger.getAttribute('aria-disabled')).toBe('true');
+      expect(trigger.getAttribute('aria-describedby')).toBe('cc-tl-model-hint cc-tl-lock-reason');
 
-      expect(trigger().getAttribute('aria-disabled')).toBe('true');
-      expect(trigger().disabled).toBe(false);
-      expect(trigger().getAttribute('aria-describedby')).toBe('cc-tl-model-hint cc-tl-lock-reason');
-      expect(openPicker()).toEqual([]);
-
-      for (const id of ['cc-tl-from', 'cc-tl-to'] as const) {
-        expect(day(id).readOnly).toBe(true);
-        expect(day(id).disabled).toBe(false);
-        expect(day(id).getAttribute('aria-describedby')).toBe('cc-tl-lock-reason');
+      const select = el.querySelector<HTMLSelectElement>('#cc-tl-range')!;
+      expect(select.getAttribute('aria-disabled')).toBe('true');
+      expect(select.disabled).toBe(false);
+      expect(select.getAttribute('aria-describedby')).toBe('cc-tl-lock-reason');
+      for (const id of ['cc-tl-from', 'cc-tl-to']) {
+        const input = el.querySelector<HTMLInputElement>(`#${id}`)!;
+        expect(input.readOnly).toBe(true);
+        expect(input.getAttribute('aria-describedby')).toContain('cc-tl-lock-reason');
       }
     });
 
+    it('refuses a preset change and writes the stored preset back to the select', () => {
+      choosePreset('7d');
+      expect(ranges).toEqual([]);
+      expect(el.querySelector<HTMLSelectElement>('#cc-tl-range')!.value).toBe('custom');
+    });
+
     it('refuses a model choice', () => {
+      const chosen: string[] = [];
+      component.modelChange.subscribe(key => chosen.push(key));
       component.selectModel('anthropic/claude-opus');
       expect(chosen).toEqual([]);
     });
 
-    it('refuses a date change and writes the stored date back to the field', () => {
-      setDay('cc-tl-from', '2026-09-10');
-      expect(ranges).toEqual([]);
-      expect(day('cc-tl-from').value).toBe('2026-09-01');
-      expect(el.querySelector('#cc-tl-range-error')).toBeNull();
-    });
-
-    it('marks Every date aria-disabled, described by the reason, and refuses it', () => {
-      expect(clear().getAttribute('aria-disabled')).toBe('true');
-      expect(clear().getAttribute('aria-describedby')).toBe('cc-tl-lock-reason');
-      clear().click();
-      fixture.detectChanges();
-      expect(ranges).toEqual([]);
-      expect(day('cc-tl-from').value).toBe('2026-09-01');
-      expect(day('cc-tl-to').value).toBe('2026-09-30');
-    });
-
-    it('lifts every part of the lock when the reason clears', () => {
+    it('lifts the lock when the reason clears', () => {
       lock('');
       expect(el.querySelector('#cc-tl-lock-reason')).toBeNull();
-      expect(trigger().hasAttribute('aria-disabled')).toBe(false);
-      expect(trigger().getAttribute('aria-describedby')).toBe('cc-tl-model-hint');
-      for (const id of ['cc-tl-from', 'cc-tl-to'] as const) {
-        expect(day(id).readOnly).toBe(false);
-        expect(day(id).hasAttribute('aria-describedby')).toBe(false);
-      }
-      expect(clear().hasAttribute('aria-disabled')).toBe(false);
-      expect(clear().hasAttribute('aria-describedby')).toBe(false);
-
-      setDay('cc-tl-from', '2026-09-10');
-      expect(ranges).toEqual([{ fromDay: '2026-09-10', toDay: '2026-09-30' }]);
+      expect(el.querySelector('#cc-tl-range')!.hasAttribute('aria-disabled')).toBe(false);
+      expect(el.querySelector<HTMLInputElement>('#cc-tl-from')!.readOnly).toBe(false);
+      choosePreset('all');
+      expect(ranges).toEqual([CC_ALL_DATES]);
     });
   });
 
@@ -274,100 +279,210 @@ describe('CcModelStepComponent', () => {
 
       fixture.componentRef.setInput('loading', false);
       withModel();
-      expect(textOf(el.querySelector('.cc-tl-status'))).toBe('6 runs of GPT-5 high in this range.');
-      const heading = el.querySelector<HTMLElement>('h5#cc-tl-runs-title')!;
-      expect(textOf(heading)).toBe('Runs of GPT-5 high');
+      expect(textOf(el.querySelector('.cc-tl-status'))).toBe('6 runs of GPT-5 high in these dates.');
+      expect(textOf(el.querySelector('h5#cc-tl-runs-title'))).toBe('Runs of GPT-5 high');
+      expect(textOf(el.querySelector('#cc-runs-status'))).toBe('Showing 6 of 6 runs');
     });
 
-    it('names the runs after the loaded timeline when the model is not in the list', () => {
-      const timeline = ccTimeline();
-      fixture.componentRef.setInput('selectedKey', 'anthropic/claude-opus');
-      fixture.componentRef.setInput('timeline', ccTimeline({ subject: { ...timeline.subject, key: 'anthropic/claude-opus', displayName: 'Claude Opus' } }));
-      fixture.detectChanges();
-      expect(textOf(el.querySelector('#cc-tl-runs-title'))).toBe('Runs of Claude Opus');
-
-      fixture.componentRef.setInput('timeline', null);
-      fixture.detectChanges();
-      expect(textOf(el.querySelector('#cc-tl-runs-title'))).toBe('Runs of the model');
-    });
-
-    it('says when the model has no run in the range, and shows the errors', () => {
+    it('says when the model has no run in the dates, and shows the errors', () => {
       withModel([]);
-      expect(textOf(el.querySelector('.cc-tl-empty'))).toBe('No run of this model in this range.');
-      expect(el.querySelector('.cc-run-table')).toBeNull();
+      expect(textOf(el.querySelector('.cc-tl-empty'))).toBe('No run of this model in these dates.');
+      expect(el.querySelector('.cc-run-cards')).toBeNull();
+      expect(el.querySelector('.cc-scope-band')).toBeNull();
 
       fixture.componentRef.setInput('timelineError', 'The timeline could not be loaded.');
       fixture.componentRef.setInput('runsError', 'The runs could not be loaded.');
       fixture.detectChanges();
       expect(textOf(el.querySelector('.cc-tl-error'))).toBe('The timeline could not be loaded.');
       expect(textOf(el.querySelector('.cc-tl-runs-error'))).toBe('The runs could not be loaded.');
-      expect(el.querySelector('.cc-tl-empty')).toBeNull();
     });
   });
 
-  describe('the run table', () => {
+  describe('the run cards', () => {
     beforeEach(() => withModel());
 
-    it('lists the runs newest first, described by its legend', () => {
-      const rows = Array.from(el.querySelectorAll('.cc-run-table tbody tr')).map(tr => tr.getAttribute('data-run-id'));
-      expect(rows).toEqual(['106', '105', '104', '103', '102', '101']);
-      expect(el.querySelector('.cc-run-table')!.getAttribute('aria-describedby')).toBe('cc-tl-runs-legend');
-      expect(textOf(el.querySelector('#cc-tl-runs-legend'))).toContain('a check mark means the run can be used on that axis');
-      expect(textOf(row(106))).toContain('#206');
-      expect(textOf(row(106).querySelector('time'))).toBe('2026-10-01 08:00 UTC');
+    it('lists the runs newest first in a labelled list of articles', () => {
+      const list = el.querySelector<HTMLElement>('ul.cc-run-cards')!;
+      expect(list.getAttribute('role')).toBe('list');
+      expect(list.getAttribute('aria-labelledby')).toBe('cc-tl-runs-title');
+      expect(cardIds()).toEqual(['106', '105', '104', '103', '102', '101']);
+      expect(card(106).getAttribute('aria-labelledby')).toBe('cc-run-106-title');
+      expect(el.querySelector('table')).toBeNull();
     });
 
-    it('renders each run\'s eligibility as badges with text and an icon, and the reason of an exclusion', () => {
-      const badges = Array.from(row(103).querySelectorAll<HTMLElement>('.cc-elig'));
-      expect(badges.map(badge => badge.getAttribute('data-axis'))).toEqual(['quality', 'speedTelemetry', 'speedLegacy', 'work', 'cost']);
-      const excluded = row(103).querySelector<HTMLElement>('.cc-elig[data-axis="speedTelemetry"]')!;
+    it('carries a kicker, a label title, a meta line, eligibility and facts', () => {
+      const kicker = textOf(card(103).querySelector('.cc-run-kicker'));
+      expect(kicker).toContain('#103');
+      expect(kicker).toContain('Harness 30');
+      expect(textOf(card(103).querySelector('.cc-legacy-tag'))).toBe('Legacy');
+      expect(textOf(card(104).querySelector('.cc-recorded-tag'))).toBe('Recorded');
+
+      const title = card(104).querySelector<HTMLElement>('h6#cc-run-104-title')!;
+      expect(title.getAttribute('tabindex')).toBe('-1');
+      expect(title.querySelector('label')!.getAttribute('for')).toBe('cc-run-104-include');
+      expect(textOf(title)).toBe('Board Suite');
+      expect(textOf(card(106).querySelector('time'))).toBe('2026-10-01 08:00 UTC');
+
+      const excluded = card(103).querySelector<HTMLElement>('.cc-elig[data-axis="speedTelemetry"]')!;
       expect(excluded.classList).toContain('is-excluded');
       expect(textOf(excluded)).toBe('Speed (telemetry): not eligible');
-      expect(excluded.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
-      expect(textOf(row(103).querySelector('.cc-elig[data-axis="quality"]'))).toBe('Quality: eligible');
-      expect(row(103).querySelector('.cc-elig[data-axis="quality"]')!.classList).toContain('is-eligible');
-      expect(textOf(row(103).querySelector('.cc-elig-reason'))).toBe('Speed (telemetry): No call telemetry');
-      expect(textOf(row(103).querySelector('.cc-legacy-tag'))).toBe('Legacy');
-      expect(row(104).querySelector('.cc-legacy-tag')).toBeNull();
-      expect(row(104).querySelector('.cc-elig-reason')).toBeNull();
+      expect(textOf(card(103).querySelector('.cc-elig-reason'))).toBe('Speed (telemetry): No call telemetry');
+
+      const facts = Array.from(card(106).querySelectorAll('.cc-run-facts dt')).map(dt => textOf(dt));
+      expect(facts).toEqual(['Segment', 'Telemetry', 'Re-grade', 'Matched controls']);
+      expect(textOf(card(106).querySelector('[data-fact="controls"] dd'))).toContain('#206');
     });
 
-    it('asks to repeat a run\'s setup and to open its run report', () => {
-      const repeated: number[] = [];
+    it('includes every run by default, with a named checkbox the title labels', () => {
+      for (const id of [101, 106]) {
+        expect(checkbox(id).checked).toBe(true);
+        expect(checkbox(id).getAttribute('aria-label')).toBe(`Include run #${id} in the analysis`);
+      }
+      expect(textOf(el.querySelector('#cc-scope-label'))).toBe('Runs in the analysis — all 6 runs in these dates');
+      expect(el.querySelector('.cc-scope-clear')).toBeNull();
+      expect(textOf(el.querySelector('.cc-scope-hint')))
+        .toBe('The filters below change what is shown, not what is analyzed. The saved analysis records this selection.');
+    });
+
+    it('leaves a run out when its checkbox is cleared, and shows it on the card and in the band', () => {
+      const scopes = hostScope();
+      checkbox(104).click();
+      fixture.detectChanges();
+
+      expect([...scopes[0].leftOut]).toEqual([104]);
+      expect(checkbox(104).checked).toBe(false);
+      expect(textOf(card(104).querySelector('.cc-left-out-tag'))).toBe('Left out');
+      expect(textOf(el.querySelector('#cc-scope-label')))
+        .toBe('Runs in the analysis — 5 of 6 runs in these dates · from #101 (2026-09-01) to #106 (2026-10-01) · 1 left out');
+      expect(textOf(el.querySelector('.cc-scope-clear'))).toBe('Clear selection (1)');
+      expect(textOf(el.querySelector('.cc-scope-chip[data-kind="leftOut"] .cc-scope-chip-label'))).toBe('Left out: #104');
+
+      checkbox(104).click();
+      fixture.detectChanges();
+      expect(scopes[1].leftOut.size).toBe(0);
+    });
+
+    it('marks the first and last runs with pressed toggles, and refuses the runs outside them', () => {
+      const scopes = hostScope();
+      const first = card(102).querySelector<HTMLButtonElement>('.cc-first-btn')!;
+      expect(first.getAttribute('aria-label')).toBe('Use run #102 as the first run of the analysis');
+      expect(first.getAttribute('aria-pressed')).toBe('false');
+      first.click();
+      fixture.detectChanges();
+      card(105).querySelector<HTMLButtonElement>('.cc-last-btn')!.click();
+      fixture.detectChanges();
+
+      expect(scopes[scopes.length - 1].firstRunId).toBe(102);
+      expect(scopes[scopes.length - 1].lastRunId).toBe(105);
+      expect(card(102).querySelector('.cc-first-btn')!.getAttribute('aria-pressed')).toBe('true');
+      expect(textOf(card(102).querySelector('.cc-first-tag'))).toBe('First run');
+      expect(textOf(card(105).querySelector('.cc-last-tag'))).toBe('Last run');
+
+      const outside = checkbox(101);
+      expect(outside.checked).toBe(false);
+      expect(outside.getAttribute('aria-disabled')).toBe('true');
+      expect(outside.disabled).toBe(false);
+      expect(outside.getAttribute('aria-describedby')).toBe('cc-run-101-reason');
+      expect(textOf(el.querySelector('#cc-run-101-reason'))).toBe('Before the first run (#102)');
+      expect(textOf(el.querySelector('#cc-run-106-reason'))).toBe('After the last run (#105)');
+
+      const count = scopes.length;
+      outside.click();
+      fixture.detectChanges();
+      expect(scopes.length).toBe(count);
+      expect(outside.checked).toBe(false);
+
+      expect(textOf(el.querySelector('#cc-scope-label')))
+        .toBe('Runs in the analysis — 4 of 6 runs in these dates · from #102 (2026-09-05) to #105 (2026-09-26)');
+    });
+
+    it('clears a later last run when the first run moves past it, and says so', () => {
+      hostScope();
+      card(103).querySelector<HTMLButtonElement>('.cc-last-btn')!.click();
+      fixture.detectChanges();
+      card(105).querySelector<HTMLButtonElement>('.cc-first-btn')!.click();
+      fixture.detectChanges();
+      expect(component.scope.firstRunId).toBe(105);
+      expect(component.scope.lastRunId).toBeNull();
+      expect(textOf(el.querySelector('.cc-scope-note'))).toBe('Run #105 is after the last run, so the last run was cleared.');
+    });
+
+    it('clears the selection and focuses the band label', async () => {
+      hostScope();
+      checkbox(104).click();
+      fixture.detectChanges();
+      el.querySelector<HTMLButtonElement>('.cc-scope-clear')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component.scope).toBe(CC_EMPTY_SCOPE);
+      expect(el.querySelector('.cc-scope-clear')).toBeNull();
+      expect(document.activeElement).toBe(el.querySelector('#cc-scope-label'));
+    });
+
+    it('removes a chip and focuses the next chip, else Clear selection', async () => {
+      hostScope();
+      checkbox(103).click();
+      fixture.detectChanges();
+      checkbox(104).click();
+      fixture.detectChanges();
+      const removes = () => Array.from(el.querySelectorAll<HTMLButtonElement>('.cc-scope-chip-remove'));
+      expect(removes().map(button => button.getAttribute('aria-label'))).toEqual(['Include run #103 again', 'Include run #104 again']);
+
+      removes()[0].click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect([...component.scope.leftOut]).toEqual([104]);
+      expect(document.activeElement).toBe(removes()[0]);
+
+      removes()[0].click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(document.activeElement).toBe(el.querySelector('#cc-scope-label'));
+    });
+
+    it('warns when every run is left out', () => {
+      hostScope();
+      for (const id of [101, 102, 103, 104, 105, 106]) {
+        checkbox(id).click();
+        fixture.detectChanges();
+      }
+      expect(textOf(el.querySelector('.cc-scope-empty'))).toBe('No run is left in the analysis. Check at least one run.');
+    });
+
+    it('asks to open a run report and, from More actions, to repeat the setup', () => {
       const reports: number[] = [];
-      component.repeatSetup.subscribe(id => repeated.push(id));
+      const repeated: number[] = [];
       component.openRunReport.subscribe(id => reports.push(id));
+      component.repeatSetup.subscribe(id => repeated.push(id));
 
-      const repeatButton = row(105).querySelector<HTMLButtonElement>('.cc-repeat-btn')!;
-      expect(textOf(repeatButton)).toBe('Repeat this run\'s setup');
-      expect(repeatButton.getAttribute('aria-label')).toBe('Repeat this run\'s setup: run #105');
-      repeatButton.click();
-      expect(repeated).toEqual([105]);
-
-      const reportButton = row(104).querySelector<HTMLButtonElement>('.cc-open-report-btn')!;
-      expect(textOf(reportButton)).toBe('Open run report');
-      expect(reportButton.getAttribute('aria-label')).toBe('Open run report: run #104');
-      reportButton.click();
+      const report = card(104).querySelector<HTMLButtonElement>('.cc-open-report-btn')!;
+      expect(report.getAttribute('aria-label')).toBe('Open the run report of run #104');
+      report.click();
       expect(reports).toEqual([104]);
+
+      const more = card(105).querySelector<HTMLButtonElement>('.cc-more-btn')!;
+      expect(more.getAttribute('aria-label')).toBe('More actions for run #105');
+      expect(more.getAttribute('popovertarget')).toBe('cc-run-105-more');
+      const popover = el.querySelector<HTMLElement>('#cc-run-105-more')!;
+      expect(popover.getAttribute('aria-label')).toBe('Run actions for run #105');
+      popover.querySelector<HTMLButtonElement>('.cc-repeat-btn')!.click();
+      expect(repeated).toEqual([105]);
     });
 
-    it('asks to toggle the grader anchor and refuses while the run\'s mark is being saved', () => {
-      const toggled: CcRunRow[] = [];
-      component.anchorToggle.subscribe(toggledRow => toggled.push(toggledRow));
-      const button = () => row(104).querySelector<HTMLButtonElement>('.cc-anchor-btn')!;
+    it('asks to toggle the grader anchor and refuses while its mark is being saved', () => {
+      const toggled: number[] = [];
+      component.anchorToggle.subscribe(row => toggled.push(row.runId));
+      const button = () => card(104).querySelector<HTMLButtonElement>('.cc-anchor-btn')!;
       expect(textOf(button())).toBe('Mark as anchor');
-      expect(button().getAttribute('aria-label')).toBe('Mark as anchor: run #104');
-
       button().click();
-      expect(toggled.map(entry => entry.runId)).toEqual([104]);
+      expect(toggled).toEqual([104]);
 
       fixture.componentRef.setInput('anchorBusy', new Set([104]));
       fixture.detectChanges();
       expect(button().getAttribute('aria-disabled')).toBe('true');
-      expect(button().getAttribute('aria-busy')).toBe('true');
-      expect(row(105).querySelector('.cc-anchor-btn')!.hasAttribute('aria-disabled')).toBe(false);
+      expect(textOf(button().querySelector('.gh-action-popover-item-reason'))).toBe('Saving the anchor…');
       button().click();
-      expect(toggled.map(entry => entry.runId)).toEqual([104]);
+      expect(toggled).toEqual([104]);
     });
 
     it('shows the anchor the host saved and its announcement', () => {
@@ -375,24 +490,78 @@ describe('CcModelStepComponent', () => {
       fixture.componentRef.setInput('rows', rows);
       fixture.componentRef.setInput('announcement', 'Run #104 is the grader anchor.');
       fixture.detectChanges();
-
-      expect(textOf(row(104).querySelector('.cc-anchor-tag'))).toBe('Anchor');
-      expect(row(105).querySelector('.cc-anchor-tag')).toBeNull();
-      const button = row(104).querySelector<HTMLButtonElement>('.cc-anchor-btn')!;
-      expect(textOf(button)).toBe('Unmark anchor');
-      expect(button.getAttribute('aria-label')).toBe('Unmark anchor: run #104');
-      const announcement = el.querySelector('.cc-tl-announcement')!;
-      expect(announcement.getAttribute('role')).toBe('status');
-      expect(textOf(announcement)).toBe('Run #104 is the grader anchor.');
+      expect(textOf(card(104).querySelector('.cc-anchor-tag'))).toBe('Anchor');
+      expect(textOf(card(104).querySelector('.cc-anchor-btn'))).toBe('Unmark anchor');
+      expect(textOf(el.querySelector('.cc-tl-announcement'))).toBe('Run #104 is the grader anchor.');
     });
 
     it('shows an anchor refusal inline as an alert', () => {
-      expect(el.querySelector('.cc-tl-anchor-error')).toBeNull();
       fixture.componentRef.setInput('anchorError', 'The anchor of run #104 could not be saved: It no longer exists.');
       fixture.detectChanges();
       const error = el.querySelector('.cc-tl-anchor-error')!;
       expect(error.getAttribute('role')).toBe('alert');
-      expect(textOf(error)).toBe('The anchor of run #104 could not be saved: It no longer exists.');
+    });
+  });
+
+  describe('the filter bar', () => {
+    it('filters what is shown but never the selection', () => {
+      withModel();
+      const scopes = hostScope();
+      checkbox(104).click();
+      fixture.detectChanges();
+      const before = component.scope;
+
+      component.onFacetChange('inclusion', ['leftOut']);
+      expect(cardIds()).toEqual(['104']);
+      expect(textOf(el.querySelector('#cc-runs-status'))).toBe('One run · filtered from 6');
+      expect(component.scope).toBe(before);
+      expect(scopes.length).toBe(1);
+      expect(textOf(el.querySelector('#cc-scope-label'))).toContain('5 of 6 runs');
+
+      el.querySelector<HTMLButtonElement>('.cc-runs-clear-filters')!.click();
+      fixture.detectChanges();
+      expect(cardIds().length).toBe(6);
+    });
+
+    it('lists the In the analysis facet with its counts', () => {
+      withModel();
+      hostScope();
+      checkbox(104).click();
+      fixture.detectChanges();
+      const facet = component.facets.find(f => f.column === 'inclusion')!;
+      expect(facet.label).toBe('In the analysis');
+      expect(facet.options).toEqual([
+        { value: 'included', label: 'Included', count: 5 },
+        { value: 'leftOut', label: 'Left out', count: 1 }
+      ]);
+    });
+
+    it('sorts by Sort by and shows ten cards, then the next batch, focusing the first new title', () => {
+      withModel(ccManyRunRows(23));
+      expect(el.querySelectorAll('.cc-run-card').length).toBe(10);
+      expect(textOf(el.querySelector('.cc-runs-show-more'))).toBe('Show 10 more');
+      expect(textOf(el.querySelector('.cc-runs-show-all'))).toBe('Show all 23');
+
+      el.querySelector<HTMLButtonElement>('.cc-runs-show-more')!.click();
+      expect(el.querySelectorAll('.cc-run-card').length).toBe(20);
+      expect(document.activeElement).toBe(el.querySelector(`#cc-run-${cardIds()[10]}-title`));
+
+      const sort = el.querySelector<HTMLSelectElement>('#cc-runs-sort')!;
+      sort.value = 'oldest';
+      sort.dispatchEvent(new Event('change'));
+      expect(cardIds()[0]).toBe('1001');
+    });
+
+    it('says when no run matches, with Clear all filters', () => {
+      withModel();
+      const search = el.querySelector<HTMLInputElement>('#cc-runs-search')!;
+      search.value = 'nothing like this';
+      search.dispatchEvent(new Event('input'));
+      component.list.table.setFilter('search', 'nothing like this');
+      component.list.invalidate();
+      fixture.componentRef.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-runs-no-matches'))).toContain('No runs match these filters.');
     });
   });
 });

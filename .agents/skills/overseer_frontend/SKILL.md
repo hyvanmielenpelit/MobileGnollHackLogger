@@ -122,6 +122,12 @@ Harness-neutral, and the floor for any Overseer frontend work.
   - **`.cc-marker-tag`** (`.is-event`, `.is-annotation`, `.is-served`, which differ by border style as
     well as color) — the Chat Consistency marker pill, shared by the chart figure, the event list and the
     Runs and controls preview.
+  - **`.gh-date-field*` and `.gh-calendar*`** — the shared date field `app-date-field`
+    (`shared/date-field/`): `.gh-date-field` (the positioned wrapper), `.gh-date-field-input` (end
+    padding for the button, tabular figures), `.gh-date-field-btn` (the 30 px calendar button's
+    placement), and the glass calendar popover `.gh-calendar` with `-head`, `-title`, `-grid`, `-day`
+    and `-foot`. The component's own SCSS holds only `:host` layout. Contract:
+    [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4h.
 
   `.mc-fig-sidebar label` and `.mc-fig-sidebar .checkbox-label` deliberately stay in
   `model-comparison.component.scss`: a global form would reach the labels inside the sidebar's child
@@ -344,8 +350,13 @@ To find specific popups, look in the corresponding component's `.html` template:
     `app-chat-consistency-tab`) is the client of `docs/overseer/ai-benchmark-chat-consistency.md`; its
     HTTP calls are all in `services/admin-chat-consistency.service.ts` (`AdminChatConsistencyService`,
     base `/api/admin/benchmark/chat-consistency`, errors through `ccErrorText`). The tab component
-    owns the chosen model, the date range, the timeline, the run rows, the anchor saves and the saved
-    analyses, and performs the run actions the wizard asks for. It is a **launcher page**
+    owns the chosen model, the date range (`CcDateRange`), the step-1 run selection (`CcRunScope`), the
+    timeline, the run rows, the anchor saves and the saved analyses, and performs the run actions the
+    wizard asks for. **Reload runs** re-anchors a rolling date preset to now (`ccAnchorRange`) before
+    loading; when rows arrive, `pruneScope` drops marks and left-out ids of runs no longer listed and the
+    drop is announced. Choosing another model clears the selection silently; opening a saved analysis
+    clears it and, when one was set, announces *The run selection in step 1 was cleared to show the
+    saved analysis.* It is a **launcher page**
     (`section.bm-launcher.cc-launcher`) plus a **six-step wizard in a full-screen dialog**
     (`dialog.gh-dialog.gh-dialog-fullscreen.cc-wizard-dialog`, `showModal()`, no `closedby="any"`),
     modeled on the Model Comparison wizard. The state lives as long as the tab component, so a GnollBench
@@ -353,7 +364,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     wizard). The parts, each in its own folder or file:
     - **The launcher** (`chat-consistency-tab.component.*`): the hero with the gold `.btn-gh` **Open Chat
       Consistency Wizard** (*compass*, `#cc-open-wizard`), a *Current model* read-out while a model is
-      chosen (model, runs, dates, latest analysis; the wizard owns the choice), the non-exclusive
+      chosen (model, runs with *· N in the chosen dates* unless *All dates* and *· N in the analysis*
+      while the selection narrows them, the dates as `ccDateRangeText` names them, latest analysis; the
+      wizard owns the choice), the non-exclusive
       *How chat consistency works* disclosure listing `CC_WIZARD_STEPS` under the wizard's own titles
       (open on the first visit, then as left, in `localStorage['overseer.benchmark.chatConsistency.launcher']`,
       `{ version: 1, howItWorksOpen }`), and below it `saved-analyses/` (`app-cc-saved-analyses`): a card
@@ -362,7 +375,8 @@ To find specific popups, look in the corresponding component's `.html` template:
       opens the wizard and calls `CcWizardComponent.showResult`, which mounts the analysis component
       before handing it the result and selects step 5.
     - `cc-wizard/` (`app-cc-wizard`): the whole dialog content in the global `gh-wizard*` frame —
-      header (`#cc-wizard-title`, a subtitle *model · N runs · dates*, the icon-only **Reload runs**
+      header (`#cc-wizard-title`, a subtitle *model · N runs · dates*, plus *· N in the analysis* while
+      the step-1 selection narrows the runs, the icon-only **Reload runs**
       `.action-btn` with *rotate* on steps 1–2, `aria-disabled` while loading or without a model, and the
       close `.btn-icon-action`), the step tabs *1. Model · 2. Timeline · 3. Periods · 4. Runs and controls
       · 5. Results · 6. Reports* (`frontend_ui_controls` §5, a tab that cannot be opened is `aria-disabled`
@@ -373,8 +387,9 @@ To find specific popups, look in the corresponding component's `.html` template:
       `wizardMounted` on the tab is never reset, so reopening keeps everything. `closeBlocked` — a chart
       export running or the Reports step's `chartsAttaching` — disables the close button and Close and
       makes the tab refuse Escape (`onWizardCancel`). It also locks step 1 (`subjectLockedReason` →
-      `lockedReason`: the picker's `disabled`, `readonly` dates, an `aria-disabled` *Every date*, one
-      reason line), binds `closedby="none"` on the dialog, and `onWizardClose` reopens a close that slips
+      `lockedReason`: the picker's `disabled`, an `aria-disabled` *Dates* select whose `change` writes
+      the stored preset back, `readonly` date fields whose calendar buttons are `aria-disabled` and open
+      nothing, one reason line `#cc-tl-lock-reason` describing them all), binds `closedby="none"` on the dialog, and `onWizardClose` reopens a close that slips
       through (Chrome lets a second Escape's `cancel` through), restoring focus without reloading the saved
       analyses. The tab registers a leave guard on `BenchmarkShellBridge` (`setLeaveGuard`, returning
       `CC_LEAVE_REFUSAL` while blocked), which the run report's sub-tab-switching actions (*Repeat this
@@ -382,15 +397,60 @@ To find specific popups, look in the corresponding component's `.html` template:
       showing it in `.rr-status`. Closing reloads the saved analyses. *Repeat this run's setup* closes the
       wizard first; *Open run report* and the Download Center are shell dialogs opened after it, so they
       show above it.
-    - `model-step/` (`app-cc-model-step`, step 1): the model picker (field capped at 32 rem) and the
-      *From (UTC)* / *To (UTC)* dates on one subgrid row of labels, controls and hints from 44 rem, *Every
-      date*, and the **Runs** table (`TableState`, pager above and below) with per-axis eligibility,
-      segment, telemetry, re-grade coverage, anchor, matched controls, served model and the row actions
-      *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor*, *Open run report*.
+    - `model-step/` (`app-cc-model-step`, step 1): the model picker (field capped at 32 rem), the
+      **Dates** select `#cc-tl-range` (`CC_RANGE_PRESETS`: *All dates*, *Last 1 day* … *Last 180 days*,
+      *Last year*, *Custom*; a rolling preset is emitted anchored at now, with the hint `#cc-tl-range-hint`
+      *Since 2026-09-30 14:05 UTC · Reload runs moves it to now*) and, while *Custom*, **From (UTC)** /
+      **To (UTC)** as `app-date-field` (`cc-tl-from` / `cc-tl-to`, each bounding the other's calendar by
+      `max` / `min`, prefilled by `ccPresetToCustom`, validated into `#cc-tl-range-error`), on one subgrid
+      row of labels, controls and hints from 44 rem (*Model · Dates · From · To*). Then the runs as
+      **cards** (`frontend_ui_controls` § 8h, the fourth card list): the head `h5#cc-tl-runs-title` *Runs
+      of {model}* with the polite `#cc-runs-status`; the **selection band** (§ 8i) `role="region"` over
+      `#cc-scope-label` (`role="status"`, `tabindex="-1"`: *Runs in the analysis — 15 of 19 runs in these
+      dates · from #21 (2026-09-20) to #93 (2026-10-05) · 2 left out*, or *… — all 19 runs in these
+      dates*), **Clear selection (N)**, the chips *First: #21*, *Last: #93* and up to six *Left out: #45*
+      (each `.action-btn` remove with a hint tooltip; *+N more* sets the *In the analysis* facet to *Left
+      out*), the hint *The filters below change what is shown, not what is analyzed. The saved analysis
+      records this selection.*, and the amber *No run is left in the analysis. Check at least one run.*;
+      then the filter bar (a `CardListState` over a `TableState<CcRunRow>`, `idPrefix: 'cc-runs'`, batch
+      10, Sort by *Newest first* / *Oldest first* / *Suite (A–Z)* / *Harness* stored in
+      `overseer.benchmark.chatConsistency.runs.view`, facets *Suite*, *Harness*, *Telemetry*, *In the
+      analysis*, *Eligibility*, `memoDeps` carrying the scope) and `ul.cc-run-cards`. Each
+      `article.cc-run-card[data-run-id][data-inclusion]` is a grid of *select* (the checkbox
+      `#cc-run-{id}-include`, *Include run #{id} in the analysis*; for a run before the first or after the
+      last mark it is unchecked, `aria-disabled`, refuses the click, and is described by *Before the first
+      run (#21)* / *After the last run (#93)* — also when the run is left out, whose id stays in the
+      scope), *head* (kicker `#id` · status · *Harness N* · *Legacy* / *Recorded* · *Anchor* · *First
+      run* / *Last run* (gold) · *Left out* (dashed); the title `h6#cc-run-{id}-title[tabindex=-1]`
+      holding the checkbox's `<label>` with the suite name; the `<time>` and *Served*), *actions*
+      (`role="group"`: the **First run** / **Last run** `.btn-ghost` toggles with `aria-pressed`, a
+      leading check glyph when pressed; *Open run report*, *eye*; *More actions*, a § 4f
+      `.gh-action-popover` with *Repeat this run's setup* and *Mark as anchor* / *Unmark anchor*,
+      `aria-disabled` with *Saving the anchor…* while busy), *elig* and *facts* (`dl.cc-run-facts`:
+      *Segment*, *Telemetry*, *Re-grade*, *Matched controls*); the actions go under the head below 48 rem
+      of the list and everything into one column below 30 rem (container `cc-run-cards`). Handlers call
+      the `chat-consistency-scope.ts` helpers and emit `scopeChange`; a helper's note (*Run #40 is after
+      the last run, so the last run was cleared.*) goes to the polite `.cc-scope-note`. The search and the
+      facets never change the emitted scope.
+    - `chat-consistency-range.ts`: `CcDateRange` (`preset`, `fromDay`, `toDay`, `anchorUtc`),
+      `CC_RANGE_PRESETS`, `CC_ALL_DATES`, `ccRangeBounds` (a rolling preset is the anchor minus N × 24 h,
+      `1y` one calendar year, with an open end; `custom` inclusive UTC days), `ccAnchorRange`,
+      `ccDateRangeText` (*All dates*, *Last 7 days*, *2026-09-01 to 2026-10-05*, *From …*, *Until …*: the
+      one text the launcher, the subtitle, the Timeline read-out and the recorded `rangeLabel` share) and
+      `ccPresetToCustom`. Pure.
+    - `chat-consistency-scope.ts`: `CcRunScope` (`firstRunId`, `lastRunId`, `leftOut`), `CC_EMPTY_SCOPE`,
+      `runInclusion` (`included`, `leftOut`, `beforeSpan`, `afterSpan`; the span is tested first),
+      `scopeRuns` (oldest first), `notAnalyzedRuns`, `setFirstRun` / `setLastRun` (a mark past the other
+      clears it, with a note; the run holding the mark clears it), `toggleLeftOut`, `pruneScope`,
+      `scopeSpanDays`, `scopeKey`, `scopeIsDefault`, `scopeChangeCount`, `CC_INCLUSION_TEXT`. Order is by
+      `startedAtUtc`, then run id, never the card sort; every change returns a new object, and components
+      compare scopes by identity. `cc-wizard` memoizes `scopedRows`, `notAnalyzed`, `analysisSpan` and
+      `scopeKeyValue` on the rows and scope objects. Pure.
     - `timeline-workspace/` (`app-cc-timeline-workspace`, step 2, in a `.gh-fig-host` step): the global
       `gh-fig-*` workspace — a sidebar (`#cc-tl-sidebar`, 18–40 rem, at most half the workspace, 26 rem
       by default, `app-pane-resizer`, width as `--gh-fig-sidebar-width`; collapsed by the view bar's
-      toggle) with the tabs **Data** (charts, series, *Start the quality axis at zero*), **Events**
+      toggle) with the tabs **Data** (charts, series, *Start the quality axis at zero*, and **Mark runs
+      not in the analysis** `#cc-tl-mark-not-analyzed`, on by default), **Events**
       (marker kinds, Overseer change kinds with composite counts, and `app-cc-event-list`), **Annotations**
       (`annotations/`, `app-cc-annotations-panel`: add and delete only; there is no edit) and
       **Download** (`app-export-size-section` *Chart size*, id prefix `cc-export`;
@@ -411,9 +471,19 @@ To find specific popups, look in the corresponding component's `.html` template:
       `buildFigureArchive`: Download in the chosen PNG or WebP, Copy always PNG, Download all one file
       or a ZIP. `exporting` is emitted as `exportingChange` for the close guard. Stored per browser in
       `try/catch`: `overseer.benchmark.chatConsistency.timeline` (`{ version: 1, … }`: sidebar, view,
-      charts, series, markers, hidden event kinds, zero baseline, theme, format, WebP quality, section
-      open states, Single chart), and `overseer.benchmark.chatConsistency.chartSize`, apart from Model
-      Comparison's `figureSize`.
+      charts, series, markers, hidden event kinds, zero baseline, `markNotAnalyzed`, theme, format, WebP
+      quality, section open states, Single chart; `parseTimelineLayout` reads a missing or non-boolean
+      `markNotAnalyzed` as `true`, so the record version did not change), and
+      `overseer.benchmark.chatConsistency.chartSize`, apart from Model Comparison's `figureSize`. The
+      workspace draws **every run in the step-1 dates** (the composite events would otherwise renumber);
+      its `notAnalyzed` input (the wizard's `notAnalyzedRuns`) reaches `CcFigureInput.notAnalyzed` as
+      `CC_INCLUSION_TEXT` reasons while the switch is on, for the screen and the exports alike, and
+      `chat-consistency-charts.ts` draws those runs as gray `crossRot` points with gray `[2, 3]` dotted
+      segments (scriptable options only when the map is non-empty, so charts without one are unchanged),
+      keeps each series' own symbol in the legend, adds the caption sentence *N runs not in the analysis
+      are drawn as gray crosses.* (runs with a value in any of the figure's series), the tooltip suffix
+      *— not in the analysis (reason)* and the table column *In the analysis*. The report charts pass no
+      map. Its `rangeLabel` input gives the read-out *model · Last 30 days · change in step 1*.
     - `chat-consistency-events.ts`: `groupOverseerEvents` groups the timeline's Overseer events into
       **composite events** — one per UTC day and harness version, tagged `E1`… in time order — for the
       chart markers, the event list, the Runs and controls preview and the *Before vs after an Overseer
@@ -426,11 +496,27 @@ To find specific popups, look in the corresponding component's `.html` template:
       steps, its `step` input chosen by the wizard, which draws the step bar, headings and footer. Step 3
       offers the presets *Launch vs last 14 days*, *Before vs after an annotation*, *Before vs after an
       Overseer change* (a select of composite events), *Confirm on later data* and *Custom dates*, shows
-      Protocol V1 and a *Override the protocol* disclosure; step 4 chooses runs and controls, holds
+      Protocol V1 and a *Override the protocol* disclosure; its four dates are `app-date-field`s
+      (`cc-wiz-bs`, `cc-wiz-be`, `cc-wiz-cs`, `cc-wiz-ce`) emitting into `onDayInput(field, value)`. Its
+      inputs: `rows` is the **scoped** list (the runs in the analysis), `allRows` every run in the dates,
+      `scope`, `range`, `span` (`scopeSpanDays` of the scoped rows) and `scopeKey`. The presets span
+      `seriesDays(axis, span)` — the span when given, else the subject's first and last run — and the note
+      `.cc-wiz-span-note` says so (*Presets use the runs chosen in step 1: #21 (2026-09-20) to #93
+      (2026-10-05), 15 runs.* / *Presets use every run in the dates: …*); a span change re-applies a
+      preset other than *Custom dates*, and `periodKey` carries `scopeKey`, so a new selection preselects
+      the runs again. Step 4 chooses runs and controls, holds
       `regrade-panel.component.*` (estimate dialog first, `confirmed: true` only from its Re-grade
-      button) and the relaxed-pooling checkbox, previews strata, composite events and missing controls,
-      and posts the analysis from the footer's Analyze; step 5 is `results-view.component.*` (one column
-      of charts, then *Events in the analyzed span* as an `app-cc-event-list`); step 6 is
+      button) and the relaxed-pooling checkbox, previews strata, composite events, missing controls and
+      *Left out in step 1: #45, #51* (left-out runs of `allRows` inside either period), and posts the
+      analysis from the footer's Analyze with `runSelection` (`rangeLabel` = `ccDateRangeText`, the
+      `ccRangeBounds`, the marks and the left-out ids ascending), always sent, the default selection
+      included; step 5 is `results-view.component.*` (one column of charts, then *Events in the analyzed
+      span* as an `app-cc-event-list`, then the **Run selection** section before *Limitations* while
+      `runSelection.recorded` or it lists unanalyzed runs: a `dl` of *Dates* (the label and its UTC
+      bounds, an open one read as *the first run* / *the last run*), *First run*, *Last run* and *Left out
+      in step 1* (*none* when empty), then *Not analyzed* by reason in `CC_UNANALYZED_REASONS` order, or
+      *Every usable run of the model in the periods was analyzed.*; absent for a code-version-1
+      analysis); step 6 is
       `reports-step.component.*` (the four Chat Consistency Report audiences, the Provider Issue Report
       enabled only when the estimate says it is available, a same-provider dialog asked on every write,
       then the charts drawn by `chat-consistency-report-charts.ts` and uploaded;
@@ -438,7 +524,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     The Reports step opens the Download Center through the shell (`openDocuments` →
     `openChatConsistencyDownloads`) with the `chatConsistency` context.
   - **"Repeat this run's setup"** fills Run Benchmark from a stored run and **never starts anything**.
-    It appears in the run report header (`#rr-repeat-setup-btn`), in the Chat Consistency run table and
+    It appears in the run report header (`#rr-repeat-setup-btn`), in a Chat Consistency run card's *More
+    actions* and
     on the Results step's next-run suggestions. Each calls `BenchmarkShellBridge.repeatRunSetup(runId)`,
     which emits on `repeatRunSetup$`; the shell closes the run report, selects the `run` sub-tab, loads
     the run and hands it to `BenchmarkLauncherState.prefillFromRun(run)`. The prefill waits until the

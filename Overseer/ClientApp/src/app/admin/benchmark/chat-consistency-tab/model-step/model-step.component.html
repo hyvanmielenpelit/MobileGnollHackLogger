@@ -1,6 +1,7 @@
 <!--
-  Step 1: which model, over which UTC dates, then the run table. From 44rem the fields share one
-  subgrid row of labels, controls and hints, so the date inputs sit level with the picker.
+  Step 1: which model, over which UTC dates, then the runs as cards and the selection the analysis
+  uses. From 44rem the fields share one subgrid row of labels, controls and hints, so the Dates select
+  and the custom dates sit level with the picker.
 -->
 <div class="cc-model-fields">
   <div class="cc-model-field cc-model-field--model">
@@ -26,29 +27,38 @@
     </div>
   </div>
 
-  <div class="cc-model-field cc-model-field--from">
-    <label for="cc-tl-from" class="cc-model-label">From (UTC)</label>
-    <input id="cc-tl-from" type="date" class="gh-input cc-model-date" [value]="fromDay"
-           [readOnly]="!!lockedReason"
-           [attr.aria-describedby]="dateDescribedBy()"
-           [attr.aria-invalid]="rangeError ? 'true' : null"
-           (change)="onDayChange('from', $event)">
-  </div>
-
-  <div class="cc-model-field cc-model-field--to">
-    <label for="cc-tl-to" class="cc-model-label">To (UTC)</label>
-    <input id="cc-tl-to" type="date" class="gh-input cc-model-date" [value]="toDay"
-           [readOnly]="!!lockedReason"
-           [attr.aria-describedby]="dateDescribedBy()"
-           [attr.aria-invalid]="rangeError ? 'true' : null"
-           (change)="onDayChange('to', $event)">
-  </div>
-
-  @if (fromDay || toDay) {
-    <button type="button" class="btn-ghost cc-tl-range-clear cc-model-clear"
+  <!-- Locked: aria-disabled and focusable, and a change writes the stored preset back. -->
+  <div class="cc-model-field cc-model-field--range">
+    <label for="cc-tl-range" class="cc-model-label">Dates</label>
+    <select id="cc-tl-range" class="gh-input cc-model-range"
             [attr.aria-disabled]="lockedReason ? 'true' : null"
-            [attr.aria-describedby]="lockedReason ? 'cc-tl-lock-reason' : null"
-            (click)="clearRange()">Every date</button>
+            [attr.aria-describedby]="rangeDescribedBy"
+            (change)="onPresetChange($event)">
+      @for (option of rangePresets; track option.id) {
+        <option [value]="option.id" [selected]="option.id === preset">{{ option.label }}</option>
+      }
+    </select>
+    <div class="cc-model-hints">
+      @if (rollingHint) {
+        <span id="cc-tl-range-hint" class="form-hint">{{ rollingHint }}</span>
+      }
+    </div>
+  </div>
+
+  @if (preset === 'custom') {
+    <div class="cc-model-field cc-model-field--from">
+      <label for="cc-tl-from" class="cc-model-label">From (UTC)</label>
+      <app-date-field inputId="cc-tl-from" label="From (UTC)" [value]="fromDay" [max]="toDay"
+                      [readonly]="!!lockedReason" [invalid]="!!rangeError" [describedBy]="dateDescribedBy"
+                      (valueChange)="onDayChange('from', $event)"></app-date-field>
+    </div>
+
+    <div class="cc-model-field cc-model-field--to">
+      <label for="cc-tl-to" class="cc-model-label">To (UTC)</label>
+      <app-date-field inputId="cc-tl-to" label="To (UTC)" [value]="toDay" [min]="fromDay"
+                      [readonly]="!!lockedReason" [invalid]="!!rangeError" [describedBy]="dateDescribedBy"
+                      (valueChange)="onDayChange('to', $event)"></app-date-field>
+    </div>
   }
 
   @if (rangeError) {
@@ -71,7 +81,7 @@
   } @else if (loading) {
     Loading the timeline…
   } @else if (timeline) {
-    {{ timeline.points.length }} {{ timeline.points.length === 1 ? 'run' : 'runs' }} of {{ timeline.subject.displayName }} in this range.
+    {{ timeline.points.length }} {{ timeline.points.length === 1 ? 'run' : 'runs' }} of {{ timeline.subject.displayName }} in these dates.
   }
 </p>
 
@@ -83,7 +93,11 @@
 }
 
 @if (selectedKey) {
-  <h5 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs of {{ selectedName }}</h5>
+  <div class="cc-runs-head">
+    <h5 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs of {{ selectedName }}</h5>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status cc-runs-status" id="cc-runs-status" role="status">{{ listStatus }}</p>
+  </div>
 
   @if (runsError) {
     <p class="gh-field-error cc-tl-runs-error">
@@ -92,39 +106,224 @@
     </p>
   } @else if (rows.length === 0) {
     @if (!loading) {
-      <p class="cc-tl-empty">No run of this model in this range.</p>
+      <p class="cc-tl-empty">No run of this model in these dates.</p>
     }
   } @else {
-    <app-table-pager [state]="runTable" [rows]="rows" noun="runs" (changed)="onTableChanged()"></app-table-pager>
-    <div class="gh-datatable-scroll cc-tl-table-scroll">
-      <table class="gh-table gh-datatable cc-run-table" aria-describedby="cc-tl-runs-legend">
-        <caption class="visually-hidden">Runs of the model: start, suite, harness, eligibility per axis, segment, legacy flag, re-grade, anchor, matched control runs, served model and actions.</caption>
-        <thead>
-          <tr>
-            <th app-sort-header [state]="runTable" column="runId" label="Run" (changed)="onTableChanged()"></th>
-            <th app-sort-header [state]="runTable" column="startedAtUtc" label="Started (UTC)" (changed)="onTableChanged()"></th>
-            <th app-sort-header [state]="runTable" column="suite" label="Suite" (changed)="onTableChanged()"></th>
-            <th app-sort-header [state]="runTable" column="harness" label="Harness" (changed)="onTableChanged()"></th>
-            <th scope="col">Eligibility</th>
-            <th scope="col">Segment</th>
-            <th scope="col">Telemetry</th>
-            <th scope="col">Re-grade</th>
-            <th app-sort-header [state]="runTable" column="anchor" label="Anchor" (changed)="onTableChanged()"></th>
-            <th scope="col">Matched controls</th>
-            <th scope="col">Served model</th>
-            <th scope="col">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of runTable.view(rows); track row.runId) {
-            <tr [attr.data-run-id]="row.runId">
-              <th scope="row" class="cc-run-id">#{{ row.runId }}</th>
-              <td class="cc-nowrap">
-                <time [attr.datetime]="row.startedAtUtc">{{ started(row) }}</time>{{ ' ' }}<span class="cc-run-status">{{ status(row) }}</span>
-              </td>
-              <td>{{ row.suiteName }}</td>
-              <td class="cc-nowrap">{{ row.harnessVersion ?? '—' }}</td>
-              <td class="cc-elig-cell">
+    <!-- The selection band: which runs the analysis uses. The filters below never change it. -->
+    <div class="cc-scope-band" role="region" aria-labelledby="cc-scope-label">
+      <p class="cc-scope-label" id="cc-scope-label" role="status" tabindex="-1">{{ scopeSummary }}</p>
+      @if (!scopeIsDefault) {
+        <div class="cc-scope-row">
+          <button type="button" class="btn-gh btn-gh-cancel btn-gh-small cc-scope-clear"
+                  (click)="clearScope()">Clear selection ({{ scopeChangeCount }})</button>
+          <ul class="cc-scope-chips" role="list" aria-label="Run selection">
+            @for (chip of scopeChips; track chip.key; let i = $index) {
+              <li class="cc-scope-chip" [attr.data-kind]="chip.kind">
+                <span class="cc-scope-chip-label">{{ chip.label }}</span>
+                <button type="button" class="action-btn cc-scope-chip-remove"
+                        [attr.aria-label]="chip.removeLabel"
+                        [attr.interestfor]="'cc-scope-tip-' + chip.key"
+                        [attr.style]="'anchor-name: --cc-scope-tip-' + chip.key"
+                        (click)="removeScopeChip(chip, i)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'cc-scope-tip-' + chip.key"
+                     [attr.style]="'position-anchor: --cc-scope-tip-' + chip.key">{{ chip.tip }}</div>
+              </li>
+            }
+            @if (moreLeftOut > 0) {
+              <li>
+                <button type="button" class="btn-link cc-scope-more" (click)="showLeftOut()">+{{ moreLeftOut }} more</button>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+      <p class="form-hint cc-scope-hint">The filters below change what is shown, not what is analyzed. The saved analysis records this selection.</p>
+      @if (scopedRows.length === 0) {
+        <div class="alert alert-warning cc-scope-empty">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div class="alert-content"><div class="alert-body">No run is left in the analysis. Check at least one run.</div></div>
+        </div>
+      }
+    </div>
+    <p class="cc-scope-note" aria-live="polite">{{ scopeNote }}</p>
+
+    @if (showFilterBar) {
+      <!-- Search, Sort by, the facets and the active filters. -->
+      <div class="gh-filter-bar cc-runs-filter-bar">
+        <div class="gh-filter-bar-row">
+          <div class="gh-search-field cc-runs-search">
+            <label class="visually-hidden" for="cc-runs-search">Search runs</label>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <input type="search" class="gh-input" id="cc-runs-search" autocomplete="off"
+                   placeholder="Search #id, suite, harness, status or served model"
+                   [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+          </div>
+          <div class="cc-runs-sort">
+            <label class="cc-runs-sort-label" for="cc-runs-sort">Sort by</label>
+            <select class="gh-input cc-runs-sort-select" id="cc-runs-sort" (change)="onSortChange($event)">
+              @for (sort of sorts; track sort.id) {
+                <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        @if (facets.length > 0) {
+          <div class="gh-facet-row cc-runs-facet-row">
+            @for (facet of facets; track facet.column) {
+              <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="runs"
+                                (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
+            }
+          </div>
+        }
+
+        @if (chips.length > 0) {
+          <div class="gh-filter-bar-row cc-runs-chips-row">
+            <ul class="gh-filter-chips cc-runs-filter-chips" role="list" aria-label="Active filters">
+              @for (chip of chips; track chip.key) {
+                <li>
+                  <button type="button" class="gh-filter-chip"
+                          [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                          (click)="removeChip(chip)">
+                    <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                    <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                </li>
+              }
+            </ul>
+            <button type="button" class="gh-filter-clear cc-runs-clear-filters" (click)="clearFilters()">Clear all</button>
+          </div>
+        }
+      </div>
+    }
+
+    @if (noMatches) {
+      <p class="cc-tl-empty cc-runs-no-matches">No runs match these filters.
+        <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
+      </p>
+    } @else {
+      <ul class="cc-run-cards" role="list" aria-labelledby="cc-tl-runs-title" aria-describedby="cc-tl-runs-legend">
+        @for (row of cards; track row.runId) {
+          @let inclusion = inclusionOf(row);
+          @let reason = outReason(row);
+          <li class="cc-run-card-item">
+            <article class="cc-run-card" [attr.data-run-id]="row.runId" [attr.data-inclusion]="inclusion"
+                     [attr.aria-labelledby]="'cc-run-' + row.runId + '-title'">
+              <div class="cc-run-select">
+                <input type="checkbox" class="cc-run-include" [id]="'cc-run-' + row.runId + '-include'"
+                       [checked]="inclusion === 'included'"
+                       [attr.aria-label]="'Include run #' + row.runId + ' in the analysis'"
+                       [attr.aria-disabled]="reason ? 'true' : null"
+                       [attr.aria-describedby]="reason ? 'cc-run-' + row.runId + '-reason' : null"
+                       (click)="onIncludeClick(row, $event)">
+                @if (reason) {
+                  <span class="cc-run-out-reason" [id]="'cc-run-' + row.runId + '-reason'">{{ reason }}</span>
+                }
+              </div>
+
+              <header class="cc-run-head">
+                <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+                <div class="cc-run-kicker">
+                  <span class="cc-run-id">#{{ row.runId }}</span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="cc-run-status">{{ status(row) }}</span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="cc-run-harness">Harness {{ row.harnessVersion ?? '—' }}</span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  @if (row.isLegacy) {
+                    <span class="gh-tag cc-legacy-tag">Legacy</span>
+                  } @else {
+                    <span class="gh-tag cc-recorded-tag">Recorded</span>
+                  }
+                  @if (row.isAnchor) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-anchor-tag">Anchor</span>
+                  }
+                  @if (isFirst(row)) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-mark-tag cc-first-tag">First run</span>
+                  }
+                  @if (isLast(row)) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-mark-tag cc-last-tag">Last run</span>
+                  }
+                  @if (inclusion === 'leftOut') {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-left-out-tag">Left out</span>
+                  }
+                </div>
+                <!-- Focused after Show more. -->
+                <h6 class="cc-run-title" [id]="'cc-run-' + row.runId + '-title'" tabindex="-1">
+                  <label [for]="'cc-run-' + row.runId + '-include'">{{ row.suiteName }}</label>
+                </h6>
+                <div class="cc-run-meta">
+                  <span><time class="cc-run-time" [attr.datetime]="row.startedAtUtc">{{ started(row) }}</time></span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="cc-served">Served: {{ served(row) }}</span>
+                </div>
+              </header>
+
+              <div class="cc-run-actions" role="group" [attr.aria-label]="'Actions for run #' + row.runId">
+                <button type="button" class="btn-ghost cc-mark-btn cc-first-btn"
+                        [attr.aria-pressed]="isFirst(row) ? 'true' : 'false'"
+                        [attr.aria-label]="'Use run #' + row.runId + ' as the first run of the analysis'"
+                        (click)="toggleFirst(row)">
+                  @if (isFirst(row)) {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  }
+                  First run
+                </button>
+                <button type="button" class="btn-ghost cc-mark-btn cc-last-btn"
+                        [attr.aria-pressed]="isLast(row) ? 'true' : 'false'"
+                        [attr.aria-label]="'Use run #' + row.runId + ' as the last run of the analysis'"
+                        (click)="toggleLast(row)">
+                  @if (isLast(row)) {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  }
+                  Last run
+                </button>
+                <button type="button" class="action-btn cc-open-report-btn"
+                        [attr.aria-label]="'Open the run report of run #' + row.runId"
+                        [attr.interestfor]="'cc-run-' + row.runId + '-report-tip'"
+                        [attr.style]="'anchor-name: --cc-run-' + row.runId + '-report-tip'"
+                        (click)="openRunReport.emit(row.runId)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'cc-run-' + row.runId + '-report-tip'"
+                     [attr.style]="'position-anchor: --cc-run-' + row.runId + '-report-tip'">Open run report</div>
+                <!-- One anchor for the trigger's tooltip and its popover. -->
+                <button type="button" class="action-btn cc-more-btn" [id]="'cc-run-' + row.runId + '-more-btn'"
+                        [attr.popovertarget]="'cc-run-' + row.runId + '-more'"
+                        [attr.aria-expanded]="moreOpenId === row.runId"
+                        [attr.aria-label]="'More actions for run #' + row.runId"
+                        [attr.interestfor]="'cc-run-' + row.runId + '-more-tip'"
+                        [attr.style]="'anchor-name: --cc-run-' + row.runId + '-more'">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'cc-run-' + row.runId + '-more-tip'"
+                     [attr.style]="'position-anchor: --cc-run-' + row.runId + '-more'">More actions</div>
+                <div popover="auto" class="gh-action-popover cc-more-popover" [id]="'cc-run-' + row.runId + '-more'"
+                     role="group" [attr.aria-label]="'Run actions for run #' + row.runId"
+                     [attr.style]="'position-anchor: --cc-run-' + row.runId + '-more'"
+                     (toggle)="onMoreToggle(row, $event)" (keydown)="onMoreKeydown(row, $event)">
+                  <button type="button" class="gh-action-popover-item cc-repeat-btn" (click)="onRepeatSetup(row)">Repeat this run's setup</button>
+                  <button type="button" class="gh-action-popover-item cc-anchor-btn"
+                          [attr.aria-disabled]="anchorBusy.has(row.runId) ? 'true' : null"
+                          [attr.aria-busy]="anchorBusy.has(row.runId) ? 'true' : null"
+                          (click)="onAnchorToggle(row)">
+                    <span>{{ row.isAnchor ? 'Unmark anchor' : 'Mark as anchor' }}</span>
+                    @if (anchorBusy.has(row.runId)) {
+                      <span class="gh-action-popover-item-reason">Saving the anchor…</span>
+                    }
+                  </button>
+                </div>
+              </div>
+
+              <div class="cc-run-elig">
                 <ul class="cc-elig-list" role="list" [attr.aria-label]="'Eligibility of run #' + row.runId">
                   @for (axis of axisOrder; track axis) {
                     @if (eligibilityOf(row, axis); as entry) {
@@ -143,51 +342,31 @@
                 @for (excluded of ineligibleReasons(row); track excluded.axis) {
                   <span class="cc-elig-reason">{{ excluded.axis }}: {{ excluded.reason }}</span>
                 }
-              </td>
-              <td class="cc-nowrap">{{ segment(row) }}</td>
-              <td class="cc-nowrap">
-                @if (row.isLegacy) {
-                  <span class="gh-tag cc-legacy-tag">Legacy</span>
-                } @else {
-                  Recorded
-                }
-              </td>
-              <td>{{ regrade(row) }}</td>
-              <td class="cc-nowrap">
-                @if (row.isAnchor) {
-                  <span class="gh-tag cc-anchor-tag">Anchor</span>
-                } @else {
-                  <span class="cc-muted">—</span>
-                }
-              </td>
-              <td>{{ controls(row) }}</td>
-              <td class="cc-served">{{ served(row) }}</td>
-              <td>
-                <div class="cc-row-actions" role="group" [attr.aria-label]="'Actions for run #' + row.runId">
-                  <button type="button" class="btn-ghost cc-repeat-btn"
-                          [attr.aria-label]="'Repeat this run\'s setup: run #' + row.runId"
-                          (click)="repeatSetup.emit(row.runId)">Repeat this run's setup</button>
-                  <button type="button" class="btn-ghost cc-anchor-btn"
-                          [attr.aria-label]="(row.isAnchor ? 'Unmark anchor: run #' : 'Mark as anchor: run #') + row.runId"
-                          [attr.aria-disabled]="anchorBusy.has(row.runId) ? 'true' : null"
-                          [attr.aria-busy]="anchorBusy.has(row.runId) ? 'true' : null"
-                          (click)="anchorBusy.has(row.runId) || anchorToggle.emit(row)">{{ row.isAnchor ? 'Unmark anchor' : 'Mark as anchor' }}</button>
-                  <button type="button" class="btn-ghost cc-open-report-btn"
-                          [attr.aria-label]="'Open run report: run #' + row.runId"
-                          (click)="openRunReport.emit(row.runId)">
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                    Open run report
-                  </button>
-                </div>
-              </td>
-            </tr>
+              </div>
+
+              <dl class="cc-run-facts">
+                <div class="cc-run-fact" data-fact="segment"><dt>Segment</dt><dd>{{ segment(row) }}</dd></div>
+                <div class="cc-run-fact" data-fact="telemetry"><dt>Telemetry</dt><dd>{{ row.isLegacy ? 'Legacy' : 'Recorded' }}</dd></div>
+                <div class="cc-run-fact" data-fact="regrade"><dt>Re-grade</dt><dd>{{ regrade(row) }}</dd></div>
+                <div class="cc-run-fact" data-fact="controls"><dt>Matched controls</dt><dd>{{ controls(row) }}</dd></div>
+              </dl>
+            </article>
+          </li>
+        }
+      </ul>
+
+      @if (remainingCount > 0) {
+        <div class="gh-load-more cc-runs-load-more">
+          <button type="button" class="btn-ghost cc-runs-show-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+          @if (remainingCount > list.batch) {
+            <button type="button" class="gh-filter-clear cc-runs-show-all" (click)="showAll()">Show all {{ matchingCount }}</button>
           }
-        </tbody>
-      </table>
-    </div>
-    <app-table-pager [state]="runTable" [rows]="rows" noun="runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
+        </div>
+      }
+    }
     <p id="cc-tl-runs-legend" class="form-hint cc-tl-legend">
       Eligibility: a check mark means the run can be used on that axis; a cross means it cannot, with the reason under the badges.
+      First run and Last run bound the runs the analysis uses; a cleared checkbox leaves a run out.
       The anchor is the run a common grader re-grades on different dates to measure grader drift.
     </p>
   }

@@ -9,14 +9,16 @@ import { APP_CHART_REGISTRABLES } from '../../../../chart-registrables';
 import { ZipWriterModule, zipWriterModule } from '../../model-comparison/figure-export';
 import { defaultFigureSize } from '../../model-comparison/figure-size';
 import { PREVIEW_SLIDER_STEPS } from '../../model-comparison/preview-view';
-import { CC_FIGURE_KEYS, CcFigureKey } from '../chat-consistency-charts';
+import { CC_FIGURE_KEYS, CcFigureInput, CcFigureKey } from '../chat-consistency-charts';
+import { CcRunInclusion } from '../chat-consistency-scope';
 import { CcModelAxis, CcTimeline } from '../chat-consistency.models';
 import { CC_API, ccAxis, ccEventTimeline, chatConsistencyTestProviders, textOf } from '../chat-consistency-tab.testing';
 import { ccChartBox } from './cc-chart-zoom';
 import {
   CC_CHART_SIZE_STORAGE_KEY,
   CC_TIMELINE_STORAGE_KEY,
-  CcTimelineWorkspaceComponent
+  CcTimelineWorkspaceComponent,
+  parseTimelineLayout
 } from './timeline-workspace.component';
 
 /** Every Chat Consistency storage key, cleared around each test. */
@@ -44,6 +46,7 @@ function clearStorage(): void {
   template: `
     <section class="gh-wizard-step gh-fig-host" style="display: flex; flex-direction: column; width: 780px; height: 560px;">
       <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="error"
+                                 [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeLabel"
                                  (exportingChange)="exportingEvents.push($event)"></app-cc-timeline-workspace>
     </section>`
 })
@@ -52,6 +55,8 @@ class TimelineWorkspaceHostComponent {
   @Input() timeline: CcTimeline | null = null;
   @Input() loading = false;
   @Input() error: string | null = null;
+  @Input() notAnalyzed: ReadonlyMap<number, CcRunInclusion> | null = null;
+  @Input() rangeLabel = '';
   readonly exportingEvents: boolean[] = [];
 }
 
@@ -387,6 +392,37 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(beginAtZero('quality')).toBe(true);
     expect(beginAtZero('ttfat')).toBe(true);
     expect(storedLayout()['zeroBaseline']).toBe(true);
+  });
+
+  it('marks the runs not in the analysis, behind a stored Mark runs not in the analysis switch', async () => {
+    await create();
+    const input = (): CcFigureInput => (ws as unknown as { figureInput(): CcFigureInput }).figureInput();
+    expect(input().notAnalyzed).toBeUndefined();
+    expect(figure('quality').takeaway).not.toContain('gray cross');
+
+    fixture.componentRef.setInput('notAnalyzed', new Map<number, CcRunInclusion>([[201, 'beforeSpan'], [204, 'leftOut']]));
+    fixture.componentRef.setInput('rangeLabel', 'Last 30 days');
+    fixture.detectChanges();
+    expect([...input().notAnalyzed!]).toEqual([[201, 'before the first run'], [204, 'left out in step 1']]);
+    expect(figure('quality').takeaway).toContain('2 runs not in the analysis are drawn as gray crosses.');
+    expect(textOf(q('.cc-tl-readout'))).toBe('GPT-5 high · Last 30 days · change in step 1');
+
+    const box = q<HTMLInputElement>('#cc-tl-mark-not-analyzed')!;
+    expect(box.checked).toBe(true);
+    expect(textOf(box.closest('label'))).toContain('Mark runs not in the analysis');
+    clickOn('#cc-tl-mark-not-analyzed');
+    expect(input().notAnalyzed).toBeUndefined();
+    expect(figure('quality').takeaway).not.toContain('gray cross');
+    expect(storedLayout()['markNotAnalyzed']).toBe(false);
+
+    clickOn('#cc-tl-mark-not-analyzed');
+    expect(storedLayout()['markNotAnalyzed']).toBe(true);
+  });
+
+  it('reads a stored layout without the switch as on', () => {
+    expect(parseTimelineLayout({ version: 1, zeroBaseline: true }).markNotAnalyzed).toBe(true);
+    expect(parseTimelineLayout({ version: 1, markNotAnalyzed: 'no' }).markNotAnalyzed).toBe(true);
+    expect(parseTimelineLayout({ version: 1, markNotAnalyzed: false }).markNotAnalyzed).toBe(false);
   });
 
   // --- Events ---

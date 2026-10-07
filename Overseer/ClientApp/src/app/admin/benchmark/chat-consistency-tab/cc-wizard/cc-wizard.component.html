@@ -74,12 +74,13 @@
                [attr.aria-busy]="loading || axesLoading ? 'true' : null">
         <h4 class="gh-section-title cc-wizard-heading" id="cc-step-heading-1" tabindex="-1">{{ stepTitles[1] }}</h4>
         <app-cc-model-step [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"
-                           [selectedKey]="selectedKey" [range]="range"
+                           [selectedKey]="selectedKey" [range]="range" [scope]="scope"
                            [timeline]="timeline" [rows]="rows" [loading]="loading"
                            [timelineError]="timelineError" [runsError]="runsError"
                            [anchorBusy]="anchorBusy" [anchorError]="anchorError" [announcement]="announcement"
                            [lockedReason]="subjectLockedReason"
                            (modelChange)="modelChange.emit($event)" (rangeChange)="rangeChange.emit($event)"
+                           (scopeChange)="scopeChange.emit($event)"
                            (repeatSetup)="repeatSetup.emit($event)" (anchorToggle)="anchorToggle.emit($event)"
                            (openRunReport)="openRunReport.emit($event)"></app-cc-model-step>
       </section>
@@ -92,6 +93,7 @@
                id="cc-step-panel-2" aria-labelledby="cc-step-tab-2" [hidden]="step !== 2">
         <h4 class="gh-section-title cc-wizard-heading cc-wizard-fig-heading" id="cc-step-heading-2" tabindex="-1">{{ stepTitles[2] }}</h4>
         <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="timelineError"
+                                   [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeText"
                                    (annotationsChanged)="annotationsChanged.emit()"
                                    (exportingChange)="onExportingChange()"></app-cc-timeline-workspace>
       </section>
@@ -104,7 +106,10 @@
                id="cc-step-panel-analysis" [attr.aria-labelledby]="'cc-step-tab-' + analysisWizardStep"
                [hidden]="step < 3">
         <h4 class="gh-section-title cc-wizard-heading" id="cc-step-heading-analysis" tabindex="-1">{{ stepTitles[analysisWizardStep] }}</h4>
-        <app-cc-analysis-wizard [axis]="axis" [timeline]="timeline" [rows]="rows" [analyses]="analyses"
+        <!-- rows is the scoped list, allRows every run in the dates. -->
+        <app-cc-analysis-wizard [axis]="axis" [timeline]="timeline" [rows]="scopedRows" [allRows]="rows"
+                                [scope]="scope" [range]="range" [span]="analysisSpan" [scopeKey]="scopeKeyValue"
+                                [analyses]="analyses"
                                 [pickerOptions]="pickerOptions" [pickerConfigs]="pickerConfigs"
                                 [pickerEmptyHint]="pickerEmptyHint" [anchorBusy]="anchorBusy"
                                 [step]="analysisStep"

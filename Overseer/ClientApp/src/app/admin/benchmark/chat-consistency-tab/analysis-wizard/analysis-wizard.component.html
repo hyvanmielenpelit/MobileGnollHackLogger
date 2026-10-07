@@ -65,24 +65,31 @@
       </label>
     </fieldset>
     <p class="form-hint cc-wiz-preset-note" role="status">{{ presetNote }}</p>
+    @if (spanNote) {
+      <p class="form-hint cc-wiz-span-note">{{ spanNote }}</p>
+    }
 
     <fieldset class="cc-wiz-periods">
       <legend>Periods (UTC dates, inclusive)</legend>
       <div class="cc-wiz-period">
         <span class="cc-wiz-period-name" id="cc-wiz-baseline-label">Baseline</span>
         <label for="cc-wiz-bs" class="visually-hidden">Baseline start</label>
-        <input id="cc-wiz-bs" type="date" class="gh-input" [value]="days.baselineStart" (change)="onDayInput('baselineStart', $event)">
+        <app-date-field inputId="cc-wiz-bs" label="Baseline start" [value]="days.baselineStart"
+                        (valueChange)="onDayInput('baselineStart', $event)"></app-date-field>
         <span aria-hidden="true">to</span>
         <label for="cc-wiz-be" class="visually-hidden">Baseline end</label>
-        <input id="cc-wiz-be" type="date" class="gh-input" [value]="days.baselineEnd" (change)="onDayInput('baselineEnd', $event)">
+        <app-date-field inputId="cc-wiz-be" label="Baseline end" [value]="days.baselineEnd"
+                        (valueChange)="onDayInput('baselineEnd', $event)"></app-date-field>
       </div>
       <div class="cc-wiz-period">
         <span class="cc-wiz-period-name">Comparison</span>
         <label for="cc-wiz-cs" class="visually-hidden">Comparison start</label>
-        <input id="cc-wiz-cs" type="date" class="gh-input" [value]="days.comparisonStart" (change)="onDayInput('comparisonStart', $event)">
+        <app-date-field inputId="cc-wiz-cs" label="Comparison start" [value]="days.comparisonStart"
+                        (valueChange)="onDayInput('comparisonStart', $event)"></app-date-field>
         <span aria-hidden="true">to</span>
         <label for="cc-wiz-ce" class="visually-hidden">Comparison end</label>
-        <input id="cc-wiz-ce" type="date" class="gh-input" [value]="days.comparisonEnd" (change)="onDayInput('comparisonEnd', $event)">
+        <app-date-field inputId="cc-wiz-ce" label="Comparison end" [value]="days.comparisonEnd"
+                        (valueChange)="onDayInput('comparisonEnd', $event)"></app-date-field>
       </div>
       @if (periodsError) {
         <p class="gh-field-error cc-wiz-periods-error">
@@ -243,6 +250,12 @@
           }
         </dd>
       </div>
+      @if (leftOutInPeriods.length > 0) {
+        <div>
+          <dt>Left out in step 1</dt>
+          <dd class="cc-wiz-left-out">{{ runList(leftOutInPeriods) }}</dd>
+        </div>
+      }
       <div>
         <dt>Missing controls</dt>
         <dd class="cc-wiz-missing">

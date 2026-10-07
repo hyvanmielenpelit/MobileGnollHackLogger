@@ -273,6 +273,45 @@ export interface CcAnalysisRequest {
   relaxedPooling?: boolean;
   commonGraderSnapshotId?: number | null;
   availableOtherProviderModels?: string[] | null;
+  /** How the runs were chosen in step 1; recorded with the analysis, never used to pick runs. */
+  runSelection?: CcRunSelection | null;
+}
+
+/** The step-1 run selection as the request carries it. */
+export interface CcRunSelection {
+  /** The step-1 dates as shown, for example `Last 30 days`; at most 64 characters. */
+  rangeLabel: string | null;
+  rangeFromUtc: string | null;
+  rangeToUtc: string | null;
+  firstRunId: number | null;
+  lastRunId: number | null;
+  /** Sorted ascending; at most 5,000. */
+  leftOutRunIds: number[];
+}
+
+/** Why a usable run of the subject inside a period was not analyzed. */
+export type CcUnanalyzedReason = 'leftOut' | 'outsideDateRange' | 'beforeFirstRun' | 'afterLastRun' | 'notSelected';
+
+export interface CcUnanalyzedRun {
+  runId: number;
+  /** `baseline` or `comparison`. */
+  period: string;
+  startedAtUtc: string;
+  reason: CcUnanalyzedReason;
+}
+
+/** The run selection as recorded with the analysis. */
+export interface CcRunSelectionView {
+  /** The request carried a selection; false for analyses saved before it was recorded. */
+  recorded: boolean;
+  rangeLabel: string | null;
+  rangeFromUtc: string | null;
+  rangeToUtc: string | null;
+  firstRunId: number | null;
+  lastRunId: number | null;
+  leftOutRunIds: number[];
+  /** Ordered by start, then id. */
+  unanalyzedRuns: CcUnanalyzedRun[];
 }
 
 export interface CcPeriodSummary {
@@ -578,6 +617,8 @@ export interface CcAnalysisResult {
   dataQuality: CcNote[];
   limitations: string[];
   nextRuns: CcNextRun[];
+  /** Absent in analyses saved before the selection was recorded; read it as not recorded. */
+  runSelection?: CcRunSelectionView | null;
   inputSha256: string;
   analysisCodeVersion: number;
 }

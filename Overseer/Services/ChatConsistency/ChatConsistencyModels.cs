@@ -100,6 +100,23 @@ public sealed record ChatConsistencyAnalysisRequest
 
     /// <summary>Models the operator can run as controls, as <c>provider/model</c>, for the next-run suggestions.</summary>
     public IReadOnlyList<string>? AvailableOtherProviderModels { get; init; }
+
+    /// <summary>How the operator chose the runs in the wizard's step 1; recorded with the result, never used to pick runs.</summary>
+    public ChatConsistencyRunSelection? RunSelection { get; init; }
+}
+
+/// <summary>How the operator chose the runs in the wizard's step 1; recorded, never used to pick runs.</summary>
+public sealed record ChatConsistencyRunSelection
+{
+    /// <summary>The step-1 dates as shown, for example "Last 30 days"; at most 64 characters.</summary>
+    public string? RangeLabel { get; init; }
+    public DateTime? RangeFromUtc { get; init; }
+    public DateTime? RangeToUtc { get; init; }
+    public long? FirstRunId { get; init; }
+    public long? LastRunId { get; init; }
+
+    /// <summary>Runs the operator unchecked; at most 5,000.</summary>
+    public IReadOnlyList<long>? LeftOutRunIds { get; init; }
 }
 
 // --- Result --------------------------------------------------------------------------------------
@@ -525,6 +542,56 @@ public sealed record ChatConsistencyNote
     public string Text { get; init; } = string.Empty;
 }
 
+/// <summary>A usable run of the subject inside a period that the analysis did not use.</summary>
+public sealed record ChatConsistencyUnanalyzedRun
+{
+    public long RunId { get; init; }
+
+    /// <summary><c>baseline</c> or <c>comparison</c>.</summary>
+    public string Period { get; init; } = string.Empty;
+    public DateTime StartedAtUtc { get; init; }
+
+    /// <summary><c>leftOut</c>, <c>outsideDateRange</c>, <c>beforeFirstRun</c>, <c>afterLastRun</c> or <c>notSelected</c>.</summary>
+    public string Reason { get; init; } = string.Empty;
+}
+
+/// <summary>Why a usable run of the subject in a period was not analyzed; <see cref="All"/> is the order they are tested in.</summary>
+public static class ChatConsistencyUnanalyzedReasons
+{
+    /// <summary>The operator unchecked it in step 1.</summary>
+    public const string LeftOut = "leftOut";
+
+    /// <summary>It started outside the step-1 dates.</summary>
+    public const string OutsideDateRange = "outsideDateRange";
+
+    /// <summary>It comes before the step-1 first run, by start, then id.</summary>
+    public const string BeforeFirstRun = "beforeFirstRun";
+
+    /// <summary>It comes after the step-1 last run, by start, then id.</summary>
+    public const string AfterLastRun = "afterLastRun";
+
+    /// <summary>None of the above: unticked or not preselected in step 4.</summary>
+    public const string NotSelected = "notSelected";
+
+    public static readonly IReadOnlyList<string> All = new[] { LeftOut, OutsideDateRange, BeforeFirstRun, AfterLastRun, NotSelected };
+}
+
+/// <summary>The run selection as recorded with the analysis.</summary>
+public sealed record ChatConsistencyRunSelectionView
+{
+    /// <summary>The request carried a selection; false for analyses saved before it was recorded.</summary>
+    public bool Recorded { get; init; }
+    public string? RangeLabel { get; init; }
+    public DateTime? RangeFromUtc { get; init; }
+    public DateTime? RangeToUtc { get; init; }
+    public long? FirstRunId { get; init; }
+    public long? LastRunId { get; init; }
+    public IReadOnlyList<long> LeftOutRunIds { get; init; } = Array.Empty<long>();
+
+    /// <summary>Ordered by start, then id.</summary>
+    public IReadOnlyList<ChatConsistencyUnanalyzedRun> UnanalyzedRuns { get; init; } = Array.Empty<ChatConsistencyUnanalyzedRun>();
+}
+
 /// <summary>A run that would resolve an inconclusive or unattributable verdict.</summary>
 public sealed record ChatConsistencyNextRun
 {
@@ -601,6 +668,9 @@ public sealed record ChatConsistencyAnalysisResult
     public IReadOnlyList<ChatConsistencyNote> DataQuality { get; init; } = Array.Empty<ChatConsistencyNote>();
     public IReadOnlyList<string> Limitations { get; init; } = Array.Empty<string>();
     public IReadOnlyList<ChatConsistencyNextRun> NextRuns { get; init; } = Array.Empty<ChatConsistencyNextRun>();
+
+    /// <summary>How the runs were chosen, and the usable runs of the subject in the periods that were not analyzed.</summary>
+    public ChatConsistencyRunSelectionView RunSelection { get; init; } = new();
     public string InputSha256 { get; init; } = string.Empty;
     public int AnalysisCodeVersion { get; init; }
 }

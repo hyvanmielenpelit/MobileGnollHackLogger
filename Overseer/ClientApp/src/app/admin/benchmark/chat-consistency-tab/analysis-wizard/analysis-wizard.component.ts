@@ -15,6 +15,7 @@ import { Subscription } from 'rxjs';
 
 import { SystemAiConfigDto } from '../../../../services/admin.service';
 import { AdminChatConsistencyService, ccErrorText } from '../../../../services/admin-chat-consistency.service';
+import { DateFieldComponent } from '../../../../shared/date-field/date-field.component';
 import { ModelPickerOption } from '../../../../shared/model-picker/model-picker.component';
 import {
   addUtcDays,
@@ -30,6 +31,8 @@ import {
   withinUtcDays
 } from '../chat-consistency-format';
 import { CC_HARNESS_EVENT_KIND, CcEventGroup, groupOverseerEvents } from '../chat-consistency-events';
+import { CC_ALL_DATES, CcDateRange, ccDateRangeText, ccRangeBounds } from '../chat-consistency-range';
+import { CC_EMPTY_SCOPE, CcRunScope, scopeIsDefault } from '../chat-consistency-scope';
 import {
   CcAnalysisRequest,
   CcAnalysisResult,
@@ -39,6 +42,7 @@ import {
   CcOpenDocumentsRequest,
   CcProtocolOverrides,
   CcRunRow,
+  CcRunSelection,
   CcTimeline,
   CcTimelinePoint
 } from '../chat-consistency.models';
@@ -81,9 +85,19 @@ export interface CcPeriodDays {
   comparisonEnd: string;
 }
 
-/** The first and last run day of a subject. */
-function seriesDays(axis: CcModelAxis): { first: string; last: string } {
-  return { first: formatUtcDate(axis.firstRunAtUtc), last: formatUtcDate(axis.lastRunAtUtc) };
+/** The UTC days of the first and last run the analysis may use. */
+export interface CcRunSpan {
+  first: string;
+  last: string;
+}
+
+/** The span of the runs chosen in step 1 when given, else the subject's first and last run day. */
+export function seriesDays(axis: CcModelAxis, span: CcRunSpan | null = null): CcRunSpan {
+  return span ?? { first: formatUtcDate(axis.firstRunAtUtc), last: formatUtcDate(axis.lastRunAtUtc) };
+}
+
+function sameSpan(a: CcRunSpan | null | undefined, b: CcRunSpan | null | undefined): boolean {
+  return (a ?? null) === (b ?? null) || (!!a && !!b && a.first === b.first && a.last === b.last);
 }
 
 function maxDay(a: string, b: string): string {
@@ -95,8 +109,8 @@ function minDay(a: string, b: string): string {
 }
 
 /** *Launch vs last 14 days*: the first 14 days of the series against its last 14, never overlapping. */
-export function launchPreset(axis: CcModelAxis): CcPeriodDays {
-  const { first, last } = seriesDays(axis);
+export function launchPreset(axis: CcModelAxis, span: CcRunSpan | null = null): CcPeriodDays {
+  const { first, last } = seriesDays(axis, span);
   const comparisonStart = maxDay(addUtcDays(last, -13), first);
   return {
     baselineStart: first,
@@ -107,8 +121,8 @@ export function launchPreset(axis: CcModelAxis): CcPeriodDays {
 }
 
 /** *Before vs after*: up to {@link CC_PRESET_WINDOW_DAYS} days before the day of `atUtc` against that day and the days after. */
-export function aroundPreset(axis: CcModelAxis, atUtc: string): CcPeriodDays {
-  const { first, last } = seriesDays(axis);
+export function aroundPreset(axis: CcModelAxis, atUtc: string, span: CcRunSpan | null = null): CcPeriodDays {
+  const { first, last } = seriesDays(axis, span);
   const day = formatUtcDate(atUtc);
   return {
     baselineStart: maxDay(first, addUtcDays(day, -CC_PRESET_WINDOW_DAYS)),
@@ -120,14 +134,14 @@ export function aroundPreset(axis: CcModelAxis, atUtc: string): CcPeriodDays {
 
 /**
  * *Confirm on later data*: the last analysis's baseline again, against the runs after its last look —
- * from the day after it was saved to the subject's last run.
+ * from the day after it was saved to the series' last run.
  */
-export function laterDataPreset(axis: CcModelAxis, last: CcAnalysisSummary): CcPeriodDays {
+export function laterDataPreset(axis: CcModelAxis, last: CcAnalysisSummary, span: CcRunSpan | null = null): CcPeriodDays {
   return {
     baselineStart: formatUtcDate(last.baselineStartUtc),
     baselineEnd: formatUtcDate(last.baselineEndUtc),
     comparisonStart: addUtcDays(formatUtcDate(last.createdAtUtc), 1),
-    comparisonEnd: seriesDays(axis).last
+    comparisonEnd: seriesDays(axis, span).last
   };
 }
 
@@ -153,7 +167,7 @@ export function periodsRefusal(days: CcPeriodDays): string {
 @Component({
   selector: 'app-cc-analysis-wizard',
   standalone: true,
-  imports: [CcRegradePanelComponent, CcResultsViewComponent, CcReportsStepComponent],
+  imports: [DateFieldComponent, CcRegradePanelComponent, CcResultsViewComponent, CcReportsStepComponent],
   templateUrl: './analysis-wizard.component.html',
   styleUrls: ['./analysis-wizard.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -164,7 +178,18 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
 
   @Input() axis: CcModelAxis | null = null;
   @Input() timeline: CcTimeline | null = null;
+  /** The runs in the analysis: the step-1 dates narrowed by the step-1 selection. */
   @Input() rows: readonly CcRunRow[] = [];
+  /** Every run in the step-1 dates, those left out included. */
+  @Input() allRows: readonly CcRunRow[] = [];
+  /** The step-1 selection, recorded with the analysis. */
+  @Input() scope: CcRunScope = CC_EMPTY_SCOPE;
+  /** The step-1 dates, recorded with the analysis. */
+  @Input() range: CcDateRange = CC_ALL_DATES;
+  /** The days of the first and last run in the analysis, which the presets span; null with none. */
+  @Input() span: CcRunSpan | null = null;
+  /** Changes with the step-1 selection, so a new selection preselects the runs again. */
+  @Input() scopeKey = '';
   @Input() analyses: readonly CcAnalysisSummary[] = [];
   /** The benchmark-capable configurations the launcher offers: the re-grade's assessors and the report writers. */
   @Input() pickerOptions: readonly ModelPickerOption<SystemAiConfigDto>[] = [];
@@ -218,13 +243,20 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['step']) this.visitedSteps.add(this.step);
     const axisChange = changes['axis'];
+    let reset = false;
     if (axisChange && axisChange.previousValue?.key !== this.axis?.key) {
       // A saved result just opened for this subject is kept; any other subject starts over.
       if (!(this.result && this.axis && this.result.subject.key === this.axis.key)) {
         this.resetForSubject();
+        reset = true;
       }
     }
-    if (changes['rows'] && this.step === 'runs') this.preselectRuns();
+    // A preset follows the runs in the analysis; dates typed by hand stay.
+    const spanChange = changes['span'];
+    if (spanChange && !reset && !sameSpan(spanChange.previousValue, this.span) && this.preset !== 'custom') {
+      this.choosePreset(this.preset);
+    }
+    if ((changes['rows'] || changes['scopeKey']) && this.step === 'runs') this.preselectRuns();
   }
 
   ngOnDestroy(): void {
@@ -333,7 +365,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     if (!axis) return;
     switch (preset) {
       case 'launch':
-        this.days = launchPreset(axis);
+        this.days = launchPreset(axis, this.span);
         break;
       case 'annotation': {
         const annotation = this.annotations.find(a => a.id === this.presetAnnotationId) ?? this.annotations[0];
@@ -342,7 +374,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
           break;
         }
         this.presetAnnotationId = annotation.id;
-        this.days = aroundPreset(axis, annotation.atUtc);
+        this.days = aroundPreset(axis, annotation.atUtc, this.span);
         break;
       }
       case 'event': {
@@ -353,7 +385,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
           break;
         }
         this.presetEventGroupKey = group.key;
-        this.days = aroundPreset(axis, group.atUtc);
+        this.days = aroundPreset(axis, group.atUtc, this.span);
         break;
       }
       case 'later': {
@@ -362,7 +394,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
           this.presetNote = 'This model has no saved analysis yet; there is no earlier look to confirm.';
           break;
         }
-        this.days = laterDataPreset(axis, last);
+        this.days = laterDataPreset(axis, last, this.span);
         this.presetNote = `Compares the runs after the last analysis, saved ${formatUtcDateTime(last.createdAtUtc)}, with its baseline.`;
         break;
       }
@@ -380,8 +412,25 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.choosePreset('event');
   }
 
-  onDayInput(field: keyof CcPeriodDays, event: Event): void {
-    this.days = { ...this.days, [field]: (event.target as HTMLInputElement).value };
+  /**
+   * Which runs the presets span: `Presets use the runs chosen in step 1: #21 (2026-09-20) to #93
+   * (2026-10-05), 15 runs.`, or every run in the dates while step 1 leaves the selection alone.
+   */
+  get spanNote(): string {
+    if (this.rows.length === 0) return '';
+    const ordered = [...this.rows].sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc) || a.runId - b.runId);
+    const first = ordered[0];
+    const last = ordered[ordered.length - 1];
+    const runs = first === last
+      ? `#${first.runId} (${formatUtcDate(first.startedAtUtc)}), 1 run`
+      : `#${first.runId} (${formatUtcDate(first.startedAtUtc)}) to #${last.runId} (${formatUtcDate(last.startedAtUtc)}), ${plural(ordered.length, 'run')}`;
+    return scopeIsDefault(this.scope)
+      ? `Presets use every run in the dates: ${runs}.`
+      : `Presets use the runs chosen in step 1: ${runs}.`;
+  }
+
+  onDayInput(field: keyof CcPeriodDays, value: string): void {
+    this.days = { ...this.days, [field]: value };
     this.preset = 'custom';
     this.presetNote = '';
     this.changed();
@@ -430,7 +479,24 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
 
   private get periodKey(): string {
     const d = this.days;
-    return `${this.axis?.key}|${d.baselineStart}|${d.baselineEnd}|${d.comparisonStart}|${d.comparisonEnd}`;
+    return `${this.axis?.key}|${d.baselineStart}|${d.baselineEnd}|${d.comparisonStart}|${d.comparisonEnd}|${this.scopeKey}`;
+  }
+
+  /** The runs left out in step 1 that fall inside either period, ascending. */
+  get leftOutInPeriods(): number[] {
+    if (this.scope.leftOut.size === 0) return [];
+    const d = this.days;
+    return this.allRows
+      .filter(row => this.scope.leftOut.has(row.runId)
+        && (withinUtcDays(row.startedAtUtc, d.baselineStart, d.baselineEnd)
+          || withinUtcDays(row.startedAtUtc, d.comparisonStart, d.comparisonEnd)))
+      .map(row => row.runId)
+      .sort((a, b) => a - b);
+  }
+
+  /** `#45, #51`. */
+  runList(ids: readonly number[]): string {
+    return ids.map(id => `#${id}`).join(', ');
   }
 
   periodRows(period: 'baseline' | 'comparison'): CcRunRow[] {
@@ -554,7 +620,8 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
       comparisonEndUtc: endOfUtcDay(this.days.comparisonEnd)!,
       baselineRunIds: [...this.baselineSelected].sort((a, b) => a - b),
       comparisonRunIds: [...this.comparisonSelected].sort((a, b) => a - b),
-      relaxedPooling: this.relaxedPooling
+      relaxedPooling: this.relaxedPooling,
+      runSelection: this.runSelection()
     };
     const name = this.name.trim();
     if (name) request.name = name;
@@ -563,6 +630,19 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     const overrides = this.protocolOverrides();
     if (overrides) request.protocolOverrides = overrides;
     return request;
+  }
+
+  /** The step-1 selection as the analysis records it; sent with every request, the default one included. */
+  private runSelection(): CcRunSelection {
+    const bounds = ccRangeBounds(this.range);
+    return {
+      rangeLabel: ccDateRangeText(this.range),
+      rangeFromUtc: bounds.fromUtc,
+      rangeToUtc: bounds.toUtc,
+      firstRunId: this.scope.firstRunId,
+      lastRunId: this.scope.lastRunId,
+      leftOutRunIds: [...this.scope.leftOut].sort((a, b) => a - b)
+    };
   }
 
   private protocolOverrides(): CcProtocolOverrides | null {

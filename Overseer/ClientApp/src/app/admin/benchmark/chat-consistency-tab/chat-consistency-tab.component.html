@@ -117,7 +117,7 @@
         (cancel)="onWizardCancel($event)" (close)="onWizardClose($event)">
   @if (wizardMounted) {
     <app-cc-wizard [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"
-                   [selectedKey]="selectedKey" [range]="range"
+                   [selectedKey]="selectedKey" [range]="range" [scope]="scope"
                    [timeline]="timeline" [rows]="rows" [loading]="subjectLoading"
                    [timelineError]="timelineError" [runsError]="runsError"
                    [anchorBusy]="anchorBusy" [anchorError]="anchorError" [announcement]="announcement"
@@ -126,12 +126,13 @@
                    [pickerConfigs]="workspace.stableBenchmarkCapableConfigs"
                    [pickerEmptyHint]="workspace.benchmarkPickerEmptyHint"
                    (modelChange)="selectModel($event)" (rangeChange)="setRange($event)"
+                   (scopeChange)="setScope($event)"
                    (repeatSetup)="repeatSetup($event)" (anchorToggle)="toggleAnchor($event)"
                    (openRunReport)="openRunReport($event)"
                    (analysisSaved)="onAnalysisSaved($event)" (runsChanged)="onRunsChanged()"
                    (annotationsChanged)="onAnnotationsChanged()"
                    (openDocuments)="openDocuments.emit($event)"
-                   (reload)="loadSubject()"
+                   (reload)="reloadSubject()"
                    (closeRequested)="closeWizard()"></app-cc-wizard>
   }
 </dialog>

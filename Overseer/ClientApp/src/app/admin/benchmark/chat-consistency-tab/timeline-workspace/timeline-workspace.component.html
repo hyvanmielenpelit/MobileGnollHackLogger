@@ -65,6 +65,19 @@
               Start the quality axis at zero
             </label>
           </fieldset>
+
+          <fieldset class="gh-fieldset cc-tl-group">
+            <legend>Runs</legend>
+            <label class="checkbox-label align-start">
+              <input type="checkbox" id="cc-tl-mark-not-analyzed" [checked]="markNotAnalyzed"
+                     aria-describedby="cc-tl-mark-not-analyzed-hint"
+                     (change)="setMarkNotAnalyzed($any($event.target).checked)">
+              <span>
+                Mark runs not in the analysis
+                <span id="cc-tl-mark-not-analyzed-hint" class="form-hint">Runs left out in step 1, or outside its first and last run, are drawn as gray crosses with dotted lines.</span>
+              </span>
+            </label>
+          </fieldset>
         </div>
       }
 

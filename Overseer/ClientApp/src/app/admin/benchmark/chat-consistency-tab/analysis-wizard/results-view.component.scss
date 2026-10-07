@@ -39,6 +39,7 @@
 }
 
 .cc-res-facts,
+.cc-res-selection-facts,
 .cc-res-identity {
   display: grid;
   gap: 0.25rem;
@@ -221,4 +222,19 @@
 .cc-res-list {
   margin: 0;
   padding-inline-start: 1.25rem;
+}
+
+.cc-res-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cc-res-selection-label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.cc-res-all-analyzed {
+  margin: 0;
 }

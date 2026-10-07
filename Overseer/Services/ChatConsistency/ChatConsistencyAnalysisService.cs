@@ -35,10 +35,13 @@ using Overseer.Services.Telemetry;
 public class ChatConsistencyAnalysisService
 {
     /// <summary>The version of this analysis code; stored with every analysis.</summary>
-    public const int CurrentAnalysisCodeVersion = 1;
+    public const int CurrentAnalysisCodeVersion = 2;
 
     private const int MaxNameLength = 200;
     private const int MaxSubjectKeyLength = 512;
+    private const int MaxRangeLabelLength = 64;
+    private const int MaxLeftOutRunIds = 5000;
+    private const int MaxRunSelectionNoteRuns = 20;
 
     private readonly ApplicationDbContext _db;
     private readonly ChatConsistencyEvidenceBuilder _evidence;
@@ -58,12 +61,21 @@ public class ChatConsistencyAnalysisService
 
     /// <summary>
     /// Runs the analysis and saves it. Refuses, with <see cref="ChatConsistencyRequestException"/>, a
-    /// request whose periods are malformed or overlap, or whose periods hold no usable run of the subject.
+    /// request whose periods are malformed or overlap, whose run selection is malformed or leaves out a
+    /// selected run, or whose periods hold no usable run of the subject. The run selection's bounds are
+    /// taken as UTC.
     /// </summary>
     public async Task<ChatConsistencyAnalysisResult> AnalyzeAsync(ChatConsistencyAnalysisRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         Validate(request);
+        if (request.RunSelection is { } selection)
+        {
+            request = request with
+            {
+                RunSelection = selection with { RangeFromUtc = ToUtc(selection.RangeFromUtc), RangeToUtc = ToUtc(selection.RangeToUtc) }
+            };
+        }
 
         var protocol = ChatConsistencyProtocol.V1.WithOverrides(request.ProtocolOverrides);
         var evidence = await _evidence.LoadAsync(request, ct);
@@ -307,7 +319,54 @@ public class ChatConsistencyAnalysisService
         {
             throw new ChatConsistencyRequestException("A run cannot be in both periods.");
         }
+
+        if (request.RunSelection is { } selection) ValidateRunSelection(request, selection);
     }
+
+    /// <summary>Refuses a run selection that is malformed or contradicts the selected runs.</summary>
+    private static void ValidateRunSelection(ChatConsistencyAnalysisRequest request, ChatConsistencyRunSelection selection)
+    {
+        if (selection.RangeLabel != null && selection.RangeLabel.Length > MaxRangeLabelLength)
+        {
+            throw new ChatConsistencyRequestException("The run selection's date label is at most 64 characters.");
+        }
+
+        if (ToUtc(selection.RangeFromUtc) is DateTime rangeFrom && ToUtc(selection.RangeToUtc) is DateTime rangeTo && rangeFrom > rangeTo)
+        {
+            throw new ChatConsistencyRequestException("The run selection's dates end before they start.");
+        }
+
+        var leftOut = selection.LeftOutRunIds ?? Array.Empty<long>();
+        if (leftOut.Count > MaxLeftOutRunIds)
+        {
+            throw new ChatConsistencyRequestException("The run selection leaves out at most 5,000 runs.");
+        }
+
+        var baseline = (request.BaselineRunIds ?? Array.Empty<long>()).ToHashSet();
+        var comparison = (request.ComparisonRunIds ?? Array.Empty<long>()).ToHashSet();
+        foreach (long id in leftOut.Distinct().OrderBy(i => i))
+        {
+            string? period = baseline.Contains(id) ? "baseline" : comparison.Contains(id) ? "comparison" : null;
+            if (period != null)
+            {
+                throw new ChatConsistencyRequestException("Run #" + Inv(id) + " is left out in step 1 but selected for the " + period + ".");
+            }
+        }
+    }
+
+    /// <summary>The instant in UTC: a local time is converted, an unspecified kind is UTC as given.</summary>
+    private static DateTime ToUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    private static DateTime? ToUtc(DateTime? value) => value.HasValue ? ToUtc(value.Value) : null;
+
+    /// <summary>The selection's left-out run ids, distinct and ascending.</summary>
+    private static List<long> LeftOutIds(ChatConsistencyRunSelection? selection)
+        => (selection?.LeftOutRunIds ?? Array.Empty<long>()).Distinct().OrderBy(i => i).ToList();
 
     /// <summary>The subject key as stored: the key itself, or its SHA-256 when it exceeds the column; the result keeps the full key.</summary>
     public static string StoredSubjectKey(string key)
@@ -486,6 +545,7 @@ public class ChatConsistencyAnalysisService
                 DataQuality = _dataQuality,
                 Limitations = Limitations(),
                 NextRuns = nextRuns,
+                RunSelection = RunSelectionView(),
                 AnalysisCodeVersion = CurrentAnalysisCodeVersion
             };
 
@@ -2264,6 +2324,53 @@ public class ChatConsistencyAnalysisService
                 _dataQuality.Add(Note("priceCard", "Every compared run is costed at one price card: " + _evidence.PriceCard.Source
                     + " (input " + Money(_evidence.PriceCard.InputPerMillion) + ", output " + Money(_evidence.PriceCard.OutputPerMillion) + " per million tokens)."));
             }
+
+            AddRunSelectionNote();
+        }
+
+        /// <summary>
+        /// One <c>runSelection</c> note naming the usable runs of the subject in the periods that were not
+        /// analyzed, grouped by reason in <see cref="ChatConsistencyUnanalyzedReasons.All"/> order; at most
+        /// <see cref="MaxRunSelectionNoteRuns"/> runs are named, the rest counted.
+        /// </summary>
+        private void AddRunSelectionNote()
+        {
+            var runs = _evidence.UnanalyzedRuns;
+            if (runs.Count == 0) return;
+
+            var groups = new List<string>();
+            int listed = 0;
+            foreach (string reason in ChatConsistencyUnanalyzedReasons.All)
+            {
+                var named = runs
+                    .Where(r => r.Reason == reason)
+                    .Take(MaxRunSelectionNoteRuns - listed)
+                    .Select(r => "#" + Inv(r.RunId) + " (" + r.Period + ")")
+                    .ToList();
+                if (named.Count == 0) continue;
+                listed += named.Count;
+                groups.Add(UnanalyzedReasonText(reason) + ": " + string.Join(", ", named));
+            }
+
+            int more = runs.Count - listed;
+            _dataQuality.Add(Note("runSelection", UnanalyzedCountText(runs.Count) + " — " + string.Join("; ", groups)
+                + (more > 0 ? "; and " + Inv(more) + " more" : string.Empty) + "."));
+        }
+
+        private ChatConsistencyRunSelectionView RunSelectionView()
+        {
+            var selection = _request.RunSelection;
+            return new ChatConsistencyRunSelectionView
+            {
+                Recorded = selection != null,
+                RangeLabel = selection?.RangeLabel,
+                RangeFromUtc = ToUtc(selection?.RangeFromUtc),
+                RangeToUtc = ToUtc(selection?.RangeToUtc),
+                FirstRunId = selection?.FirstRunId,
+                LastRunId = selection?.LastRunId,
+                LeftOutRunIds = LeftOutIds(selection),
+                UnanalyzedRuns = _evidence.UnanalyzedRuns
+            };
         }
 
         private List<string> Limitations()
@@ -2282,6 +2389,12 @@ public class ChatConsistencyAnalysisService
             if (_work[ChatConsistencyEndpointIds.TimeToFirstAnswerText].LegacyProxy)
             {
                 list.Add("P2 uses model time per item as a legacy proxy: it spans the provider's whole turn, not the wait for the first answer text.");
+            }
+
+            if (_evidence.UnanalyzedRuns.Count > 0)
+            {
+                list.Add("The operator chose the runs: " + UnanalyzedCountText(_evidence.UnanalyzedRuns.Count)
+                    + " (see the run selection). The verdicts hold for the analyzed runs; leaving runs out after looking at the timeline can bias them.");
             }
 
             return list;
@@ -2497,9 +2610,10 @@ public class ChatConsistencyAnalysisService
         // --- Input fingerprint -----------------------------------------------------------------
 
         /// <summary>
-        /// Lower-case hex SHA-256 over a canonical serialization of every input: the request, the protocol,
-        /// each run with the fields and per-answer values the analysis reads, the calibrations, the
-        /// annotations and the price card, all in id order.
+        /// Lower-case hex SHA-256 over a canonical serialization of every input: the request with its run
+        /// selection, the protocol, each run with the fields and per-answer values the analysis reads, the
+        /// calibrations, the annotations and the price card, all in id order, and the runs not analyzed and
+        /// why, by start.
         /// </summary>
         private string InputSha256()
         {
@@ -2624,10 +2738,22 @@ public class ChatConsistencyAnalysisService
                     ControlRunIds = _request.ControlRunIds?.Distinct().OrderBy(i => i).ToList(),
                     _request.RelaxedPooling,
                     _request.CommonGraderSnapshotId,
-                    _request.AvailableOtherProviderModels
+                    _request.AvailableOtherProviderModels,
+                    RunSelection = _request.RunSelection is { } selection
+                        ? new
+                        {
+                            selection.RangeLabel,
+                            RangeFromUtc = ToUtc(selection.RangeFromUtc),
+                            RangeToUtc = ToUtc(selection.RangeToUtc),
+                            selection.FirstRunId,
+                            selection.LastRunId,
+                            LeftOutRunIds = LeftOutIds(selection)
+                        }
+                        : null
                 },
                 Protocol = _protocol.ToJson(),
                 Runs = runs,
+                UnanalyzedRuns = _evidence.UnanalyzedRuns.Select(u => new { u.RunId, u.Period, u.Reason }).ToList(),
                 Calibrations = _evidence.Calibrations.OrderBy(c => c.Id).Select(Calibration).ToList(),
                 AnchorCalibrations = _evidence.AnchorCalibrations.OrderBy(c => c.Id).Select(Calibration).ToList(),
                 Annotations = _evidence.Annotations.OrderBy(a => a.Id).Select(a => new
@@ -2658,6 +2784,23 @@ public class ChatConsistencyAnalysisService
         ConsistencyVerdict.Inconclusive => "inconclusive",
         _ => "not computable"
     };
+
+    /// <summary>A <see cref="ChatConsistencyUnanalyzedReasons"/> value as the notes write it.</summary>
+    private static string UnanalyzedReasonText(string reason) => reason switch
+    {
+        ChatConsistencyUnanalyzedReasons.LeftOut => "left out in step 1",
+        ChatConsistencyUnanalyzedReasons.OutsideDateRange => "outside the step-1 dates",
+        ChatConsistencyUnanalyzedReasons.BeforeFirstRun => "before the first run",
+        ChatConsistencyUnanalyzedReasons.AfterLastRun => "after the last run",
+        ChatConsistencyUnanalyzedReasons.NotSelected => "not selected in step 4",
+        _ => reason
+    };
+
+    /// <summary>"1 usable run of the model inside the periods was not analyzed", or the plural.</summary>
+    private static string UnanalyzedCountText(int count)
+        => count == 1
+            ? "1 usable run of the model inside the periods was not analyzed"
+            : Inv(count) + " usable runs of the model inside the periods were not analyzed";
 
     private static double ToPercent(double logRatio) => 100.0 * (Math.Exp(logRatio) - 1.0);
 

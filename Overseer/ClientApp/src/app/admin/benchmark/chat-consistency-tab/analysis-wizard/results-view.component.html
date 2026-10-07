@@ -133,6 +133,40 @@
 <h5 class="cc-res-heading">Events in the analyzed span</h5>
 <app-cc-event-list [days]="eventDays" idPrefix="cc-res-ev" [dayHeadingLevel]="6"></app-cc-event-list>
 
+@if (runSelection; as selection) {
+  <section class="cc-res-selection" aria-labelledby="cc-res-selection-title">
+    <h5 class="cc-res-heading" id="cc-res-selection-title">Run selection</h5>
+    @if (selection.recorded) {
+      <dl class="cc-res-selection-facts">
+        <div>
+          <dt>Dates</dt>
+          <dd>
+            {{ selection.rangeLabel || 'All dates' }}
+            @if (rangeBoundsText(selection); as bounds) {
+              <span class="cc-muted">{{ ' · ' + bounds }}</span>
+            }
+          </dd>
+        </div>
+        <div><dt>First run</dt><dd>{{ runMark(selection.firstRunId) }}</dd></div>
+        <div><dt>Last run</dt><dd>{{ runMark(selection.lastRunId) }}</dd></div>
+        <div><dt>Left out in step 1</dt><dd>{{ leftOutText(selection) }}</dd></div>
+      </dl>
+    }
+    <p class="cc-res-selection-label">Not analyzed</p>
+    @if (unanalyzedGroups(selection); as groups) {
+      @if (groups.length > 0) {
+        <ul class="cc-res-list cc-res-unanalyzed">
+          @for (group of groups; track group.reason) {
+            <li [attr.data-reason]="group.reason">{{ group.label }}: {{ group.runs }}</li>
+          }
+        </ul>
+      } @else {
+        <p class="cc-muted cc-res-all-analyzed">Every usable run of the model in the periods was analyzed.</p>
+      }
+    }
+  </section>
+}
+
 <h5 class="cc-res-heading">Limitations</h5>
 @if (result.limitations.length > 0) {
   <ul class="cc-res-list">

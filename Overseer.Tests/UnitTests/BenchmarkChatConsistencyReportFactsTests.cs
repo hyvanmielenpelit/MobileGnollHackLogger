@@ -393,6 +393,42 @@ public class BenchmarkChatConsistencyReportFactsTests
     }
 
     [Fact]
+    public void TheRunSelectionNoteAndLimitation_BecomeLimitationFacts()
+    {
+        const string note = "2 usable runs of the model inside the periods were not analyzed — left out in step 1: #45 (baseline); "
+            + "not selected in step 4: #60 (comparison).";
+        const string limitation = "The operator chose the runs: 2 usable runs of the model inside the periods were not analyzed "
+            + "(see the run selection). The verdicts hold for the analyzed runs; leaving runs out after looking at the timeline can bias them.";
+        var baseResult = Result();
+        var result = baseResult with
+        {
+            DataQuality = baseResult.DataQuality.Append(new ChatConsistencyNote { Kind = "runSelection", Text = note }).ToList(),
+            Limitations = baseResult.Limitations.Append(limitation).ToList(),
+            RunSelection = new ChatConsistencyRunSelectionView
+            {
+                Recorded = true,
+                RangeLabel = "Last 30 days",
+                LeftOutRunIds = new long[] { 45 },
+                UnanalyzedRuns = new[]
+                {
+                    new ChatConsistencyUnanalyzedRun { RunId = 45, Period = "baseline", StartedAtUtc = Day1.AddDays(1), Reason = ChatConsistencyUnanalyzedReasons.LeftOut },
+                    new ChatConsistencyUnanalyzedRun { RunId = 60, Period = "comparison", StartedAtUtc = Day1.AddDays(15), Reason = ChatConsistencyUnanalyzedReasons.NotSelected }
+                }
+            }
+        };
+
+        foreach (var audience in BenchmarkReportSlots.ChatConsistencyAudiences)
+        {
+            var sheet = BenchmarkChatConsistencyReportFacts.Build(result, audience, RequestIds());
+
+            Assert.Equal(3, Fact(sheet, "limitation.count").Value!.GetValue<int>());
+            Assert.Equal(limitation, Fact(sheet, "limitation.3").Display);
+            Assert.Equal(2, Fact(sheet, "limitation.dataQuality.count").Value!.GetValue<int>());
+            Assert.Equal(note, Fact(sheet, "limitation.dataQuality.2").Display);
+        }
+    }
+
+    [Fact]
     public void ControlModels_AreLettered_AndNeverNamedInTheFacts()
     {
         var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ProviderIssueReport, RequestIds());

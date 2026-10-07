@@ -35,28 +35,29 @@
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
+
+  &:empty {
+    display: none;
+  }
 }
 
-// The picker's trigger is at least 38 px tall; the date inputs match it.
-.cc-model-date {
+// The picker's trigger is at least 38 px tall; the Dates select matches it.
+.cc-model-range {
   min-block-size: 38px;
+  max-inline-size: 16rem;
 
-  &[type="date"] {
-    color-scheme: dark;
-  }
-
-  &[readonly] {
+  &[aria-disabled="true"] {
     opacity: 0.55;
     cursor: not-allowed;
   }
 }
 
-.cc-model-clear {
-  justify-self: start;
+app-date-field {
+  max-inline-size: 13rem;
 }
 
 // Wide: one row of fields over three shared rows (labels, controls, hints), so every control sits
-// on one track and the date inputs are level with the picker's trigger.
+// on one track and the Dates select and the custom dates are level with the picker's trigger.
 @container cc-model (min-width: 44rem) {
   .cc-model-fields {
     grid-template-columns: minmax(16rem, 32rem) auto auto auto;
@@ -79,28 +80,26 @@
     }
 
     > .cc-model-hints {
+      display: flex;
       align-self: start;
     }
   }
 
-  // Explicit columns: an item locked to a row is placed before the auto-placed ones, so the button
-  // would otherwise take the first column.
+  // Explicit columns: an item locked to a row is placed before the auto-placed ones.
   .cc-model-field--model {
     grid-column: 1;
   }
 
-  .cc-model-field--from {
+  .cc-model-field--range {
     grid-column: 2;
   }
 
-  .cc-model-field--to {
+  .cc-model-field--from {
     grid-column: 3;
   }
 
-  .cc-model-clear {
+  .cc-model-field--to {
     grid-column: 4;
-    grid-row: 2;
-    align-self: center;
   }
 
   .cc-model-range-error {
@@ -115,7 +114,8 @@
 }
 
 .cc-tl-status,
-.cc-tl-announcement {
+.cc-tl-announcement,
+.cc-scope-note {
   margin: 0;
   color: var(--nav-color);
 
@@ -124,8 +124,20 @@
   }
 }
 
-.cc-tl-runs-title {
+.cc-runs-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
   margin-top: 0.5rem;
+
+  .cc-tl-runs-title {
+    margin: 0;
+  }
+}
+
+.cc-runs-status {
+  margin-inline-start: auto;
 }
 
 .cc-tl-empty {
@@ -133,40 +145,291 @@
   color: var(--nav-color);
 }
 
-// The table scrolls inside its own container, never the page.
-.cc-tl-table-scroll {
-  max-inline-size: 100%;
-  overflow-x: auto;
+// --- Selection band ---------------------------------------------------------------------------
+
+.cc-scope-band {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(224, 186, 109, 0.05);
 }
 
-.cc-run-table {
-  font-size: var(--text-secondary);
+.cc-scope-label {
+  margin: 0;
+  font-weight: 600;
 
-  td,
-  th {
-    vertical-align: top;
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 }
 
-.cc-nowrap {
+.cc-scope-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cc-scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-inline-start: 0.625rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+
+  &[data-kind="leftOut"] {
+    border-style: dashed;
+  }
+}
+
+.cc-scope-hint,
+.cc-scope-empty {
+  margin: 0;
+}
+
+// --- Filter bar -------------------------------------------------------------------------------
+
+.cc-runs-search {
+  flex: 1 1 16rem;
+}
+
+// Sort by, pushed to the end of the search row.
+.cc-runs-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.cc-runs-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
   white-space: nowrap;
 }
 
+.cc-runs-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.cc-runs-clear-filters {
+  margin-inline-start: 4px;
+}
+
+// --- Run cards --------------------------------------------------------------------------------
+
+.cc-run-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: cc-run-cards / inline-size;
+}
+
+.cc-run-card-item {
+  min-inline-size: 0;
+}
+
+// The checkbox down the left, the header and the actions on one row, then the eligibility and the
+// facts. A run in the analysis has the gold border and tint with its tick; a run outside the span
+// or left out has a dashed gray border.
+.cc-run-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "select head  actions"
+    "select elig  elig"
+    "select facts facts";
+  gap: 0.625rem 1.25rem;
+  padding: 0.875rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:has(.cc-run-include:checked) {
+    border-color: var(--border-glass);
+    background: rgba(224, 186, 109, 0.04);
+  }
+
+  &:not(:has(.cc-run-include:checked)) {
+    border-style: dashed;
+  }
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+.cc-run-select {
+  grid-area: select;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding-top: 0.125rem;
+  max-inline-size: 7rem;
+}
+
+.cc-run-include {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  accent-color: var(--primary-color);
+
+  &[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+}
+
+.cc-run-out-reason {
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  text-align: center;
+  color: var(--nav-color);
+}
+
+.cc-run-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+
+.cc-run-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  // Inline with the other parts, without the block layout the global tags take under a name.
+  .gh-tag {
+    display: inline-flex;
+    margin: 0;
+  }
+}
+
 .cc-run-id {
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
 }
 
-.cc-run-status {
-  display: block;
-  color: var(--nav-color);
+.cc-sep {
+  color: #71717a;
 }
 
-.cc-muted {
-  color: var(--nav-color);
+// Focused after Show more, so it carries a ring for that focus alone.
+.cc-run-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
+
+  label {
+    cursor: pointer;
+  }
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
-.cc-elig-cell {
-  min-width: 14rem;
+.cc-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  > span {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.cc-run-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cc-run-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: start;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+// A pressed mark shows its check glyph and a gold border, not color alone.
+.cc-mark-btn[aria-pressed="true"] {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.cc-legacy-tag {
+  border-color: var(--score-mid-border);
+  color: var(--score-mid-ink);
+}
+
+.cc-recorded-tag {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #d4d4d8;
+}
+
+.cc-anchor-tag,
+.cc-mark-tag {
+  border-color: var(--border-glass);
+  color: var(--primary-color);
+}
+
+.cc-left-out-tag {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #d4d4d8;
+}
+
+.cc-run-elig {
+  grid-area: elig;
+  min-inline-size: 0;
 }
 
 .cc-elig-list {
@@ -210,28 +473,80 @@
   font-size: var(--text-xs);
 }
 
-.cc-legacy-tag {
-  border-color: var(--score-mid-border);
-  color: var(--score-mid-ink);
+// Four facts in fixed columns behind a hairline, so they line up down the list.
+.cc-run-facts {
+  grid-area: facts;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: var(--text-secondary);
+
+  dt {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #888;
+  }
+
+  dd {
+    margin: 0.125rem 0 0;
+    overflow-wrap: anywhere;
+  }
 }
 
-.cc-anchor-tag {
-  border-color: var(--border-glass);
-  color: var(--primary-color);
+.cc-run-fact {
+  min-inline-size: 0;
 }
 
-.cc-served {
-  min-width: 10rem;
-  overflow-wrap: anywhere;
+// The actions go under the header below 48 rem of the list, and everything into one column below 30 rem.
+@container cc-run-cards (max-width: 48rem) {
+  .cc-run-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "select head"
+      "select actions"
+      "select elig"
+      "select facts";
+  }
+
+  .cc-run-actions {
+    justify-content: flex-start;
+  }
 }
 
-.cc-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  min-width: 12rem;
+@container cc-run-cards (max-width: 30rem) {
+  .cc-run-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "select"
+      "head"
+      "actions"
+      "elig"
+      "facts";
+    padding-inline: 1rem;
+  }
+
+  .cc-run-select {
+    flex-direction: row;
+    align-items: center;
+    max-inline-size: none;
+  }
+
+  .cc-run-out-reason {
+    text-align: start;
+  }
 }
 
 .cc-tl-legend {
   margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-run-card {
+    transition: none;
+  }
 }

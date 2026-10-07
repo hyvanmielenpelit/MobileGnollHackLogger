@@ -99,6 +99,18 @@ exist when it was found: the wizard's **Confirm on later data** preset takes the
 baseline against the runs after it was saved. Change-point detection (`ChatConsistencyStatistics.Pelt`)
 exists but is not wired into the analysis or the timeline.
 
+**Leaving runs out after looking at the timeline is detection too.** Step 1 of the wizard lets the
+operator mark a first and a last run and leave runs out; nothing stops dropping a run *because* it is an
+outlier. So every analysis saved since `AnalysisCodeVersion` 2 records its **run selection** (the step-1
+dates, the marks, the left-out runs) and every usable run of the model inside the periods that was not
+analyzed, with why: *left out in step 1*, *outside the step-1 dates*, *before the first run*, *after the
+last run* or *not selected in step 4*. When any run is unanalyzed, the result carries a `runSelection`
+data-quality note naming them and a limitation (*"The operator chose the runs: … leaving runs out after
+looking at the timeline can bias them."*), and the report documents state both. **A reader citing a
+verdict must not drop that note or limitation**: a verdict on a hand-picked subset holds for the
+analyzed runs only, and is confirmed only on later data. Analyses saved under code version 1 have no
+selection record (`recorded: false`).
+
 ## 9. Classifying a Harness Bump
 
 `HarnessImpactLedgerTests` fails until **every** version up to `BenchmarkAssessmentPrompt.HarnessVersion`

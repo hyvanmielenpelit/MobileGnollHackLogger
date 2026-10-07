@@ -15,6 +15,17 @@ import { ModelPickerOption } from '../../../../shared/model-picker/model-picker.
 import { refreshAnchorPositioning } from '../../../../utils/polyfills.util';
 import { CcAnalysisStep, CcAnalysisWizardComponent } from '../analysis-wizard/analysis-wizard.component';
 import { plural } from '../chat-consistency-format';
+import { CC_ALL_DATES, CcDateRange, ccDateRangeText } from '../chat-consistency-range';
+import {
+  CC_EMPTY_SCOPE,
+  CcRunInclusion,
+  CcRunScope,
+  notAnalyzedRuns,
+  scopeIsDefault,
+  scopeKey,
+  scopeRuns,
+  scopeSpanDays
+} from '../chat-consistency-scope';
 import {
   CcAnalysisResult,
   CcAnalysisSummary,
@@ -23,7 +34,7 @@ import {
   CcRunRow,
   CcTimeline
 } from '../chat-consistency.models';
-import { CcDayRange, CcModelStepComponent } from '../model-step/model-step.component';
+import { CcModelStepComponent } from '../model-step/model-step.component';
 import { CcTimelineWorkspaceComponent } from '../timeline-workspace/timeline-workspace.component';
 
 /** The steps of the Chat Consistency wizard. */
@@ -92,7 +103,9 @@ export class CcWizardComponent {
   @Input() axesLoading = false;
   @Input() axesError: string | null = null;
   @Input() selectedKey: string | null = null;
-  @Input() range: CcDayRange = { fromDay: '', toDay: '' };
+  @Input() range: CcDateRange = CC_ALL_DATES;
+  /** The runs of step 1 the analysis uses. */
+  @Input() scope: CcRunScope = CC_EMPTY_SCOPE;
   @Input() timeline: CcTimeline | null = null;
   @Input() rows: readonly CcRunRow[] = [];
   /** The timeline and the run table of the subject are loading. */
@@ -112,7 +125,8 @@ export class CcWizardComponent {
   @Input() pickerEmptyHint: string | null = null;
 
   @Output() readonly modelChange = new EventEmitter<string>();
-  @Output() readonly rangeChange = new EventEmitter<CcDayRange>();
+  @Output() readonly rangeChange = new EventEmitter<CcDateRange>();
+  @Output() readonly scopeChange = new EventEmitter<CcRunScope>();
   @Output() readonly repeatSetup = new EventEmitter<number>();
   @Output() readonly anchorToggle = new EventEmitter<CcRunRow>();
   @Output() readonly openRunReport = new EventEmitter<number>();
@@ -151,20 +165,64 @@ export class CcWizardComponent {
     return ANALYSIS_STEP_OF[this.analysisWizardStep];
   }
 
-  /** `GPT-5 high · 18 runs · every date`, or the invitation to choose a model. */
+  /**
+   * `GPT-5 high · 18 runs · Last 30 days`, with `· 15 in the analysis` while step 1 narrows the runs,
+   * or the invitation to choose a model.
+   */
   get subtitle(): string {
     const axis = this.axis;
     if (!axis) return 'Choose a model, then follow the steps';
     const count = this.timeline?.points.length ?? axis.runCount;
-    return `${axis.displayName} · ${plural(count, 'run')} · ${this.rangeText}`;
+    const text = `${axis.displayName} · ${plural(count, 'run')} · ${this.rangeText}`;
+    return scopeIsDefault(this.scope) ? text : `${text} · ${this.scopedRows.length} in the analysis`;
   }
 
-  private get rangeText(): string {
-    const { fromDay, toDay } = this.range;
-    if (fromDay && toDay) return `${fromDay} to ${toDay}`;
-    if (fromDay) return `from ${fromDay}`;
-    if (toDay) return `until ${toDay}`;
-    return 'every date';
+  get rangeText(): string {
+    return ccDateRangeText(this.range);
+  }
+
+  /** The runs the analysis uses, oldest first. */
+  get scopedRows(): readonly CcRunRow[] {
+    return this.scopeState().scoped;
+  }
+
+  /** The runs of step 1 not in the analysis, with why. */
+  get notAnalyzed(): ReadonlyMap<number, CcRunInclusion> {
+    return this.scopeState().notAnalyzed;
+  }
+
+  /** The UTC days of the first and last run in the analysis; null with none. */
+  get analysisSpan(): { first: string; last: string } | null {
+    return this.scopeState().span;
+  }
+
+  get scopeKeyValue(): string {
+    return this.scopeState().key;
+  }
+
+  /** The scope's derived values, kept until the rows or the scope object change. */
+  private scopeMemo: {
+    rows: readonly CcRunRow[];
+    scope: CcRunScope;
+    scoped: readonly CcRunRow[];
+    notAnalyzed: ReadonlyMap<number, CcRunInclusion>;
+    span: { first: string; last: string } | null;
+    key: string;
+  } | null = null;
+
+  private scopeState(): NonNullable<CcWizardComponent['scopeMemo']> {
+    const memo = this.scopeMemo;
+    if (memo && memo.rows === this.rows && memo.scope === this.scope) return memo;
+    const scoped = scopeRuns(this.rows, this.scope);
+    this.scopeMemo = {
+      rows: this.rows,
+      scope: this.scope,
+      scoped,
+      notAnalyzed: notAnalyzedRuns(this.rows, this.scope),
+      span: scopeSpanDays(scoped),
+      key: scopeKey(this.scope)
+    };
+    return this.scopeMemo;
   }
 
   /** Reload runs, on steps 1–2, refuses while the subject loads and without a model. */

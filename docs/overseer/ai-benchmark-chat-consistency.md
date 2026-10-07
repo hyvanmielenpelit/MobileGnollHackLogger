@@ -508,12 +508,15 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 1).
+currently 2; version 2 records the run selection, § 17.2).
 
-- **`InputSha256`** is the SHA-256 of a canonical serialization of every input: the request, the
-  protocol, each run with the fields and per-answer values the analysis reads (its call telemetry
-  included), the calibrations and anchor calibrations, the annotations and the price card, all in id
-  order.
+- **`InputSha256`** is the SHA-256 of a canonical serialization of every input: the code version, the
+  request (its run selection included: the date label, the UTC bounds, the first and last run and the
+  sorted left-out run ids), the protocol, each run with the fields and per-answer values the analysis
+  reads (its call telemetry included), the unanalyzed runs (id, period, reason), the calibrations and
+  anchor calibrations, the annotations and the price card, all in id order. Two analyses that differ
+  only in the recorded selection have different fingerprints. Analyses saved under code version 1 keep
+  their fingerprint and open with no selection record.
 - Fixed inputs give fixed results: every resampling is seeded from the protocol, every collection is
   ordered, and the result JSON excludes the row's id and creation time.
 
@@ -527,8 +530,10 @@ Consistency wizard**, six steps in a full-screen dialog.
 ### 17.1 The launcher
 
 - **Open Chat Consistency Wizard** opens the wizard where it was left, on step 1 the first time.
-- **Current model**, while a model is chosen: the model, its runs (all, with call telemetry, and in the
-  chosen dates), the dates and the latest saved analysis. It is a read-out; the wizard makes the choice.
+- **Current model**, while a model is chosen: the model, its runs (all, with call telemetry, in the
+  chosen dates unless they are *All dates*, and *· N in the analysis* while step 1 narrows them), the
+  dates as step 1 names them (*All dates*, *Last 30 days*, *2026-09-01 to 2026-10-05*) and the latest
+  saved analysis. It is a read-out; the wizard makes the choice.
 - **How chat consistency works**, a disclosure listing the six steps under the wizard's own titles,
   open on the first visit and afterwards as the operator left it.
 - **Saved analyses** — every analysis, newest first, with *Open* and *Delete* (refused while report
@@ -537,29 +542,71 @@ Consistency wizard**, six steps in a full-screen dialog.
 
 ### 17.2 The wizard
 
-A header names the model, its run count and the dates, with *Reload runs* on steps 1 and 2 and a close
-button. Under it, the step tabs; at the bottom, *Previous*, the step position with the reason the next
-step is unavailable, and *Next* — *Analyze* on step 4, *Close* on step 6.
+A header names the model, its run count and the dates (*GPT-6.1 Sol (medium) · 19 runs · Last 30
+days*, with *· 15 in the analysis* while step 1 narrows the runs), with *Reload runs* on steps 1 and 2
+and a close button. Under it, the step tabs; at the bottom, *Previous*, the step position with the
+reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close* on step 6.
 
-1. **Model** — the model (*Models with at least one usable benchmark run*) and an optional UTC date
-   range (*Every date* clears it), then the **Runs** table: per-axis eligibility with the reasons,
-   segment, telemetry, re-grade coverage, anchor, matched controls and served model, and per row
-   *Repeat this run's setup*, *Mark as anchor* / *Unmark anchor* and *Open run report*.
-2. **Timeline** — the chart workspace (§ 17.3).
+1. **Model** — the model (*Models with at least one usable benchmark run*), the dates, then the runs as
+   cards with the **run selection** the analysis uses:
+   - **Dates**: *All dates*, *Last 1 day*, *Last 3 days*, *Last 7 days*, *Last 14 days*, *Last 28
+     days*, *Last 30 days*, *Last 90 days*, *Last 180 days*, *Last year* or *Custom*. A rolling preset
+     counts back N × 24 hours (*Last year*: one calendar year) from the moment it was chosen, with an
+     open end; the hint under the select names its start (*Since 2026-09-30 14:05 UTC · Reload runs
+     moves it to now*), and *Reload runs* moves it to now. *Custom* shows **From (UTC)** and **To
+     (UTC)**, inclusive UTC calendar days prefilled from the preset it replaces. Each is a `YYYY-MM-DD`
+     text field (`2026-9-5`, `2026/9/5` and `2026.9.5` become `2026-09-05`) with a calendar button that
+     opens a glass calendar of UTC days.
+   - **Runs of the model**, one card per run, newest first: an *Include run #N in the analysis*
+     checkbox labeled by the suite name; the run id, status, harness, *Legacy* or *Recorded*, and the
+     *Anchor*, *First run*, *Last run* and *Left out* tags; the start time and served model; **First
+     run** and **Last run** toggles, *Open run report* and *More actions* (*Repeat this run's setup*,
+     *Mark as anchor* / *Unmark anchor*); the per-axis eligibility with the reasons; and the segment,
+     telemetry, re-grade coverage and matched controls. A filter bar searches (`#id`, suite, harness,
+     status, served model), sorts (*Newest first*, *Oldest first*, *Suite (A–Z)*, *Harness*) and
+     filters by *Suite*, *Harness*, *Telemetry*, *In the analysis* and *Eligibility*; ten cards show at
+     a time, with *Show 10 more* and *Show all N*.
+   - **The selection.** Without a mark or a left-out run, every run in the dates is analyzed. *First
+     run* and *Last run* bound the runs the analysis uses, in start order (then run id); a first run
+     later than the last clears the last, and the reverse, each saying so; pressing a pressed toggle
+     clears its mark. Clearing a card's checkbox leaves the run out. A run before the first or after
+     the last reads *Before the first run (#21)* / *After the last run (#93)* with its checkbox
+     disabled, also when it was left out before the mark was set; its left-out id stays in the
+     selection. The **Runs in the analysis** band above the filter bar sums it up (*Runs in the
+     analysis — 15 of 19 runs in these dates · from #21 (2026-09-20) to #93 (2026-10-05) · 2 left
+     out*), shows the marks and up to six left-out runs as removable chips (*+N more* filters the list
+     to *Left out*), offers *Clear selection (N)*, and warns *No run is left in the analysis. Check at
+     least one run.* **The search and the filters change what is shown, never what is analyzed.**
+   - The selection is cleared when another model is chosen, and when a saved analysis is opened (*The
+     run selection in step 1 was cleared to show the saved analysis.*); a reload that no longer lists a
+     marked or left-out run drops it and says so. The dates stay.
+2. **Timeline** — the chart workspace (§ 17.3). It draws every run in the dates, not only the runs in
+   the analysis, so the composite events keep their numbers.
 3. **Periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an annotation*,
    *Before vs after an Overseer change*, which offers the composite events of § 5.2, *Confirm on later
-   data*, *Custom dates*) or by hand, as inclusive UTC dates; Protocol V1 with its margins, and
-   *Override the protocol* for the margins and α.
-4. **Runs and controls** — the baseline and comparison runs (eligible runs preselected), the matched
-   control runs, the common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade*
-   is pressed), *Pool across measurement segment boundaries*, and a preview of the common strata, the
-   composite Overseer events in the span and the missing controls. *Analyze* runs and saves the
-   analysis and moves to Results; *Stop Analysis* stops it.
+   data*, *Custom dates*) or by hand, as inclusive UTC dates in the same date fields as step 1; Protocol
+   V1 with its margins, and *Override the protocol* for the margins and α. **The presets span the runs
+   in the analysis**, from the first to the last of them, as the note under the presets says: *Presets
+   use the runs chosen in step 1: #21 (2026-09-20) to #93 (2026-10-05), 15 runs.*, or *Presets use
+   every run in the dates: …* while step 1 chooses nothing. A changed selection re-applies the chosen
+   preset; dates typed by hand stay.
+4. **Runs and controls** — the baseline and comparison runs from the runs in the analysis (eligible
+   runs preselected, again whenever the step-1 selection changes), the matched control runs, the
+   common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade* is pressed), *Pool
+   across measurement segment boundaries*, and a preview of the common strata, the composite Overseer
+   events in the span, the missing controls and *Left out in step 1: #45, #51* for left-out runs inside
+   either period. *Analyze* runs and saves the analysis, with the step-1 run selection (§ 19), and moves
+   to Results; *Stop Analysis* stops it.
 5. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
    effects, the attribution grouped by side after the total changes, the next runs (each with *Repeat
-   this run's setup*), the charts, the events in the analyzed span as an event list (§ 17.3), the
-   limitations and data-quality notes, and the identity (analysis id, `InputSha256`, analysis code
-   version).
+   this run's setup*), the charts, the events in the analyzed span as an event list (§ 17.3), the **Run
+   selection**, the limitations and data-quality notes, and the identity (analysis id, `InputSha256`,
+   analysis code version). The *Run selection* section lists *Dates* (the step-1 label with its UTC
+   bounds, *Last 30 days · 2026-09-07 09:00 UTC to the last run*), *First run*, *Last run* and *Left out
+   in step 1* (a run id or *none*), then *Not analyzed*: one line per reason with its runs and period
+   (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not selected in step 4: #60
+   (comparison)*), or *Every usable run of the model in the periods was analyzed.* An analysis saved
+   under code version 1 has no such section.
 6. **Reports** — the Chat Consistency Report documents (§ 20).
 
 Step 1 is always open; steps 2 and 3 need a model, step 4 valid periods and overrides, and steps 5 and 6
@@ -568,9 +615,10 @@ marked unavailable, with its reason. Each step is kept once shown, so closing an
 or changing step, keeps a table's sort and page, the chart zoom and an analysis in progress. **Escape
 and the close buttons are refused while a chart export runs or while the Reports step attaches report
 charts**, since closing would strand a half-written batch. For the same duration the model and the dates
-in step 1 are locked, with the reason shown under them, and a repeated Escape cannot close the wizard
-either. The model, the step and the analysis live as
-long as the tab: switching to another GnollBench sub-tab loses them.
+in step 1 are locked — the *Dates* select keeps its value, the date fields are read-only and their
+calendar buttons open nothing, all still focusable — with the reason shown under them, and a repeated
+Escape cannot close the wizard either. The model, the dates, the run selection, the step and the
+analysis live as long as the tab: switching to another GnollBench sub-tab loses them.
 
 ### 17.3 The Timeline step
 
@@ -582,10 +630,19 @@ its markers — composite Overseer events `E<n>`, annotations `A<n>` and served-
 their tags staggered in a band above the plot — names them under the chart, and has a *Show data*
 table.
 
+**Runs not in the analysis** — left out in step 1, or before its first or after its last run — are
+drawn as **gray crosses**, and every line segment touching one is gray and dotted, so shape and dash,
+not only color, mark them; the legend keeps each series' own symbol. The caption counts them (*2 runs
+not in the analysis are drawn as gray crosses.*, counting runs with a value in any of the chart's
+series), the tooltip appends the reason (*— not in the analysis (left out in step 1)*), and the
+*Show data* table gains an *In the analysis* column (*Yes*, *No — before the first run*). Without a
+step-1 selection the charts are drawn as before. The values, scales and gaps do not change.
+
 The sidebar has four tabs:
 
-- **Data** — which charts are shown, which series of the charts that draw more than one, and *Start the
-  quality axis at zero*.
+- **Data** — which charts are shown, which series of the charts that draw more than one, *Start the
+  quality axis at zero*, and **Mark runs not in the analysis** (on by default; off draws every run
+  alike).
 - **Events** — which markers the charts show (*Overseer changes*, *Annotations*, *Served-model
   changes*), which Overseer change kinds (each with the number of composite events holding it), and the
   **event list**: one section per UTC day, oldest first. A composite event shows its title (*Harness 26 →
@@ -614,19 +671,21 @@ In a view, outside a form field and without Ctrl, ⌘ or Alt, `+` or `=` zooms i
 fits (one chart's height in All charts, the screen in Single chart) and, in Single chart, `1` is 100 %.
 
 **The image is the plot alone** — without its title, caption or marker list — in the chosen theme, with
-the series and markers the sidebar shows. **Download** writes PNG or WebP (quality 75–100) at a size
+the series and markers the sidebar shows, and the gray crosses while runs not in the analysis are
+marked. **Download** writes PNG or WebP (quality 75–100) at a size
 preset, grouped by aspect ratio (16:9, 16:10, 4:3, 3:2, 1:1, 21:9 and print), or at a custom width and
 height, with a pixel density and a text size: the controls of Model Comparison. A browser that cannot
 encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image type clipboards take.
 **Download all** writes every shown chart — one ZIP when there is more than one — and names the charts
 it skipped for having nothing to draw. The files are
 `chat-consistency_<model key>_<chart>_<yyyyMMdd_HHmmss>.<png|webp>` and
-`chat-consistency_<model key>_charts_<yyyyMMdd_HHmmss>.zip`. The workspace layout, the chart choices and
-the download settings are kept per browser.
+`chat-consistency_<model key>_charts_<yyyyMMdd_HHmmss>.zip`. The workspace layout, the chart choices
+(*Mark runs not in the analysis* included) and the download settings are kept per browser.
 
 ### 17.4 Repeat this run's setup
 
-**"Repeat this run's setup"** — in the run table, on the next-run suggestions and in the run report —
+**"Repeat this run's setup"** — in a run card's *More actions*, on the next-run suggestions and in the
+run report —
 opens Run Benchmark with the run's suite, scoring profile, models and prompt options filled in, and
 notes anything that no longer exists. **It never starts a run**: the operator checks the settings and
 presses Start. From the wizard it switches sub-tab, so it closes the wizard first. While Chat
@@ -641,6 +700,29 @@ pointed at it. The **Confirm on later data** preset re-tests it on data that did
 last saved analysis's baseline against the subject's runs from the day after that analysis was saved —
 and only a change that holds there is confirmed.
 
+**Leaving runs out after looking is detection too.** Step 1's first and last run and its *Include in the
+analysis* checkboxes let the operator drop runs, and nothing stops dropping one *because* the timeline
+shows it as an outlier. The analysis therefore records the choice instead of preventing it: every
+analysis saved since code version 2 keeps its **run selection** (the step-1 dates, the marks and the
+left-out runs) and every usable run of the subject inside the periods that it did not analyze, with the
+first reason that applies, in this order — *left out in step 1*, *outside the step-1 dates*, *before
+the first run*, *after the last run* (by start, then run id) or *not selected in step 4*. A run left out
+and also outside the marks is recorded as left out. When any run is unanalyzed, the result carries:
+
+- a data-quality note of kind `runSelection`: *"3 usable runs of the model inside the periods were not
+  analyzed — left out in step 1: #45 (baseline), #51 (comparison); not selected in step 4: #60
+  (comparison)."*, naming at most 20 runs and then *"and N more"*;
+- the limitation *"The operator chose the runs: N usable runs of the model inside the periods were not
+  analyzed (see the run selection). The verdicts hold for the analyzed runs; leaving runs out after
+  looking at the timeline can bias them."*
+
+A first or last run of the selection that no longer exists is ignored, with the `runSelection` note
+*"The first run of the selection, #21, was not found."* The runs are classified only when the request
+names its baseline and comparison runs, as the wizard always does; without them the server takes every
+usable run in the periods, so none is unanalyzed. The selection never adds or removes a run from the
+analysis. The Timeline marks the runs step 1 keeps out (§ 17.3), and the report documents state the
+note and the limitation as they state every data-quality note and limitation.
+
 ## 19. API
 
 `AdminChatConsistencyController`, route `api/admin/benchmark/chat-consistency`, policy `AdminOnly`.
@@ -651,8 +733,8 @@ routes, which use the run report-documents contract.
 |--------|-------|--------------|
 | GET | `models` | every model axis with usable runs, run counts and first and last run dates |
 | GET | `timeline?modelKey&from&to` | one point per usable run in the inclusive UTC range, with events and annotations; 400 without `modelKey` or when `from` > `to` |
-| GET | `runs?modelKey&from&to` | the run table, validated alike |
-| POST | `analyses` | runs and saves an analysis; 200 with the result and `analysisId`; 400 for malformed or overlapping periods or a period without a usable run; 499 when the client aborts |
+| GET | `runs?modelKey&from&to` | the runs of step 1's run cards, validated alike |
+| POST | `analyses` | runs and saves an analysis; 200 with the result and `analysisId`; 400 for malformed or overlapping periods, a period without a usable run, or a malformed or contradictory `runSelection` (below); 499 when the client aborts |
 | GET | `analyses` | every saved analysis, newest first, without the results |
 | GET | `analyses/{id}` | one saved analysis; 404 |
 | DELETE | `analyses/{id}` | 204; 404; 409 while report documents written from it exist |
@@ -668,6 +750,24 @@ routes, which use the run report-documents contract.
 | GET | `annotations?provider&modelId` | annotations, oldest first, filtered when a provider is given |
 | POST | `annotations` | adds an annotation; 400 for empty text or text over 1,000 characters, a provider over 64 or model id over 128 characters, an unknown kind, or a source that is not an absolute http(s) URL of at most 512 characters |
 | DELETE | `annotations/{id}` | 204; 404 |
+
+**The run selection.** The analysis request's optional `runSelection` records how step 1 chose the
+runs; it is recorded, never used to pick runs. Its fields are `rangeLabel` (the dates as step 1 names
+them, at most 64 characters), `rangeFromUtc` and `rangeToUtc` (the UTC bounds, null when open; taken as
+UTC), `firstRunId`, `lastRunId` and `leftOutRunIds` (at most 5,000). The wizard always sends it, the
+default selection included. It is refused with 400 and:
+
+- *"The run selection's date label is at most 64 characters."*
+- *"The run selection's dates end before they start."*
+- *"The run selection leaves out at most 5,000 runs."*
+- *"Run #45 is left out in step 1 but selected for the baseline."* (or *comparison*), for a left-out run
+  that is also in `baselineRunIds` or `comparisonRunIds`.
+
+The result's `runSelection` carries `recorded` (false for an analysis saved before code version 2,
+whose JSON has none), the same fields with the left-out ids distinct and ascending, and
+`unanalyzedRuns`: `{ runId, period, startedAtUtc, reason }`, ordered by start, then id, with `period`
+`baseline` or `comparison` and `reason` one of `leftOut`, `outsideDateRange`, `beforeFirstRun`,
+`afterLastRun` and `notSelected` (`ChatConsistencyUnanalyzedReasons`, § 18).
 
 The client calls them through `AdminChatConsistencyService`
 (`Overseer/ClientApp/src/app/services/admin-chat-consistency.service.ts`).
@@ -714,6 +814,9 @@ The analysis records these in every result:
   not a change in which items each period sampled at which hour.
 - Cost is computed at one price card, so a price change does not register as a cost change.
 - On the legacy proxy, P2 spans the provider's whole turn, not the wait for the first answer text.
+- When usable runs of the model inside the periods were not analyzed, the operator chose the runs:
+  the verdicts hold for the analyzed runs, and leaving runs out after looking at the timeline can bias
+  them (§ 18).
 
 And of the implementation:
 

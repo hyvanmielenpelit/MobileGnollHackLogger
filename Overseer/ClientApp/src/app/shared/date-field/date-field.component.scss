@@ -1,0 +1,5 @@
+/* The field's and the calendar's look is global (.gh-date-field*, .gh-calendar* in styles.scss). */
+:host {
+  display: block;
+  min-inline-size: 0;
+}
