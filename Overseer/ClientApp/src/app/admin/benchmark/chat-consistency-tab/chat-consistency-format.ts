@@ -68,6 +68,16 @@ export function formatInteger(value: CcNumber | null | undefined): string {
   return n < 0 && Math.round(n) !== 0 ? MINUS + rounded : rounded;
 }
 
+/** `value` rounded to `digits` decimals, with comma thousands separators and the typographic minus: `12,345.6`. */
+export function formatGrouped(value: CcNumber | null | undefined, digits: number): string {
+  const text = formatFixed(value, digits);
+  if (text === NO_VALUE) return text;
+  const sign = text.startsWith(MINUS) ? MINUS : '';
+  const [whole, fraction] = text.slice(sign.length).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return sign + grouped + (fraction === undefined ? '' : `.${fraction}`);
+}
+
 /** A fraction as a percentage: `0.025` → `2.5 %`. */
 export function formatFractionPercent(fraction: CcNumber | null | undefined, digits = 1): string {
   const n = ccNumber(fraction);
@@ -80,26 +90,29 @@ export function formatSignedPercent(percent: CcNumber | null | undefined, digits
   return n === null ? NO_VALUE : `${formatSigned(n, digits)} %`;
 }
 
-/** Milliseconds: `850 ms` below a second, `2.4 s` from one. */
-export function formatMs(ms: CcNumber | null | undefined): string {
+/** Milliseconds: `850 ms` below a second, `2.4 s` from one, the seconds to `secondsDigits` decimals. */
+export function formatMs(ms: CcNumber | null | undefined, secondsDigits = 1): string {
   const n = ccNumber(ms);
   if (n === null) return NO_VALUE;
-  return Math.abs(n) < 1000 ? `${formatFixed(n, 0)} ms` : `${formatFixed(n / 1000, 1)} s`;
+  return Math.abs(n) < 1000 ? `${formatFixed(n, 0)} ms` : `${formatFixed(n / 1000, secondsDigits)} s`;
 }
 
 /** A decode rate in tokens per second. */
-export function formatTokenRate(rate: CcNumber | null | undefined): string {
+export function formatTokenRate(rate: CcNumber | null | undefined, digits = 1): string {
   const n = ccNumber(rate);
-  return n === null ? NO_VALUE : `${formatFixed(n, 1)} tok/s`;
+  return n === null ? NO_VALUE : `${formatFixed(n, digits)} tok/s`;
 }
 
-/** US dollars, with enough decimals that a cent-sized cost does not read as zero. */
-export function formatUsd(value: CcNumber | null | undefined): string {
+/**
+ * US dollars to `digits` decimals; without `digits`, with enough decimals that a cent-sized cost
+ * does not read as zero.
+ */
+export function formatUsd(value: CcNumber | null | undefined, digits?: number): string {
   const n = ccNumber(value);
   if (n === null) return NO_VALUE;
   const abs = Math.abs(n);
-  const digits = abs >= 1 ? 2 : abs >= 0.01 ? 3 : 4;
-  return `${n < 0 ? MINUS : ''}$${abs.toFixed(digits)}`;
+  const places = digits ?? (abs >= 1 ? 2 : abs >= 0.01 ? 3 : 4);
+  return `${n < 0 ? MINUS : ''}$${abs.toFixed(places)}`;
 }
 
 /** A p-value: `< 0.001` below it, else three decimals. */

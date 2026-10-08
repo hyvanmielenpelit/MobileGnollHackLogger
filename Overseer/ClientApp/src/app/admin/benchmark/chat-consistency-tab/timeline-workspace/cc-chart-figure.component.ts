@@ -12,7 +12,8 @@ import {
 import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
-import { CcChartMarker, CcFigure, CcFigureTable, CcMarkerKind } from '../chat-consistency-charts';
+import { CcChartMarker, CcDataListItem, CcFigure, CcFigureTable, CcMarkerKind } from '../chat-consistency-charts';
+import { plural } from '../chat-consistency-format';
 
 /** A run of marker tags of one kind with consecutive numbers: `E1`–`E4`, or `E7` alone. */
 export interface CcMarkerTagRun {
@@ -105,6 +106,8 @@ export function markerSummaryPieces(groups: readonly CcMarkerSummaryGroup[]): Cc
 export interface CcDataField {
   label: string;
   value: string;
+  /** The value as a list, one item per line; null for a plain value. */
+  items: readonly CcDataListItem[] | null;
   /** Spans the whole card row: a list, a note or a long value. */
   wide: boolean;
 }
@@ -125,7 +128,8 @@ const WIDE_VALUE_LENGTH = 32;
 /**
  * The table's rows as cards, ids derived from `idPrefix`: column 0 and its cell make the title,
  * column 1 the start, and every other column a field; an empty cell reads `—`, and an empty *Note*
- * is left out.
+ * is left out. A column the table also carries as lists (`CcFigureTable.lists`) gives its field the
+ * row's items, unless that row's list is empty.
  */
 export function ccDataCards(table: CcFigureTable, idPrefix: string): CcDataCard[] {
   const [unit = 'Run', , ...labels] = table.columns;
@@ -138,7 +142,12 @@ export function ccDataCards(table: CcFigureTable, idPrefix: string): CcDataCard[
       .filter(field => !(field.label === 'Note' && field.value === ''))
       .map(field => {
         const value = field.value === '' ? '—' : field.value;
-        return { label: field.label, value, wide: WIDE_COLUMNS.has(field.label) || value.length > WIDE_VALUE_LENGTH };
+        const list = table.lists?.[field.label]?.[r];
+        const items = list && list.length > 0 ? list : null;
+        return {
+          label: field.label, value, items,
+          wide: items !== null || WIDE_COLUMNS.has(field.label) || value.length > WIDE_VALUE_LENGTH
+        };
       })
   }));
 }
@@ -148,7 +157,7 @@ export function ccDataCards(table: CcFigureTable, idPrefix: string): CcDataCard[
  * the takeaway and described by a visually hidden list of its markers) in a box of the size the host
  * chooses, the takeaway sentence under it, a footer row with a one-line summary of the markers and
  * the actions the host projects (`[ccFigureActions]`), and a *Show data* disclosure holding the same
- * numbers as a list of cards.
+ * numbers as a list of data rows.
  */
 @Component({
   selector: 'app-cc-chart-figure',
@@ -224,5 +233,10 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
   /** `run` or `battery run`: what a data card is, from the table's first column. */
   get unitNoun(): string {
     return (this.figure?.table.columns[0] ?? 'Run').toLowerCase();
+  }
+
+  /** The *Show data* summary's count: `2 battery runs`, `6 runs`. */
+  get dataSummary(): string {
+    return plural(this.dataCards.length, this.unitNoun);
   }
 }

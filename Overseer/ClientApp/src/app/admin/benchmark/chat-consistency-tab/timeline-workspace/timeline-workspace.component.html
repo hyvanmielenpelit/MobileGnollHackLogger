@@ -82,6 +82,27 @@
             </label>
           </fieldset>
 
+          <fieldset class="gh-fieldset cc-tl-group cc-tl-decimals" aria-describedby="cc-tl-decimals-hint">
+            <legend>Decimal places</legend>
+            <p id="cc-tl-decimals-hint" class="cc-tl-hint">For point labels, tooltips, takeaways and Show data. Axis ticks keep the decimals their step needs; times under one second stay in whole milliseconds.</p>
+            <div class="cc-tl-decimals-grid">
+              @for (row of decimalRows; track row.key) {
+                <label class="cc-tl-decimals-label" [for]="'cc-tl-decimals-' + row.key">{{ row.title }}</label>
+                <select class="gh-input cc-tl-decimals-select" [id]="'cc-tl-decimals-' + row.key"
+                        (change)="setDecimals(row.key, $any($event.target).value)">
+                  <option value="" [selected]="row.value === null">{{ row.autoText }}</option>
+                  @for (n of row.choices; track n) {
+                    <option [value]="n" [selected]="row.value === n">{{ n }}</option>
+                  }
+                </select>
+              }
+            </div>
+            <div class="cc-tl-checklist-actions">
+              <button type="button" class="btn-link cc-tl-decimals-reset" [attr.aria-disabled]="anyDecimals ? null : 'true'"
+                      (click)="anyDecimals && resetDecimals()">All automatic<span class="visually-hidden"> decimal places</span></button>
+            </div>
+          </fieldset>
+
           <fieldset class="gh-fieldset cc-tl-group">
             <legend>Runs</legend>
             <label class="checkbox-label align-start">

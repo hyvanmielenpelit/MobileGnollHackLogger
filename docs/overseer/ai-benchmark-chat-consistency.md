@@ -742,7 +742,7 @@ to first answer text blue, streaming rate aqua, output tokens violet, tool calls
 Lines are 2 px with ringed points; each reliability rate has its own point shape as well as color. A
 chart with one series has no legend box (its title names the series) and an area wash under the line.
 On a chart drawing **at most two series, every point carries its value**, in the data cards' precision
-(*82.0*, *39.3 s*), above the point (the second series below it, either flipping where the plot's edge
+(*82.0*, *39.3 s*), or the chart's **Decimal places**, above the point (the second series below it, either flipping where the plot's edge
 would cut it), over a halo of the background so it reads across lines and fills; a point not in the
 analysis has its value muted. Where labels would collide, the lower-priority one is dropped: the latest
 point, the highest and the lowest are placed first, then the rest left to right, so those three always
@@ -779,11 +779,14 @@ start as the title (*#11 · 2026-10-08 07:14 UTC*) and one line per series with 
 (*Estimated: 422.2 tok/s*, *Overall Index: 82.4*), the series color only on a chart drawing more than
 one. A battery run's members are on its data card, not in the tooltip.
 
-**Show data** opens the chart's numbers as a list of **data cards**, one per run or battery run,
-spanning the figure's width with nothing scrolling sideways: the unit as the card's heading (*Battery
-run #11*), its start beside it, and every other column as a labeled field; *Member runs*, *Note*, *In
-the analysis*, *Served model* and any long value take a whole row, an empty value reads *—*, and an
-empty *Note* is left out. The list scrolls on its own beyond 24 rem.
+**Show data** opens the chart's numbers as one bordered list of **data cards**, one row per run or
+battery run, separated by hairlines and spanning the figure's width with nothing scrolling sideways;
+its summary counts them (*Show data · 2 battery runs*). Each row has the unit as its heading (*Battery
+run #11*), its start at the row's right, and every other column as a labeled field under them;
+*Member runs* lists one member per line, its id and then its suite (*#96 GnollHack Player Assistance
+Benchmark Suite*); *Member runs*, *Note*, *In the analysis*, *Served model* and any long value take a
+whole row, an empty value reads *—*, and an empty *Note* is left out. On a narrow chart the start moves
+under the heading and the fields stack in one column. The list scrolls on its own beyond 24 rem.
 
 **Runs not in the analysis** — left out in step 1, or before its first or after its last run — are
 drawn as **gray crosses**, and every line segment touching one is gray and dotted, so shape and dash,
@@ -796,8 +799,13 @@ step-1 selection the charts are drawn as before. The values, scales and gaps do 
 The sidebar has four tabs:
 
 - **Data** — with a battery compared, **Plot by** (*Battery runs* or *Member runs*); which charts are
-  shown, which series of the charts that draw more than one, *Show the full 0–100 Intelligence scale*, and
-  **Mark runs not in the analysis** (on by default; off draws every run alike).
+  shown, which series of the charts that draw more than one, *Show the full 0–100 Intelligence scale*,
+  **Decimal places** per chart — *Automatic* (the precision above, named in the choice, such as
+  *Automatic (2–4)* for cost) or 0–3, cost 0–4 — for the point labels, tooltips, takeaways and *Show
+  data* on the Timeline and in its downloads, while the axis ticks keep the decimals their step needs and
+  times under a second stay whole milliseconds (the Results step and the report charts keep the automatic
+  precision), with *All automatic* to reset them, and **Mark runs not in the analysis** (on by default;
+  off draws every run alike).
 - **Events** — which markers the charts show (*Overseer changes*, *Annotations*, *Served-model
   changes*), which Overseer change kinds (each with the number of composite events holding it), and the
   **event list**: one section per UTC day, oldest first. A composite event shows its title (*Harness 26 →
@@ -837,7 +845,7 @@ encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image ty
 it skipped for having nothing to draw. The files are
 `chat-consistency_<model key>_<chart>_<yyyyMMdd_HHmmss>.<png|webp>` and
 `chat-consistency_<model key>_charts_<yyyyMMdd_HHmmss>.zip`. The workspace layout, the chart choices
-(*Mark runs not in the analysis* and *Show the GnollBench logo* included) and the download settings are
+(the decimal places, *Mark runs not in the analysis* and *Show the GnollBench logo* included) and the download settings are
 kept per browser; a layout stored before the *Work per answer* chart was split shows both of its charts.
 
 ### 17.4 Repeat this run's setup

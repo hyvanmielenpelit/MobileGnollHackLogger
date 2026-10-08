@@ -103,14 +103,36 @@ describe('CcChartFigureComponent', () => {
     expect(cards[0].getAttribute('aria-labelledby')).toBe(title.id);
     expect(textOf(cards[0].querySelector('.cc-data-card-meta'))).toBe('2026-10-08 07:14 UTC');
 
-    const fields = Array.from(cards[0].querySelectorAll<HTMLElement>('.cc-data-field'))
-      .map(field => [textOf(field.querySelector('dt')), textOf(field.querySelector('dd')), field.classList.contains('is-wide')]);
+    // A list value reads as its items: adjacent items have no text between them.
+    const valueOf = (dd: Element) => dd.querySelector('.cc-data-list')
+      ? Array.from(dd.querySelectorAll('li')).map(li => textOf(li)).join(' · ')
+      : textOf(dd);
+    const fieldEls = Array.from(cards[0].querySelectorAll<HTMLElement>('.cc-data-field'));
+    const fields = fieldEls
+      .map(field => [textOf(field.querySelector('dt')), valueOf(field.querySelector('dd')!), field.classList.contains('is-wide')]);
     // The empty Note is left out; Member runs takes the whole row.
     expect(fields).toEqual([
       ['Overall Intelligence Index', '82.0', false],
       ['Suites', '2', false],
-      ['Member runs', '#1101 (Board Suite), #1102 (Wiki Suite)', true]
+      ['Member runs', '#1101 Board Suite · #1102 Wiki Suite', true]
     ]);
+
+    // Member runs one per line: the id, then its suite name.
+    const members = fieldEls[2].querySelector('dd ul.cc-data-list')!;
+    expect(members.getAttribute('role')).toBe('list');
+    const items = Array.from(members.querySelectorAll('li'));
+    expect(items.map(li => textOf(li.querySelector('.cc-data-ref')))).toEqual(['#1101', '#1102']);
+    expect(items.map(li => textOf(li.querySelector('.cc-data-ref-label')))).toEqual(['Board Suite', 'Wiki Suite']);
+    expect(textOf(items[0])).toBe('#1101 Board Suite');
+    expect(fieldEls.slice(0, 2).map(field => field.querySelector('.cc-data-list'))).toEqual([null, null]);
+  });
+
+  it('counts the rows on the Show data summary', () => {
+    create(battery());
+    expect(textOf(el.querySelector('.cc-figure-data > summary'))).toBe('Show data · 2 battery runs');
+    fixture.destroy();
+    create(qualityFigure({ points: ccTimeline().points }));
+    expect(textOf(el.querySelector('.cc-figure-data > summary'))).toBe('Show data · 6 runs');
   });
 
   it('heads the cards one level under the host\'s section heading', () => {
@@ -136,6 +158,15 @@ describe('CcChartFigureComponent', () => {
       const long = ccDataCards({ columns: ['Run', 'Started', 'Value'], rows: [['#1', 'now', 'x'.repeat(33)]] }, 'y');
       expect(long[0].fields[0].wide).toBe(true);
       expect(ccDataCards({ columns: ['Run', 'Started', 'Value'], rows: [['#1', 'now', 'x'.repeat(32)]] }, 'y')[0].fields[0].wide).toBe(false);
+    });
+
+    it('gives a list column its items and a plain column none', () => {
+      const cards = ccDataCards(battery().table, 'x');
+      const field = (label: string) => cards[0].fields.find(entry => entry.label === label)!;
+      expect(field('Overall Intelligence Index').items).toBeNull();
+      expect(field('Member runs').items).toEqual([{ ref: '#1101', label: 'Board Suite' }, { ref: '#1102', label: 'Wiki Suite' }]);
+      const empty = ccDataCards({ columns: ['Run', 'Started', 'Member runs'], rows: [['#1', 'now', '—']], lists: { 'Member runs': [[]] } }, 'y');
+      expect(empty[0].fields[0].items).toBeNull();
     });
   });
 });

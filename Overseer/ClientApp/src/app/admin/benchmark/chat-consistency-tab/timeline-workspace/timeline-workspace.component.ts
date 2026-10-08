@@ -63,17 +63,21 @@ import {
 } from '../../model-comparison/preview-view';
 import { CcAnnotationsPanelComponent } from '../annotations/annotations-panel.component';
 import {
+  CC_DECIMAL_CHOICES,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
   CC_HEADER_LOGO_PX,
   CC_SCREEN_THEME,
   CcChartOptions,
   CcChartTheme,
+  CcDecimalPlaces,
   CcFigure,
   CcFigureInput,
   CcFigureKey,
   CcFigureSeries,
+  CcValueFigureKey,
   buildCcFigure,
+  ccAutoDecimalsText,
   prefersReducedMotion
 } from '../chat-consistency-charts';
 import {
@@ -156,6 +160,8 @@ export interface CcTimelineLayout {
   readonly markerKinds: readonly CcMarkerKind[];
   readonly hiddenEventKinds: readonly string[];
   readonly zeroBaseline: boolean;
+  /** Decimal places per chart; absent charts are automatic. */
+  readonly decimals: CcDecimalPlaces;
   /** Runs not in the analysis are drawn as gray crosses with dotted segments. */
   readonly markNotAnalyzed: boolean;
   readonly imageTheme: CcImageTheme;
@@ -188,6 +194,7 @@ export function defaultTimelineLayout(): CcTimelineLayout {
     markerKinds: MARKER_KINDS,
     hiddenEventKinds: [],
     zeroBaseline: false,
+    decimals: {},
     markNotAnalyzed: true,
     imageTheme: 'screen',
     imageFormat: 'png',
@@ -204,6 +211,18 @@ function listOf<T extends string>(value: unknown, accept: (item: string) => bool
   if (!Array.isArray(value)) return null;
   const items = new Set(value.filter((item): item is string => typeof item === 'string' && accept(item)));
   return order ? order.filter(item => items.has(item)) : [...items] as T[];
+}
+
+/** The charts of `value` whose decimal places are one of their choices; `{}` when it is not a plain object. */
+function decimalsOf(value: unknown): CcDecimalPlaces {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  const record = value as Record<string, unknown>;
+  const decimals: CcDecimalPlaces = {};
+  for (const [key, choices] of Object.entries(CC_DECIMAL_CHOICES) as [CcValueFigureKey, readonly number[]][]) {
+    const places = record[key];
+    if (typeof places === 'number' && choices.includes(places)) decimals[key] = places;
+  }
+  return decimals;
 }
 
 /**
@@ -237,6 +256,7 @@ export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
       ?? fallback.markerKinds,
     hiddenEventKinds: listOf<string>(record['hiddenEventKinds'], item => item !== '') ?? fallback.hiddenEventKinds,
     zeroBaseline: flag('zeroBaseline', fallback.zeroBaseline),
+    decimals: decimalsOf(record['decimals']),
     markNotAnalyzed: flag('markNotAnalyzed', fallback.markNotAnalyzed),
     imageTheme: oneOf<CcImageTheme>('imageTheme', ['screen', 'print'], fallback.imageTheme),
     imageFormat: oneOf<FigureExportFormat>('imageFormat', ['png', 'webp'], fallback.imageFormat),
@@ -292,6 +312,7 @@ interface CcExportSnapshot {
   readonly theme: CcChartTheme;
   readonly hiddenSeries: ReadonlySet<string>;
   readonly zeroBaseline: boolean;
+  readonly decimals: CcDecimalPlaces;
   readonly subject: string | null;
   readonly logo: FigureLogo | null;
   readonly webpQuality: WebpQuality;
@@ -406,6 +427,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   markerKinds = new Set<CcMarkerKind>(this.stored.markerKinds);
   hiddenEventKinds = new Set<string>(this.stored.hiddenEventKinds);
   zeroBaseline = this.stored.zeroBaseline;
+  decimals: CcDecimalPlaces = this.stored.decimals;
   markNotAnalyzed = this.stored.markNotAnalyzed;
   imageTheme: CcImageTheme = this.stored.imageTheme;
   imageFormat: FigureExportFormat = this.stored.imageFormat;
@@ -608,6 +630,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       reducedMotion,
       hiddenSeries: this.hiddenSeries,
       zeroBaseline: this.zeroBaseline,
+      decimals: this.decimals,
       header: { title: figureTitle(key), subject: this.chartSubject },
       logo: this.showLogo ? this.logoImage : null
     };
@@ -793,6 +816,40 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   setMarkNotAnalyzed(on: boolean): void {
     this.markNotAnalyzed = on;
+    this.afterFigureSettings();
+  }
+
+  /** The *Decimal places* rows: every chart that writes values, with its choices and its setting. */
+  get decimalRows(): { key: CcValueFigureKey; title: string; choices: readonly number[]; autoText: string; value: number | null }[] {
+    const unitKind: CcUnitKind = this.plotsBatteryRuns ? 'batteryRun' : 'run';
+    return CC_FIGURE_KEYS
+      .filter((entry): entry is { key: CcValueFigureKey; title: string } => entry.key !== 'timeline')
+      .map(({ key, title }) => ({
+        key, title, choices: CC_DECIMAL_CHOICES[key], autoText: ccAutoDecimalsText(key, unitKind), value: this.decimals[key] ?? null
+      }));
+  }
+
+  /** Some chart has decimal places set. */
+  get anyDecimals(): boolean {
+    return Object.keys(this.decimals).length > 0;
+  }
+
+  /** `''` makes the chart automatic; a number among its choices sets it; anything else is ignored. */
+  setDecimals(key: CcValueFigureKey, raw: string): void {
+    const next: CcDecimalPlaces = { ...this.decimals };
+    if (raw === '') {
+      delete next[key];
+    } else {
+      const places = Number(raw);
+      if (!CC_DECIMAL_CHOICES[key].includes(places)) return;
+      next[key] = places;
+    }
+    this.decimals = next;
+    this.afterFigureSettings();
+  }
+
+  resetDecimals(): void {
+    this.decimals = {};
     this.afterFigureSettings();
   }
 
@@ -1328,6 +1385,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       theme: ccExportTheme(this.imageTheme),
       hiddenSeries: this.hiddenSeries,
       zeroBaseline: this.zeroBaseline,
+      decimals: this.decimals,
       subject: this.chartSubject,
       logo: this.showLogo ? this.logoImage : null,
       webpQuality: this.webpQuality,
@@ -1348,6 +1406,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       reducedMotion: true,
       hiddenSeries: snapshot.hiddenSeries,
       zeroBaseline: snapshot.zeroBaseline,
+      decimals: snapshot.decimals,
       header: { title: figureTitle(key), subject: snapshot.subject },
       logo: snapshot.logo
     });
@@ -1491,6 +1550,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       markerKinds: MARKER_KINDS.filter(kind => this.markerKinds.has(kind)),
       hiddenEventKinds: [...this.hiddenEventKinds],
       zeroBaseline: this.zeroBaseline,
+      decimals: this.decimals,
       markNotAnalyzed: this.markNotAnalyzed,
       imageTheme: this.imageTheme,
       imageFormat: this.imageFormat,

@@ -100,34 +100,46 @@
   font-size: var(--text-secondary);
 }
 
-// One column of cards at the figure's content width; it never sets the figure wider than the chart.
+.cc-figure-data-count {
+  color: var(--nav-color);
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+// One bordered list of rows at the figure's content width; it never sets the figure wider than the chart.
 .cc-data-cards {
+  container: cc-data / inline-size;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   inline-size: 100%;
   max-block-size: 24rem;
   margin: 0;
   padding: 0;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: #161616;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   list-style: none;
+
+  > li + li {
+    border-block-start: 1px solid var(--border-glass);
+  }
 }
 
 .cc-data-card {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-glass);
-  border-radius: 6px;
-  background: #1a1a1a;
+  padding: 0.625rem 0.875rem;
   font-size: var(--text-secondary);
 }
 
+// The title on the left, the start time at the row's right.
 .cc-data-card-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.25rem 0.75rem;
-  margin-block-end: 0.375rem;
+  gap: 0.125rem 1rem;
+  margin-block-end: 0.5rem;
 }
 
 .cc-data-card-title {
@@ -138,23 +150,28 @@
 }
 
 .cc-data-card-meta {
+  margin-inline-start: auto;
   color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .cc-data-card-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
-  gap: 0.25rem 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem 1.25rem;
   margin: 0;
 
   dt {
+    margin-block-end: 0.125rem;
     color: var(--nav-color);
-    font-size: var(--text-secondary);
     font-weight: normal;
   }
 
   dd {
     margin: 0;
+    color: var(--font-color);
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }
@@ -168,7 +185,50 @@
   }
 }
 
+// A list value, one item per line: the member run's id, then its suite name.
+.cc-data-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-weight: normal;
+
+  li {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    min-width: 0;
+  }
+}
+
+.cc-data-ref {
+  flex: none;
+  min-inline-size: 4.5ch;
+  color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-data-ref-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+// A narrow figure: the start time under the title, and the fields in one column.
+@container cc-data (inline-size < 26rem) {
+  .cc-data-card-meta {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+
+  .cc-data-card-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .cc-data-empty {
+  padding: 0.625rem 0.875rem;
   color: var(--nav-color);
   font-style: italic;
 }

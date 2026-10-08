@@ -42,6 +42,38 @@
   gap: 12px;
 }
 
+// One row per chart: its title, then its select; a narrow sidebar puts each select under its title.
+.cc-tl-decimals {
+  container: cc-decimals / inline-size;
+}
+
+.cc-tl-decimals-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8.5rem, auto);
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.cc-tl-decimals-select {
+  inline-size: 100%;
+}
+
+@container cc-decimals (inline-size < 17rem) {
+  .cc-tl-decimals-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px 0;
+  }
+
+  .cc-tl-decimals-label:not(:first-child) {
+    margin-top: 6px;
+  }
+}
+
+.cc-tl-decimals-reset[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 // One chart's series, nested under the Series group without a second frame.
 .cc-tl-series {
   display: flex;

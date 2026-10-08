@@ -3,6 +3,7 @@ import type { ChartConfiguration } from 'chart.js';
 
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
+  CC_DECIMAL_CHOICES,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
   CC_HEADER_LOGO_PX,
@@ -20,6 +21,7 @@ import {
   analysisChartPoints,
   buildCcFigures,
   buildMarkers,
+  ccAutoDecimalsText,
   ccHeaderHeight,
   ccPlaceLabels,
   ccStepDecimals,
@@ -880,6 +882,24 @@ describe('chat-consistency-charts', () => {
       expect(close.takeaway).toBe('The Overall Intelligence Index held between 82.0 and 82.4 across 2 battery runs.');
     });
 
+    it('lists each battery run\'s member runs with their suite names, in member order', () => {
+      const figure = qualityFigure({ ...battery, memberLabels: new Map([[301, 'Board Suite'], [303, 'Board Suite'], [304, 'Wiki Suite']]) });
+      expect(figure.table.lists?.['Member runs']).toEqual([
+        [{ ref: '#301', label: 'Board Suite' }, { ref: '#302', label: null }],
+        [{ ref: '#303', label: 'Board Suite' }, { ref: '#304', label: 'Wiki Suite' }]
+      ]);
+      expect(figure.table.rows[0][5]).toBe('#301 (Board Suite), #302');
+      const marked = qualityFigure({ ...battery, notAnalyzed: new Map([[11, 'left out in step 1']]) });
+      expect(marked.table.columns[marked.table.columns.length - 1]).toBe('In the analysis');
+      expect(marked.table.lists?.['Member runs']?.[1]).toEqual([{ ref: '#303', label: 'Board Suite' }, { ref: '#304', label: 'Wiki Suite' }]);
+      expect(qualityFigure(input).table.lists).toBeUndefined();
+    });
+
+    it('writes the battery runs\' Intelligence to the chosen decimals', () => {
+      const figure = qualityFigure(battery, { decimals: { quality: 2 } });
+      expect(figure.table.rows.map(cells => cells[2])).toEqual(['79.00', '86.00']);
+    });
+
     it('names the battery run of a served-model change', () => {
       const markers = buildMarkers([
         ccBatteryPoint(11, '2026-10-08T06:00:00Z', { servedModelIds: [{ modelId: 'a', callCount: 9 }] }),
@@ -908,6 +928,77 @@ describe('chat-consistency-charts', () => {
       const runs = analysisChartPoints(ccAnalysisResult(), timeline.points, batteryPoints);
       expect(runs.unitKind).toBe('run');
       expect(runs.points.map(p => p.runId)).toEqual([101, 102, 103, 104, 105, 106]);
+    });
+  });
+
+  describe('decimal places', () => {
+    type Callbacks = Record<string, (item: unknown) => unknown>;
+    const label = (figure: CcFigure, datasetIndex = 0, pointIndex = 0) => {
+      const config = figure.config!;
+      const callbacks = config.options.plugins!.tooltip!.callbacks! as unknown as Callbacks;
+      const ds = config.data.datasets[datasetIndex];
+      return callbacks['label']({ raw: ds.data[pointIndex], dataset: ds });
+    };
+    const withFirst = (overrides: Parameters<typeof ccPoint>[2]) =>
+      ({ ...input, points: timeline.points.map((point, i) => i === 0 ? { ...point, ...overrides } : point) });
+
+    it('writes Intelligence to the chosen decimals in the table, takeaway and tooltip', () => {
+      const figure = qualityFigure(input, { decimals: { quality: 2 } });
+      expect(figure.table.rows[0][2]).toBe('71.00');
+      expect(figure.takeaway).toBe('The Intelligence Index held between 71.00 and 74.00 across 6 runs.');
+      expect(figure.altText).toBe(`Intelligence per run. ${figure.takeaway}`);
+      expect(String(label(figure)).endsWith('71.00')).toBe(true);
+    });
+
+    it('writes times in seconds to the chosen decimals and keeps whole milliseconds under a second', () => {
+      const figure = timeToFirstAnswerFigure(withFirst({ medianTimeToFirstAnswerTextMs: 850 }), { decimals: { ttfat: 2 } });
+      expect(figure.table.rows.map(cells => cells[2])).toEqual(['850 ms', '2.40 s', '—', '2.40 s', '2.40 s', '2.40 s']);
+      expect(figure.takeaway).toContain('from 850 ms to 2.40 s');
+    });
+
+    it('writes rates, tool calls, tokens and costs to the chosen decimals', () => {
+      expect(streamingRateFigure(input, { decimals: { rate: 0 } }).table.rows[0][2]).toBe('40 tok/s');
+      expect(toolCallsFigure(input, { decimals: { tools: 2 } }).table.rows[0][2]).toBe('3.50');
+      const tokens = workFigure(input, { decimals: { work: 1 } });
+      expect(tokens.table.rows[0][2]).toBe('1,200.0');
+      expect(label(tokens)).toBe('Output tokens: 1,200.0');
+      expect(costFigure(input, { decimals: { cost: 4 } }).table.rows[0][2]).toBe('$0.0150');
+      expect(costFigure(input, { decimals: { cost: 0 } }).table.rows[0][2]).toBe('$0');
+    });
+
+    it('writes reliability rates to the chosen decimals', () => {
+      const figure = reliabilityFigure(withFirst({ timeoutRate: 0.05 }), { decimals: { reliability: 0 } });
+      expect(figure.table.columns[3]).toBe('Timeouts');
+      expect(figure.table.rows[0][3]).toBe('5 %');
+      expect(figure.table.rows[1][3]).toBe('0 %');
+      expect(figure.takeaway).toBe('The highest rate was timeouts at 5 % in run #101, across 6 runs.');
+      expect(label(figure, 1)).toBe('Timeouts: 5 %');
+    });
+
+    it('leaves every figure\'s axis ticks as their step writes them', () => {
+      type ValueAxis = { min: number; max: number; ticks: { stepSize: number; callback: (value: number) => string } };
+      const decimals = { quality: 3, ttfat: 3, rate: 3, work: 3, tools: 3, cost: 4, reliability: 3 };
+      const ticks = (figure: CcFigure) => {
+        const scale = figure.config!.options.scales!['y'] as unknown as ValueAxis;
+        return Array.from({ length: Math.round((scale.max - scale.min) / scale.ticks.stepSize) + 1 },
+          (_, i) => scale.ticks.callback(scale.min + i * scale.ticks.stepSize));
+      };
+      const plain = buildCcFigures(input).filter(f => f.key !== 'timeline');
+      const chosen = buildCcFigures(input, { decimals }).filter(f => f.key !== 'timeline');
+      expect(chosen.map(ticks)).toEqual(plain.map(ticks));
+    });
+
+    it('labels each chart\'s automatic precision and offers four decimals for cost alone', () => {
+      expect(ccAutoDecimalsText('quality', 'run')).toBe('Automatic (0)');
+      expect(ccAutoDecimalsText('quality', 'batteryRun')).toBe('Automatic (1)');
+      expect(ccAutoDecimalsText('ttfat', 'run')).toBe('Automatic (1, in seconds)');
+      for (const key of ['rate', 'tools', 'reliability'] as const) {
+        expect(ccAutoDecimalsText(key, 'run'), key).toBe('Automatic (1)');
+      }
+      expect(ccAutoDecimalsText('work', 'batteryRun')).toBe('Automatic (0)');
+      expect(ccAutoDecimalsText('cost', 'run')).toBe('Automatic (2–4)');
+      expect(CC_DECIMAL_CHOICES.cost).toEqual([0, 1, 2, 3, 4]);
+      expect(CC_DECIMAL_CHOICES.quality).toEqual([0, 1, 2, 3]);
     });
   });
 

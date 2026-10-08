@@ -305,6 +305,20 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(other.defaultPrevented).toBe(false);
   });
 
+  it('keeps a visited Annotations panel mounted but hidden under the other tabs', async () => {
+    await create();
+    openSideTab('annotations');
+    http.expectOne(r => r.url === `${CC_API}/annotations`).flush([]);
+    fixture.detectChanges();
+    openSideTab('data');
+
+    const annotations = q<HTMLElement>('#cc-tl-side-panel-annotations');
+    expect(annotations).not.toBeNull();
+    expect(annotations!.hidden).toBe(true);
+    expect(getComputedStyle(annotations!).display).toBe('none');
+    expect(getComputedStyle(q('#cc-tl-side-panel-data')!).display).not.toBe('none');
+  });
+
   it('collapses and reopens the sidebar from its toggle, and resizes it with the separator', async () => {
     await create();
     const toggle = q<HTMLButtonElement>('.cc-tl-sidebar-toggle')!;
@@ -419,6 +433,61 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(bounds('quality')).toEqual([0, 100]);
     expect(bounds('ttfat')).toEqual(ttfat);
     expect(storedLayout()['zeroBaseline']).toBe(true);
+  });
+
+  it('sets each chart\'s decimal places, stores them, and resets them with All automatic', async () => {
+    await create();
+    const keys = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability'];
+    const selects = qa<HTMLSelectElement>('select[id^="cc-tl-decimals-"]');
+    expect(selects.map(select => select.id)).toEqual(keys.map(key => `cc-tl-decimals-${key}`));
+    // Each select is named by its label, the chart's title.
+    expect(selects.map(select => textOf(select.labels?.[0] ?? null)))
+      .toEqual(FIGURE_ORDER.filter(key => key !== 'timeline').map(key => CC_FIGURE_KEYS.find(entry => entry.key === key)!.title));
+    expect(selects.map(select => textOf(select.options[0]))).toEqual([
+      'Automatic (0)', 'Automatic (1, in seconds)', 'Automatic (1)', 'Automatic (0)', 'Automatic (1)', 'Automatic (2–4)', 'Automatic (1)'
+    ]);
+    expect(selects.map(select => select.value)).toEqual(keys.map(() => ''));
+    const offers = (key: string) => Array.from(q<HTMLSelectElement>(`#cc-tl-decimals-${key}`)!.options).map(option => option.value);
+    expect(offers('cost')).toEqual(['', '0', '1', '2', '3', '4']);
+    expect(offers('quality')).toEqual(['', '0', '1', '2', '3']);
+
+    const reset = q<HTMLButtonElement>('.cc-tl-decimals-reset')!;
+    expect(textOf(reset)).toBe('All automatic decimal places');
+    expect(reset.getAttribute('aria-disabled')).toBe('true');
+
+    const before = figure('quality').table.rows[0][2];
+    expect(before).toMatch(/^\d+$/);
+    setSelect('#cc-tl-decimals-quality', '2');
+    await settle();
+    expect(figure('quality').table.rows[0][2]).toMatch(/^\d+\.\d{2}$/);
+    expect(figure('quality').takeaway).toMatch(/\d+\.\d{2}/);
+    expect(storedLayout()['decimals']).toEqual({ quality: 2 });
+    expect(q<HTMLButtonElement>('.cc-tl-decimals-reset')!.getAttribute('aria-disabled')).toBeNull();
+
+    setSelect('#cc-tl-decimals-cost', '4');
+    await settle();
+    expect(storedLayout()['decimals']).toEqual({ quality: 2, cost: 4 });
+    setSelect('#cc-tl-decimals-quality', '');
+    await settle();
+    expect(figure('quality').table.rows[0][2]).toBe(before);
+    expect(storedLayout()['decimals']).toEqual({ cost: 4 });
+
+    clickOn('.cc-tl-decimals-reset');
+    await settle();
+    expect(storedLayout()['decimals']).toEqual({});
+    expect(q<HTMLSelectElement>('#cc-tl-decimals-cost')!.value).toBe('');
+    expect(q<HTMLButtonElement>('.cc-tl-decimals-reset')!.getAttribute('aria-disabled')).toBe('true');
+    // A disabled reset refuses the click.
+    const resetDecimals = vi.spyOn(ws, 'resetDecimals');
+    clickOn('.cc-tl-decimals-reset');
+    expect(resetDecimals).not.toHaveBeenCalled();
+  });
+
+  it('reads stored decimal places, keeping only each chart\'s choices', () => {
+    expect(parseTimelineLayout({ version: 2, decimals: { work: 1, cost: 9, bogus: 2 } }).decimals).toEqual({ work: 1 });
+    expect(parseTimelineLayout({ version: 2, decimals: { cost: 4, quality: '2' } }).decimals).toEqual({ cost: 4 });
+    expect(parseTimelineLayout({ version: 2, decimals: [1, 2] }).decimals).toEqual({});
+    expect(parseTimelineLayout({ version: 2 }).decimals).toEqual({});
   });
 
   it('marks the runs not in the analysis, behind a stored Mark runs not in the analysis switch', async () => {
@@ -1061,6 +1130,14 @@ describe('CcTimelineWorkspaceComponent', () => {
 
     clickOn('#cc-tl-plot-by-battery');
     expect(plottedIds('quality')).toEqual([11, 12]);
+  });
+
+  it('labels the automatic Intelligence decimals by what the charts plot', async () => {
+    await createBattery();
+    const auto = () => textOf(q<HTMLSelectElement>('#cc-tl-decimals-quality')!.options[0]);
+    expect(auto()).toBe('Automatic (1)');
+    clickOn('#cc-tl-plot-by-members');
+    expect(auto()).toBe('Automatic (0)');
   });
 
   it('offers no Plot by choice without a battery set, and names runs in the subject', async () => {

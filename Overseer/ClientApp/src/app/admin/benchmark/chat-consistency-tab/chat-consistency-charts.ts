@@ -64,6 +64,7 @@ import {
   ccNumber,
   formatFixed,
   formatFractionPercent,
+  formatGrouped,
   formatInteger,
   formatMs,
   formatTokenRate,
@@ -179,13 +180,52 @@ export interface CcChartConfig {
   plugins: Plugin<'line'>[];
 }
 
+/** One item of a list cell: a member run's `#id` and its suite name, null where none is known. */
+export interface CcDataListItem {
+  ref: string;
+  label: string | null;
+}
+
 /** A chart's data as a real table, for the figure's *Show data* disclosure. */
 export interface CcFigureTable {
   columns: string[];
   rows: string[][];
+  /**
+   * Column label → per row, the column's cells as lists, for a card to show one item per line; the
+   * string cell holds the same items joined.
+   */
+  lists?: Readonly<Record<string, readonly (readonly CcDataListItem[])[]>>;
 }
 
 export type CcFigureKey = 'quality' | 'ttfat' | 'rate' | 'work' | 'tools' | 'cost' | 'reliability' | 'timeline';
+
+/** The figures that write values: every figure but the overview. */
+export type CcValueFigureKey = Exclude<CcFigureKey, 'timeline'>;
+
+/** Decimal places per chart; a missing chart writes its automatic precision. */
+export type CcDecimalPlaces = Partial<Record<CcValueFigureKey, number>>;
+
+/** The decimal places each chart offers besides its automatic precision. */
+export const CC_DECIMAL_CHOICES: Readonly<Record<CcValueFigureKey, readonly number[]>> = Object.freeze({
+  quality: [0, 1, 2, 3],
+  ttfat: [0, 1, 2, 3],
+  rate: [0, 1, 2, 3],
+  work: [0, 1, 2, 3],
+  tools: [0, 1, 2, 3],
+  cost: [0, 1, 2, 3, 4],
+  reliability: [0, 1, 2, 3]
+});
+
+/** The label of a chart's automatic precision, as its figure builder writes values without a setting. */
+export function ccAutoDecimalsText(key: CcValueFigureKey, unitKind: CcUnitKind): string {
+  switch (key) {
+    case 'quality': return unitKind === 'batteryRun' ? 'Automatic (1)' : 'Automatic (0)';
+    case 'ttfat': return 'Automatic (1, in seconds)';
+    case 'work': return 'Automatic (0)';
+    case 'cost': return 'Automatic (2–4)';
+    default: return 'Automatic (1)';
+  }
+}
 
 export interface CcFigure {
   key: CcFigureKey;
@@ -252,6 +292,8 @@ export interface CcChartOptions {
   header?: CcChartHeader;
   /** The GnollBench logo at the header band's right; absent or null draws none. */
   logo?: FigureLogo | null;
+  /** The decimals of the point labels, tooltip, takeaway and table; the axis ticks keep their step's. */
+  decimals?: CcDecimalPlaces;
 }
 
 /** One dataset of a figure: its stable id, its legend label and the tooltip's short name for it. */
@@ -367,6 +409,11 @@ function membersText(point: CcBatteryTimelinePoint, labels: ReadonlyMap<number, 
     const label = labels?.get(id);
     return label ? `#${id} (${label})` : `#${id}`;
   }).join(', ');
+}
+
+/** The member runs of `point` as list items, in member order. */
+function membersList(point: CcBatteryTimelinePoint, labels: ReadonlyMap<number, string> | undefined): CcDataListItem[] {
+  return point.memberRunIds.map(id => ({ ref: `#${id}`, label: labels?.get(id) || null }));
 }
 
 /**
@@ -1514,12 +1561,20 @@ function finishTable(table: CcFigureTable, points: readonly CcTimelinePoint[], i
         return battery
           ? [...cells, String(battery.suiteCount), membersText(battery, input.memberLabels)]
           : [...cells, '—', '—'];
-      })
+      }),
+      lists: {
+        ...result.lists,
+        'Member runs': points.map(point => {
+          const battery = batteryPointOf(point);
+          return battery ? membersList(battery, input.memberLabels) : [];
+        })
+      }
     };
   }
   const notAnalyzed = notAnalyzedOf(input);
   if (!notAnalyzed) return result;
   return {
+    ...(result.lists ? { lists: result.lists } : {}),
     columns: [...result.columns, 'In the analysis'],
     rows: result.rows.map((cells, i) => {
       const reason = notAnalyzed.get(points[i].runId);
@@ -1586,8 +1641,9 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
   const common = grader ? seriesOf(points, point => commonGraderQualityOf(point, grader.snapshotId)) : [];
   const commonLabel = grader ? `Intelligence, common grader (${grader.display})` : '';
   // The table's precision: a battery run's Overall Index and the common grader to one decimal.
-  const primaryFormat = (value: number) => formatFixed(value, battery ? 1 : 0);
-  const commonFormat = (value: number) => formatFixed(value, 1);
+  const places = options.decimals?.quality;
+  const primaryFormat = (value: number | null) => formatFixed(value, places ?? (battery ? 1 : 0));
+  const commonFormat = (value: number | null) => formatFixed(value, places ?? 1);
 
   const primaryValues = valuesOf(primary);
   const commonValues = valuesOf(common);
@@ -1638,8 +1694,8 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
     table: finishTable({
       columns,
       rows: points.map((point, i) => {
-        const cells = [formatFixed(primary[i].y, battery ? 1 : 0)];
-        if (grader) cells.push(formatFixed(common[i].y, 1));
+        const cells = [primaryFormat(primary[i].y)];
+        if (grader) cells.push(commonFormat(common[i].y));
         if (battery) cells.push(batteryPointOf(point)?.overallIndexNote ?? '');
         return row(point, ...cells);
       })
@@ -1659,15 +1715,17 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
     ? ccNumber(point.medianModelTimeMs) : null);
   const telemetryValues = valuesOf(telemetry);
   const proxyValues = valuesOf(proxy);
+  const places = options.decimals?.ttfat ?? 1;
+  const ms = (value: number | null) => formatMs(value, places);
 
   let takeaway: string;
   if (telemetryValues.length === 0 && proxyValues.length === 0) {
     takeaway = `No ${noun} in this range has a latency figure.`;
   } else if (telemetryValues.length === 0) {
-    const { min, max } = rangeText(proxyValues, formatMs);
+    const { min, max } = rangeText(proxyValues, ms);
     takeaway = `Only the legacy proxy is available: model time per answer ranged from ${min} to ${max} across ${plural(proxyValues.length, noun)}.`;
   } else {
-    const { min, max } = rangeText(telemetryValues, formatMs);
+    const { min, max } = rangeText(telemetryValues, ms);
     takeaway = telemetryValues.length === 1
       ? `Median time to first answer text was ${min} in the one telemetry ${noun}.`
       : `Median time to first answer text ranged from ${min} to ${max} across ${plural(telemetryValues.length, `telemetry ${noun}`)}.`;
@@ -1684,11 +1742,11 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
     config: config([
       seriesSpec('ttfat', 'ttfat.telemetry', telemetry, theme.series[1]),
       seriesSpec('ttfat', 'ttfat.proxy', proxy, theme.series[2], { hollow: true })
-    ], input, markers, options, { title: 'Median time', tick: msTick, format: formatMs, policy: ratioPolicy(1000) },
+    ], input, markers, options, { title: 'Median time', tick: msTick, format: ms, policy: ratioPolicy(1000) },
     { pointLabels: true, wash: true }),
     table: finishTable({
       columns: [...leadColumns(input), 'Time to first answer text', 'Legacy proxy', 'Measure'],
-      rows: points.map((point, i) => row(point, formatMs(telemetry[i].y), formatMs(proxy[i].y),
+      rows: points.map((point, i) => row(point, ms(telemetry[i].y), ms(proxy[i].y),
         point.latencyLabel || (point.isLegacy ? 'legacy proxy' : 'telemetry')))
     }, points, input),
     markers
@@ -1705,12 +1763,14 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
   const estimated = seriesOf(points, point => point.streamingRateEstimated ? ccNumber(point.medianStreamingRate) : null);
   const values = [...valuesOf(measured), ...valuesOf(estimated)];
   const legacy = points.filter(point => point.isLegacy).length;
+  const places = options.decimals?.rate ?? 1;
+  const rate = (value: CcTimelinePoint['medianStreamingRate']) => formatTokenRate(value, places);
 
   let takeaway: string;
   if (values.length === 0) {
     takeaway = `No ${noun} in this range has a streaming rate; legacy ${noun}s did not record one.`;
   } else {
-    const { min, max } = rangeText(values, formatTokenRate);
+    const { min, max } = rangeText(values, rate);
     takeaway = values.length === 1
       ? `The answer streaming rate was ${min} in the one ${noun} that recorded it.`
       : `The answer streaming rate ranged from ${min} to ${max} across ${plural(values.length, noun)}.`;
@@ -1725,11 +1785,11 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
     config: config([
       seriesSpec('rate', 'rate.measured', measured, theme.series[3]),
       seriesSpec('rate', 'rate.estimated', estimated, theme.series[3], { hollow: true })
-    ], input, markers, options, { title: 'Tokens per second', tick: numberTick, format: formatTokenRate, policy: ratioPolicy(10) },
+    ], input, markers, options, { title: 'Tokens per second', tick: numberTick, format: rate, policy: ratioPolicy(10) },
     { pointLabels: true, wash: true }),
     table: finishTable({
       columns: [...leadColumns(input), 'Streaming rate', 'Estimated'],
-      rows: points.map(point => row(point, formatTokenRate(point.medianStreamingRate), point.streamingRateEstimated ? 'Yes' : 'No'))
+      rows: points.map(point => row(point, rate(point.medianStreamingRate), point.streamingRateEstimated ? 'Yes' : 'No'))
     }, points, input),
     markers
   };
@@ -1743,13 +1803,15 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
   const noun = nounOf(input);
   const tokens = seriesOf(points, point => ccNumber(point.outputTokensPerAnswer));
   const values = valuesOf(tokens);
+  const places = options.decimals?.work;
+  const format = places === undefined ? formatInteger : (value: number | null) => formatGrouped(value, places);
   let takeaway: string;
   if (values.length === 0) {
     takeaway = `No ${noun} in this range has an output-token figure.`;
   } else if (values.length === 1) {
-    takeaway = `Output tokens per answer were ${formatInteger(values[0])} in the one ${noun} of this range.`;
+    takeaway = `Output tokens per answer were ${format(values[0])} in the one ${noun} of this range.`;
   } else {
-    const { min, max } = rangeText(values, formatInteger);
+    const { min, max } = rangeText(values, format);
     takeaway = `Output tokens per answer ranged from ${min} to ${max} across ${plural(values.length, noun)}.`;
   }
   takeaway += notAnalyzedNote(input, [tokens]);
@@ -1759,10 +1821,10 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     takeaway,
     altText: `${altLead('Output tokens per answer', input)} ${takeaway}`,
     config: config([seriesSpec('work', 'work.tokens', tokens, theme.series[4])], input, markers, options,
-      { title: 'Output tokens', tick: integerTick, format: formatInteger, policy: ratioPolicy(100) }, { pointLabels: true, wash: true }),
+      { title: 'Output tokens', tick: integerTick, format, policy: ratioPolicy(100) }, { pointLabels: true, wash: true }),
     table: finishTable({
       columns: [...leadColumns(input), 'Output tokens per answer'],
-      rows: points.map((point, i) => row(point, formatInteger(tokens[i].y)))
+      rows: points.map((point, i) => row(point, format(tokens[i].y)))
     }, points, input),
     markers
   };
@@ -1776,7 +1838,8 @@ export function toolCallsFigure(input: CcFigureInput, options: CcChartOptions = 
   const noun = nounOf(input);
   const calls = seriesOf(points, point => ccNumber(point.toolCallsPerAnswer));
   const values = valuesOf(calls);
-  const format = (value: number) => formatFixed(value, 1);
+  const places = options.decimals?.tools ?? 1;
+  const format = (value: number | null) => formatFixed(value, places);
   let takeaway: string;
   if (values.length === 0) {
     takeaway = `No ${noun} in this range has a tool-call figure.`;
@@ -1796,7 +1859,7 @@ export function toolCallsFigure(input: CcFigureInput, options: CcChartOptions = 
       { title: 'Tool calls', tick: numberTick, format, policy: ratioPolicy(1) }, { pointLabels: true, wash: true }),
     table: finishTable({
       columns: [...leadColumns(input), 'Tool calls per answer'],
-      rows: points.map((point, i) => row(point, formatFixed(calls[i].y, 1)))
+      rows: points.map((point, i) => row(point, format(calls[i].y)))
     }, points, input),
     markers
   };
@@ -1810,13 +1873,15 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
   const noun = nounOf(input);
   const cost = seriesOf(points, point => ccNumber(point.costPerQuestionUsd));
   const values = valuesOf(cost);
+  const places = options.decimals?.cost;
+  const usd = (value: number | null) => formatUsd(value, places);
   let takeaway: string;
   if (values.length === 0) {
     takeaway = `No ${noun} in this range has a cost figure.`;
   } else if (values.length === 1) {
-    takeaway = `Cost per question was ${formatUsd(values[0])} in the one ${noun} of this range.`;
+    takeaway = `Cost per question was ${usd(values[0])} in the one ${noun} of this range.`;
   } else {
-    const { min, max } = rangeText(values, formatUsd);
+    const { min, max } = rangeText(values, usd);
     takeaway = `Cost per question ranged from ${min} to ${max} across ${plural(values.length, noun)}, at one price card.`;
   }
   takeaway += notAnalyzedNote(input, [cost]);
@@ -1826,10 +1891,10 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     takeaway,
     altText: `${altLead('Cost per question', input)} ${takeaway}`,
     config: config([seriesSpec('cost', 'cost.cost', cost, theme.series[5])], input, markers, options,
-      { title: 'USD per question', tick: usdTick, format: formatUsd, policy: ratioPolicy(0.01) }, { pointLabels: true, wash: true }),
+      { title: 'USD per question', tick: usdTick, format: usd, policy: ratioPolicy(0.01) }, { pointLabels: true, wash: true }),
     table: finishTable({
       columns: [...leadColumns(input), 'Cost per question'],
-      rows: points.map((point, i) => row(point, formatUsd(cost[i].y)))
+      rows: points.map((point, i) => row(point, usd(cost[i].y)))
     }, points, input),
     markers
   };
@@ -1858,11 +1923,13 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
     }
   }
   const counted = points.filter(point => RELIABILITY_RATES.some(rate => ccNumber(point[rate.key] as number | string | null) !== null)).length;
+  const places = options.decimals?.reliability ?? 1;
+  const percent = (value: number) => `${formatFixed(value, places)} %`;
   const takeaway = (counted === 0
     ? `No ${noun} in this range has reliability figures.`
     : worst === null
       ? `No terminal failures, timeouts, empty answers, refusals or exhausted tool budgets in ${plural(counted, noun)}.`
-      : `The highest rate was ${worst.label.toLowerCase()} at ${formatFixed(worst.value, 1)} % in ${noun} #${worst.runId}, across ${plural(counted, noun)}.`)
+      : `The highest rate was ${worst.label.toLowerCase()} at ${percent(worst.value)} in ${noun} #${worst.runId}, across ${plural(counted, noun)}.`)
     + notAnalyzedNote(input, series.map(rate => rate.data));
   return {
     key: 'reliability',
@@ -1874,13 +1941,13 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
       input, markers, options, {
         title: 'Share of answers (%)',
         tick: (value, axis) => `${numberTick(value, axis)} %`,
-        format: value => `${formatFixed(value, 1)} %`,
+        format: percent,
         policy: ratioPolicy(10, 100)
       }),
     table: finishTable({
       columns: [...leadColumns(input), ...RELIABILITY_RATES.map(rate => rate.label)],
       rows: points.map(point => row(point,
-        ...RELIABILITY_RATES.map(rate => formatFractionPercent(point[rate.key] as number | string | null))))
+        ...RELIABILITY_RATES.map(rate => formatFractionPercent(point[rate.key] as number | string | null, places))))
     }, points, input),
     markers
   };

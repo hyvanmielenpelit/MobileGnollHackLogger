@@ -44,7 +44,7 @@
   </div>
 
   <details class="gh-disclosure cc-figure-data">
-    <summary>Show data</summary>
+    <summary>Show data<span class="cc-figure-data-count">&ngsp;· {{ dataSummary }}</span></summary>
     <div class="gh-disclosure-body">
       <p class="visually-hidden" [id]="figureId + '-data-title'">{{ figure.title }}: data per {{ unitNoun }}</p>
       <ul role="list" class="cc-data-cards" [attr.aria-labelledby]="figureId + '-data-title'">
@@ -63,7 +63,18 @@
                 @for (field of card.fields; track $index) {
                   <div class="cc-data-field" [class.is-wide]="field.wide">
                     <dt>{{ field.label }}</dt>
-                    <dd>{{ field.value }}</dd>
+                    <dd>
+                      @if (field.items) {
+                        <!-- &ngsp; keeps the space between the id and the suite name. -->
+                        <ul role="list" class="cc-data-list">
+                          @for (item of field.items; track $index) {
+                            <li><span class="cc-data-ref">{{ item.ref }}</span>@if (item.label) {&ngsp;<span class="cc-data-ref-label">{{ item.label }}</span>}</li>
+                          }
+                        </ul>
+                      } @else {
+                        {{ field.value }}
+                      }
+                    </dd>
                   </div>
                 }
               </dl>

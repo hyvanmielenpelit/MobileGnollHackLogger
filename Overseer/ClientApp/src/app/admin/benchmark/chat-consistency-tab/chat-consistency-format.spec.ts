@@ -10,6 +10,7 @@ import {
   endpointMdeText,
   formatFixed,
   formatFractionPercent,
+  formatGrouped,
   formatInteger,
   formatInterval,
   formatMs,
@@ -73,6 +74,22 @@ describe('chat-consistency-format', () => {
       expect(formatUsd(0.0123)).toBe('$0.012');
       expect(formatUsd(0.00421)).toBe('$0.0042');
       expect(formatUsd(null)).toBe(NO_VALUE);
+    });
+
+    it('writes times, rates and dollars to a chosen number of decimals', () => {
+      expect(formatMs(850, 3)).toBe('850 ms');
+      expect(formatMs(39_312, 2)).toBe('39.31 s');
+      expect(formatTokenRate(422.25, 0)).toBe('422 tok/s');
+      expect(formatUsd(0.01234, 2)).toBe('$0.01');
+      expect(formatUsd(0.01234)).toBe('$0.012');
+    });
+
+    it('groups a decimal value by thousands', () => {
+      expect(formatGrouped(9044.25, 1)).toBe('9,044.3');
+      expect(formatGrouped(1234567, 0)).toBe('1,234,567');
+      expect(formatGrouped(-12345.678, 2)).toBe(`${MINUS}12,345.68`);
+      expect(formatGrouped(-0.04, 1)).toBe('0.0');
+      expect(formatGrouped(null, 1)).toBe(NO_VALUE);
     });
 
     it('writes p-values and intervals', () => {

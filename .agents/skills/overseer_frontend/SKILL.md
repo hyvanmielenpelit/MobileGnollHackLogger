@@ -111,7 +111,9 @@ Harness-neutral, and the floor for any Overseer frontend work.
     wizard and the Chat Consistency wizard.
   - **`gh-fig-*`** — the figure workspace: `.gh-fig-host` (the edge-to-edge step that holds it),
     `.gh-fig-workspace` (sidebar width `--gh-fig-sidebar-width`), `-resizer`, `-sidebar`,
-    `-sidebar-tabs`, `-side-panel`, `-main`, `-bar`, `-tabs`, `-panels`, `-panel`, `-viewport`,
+    `-sidebar-tabs`, `-side-panel`, `-main`, `-bar`, `-tabs`, `-panels`, `-panel`, `-viewport`
+    (`-side-panel` and `-panel` set `display: flex`, so each carries `&[hidden] { display: none; }`;
+    without it a `[hidden]` panel stays visible),
     `.gh-fig-tile*` (a tile and its hover-or-focus action cluster), `.gh-fig-toolbar*` (the toolbar row
     and its zoom, figure and export groups), `.gh-fig-all-toolbar` and `.gh-fig-figure-select`, with
     the zoom controls `.gh-zoom-*` (`-label`, `-slider`, `-value`) and the read-out `.gh-range-value`;
@@ -478,8 +480,11 @@ To find specific popups, look in the corresponding component's `.html` template:
       `gh-fig-*` workspace — a sidebar (`#cc-tl-sidebar`, 18–40 rem, at most half the workspace, 26 rem
       by default, `app-pane-resizer`, width as `--gh-fig-sidebar-width`; collapsed by the view bar's
       toggle) with the tabs **Data** (charts, series, *Show the full 0–100 Intelligence scale*
-      `#cc-tl-zero-baseline`, stored as `zeroBaseline`, and **Mark runs
-      not in the analysis** `#cc-tl-mark-not-analyzed`, on by default), **Events**
+      `#cc-tl-zero-baseline`, stored as `zeroBaseline`, **Decimal places** — one select per value
+      chart, `#cc-tl-decimals-<key>`, *Automatic (n)* from `ccAutoDecimalsText` and the choices of
+      `CC_DECIMAL_CHOICES`, reaching the figure builders as `CcChartOptions.decimals` for point labels,
+      tooltip, takeaway and table but never the axis ticks; Results and the report charts pass none —
+      and **Mark runs not in the analysis** `#cc-tl-mark-not-analyzed`, on by default), **Events**
       (marker kinds, Overseer change kinds with composite counts, and `app-cc-event-list`), **Annotations**
       (`annotations/`, `app-cc-annotations-panel`: add and delete only; there is no edit) and
       **Download** (`app-export-size-section` *Chart size*, id prefix `cc-export`;
@@ -490,8 +495,10 @@ To find specific popups, look in the corresponding component's `.html` template:
       toolbar zoom, **Fit width**, **Fit to screen**, **Download all**) and **Single chart**
       (Previous / select / Next, zoom, **Fit to screen**, **Actual size**, Copy, Download); both views
       open at Fit to screen. `app-cc-chart-figure` puts the takeaway under the chart, then the footer
-      (marker line, projected actions), and *Show data* as a card list (`ccDataCards`, headings at
-      `dataHeadingLevel`, 5 under the step's `h4`, 6 by default). Zoom is
+      (marker line, projected actions), and *Show data* as a single bordered list of rows, its summary
+      counting them (`ccDataCards`, headings at `dataHeadingLevel`, 5 under the step's `h4`, 6 by
+      default; a column in `CcFigureTable.lists`, *Member runs*, shows one item per line as
+      `.cc-data-list`, the string cell still holding them joined). Zoom is
       `cc-chart-zoom.ts`: it **resizes the live Chart.js charts**, never a bitmap — at 1 the box is
       `layoutBoxFor` of the chart size (`ccChartBox`; density ignored), so text keeps its size and every
       run keeps its tooltip; the range is 25 % (lower where a fit is) to 400 %, the slider applies once per
@@ -503,10 +510,12 @@ To find specific popups, look in the corresponding component's `.html` template:
       through Model Comparison's `renderPlotOffscreen`, `encodeFigureImage`, `copyImageToClipboard` and
       `buildFigureArchive`: Download in the chosen PNG or WebP, Copy always PNG, Download all one file
       or a ZIP. `exporting` is emitted as `exportingChange` for the close guard. Stored per browser in
-      `try/catch`: `overseer.benchmark.chatConsistency.timeline` (`{ version: 1, … }`: sidebar, view,
-      charts, series, markers, hidden event kinds, zero baseline, `markNotAnalyzed`, theme, format, WebP
-      quality, section open states, Single chart; `parseTimelineLayout` reads a missing or non-boolean
-      `markNotAnalyzed` as `true`, so the record version did not change), and
+      `try/catch`: `overseer.benchmark.chatConsistency.timeline` (`{ version: 2, … }`: sidebar, view,
+      charts, series, markers, hidden event kinds, zero baseline, `decimals`, `markNotAnalyzed`, theme,
+      format, WebP quality, section open states, Single chart; `parseTimelineLayout` migrates a
+      version-1 layout's *Work per answer* chart to `work` and `tools`, reads a missing or non-boolean
+      `markNotAnalyzed` as `true` and keeps only the `decimals` each chart offers, so neither of those
+      changed the record version), and
       `overseer.benchmark.chatConsistency.chartSize`, apart from Model Comparison's `figureSize`. The
       workspace draws **every run in the step-1 dates** (the composite events would otherwise renumber);
       its `notAnalyzed` input (the wizard's `notAnalyzedRuns`) reaches `CcFigureInput.notAnalyzed` as
