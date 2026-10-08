@@ -81,6 +81,16 @@ public static class CallTelemetryMeasures
     }
 
     /// <summary>
+    /// The shortest <see cref="ModelCallTelemetry.Last80DecodeSpanMs"/> a streaming rate is measured
+    /// over. A shorter span is visible text that arrived in one burst after thinking, whose rate
+    /// measures delivery, not decoding.
+    /// </summary>
+    public const int MinMeasurableDecodeSpanMs = 500;
+
+    /// <summary>The highest streaming rate, in tokens per second, reported as a decode rate.</summary>
+    public const int MaxPlausibleTokensPerSecond = 1000;
+
+    /// <summary>
     /// The final candidate call's visible decode rate over the last 80 % of its visible deltas, in
     /// tokens per second: window tokens ÷ (<see cref="ModelCallTelemetry.Last80DecodeSpanMs"/> / 1000).
     /// Window tokens are the visible tokens (<see cref="ModelCallTelemetry.OutputTokens"/> −
@@ -89,14 +99,54 @@ public static class CallTelemetryMeasures
     /// Anthropic counts thinking inside its output tokens, so for it the window tokens are estimated as
     /// <see cref="ModelCallTelemetry.Last80VisibleChars"/> ÷ <see cref="EstimatedCharsPerToken"/> and
     /// <c>Estimated</c> is true. Null when the span is missing or not positive, either character count
-    /// is missing or zero, or the visible tokens are unknown or not positive.
+    /// is missing or zero, or the visible tokens are unknown or not positive; and, for every provider,
+    /// when the span is shorter than <see cref="MinMeasurableDecodeSpanMs"/> or the rate exceeds
+    /// <see cref="MaxPlausibleTokensPerSecond"/> (<see cref="IsStreamingRateUnmeasurable"/>).
     /// </summary>
     public static (double TokensPerSecond, bool Estimated)? AnswerStreamingRate(BenchmarkRunAnswer answer)
     {
         ArgumentNullException.ThrowIfNull(answer);
         var final = FinalCandidateCall(answer);
+        if (final == null || final.Last80DecodeSpanMs is not int spanMs || spanMs < MinMeasurableDecodeSpanMs)
+        {
+            return null;
+        }
+
+        var rate = UnboundedStreamingRate(final);
+        return rate.HasValue && rate.Value.TokensPerSecond <= MaxPlausibleTokensPerSecond ? rate : null;
+    }
+
+    /// <summary>
+    /// True when the final candidate call recorded a decode span and visible characters but its
+    /// streaming rate fails a bound: the span is shorter than <see cref="MinMeasurableDecodeSpanMs"/>,
+    /// or the rate exceeds <see cref="MaxPlausibleTokensPerSecond"/>. False when there is no final
+    /// call, a mark is missing, or the rate is unknown for another reason.
+    /// </summary>
+    public static bool IsStreamingRateUnmeasurable(BenchmarkRunAnswer answer)
+    {
+        ArgumentNullException.ThrowIfNull(answer);
+        var final = FinalCandidateCall(answer);
         if (final == null
-            || final.Last80DecodeSpanMs is not int spanMs || spanMs <= 0
+            || final.Last80DecodeSpanMs is not int spanMs || spanMs < 0
+            || final.Last80VisibleChars is not int windowChars || windowChars <= 0
+            || final.VisibleOutputChars <= 0)
+        {
+            return false;
+        }
+
+        if (spanMs < MinMeasurableDecodeSpanMs)
+        {
+            return true;
+        }
+
+        var rate = UnboundedStreamingRate(final);
+        return rate.HasValue && rate.Value.TokensPerSecond > MaxPlausibleTokensPerSecond;
+    }
+
+    /// <summary><see cref="AnswerStreamingRate"/> for <paramref name="final"/> without its two bounds.</summary>
+    private static (double TokensPerSecond, bool Estimated)? UnboundedStreamingRate(ModelCallTelemetry final)
+    {
+        if (final.Last80DecodeSpanMs is not int spanMs || spanMs <= 0
             || final.Last80VisibleChars is not int windowChars || windowChars <= 0
             || final.VisibleOutputChars <= 0)
         {

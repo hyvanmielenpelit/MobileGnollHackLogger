@@ -2226,6 +2226,46 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void KnowledgeBaseRouting_CountsTheTopicQuestionsWithZeroArticleCalls_AndObservesTheRest()
+    {
+        var settings = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        settings.QuestionText = "How do I change the tileset settings in GnollHack?";
+        settings.ToolCallSummary = "wiki_search×1";
+        var identify = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        identify.QuestionText = "How do I tell what an unidentified wand does?";
+        identify.ToolCallSummary = "get_knowledge_article×1";
+        var mechanics = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 80);
+        mechanics.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        mechanics.ToolCallSummary = "source_code_search×2";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, settings, identify, mechanics);
+        BenchmarkRunFinalizer.Apply(run, new[] { settings, identify, mechanics });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Knowledge base under-use:** 1 of 2 knowledge-base-topic question(s) made zero `get_knowledge_article` calls." + Environment.NewLine
+            + "- *Prompt observation:* 1 of 1 other answered question(s) made zero `get_knowledge_article` calls. The prompt (`Overseer/Services/ChatService.cs` § \"Information Routing\")", report);
+    }
+
+    [Fact]
+    public void KnowledgeBaseRouting_WithoutTopicQuestions_KeepsTheObservationOverEveryAnsweredQuestion()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        q1.ToolCallSummary = "wiki_search×1";
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        q2.QuestionText = "What does a cockatrice corpse do when wielded?";
+        q2.ToolCallSummary = "get_knowledge_article×1";
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1, q2 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("Knowledge base under-use:", report);
+        Assert.Contains("- *Prompt observation:* 1 of 2 answered question(s) made zero `get_knowledge_article` calls. The prompt", report);
+        Assert.DoesNotContain("other answered question(s)", report);
+    }
+
+    [Fact]
     public void DirectionalAgreement_SentenceAbsentBelowThresholdAndPresentAtOrAbove()
     {
         // Case 1: n = 1 (below threshold of 3)
@@ -6941,5 +6981,40 @@ public class BenchmarkReportBuilderTests
 
         // Characters ÷ 4 over the window: 1280 / 4 / 4 s = 80 and 3200 / 4 / 4 s = 200; median 140.
         Assert.Contains("  - **Answer Streaming Rate:** Median 140.0 tokens/s *(estimated: the provider counts thinking inside its output tokens, so visible tokens are estimated at 4 characters per token)*", report);
+    }
+
+    private static ModelCallTelemetry FinalCandidateCallOf(BenchmarkRun run, int orderIndex)
+        => run.Answers.Single(a => a.OrderIndex == orderIndex).ModelCalls
+            .Where(c => c.Source == ModelCallSource.BenchmarkCandidate)
+            .OrderBy(c => c.CallIndex)
+            .Last();
+
+    [Fact]
+    public void TimingDecomposition_CountsTheAnswersWhoseRateIsNotMeasurable()
+    {
+        // Q2's visible text arrived in 200 ms: no rate, so the median is Q1's 80 tokens/s alone.
+        var run = TimingDecompositionRun();
+        FinalCandidateCallOf(run, 2).Last80DecodeSpanMs = 200;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("  - **Answer Streaming Rate:** Median 80.0 tokens/s over 1 of 2 answers; not measurable on 1 (the visible text arrived in one burst after thinking) *(visible output over the last 80 % of the final call's deltas)*" + Environment.NewLine, report);
+    }
+
+    [Fact]
+    public void TimingDecomposition_SaysNotMeasurable_WhenEveryRateFailsABound()
+    {
+        // Q1 in one 100 ms burst; Q2 at 3,200 tokens over 0.8 s = 4,000 tokens/s, above the bound.
+        var run = TimingDecompositionRun();
+        FinalCandidateCallOf(run, 1).Last80DecodeSpanMs = 100;
+        var q2 = FinalCandidateCallOf(run, 2);
+        q2.OutputTokens = 4_000;
+        q2.Last80DecodeSpanMs = 800;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("  - **Answer Streaming Rate:** Not measurable — on 2 of 2 answers the visible text arrived in one burst after thinking." + Environment.NewLine, report);
+        Assert.DoesNotContain("  - **Answer Streaming Rate:** Median", report);
+        Assert.DoesNotContain("  - **Answer Streaming Rate:** Not recorded", report);
     }
 }

@@ -9,13 +9,15 @@ import { BenchmarkComparisonState } from '../state/benchmark-comparison.state';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ComparisonSummaryCardComponent } from './comparison-summary-card/comparison-summary-card.component';
+import type { LastComparisonRecord } from './last-comparison';
 
 /** The Model Comparison sub-tab: the launcher for the comparison wizard and the comparison reports. */
 @Component({
   selector: 'app-benchmark-comparison-tab',
   standalone: true,
   imports: [
-    CommonModule, ReportDocumentsLauncherComponent
+    CommonModule, ReportDocumentsLauncherComponent, ComparisonSummaryCardComponent
   ],
   templateUrl: './benchmark-comparison-tab.component.html',
   styleUrls: ['./benchmark-comparison-tab.component.scss']
@@ -27,9 +29,13 @@ export class BenchmarkComparisonTabComponent implements OnInit {
   readonly comparison = inject(BenchmarkComparisonState);
   private cdr = inject(ChangeDetectorRef);
 
+  /** The reload token last seen; a bump means the wizard closed and may have written documents. */
+  private seenReportsReloadToken: number | null = null;
+
   constructor() {
     // Service state changes outside this component's own events; OnPush needs telling.
     this.viewSync.changed$.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.refreshDocumentsAfterWizardClose();
       this.cdr.markForCheck();
       this.cdr.detectChanges();
     });
@@ -37,6 +43,9 @@ export class BenchmarkComparisonTabComponent implements OnInit {
 
   ngOnInit(): void {
     this.comparison.restoreComparisonLauncherDisclosure();
+    this.comparison.restoreLastComparison();
+    this.seenReportsReloadToken = this.comparison.comparisonReportsReloadToken;
+    this.comparison.refreshLastComparisonDocuments();
     // The three lists the picker offers. No comparison is fetched here: an unattended request on
     // tab entry re-prices every entry for a selection the operator has not confirmed.
     this.workspace.loadHistory();
@@ -50,4 +59,20 @@ export class BenchmarkComparisonTabComponent implements OnInit {
 
   /** The wizard's steps, which the launcher lists under the same titles as the wizard's stepper. */
   readonly comparisonWizardSteps = COMPARISON_WIZARD_STEPS;
+
+  /** The Last comparison card's Open in wizard: its sources and basis become the selection. */
+  openInWizard(record: LastComparisonRecord): void {
+    this.comparison.applyComparisonEntries(record.entryKeys, record.pricingBasis);
+    this.bridge.openComparisonWizard();
+  }
+
+  /** Counts the last comparison's documents again once the wizard has closed. */
+  private refreshDocumentsAfterWizardClose(): void {
+    const token = this.comparison.comparisonReportsReloadToken;
+    if (this.seenReportsReloadToken === null || token === this.seenReportsReloadToken) {
+      return;
+    }
+    this.seenReportsReloadToken = token;
+    this.comparison.refreshLastComparisonDocuments();
+  }
 }

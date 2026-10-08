@@ -800,8 +800,16 @@ public static class BenchmarkAssessmentPrompt
     ///     own claims were not checked prints its charged sentences on the Claim Verification line
     ///     (B4). Report facts date each subject's first run by its start (B5). ScoringMethodVersion
     ///     stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v54: a run whose candidate prompt disallowed source code references grades with a preamble
+    ///     rule that an omitted file, path, line or function location lowers neither Completeness nor
+    ///     Accuracy, and its syntheses are told not to list that absence as a weakness; a run that
+    ///     allowed them, or recorded no option, grades with the harness-53 text (A1). A streaming rate
+    ///     is reported only over a decode span of at least 500 ms and at most 1,000 tokens/s, and the
+    ///     answers outside either bound are counted as not measurable (A2). The report counts the
+    ///     knowledge-base-topic questions that made no get_knowledge_article call (A3).
+    ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "53";
+    public const string HarnessVersion = "54";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -822,10 +830,11 @@ public static class BenchmarkAssessmentPrompt
         int scrubbedArtifactCount = 0,
         int? toolCallBudget = null,
         string? boardName = null,
-        string? boardText = null)
+        string? boardText = null,
+        bool sourceReferencesAllowed = true)
     {
         string? boardBlock = BuildGradingBoardBlock(boardName, boardText);
-        return BuildPerQuestionPreamble(suiteName)
+        return BuildPerQuestionPreamble(suiteName, sourceReferencesAllowed)
             + Environment.NewLine
             + (boardBlock == null ? string.Empty : boardBlock + Environment.NewLine)
             + BuildPerQuestionBody(
@@ -879,11 +888,42 @@ public static class BenchmarkAssessmentPrompt
     }
 
     /// <summary>
+    /// The grading preamble's rule for a run whose candidate prompt disallowed source code
+    /// references; see <see cref="BuildPerQuestionPreamble"/>.
+    /// </summary>
+    public const string SourceReferencesDisallowedRule =
+        "SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a file, path, line or function location. A rubric point that names a file or a line is met when the answer states the mechanic the point describes; the rubric's file and line citations are there for you to check facts, not for the candidate to repeat.";
+
+    /// <summary>
+    /// The synthesis prompt's one-sentence form of <see cref="SourceReferencesDisallowedRule"/>;
+    /// see <see cref="BuildFinalSynthesisPrompt"/>.
+    /// </summary>
+    public const string SourceReferencesDisallowedSynthesisSentence =
+        "The candidate was instructed not to cite source files, paths or line numbers; never list their absence as a weakness.";
+
+    /// <summary>
+    /// Whether <paramref name="run"/>'s candidate prompt allowed source code references, from its
+    /// <see cref="BenchmarkRun.CandidatePromptOptionsJson"/>. A run that recorded no options, or
+    /// recorded them before the field existed, reads as allowed: every run before harness 44 allowed
+    /// them.
+    /// </summary>
+    public static bool SourceReferencesAllowed(BenchmarkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        return BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson).AllowSourceCodeReferences;
+    }
+
+    /// <summary>
     /// The part of the per-question assessor prompt that is identical for every question of a
     /// suite: the role, the instructions, the BARS scales and the evidence rules. Grading requests
     /// send it as a frozen system segment so the provider can cache it across questions.
     /// </summary>
-    public static string BuildPerQuestionPreamble(string suiteName)
+    /// <param name="sourceReferencesAllowed">
+    /// The run's <see cref="BenchmarkCandidatePromptOptions.AllowSourceCodeReferences"/>
+    /// (<see cref="SourceReferencesAllowed"/>). False adds <see cref="SourceReferencesDisallowedRule"/>
+    /// after the COMPLETENESS scope rule; true leaves the preamble without it.
+    /// </param>
+    public static string BuildPerQuestionPreamble(string suiteName, bool sourceReferencesAllowed = true)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert game knowledge and reasoning assessor for GnollHack (a roguelike game derived from NetHack 3.6.2).");
@@ -947,6 +987,11 @@ public static class BenchmarkAssessmentPrompt
         // instrument's share of the Accuracy→Completeness gap a measured figure instead of a guess.
         sb.AppendLine("- **The question defines the scope.** A rubric point the question did not ask for is **not** an omission and must **not** lower the COMPLETENESS level. Grade what the question requested; the rubric is ground truth for the facts, not a checklist of everything the answer owed.");
         sb.AppendLine("- When the rubric contains such a point, record it in `completenessEvidence` prefixed **`OUT-OF-SCOPE:`** — e.g. `OUT-OF-SCOPE: rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite.` Record it and do not deduct for it. The harness counts these to measure how much of the run's Completeness shortfall is the instrument rather than the answer, so an unrecorded out-of-scope point is a measurement lost.");
+        // The candidate's own prompt forbade source locations, so their absence is obedience.
+        if (!sourceReferencesAllowed)
+        {
+            sb.AppendLine($"- {SourceReferencesDisallowedRule}");
+        }
         sb.AppendLine();
         sb.AppendLine("### 3. CONCISENESS (Weight: 10%)");
         sb.AppendLine("- Level 0: Completely overwhelmed by filler, repetitive rambling, or unprompted tangents.");
@@ -1149,10 +1194,11 @@ public static class BenchmarkAssessmentPrompt
         string? boardText = null,
         bool blind = true,
         string? triggerLabel = null,
-        IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null)
+        IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null,
+        bool sourceReferencesAllowed = true)
     {
         string? boardBlock = BuildGradingBoardBlock(boardName, boardText);
-        return BuildPerQuestionPreamble(suiteName)
+        return BuildPerQuestionPreamble(suiteName, sourceReferencesAllowed)
             + Environment.NewLine
             + (boardBlock == null ? string.Empty : boardBlock + Environment.NewLine)
             + BuildSecondOpinionBody(
@@ -1477,7 +1523,8 @@ public static class BenchmarkAssessmentPrompt
         IReadOnlyList<BenchmarkPerQuestionVerdictSummary> verdicts,
         string? boardName = null,
         string? boardDigest = null,
-        BenchmarkRunClaimTotals? panelRunClaimTotals = null)
+        BenchmarkRunClaimTotals? panelRunClaimTotals = null,
+        bool sourceReferencesAllowed = true)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert AI intelligence and game knowledge assessor synthesizing the overall evaluation for an AI benchmark run on GnollHack.");
@@ -1508,6 +1555,11 @@ public static class BenchmarkAssessmentPrompt
         // The structured counterpart of the two prose fields: a second synthesis of the same run is
         // compared with this one entry by entry, which prose cannot support.
         sb.AppendLine($"7. List every strength and weakness you name in `findings` as well, one entry each: `kind` is \"strength\" or \"weakness\"; `category` is one of {string.Join(", ", BenchmarkAssessmentParser.SynthesisFindingCategories)}; `questions` lists the question numbers the finding rests on, empty for a run-wide finding; `text` states it in one sentence.");
+        // A run whose candidate prompt forbade source locations: their absence is obedience.
+        if (!sourceReferencesAllowed)
+        {
+            sb.AppendLine($"8. {SourceReferencesDisallowedSynthesisSentence}");
+        }
         sb.AppendLine();
         // The distribution the model would otherwise have to derive itself by counting "Levels:"
         // lines below; handing it over pre-counted is what instruction 6 tells the model to rely on.

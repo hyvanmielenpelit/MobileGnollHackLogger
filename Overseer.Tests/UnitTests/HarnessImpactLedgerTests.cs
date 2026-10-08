@@ -140,6 +140,7 @@ public class HarnessImpactLedgerTests
     [InlineData("47")]
     [InlineData("50")]
     [InlineData("52")]
+    [InlineData("54")]
     public void ToolOutputChangesCountAsCandidateInputEvenWithoutAGuideChange(string version)
     {
         Assert.True(HarnessImpactLedger.ImpactOf(version).HasFlag(HarnessImpact.CandidateInput));

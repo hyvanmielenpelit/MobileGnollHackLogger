@@ -179,6 +179,86 @@ public class CallTelemetryMeasuresTests
         Assert.Null(CallTelemetryMeasures.AnswerStreamingRate(Answer(0, 0)));
     }
 
+    private static ModelCallTelemetry StreamedCall(int spanMs, string provider = "OpenAI")
+    {
+        var call = CandidateCall(0, 0, firstOutputMs: 100, provider: provider);
+        call.OutputTokens = 500;
+        call.VisibleOutputChars = 2_000;
+        call.Last80VisibleChars = 1_600;
+        call.Last80DecodeSpanMs = spanMs;
+        return call;
+    }
+
+    [Theory]
+    [InlineData("OpenAI")]
+    [InlineData("Anthropic")]
+    [InlineData("Google")]
+    public void AStreamingRateOverASpanShorterThanTheMinimum_IsNullAndUnmeasurable(string provider)
+    {
+        // 400 window tokens over 0.2 s: the visible text arrived in one burst after thinking.
+        var answer = Answer(0, 0, StreamedCall(CallTelemetryMeasures.MinMeasurableDecodeSpanMs - 300, provider));
+
+        Assert.Null(CallTelemetryMeasures.AnswerStreamingRate(answer));
+        Assert.True(CallTelemetryMeasures.IsStreamingRateUnmeasurable(answer));
+    }
+
+    [Fact]
+    public void AZeroSpanWithVisibleCharacters_IsUnmeasurable()
+    {
+        var answer = Answer(0, 0, StreamedCall(0));
+
+        Assert.Null(CallTelemetryMeasures.AnswerStreamingRate(answer));
+        Assert.True(CallTelemetryMeasures.IsStreamingRateUnmeasurable(answer));
+    }
+
+    [Theory]
+    [InlineData("OpenAI")]
+    [InlineData("Anthropic")]
+    public void AStreamingRateAboveThePlausibleMaximum_IsNullAndUnmeasurable(string provider)
+    {
+        // OpenAI: 400 window tokens over 0.6 s = 667 tokens/s is plausible; with 2,000 output tokens,
+        // 1,600 over 0.6 s = 2,667 tokens/s is not. Anthropic: 1,600 / 4 = 400 estimated tokens, so a
+        // 0.6 s span is plausible and the window characters are raised to exceed the bound.
+        var call = StreamedCall(600, provider);
+        call.OutputTokens = 2_000;
+        call.Last80VisibleChars = 1_600;
+        if (provider == "Anthropic")
+        {
+            call.VisibleOutputChars = 4_000;
+            call.Last80VisibleChars = 3_200; // 800 estimated tokens over 0.6 s = 1,333 tokens/s
+        }
+        var answer = Answer(0, 0, call);
+
+        Assert.Null(CallTelemetryMeasures.AnswerStreamingRate(answer));
+        Assert.True(CallTelemetryMeasures.IsStreamingRateUnmeasurable(answer));
+    }
+
+    [Fact]
+    public void APlausibleStreamingRate_IsReturned_AndMeasurable()
+    {
+        // 400 window tokens over exactly the minimum span: 800 tokens/s, within both bounds.
+        var answer = Answer(0, 0, StreamedCall(CallTelemetryMeasures.MinMeasurableDecodeSpanMs));
+
+        Assert.Equal(800.0, CallTelemetryMeasures.AnswerStreamingRate(answer)!.Value.TokensPerSecond, 9);
+        Assert.False(CallTelemetryMeasures.IsStreamingRateUnmeasurable(answer));
+    }
+
+    [Fact]
+    public void WithoutTelemetry_TheRateIsNull_AndNotUnmeasurable()
+    {
+        var noRows = Answer(0, 0);
+        var noSpan = Answer(0, 0, StreamedCall(4_000));
+        noSpan.ModelCalls[0].Last80DecodeSpanMs = null;
+        var noChars = Answer(0, 0, StreamedCall(100));
+        noChars.ModelCalls[0].Last80VisibleChars = null;
+
+        foreach (var answer in new[] { noRows, noSpan, noChars })
+        {
+            Assert.Null(CallTelemetryMeasures.AnswerStreamingRate(answer));
+            Assert.False(CallTelemetryMeasures.IsStreamingRateUnmeasurable(answer));
+        }
+    }
+
     [Fact]
     public void NetModelTime_SubtractsOwnWaits_AndIsNullWhenNeitherWasRecorded()
     {

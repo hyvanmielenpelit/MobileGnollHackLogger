@@ -22,6 +22,13 @@ import { BenchmarkComparisonSelection } from '../benchmark.models';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import type { ComparisonWizardPreset } from './benchmark-shell-bridge.service';
+import type { ComparisonIdentifiedEvent } from '../model-comparison/model-comparison.component';
+import {
+  LastComparisonRecord,
+  buildLastComparisonRecord,
+  readLastComparison,
+  writeLastComparison
+} from '../comparison-tab/last-comparison';
 
 /** The most runs the comparability index is asked about; the server's own cap. */
 export const MAX_COMPARABILITY_INDEX_RUNS = 1000;
@@ -58,6 +65,24 @@ export class BenchmarkComparisonState implements OnDestroy {
    * first shown, when it is read from storage.
    */
   comparisonHowItWorksOpen: boolean | null = null;
+
+  /**
+   * The comparison last computed and numbered in this browser, for the launcher's *Last comparison*
+   * card. Read from storage once per page by `restoreLastComparison`, and replaced by each new one.
+   */
+  lastComparison: LastComparisonRecord | null = null;
+
+  /** Whether `lastComparison` has been read from storage on this page. */
+  private lastComparisonRestored = false;
+
+  /**
+   * The report documents written from `lastComparison`, as `listComparisons` counts them; null until
+   * the list has answered, when it failed, or when it does not carry that comparison.
+   */
+  lastComparisonDocuments: { count: number; latestAtUtc: string | null } | null = null;
+
+  /** Guards the documents count against an out-of-order answer, as comparisonToken does. */
+  private lastComparisonDocumentsToken = 0;
 
   // --- Model Comparison ---
   //
@@ -240,13 +265,59 @@ export class BenchmarkComparisonState implements OnDestroy {
   applyComparisonPreset(preset: ComparisonWizardPreset): void {
     const batteryRunIds = [...new Set(preset.batteryRunIds)];
     this.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds });
-    // The picker's rows are the battery runs Run History loads, which a shortcut from another tab
-    // may not have loaded yet.
+    this.loadMissingBatteryRuns(batteryRunIds);
+    this.viewSync.notify();
+  }
+
+  /**
+   * Replaces the selection with the sources behind a comparison's entry keys (`run:12`, `group:3`,
+   * `battery:4`) and sets its pricing basis, so the wizard opens on step 1 with them selected. Keys
+   * of another form are skipped, and ids are de-duplicated in order. A set that mixes battery results
+   * with runs or groups keeps the runs and groups, since the server refuses the mix. A suite scope
+   * that does not offer every run and group is cleared, so none of them is pruned from the selection.
+   */
+  applyComparisonEntries(entryKeys: readonly string[], pricingBasis: BenchmarkModelComparisonPricingBasis): void {
+    const runIds: number[] = [];
+    const groupIds: number[] = [];
+    const batteryRunIds: number[] = [];
+    for (const key of entryKeys) {
+      const match = /^(run|group|battery):(\d+)$/.exec(key);
+      if (!match) { continue; }
+      const id = Number(match[2]);
+      const ids = match[1] === 'run' ? runIds : match[1] === 'group' ? groupIds : batteryRunIds;
+      if (Number.isSafeInteger(id) && !ids.includes(id)) {
+        ids.push(id);
+      }
+    }
+    const mixed = batteryRunIds.length > 0 && runIds.length + groupIds.length > 0;
+
+    if (this.comparisonSuiteId !== null && runIds.length + groupIds.length > 0) {
+      const runsInScope = new Set(this.comparisonRunOptions.map(run => run.id));
+      const groupsInScope = new Set(this.comparisonGroupOptions.map(group => group.id));
+      if (runIds.some(id => !runsInScope.has(id)) || groupIds.some(id => !groupsInScope.has(id))) {
+        this.comparisonSuiteId = null;
+        this.loadComparabilityIndex();
+      }
+    }
+
+    // Set before the selection change, which persists the basis with the selection.
+    this.comparisonPricingBasis = pricingBasis;
+    this.onComparisonSelectionChange({ runIds, groupIds, batteryRunIds: mixed ? [] : batteryRunIds });
+    if (!mixed) {
+      this.loadMissingBatteryRuns(batteryRunIds);
+    }
+    this.viewSync.notify();
+  }
+
+  /**
+   * Loads Run History when a battery run is not loaded yet: the picker's rows are the battery runs it
+   * loads, which a shortcut from another tab may not have loaded.
+   */
+  private loadMissingBatteryRuns(batteryRunIds: readonly number[]): void {
     const loaded = new Set(this.workspace.batteryRuns.map(battery => battery.id));
     if (batteryRunIds.some(id => !loaded.has(id))) {
       this.workspace.loadHistory();
     }
-    this.viewSync.notify();
   }
 
   /**
@@ -411,6 +482,71 @@ export class BenchmarkComparisonState implements OnDestroy {
     } catch {
       // Storage throws in private-browsing modes. Forgetting a disclosure state is not worth
       // surfacing to the operator.
+    }
+  }
+
+  /** Reads the last comparison from storage once per page; a record already in memory is newer. */
+  restoreLastComparison(): void {
+    if (this.lastComparisonRestored) { return; }
+    this.lastComparisonRestored = true;
+    if (this.lastComparison === null) {
+      this.lastComparison = readLastComparison();
+    }
+  }
+
+  /**
+   * The wizard numbered a computed comparison, or its figures or name changed: it becomes the last
+   * comparison, in memory and in storage. A different comparison's documents count is dropped until
+   * it is fetched again.
+   */
+  recordLastComparison(event: ComparisonIdentifiedEvent): void {
+    let record: LastComparisonRecord;
+    try {
+      record = buildLastComparisonRecord(event.comparison, event.identity, new Date());
+    } catch {
+      return;                                   // a payload of an unexpected shape leaves the card as it was
+    }
+    writeLastComparison(record);
+    if (this.lastComparison?.id !== record.id) {
+      ++this.lastComparisonDocumentsToken;
+      this.lastComparisonDocuments = null;
+    }
+    this.lastComparison = record;
+    this.lastComparisonRestored = true;
+    this.viewSync.notify();
+  }
+
+  /**
+   * Counts the report documents of the last comparison from the existing comparison list. Called on
+   * tab entry and after the wizard closes. A failure, or a list without that comparison, leaves the
+   * count null, and the card shows no documents fact.
+   */
+  refreshLastComparisonDocuments(): void {
+    const token = ++this.lastComparisonDocumentsToken;
+    const record = this.lastComparison;
+    if (!record) {
+      this.lastComparisonDocuments = null;
+      return;
+    }
+    const fail = (): void => {
+      if (token !== this.lastComparisonDocumentsToken) { return; }
+      this.lastComparisonDocuments = null;
+      this.viewSync.notify();
+    };
+    try {
+      this.benchmarkService.listComparisons().subscribe({
+        next: rows => {
+          if (token !== this.lastComparisonDocumentsToken) { return; }
+          const row = Array.isArray(rows) ? rows.find(item => item.id === record.id) : undefined;
+          this.lastComparisonDocuments = row && Number.isFinite(row.documentCount)
+            ? { count: row.documentCount, latestAtUtc: row.lastDocumentAtUtc ?? null }
+            : null;
+          this.viewSync.notify();
+        },
+        error: fail
+      });
+    } catch {
+      fail();
     }
   }
 

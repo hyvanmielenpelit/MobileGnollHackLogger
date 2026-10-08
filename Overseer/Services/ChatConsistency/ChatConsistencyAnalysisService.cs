@@ -35,7 +35,7 @@ using Overseer.Services.Telemetry;
 public class ChatConsistencyAnalysisService
 {
     /// <summary>The version of this analysis code; stored with every analysis.</summary>
-    public const int CurrentAnalysisCodeVersion = 2;
+    public const int CurrentAnalysisCodeVersion = 3;
 
     private const int MaxNameLength = 200;
     private const int MaxSubjectKeyLength = 512;
@@ -948,9 +948,21 @@ public class ChatConsistencyAnalysisService
                 return;
             }
 
-            if (b.Concat(c).SelectMany(r => r.Answers).Any(a => CallTelemetryMeasures.AnswerStreamingRate(a) is { } rate && rate.Estimated))
+            var compared = b.Concat(c).SelectMany(r => r.Answers).ToList();
+            int unmeasurable = compared.Count(a => ChatConsistencyMeasures.IsDelivered(a) && CallTelemetryMeasures.IsStreamingRateUnmeasurable(a));
+            string? unmeasurableNote = unmeasurable > 0
+                ? $"{unmeasurable.ToString(CultureInfo.InvariantCulture)} delivered answer(s) have no rate: the visible text arrived in one burst after thinking "
+                  + $"(a decode span under {CallTelemetryMeasures.MinMeasurableDecodeSpanMs.ToString(CultureInfo.InvariantCulture)} ms "
+                  + $"or a rate over {CallTelemetryMeasures.MaxPlausibleTokensPerSecond.ToString("N0", CultureInfo.InvariantCulture)} tokens/s)."
+                : null;
+            if (compared.Any(a => CallTelemetryMeasures.AnswerStreamingRate(a) is { } rate && rate.Estimated))
             {
-                w.Notes.Add("Some rates are estimated from visible characters at 4 characters per token (Anthropic counts thinking inside output tokens).");
+                w.Notes.Add("Some rates are estimated from visible characters at 4 characters per token (Anthropic counts thinking inside output tokens)."
+                    + (unmeasurableNote != null ? " " + unmeasurableNote : string.Empty));
+            }
+            else if (unmeasurableNote != null)
+            {
+                w.Notes.Add(unmeasurableNote);
             }
 
             Stratified(w, b, c, pooled);

@@ -478,6 +478,69 @@ public class BenchmarkBatteryReportFactsTests
         Assert.Equal(new[] { 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(prep.Sheet));
     }
 
+    /// <summary>
+    /// Three panel rounds in which each of <paramref name="marks"/> is applied to the answer at its
+    /// (round, suite A order index) it names. Suite A's means are 60, 70 and 80.
+    /// </summary>
+    private static Task<long> SeedPanelRoundsAsync(
+        ApplicationDbContext db, params (int Round, int OrderIndex, Action<BenchmarkRunAnswer> Mark)[] marks)
+        => SeedThreeRoundsAsync(db, adjust: (run, round) =>
+        {
+            BenchmarkBatteryTestData.AsPanelRun(run);
+            if (run.BenchmarkSuiteId != BenchmarkBatteryTestData.SuiteA) return;
+            foreach (var (markRound, orderIndex, mark) in marks)
+            {
+                if (markRound == round) mark(run.Answers.Single(a => a.OrderIndex == orderIndex));
+            }
+        });
+
+    [Fact]
+    public async Task TheDetail_TakesUnconfirmedCriticalErrorsAndPanelDisagreements_BeforeTheLowestAndHighestMeans()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        // S1-Q2 (mean 70) carries an unresolved critical error in round 2, S1-Q3 (mean 80) a panel
+        // disagreement in round 1; without them suite 1's two would be S1-Q1 and S1-Q3.
+        long id = await SeedPanelRoundsAsync(db,
+            (2, 2, a => a.CriticalErrorResolution = BenchmarkCriticalErrorResolution.Unresolved),
+            (1, 3, a => a.PanelDisagreed = true));
+
+        var prep = await PrepareAsync(db, id, Configuration(detailPerSuite: 2));
+
+        var detailed = prep.Sheet.Questions.Where(q => q.Detailed == true).Select(q => q.Reference).ToList();
+        Assert.Equal(new[] { "S1-Q2", "S1-Q3", "S2-Q1", "S2-Q2" }, detailed);
+        Assert.Equal(0, prep.Sheet.Questions.Single(q => q.Reference == "S1-Q2").CriticalErrorCount);
+    }
+
+    [Fact]
+    public async Task TheDetail_RanksAnUnconfirmedCriticalErrorAboveAPanelDisagreement()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        // S1-Q1 (mean 60) was disagreed on; S1-Q3 (mean 80) carries a critical error the verifier overturned.
+        long id = await SeedPanelRoundsAsync(db,
+            (1, 1, a => a.PanelDisagreed = true),
+            (3, 3, a => a.CriticalErrorResolution = BenchmarkCriticalErrorResolution.OverturnedByVerifier));
+
+        var prep = await PrepareAsync(db, id, Configuration(detailPerSuite: 1));
+
+        var detailed = prep.Sheet.Questions.Where(q => q.Detailed == true).Select(q => q.Reference).ToList();
+        Assert.Equal(new[] { "S1-Q3", "S2-Q2" }, detailed);
+    }
+
+    [Fact]
+    public async Task TheDetail_BreaksATieBetweenPanelDisagreementsByTheLowerMean()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        // S1-Q2 (mean 70) and S1-Q3 (mean 80) were both disagreed on; S1-Q1 (mean 60) was not.
+        long id = await SeedPanelRoundsAsync(db,
+            (1, 3, a => a.PanelDisagreed = true),
+            (2, 2, a => a.PanelDisagreed = true));
+
+        var prep = await PrepareAsync(db, id, Configuration(detailPerSuite: 1));
+
+        var detailed = prep.Sheet.Questions.Where(q => q.Detailed == true).Select(q => q.Reference).ToList();
+        Assert.Equal(new[] { "S1-Q2", "S2-Q2" }, detailed);
+    }
+
     [Fact]
     public async Task OtherBatteryResults_ArePeersWithIndexIntervalSpeedAndCost_AndNoPairedTest()
     {

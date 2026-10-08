@@ -525,7 +525,9 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
     return this.list.chips(this.rows);
   }
 
+  /** Empty during the first load, which the status line above the heading announces. */
   get listStatus(): string {
+    if (this.loading && this.rows.length === 0) return '';
     return this.list.statusText(this.rows, { one: 'run', many: 'runs' });
   }
 

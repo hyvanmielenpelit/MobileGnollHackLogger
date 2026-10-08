@@ -297,6 +297,12 @@ export interface ComparisonIdentityState {
   readonly entryKeys: readonly string[];
 }
 
+/** What `comparisonIdentified` carries: the computed comparison and the numbered comparison it is. */
+export interface ComparisonIdentifiedEvent {
+  comparison: BenchmarkModelComparisonDto;
+  identity: BenchmarkComparisonDto;
+}
+
 /**
  * Every wizard step with its title and a one-line summary of what it is for.
  *
@@ -749,6 +755,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Step 3's *How the graders work* link; the host opens the guide at *Choosing grader models*. */
   @Output() graderGuideRequested = new EventEmitter<void>();
 
+  /**
+   * The computed comparison with the numbered comparison it is: once `identify` answers, after a
+   * rename, and when a recompute of the same entries brings new figures while the number is held.
+   */
+  @Output() readonly comparisonIdentified = new EventEmitter<ComparisonIdentifiedEvent>();
+
   /** The request has run past `SLOW_COMPARISON_MS`, and the footer says how to leave it. */
   slowLoading = false;
 
@@ -1020,7 +1032,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.rebuild();
     this.refreshColumnEmpty(true);
     this.scheduleTableMeasure();
-    this.identifyComparison();
+    if (!this.identifyComparison()) {
+      // The number held is this entry set's, so the new figures go out with it.
+      this.emitComparisonIdentified();
+    }
 
     // Not on the first change: that one is the initial binding, and step 1 is where the wizard
     // opens regardless of what the host already holds.
@@ -2087,19 +2102,24 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return { runIds: idsOf('run'), groupIds: idsOf('group'), batteryRunIds: idsOf('battery') };
   }
 
+  /** The entry set of a comparison, independent of entry order. */
+  private static entrySignature(comparison: BenchmarkModelComparisonDto): string {
+    return comparison.entries.map(entry => entry.key).sort().join(',');
+  }
+
   /**
    * Numbers the computed comparison: after Compare, and whenever the entry set changes; a recompute
    * of the same entries keeps the identity it has. A failure, or an answer for an older set, is
-   * dropped.
+   * dropped. True when it asked, false when there was nothing to ask about.
    */
-  private identifyComparison(): void {
+  private identifyComparison(): boolean {
     const comparison = this.comparison;
     if (!comparison || comparison.entries.length === 0) {
-      return;
+      return false;
     }
-    const signature = comparison.entries.map(entry => entry.key).sort().join(',');
+    const signature = ModelComparisonComponent.entrySignature(comparison);
     if (signature === this.identitySignature) {
-      return;
+      return false;
     }
     this.identitySignature = signature;
     this.identitySub?.unsubscribe();
@@ -2119,6 +2139,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     } catch {
       // As a failed request: the wizard carries on without the number.
     }
+    return true;
   }
 
   private setComparisonIdentity(identity: BenchmarkComparisonDto | null): void {
@@ -2128,6 +2149,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       : null;
     this.refreshDocumentChartActions();
     this.cdr.markForCheck();
+    if (identity) {
+      this.emitComparisonIdentified();
+    }
+  }
+
+  /**
+   * Emits `comparisonIdentified` while a comparison and the number of its own entry set are both
+   * held. A failure in the host's handler never reaches the wizard.
+   */
+  private emitComparisonIdentified(): void {
+    const comparison = this.comparison;
+    const identity = this.comparisonIdentity;
+    if (!comparison || !identity || comparison.entries.length === 0
+      || ModelComparisonComponent.entrySignature(comparison) !== this.identitySignature) {
+      return;
+    }
+    try {
+      this.comparisonIdentified.emit({ comparison, identity });
+    } catch {
+      // The record is a convenience of the launcher; the wizard carries on without it.
+    }
   }
 
   /** The rename dialog is rendered: from Rename comparison until it has closed. */

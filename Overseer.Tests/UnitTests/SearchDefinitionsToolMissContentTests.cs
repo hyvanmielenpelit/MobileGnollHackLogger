@@ -150,6 +150,98 @@ public class SearchDefinitionsToolMissContentTests : IDisposable
     }
 
     /// <summary>
+    /// An identifier-shaped probe matches whole words only: <c>disarm_bonus</c> is not an occurrence
+    /// of <c>ARM_BONUS</c>, so a corpus holding only the former reports the latter as absent.
+    /// </summary>
+    [Fact]
+    public async Task IdentifierProbe_DoesNotCountAnOccurrenceInsideALongerName()
+    {
+        WriteSource("do_wear.c",
+            "/* do_wear.c */\r\n" +
+            "    total += disarm_bonus(uarm);\r\n" +
+            "    total -= disarm_bonus(uarmc);\r\n");
+
+        var (service, netHackService) = await CreateServicesAsync();
+        using (service)
+        using (netHackService)
+        {
+            var tool = new SearchDefinitionsTool(service, netHackService);
+            var arguments = JsonDocument.Parse("""{"symbol": "ARM_BONUS"}""").RootElement;
+
+            var result = await tool.ExecuteAsync(arguments, CreateContext(4005), CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.StartsWith("No definition found for '", result.Content);
+            Assert.Contains("'ARM_BONUS' does not occur in the indexed gnollhack source.", result.Content);
+            Assert.DoesNotContain("do_wear.c", result.Content);
+        }
+    }
+
+    /// <summary>
+    /// A whole-word occurrence of an identifier-shaped probe is still found, and is the only one
+    /// counted when a longer name containing it occurs elsewhere.
+    /// </summary>
+    [Fact]
+    public async Task IdentifierProbe_FindsAWholeWordOccurrence()
+    {
+        WriteSource("do_wear.c",
+            "/* do_wear.c */\r\n" +
+            "    total += disarm_bonus(uarm);\r\n" +
+            "    total -= disarm_bonus(uarmc);\r\n");
+        WriteSource("armor.c",
+            "/* armor.c */\r\n" +
+            "    total += ARM_BONUS(uarm);\r\n");
+
+        var (service, netHackService) = await CreateServicesAsync();
+        using (service)
+        using (netHackService)
+        {
+            var tool = new SearchDefinitionsTool(service, netHackService);
+            var arguments = JsonDocument.Parse("""{"symbol": "ARM_BONUS"}""").RootElement;
+
+            var result = await tool.ExecuteAsync(arguments, CreateContext(4006), CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.StartsWith("No definition found for '", result.Content);
+            Assert.Contains("'ARM_BONUS' occurs in 1 lines across src/armor.c.", result.Content);
+            Assert.DoesNotContain("do_wear.c", result.Content);
+        }
+    }
+
+    /// <summary>
+    /// A probe query that is not identifier-shaped stays a case-insensitive substring search, so it
+    /// still matches inside a longer name.
+    /// </summary>
+    [Fact]
+    public async Task NonIdentifierProbe_StaysASubstringSearch()
+    {
+        WriteSource("do_wear.c",
+            "/* do_wear.c */\r\n" +
+            "    total += disarm_bonus(uarm);\r\n" +
+            "    total -= disarm_bonus(uarmc);\r\n");
+
+        var (service, netHackService) = await CreateServicesAsync();
+        using (service)
+        using (netHackService)
+        {
+            var tool = new SearchDefinitionsTool(service, netHackService);
+            var arguments = JsonDocument.Parse("""{"symbol": "ARM_BONUS("}""").RootElement;
+
+            var result = await tool.ExecuteAsync(arguments, CreateContext(4007), CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.StartsWith("No definition found for '", result.Content);
+            Assert.Contains("'ARM_BONUS(' occurs in 2 lines across src/do_wear.c.", result.Content);
+        }
+    }
+
+    private void WriteSource(string fileName, string content)
+    {
+        Directory.CreateDirectory(Path.Combine(_sourceDir, "src"));
+        File.WriteAllText(Path.Combine(_sourceDir, "src", fileName), content);
+    }
+
+    /// <summary>
     /// <see cref="GetFunctionDefinitionTool"/> delegates its miss content to the same
     /// <see cref="SourceMissContentBuilder"/> that <see cref="SearchDefinitionsTool"/> now uses, but
     /// with its own guidance sentences. This asserts the resulting payload byte-for-byte against the

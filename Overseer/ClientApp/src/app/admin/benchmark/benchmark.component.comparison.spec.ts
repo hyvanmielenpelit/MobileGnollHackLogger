@@ -9,8 +9,12 @@ import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.com
 import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
 import { MAX_COMPARABILITY_INDEX_GROUPS, MAX_COMPARABILITY_INDEX_RUNS } from './state/benchmark-comparison.state';
 import {
-  AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture, COMPARISON_SELECTION_KEY, COMPARISON_LAUNCHER_KEY
+  AdminBenchmarkSpecContext, BENCHMARK_SPEC_COMPARISON, clearStoredState, createAdminBenchmarkFixture,
+  COMPARISON_SELECTION_KEY, COMPARISON_LAUNCHER_KEY
 } from './benchmark.component.testing';
+import {
+  LAST_COMPARISON_STORAGE_KEY, LAST_COMPARISON_STORAGE_VERSION, LastComparisonRecord
+} from './comparison-tab/last-comparison';
 
 describe('AdminBenchmarkComponent', () => {
   let ctx: AdminBenchmarkSpecContext;
@@ -18,9 +22,18 @@ describe('AdminBenchmarkComponent', () => {
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
   let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
 
+  /** The Last comparison card's record is real browser state too, so no spec may leak one. */
+  function clearLastComparison(): void {
+    try {
+      localStorage.removeItem(LAST_COMPARISON_STORAGE_KEY);
+    } catch { /* private-browsing modes throw */ }
+  }
+
   beforeEach(clearStoredState);
+  beforeEach(clearLastComparison);
 
   afterEach(clearStoredState);
+  afterEach(clearLastComparison);
 
   beforeEach(async () => {
     ctx = await createAdminBenchmarkFixture();
@@ -77,8 +90,67 @@ describe('AdminBenchmarkComponent', () => {
     beforeEach(() => {
       ctx.workspace.historyRuns = [buildRun(1, 5), buildRun(2, 5), buildRun(3, 6)];
       ctx.workspace.runGroups = [buildGroup(11, 5), buildGroup(12, 6)];
+      // The Last comparison card counts its documents from the comparison list.
+      Object.assign(benchmarkServiceMock, {
+        listComparisons: vi.fn().mockName('AdminBenchmarkService.listComparisons').mockReturnValue(of([]))
+      });
       ctx.refresh();
     });
+
+    /** A remembered comparison as the card stores it: comparison #12, two charted runs and one excluded. */
+    function storedRecord(overrides: Partial<LastComparisonRecord> = {}): LastComparisonRecord {
+      const entry = {
+        label: '', modelDisplayName: '', provider: 'Google', thinkingLevel: null, excluded: false,
+        explanation: 'Comparable with the baseline.', qualityPoint: 61, qualityLower: 55, qualityUpper: 67,
+        modelTimeP50Ms: 4200, ttftP50Ms: 850, candidateCostPerQuestionUsd: 0.0042
+      };
+      return {
+        version: LAST_COMPARISON_STORAGE_VERSION,
+        savedAtUtc: '2026-10-08T12:00:00Z',
+        id: 12,
+        name: 'Model 1 vs Model 2',
+        subjectKind: 'Runs',
+        entryKeys: ['group:11', 'run:1', 'run:2'],
+        computedAtUtc: '2026-10-08T11:59:00Z',
+        pricingBasis: 'AsRun',
+        pricingBasisLabel: 'As run, each run at its own price card',
+        scopeName: 'Suite 5',
+        comparableCount: 2,
+        excludedCount: 1,
+        entries: [
+          { ...entry, key: 'run:1', label: 'Model 1', modelDisplayName: 'Model 1' },
+          { ...entry, key: 'run:2', label: 'Model 2', modelDisplayName: 'Model 2', qualityPoint: 58 },
+          {
+            ...entry, key: 'group:11', label: 'Group 11', modelDisplayName: 'Group 11', excluded: true,
+            explanation: 'Graded under another scoring method.', qualityPoint: null, qualityLower: null, qualityUpper: null
+          }
+        ],
+        ...overrides
+      };
+    }
+
+    function storeRecord(record: LastComparisonRecord): void {
+      localStorage.setItem(LAST_COMPARISON_STORAGE_KEY, JSON.stringify(record));
+    }
+
+    function showComparisonTab(): void {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+    }
+
+    function summaryCard(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('#bm-panel-modelcomparison app-comparison-summary-card');
+    }
+
+    /** The card's facts as term → value, whitespace collapsed. */
+    function cardFacts(): Record<string, string> {
+      const pairs: Record<string, string> = {};
+      for (const group of Array.from(summaryCard()!.querySelectorAll('dl.bm-summary-facts > div'))) {
+        const textOf = (el: Element | null) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+        pairs[textOf(group.querySelector('dt'))] = textOf(group.querySelector('dd'));
+      }
+      return pairs;
+    }
 
     // --- The sticky-container regression guard ---
 
@@ -137,8 +209,10 @@ describe('AdminBenchmarkComponent', () => {
       expect(terms).not.toContain('Selected');
       expect(launcher.textContent).not.toContain('analysis groups');
       expect(launcher.textContent).not.toContain('Clear selection');
-      // No comparison yet: the state list is absent rather than empty.
-      expect(launcher.querySelector('.mc-launcher-state')).toBeNull();
+      // No comparison remembered yet: the Last comparison card is absent rather than empty, and
+      // nothing is fetched for it.
+      expect(summaryCard()).toBeNull();
+      expect(benchmarkServiceMock.listComparisons).not.toHaveBeenCalled();
       // One action, and it is the one that opens the surface that owns the selection.
       const actions = launcher.querySelectorAll('.mc-launcher-actions button');
       expect(actions.length).toBe(1);
@@ -290,24 +364,147 @@ describe('AdminBenchmarkComponent', () => {
       expect(comparisonReportLoads()).toBe(3);
     });
 
-    it('states what the last comparison produced once one exists', () => {
-      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
-      ctx.comparison.comparison = {
-        baselineSuiteName: 'Suite 5',
-        pricingBasis: 'Current',
-        pricingBasisLabel: 'Current prices',
-        comparableCount: 2,
-        entries: [{}, {}, {}],
-        computedAtUtc: '2026-09-08T10:00:00Z'
-      } as any;
-      // As runComparison does on its response.
-      ctx.refresh();
+    // --- The Last comparison card ---
 
-      const state = fixture.nativeElement.querySelector('.mc-launcher .mc-launcher-state');
-      expect(state).toBeTruthy();
-      const terms = Array.from(state.querySelectorAll('dt')).map((dt: any) => dt.textContent.trim());
-      expect(terms).toEqual(['Suite', 'Pricing basis', 'Charted', 'Computed']);
-      expect(state.textContent).toContain('2 of 3 entries');
+    it('renders the remembered comparison as its own card between the hero and the library', () => {
+      storeRecord(storedRecord());
+      benchmarkServiceMock.listComparisons.mockReturnValue(of([{
+        id: 12, name: 'Model 1 vs Model 2', customName: null, defaultName: 'Model 1 vs Model 2', entryCount: 3,
+        subjectKind: 'Runs', documentCount: 4, lastDocumentAtUtc: '2026-10-08T09:00:00Z', createdAtUtc: '2026-10-06T10:00:00Z'
+      }]));
+      showComparisonTab();
+
+      const card = summaryCard()!;
+      expect(card).toBeTruthy();
+      expect(card.querySelector('#mc-last-title')!.textContent!.trim()).toBe('Comparison #12 · Model 1 vs Model 2');
+      // A grid child of its own: not inside the hero, and before the Comparison reports library.
+      const launcher = fixture.nativeElement.querySelector('.mc-launcher.bm-launcher') as HTMLElement;
+      const hero = launcher.querySelector('.mc-launcher-hero') as HTMLElement;
+      const library = launcher.querySelector('.mc-launcher-library') as HTMLElement;
+      expect(card.parentElement).toBe(launcher);
+      expect(hero.contains(card)).toBe(false);
+      expect(hero.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(card.compareDocumentPosition(library) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // The old read-out in the hero is gone.
+      expect(hero.querySelector('dl')).toBeNull();
+
+      expect(benchmarkServiceMock.listComparisons).toHaveBeenCalledTimes(1);
+      expect(cardFacts()).toEqual({
+        'Charted': '2 of 3 entries · 1 excluded',
+        'Pricing': 'As run As run, each run at its own price card',
+        'Report documents': '4 · latest 8 Oct 2026'
+      });
+      expect(card.querySelectorAll('table.bm-summary-table tbody tr').length).toBe(3);
+    });
+
+    it('omits the documents fact when the comparison list fails or does not carry the comparison', () => {
+      storeRecord(storedRecord());
+      benchmarkServiceMock.listComparisons.mockReturnValue(throwError(() => ({ error: 'No.' })));
+      showComparisonTab();
+
+      expect(summaryCard()).toBeTruthy();
+      expect(Object.keys(cardFacts())).toEqual(['Charted', 'Pricing']);
+
+      benchmarkServiceMock.listComparisons.mockReturnValue(of([]));
+      ctx.comparison.refreshLastComparisonDocuments();
+      fixture.detectChanges();
+      expect(Object.keys(cardFacts())).toEqual(['Charted', 'Pricing']);
+    });
+
+    it('ignores a stored record of another version', () => {
+      storeRecord({ ...storedRecord(), version: 2 } as unknown as LastComparisonRecord);
+      showComparisonTab();
+
+      expect(summaryCard()).toBeNull();
+      expect(ctx.comparison.lastComparison).toBeNull();
+    });
+
+    it('records the comparison the wizard numbers, and the card follows it', () => {
+      showComparisonTab();
+      component.openComparisonWizard();
+      fixture.detectChanges();
+      expect(summaryCard()).toBeNull();
+
+      const comparison = {
+        pricingBasis: 'Current',
+        pricingBasisLabel: 'Current catalog, as of 2026-10-08',
+        computedAtUtc: '2026-10-08T11:00:00Z',
+        subjectKind: 'Runs',
+        baselineSuiteName: 'Suite 5',
+        baselineBatteryName: null,
+        comparableCount: 2,
+        excludedCount: 0,
+        entries: [
+          { key: 'run:1', label: 'Model 1', modelDisplayName: 'Model 1', provider: 'Google', excluded: false, explanation: '', quality: { pointEstimate: 61 } },
+          { key: 'run:2', label: 'Model 2', modelDisplayName: 'Model 2', provider: 'Google', excluded: false, explanation: '', quality: { pointEstimate: 66 } }
+        ]
+      } as any;
+      component.comparisonWizard!.comparisonIdentified.emit({ comparison, identity: BENCHMARK_SPEC_COMPARISON });
+      fixture.detectChanges();
+
+      const stored = JSON.parse(localStorage.getItem(LAST_COMPARISON_STORAGE_KEY)!) as LastComparisonRecord;
+      expect(stored.id).toBe(12);
+      expect(stored.entryKeys).toEqual(['run:1', 'run:2']);
+      expect(stored.entries.map(entry => entry.key)).toEqual(['run:2', 'run:1']);
+      expect(ctx.comparison.lastComparison).toEqual(stored);
+      expect(summaryCard()!.querySelector('#mc-last-title')!.textContent!.trim()).toBe('Comparison #12 · Model 1 vs Model 2');
+
+      // The wizard's Reports step may have written documents, so closing it counts them again.
+      benchmarkServiceMock.listComparisons.mockClear();
+      benchmarkServiceMock.listComparisons.mockReturnValue(of([{
+        id: 12, name: 'Model 1 vs Model 2', customName: null, defaultName: 'Model 1 vs Model 2', entryCount: 2,
+        subjectKind: 'Runs', documentCount: 0, lastDocumentAtUtc: null, createdAtUtc: '2026-10-06T10:00:00Z'
+      }]));
+      // As the dialog's close event does.
+      component.onComparisonWizardClose();
+      ctx.refresh();
+      expect(benchmarkServiceMock.listComparisons).toHaveBeenCalledTimes(1);
+      expect(cardFacts()['Report documents']).toBe('None yet');
+      component.closeComparisonWizard();
+    });
+
+    it('opens the wizard on the remembered selection and basis from Open in wizard', () => {
+      storeRecord(storedRecord());
+      showComparisonTab();
+      const dialog = fixture.nativeElement
+        .querySelector('.benchmark-model-comparison-dialog') as HTMLDialogElement;
+      const showModal = vi.spyOn(dialog, 'showModal');
+
+      const open = Array.from(summaryCard()!.querySelectorAll<HTMLButtonElement>('.bm-summary-card-actions button'))
+        .find(button => button.textContent!.trim() === 'Open in wizard')!;
+      expect(open.classList.contains('btn-ghost')).toBe(true);
+      open.click();
+      fixture.detectChanges();
+
+      expect(ctx.comparison.comparisonRunIds).toEqual([1, 2]);
+      expect(ctx.comparison.comparisonGroupIds).toEqual([11]);
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([]);
+      expect(ctx.comparison.comparisonPricingBasis).toBe('AsRun');
+      // No payload is what puts the wizard on step 1, where the selection is.
+      expect(ctx.comparison.comparison).toBeNull();
+      const selection = JSON.parse(localStorage.getItem(COMPARISON_SELECTION_KEY)!);
+      expect(selection).toEqual(expect.objectContaining({ runIds: [1, 2], groupIds: [11], batteryRunIds: [], pricingBasis: 'AsRun' }));
+      expect(showModal).toHaveBeenCalledTimes(1);
+      expect(component.comparisonWizardMounted).toBe(true);
+      component.closeComparisonWizard();
+    });
+
+    it('clears a suite scope that would hide the remembered sources', () => {
+      ctx.comparison.onComparisonSuiteChange(6);
+      expect(ctx.comparison.comparisonSuiteId).toBe(6);
+
+      ctx.comparison.applyComparisonEntries(['run:1', 'group:11', 'nonsense', 'run:1'], 'Current');
+
+      expect(ctx.comparison.comparisonSuiteId).toBeNull();
+      expect(ctx.comparison.comparisonRunIds).toEqual([1]);
+      expect(ctx.comparison.comparisonGroupIds).toEqual([11]);
+    });
+
+    it('keeps runs and groups when remembered keys mix them with battery results', () => {
+      ctx.comparison.applyComparisonEntries(['run:1', 'battery:4'], 'Current');
+
+      expect(ctx.comparison.comparisonRunIds).toEqual([1]);
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([]);
     });
 
     it('lists the four wizard steps under the titles the wizard itself uses', () => {
@@ -987,23 +1184,27 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('names the battery in Last comparison when the comparison holds battery results', () => {
-      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
-      ctx.comparison.comparison = {
+      storeRecord(storedRecord({
         subjectKind: 'Batteries',
-        baselineSuiteName: null,
-        baselineBatteryName: 'Core Battery',
+        entryKeys: ['battery:4', 'battery:9'],
+        scopeName: 'Core Battery',
         pricingBasis: 'Current',
         pricingBasisLabel: 'Current prices',
         comparableCount: 2,
-        entries: [{}, {}],
-        computedAtUtc: '2026-10-02T10:00:00Z'
-      } as any;
-      ctx.refresh();
+        excludedCount: 0,
+        entries: []
+      }));
+      showComparisonTab();
 
-      const state = fixture.nativeElement.querySelector('.mc-launcher .mc-launcher-state') as HTMLElement;
-      const terms = Array.from(state.querySelectorAll('dt')).map(dt => dt.textContent!.trim());
-      expect(terms).toEqual(['Battery', 'Pricing basis', 'Charted', 'Computed']);
-      expect(state.querySelector('dd')!.textContent!.trim()).toBe('Core Battery');
+      const meta = summaryCard()!.querySelector('.bm-summary-card-meta')!.textContent!.replace(/\s+/g, ' ').trim();
+      expect(meta.startsWith('Battery results · Core Battery · computed ')).toBe(true);
+      expect(cardFacts()['Pricing']).toBe('Catalog prices Current prices');
+
+      ctx.workspace.batteryRuns = [buildBatteryRun(4), buildBatteryRun(9)];
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      ctx.comparison.applyComparisonEntries(ctx.comparison.lastComparison!.entryKeys, 'Current');
+      expect(ctx.comparison.comparisonRunIds).toEqual([]);
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([4, 9]);
     });
 
     it('names battery results as the third source kind in the steps', () => {

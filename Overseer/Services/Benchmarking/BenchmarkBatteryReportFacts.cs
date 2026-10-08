@@ -65,7 +65,8 @@ using Overseer.Models;
 // Questions are numbered 1..N across the battery, suite by suite, and each carries its suite-qualified
 // reference S<n>-Q<m>, m counting the suite's questions by order index. Every question has a one-line
 // row; at most DetailQuestionsPerSuite questions of each suite also carry their verbatim content
-// (critical errors first, then the lowest and the highest mean scores, alternately), from the run
+// (confirmed critical errors first, then critical errors a panel member raised that were not
+// confirmed, then panel disagreements, then the lowest and the highest mean scores, alternately), from the run
 // whose score is the median of the question's rounds. When the largest writer prompt exceeds
 // MaxPromptChars, detail is left out in reverse priority and a validation note says so.
 
@@ -462,9 +463,22 @@ public static class BenchmarkBatteryReportFacts
     // Questions and detail
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>One question row and what it was built from.</summary>
+    /// <summary>
+    /// One question row and what it was built from, with how many of its rounds carried a critical
+    /// error a panel member raised that was not confirmed (overturned by the verifier or unresolved),
+    /// and how many the panel disagreed on (<see cref="BenchmarkRunAnswer.PanelDisagreed"/>).
+    /// </summary>
     private sealed record QuestionItem(
-        BenchmarkReportQuestion Question, BenchmarkBatterySuiteProfile Suite, BenchmarkGroupItemStatistics Item);
+        BenchmarkReportQuestion Question,
+        BenchmarkBatterySuiteProfile Suite,
+        BenchmarkGroupItemStatistics Item,
+        int UnconfirmedCriticalErrorCount = 0,
+        int PanelDisagreementCount = 0);
+
+    /// <summary>A critical error one panel member raised that the panel did not apply as confirmed.</summary>
+    private static bool HasUnconfirmedCriticalError(BenchmarkRunAnswer answer)
+        => answer.CriticalErrorResolution is BenchmarkCriticalErrorResolution.OverturnedByVerifier
+            or BenchmarkCriticalErrorResolution.Unresolved;
 
     /// <summary>
     /// One row per persisted item of every suite, in suite order and, within a suite, by order index:
@@ -524,7 +538,12 @@ public static class BenchmarkBatteryReportFacts
                 };
 
                 questions.Add(question);
-                items.Add(new QuestionItem(question, suite, item));
+                items.Add(new QuestionItem(
+                    question,
+                    suite,
+                    item,
+                    counting.Count(HasUnconfirmedCriticalError),
+                    counting.Count(a => a.PanelDisagreed == true)));
             }
         }
 
@@ -533,8 +552,10 @@ public static class BenchmarkBatteryReportFacts
 
     /// <summary>
     /// The questions given in detail and their content. Per suite, at most <paramref name="perSuite"/>:
-    /// those with critical errors first (most rounds first, then the lowest mean), then the lowest and
-    /// the highest remaining mean scores alternately. The priority order takes each suite's first
+    /// those with confirmed critical errors first (most rounds first, then the lowest mean), then those
+    /// where a panel member raised a critical error that was not confirmed, then those the panel
+    /// disagreed on (each by the lowest mean, then question key), then the lowest and the highest
+    /// remaining mean scores alternately (<see cref="Choose"/>). The priority order takes each suite's first
     /// choice, then each suite's second, and so on. Each question's content is its answer in the run
     /// whose score is the median of its rounds (the lower middle at an even count, ties by run id).
     /// </summary>
@@ -604,7 +625,13 @@ public static class BenchmarkBatteryReportFacts
         return (content, order);
     }
 
-    /// <summary>One suite's choice, in its own priority order.</summary>
+    /// <summary>
+    /// One suite's choice, in its own priority order: questions with a confirmed critical error (most
+    /// rounds first, then the lowest mean); then questions where a panel member raised a critical
+    /// error that was not confirmed; then questions the panel disagreed on, each of those two groups
+    /// by mean ascending, then question key; then the lowest and the highest remaining means,
+    /// alternately.
+    /// </summary>
     private static List<QuestionItem> Choose(IReadOnlyList<QuestionItem> suiteItems, int perSuite)
     {
         var chosen = suiteItems
@@ -615,8 +642,25 @@ public static class BenchmarkBatteryReportFacts
             .Take(perSuite)
             .ToList();
 
-        var rest = suiteItems
-            .Where(i => i.Item.CriticalErrorCount == 0)
+        IEnumerable<QuestionItem> Unchosen() => suiteItems.Where(i => !chosen.Contains(i));
+
+        foreach (var inGroup in new Func<QuestionItem, bool>[]
+                 {
+                     i => i.UnconfirmedCriticalErrorCount > 0,
+                     i => i.PanelDisagreementCount > 0
+                 })
+        {
+            var next = Unchosen()
+                .Where(inGroup)
+                .OrderBy(i => i.Item.Mean)
+                .ThenBy(i => i.Item.QuestionId)
+                .ThenBy(i => i.Item.ItemRevision)
+                .Take(Math.Max(0, perSuite - chosen.Count))
+                .ToList();
+            chosen.AddRange(next);
+        }
+
+        var rest = Unchosen()
             .OrderBy(i => i.Item.Mean)
             .ThenBy(i => i.Question.Number)
             .ToList();

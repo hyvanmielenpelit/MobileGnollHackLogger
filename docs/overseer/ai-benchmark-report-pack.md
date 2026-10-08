@@ -419,6 +419,22 @@ it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped 
 - The `modelResult` slot is told that code appends the interval sentence after it (§ 1) and not to
   restate it (R11).
 
+**Writer rules added with harness 54** (2026-10-08, no format version change;
+`BenchmarkReportPackPrompt.SharedWritingRules`), at the end of WEIGHING THE EVIDENCE in the system prompt
+of every audience for a run, group or battery subject — run- and battery-completion documents included,
+the comparison-wide (§ 15) and chat consistency (§ 16) prompts not:
+
+- **Levers, not training.** *"Outside a recommendation for model developers, never recommend training,
+  fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool
+  guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings."* The
+  model-developer recommendations (R12) keep their own rule.
+- **Disagreement means a panel disagreement.** *Disagreed* and *disagreement* are written only for an
+  answer the facts mark as a panel disagreement; any other gap gives both members' scores.
+- **A wrong tool result is a source lead.** When an answer repeats a tool result the facts show to be
+  wrong, the lead is about that result's source (tag `corpus`), not about the model's knowledge.
+
+The rules reach documents written from now on, which record the new `WriterPromptSha256` (§ 7).
+
 ---
 
 ## 4. The Writer Model
@@ -1208,7 +1224,7 @@ with every PDF and Word request.
 **Progress.** While a package is prepared, an overlay dims the dialog body (leaving Close and Cancel
 usable) and shows a ring spinner, the current step — *Preparing 2 of 5 — …*, *Building the ZIP…*,
 *Saving…* — and a progress bar. The footer's status line announces the same steps to screen readers;
-with reduced motion the ring stands still.
+with reduced motion the ring turns slowly (6 s) with a still arc.
 
 **File names.** A pack document at Full, and every internal-only file (run report, tool-call log,
 diagnostics), gets an `_INTERNAL` file-name suffix. Every name ends
@@ -2038,10 +2054,37 @@ card's **More actions**. The list reloads when a job finishes and when a documen
 
 **The Model Comparison launcher** (Admin → GnollBench → Model Comparison) leads with the action: a hero
 card with *Cross-model comparison*, its lead and **Open Comparison Wizard** (the page's only `.btn-gh`,
-*compass* glyph), then the *Last comparison* read-out, then *How the comparison works* — the four wizard
-steps and the like-for-like note — in a disclosure that is open on the first visit and afterwards as the
-operator left it (`localStorage['overseer.benchmark.modelComparison.launcher']`). Below it, **Comparison
-reports** (`app-report-documents-launcher`, `report-pack/report-documents-launcher.component.*`) sums up
+*compass* glyph), then *How the comparison works* — the four wizard steps and the like-for-like note —
+in a disclosure that is open on the first visit and afterwards as the operator left it
+(`localStorage['overseer.benchmark.modelComparison.launcher']`). Below the hero come the *Last
+comparison* card and the **Comparison reports** library.
+
+**The *Last comparison* card** (`comparison-tab/comparison-summary-card/`) is a full-width row of the
+launcher between the hero and the library, built on the shared `.bm-summary-card` styles; it replaces
+the hero's inline *Last comparison* read-out. It shows the comparison last computed in this browser,
+kept in `localStorage['overseer.benchmark.modelComparison.last']` (`comparison-tab/last-comparison.ts`,
+record version 1, at most 64 entries, each exclusion explanation cut at 240 characters). The wizard
+records it when a comparison is computed and numbered — its `comparisonIdentified` output, after
+`POST model-comparisons/identify` answers, goes to `BenchmarkComparisonState.recordLastComparison` — and
+again when a recompute of the same entry set brings new figures or the comparison is renamed. The card
+reads *Last comparison*, then *Comparison #N · <name>* and a meta line (*Runs and groups* or *Battery
+results*, the battery or suite, the computed time, *remembered in this browser*), with these facts:
+
+- **Charted** — *2 of 3 entries*, and *· 1 excluded* when some are;
+- **Pricing** — *Catalog prices* or *As run*, with the basis label beneath;
+- **Report documents** — the count of the comparison's Report Pack documents and the latest one's date,
+  or *None yet*, from `GET model-comparisons` (`listComparisons()`), fetched when the tab is shown and
+  again after the wizard closes; left out while the count is unknown or its request failed.
+
+Its table lists every entry, charted ones by Intelligence Index, highest first, then the excluded ones:
+*Model* (name, provider and thinking badges), *Intelligence Index* with its interval, *Median model
+time*, *TTFT P50*, *Candidate cost / question* and *Status* (*Charted*, or *Excluded* with its
+explanation in an info tip). **Open in wizard** (`.btn-ghost`) applies the record's entries and pricing
+basis to the selection (`applyComparisonEntries`; a suite scope that would prune one of them is cleared)
+and opens the wizard on step 1. With no record — another browser, private browsing, cleared storage —
+there is no card; the next Compare brings it back. The server keeps nothing for it.
+
+**Comparison reports** (`app-report-documents-launcher`, `report-pack/report-documents-launcher.component.*`) sums up
 every Report Pack document in one line — *"5 report documents from 2 comparisons · the latest written
 …"*, comparisons counted by their number (a document without one by the number another document of its
 comparison key carries, else by that key), or *"No reports yet. Reports written on the comparison
@@ -2352,8 +2395,12 @@ Every question gets a **one-line row** — band, mean score over the runs that s
 refuted claims, tool calls. At most `Benchmark:ReportPack:BatteryDetailQuestionsPerSuite` (default
 **6**) questions per suite also get **full detail**: the question as asked, its rubric without its
 `SOURCE` paragraphs, one answer excerpt from the run whose score was the median of the question's rounds,
-and the graders' comments on it. They are chosen critical errors first, then the lowest and the highest
-mean scores, alternately. Question topics and notes are asked for the questions in detail only, and a
+and the graders' comments on it. They are chosen, per suite, in this order (harness 54): questions with
+a **confirmed** critical error (most rounds first, then the lowest mean); questions where a panel member
+raised a critical error that was **not confirmed** — overturned by the claim verifier or unresolved,
+either member; questions the **panel disagreed** on (`BenchmarkRunAnswer.PanelDisagreed`, the flag the
+*Disagreements* count reads); then the lowest and the highest remaining mean scores, alternately. The two
+middle groups are ordered by mean ascending, then question key. Question topics and notes are asked for the questions in detail only, and a
 question needs a note when it scored below 50 or carried a critical error.
 
 **The prompt budget.** When the largest writer prompt exceeds `Benchmark:ReportPack:BatteryMaxPromptChars`

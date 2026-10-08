@@ -67,13 +67,21 @@ namespace Overseer.Services.Tools
             return content.Substring(0, cut).TrimEnd() + "…";
         }
 
-        /// <summary>Runs one bounded filenames_only occurrence probe, swallowing errors and "Error:"-prefixed content.</summary>
+        /// <summary>
+        /// Runs one bounded, case-insensitive filenames_only occurrence probe, swallowing errors and
+        /// "Error:"-prefixed content. An identifier-shaped query is matched as a whole word, so
+        /// <c>ARM_BONUS</c> does not count the lines of <c>disarm_bonus</c>; any other query is a
+        /// plain substring search.
+        /// </summary>
         private static string SafeProbe(SourceCodeService service, string probeQuery)
         {
             try
             {
-                var result = service.SearchFiles(probeQuery, fileFilter: "", maxResults: ProbeMaxResults,
-                    includeNetCode: false, maxResultLength: ProbeMaxResultLength, isRegex: false,
+                bool wholeWord = Regex.IsMatch(probeQuery, @"^[A-Za-z_][A-Za-z0-9_]*$");
+                string query = wholeWord ? @"\b" + Regex.Escape(probeQuery) + @"\b" : probeQuery;
+
+                var result = service.SearchFiles(query, fileFilter: "", maxResults: ProbeMaxResults,
+                    includeNetCode: false, maxResultLength: ProbeMaxResultLength, isRegex: wholeWord,
                     filenamesOnly: true, contextLines: 0, caseSensitive: false);
 
                 return string.IsNullOrWhiteSpace(result) || result.StartsWith("Error:", System.StringComparison.Ordinal)

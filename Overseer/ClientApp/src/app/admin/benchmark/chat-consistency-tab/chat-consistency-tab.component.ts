@@ -19,8 +19,15 @@ import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import { CC_WIZARD_STEPS, CcWizardComponent, CcWizardStep } from './cc-wizard/cc-wizard.component';
-import { formatInteger, formatUtcDate, plural, utcMillis } from './chat-consistency-format';
-import { CC_ALL_DATES, CcDateRange, ccAnchorRange, ccDateRangeText, ccRangeBounds } from './chat-consistency-range';
+import { utcMillis } from './chat-consistency-format';
+import {
+  CC_ALL_DATES,
+  CC_RANGE_PRESETS,
+  CcDateRange,
+  ccAnchorRange,
+  ccDateRangeText,
+  ccRangeBounds
+} from './chat-consistency-range';
 import { CC_EMPTY_SCOPE, CcRunScope, pruneScope, scopeIsDefault, scopeRuns } from './chat-consistency-scope';
 import {
   CcAnalysisResult,
@@ -30,6 +37,7 @@ import {
   CcRunRow,
   CcTimeline
 } from './chat-consistency.models';
+import { CcCurrentModelCardComponent } from './current-model-card/current-model-card.component';
 import { CcSavedAnalysesComponent } from './saved-analyses/saved-analyses.component';
 
 /** Where the launcher's *How chat consistency works* state is kept, per browser. */
@@ -37,6 +45,19 @@ export const CC_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.chatConsistency.launc
 
 /** The version of the stored launcher record; a record of another version reads as none. */
 const CC_LAUNCHER_STORAGE_VERSION = 1;
+
+/** Where the current model and its dates are kept, per browser, so a reload keeps them. */
+export const CC_SUBJECT_STORAGE_KEY = 'overseer.benchmark.chatConsistency.subject';
+
+/** The version of the stored subject record; a record of another version reads as none. */
+const CC_SUBJECT_STORAGE_VERSION = 1;
+
+/** The stored subject: the model's axis key and the date range chosen for it. */
+interface CcStoredSubject {
+  version: number;
+  modelKey: string;
+  range: CcDateRange;
+}
 
 /** The run report's refusal to switch sub-tabs while the wizard is blocked. */
 export const CC_LEAVE_REFUSAL =
@@ -53,7 +74,7 @@ export const CC_LEAVE_REFUSAL =
 @Component({
   selector: 'app-chat-consistency-tab',
   standalone: true,
-  imports: [CcWizardComponent, CcSavedAnalysesComponent],
+  imports: [CcWizardComponent, CcCurrentModelCardComponent, CcSavedAnalysesComponent],
   templateUrl: './chat-consistency-tab.component.html',
   styleUrls: ['./chat-consistency-tab.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -146,27 +167,20 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     return this.axes.find(axis => axis.key === this.selectedKey) ?? null;
   }
 
-  // --- Launcher read-outs ---
-
-  /**
-   * `6 runs, 4 with call telemetry`, over every date, how many fall in the chosen dates, and how many
-   * of those the analysis uses when step 1 narrows them.
-   */
-  get currentRunsText(): string {
-    const axis = this.selectedAxis;
-    if (!axis) return '';
-    let text = `${plural(axis.runCount, 'run')}, ${formatInteger(axis.telemetryRunCount)} with call telemetry`;
-    if (this.range.preset !== 'all' && this.timeline) {
-      text += ` · ${formatInteger(this.timeline.points.length)} in the chosen dates`;
-    }
-    if (!scopeIsDefault(this.scope)) {
-      text += ` · ${formatInteger(scopeRuns(this.rows, this.scope).length)} in the analysis`;
-    }
-    return text;
-  }
+  // --- The Current model card ---
 
   get currentDatesText(): string {
     return ccDateRangeText(this.range);
+  }
+
+  /** The runs in the chosen dates; null over every date, or before the timeline is loaded. */
+  get runsInRange(): number | null {
+    return this.range.preset !== 'all' && this.timeline ? this.timeline.points.length : null;
+  }
+
+  /** The runs the analysis uses; null when step 1 does not narrow them. */
+  get runsInAnalysis(): number | null {
+    return scopeIsDefault(this.scope) ? null : scopeRuns(this.rows, this.scope).length;
   }
 
   /** The newest saved analysis of the current model. */
@@ -179,10 +193,6 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
       if (!latest || utcMillis(analysis.createdAtUtc) > utcMillis(latest.createdAtUtc)) latest = analysis;
     }
     return latest;
-  }
-
-  savedDay(analysis: CcAnalysisSummary): string {
-    return formatUtcDate(analysis.createdAtUtc);
   }
 
   // --- How chat consistency works ---
@@ -232,6 +242,78 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     } catch {
       // Storage throws in private-browsing modes; a forgotten disclosure state is not worth reporting.
     }
+  }
+
+  // --- The remembered subject ---
+
+  /** Records the current model and its dates; nothing while no model is chosen. */
+  private persistSubject(): void {
+    const modelKey = this.selectedKey;
+    if (!modelKey) return;
+    const record: CcStoredSubject = { version: CC_SUBJECT_STORAGE_VERSION, modelKey, range: this.range };
+    try {
+      localStorage.setItem(CC_SUBJECT_STORAGE_KEY, JSON.stringify(record));
+    } catch {
+      // Storage throws in private-browsing modes; the wizard then starts without a model.
+    }
+  }
+
+  /**
+   * The stored subject, or null when there is none, it is of another version or its shape is not a
+   * subject's.
+   */
+  private readStoredSubject(): CcStoredSubject | null {
+    let stored: string | null;
+    try {
+      stored = localStorage.getItem(CC_SUBJECT_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+    if (stored === null) return null;
+    let record: unknown;
+    try {
+      record = JSON.parse(stored);
+    } catch {
+      return null;
+    }
+    if (!record || typeof record !== 'object') return null;
+    const candidate = record as { version?: unknown; modelKey?: unknown; range?: unknown };
+    if (candidate.version !== CC_SUBJECT_STORAGE_VERSION) return null;
+    const modelKey = candidate.modelKey;
+    if (typeof modelKey !== 'string' || modelKey === '') return null;
+    const range = candidate.range as { preset?: unknown; fromDay?: unknown; toDay?: unknown; anchorUtc?: unknown } | null;
+    if (!range || typeof range !== 'object') return null;
+    const preset = CC_RANGE_PRESETS.find(entry => entry.id === range.preset)?.id;
+    const fromDay = range.fromDay;
+    const toDay = range.toDay;
+    const anchorUtc = range.anchorUtc;
+    if (preset === undefined || typeof fromDay !== 'string' || typeof toDay !== 'string') return null;
+    if (anchorUtc !== null && typeof anchorUtc !== 'string') return null;
+    return {
+      version: CC_SUBJECT_STORAGE_VERSION,
+      modelKey,
+      range: { preset, fromDay, toDay, anchorUtc: typeof anchorUtc === 'string' ? anchorUtc : null }
+    };
+  }
+
+  /**
+   * Selects the stored model with its dates, a rolling preset moved to now, when it is among the
+   * models with runs. A stored model that is not is forgotten.
+   */
+  private restoreSubject(): void {
+    const stored = this.readStoredSubject();
+    if (!stored) return;
+    if (!this.axes.some(axis => axis.key === stored.modelKey && axis.runCount > 0)) {
+      try {
+        localStorage.removeItem(CC_SUBJECT_STORAGE_KEY);
+      } catch {
+        // Nothing to forget when storage is unavailable.
+      }
+      return;
+    }
+    this.selectedKey = stored.modelKey;
+    this.range = ccAnchorRange(stored.range, new Date());
+    this.loadSubject();
   }
 
   // --- The wizard dialog ---
@@ -316,6 +398,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
       next: axes => {
         this.axesLoading = false;
         this.axes = axes;
+        if (this.selectedKey === null) this.restoreSubject();
         this.cdr.markForCheck();
       },
       error: err => {
@@ -352,11 +435,13 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.scope = CC_EMPTY_SCOPE;
     this.anchorError = null;
     this.announcement = '';
+    this.persistSubject();
     this.loadSubject();
   }
 
   setRange(range: CcDateRange): void {
     this.range = range;
+    this.persistSubject();
     this.loadSubject();
   }
 
@@ -369,6 +454,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   /** Reload runs: a rolling preset moves to now first. */
   reloadSubject(): void {
     this.range = ccAnchorRange(this.range, new Date());
+    this.persistSubject();
     this.loadSubject();
   }
 

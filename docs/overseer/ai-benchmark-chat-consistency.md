@@ -112,7 +112,11 @@ id (`x-request-id`, `request-id`, `x-goog-request-id`), `openai-processing-ms`, 
   in.
 - **Answer streaming rate** — the final candidate call's visible tokens per second over the last 80 %
   of its visible text deltas; for Anthropic, which counts thinking inside its output tokens, estimated
-  at 4 characters per token and marked estimated.
+  at 4 characters per token and marked estimated. From harness 54 an answer has **no measurable rate**,
+  for every provider, when that window's decode span is under 500 ms (`MinMeasurableDecodeSpanMs`) or the
+  rate is over 1,000 tokens/s (`MaxPlausibleTokensPerSecond`): its visible text arrived in one burst
+  after thinking, and the figure would measure delivery, not decoding (`IsStreamingRateUnmeasurable`).
+  Such an answer leaves the streaming-rate axis.
 - **Net model time** — model time minus the turn's own waits.
 - **Own-wait share** — own waits ÷ model time, over answers with candidate telemetry.
 
@@ -480,6 +484,7 @@ version the changelog cannot tell apart is marked conservative.
 | 51 | CI, G | _policy.md retrieved-figures sentence removed; get_item_stats name cleanup; claim verifier retry recorded and asked for every item. |
 | 52 | CI, G | nethack_wiki_view headings notice for an over-cap article; forced-final instruction when the tools run out; one-line macro bodies count in citation liveness. |
 | 53 | G | A member whose charge the verifier upheld is never verification-cleared; the synthesis is told the verdicts on its charges; report fixes. |
+| 54 | CI, G | Graders told when source references are disallowed; get_constants reads brace-on-next-line enums and the source miss probe is whole-word; streaming-rate bounds and report fixes. |
 
 **Same-stamp cases.** Harness 12 carries a same-stamp impact of CI, CA, G and S, and harness 18 of
 CA: runs stamped with one of those versions may still differ in those respects, so even two runs with
@@ -508,7 +513,11 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 2; version 2 records the run selection, § 17.2).
+currently 3; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
+streaming rate with its measurability bounds (§ 4.4), and the streaming-rate caveat counts the delivered
+answers with no measurable rate: *"k delivered answer(s) have no rate: the visible text arrived in one
+burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*). A stored analysis
+keeps the version it was computed under; its fingerprint and result do not change.
 
 - **`InputSha256`** is the SHA-256 of a canonical serialization of every input: the code version, the
   request (its run selection included: the date label, the UTC bounds, the first and last run and the
@@ -530,12 +539,29 @@ Consistency wizard**, six steps in a full-screen dialog.
 ### 17.1 The launcher
 
 - **Open Chat Consistency Wizard** opens the wizard where it was left, on step 1 the first time.
-- **Current model**, while a model is chosen: the model, its runs (all, with call telemetry, in the
-  chosen dates unless they are *All dates*, and *· N in the analysis* while step 1 narrows them), the
-  dates as step 1 names them (*All dates*, *Last 30 days*, *2026-09-01 to 2026-10-05*) and the latest
-  saved analysis. It is a read-out; the wizard makes the choice.
 - **How chat consistency works**, a disclosure listing the six steps under the wizard's own titles,
   open on the first visit and afterwards as the operator left it.
+- **The *Current model* card** (`chat-consistency-tab/current-model-card/`), while a model is chosen: a
+  full-width summary card between the hero and the saved analyses, on the shared `.bm-summary-card`
+  styles. Its title is the model's name with its thinking-level, provider and service-tier badges, its
+  meta line *Chosen in the wizard · remembered in this browser*, and its facts:
+  - **Runs** — *6 runs · 4 with call telemetry*;
+  - **Dates** — the dates as step 1 names them (*All dates*, *Last 30 days*, *2026-09-01 to
+    2026-10-05*), then *· N runs in these dates* unless they are *All dates*; a small spinner stands in
+    for the count while the runs load (shown after 0.3 s);
+  - **In the analysis** — the runs the analysis uses, only while step 1 narrows them;
+  - **First run** and **Latest run** (*#106 · 2026-10-01*);
+  - **Suites** — the suites the model's runs answered;
+  - **Latest analysis** — *#7 · <name> · saved 2026-10-02* with its headline, or *None yet*.
+
+  Its actions are **Open latest run report** and, when an analysis exists, **Open analysis #N**. It is a
+  read-out; the wizard makes the choice. Its content is read from the database every time the tab loads.
+- **The remembered model.** The chosen model and its dates are kept in this browser, in
+  `localStorage['overseer.benchmark.chatConsistency.subject']` (`{ version: 1, modelKey, range }`),
+  written whenever the model or the dates change. Once the model list loads with no model chosen, the
+  tab restores them: a rolling preset (*Last 30 days*) is moved to now, and a record whose model is no
+  longer listed, or has no runs, is removed. The run selection, the step and the analysis are not
+  remembered. Another browser, private browsing or cleared storage starts without a model.
 - **Saved analyses** — every analysis, newest first, with *Open* and *Delete* (refused while report
   documents exist). *Open* switches to the analysis's model when it is another and opens the wizard on
   **Results**.
@@ -566,6 +592,11 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close*
      status, served model), sorts (*Newest first*, *Oldest first*, *Suite (A–Z)*, *Harness*) and
      filters by *Suite*, *Harness*, *Telemetry*, *In the analysis* and *Eligibility*; ten cards show at
      a time, with *Show 10 more* and *Show all N*.
+   - **Loading.** While the chosen model's runs load for the first time, the list's place holds the
+     shared ring (`.dc-ring`) and *Loading the runs of <model>…*, both hidden from assistive technology
+     because the step's status line announces the same text; they appear only after 0.3 s, so a fast
+     load shows nothing. On a reload the run cards stay in place, dimmed (`is-refreshing`, `aria-busy`),
+     with a small *Updating…* spinner beside the *Runs of <model>* heading, shown after 0.3 s as well.
    - **The selection.** Without a mark or a left-out run, every run in the dates is analyzed. *First
      run* and *Last run* bound the runs the analysis uses, in start order (then run id); a first run
      later than the last clears the last, and the reverse, each saying so; pressing a pressed toggle
@@ -617,8 +648,9 @@ and the close buttons are refused while a chart export runs or while the Reports
 charts**, since closing would strand a half-written batch. For the same duration the model and the dates
 in step 1 are locked — the *Dates* select keeps its value, the date fields are read-only and their
 calendar buttons open nothing, all still focusable — with the reason shown under them, and a repeated
-Escape cannot close the wizard either. The model, the dates, the run selection, the step and the
-analysis live as long as the tab: switching to another GnollBench sub-tab loses them.
+Escape cannot close the wizard either. The run selection, the step and the analysis live as long as the
+tab: switching to another GnollBench sub-tab loses them. The model and the dates are also remembered in
+this browser and restored when the tab loads again (§ 17.1).
 
 ### 17.3 The Timeline step
 

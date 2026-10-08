@@ -300,6 +300,8 @@ public static class HarnessImpactLedger
                 "nethack_wiki_view headings notice for an over-cap article; forced-final instruction when the tools run out; one-line macro bodies count in citation liveness."),
             new("53", G,
                 "A member whose charge the verifier upheld is never verification-cleared; the synthesis is told the verdicts on its charges; report fixes."),
+            new("54", CI | G,
+                "Graders told when source references are disallowed; get_constants reads brace-on-next-line enums and the source miss probe is whole-word; streaming-rate bounds and report fixes."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

@@ -1,0 +1,40 @@
+/* The card frame, header, facts and table layout are the global `bm-summary-card*` rules in
+   `styles.scss`, shared with the Chat Consistency launcher. Only this card's own cells are here. */
+
+:host {
+  // The host is the launcher grid's child, so it takes the full row the card's frame asks for.
+  display: block;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+// A row header in the body reads as a value, not as a column heading.
+.bm-summary-table tbody th {
+  background: transparent;
+  color: #e4e4e7;
+  font-weight: 500;
+}
+
+.bm-summary-model-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.bm-summary-model-name {
+  overflow-wrap: anywhere;
+}
+
+// The 95 % interval, under its point.
+.bm-summary-interval {
+  display: block;
+  font-size: var(--text-xs);
+  color: #a1a1aa;
+}
+
+.bm-summary-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}

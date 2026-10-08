@@ -1596,12 +1596,20 @@ public static class BenchmarkReportBuilder
             .Where(r => r.HasValue)
             .Select(r => r!.Value)
             .ToList();
+        int unmeasurable = covered.Count(CallTelemetryMeasures.IsStreamingRateUnmeasurable);
         if (rates.Count > 0)
         {
             string rateNote = rates.Any(r => r.Estimated)
                 ? $" *(estimated: the provider counts thinking inside its output tokens, so visible tokens are estimated at {Inv(CallTelemetryMeasures.EstimatedCharsPerToken)} characters per token)*"
                 : " *(visible output over the last 80 % of the final call's deltas)*";
-            sb.AppendLine($"  - **Answer Streaming Rate:** Median {Inv(Median(rates.Select(r => r.TokensPerSecond)), "F1")} tokens/s{Over(rates.Count)}{rateNote}");
+            string unmeasurableNote = unmeasurable > 0
+                ? $"; not measurable on {Inv(unmeasurable)} (the visible text arrived in one burst after thinking)"
+                : string.Empty;
+            sb.AppendLine($"  - **Answer Streaming Rate:** Median {Inv(Median(rates.Select(r => r.TokensPerSecond)), "F1")} tokens/s{Over(rates.Count)}{unmeasurableNote}{rateNote}");
+        }
+        else if (unmeasurable > 0)
+        {
+            sb.AppendLine($"  - **Answer Streaming Rate:** Not measurable — on {Inv(unmeasurable)} of {Inv(covered.Count)} answers the visible text arrived in one burst after thinking.");
         }
         else
         {
@@ -4733,13 +4741,22 @@ public static class BenchmarkReportBuilder
             // than recomputed.
             int routingAnsweredCount = routing.AnsweredQuestionCount;
             int routingZeroKbCount = routing.ZeroKnowledgeBaseAnswerCount;
-            if (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(answers))
+            const string RoutingObservation = "The prompt (`Overseer/Services/ChatService.cs` § \"Information Routing\") tells the model to call `get_knowledge_article` first for the topics listed in its Knowledge Base section, and to skip the knowledge base for game mechanics, monsters, items, spells and other topics not listed there. The listed topics include game topics such as item identification and reading the game map, so zero calls is prompt-compliant only on a question outside them.";
+            int kbTopicCount = routing.KnowledgeBaseTopicQuestionCount;
+            if (kbTopicCount > 0)
             {
-                sb.AppendLine($"- **Knowledge base under-use:** {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls.");
+                // The topic questions are counted on their own; the observation covers the rest.
+                sb.AppendLine($"- **Knowledge base under-use:** {routing.KnowledgeBaseTopicZeroCallCount} of {kbTopicCount} knowledge-base-topic question(s) made zero `get_knowledge_article` calls.");
+                int otherCount = routingAnsweredCount - kbTopicCount;
+                if (otherCount > 0)
+                {
+                    int otherZeroKbCount = routingZeroKbCount - routing.KnowledgeBaseTopicZeroCallCount;
+                    sb.AppendLine($"- *Prompt observation:* {otherZeroKbCount} of {otherCount} other answered question(s) made zero `get_knowledge_article` calls. {RoutingObservation}");
+                }
             }
             else
             {
-                sb.AppendLine($"- *Prompt observation:* {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls. The prompt (`Overseer/Services/ChatService.cs` § \"Information Routing\") tells the model to call `get_knowledge_article` first for the topics listed in its Knowledge Base section, and to skip the knowledge base for game mechanics, monsters, items, spells and other topics not listed there. The listed topics include game topics such as item identification and reading the game map, so zero calls is prompt-compliant only on a question outside them.");
+                sb.AppendLine($"- *Prompt observation:* {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls. {RoutingObservation}");
             }
 
             if (routing.CorrelationSampleSize >= 2)

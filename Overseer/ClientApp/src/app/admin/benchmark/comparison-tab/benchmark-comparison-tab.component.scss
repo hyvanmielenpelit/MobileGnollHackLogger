@@ -14,7 +14,8 @@
    MODEL COMPARISON LAUNCHER
 
    The sub-tab's whole content. The task itself lives in a full-screen dialog, so the hero card
-   names what the view does, opens the wizard, and shows what the last comparison found; the
-   Comparison reports library sits below it. Duplicating any of the wizard's controls here would
-   give the selection two owners. Its layout is the global `bm-launcher*` rules in `styles.scss`.
+   names what the view does and opens the wizard; the Last comparison card below it shows what the
+   comparison last computed in this browser found, and the Comparison reports library sits below
+   that. Duplicating any of the wizard's controls here would give the selection two owners. Its
+   layout is the global `bm-launcher*` and `bm-summary-card*` rules in `styles.scss`.
    ========================================================================== */

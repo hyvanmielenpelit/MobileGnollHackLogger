@@ -2611,6 +2611,7 @@
       (removeSource)="comparison.onComparisonRemoveSource($event)"
       (clearSelection)="comparison.clearComparisonSelection()"
       (closeRequested)="closeComparisonWizard()"
+      (comparisonIdentified)="comparison.recordLastComparison($event)"
       (graderGuideRequested)="openGraderGuide('models')">
       <app-comparison-source-picker
         [runs]="comparison.comparisonRunOptions"

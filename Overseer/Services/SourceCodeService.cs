@@ -385,10 +385,19 @@ namespace Overseer.Services
                             
                             // Parse constants
                             bool inEnum = false;
+                            // Set by an "enum name" line without a brace; the next non-blank line opens the enum if it starts with "{".
+                            // A line with "(" is a function signature or prototype taking an enum parameter, never an enum header.
+                            bool pendingEnum = false;
                             for (int i = 0; i < contentLines.Length; i++)
                             {
                                 string line = contentLines[i].Trim();
-                                
+
+                                if (pendingEnum && line.Length > 0)
+                                {
+                                    pendingEnum = false;
+                                    if (line.StartsWith("{", StringComparison.Ordinal)) inEnum = true;
+                                }
+
                                 var defineMatch = Regex.Match(line, @"^#define\s+([A-Za-z0-9_]+)(?:\s+([^/]*))?");
                                 if (defineMatch.Success)
                                 {
@@ -399,7 +408,13 @@ namespace Overseer.Services
                                 }
                                 
                                 if (Regex.IsMatch(line, @"\benum\b.*\{")) inEnum = true;
-                                
+                                else if (!inEnum && !line.StartsWith("#", StringComparison.Ordinal)
+                                    && !line.Contains('{') && !line.Contains(';') && !line.Contains('(')
+                                    && Regex.IsMatch(line, @"\benum\b"))
+                                {
+                                    pendingEnum = true;
+                                }
+
                                 if (inEnum)
                                 {
                                     var matches = Regex.Matches(line, @"([A-Za-z0-9_]+)\s*(?:=\s*([^,}]+))?\s*(?:,|})");

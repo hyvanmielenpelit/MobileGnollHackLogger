@@ -1,0 +1,63 @@
+<!--
+  The host is display: contents, so this section is the launcher's grid child. Named by the eyebrow
+  and the model's name; the badges stay in the heading for a reader who moves by headings.
+-->
+<section class="bm-summary-card cc-current-card" aria-labelledby="cc-current-eyebrow cc-current-name">
+  <div class="bm-summary-card-header">
+    <div>
+      <p id="cc-current-eyebrow" class="bm-summary-card-eyebrow">Current model</p>
+      <h4 class="bm-summary-card-title cc-current-title">
+        <span id="cc-current-name" class="cc-current-name">{{ axis.displayName }}</span>
+        <span class="cc-current-badges">
+          <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ thinkingText }}</span>
+          <app-provider-badge [provider]="axis.provider" />
+          @if (axis.serviceTier) {
+            <span class="config-badge"><span class="visually-hidden">service tier </span>{{ tierText }}</span>
+          }
+        </span>
+      </h4>
+      <p class="bm-summary-card-meta">Chosen in the wizard · remembered in this browser</p>
+    </div>
+    <div class="bm-summary-card-actions">
+      <button type="button" class="btn-ghost cc-current-open-report" (click)="openRunReport.emit(axis.latestRunId)">Open latest run report</button>
+      @if (latestAnalysis; as latest) {
+        <button type="button" class="btn-ghost cc-current-open-analysis" (click)="openAnalysis.emit(latest.id)">Open analysis #{{ latest.id }}</button>
+      }
+    </div>
+  </div>
+
+  <dl class="bm-summary-facts cc-current-facts">
+    <div data-fact="runs"><dt>Runs</dt><dd>{{ runsText }}</dd></div>
+    <div data-fact="dates">
+      <dt>Dates</dt>
+      <dd>
+        {{ rangeText }}
+        <!-- Shown only after 0.3 s, so a quick load does not flash. The wizard's status line announces it. -->
+        @if (loading) {
+          <span class="cc-current-loading" aria-hidden="true"><span class="gh-spinner-small"></span></span>
+        } @else {
+          {{ runsInRangeText }}
+        }
+      </dd>
+    </div>
+    @if (runsInAnalysis !== null) {
+      <div data-fact="analysis-runs"><dt>In the analysis</dt><dd>{{ runsInAnalysisText }}</dd></div>
+    }
+    <div data-fact="first-run"><dt>First run</dt><dd><time [attr.datetime]="axis.firstRunAtUtc">{{ firstRunText }}</time></dd></div>
+    <div data-fact="latest-run"><dt>Latest run</dt><dd>{{ latestRunText }}</dd></div>
+    <div data-fact="suites"><dt>Suites</dt><dd class="cc-current-suites">{{ suitesText }}</dd></div>
+    <div data-fact="latest-analysis">
+      <dt>Latest analysis</dt>
+      <dd>
+        @if (latestAnalysis; as latest) {
+          {{ latestAnalysisText(latest) }}
+          @if (latest.headline) {
+            <p class="bm-summary-facts-note">{{ latest.headline }}</p>
+          }
+        } @else {
+          None yet
+        }
+      </dd>
+    </div>
+  </dl>
+</section>

@@ -7305,6 +7305,153 @@ stored before it. The full description is [`ai-benchmark-report-pack.md`](ai-ben
   PDF with placeholder text and no model call (`POST report-packs/layout-preview`). The PDF layout moves
   to **6**: figure rows, wide-table fallbacks and the comparison in the running header.
 
+### Harness Version 54 Updates
+
+The battery run 11 round (runs 96 and 97, 2026-10-08, Claude 5.5 Haiku). Graders are told when the
+candidate was forbidden to cite source locations, a streaming rate needs a measurable decode window, the
+knowledge-base line counts the questions that name a knowledge-base topic, `get_constants` reads an enum
+whose brace is on the next line, the source miss probe matches an identifier as a whole word, and the
+battery report writer is given the contested questions in detail. `HarnessVersion` moves to **"54"**;
+`ScoringMethodVersion` stays **14**. No migration and no change to `Overseer/ToolGuides/`, so
+`ToolGuidesSha256` stays `733b710f7524`; `CandidateSystemPromptSha256` does not move. `HarnessImpactLedger`
+classifies 54 as `CandidateInput | Grading`.
+
+#### What was wrong
+
+- **A1.** Runs 96 and 97 disallowed source code references in the candidate prompt, but the graders
+  were never told, so an answer that obeyed and left out a file, a path or a line could be graded down
+  for it, and a synthesis could list the absence as a weakness.
+- **A2.** An answer whose visible text arrives in one burst after thinking has a decode span of a few
+  milliseconds, and its *streaming rate* measured delivery, not decoding.
+- **A3.** The run report's *Knowledge base under-use* line counted every answered question, those outside
+  the knowledge-base topics included, where zero `get_knowledge_article` calls is prompt-compliant.
+- **B1.** `get_constants` missed every enum written with its `{` on the line after `enum name`.
+- **B2.** The occurrence probe in a `search_definitions` or `get_function_definition` miss payload was a
+  substring search, so a probe for `ARM_BONUS` counted the lines of `disarm_bonus`.
+- **C1.** The battery writer's question detail took confirmed critical errors first, then the extreme
+  means, so a critical error that was not confirmed and a question the panel disagreed on could be left
+  as one-line rows.
+- **C2.** The writer prompt did not keep a recommendation off training and fine-tuning, the word
+  *disagreement* to panel disagreements, or a lead about a wrong tool result on that result's source.
+
+#### Grading (A1)
+
+When the run's `CandidatePromptOptionsJson.AllowSourceCodeReferences` is **false**,
+`BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(suiteName, sourceReferencesAllowed)` adds
+`SourceReferencesDisallowedRule` as the last bullet of the COMPLETENESS section, after the out-of-scope
+rule:
+
+> SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line
+> numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a file, path, line
+> or function location. A rubric point that names a file or a line is met when the answer states the
+> mechanic the point describes; the rubric's file and line citations are there for you to check facts,
+> not for the candidate to repeat.
+
+The preamble is the frozen system segment of every per-question grading request, so the assessor, the
+co-assessor, the reference reader, the second opinion, the evidence-informed re-grade, the trial
+*Try another assessor* and the assessor calibration all receive it. `BuildFinalSynthesisPrompt` adds
+critical instruction **8**, `SourceReferencesDisallowedSynthesisSentence`: *"The candidate was
+instructed not to cite source files, paths or line numbers; never list their absence as a weakness."*
+
+The flag is read from the run (`BenchmarkAssessmentPrompt.SourceReferencesAllowed(run)`), not from the
+current settings. A run that recorded no options, or recorded them before the field existed, reads as
+allowed: every run before harness 44 allowed source references. When the flag is true the preamble and
+the synthesis prompt are byte-identical to harness 53. An old run with source references disallowed
+that is re-assessed or re-synthesized under harness 54 receives the rule.
+
+#### Streaming rate (A2)
+
+`CallTelemetryMeasures.AnswerStreamingRate` returns null, for every provider, when the final candidate
+call's `Last80DecodeSpanMs` is below `MinMeasurableDecodeSpanMs` (**500 ms**) or the rate is above
+`MaxPlausibleTokensPerSecond` (**1,000 tokens/s**). `IsStreamingRateUnmeasurable(answer)` is true for an
+answer that recorded a span and visible characters but fails either bound, and false when a mark is
+missing. The run report's *Timing Decomposition* (`AppendTimingDecomposition`) counts those answers:
+
+> **Answer Streaming Rate:** Median 84.2 tokens/s over 30 of 36 answers; not measurable on 6 (the visible
+> text arrived in one burst after thinking)
+
+or, with no measurable rate, *"Not measurable — on 36 of 36 answers the visible text arrived in one burst
+after thinking."* The bounds are computed when the report is rendered, so a stored run re-rendered from
+harness-54 code shows them. The Chat Consistency analysis reads the same measure:
+`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion` moves **2 → 3**, and the streaming-rate
+window's caveat counts the delivered answers with no measurable rate. Stored analyses keep the version
+they were computed under ([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md)).
+
+#### Report (A3)
+
+`BenchmarkChatTransfer.AnalyzeToolRouting` also returns `KnowledgeBaseTopicQuestionCount` — the answered
+questions whose text names a knowledge-base topic (`IsKnowledgeBaseTopicQuestion`, the test
+`HasKnowledgeBaseRoutingQuestion` applies per answer) — and `KnowledgeBaseTopicZeroCallCount`, those of
+them that made zero `get_knowledge_article` calls. When a run has such questions, the report prints
+
+> **Knowledge base under-use:** 2 of 5 knowledge-base-topic question(s) made zero `get_knowledge_article`
+> calls.
+
+followed by the existing *Prompt observation* over the other answered questions only. A run with none
+prints the *Prompt observation* over every answered question, as before.
+
+#### Tool output (B1, B2)
+
+- **`get_constants` (B1).** `SourceCodeService` indexes an enum whose `{` is on the next line: a line
+  that holds the word `enum` but no `{`, `;` or `(` and is not a preprocessor line sets a pending state,
+  and the next non-blank line opens the enum if it starts with `{`. A function signature or prototype
+  with an enum parameter holds `(` and never opens one. The constants of such enums are new results.
+- **The source miss probe (B2).** `SourceMissContentBuilder.SafeProbe`, which builds the occurrence
+  count of a `search_definitions` or `get_function_definition` miss payload, searches an
+  identifier-shaped query (`^[A-Za-z_][A-Za-z0-9_]*$`) as a whole word (`\b…\b`, a regular expression,
+  case-insensitive), so `ARM_BONUS` no longer counts the lines of `disarm_bonus`. Other queries stay a
+  plain substring search; the wording and the caps of the payload do not change.
+
+Both change what a tool returns, not a tool guide, so `ToolGuidesSha256` does not move; a run's
+`HarnessVersion` tells the two apart.
+
+#### Report writer (C1, C2)
+
+- **Battery detail (C1).** Per suite, `BenchmarkBatteryReportFacts` gives the writer's full detail to, in
+  order: questions with a **confirmed** critical error (most rounds first, then the lowest mean); then
+  questions where a panel member raised a critical error that was **not confirmed** — overturned by the
+  verifier or unresolved, either member; then questions the **panel disagreed** on
+  (`BenchmarkRunAnswer.PanelDisagreed`, the flag the *Disagreements* count reads); then the lowest and the
+  highest remaining means, alternately. The two new groups are ordered by mean ascending, then question
+  key. The cap per suite (`BatteryDetailQuestionsPerSuite`) and the reverse-priority budget rule do not
+  change.
+- **Writer rules (C2).** `BenchmarkReportPackPrompt.SharedWritingRules` adds three rules to WEIGHING THE
+  EVIDENCE in the writer system prompt of every audience for a run, group or battery subject (the
+  comparison-wide and chat consistency prompts are unchanged): outside a recommendation for model
+  developers, never recommend training, fine-tuning or using outputs as training targets, but a lever the
+  facts name; write *disagreed* or *disagreement* only for a panel disagreement, otherwise give both
+  members' scores; and write a lead about a wrong tool result about its source (tag `corpus`). It reaches
+  documents written from now on, which record the new `WriterPromptSha256`; `ReportFormatVersion` does
+  not move ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 3 and 14).
+
+#### Suite seed
+
+The *GnollHack Player Assistance Benchmark Suite* seed's Elbereth question (order index 18; suite 6, id
+105 in the development database) carries the rubric of
+this round's repair (S4) in `Overseer/Data/DefaultSuites/gnollhack_player_assistance.json`, so the seed
+and the repaired suite agree.
+
+#### Client, no version effect
+
+- **Model Comparison: the *Last comparison* card.** The hero's inline read-out is replaced by a
+  full-width summary card between the hero and the comparison library, remembered in this browser
+  (`localStorage['overseer.benchmark.modelComparison.last']`): its facts, an entries table and **Open in
+  wizard** ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 12).
+- **Chat Consistency: the *Current model* card and the remembered model.** The inline read-out is
+  replaced by a summary card while a model is selected, and the selected model and its dates are kept in
+  `localStorage['overseer.benchmark.chatConsistency.subject']`; step 1 shows a loading ring while the
+  model's runs load for the first time
+  ([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) § 17).
+- **Styles.** The shared `.bm-summary-card*`, `.bm-summary-facts*`, `.bm-summary-table-wrap` and
+  `.bm-summary-table` classes in `Overseer/ClientApp/src/styles.scss` style both cards; `.bm-launcher-last`
+  and `.bm-launcher-state` are gone. Under reduced motion the shared `.dc-ring` turns slowly (6 s) with a
+  still arc instead of standing still.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 53 → 54, so a harness-54 run differs from
+a harness-53 one on that key: A1 changes the grading input of a run with source references disallowed,
+and B1 and B2 change tool output. A battery run started under harness 53 refuses to launch members
+under 54 (`HarnessVersionRefusal`).
+
 ---
 
 ## 3. Assessor Strategy
@@ -8167,7 +8314,7 @@ report and the chat consistency analysis; each is null when a mark it needs was 
 | Measure | Definition |
 |---------|------------|
 | Time to first answer text | From the turn's start to the **final** candidate call's first visible output, minus every permit and retry-backoff wait of the turn, floored at 0. Failed attempts are provider time and stay in. |
-| Answer streaming rate | The final candidate call's visible tokens over the last 80 % of its visible deltas, per second. Visible tokens are `OutputTokens − ReasoningTokens`, scaled by the window's share of the visible characters; for Anthropic, which counts thinking inside its output tokens, they are estimated at 4 characters per token and the rate is marked estimated. |
+| Answer streaming rate | The final candidate call's visible tokens over the last 80 % of its visible deltas, per second. Visible tokens are `OutputTokens − ReasoningTokens`, scaled by the window's share of the visible characters; for Anthropic, which counts thinking inside its output tokens, they are estimated at 4 characters per token and the rate is marked estimated. From harness 54 the rate is **not measurable** (null), for every provider, when the decode span is under 500 ms (`MinMeasurableDecodeSpanMs`) or the rate is over 1,000 tokens/s (`MaxPlausibleTokensPerSecond`): the visible text arrived in one burst after thinking (`IsStreamingRateUnmeasurable`). |
 | Net model time | `ModelTimeMs` minus the turn's permit and backoff waits. |
 | Own-wait share | (permit + backoff) ÷ model time, over the answers with candidate telemetry. |
 
@@ -8179,7 +8326,8 @@ answer, failed ones included), then, over the answers that carry candidate rows:
 
 - **Time to First Answer Text** — P50 and P90, net of Overseer's own waits;
 - **Answer Streaming Rate** — the median in tokens per second, with the estimation note when any rate
-  was estimated;
+  was estimated, and *not measurable on k* for the answers outside the bounds above (*Not measurable —
+  on k of n answers …* when none has a rate);
 - **Own Waits** — total permit wait, total retry backoff, retried attempts, HTTP 429 and 5xx counts;
 - **Served Model IDs** and **Served Tiers** — each with its call count;
 - an interpretation line giving own waits as a share of model time, which says *the rate limit, not the

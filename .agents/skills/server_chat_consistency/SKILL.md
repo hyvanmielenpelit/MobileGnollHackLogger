@@ -31,6 +31,13 @@ endpoints (Protocol V1):
 α 0.05 with Holm across P1–P5; Benjamini–Hochberg within each secondary family. The evidence is
 **GnollBench runs only**: only a rubric-graded run can show a change of quality.
 
+P3 reads `CallTelemetryMeasures.AnswerStreamingRate`, which from harness 54 has no value for an answer
+whose final call's decode span is under 500 ms or whose rate is over 1,000 tokens/s — visible text that
+arrived in one burst after thinking, so the figure would measure delivery, not decoding. Analysis code
+version **3** (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`) applies those bounds, and the
+streaming-rate caveat counts the delivered answers left without a rate; an analysis saved under version
+2 keeps its stored result, so re-analyze before comparing a P3 verdict across the two.
+
 ## 2. Verdicts and Grades
 
 - **Verdicts** (Lakens): *degraded* / *improved* (Holm p < α and the 95 % interval wholly beyond the

@@ -363,6 +363,50 @@ public class BenchmarkChatTransferTests
     }
 
     [Fact]
+    public void AnalyzeToolRouting_CountsTheAnsweredKnowledgeBaseTopicQuestions_AndThoseWithZeroArticleCalls()
+    {
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            new() { OrderIndex = 1, QuestionText = "How do I change the tileset settings in GnollHack?", ToolCallSummary = "wiki_search×2" },
+            new() { OrderIndex = 2, QuestionText = "How do I tell what an unidentified wand does?", ToolCallSummary = "get_knowledge_article×1, wiki_search×1" },
+            new() { OrderIndex = 3, QuestionText = "Where is the options menu in GnollHack?", ToolCallSummary = null },
+            new() { OrderIndex = 4, QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?", ToolCallSummary = "source_code_search×3" },
+            // Not answered: outside the gradeable population, so not counted as a topic question.
+            new() { OrderIndex = 5, QuestionText = "How do I export a save file?", Status = BenchmarkAnswerStatus.ProviderError },
+        };
+
+        var routing = BenchmarkChatTransfer.AnalyzeToolRouting(answers);
+
+        Assert.Equal(4, routing.AnsweredQuestionCount);
+        Assert.Equal(3, routing.ZeroKnowledgeBaseAnswerCount);
+        Assert.Equal(3, routing.KnowledgeBaseTopicQuestionCount);
+        Assert.Equal(2, routing.KnowledgeBaseTopicZeroCallCount);
+    }
+
+    [Fact]
+    public void AnalyzeToolRouting_WithoutKnowledgeBaseTopicQuestions_CountsNone()
+    {
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            new() { OrderIndex = 1, QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?", ToolCallSummary = "wiki_search×1" },
+        };
+
+        var routing = BenchmarkChatTransfer.AnalyzeToolRouting(answers);
+
+        Assert.Equal(1, routing.ZeroKnowledgeBaseAnswerCount);
+        Assert.Equal(0, routing.KnowledgeBaseTopicQuestionCount);
+        Assert.Equal(0, routing.KnowledgeBaseTopicZeroCallCount);
+    }
+
+    [Fact]
+    public void IsKnowledgeBaseTopicQuestion_ReadsOneAnswersQuestionText()
+    {
+        Assert.True(BenchmarkChatTransfer.IsKnowledgeBaseTopicQuestion(RoutingAnswer("Where is the options menu in GnollHack?")));
+        Assert.False(BenchmarkChatTransfer.IsKnowledgeBaseTopicQuestion(RoutingAnswer("Where on this map is the altar?")));
+        Assert.False(BenchmarkChatTransfer.IsKnowledgeBaseTopicQuestion(null));
+    }
+
+    [Fact]
     public void HasKnowledgeBaseRoutingQuestion_IsFalseForMechanicsQuestionsAndEmptyInput()
     {
         Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[]

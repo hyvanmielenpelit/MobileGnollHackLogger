@@ -145,6 +145,50 @@ app-date-field {
   color: var(--nav-color);
 }
 
+// --- Loading ----------------------------------------------------------------------------------
+
+// The first load, in place of the runs. The ring is the shared `.dc-ring`. Both indicators appear
+// only after 0.3 s, so a quick load shows nothing.
+.cc-runs-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-block-size: 10rem;
+  font-size: var(--text-body);
+  color: #b4b4b8;
+  animation: cc-loading-reveal 0.2s ease-out 0.3s both;
+}
+
+.cc-runs-loading-text {
+  margin: 0;
+}
+
+// A reload: beside the heading, while the list stays in place.
+.cc-runs-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-secondary);
+  color: #b4b4b8;
+  animation: cc-loading-reveal 0.2s ease-out 0.3s both;
+}
+
+@keyframes cc-loading-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.cc-run-cards.is-refreshing {
+  opacity: 0.55;
+}
+
 // --- Selection band ---------------------------------------------------------------------------
 
 .cc-scope-band {
@@ -248,6 +292,7 @@ app-date-field {
   padding: 0;
   list-style: none;
   container: cc-run-cards / inline-size;
+  transition: opacity 0.15s ease-out;
 }
 
 .cc-run-card-item {
@@ -546,7 +591,14 @@ app-date-field {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cc-run-card {
+  .cc-run-card,
+  .cc-run-cards {
     transition: none;
+  }
+
+  // Still delayed, but they appear without a fade.
+  .cc-runs-loading,
+  .cc-runs-updating {
+    animation-duration: 0s;
   }
 }

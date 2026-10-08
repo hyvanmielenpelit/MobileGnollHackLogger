@@ -374,8 +374,26 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true), with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, must also say in the same sentence that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero.");
         Line(sb, "- A peer's paired difference (its pairedDifference and pairedInterval facts) is the subject's mean per-question difference from that peer over the questions both answered. It is an estimate from question sampling only, not adjusted for comparing several models and not a significance test; never present it as one.");
         Line(sb, "- Mention a degraded state, of the subject or of a peer, wherever a comparison depends on it.");
+        AppendSharedWritingRules(sb);
         Line(sb);
     }
+
+    /// <summary>The rules on recommended levers, disagreement wording and leads about a wrong tool result.</summary>
+    private static void AppendSharedWritingRules(StringBuilder sb)
+    {
+        foreach (string rule in SharedWritingRules)
+        {
+            Line(sb, "- " + rule);
+        }
+    }
+
+    /// <summary>The rules <see cref="AppendSharedWritingRules"/> writes, each without its list marker.</summary>
+    public static IReadOnlyList<string> SharedWritingRules => new[]
+    {
+        "Outside a recommendation for model developers, never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.",
+        "Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, give both members' scores.",
+        "When an answer repeats a tool result the facts show to be wrong, write the lead about the source of that result (tag `corpus`), not about the model's knowledge."
+    };
 
     private static void AppendDisclosureRules(StringBuilder sb)
     {

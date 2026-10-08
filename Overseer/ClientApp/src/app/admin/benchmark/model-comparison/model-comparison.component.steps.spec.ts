@@ -1,9 +1,10 @@
 import { ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ModelComparisonComponent } from './model-comparison.component';
+import type { ComparisonIdentifiedEvent } from './model-comparison.component';
 import { BenchmarkModelComparisonEntryDto } from './model-comparison.models';
 import { HttpTestingController } from '@angular/common/http/testing';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, config as rxjsConfig } from 'rxjs';
 import { SystemAlert } from '../../../services/admin-alert.service';
 import {
   BenchmarkComparisonDto,
@@ -735,6 +736,128 @@ describe('ModelComparisonComponent', () => {
         expect(second.cancelled, 'the request for the older set is dropped').toBe(true);
         third.flush(identity());
         expect(component.currentComparison?.id).toBe(12);
+      });
+
+      describe('comparisonIdentified', () => {
+        const group = (): BenchmarkModelComparisonEntryDto =>
+          buildEntry({ key: 'group:4', sourceKind: 'Group', sourceId: 4, runIds: [7, 8], label: 'Group 4' });
+
+        /** Records every `comparisonIdentified` the wizard emits. */
+        function listen() {
+          const emitted = vi.fn<(event: ComparisonIdentifiedEvent) => void>();
+          component.comparisonIdentified.subscribe(emitted);
+          return emitted;
+        }
+
+        /** Compares three runs and answers identify with comparison #12. */
+        function compareAndIdentify(): void {
+          render(buildDto(comparableSet(3)), 2);
+          http.expectOne(IDENTIFY_URL).flush(identity());
+          fixture.detectChanges();
+        }
+
+        it('emits once, with the comparison and its identity, when Compare numbers the comparison', () => {
+          const emitted = listen();
+          render(buildDto(comparableSet(3)), 2);
+          const request = http.expectOne(IDENTIFY_URL);
+          expect(emitted, 'nothing before the number arrives').not.toHaveBeenCalled();
+
+          request.flush(identity());
+          fixture.detectChanges();
+
+          expect(emitted).toHaveBeenCalledTimes(1);
+          const [event] = emitted.mock.calls[0];
+          expect(event.comparison).toBe(component.comparison);
+          expect(event.identity).toBe(component.comparisonIdentity);
+          expect(event.identity).toEqual(identity());
+        });
+
+        it('emits again, once, with the new figures when the same entries are recomputed', () => {
+          const emitted = listen();
+          compareAndIdentify();
+          emitted.mockClear();
+
+          const recomputed = buildDto(comparableSet(3), { pricingBasis: 'AsRun' });
+          render(recomputed, 2);
+          http.expectNone(IDENTIFY_URL);
+
+          expect(emitted).toHaveBeenCalledTimes(1);
+          const [event] = emitted.mock.calls[0];
+          expect(event.comparison).toBe(recomputed);
+          expect(event.comparison.pricingBasis).toBe('AsRun');
+          expect(event.identity.id).toBe(12);
+        });
+
+        it('emits nothing while a new entry set is being numbered, then emits that set\'s identity once', () => {
+          const emitted = listen();
+          compareAndIdentify();
+          emitted.mockClear();
+
+          render(buildDto([...comparableSet(2), group()]), 2);
+          const pending = http.expectOne(IDENTIFY_URL);
+          // A recompute of the new set before its number arrives asks nothing and emits nothing.
+          const recomputed = buildDto([...comparableSet(2), group()], { pricingBasis: 'AsRun' });
+          render(recomputed, 2);
+          http.expectNone(IDENTIFY_URL);
+          expect(emitted, 'no stale identity for the new entry set').not.toHaveBeenCalled();
+
+          const numbered = identity({
+            id: 13,
+            name: 'Model 1 vs Model 2 vs Group 4',
+            defaultName: 'Model 1 vs Model 2 vs Group 4',
+            entryKeys: ['group:4', 'run:1', 'run:2']
+          });
+          pending.flush(numbered);
+
+          expect(emitted).toHaveBeenCalledTimes(1);
+          const [event] = emitted.mock.calls[0];
+          expect(event.comparison).toBe(recomputed);
+          expect(event.identity).toEqual(numbered);
+        });
+
+        it('emits the renamed identity after a rename, and nothing for another comparison\'s', () => {
+          const emitted = listen();
+          compareAndIdentify();
+          emitted.mockClear();
+
+          // The rename dialog's saved output.
+          component.onComparisonRenamed(identity({ id: 99, name: 'Elsewhere', customName: 'Elsewhere' }));
+          expect(emitted).not.toHaveBeenCalled();
+
+          const renamed = identity({ name: 'Flagships, October', customName: 'Flagships, October', renamedAtUtc: '2026-10-06T11:00:00Z' });
+          component.onComparisonRenamed(renamed);
+
+          expect(emitted).toHaveBeenCalledTimes(1);
+          const [event] = emitted.mock.calls[0];
+          expect(event.comparison).toBe(component.comparison);
+          expect(event.identity).toEqual(renamed);
+        });
+
+        it('carries on when a subscriber throws: the wizard is numbered and other subscribers still hear it', async () => {
+          // RxJS reports a subscriber's error asynchronously, outside the emitter.
+          const unhandled = vi.fn();
+          const previous = rxjsConfig.onUnhandledError;
+          rxjsConfig.onUnhandledError = unhandled;
+          try {
+            component.comparisonIdentified.subscribe(() => {
+              throw new Error('Host handler failed.');
+            });
+            const emitted = listen();
+
+            render(buildDto(comparableSet(3)), 2);
+            const request = http.expectOne(IDENTIFY_URL);
+            expect(() => request.flush(identity())).not.toThrow();
+            fixture.detectChanges();
+
+            expect(emitted).toHaveBeenCalledTimes(1);
+            expect(component.currentComparison?.id).toBe(12);
+            expect(identityLine()!.textContent).toContain('Comparison #12');
+            await until(() => unhandled.mock.calls.length > 0);
+            expect(unhandled).toHaveBeenCalledTimes(1);
+          } finally {
+            rxjsConfig.onUnhandledError = previous;
+          }
+        });
       });
 
       it('never blocks the wizard when identify fails: the header omits the number', () => {

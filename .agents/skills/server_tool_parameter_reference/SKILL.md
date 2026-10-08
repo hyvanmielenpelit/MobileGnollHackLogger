@@ -413,8 +413,9 @@ message therefore dates the run to before 2026-09-11.
 > a bounded occurrence probe.** The payload **opens with** `No definition found for '` — which is
 > what a reader matches on, never a length; before the round this opening sentence was the whole
 > payload, the bare `No definition found for '<name>' of kind '<kind>'.`. From the round it then
-> names, from one bounded `filenames_only` probe (max 3 files, 1000 characters, non-regex,
-> case-insensitive, exceptions and `Error:`-prefixed content swallowed into "no hit"), where the
+> names, from one bounded `filenames_only` probe (max 3 files, 1000 characters, case-insensitive,
+> exceptions and `Error:`-prefixed content swallowed into "no hit"; whole-word for an
+> identifier-shaped name from harness 54, see *The occurrence probe is whole-word* below), where the
 > identifier occurs with match counts, or states that it does not occur in the indexed repository;
 > then always the guidance that this tool extracts only a body declared under that exact name, so a
 > struct member, function pointer or macro alias must be read with `source_code_search` (with
@@ -428,8 +429,9 @@ message therefore dates the run to before 2026-09-11.
 > (2026-09-12), carries the same bounded occurrence probe.** The payload **opens with**
 > `No definition found for '` — the same opening sentence `SourceCodeService.FindDefinition`
 > produces — and is then extended by the shared `SourceMissContentBuilder` with where the symbol
-> does occur (one bounded `filenames_only` probe: max 3 files, 1000 characters, non-regex,
-> case-insensitive, exceptions and `Error:`-prefixed content swallowed into "no hit") or a
+> does occur (one bounded `filenames_only` probe: max 3 files, 1000 characters, case-insensitive,
+> exceptions and `Error:`-prefixed content swallowed into "no hit"; whole-word for an
+> identifier-shaped symbol from harness 54) or a
 > statement that it does not occur in the indexed repository, followed by this tool's own
 > guidance: on a hit, that the symbol occurs but no definition line matched this kind, so try
 > `kind: "any"` or `source_code_search` with `context_lines` on the named file — or, from harness
@@ -440,6 +442,17 @@ message therefore dates the run to before 2026-09-11.
 > `filenames_only: true`. Capped at **600 characters**, builder inside a `catch`. A stored result
 > that is the bare sentence alone is a run recorded **before** the run-40 round, or a call in
 > which the builder threw — the **resolver-defect** payload, as with `get_function_definition`.
+
+**The occurrence probe is whole-word, from harness 54 (the battery run 11 round, 2026-10-08).** The
+shared probe of both miss payloads, `SourceMissContentBuilder.SafeProbe`, searches an
+identifier-shaped query (`^[A-Za-z_][A-Za-z0-9_]*$`) as a whole word — the regex `\b<escaped
+query>\b`, case-insensitive — so a probe for `ARM_BONUS` no longer counts the lines of
+`disarm_bonus`. Any other query is still a plain, non-regex substring search. The payload's wording,
+its three-file and 1000-character probe bounds and its 600-character cap do not change. Up to harness
+53 the probe was always a substring search, so a stored *"occurs in …"* count could include longer
+identifiers containing the name. `source_code_search`'s own miss probes (`SourceCodeSearchTool.SafeProbe`,
+above) are a separate helper and unchanged. Tool output, not a tool guide: `ToolGuidesSha256` does not
+move.
 
 **`search_definitions` / `get_function_definition` matching is line-pattern, not a C parser.**
 Function/macro/struct/type matches are anchored regexes against a single line
@@ -460,6 +473,17 @@ the matcher also tries a closing-brace typedef alternative, `^\s*\}\s*name\s*;` 
 had missed `} gbuf_entry;` at `src/display.c:161` — whose body locator walks back, bounded at 400
 lines, to the nearest `typedef struct|union|enum` opener and returns the whole block; when no
 opener is found within the bound, it falls back to the closing line and the usual 10-line window.
+
+**`get_constants` reads constants parsed at index time, line by line** (`SourceCodeService`'s index
+build, not a C parser): every `#define NAME value` line, and the members of an enum body — a line
+matching `\benum\b.*\{` opens the body, members are read as `NAME [= value]` followed by `,` or `}`,
+and a line holding `}` closes it. **From harness 54 (the battery run 11 round, 2026-10-08) an enum whose
+`{` is on the next line is read too**: a line that holds the word `enum` but no `{`, `;` or `(`, and is
+not a preprocessor line, sets a pending state, and the next non-blank line opens the body when it
+starts with `{`. A function signature or prototype with an enum parameter holds `(` and never opens
+one. Up to harness 53 every constant of such an enum was missing, so a `get_constants` "No … found" on
+one in a run stamped 53 or earlier was the parser, not the corpus. Tool output, not a tool guide:
+`ToolGuidesSha256` does not move.
 
 **Failure modes across the family**: missing required parameter → `Success = false` with a
 `"Missing … parameter"` message (this no longer applies to `source_code_view`'s `start_line` /

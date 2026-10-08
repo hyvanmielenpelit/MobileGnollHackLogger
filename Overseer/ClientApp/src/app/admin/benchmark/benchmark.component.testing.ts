@@ -33,6 +33,7 @@ import { BenchmarkHistoryTabComponent } from './history-tab/benchmark-history-ta
 import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.component';
 import { BenchmarkProfilesTabComponent } from './profiles-tab/benchmark-profiles-tab.component';
 import { BenchmarkComparisonTabComponent } from './comparison-tab/benchmark-comparison-tab.component';
+import { LAST_COMPARISON_STORAGE_KEY } from './comparison-tab/last-comparison';
 
 // Spec helper for the AdminBenchmarkComponent spec files, which are split by area and share this
 // setup. Imported by specs only.
@@ -66,6 +67,7 @@ export function clearStoredState(): void {
     localStorage.removeItem(RUN_SETTINGS_KEY);
     localStorage.removeItem(COMPARISON_SELECTION_KEY);
     localStorage.removeItem(COMPARISON_LAUNCHER_KEY);
+    localStorage.removeItem(LAST_COMPARISON_STORAGE_KEY);
     localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
     localStorage.removeItem(RUN_REPORT_HEADER_STORAGE_KEY);
     localStorage.removeItem(RUN_HISTORY_VIEW_STORAGE_KEY);
@@ -311,12 +313,14 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     attachBatteryMember: vi.fn().mockName("AdminBenchmarkService.attachBatteryMember"),
     getBatteryAttachCandidates: vi.fn().mockName("AdminBenchmarkService.getBatteryAttachCandidates"),
     identifyComparison: vi.fn().mockName("AdminBenchmarkService.identifyComparison"),
-    renameComparison: vi.fn().mockName("AdminBenchmarkService.renameComparison")
+    renameComparison: vi.fn().mockName("AdminBenchmarkService.renameComparison"),
+    listComparisons: vi.fn().mockName("AdminBenchmarkService.listComparisons")
   } as unknown as MockedObject<AdminBenchmarkService>;
 
   // The comparison wizard numbers every computed comparison, and its header can rename it.
   benchmarkServiceMock.identifyComparison.mockReturnValue(of(BENCHMARK_SPEC_COMPARISON));
   benchmarkServiceMock.renameComparison.mockReturnValue(of(BENCHMARK_SPEC_COMPARISON));
+  benchmarkServiceMock.listComparisons.mockReturnValue(of([]));
 
   // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Multi-Suite tab
   // and the Battery Progress dialog read the rest.

@@ -18,37 +18,6 @@
       </button>
     </div>
 
-    <!-- Only while a model is chosen. A read-out, not a control: the wizard owns the choice. -->
-    @if (selectedAxis; as axis) {
-      <section class="bm-launcher-last cc-launcher-current" aria-labelledby="cc-launcher-current-heading">
-        <h4 id="cc-launcher-current-heading">Current model</h4>
-        <dl class="bm-launcher-state">
-          <div>
-            <dt>Model</dt>
-            <dd>{{ axis.displayName }}</dd>
-          </div>
-          <div>
-            <dt>Runs</dt>
-            <dd>{{ currentRunsText }}</dd>
-          </div>
-          <div>
-            <dt>Dates</dt>
-            <dd>{{ currentDatesText }}</dd>
-          </div>
-          <div>
-            <dt>Latest analysis</dt>
-            <dd>
-              @if (latestAnalysis; as latest) {
-                #{{ latest.id }} · saved {{ savedDay(latest) }}
-              } @else {
-                None yet
-              }
-            </dd>
-          </div>
-        </dl>
-      </section>
-    }
-
     <!-- Non-exclusive (no name), so it never closes another disclosure. Open on the first visit,
          then as the operator last left it. -->
     <details class="gh-disclosure bm-launcher-howto cc-launcher-howto"
@@ -83,6 +52,15 @@
       </div>
     </details>
   </div>
+
+  <!-- Only while a model is chosen. A read-out, not a control: the wizard owns the choice. -->
+  @if (selectedAxis; as axis) {
+    <app-cc-current-model-card [axis]="axis" [rangeText]="currentDatesText"
+                               [runsInRange]="runsInRange" [runsInAnalysis]="runsInAnalysis"
+                               [latestAnalysis]="latestAnalysis" [loading]="subjectLoading"
+                               (openRunReport)="openRunReport($event)"
+                               (openAnalysis)="openAnalysis($event)"></app-cc-current-model-card>
+  }
 
   <!-- The saved analyses component carries its own `h4#cc-saved-title` heading. Open shows an
        analysis in the wizard, on its results. -->

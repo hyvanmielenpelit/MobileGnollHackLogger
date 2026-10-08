@@ -2864,7 +2864,7 @@ public class BenchmarkService
     {
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             GradingSystemPrompt,
-            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName, BenchmarkAssessmentPrompt.SourceReferencesAllowed(run)),
             prompt,
             boardBlock);
 
@@ -6031,7 +6031,7 @@ public class BenchmarkService
     {
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             GradingSystemPrompt,
-            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName, BenchmarkAssessmentPrompt.SourceReferencesAllowed(run)),
             prompt,
             GradingBoardBlock(run));
 
@@ -6496,7 +6496,7 @@ public class BenchmarkService
             claimVerifications: claimVerifications);
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             GradingSystemPrompt,
-            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName, BenchmarkAssessmentPrompt.SourceReferencesAllowed(run)),
             prompt,
             GradingBoardBlock(run));
 
@@ -6915,7 +6915,9 @@ public class BenchmarkService
         string? boardName = board != null ? run.GameSnapshotNameUsed : null;
         string? boardDigest = board?.DigestText;
 
-        string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries, boardName, boardDigest, panelRunClaimTotals);
+        string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(
+            run.SuiteName, summaries, boardName, boardDigest, panelRunClaimTotals,
+            sourceReferencesAllowed: BenchmarkAssessmentPrompt.SourceReferencesAllowed(run));
         // No board block: the synthesis reads the board's digest inside its prompt, never the whole board.
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             "You are an objective AI benchmark evaluator synthesizing a final report. Strictly adhere to the requested JSON response format.",

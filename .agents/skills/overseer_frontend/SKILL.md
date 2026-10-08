@@ -84,7 +84,8 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `.is-current`, plus `.is-skipped` (muted, dashed ring) and `.is-ended` (`--color-warning`) for a
   finished run's stages, a `.run-stage-note` under the `.run-stage-label`, and a visually hidden state
   word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
-  `.dc-ring-arc`; the Download Center and the PDF viewer), which stands still under reduced motion.
+  `.dc-ring-arc`; the Download Center, the PDF viewer and the Chat Consistency wizard's step-1 runs
+  loading state), which turns slowly (6 s, still arc) under reduced motion.
 - **`.config-badge`** is the neutral configuration badge (service tier, custom endpoint, prompt
   options) beside `.thinking-badge`, `.reasoning-badge` and `.provider-badge`: a configuration fact,
   not a capability claim. It badges the requested service tier and the reader coverage in the run and
@@ -117,8 +118,15 @@ Harness-neutral, and the floor for any Overseer frontend work.
     shared by Model Comparison step 2 and the Chat Consistency Timeline step. Model Comparison keeps its
     `mc-` classes beside them, which its specs query.
   - **`bm-launcher*`** — the launcher page of a benchmark sub-tab whose task is a full-screen wizard
-    (`.bm-launcher`, `-hero`, `-lead`, `-actions`, `-last`, `-state`, `-howto`, `-steps`,
-    `-step-number`, `-library`), shared by the Model Comparison and Chat Consistency launchers.
+    (`.bm-launcher`, `-hero`, `-lead`, `-actions`, `-howto`, `-steps`, `-step-number`, `-library`),
+    shared by the Model Comparison and Chat Consistency launchers.
+  - **`bm-summary-card*`** (since 2026-10-08) — a launcher's full-width summary card, a row of the
+    launcher grid between the hero and the library: `.bm-summary-card` with `-header`, `-eyebrow`,
+    `-title`, `-meta` and `-actions` (a container query stacks the header below 36 rem), the facts list
+    `.bm-summary-facts` with `.bm-summary-facts-note`, and the entries table `.bm-summary-table-wrap` /
+    `.bm-summary-table`. Shared by the Model Comparison *Last comparison* card
+    (`comparison-tab/comparison-summary-card/`) and the Chat Consistency *Current model* card
+    (`chat-consistency-tab/current-model-card/`).
   - **`.cc-marker-tag`** (`.is-event`, `.is-annotation`, `.is-served`, which differ by border style as
     well as color) — the Chat Consistency marker pill, shared by the chart figure, the event list and the
     Runs and controls preview.
@@ -360,16 +368,24 @@ To find specific popups, look in the corresponding component's `.html` template:
     (`section.bm-launcher.cc-launcher`) plus a **six-step wizard in a full-screen dialog**
     (`dialog.gh-dialog.gh-dialog-fullscreen.cc-wizard-dialog`, `showModal()`, no `closedby="any"`),
     modeled on the Model Comparison wizard. The state lives as long as the tab component, so a GnollBench
-    sub-tab switch loses the model, the step and an analysis in progress (`ngOnDestroy` closes an open
-    wizard). The parts, each in its own folder or file:
+    sub-tab switch loses the run selection, the step and an analysis in progress (`ngOnDestroy` closes an
+    open wizard); the model and its dates are remembered in this browser
+    (`localStorage['overseer.benchmark.chatConsistency.subject']`, `{ version: 1, modelKey, range }`,
+    `CC_SUBJECT_STORAGE_KEY`), written on every model or date change and restored once the model axes
+    load with no model chosen — a rolling preset moved to now, a record whose model is unknown or has no
+    runs removed. The parts, each in its own folder or file:
     - **The launcher** (`chat-consistency-tab.component.*`): the hero with the gold `.btn-gh` **Open Chat
-      Consistency Wizard** (*compass*, `#cc-open-wizard`), a *Current model* read-out while a model is
-      chosen (model, runs with *· N in the chosen dates* unless *All dates* and *· N in the analysis*
-      while the selection narrows them, the dates as `ccDateRangeText` names them, latest analysis; the
-      wizard owns the choice), the non-exclusive
+      Consistency Wizard** (*compass*, `#cc-open-wizard`) and the non-exclusive
       *How chat consistency works* disclosure listing `CC_WIZARD_STEPS` under the wizard's own titles
       (open on the first visit, then as left, in `localStorage['overseer.benchmark.chatConsistency.launcher']`,
-      `{ version: 1, howItWorksOpen }`), and below it `saved-analyses/` (`app-cc-saved-analyses`): a card
+      `{ version: 1, howItWorksOpen }`); then, while a model is chosen, the *Current model* summary card
+      (`current-model-card/`, `app-cc-current-model-card`, `.bm-summary-card`): the model with its
+      thinking, provider and tier badges, the facts *Runs*, *Dates* (with *· N runs in these dates*
+      unless *All dates*, a small spinner while the runs load), *In the analysis* (only while the
+      selection narrows them), *First run*, *Latest run*, *Suites* and *Latest analysis*, and the
+      `.btn-ghost` actions **Open latest run report** and **Open analysis #N**; its content comes from
+      the server's model axes and saved analyses, and the wizard owns the choice. Below it
+      `saved-analyses/` (`app-cc-saved-analyses`): a card
       list with *Open* and *Delete*; a delete the server refuses with 409 (report documents exist) shows
       its reason inside the dialog. **Open** fetches the analysis, switches the subject to its model,
       opens the wizard and calls `CcWizardComponent.showResult`, which mounts the analysis component
@@ -405,7 +421,11 @@ To find specific popups, look in the corresponding component's `.html` template:
       `max` / `min`, prefilled by `ccPresetToCustom`, validated into `#cc-tl-range-error`), on one subgrid
       row of labels, controls and hints from 44 rem (*Model · Dates · From · To*). Then the runs as
       **cards** (`frontend_ui_controls` § 8h, the fourth card list): the head `h5#cc-tl-runs-title` *Runs
-      of {model}* with the polite `#cc-runs-status`; the **selection band** (§ 8i) `role="region"` over
+      of {model}* with the polite `#cc-runs-status`; while the runs load for the first time,
+      `.cc-runs-loading` (a `.dc-ring` and *Loading the runs of {model}…*, `aria-hidden`, revealed after
+      0.3 s, the status line announcing the same text) stands in for the list, and on a reload the cards
+      stay, `.cc-run-cards.is-refreshing` with `aria-busy`, and `.cc-runs-updating` (*Updating…*) shows
+      beside the heading; the **selection band** (§ 8i) `role="region"` over
       `#cc-scope-label` (`role="status"`, `tabindex="-1"`: *Runs in the analysis — 15 of 19 runs in these
       dates · from #21 (2026-09-20) to #93 (2026-10-05) · 2 left out*, or *… — all 19 runs in these
       dates*), **Clear selection (N)**, the chips *First: #21*, *Last: #93* and up to six *Left out: #45*
@@ -541,11 +561,23 @@ To find specific popups, look in the corresponding component's `.html` template:
     Nothing starts on its own.* and the notes. Leaving the Run sub-tab clears it.
   - **The Model Comparison tab** (`bm-panel-modelcomparison`, `comparison-tab/`) is a one-column grid. The hero card
     `.mc-launcher-hero` holds the h3, the lead, then **Open Comparison Wizard** — the page's only
-    `.btn-gh`, full size, *compass* glyph — then the *Last comparison* read-out, then a non-exclusive
+    `.btn-gh`, full size, *compass* glyph — then a non-exclusive
     `details.gh-disclosure.mc-launcher-howto` *How the comparison works* (the steps and the
     like-for-like note), open on the first visit and afterwards as left
     (`localStorage['overseer.benchmark.modelComparison.launcher']`, try/catch); its step list names
-    the wizard's four steps. Below it, `.mc-launcher-library` holds **Comparison reports**:
+    the wizard's four steps. Below the hero, the *Last comparison* summary card
+    (`comparison-tab/comparison-summary-card/`, `app-comparison-summary-card`, `.bm-summary-card`) shows
+    the comparison last computed and numbered in this browser, read from
+    `localStorage['overseer.benchmark.modelComparison.last']` (`comparison-tab/last-comparison.ts`, record
+    version 1, at most 64 entries; every access in try/catch): *Comparison #N · <name>*, the facts
+    *Charted*, *Pricing* and *Report documents* (counted from `listComparisons()`, refreshed on tab
+    entry and after the wizard closes, omitted while unknown or failed), an entries table (*Model*,
+    *Intelligence Index* with interval, *Median model time*, *TTFT P50*, *Candidate cost / question*,
+    *Status*), and **Open in wizard** (`BenchmarkComparisonState.applyComparisonEntries`, then
+    `openComparisonWizard()`). The wizard's `comparisonIdentified` output feeds
+    `BenchmarkComparisonState.recordLastComparison` after `identify` answers, on a rename and on a
+    recompute of the same entry set; with no record there is no card. Below it, `.mc-launcher-library`
+    holds **Comparison reports**:
     `app-report-documents-launcher` (`report-pack/report-documents-launcher.component.*`,
     `idPrefix="mcl"`), a summary (*N report documents from M comparisons · the latest written …*, the
     comparisons counted by `comparisonId`, a document without one by the number another document of its
@@ -1287,7 +1319,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     the comparison have one, else by entry set.
   - **Battery results** are the third source kind. A battery comparison's `subjectKind` is
     `Batteries`: `sourceLabel` and `table-export.ts` read *Battery run N*, the cost axis titles say *per
-    battery pass*, the launcher's *Last comparison* names the baseline battery, `reportPackContext`
+    battery pass*, the launcher's *Last comparison* card names the baseline battery, `reportPackContext`
     carries `batteryRunIds` and `documentsContext` the `battery:` keys. No table display column was
     added. `BenchmarkShellBridge.openComparisonWizard(preset?)` opens the wizard on step 1 with a preset's
     `batteryRunIds` selected (the leaderboard's **Open in Model Comparison**). The charts plot at most

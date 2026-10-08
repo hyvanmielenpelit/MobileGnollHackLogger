@@ -270,18 +270,57 @@ describe('CcModelStepComponent', () => {
   });
 
   describe('the status line and the runs heading', () => {
-    it('says the timeline is loading, then counts the runs under a Runs of heading', () => {
+    it('says the runs are loading, then counts the runs under a Runs of heading', () => {
       fixture.componentRef.setInput('selectedKey', 'openai/gpt-5|high');
       fixture.componentRef.setInput('loading', true);
       fixture.detectChanges();
-      expect(textOf(el.querySelector('.cc-tl-status'))).toBe('Loading the timeline…');
+      expect(textOf(el.querySelector('.cc-tl-status'))).toBe('Loading the runs of GPT-5 high…');
       expect(el.querySelector('.cc-tl-empty')).toBeNull();
+
+      // The first load: a ring under the heading, hidden from assistive technology, and an empty list
+      // status, so the status line above is the one announcement.
+      const loadingArea = el.querySelector<HTMLElement>('.cc-runs-loading')!;
+      expect(loadingArea.getAttribute('aria-hidden')).toBe('true');
+      expect(loadingArea.querySelector('svg.dc-ring .dc-ring-arc')).not.toBeNull();
+      expect(textOf(loadingArea.querySelector('.cc-runs-loading-text'))).toBe('Loading the runs of GPT-5 high…');
+      expect(el.querySelector('#cc-tl-runs-title')!.compareDocumentPosition(loadingArea) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(component.listStatus).toBe('');
+      expect(textOf(el.querySelector('#cc-runs-status'))).toBe('');
+      expect(el.querySelector('.cc-runs-updating')).toBeNull();
 
       fixture.componentRef.setInput('loading', false);
       withModel();
       expect(textOf(el.querySelector('.cc-tl-status'))).toBe('6 runs of GPT-5 high in these dates.');
       expect(textOf(el.querySelector('h5#cc-tl-runs-title'))).toBe('Runs of GPT-5 high');
       expect(textOf(el.querySelector('#cc-runs-status'))).toBe('Showing 6 of 6 runs');
+      expect(el.querySelector('.cc-runs-loading')).toBeNull();
+    });
+
+    it('keeps the runs in place during a reload, busy and dimmed, with Updating… beside the heading', () => {
+      withModel();
+      const list = el.querySelector<HTMLElement>('ul.cc-run-cards')!;
+      expect(list.hasAttribute('aria-busy')).toBe(false);
+      expect(list.classList).not.toContain('is-refreshing');
+
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+      expect(el.querySelector('ul.cc-run-cards')).toBe(list);
+      expect(cardIds().length).toBe(6);
+      expect(list.getAttribute('aria-busy')).toBe('true');
+      expect(list.classList).toContain('is-refreshing');
+      const updating = el.querySelector<HTMLElement>('.cc-runs-head .cc-runs-updating')!;
+      expect(updating.getAttribute('aria-hidden')).toBe('true');
+      expect(updating.querySelector('.gh-spinner-small')).not.toBeNull();
+      expect(textOf(updating)).toBe('Updating…');
+      expect(el.querySelector('.cc-runs-loading')).toBeNull();
+      expect(textOf(el.querySelector('.cc-tl-status'))).toBe('Loading the runs of GPT-5 high…');
+      expect(textOf(el.querySelector('#cc-runs-status'))).toBe('Showing 6 of 6 runs');
+
+      fixture.componentRef.setInput('loading', false);
+      fixture.detectChanges();
+      expect(list.hasAttribute('aria-busy')).toBe(false);
+      expect(list.classList).not.toContain('is-refreshing');
+      expect(el.querySelector('.cc-runs-updating')).toBeNull();
     });
 
     it('says when the model has no run in the dates, and shows the errors', () => {

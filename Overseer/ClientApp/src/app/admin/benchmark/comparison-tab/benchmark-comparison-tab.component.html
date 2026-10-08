@@ -5,9 +5,11 @@
   dialog and this panel stays short.
 
   It deliberately duplicates none of the wizard's controls: the selection has one owner, and
-  a second Clear or a second suite scope here would let the two disagree. The Comparison
-  reports library below the hero card is a list of documents already written, not a
-  comparison control: it selects nothing and changes nothing the wizard owns.
+  a second Clear or a second suite scope here would let the two disagree. The Last comparison
+  card below the hero is the comparison last computed in this browser: a read-out with one
+  action, Open in wizard, which hands its selection to the wizard. The Comparison reports
+  library below it is a list of documents already written, not a comparison control: it
+  selects nothing and changes nothing the wizard owns.
 -->
 <div class="mc-launcher bm-launcher">
   <div class="mc-launcher-hero bm-launcher-hero">
@@ -23,41 +25,6 @@
         Open Comparison Wizard
       </button>
     </div>
-
-    <!-- Only what the last comparison produced. Nothing about a pending selection is reported
-         here: this panel holds no control that could change one, and a labelled read-out beside
-         no selector reads as a control that has stopped working. -->
-    @if (comparison.comparison) {
-      <section class="mc-launcher-last bm-launcher-last" aria-labelledby="mc-launcher-last-heading">
-        <h4 id="mc-launcher-last-heading">Last comparison</h4>
-        <dl class="mc-launcher-state bm-launcher-state">
-          <!-- A comparison of battery results spans several suites, so it names its battery instead. -->
-          @if (comparison.comparison.subjectKind === 'Batteries') {
-            <div>
-              <dt>Battery</dt>
-              <dd>{{ comparison.comparison.baselineBatteryName || 'Not set' }}</dd>
-            </div>
-          } @else {
-            <div>
-              <dt>Suite</dt>
-              <dd>{{ comparison.comparison.baselineSuiteName || 'Not set' }}</dd>
-            </div>
-          }
-          <div>
-            <dt>Pricing basis</dt>
-            <dd>{{ comparison.comparison.pricingBasisLabel || comparison.comparison.pricingBasis }}</dd>
-          </div>
-          <div>
-            <dt>Charted</dt>
-            <dd>{{ comparison.comparison.comparableCount }} of {{ comparison.comparison.entries.length }} entries</dd>
-          </div>
-          <div>
-            <dt>Computed</dt>
-            <dd>{{ comparison.comparison.computedAtUtc | date:'short' }}</dd>
-          </div>
-        </dl>
-      </section>
-    }
 
     @if (comparison.comparabilityIndexError) {
       <!-- Non-fatal: the index is a disclosure aid, and the comparison itself is unaffected. -->
@@ -104,6 +71,15 @@
       </div>
     </details>
   </div>
+
+  <!-- Only what the last comparison produced. Nothing about a pending selection is reported
+       here: this panel holds no control that could change one, and a labelled read-out beside
+       no selector reads as a control that has stopped working. -->
+  @if (comparison.lastComparison; as last) {
+    <app-comparison-summary-card [record]="last" [documents]="comparison.lastComparisonDocuments"
+                                 (openInWizard)="openInWizard($event)">
+    </app-comparison-summary-card>
+  }
 
   <!-- Rendered only inside this tab's @if, so it counts the documents when the tab is shown, not
        on page load, and afresh on every showing; the reload token covers the wizard closing. -->

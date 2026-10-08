@@ -224,14 +224,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyThree()
+    public void HarnessVersion_IsFiftyFour()
     {
-        // Harness 53: a member whose charged sentence the verifier refuted is never
-        // verification-cleared; the synthesis footer counts a contested deduction on either member
-        // and the charges the verifier upheld; the synthesis data blocks state each assessor's
-        // charged sentences by verdict; and an answer whose own claims were not checked prints its
-        // charged sentences on the Claim Verification line.
-        Assert.Equal("53", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 54: a run whose candidate prompt disallowed source code references grades with
+        // the SOURCE-CODE REFERENCES rule and tells its syntheses so; a streaming rate outside the
+        // measurable bounds is counted as not measurable; and the report counts the
+        // knowledge-base-topic questions that made no get_knowledge_article call.
+        Assert.Equal("54", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -946,15 +945,98 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs53_ScoringMethodIs14()
+    public void Versions_HarnessIs54_ScoringMethodIs14()
     {
-        Assert.Equal("53", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("54", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 53 keeps an upheld charge out of the verification-cleared figures, gives the
-        // synthesis each assessor's charged sentences by verdict, and counts upheld charges and
-        // either member's contested deductions in the report; the per-question grader prompt and
-        // its ACCURACY anchors do not change, so scoring method 14 stays.
+        // Harness 54 adds the SOURCE-CODE REFERENCES rule only to a run whose candidate prompt
+        // disallowed source references, and changes report measures; the ACCURACY anchors, the
+        // weights and the level-to-points mapping do not change, so scoring method 14 stays.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPreamble_SourceReferencesDisallowed_CarriesTheRuleAfterTheScopeRule()
+    {
+        string preamble = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite", sourceReferencesAllowed: false);
+
+        const string paragraph = "SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a file, path, line or function location. A rubric point that names a file or a line is met when the answer states the mechanic the point describes; the rubric's file and line citations are there for you to check facts, not for the candidate to repeat.";
+        Assert.Equal(paragraph, BenchmarkAssessmentPrompt.SourceReferencesDisallowedRule);
+        Assert.Equal(1, CountOf(preamble, paragraph));
+
+        int scope = preamble.IndexOf("- **The question defines the scope.**", StringComparison.Ordinal);
+        int outOfScope = preamble.IndexOf("prefixed **`OUT-OF-SCOPE:`**", StringComparison.Ordinal);
+        int rule = preamble.IndexOf(paragraph, StringComparison.Ordinal);
+        int conciseness = preamble.IndexOf("### 3. CONCISENESS", StringComparison.Ordinal);
+        Assert.True(scope >= 0 && scope < outOfScope && outOfScope < rule && rule < conciseness);
+    }
+
+    [Fact]
+    public void PerQuestionPreamble_SourceReferencesAllowed_IsUnchanged()
+    {
+        string allowed = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite", sourceReferencesAllowed: true);
+
+        Assert.Equal(BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite"), allowed);
+        Assert.DoesNotContain("SOURCE-CODE REFERENCES", allowed);
+
+        // The disallowed preamble is the allowed one with exactly the rule's line added.
+        string disallowed = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite", sourceReferencesAllowed: false);
+        Assert.Equal(allowed, disallowed.Replace("- " + BenchmarkAssessmentPrompt.SourceReferencesDisallowedRule + Environment.NewLine, string.Empty));
+    }
+
+    [Fact]
+    public void FullGradingPrompts_CarryTheRuleOnlyWhenSourceReferencesAreDisallowed()
+    {
+        string PerQuestion(bool allowed) => BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok,
+            sourceReferencesAllowed: allowed);
+        string SecondOpinion(bool allowed) => BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok,
+            80, false, null, sourceReferencesAllowed: allowed);
+
+        Assert.Contains(BenchmarkAssessmentPrompt.SourceReferencesDisallowedRule, PerQuestion(false));
+        Assert.DoesNotContain("SOURCE-CODE REFERENCES", PerQuestion(true));
+        Assert.Contains(BenchmarkAssessmentPrompt.SourceReferencesDisallowedRule, SecondOpinion(false));
+        Assert.DoesNotContain("SOURCE-CODE REFERENCES", SecondOpinion(true));
+    }
+
+    [Fact]
+    public void FinalSynthesisPrompt_SourceReferencesDisallowed_CarriesTheOneSentenceForm()
+    {
+        var summary = new BenchmarkPerQuestionVerdictSummary
+        {
+            OrderIndex = 1,
+            QuestionText = "Q?",
+            AccuracyLevel = 6,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 92,
+            Status = BenchmarkAnswerStatus.Ok
+        };
+        const string sentence = "The candidate was instructed not to cite source files, paths or line numbers; never list their absence as a weakness.";
+
+        string disallowed = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary }, sourceReferencesAllowed: false);
+        string allowed = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary }, sourceReferencesAllowed: true);
+
+        Assert.Equal(sentence, BenchmarkAssessmentPrompt.SourceReferencesDisallowedSynthesisSentence);
+        Assert.Equal(1, CountOf(disallowed, sentence));
+        Assert.DoesNotContain(sentence, allowed);
+        Assert.Equal(BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary }), allowed);
+        Assert.Equal(allowed, disallowed.Replace("8. " + sentence + Environment.NewLine, string.Empty));
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("{\"verboseMode\":false,\"enableToolUse\":true}", true)]
+    [InlineData("{\"allowSourceCodeReferences\":true}", true)]
+    [InlineData("{\"allowSourceCodeReferences\":false}", false)]
+    public void SourceReferencesAllowed_ReadsTheRunsPromptOptions_AndAnOlderRunAsAllowed(string? json, bool expected)
+    {
+        var run = new BenchmarkRun { Id = 1, CandidatePromptOptionsJson = json };
+
+        Assert.Equal(expected, BenchmarkAssessmentPrompt.SourceReferencesAllowed(run));
     }
 
     [Fact]

@@ -1,0 +1,99 @@
+<section class="bm-summary-card" aria-labelledby="mc-last-title">
+  <div class="bm-summary-card-header">
+    <div>
+      <p class="bm-summary-card-eyebrow">Last comparison</p>
+      <h4 id="mc-last-title" class="bm-summary-card-title">Comparison #{{ record.id }} · {{ record.name }}</h4>
+      <p class="bm-summary-card-meta">
+        {{ metaLead }} · computed {{ record.computedAtUtc | date:'medium' }} · remembered in this browser
+      </p>
+    </div>
+    <div class="bm-summary-card-actions">
+      <button type="button" class="btn-ghost" (click)="onOpenInWizard()">Open in wizard</button>
+    </div>
+  </div>
+
+  <dl class="bm-summary-facts">
+    <div>
+      <dt>Charted</dt>
+      <dd>{{ chartedText }}</dd>
+    </div>
+    <div>
+      <dt>Pricing</dt>
+      <dd>
+        {{ pricingText }}
+        @if (record.pricingBasisLabel) {
+          <span class="bm-summary-facts-note">{{ record.pricingBasisLabel }}</span>
+        }
+      </dd>
+    </div>
+    <!-- Only once the count is known: a failed or pending count shows nothing rather than a guess. -->
+    @if (documents; as docs) {
+      <div>
+        <dt>Report documents</dt>
+        <dd>
+          @if (docs.count === 0) {
+            None yet
+          } @else if (docs.latestAtUtc) {
+            {{ docs.count }} · latest {{ docs.latestAtUtc | date:'d MMM y' }}
+          } @else {
+            {{ docs.count }}
+          }
+        </dd>
+      </div>
+    }
+  </dl>
+
+  <div class="bm-summary-table-wrap">
+    <table class="gh-table gh-datatable bm-summary-table">
+      <caption class="visually-hidden">Entries of comparison #{{ record.id }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Model</th>
+          <th scope="col" class="bm-summary-num">Intelligence Index</th>
+          <th scope="col" class="bm-summary-num">Median model time</th>
+          <th scope="col" class="bm-summary-num">TTFT P50</th>
+          <th scope="col" class="bm-summary-num">Candidate cost / question</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (entry of record.entries; track entry.key; let i = $index) {
+          <tr>
+            <th scope="row" class="bm-summary-model">
+              <span class="bm-summary-model-row">
+                <span class="bm-summary-model-name">{{ entry.label || entry.modelDisplayName }}</span>
+                @if (entry.provider) {
+                  <app-provider-badge [provider]="entry.provider"></app-provider-badge>
+                }
+                @if (entry.thinkingLevel) {
+                  <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                }
+              </span>
+            </th>
+            <td class="bm-summary-num">
+              {{ formatIndex(entry.qualityPoint) }}
+              @if (intervalText(entry); as interval) {
+                <span class="bm-summary-interval">{{ interval }}</span>
+              }
+            </td>
+            <td class="bm-summary-num">{{ formatMs(entry.modelTimeP50Ms) }}</td>
+            <td class="bm-summary-num">{{ formatMs(entry.ttftP50Ms) }}</td>
+            <td class="bm-summary-num">{{ formatUsd(entry.candidateCostPerQuestionUsd) }}</td>
+            <td>
+              @if (entry.excluded) {
+                <span class="bm-summary-status">
+                  Excluded
+                  @if (entry.explanation) {
+                    <app-info-tip [tipId]="statusTipId(i)" [subject]="'the exclusion of ' + (entry.label || entry.modelDisplayName)">{{ entry.explanation }}</app-info-tip>
+                  }
+                </span>
+              } @else {
+                Charted
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</section>

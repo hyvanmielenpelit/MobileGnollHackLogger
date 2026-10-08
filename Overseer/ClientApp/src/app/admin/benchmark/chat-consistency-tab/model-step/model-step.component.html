@@ -79,7 +79,7 @@
   @if (!selectedKey) {
     Choose a model to see its runs over time.
   } @else if (loading) {
-    Loading the timeline…
+    Loading the runs of {{ selectedName }}…
   } @else if (timeline) {
     {{ timeline.points.length }} {{ timeline.points.length === 1 ? 'run' : 'runs' }} of {{ timeline.subject.displayName }} in these dates.
   }
@@ -95,6 +95,11 @@
 @if (selectedKey) {
   <div class="cc-runs-head">
     <h5 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs of {{ selectedName }}</h5>
+    <!-- A reload keeps the list in place. The status line above announces it, so this is hidden from
+         assistive technology; it shows only after 0.3 s. -->
+    @if (loading && rows.length > 0) {
+      <span class="cc-runs-updating" aria-hidden="true"><span class="gh-spinner-small"></span>Updating…</span>
+    }
     <!-- The list's one polite live region. -->
     <p class="gh-list-status cc-runs-status" id="cc-runs-status" role="status">{{ listStatus }}</p>
   </div>
@@ -105,7 +110,16 @@
       <span>{{ runsError }}</span>
     </p>
   } @else if (rows.length === 0) {
-    @if (!loading) {
+    @if (loading) {
+      <!-- The first load. The status line above announces it; the ring shows only after 0.3 s. -->
+      <div class="cc-runs-loading" aria-hidden="true">
+        <svg class="dc-ring" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 48 48" focusable="false">
+          <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+          <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+        </svg>
+        <p class="cc-runs-loading-text">Loading the runs of {{ selectedName }}…</p>
+      </div>
+    } @else {
       <p class="cc-tl-empty">No run of this model in these dates.</p>
     }
   } @else {
@@ -206,7 +220,8 @@
         <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
       </p>
     } @else {
-      <ul class="cc-run-cards" role="list" aria-labelledby="cc-tl-runs-title" aria-describedby="cc-tl-runs-legend">
+      <ul class="cc-run-cards" role="list" aria-labelledby="cc-tl-runs-title" aria-describedby="cc-tl-runs-legend"
+          [class.is-refreshing]="loading" [attr.aria-busy]="loading ? 'true' : null">
         @for (row of cards; track row.runId) {
           @let inclusion = inclusionOf(row);
           @let reason = outReason(row);

@@ -915,6 +915,31 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("its knowledge, calibration", system);
     }
 
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_StatesTheSharedWritingRules(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("- Outside a recommendation for model developers, never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — "
+            + "a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.\n", system);
+        Assert.Contains("- Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; "
+            + "for any other gap, give both members' scores.\n", system);
+        Assert.Contains("- When an answer repeats a tool result the facts show to be wrong, write the lead about the source of that result "
+            + "(tag `corpus`), not about the model's knowledge.\n", system);
+        Assert.Equal(3, BenchmarkReportPackPrompt.SharedWritingRules.Count);
+        Assert.All(BenchmarkReportPackPrompt.SharedWritingRules, rule => Assert.Contains("- " + rule + "\n", system));
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void ABatterySubject_StatesTheSharedWritingRules(BenchmarkReportAudience audience)
+    {
+        string system = BenchmarkReportPackPrompt.Build(audience, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).SystemPrompt;
+
+        Assert.All(BenchmarkReportPackPrompt.SharedWritingRules, rule => Assert.Contains("- " + rule + "\n", system));
+    }
+
     [Fact]
     public void ExecutiveSummary_HasNoRecommendationRule()
     {

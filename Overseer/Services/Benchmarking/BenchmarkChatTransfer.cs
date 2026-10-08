@@ -37,6 +37,16 @@ public sealed record BenchmarkToolRoutingAnalysis
     public IReadOnlyList<BenchmarkBandToolFamilyStats> BandStats { get; init; } = Array.Empty<BenchmarkBandToolFamilyStats>();
     public int AnsweredQuestionCount { get; init; }
     public int ZeroKnowledgeBaseAnswerCount { get; init; }
+
+    /// <summary>
+    /// The answered questions whose question text names a knowledge-base topic
+    /// (<see cref="BenchmarkChatTransfer.IsKnowledgeBaseTopicQuestion"/>).
+    /// </summary>
+    public int KnowledgeBaseTopicQuestionCount { get; init; }
+
+    /// <summary>The knowledge-base-topic questions of <see cref="KnowledgeBaseTopicQuestionCount"/> that made zero <c>get_knowledge_article</c> calls.</summary>
+    public int KnowledgeBaseTopicZeroCallCount { get; init; }
+
     public double? SourceShareModelTimeCorrelation { get; init; }
     public double? SourceShareQualityScoreCorrelation { get; init; }
     public int CorrelationSampleSize { get; init; }
@@ -236,14 +246,27 @@ public static class BenchmarkChatTransfer
             });
         }
 
-        // Knowledge base under-use: answers with zero get_knowledge_article calls
+        // Knowledge base under-use: answers with zero get_knowledge_article calls, overall and
+        // among the questions that name a knowledge-base topic
         int zeroKbCount = 0;
+        int kbTopicCount = 0;
+        int kbTopicZeroCount = 0;
         foreach (var a in answered)
         {
             var counts = ToolCallCountsFor(a);
-            if (!counts.TryGetValue("get_knowledge_article", out int kbCalls) || kbCalls == 0)
+            bool zeroKb = !counts.TryGetValue("get_knowledge_article", out int kbCalls) || kbCalls == 0;
+            if (zeroKb)
             {
                 zeroKbCount++;
+            }
+
+            if (IsKnowledgeBaseTopicQuestion(a))
+            {
+                kbTopicCount++;
+                if (zeroKb)
+                {
+                    kbTopicZeroCount++;
+                }
             }
         }
 
@@ -288,6 +311,8 @@ public static class BenchmarkChatTransfer
             BandStats = bandStatsList,
             AnsweredQuestionCount = answered.Count,
             ZeroKnowledgeBaseAnswerCount = zeroKbCount,
+            KnowledgeBaseTopicQuestionCount = kbTopicCount,
+            KnowledgeBaseTopicZeroCallCount = kbTopicZeroCount,
             SourceShareModelTimeCorrelation = rTime,
             SourceShareQualityScoreCorrelation = rQuality,
             CorrelationSampleSize = sourceShares.Count,
@@ -427,14 +452,20 @@ public static class BenchmarkChatTransfer
 
         foreach (var a in answers)
         {
-            if (a == null) continue;
-            if (IsKnowledgeBaseTopicText(a.QuestionText))
+            if (IsKnowledgeBaseTopicQuestion(a))
             {
                 return true;
             }
         }
         return false;
     }
+
+    /// <summary>
+    /// True when <paramref name="answer"/>'s question text names a knowledge-base topic, by the
+    /// test <see cref="HasKnowledgeBaseRoutingQuestion"/> applies to each answer.
+    /// </summary>
+    public static bool IsKnowledgeBaseTopicQuestion(BenchmarkRunAnswer? answer)
+        => answer != null && IsKnowledgeBaseTopicText(answer.QuestionText);
 
     private static bool IsKnowledgeBaseTopicText(string? text)
         => !string.IsNullOrWhiteSpace(text) && KnowledgeBaseTopicRegex.IsMatch(text);
