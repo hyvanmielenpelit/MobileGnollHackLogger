@@ -1,7 +1,7 @@
 /**
- * Export layout, file names and theme of a Chat Consistency chart image. The image is the plot
- * alone, so its layout has no chrome: the plot box is the whole layout box. Free of Angular and the
- * DOM.
+ * Export layout, file names and theme of a Chat Consistency chart image. The chart draws its own
+ * header band, so the layout has no chrome around it: the plot box is the whole layout box. Free of
+ * Angular and the DOM.
  */
 
 import {
@@ -76,9 +76,9 @@ export function ccChartArchiveFilename(modelKey: string, now: Date = new Date())
 }
 
 /**
- * The theme an image is drawn in: *As shown* is the screen theme on an opaque dark ground, since a
+ * The theme an image is drawn in: *As shown* is the screen theme on its opaque surface, since a
  * transparent dark chart is unreadable on a light page; *Light, for print* is the print theme.
  */
 export function ccExportTheme(choice: 'screen' | 'print'): CcChartTheme {
-  return choice === 'print' ? CC_PRINT_THEME : { ...CC_SCREEN_THEME, background: '#101010' };
+  return choice === 'print' ? CC_PRINT_THEME : { ...CC_SCREEN_THEME, background: CC_SCREEN_THEME.surface };
 }

@@ -8,6 +8,7 @@ import {
   comparisonSetUnits,
   notAnalyzedRuns,
   notAnalyzedSetRuns,
+  notAnalyzedUnits,
   pruneScope,
   runInclusion,
   scopeChangeCount,
@@ -359,6 +360,21 @@ describe('chat-consistency-scope', () => {
       expect(suite.has(304)).toBe(false);
       expect(suite.get(301)).toBe('outsideSet');
       expect(notAnalyzedSetRuns(rows(), [], null, scope(null, null, [12]))).toEqual(notAnalyzedRuns(rows(), scope(null, null, [12])));
+    });
+
+    it('marks the battery runs not in the analysis by battery run id, for a timeline drawn by battery run', () => {
+      const units = batteryRows();
+      expect(entries(notAnalyzedUnits(units, CC_BATTERY_SET_KEY, CC_EMPTY_BATTERY_SCOPE))).toEqual([[13, 'incomplete']]);
+      const leftOut = { ...CC_EMPTY_BATTERY_SCOPE, leftOut: new Set([11]) };
+      expect(entries(notAnalyzedUnits(units, CC_BATTERY_SET_KEY, leftOut))).toEqual([[11, 'leftOut'], [13, 'incomplete']]);
+      const spanned = { ...CC_EMPTY_BATTERY_SCOPE, firstRunId: 12 };
+      expect(entries(notAnalyzedUnits(units, CC_BATTERY_SET_KEY, spanned))).toEqual([[11, 'beforeSpan'], [13, 'incomplete']]);
+      const ended = { ...CC_EMPTY_BATTERY_SCOPE, lastRunId: 11 };
+      expect(entries(notAnalyzedUnits(ccBatteryRunRows(), CC_BATTERY_SET_KEY, ended))).toEqual([[12, 'afterSpan']]);
+      // No member run id is ever a key, and a suite set or no set has no battery runs.
+      expect(notAnalyzedUnits(units, CC_BATTERY_SET_KEY, leftOut).has(301)).toBe(false);
+      expect(notAnalyzedUnits(units, 'suite:id:5', leftOut).size).toBe(0);
+      expect(notAnalyzedUnits(units, null, leftOut).size).toBe(0);
     });
 
     it('hands on the members of the scoped battery runs as the runs of the analysis', () => {

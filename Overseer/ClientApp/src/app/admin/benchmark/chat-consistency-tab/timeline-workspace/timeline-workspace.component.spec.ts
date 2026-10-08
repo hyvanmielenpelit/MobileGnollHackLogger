@@ -9,10 +9,20 @@ import { APP_CHART_REGISTRABLES } from '../../../../chart-registrables';
 import { ZipWriterModule, zipWriterModule } from '../../model-comparison/figure-export';
 import { defaultFigureSize } from '../../model-comparison/figure-size';
 import { PREVIEW_SLIDER_STEPS } from '../../model-comparison/preview-view';
-import { CC_FIGURE_KEYS, CcFigureInput, CcFigureKey } from '../chat-consistency-charts';
+import { figureLogoIo, resetFigureLogoCache } from '../../model-comparison/figure-logo';
+import { CC_FIGURE_KEYS, CcChartOptions, CcFigureInput, CcFigureKey } from '../chat-consistency-charts';
 import { CcRunInclusion } from '../chat-consistency-scope';
-import { CcModelAxis, CcTimeline } from '../chat-consistency.models';
-import { CC_API, ccAxis, ccEventTimeline, chatConsistencyTestProviders, textOf } from '../chat-consistency-tab.testing';
+import { CcBatteryRunRow, CcModelAxis, CcTimeline, CcUnitKind } from '../chat-consistency.models';
+import {
+  CC_API,
+  CC_BATTERY_SET_KEY,
+  ccAxis,
+  ccBatteryPoint,
+  ccBatteryRunRows,
+  ccEventTimeline,
+  chatConsistencyTestProviders,
+  textOf
+} from '../chat-consistency-tab.testing';
 import { ccChartBox } from './cc-chart-zoom';
 import {
   CC_CHART_SIZE_STORAGE_KEY,
@@ -47,6 +57,8 @@ function clearStorage(): void {
     <section class="gh-wizard-step gh-fig-host" style="display: flex; flex-direction: column; width: 780px; height: 560px;">
       <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="error"
                                  [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeLabel"
+                                 [unitKind]="unitKind" [setKey]="setKey" [batteryRows]="batteryRows"
+                                 [notAnalyzedUnits]="notAnalyzedUnits" [subjectLabel]="subjectLabel"
                                  (exportingChange)="exportingEvents.push($event)"></app-cc-timeline-workspace>
     </section>`
 })
@@ -57,6 +69,11 @@ class TimelineWorkspaceHostComponent {
   @Input() error: string | null = null;
   @Input() notAnalyzed: ReadonlyMap<number, CcRunInclusion> | null = null;
   @Input() rangeLabel = '';
+  @Input() unitKind: CcUnitKind = 'run';
+  @Input() setKey: string | null = null;
+  @Input() batteryRows: readonly CcBatteryRunRow[] = [];
+  @Input() notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion> | null = null;
+  @Input() subjectLabel = '';
   readonly exportingEvents: boolean[] = [];
 }
 
@@ -74,6 +91,9 @@ describe('CcTimelineWorkspaceComponent', () => {
 
   beforeEach(async () => {
     clearStorage();
+    // A logo the canvas can draw, without loading the asset.
+    resetFigureLogoCache();
+    vi.spyOn(figureLogoIo, 'loadImage').mockResolvedValue(document.createElement('canvas'));
     // The off-screen export renders with `new Chart`, which the on-screen directive registers for lazily.
     Chart.register(...APP_CHART_REGISTRABLES);
     await TestBed.configureTestingModule({
@@ -87,6 +107,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     if (fixture) fixture.destroy();
     http.verify();
     clearStorage();
+    resetFigureLogoCache();
     // `withClipboard` stands in for `navigator.clipboard` on the instance.
     delete (navigator as unknown as { clipboard?: unknown }).clipboard;
   });
@@ -364,20 +385,22 @@ describe('CcTimelineWorkspaceComponent', () => {
     await create();
     // Without a common grader the quality chart draws one series, so it has no series checklist.
     expect(q('#cc-tl-series-quality-common')).toBeNull();
-    const tools = q<HTMLInputElement>('#cc-tl-series-work-tools')!;
-    expect(tools.checked).toBe(true);
-    expect(seriesIds('work')).toEqual(expect.arrayContaining(['work.tokens', 'work.tools']));
-
-    tools.click();
-    fixture.detectChanges();
-    expect(q<HTMLInputElement>('#cc-tl-series-work-tools')!.checked).toBe(false);
-    expect(seriesIds('work')).not.toContain('work.tools');
-    expect(seriesIds('work')).toContain('work.tokens');
-    expect(storedLayout()['hiddenSeries']).toEqual(['work.tools']);
-
-    clickOn('#cc-tl-show-work');
-    expect(q('#cc-tl-series-work-tools')).toBeNull();
+    // Output tokens and tool calls are one series each, so neither has a checklist.
     expect(q('#cc-tl-series-work-tokens')).toBeNull();
+    expect(q('#cc-tl-series-tools-calls')).toBeNull();
+    const timeouts = q<HTMLInputElement>('#cc-tl-series-reliability-timeoutRate')!;
+    expect(timeouts.checked).toBe(true);
+    expect(seriesIds('reliability')).toContain('reliability.timeoutRate');
+
+    timeouts.click();
+    fixture.detectChanges();
+    expect(q<HTMLInputElement>('#cc-tl-series-reliability-timeoutRate')!.checked).toBe(false);
+    expect(seriesIds('reliability')).not.toContain('reliability.timeoutRate');
+    expect(seriesIds('reliability')).toContain('reliability.refusalRate');
+    expect(storedLayout()['hiddenSeries']).toEqual(['reliability.timeoutRate']);
+
+    clickOn('#cc-tl-show-reliability');
+    expect(q('#cc-tl-series-reliability-timeoutRate')).toBeNull();
   });
 
   it('starts the quality axis at zero on request', async () => {
@@ -423,6 +446,24 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(parseTimelineLayout({ version: 1, zeroBaseline: true }).markNotAnalyzed).toBe(true);
     expect(parseTimelineLayout({ version: 1, markNotAnalyzed: 'no' }).markNotAnalyzed).toBe(true);
     expect(parseTimelineLayout({ version: 1, markNotAnalyzed: false }).markNotAnalyzed).toBe(false);
+  });
+
+  it('reads a version-1 layout that shows Work per answer as showing both of its charts, and drops work.tools', () => {
+    const old = parseTimelineLayout({ version: 1, figures: ['quality', 'work'], hiddenSeries: ['work.tools', 'ttfat.proxy'] });
+    expect(old.figures).toEqual(['quality', 'work', 'tools']);
+    expect(old.hiddenSeries).toEqual(['ttfat.proxy']);
+    expect(parseTimelineLayout({ version: 1, figures: ['quality'] }).figures).toEqual(['quality']);
+    // A version-2 layout means what it says.
+    expect(parseTimelineLayout({ version: 2, figures: ['work'] }).figures).toEqual(['work']);
+    expect(parseTimelineLayout({}).logo).toBe(true);
+    expect(parseTimelineLayout({ version: 2, logo: false }).logo).toBe(false);
+  });
+
+  it('writes the layout as version 2', async () => {
+    await create();
+    clickOn('#cc-tl-zero-baseline');
+    expect(storedLayout()['version']).toBe(2);
+    expect(storedLayout()['logo']).toBe(true);
   });
 
   // --- Events ---
@@ -695,7 +736,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(q<HTMLInputElement>('#cc-image-format-format-png')!.checked).toBe(true);
     expect(q('#cc-image-format-quality')).toBeNull();
     expect(q<HTMLInputElement>('#cc-tl-image-theme-screen')!.checked).toBe(true);
-    expect(qa('.cc-tl-hint').some(hint => textOf(hint).startsWith('The image is the plot alone'))).toBe(true);
+    expect(qa('.cc-tl-hint').some(hint => textOf(hint).startsWith('The image is the chart as shown: its title, the model and the GnollBench logo'))).toBe(true);
     expect(q('.cc-tl-size-error')).toBeNull();
 
     clickOn('#cc-image-format-format-webp');
@@ -898,7 +939,7 @@ describe('CcTimelineWorkspaceComponent', () => {
       sidebarTab: 'download',
       view: 'single',
       figures: ['cost', 'quality', 'unknown'],
-      hiddenSeries: ['work.tools', 'unknown.series'],
+      hiddenSeries: ['ttfat.proxy', 'work.tools', 'unknown.series'],
       zeroBaseline: true,
       imageTheme: 'print',
       webpQuality: 42,
@@ -914,7 +955,8 @@ describe('CcTimelineWorkspaceComponent', () => {
     const select = q<HTMLSelectElement>('#cc-tl-single-figure')!;
     expect(Array.from(select.options).map(option => option.value)).toEqual(['quality', 'cost']);
     expect(select.value).toBe('cost');
-    expect([...ws.hiddenSeries]).toEqual(['work.tools']);
+    // The retired `work.tools` series is dropped with the unknown one.
+    expect([...ws.hiddenSeries]).toEqual(['ttfat.proxy']);
     expect(ws.zeroBaseline).toBe(true);
     expect(ws.imageTheme).toBe('print');
     // A quality that is not offered falls back to the default.
@@ -945,5 +987,114 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(ws.chartSize.resolutionId).toBe('uw1080');
     clickOn('#cc-tl-image-theme-print');
     expect(ws.imageTheme).toBe('print');
+  });
+
+  // --- Battery runs, the header band and the logo ---
+
+  /** The workspace in the battery set of the fixtures: battery runs #11 and #12 on the timeline. */
+  async function createBattery(notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion> | null = null): Promise<void> {
+    const timeline = ccEventTimeline({
+      batteryPoints: [
+        ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 79, memberRunIds: [301, 302] }),
+        ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 86, memberRunIds: [303, 304] }),
+        ccBatteryPoint(21, '2026-10-08T12:00:00Z', { setKey: `battery:${'d'.repeat(64)}` })
+      ]
+    });
+    fixture = TestBed.createComponent(TimelineWorkspaceHostComponent);
+    host = fixture.componentInstance;
+    fixture.componentRef.setInput('axis', ccAxis());
+    fixture.componentRef.setInput('timeline', timeline);
+    fixture.componentRef.setInput('unitKind', 'batteryRun');
+    fixture.componentRef.setInput('setKey', CC_BATTERY_SET_KEY);
+    fixture.componentRef.setInput('batteryRows', ccBatteryRunRows());
+    fixture.componentRef.setInput('notAnalyzedUnits', notAnalyzedUnits);
+    fixture.componentRef.setInput('subjectLabel', 'GPT-5 high · Two initial suites (revision 1)');
+    fixture.detectChanges();
+    ws = fixture.debugElement.query(By.directive(CcTimelineWorkspaceComponent)).componentInstance as CcTimelineWorkspaceComponent;
+    el = fixture.nativeElement as HTMLElement;
+    await settle();
+  }
+
+  function plottedIds(key: CcFigureKey): number[] {
+    return (figure(key).config!.data.datasets[0].data as { runId: number }[]).map(point => point.runId);
+  }
+
+  function header(key: CcFigureKey): CcChartOptions['header'] {
+    const input = (ws as unknown as { figureInput(): CcFigureInput }).figureInput();
+    const options = (ws as unknown as { chartOptions(theme: unknown, reduced: boolean, key: CcFigureKey): CcChartOptions })
+      .chartOptions(null, true, key);
+    expect(input).not.toBeNull();
+    return options.header;
+  }
+
+  it('plots one point per battery run of the compared set, and member runs on request', async () => {
+    await createBattery(new Map<number, CcRunInclusion>([[11, 'leftOut']]));
+    expect(plottedIds('quality')).toEqual([11, 12]);
+    expect(figure('quality').config!.data.datasets[0].label).toBe('Overall Index (battery)');
+    expect(figure('quality').table.columns[0]).toBe('Battery run');
+    expect(figure('quality').takeaway).toContain('1 battery run not in the analysis is drawn as a gray cross.');
+    expect(header('quality')).toEqual({ title: 'Quality per run', subject: 'GPT-5 high · Two initial suites (revision 1) · battery runs' });
+    expect(textOf(q('.cc-tl-tile[data-figure="quality"] caption'))).toBe('Quality per run: data per battery run');
+
+    const radios = qa<HTMLInputElement>('input[name="cc-tl-plot-by"]');
+    expect(radios.map(radio => [radio.id, radio.checked])).toEqual([['cc-tl-plot-by-battery', true], ['cc-tl-plot-by-members', false]]);
+    clickOn('#cc-tl-plot-by-members');
+    expect(plottedIds('quality')).toEqual([201, 202, 203, 204, 205, 206]);
+    expect(figure('quality').table.columns[0]).toBe('Run');
+    expect(header('quality')!.subject).toBe('GPT-5 high · Two initial suites (revision 1) · member runs');
+    // Component state, not stored.
+    expect(storedLayout()['plotBy']).toBeUndefined();
+
+    clickOn('#cc-tl-plot-by-battery');
+    expect(plottedIds('quality')).toEqual([11, 12]);
+  });
+
+  it('offers no Plot by choice without a battery set, and names runs in the subject', async () => {
+    await create();
+    expect(q('input[name="cc-tl-plot-by"]')).toBeNull();
+    expect(header('quality')).toEqual({ title: 'Quality per run', subject: 'GPT-5 high · runs' });
+  });
+
+  it('draws the GnollBench logo on the charts and in every image until it is turned off', async () => {
+    await create();
+    await vi.waitFor(() => {
+      if (!figure('quality')) throw new Error('No figure.');
+      const options = (ws as unknown as { chartOptions(theme: unknown, reduced: boolean, key: CcFigureKey): CcChartOptions })
+        .chartOptions(null, true, 'quality');
+      if (!options.logo) throw new Error('No logo yet.');
+    });
+    openSideTab('download');
+    const box = q<HTMLInputElement>('#cc-tl-show-logo')!;
+    expect(box.checked).toBe(true);
+    expect(textOf(q('#cc-tl-show-logo-hint'))).toBe('On the charts and in every image.');
+
+    clickOn('#cc-tl-show-logo');
+    const options = (ws as unknown as { chartOptions(theme: unknown, reduced: boolean, key: CcFigureKey): CcChartOptions })
+      .chartOptions(null, true, 'quality');
+    expect(options.logo).toBeNull();
+    expect(storedLayout()['logo']).toBe(false);
+    const snapshot = (ws as unknown as { exportSnapshot(): { logo: unknown; subject: string | null } }).exportSnapshot();
+    expect(snapshot.logo).toBeNull();
+    expect(snapshot.subject).toBe('GPT-5 high · runs');
+  });
+
+  it('hides the HTML figure title visually, since the chart draws it', async () => {
+    await create();
+    const title = q('.cc-tl-tile[data-figure="quality"] .cc-figure-title')!;
+    expect(title.classList).toContain('visually-hidden');
+    expect(textOf(title)).toBe('Quality per run');
+    expect(q('.cc-tl-tile[data-figure="quality"] .cc-figure-takeaway')!.classList).not.toContain('visually-hidden');
+  });
+
+  it('wraps the settings tabs and keeps the event list\'s sticky headings under the measured row', async () => {
+    await create();
+    const row = q('[role="tablist"][aria-label="Settings sections"]')!;
+    expect(row.classList).toContain('gh-tabs-wrap');
+    expect(getComputedStyle(row).flexWrap).toBe('wrap');
+    openSideTab('events');
+    await settle();
+    const measured = Math.ceil(row.getBoundingClientRect().height);
+    expect(ws.tabBarHeight).toBe(measured);
+    expect(q<HTMLElement>('#cc-tl-events')!.style.getPropertyValue('--cc-ev-sticky-top')).toBe(`${measured}px`);
   });
 });

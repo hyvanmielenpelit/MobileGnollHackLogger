@@ -263,7 +263,7 @@
                =================================================================================== -->
           <aside id="mc-fig-sidebar" class="mc-fig-sidebar gh-fig-sidebar" aria-label="Comparison settings"
                  [hidden]="sidebarCollapsed">
-            <div class="gh-tabs gh-tabs-secondary mc-fig-sidebar-tabs gh-fig-sidebar-tabs" role="tablist"
+            <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap mc-fig-sidebar-tabs gh-fig-sidebar-tabs" role="tablist"
                  aria-label="Settings sections">
               @for (tab of visibleSidebarTabs; track tab.id; let i = $index) {
                 <button type="button" role="tab" class="gh-tab"

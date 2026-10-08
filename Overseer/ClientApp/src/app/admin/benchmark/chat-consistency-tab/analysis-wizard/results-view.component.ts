@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 
-import { CcFigure, CcFigureInput, analysisBands, buildCcFigure, prefersReducedMotion } from '../chat-consistency-charts';
+import { CcFigure, CcFigureInput, analysisBands, analysisChartPoints, buildCcFigure, prefersReducedMotion } from '../chat-consistency-charts';
 import { CcEventDay, CcEventGroup, buildEventDays, groupOverseerEvents, servedModelChanges } from '../chat-consistency-events';
 import {
   endpointEstimateText,
@@ -13,6 +13,7 @@ import {
 import {
   CcAnalysisResult,
   CcAttributionResult,
+  CcBatteryTimelinePoint,
   CcEndpointResult,
   CcNextRun,
   CcRunSelectionView,
@@ -40,8 +41,8 @@ export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReas
   { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
 ];
 
-/** The figures the results draw over the analysis's runs. */
-const RESULT_FIGURES = ['quality', 'ttfat', 'rate', 'work', 'cost', 'timeline'] as const;
+/** The figures the results draw over the analysis's units. */
+const RESULT_FIGURES = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'timeline'] as const;
 
 /** The notes of one verdict table row: legacy data and proxy, common grader, pooling, sample. */
 export function endpointNotes(endpoint: CcEndpointResult): string[] {
@@ -76,6 +77,8 @@ export class CcResultsViewComponent implements OnChanges {
   @Input({ required: true }) result!: CcAnalysisResult;
   /** The subject's timeline points; the charts keep the analysis's runs. */
   @Input() points: readonly CcTimelinePoint[] = [];
+  /** The timeline's battery points; a battery analysis's charts keep its battery runs. */
+  @Input() batteryPoints: readonly CcBatteryTimelinePoint[] = [];
   /** The timeline's composite events, whose E numbers the results reuse. */
   @Input() eventNumbering: readonly CcEventGroup[] = [];
 
@@ -89,12 +92,12 @@ export class CcResultsViewComponent implements OnChanges {
   eventDays: CcEventDay[] = [];
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['result'] || changes['points'] || changes['eventNumbering']) {
-      const ids = new Set([...this.result.baseline.runIds, ...this.result.comparison.runIds]);
-      const points = this.points.filter(point => ids.has(point.runId));
-      // The analyzed runs are drawn; every timeline point serves the events' harness lookup.
+    if (changes['result'] || changes['points'] || changes['batteryPoints'] || changes['eventNumbering']) {
+      const { points, unitKind } = analysisChartPoints(this.result, this.points, this.batteryPoints);
+      // The analyzed units are drawn; every timeline point serves the events' harness lookup.
       const input: CcFigureInput = {
         points,
+        unitKind,
         events: this.result.events,
         annotations: this.result.annotations,
         bands: analysisBands(this.result.baseline, this.result.comparison),

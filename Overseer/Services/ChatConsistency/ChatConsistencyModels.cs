@@ -856,7 +856,7 @@ public sealed record ChatConsistencyCommonGraderPoint
 }
 
 /// <summary>One run on the timeline.</summary>
-public sealed record ChatConsistencyTimelinePoint
+public record ChatConsistencyTimelinePoint
 {
     public long RunId { get; init; }
     public DateTime StartedAtUtc { get; init; }
@@ -867,7 +867,7 @@ public sealed record ChatConsistencyTimelinePoint
     public bool IsLegacy { get; init; }
     public bool IsAnchor { get; init; }
 
-    /// <summary>The published, difficulty-weighted index.</summary>
+    /// <summary>The published, difficulty-weighted index; null on a battery point.</summary>
     public int? QualityIndex { get; init; }
 
     /// <summary>The equal-weight mean of the native per-answer scores.</summary>
@@ -884,7 +884,7 @@ public sealed record ChatConsistencyTimelinePoint
     /// <summary>Median model time per answer; the legacy latency proxy.</summary>
     public double? MedianModelTimeMs { get; init; }
 
-    /// <summary>"telemetry" or "legacy proxy".</summary>
+    /// <summary>"telemetry" or "legacy proxy"; on a battery point whose members differ, "mixed".</summary>
     public string LatencyLabel { get; init; } = string.Empty;
     public double? OutputTokensPerAnswer { get; init; }
     public double? ToolCallsPerAnswer { get; init; }
@@ -901,6 +901,54 @@ public sealed record ChatConsistencyTimelinePoint
     public int MaxParallelQuestions { get; init; }
 }
 
+/// <summary>
+/// One battery run on the timeline. <see cref="ChatConsistencyTimelinePoint.RunId"/> holds the battery
+/// run id, the unit id of a battery set. The measures are pooled over the answers of the usable members on
+/// the subject's axis; <see cref="ChatConsistencyTimelinePoint.SuiteName"/> is the battery label,
+/// <see cref="ChatConsistencyTimelinePoint.SuiteId"/> and <see cref="ChatConsistencyTimelinePoint.QualityIndex"/>
+/// are null, and the battery's quality is <see cref="OverallIndex"/>.
+/// </summary>
+public sealed record ChatConsistencyBatteryTimelinePoint : ChatConsistencyTimelinePoint
+{
+    public ChatConsistencyBatteryTimelinePoint()
+    {
+    }
+
+    /// <summary>A battery point carrying every field of <paramref name="measures"/>.</summary>
+    public ChatConsistencyBatteryTimelinePoint(ChatConsistencyTimelinePoint measures)
+        : base(measures)
+    {
+    }
+
+    /// <summary><c>battery:</c> plus the battery run's definition hash.</summary>
+    public string SetKey { get; init; } = string.Empty;
+    public string BatteryName { get; init; } = string.Empty;
+
+    /// <summary>The definition snapshot's revision; null when it cannot be read.</summary>
+    public int? DefinitionRevision { get; init; }
+    public DateTime? CompletedAtUtc { get; init; }
+    public BenchmarkRunSeriesStatus BatteryStatus { get; init; }
+    public int SuiteCount { get; init; }
+
+    /// <summary>Every suite slot holds a usable member on the subject's axis.</summary>
+    public bool Complete { get; init; }
+
+    /// <summary>For example "1 of 2 suites usable"; null when complete.</summary>
+    public string? IncompleteReason { get; init; }
+
+    /// <summary>The usable members' run ids on the subject's axis, distinct, in suite order.</summary>
+    public List<long> MemberRunIds { get; init; } = new();
+
+    /// <summary>
+    /// The Overall Index of the battery run's latest stored battery analysis, when the battery run is
+    /// complete and the analysis is current over <see cref="MemberRunIds"/>; null otherwise.
+    /// </summary>
+    public double? OverallIndex { get; init; }
+
+    /// <summary>Why <see cref="OverallIndex"/> is null; null when it is set.</summary>
+    public string? OverallIndexNote { get; init; }
+}
+
 /// <summary>The subject's timeline over a range.</summary>
 public sealed record ChatConsistencyTimeline
 {
@@ -908,6 +956,12 @@ public sealed record ChatConsistencyTimeline
     public DateTime? FromUtc { get; init; }
     public DateTime? ToUtc { get; init; }
     public IReadOnlyList<ChatConsistencyTimelinePoint> Points { get; init; } = Array.Empty<ChatConsistencyTimelinePoint>();
+
+    /// <summary>
+    /// One point per battery run started between the bounds with a non-superseded member on the subject's
+    /// axis, of every battery definition, ordered by start, then id.
+    /// </summary>
+    public List<ChatConsistencyBatteryTimelinePoint> BatteryPoints { get; init; } = new();
     public IReadOnlyList<ChatConsistencyEventView> Events { get; init; } = Array.Empty<ChatConsistencyEventView>();
     public IReadOnlyList<ChatConsistencyAnnotationView> Annotations { get; init; } = Array.Empty<ChatConsistencyAnnotationView>();
     public ChatConsistencyPriceCard PriceCard { get; init; } = new();

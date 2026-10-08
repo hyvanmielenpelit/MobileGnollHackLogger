@@ -163,4 +163,8 @@ Classify the new version from its changelog on `HarnessVersion` and `docs/overse
   `ChatConsistencyEvidenceBuilder`, `ChatConsistencyRegradeService`, `HarnessImpactLedger`;
   `Overseer/Services/Telemetry/`; `Overseer/Controllers/AdminChatConsistencyController.cs`; the client
   in `Overseer/ClientApp/src/app/admin/benchmark/chat-consistency-tab/`.
+- Battery points: the timeline carries `ChatConsistencyTimeline.BatteryPoints`, one per battery run with
+  its usable members pooled over the union of their answers and its quality the stored, current battery
+  analysis's Overall Index (none without one); with a battery compared, step 2 and the Results and
+  report charts draw them instead of the member runs.
 - Planning the runs: `server_benchmark_runbook` § *Checkpoint and control runs for chat consistency*.

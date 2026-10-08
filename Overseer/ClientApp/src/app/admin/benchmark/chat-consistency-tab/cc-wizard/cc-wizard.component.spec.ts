@@ -214,7 +214,25 @@ describe('CcWizardComponent', () => {
 
     tab(2).click();
     fixture.detectChanges();
-    expect(wizard.timelineWorkspace!.notAnalyzed).toBe(wizard.notAnalyzed);
+    const workspace = wizard.timelineWorkspace!;
+    expect(workspace.notAnalyzed).toBe(wizard.notAnalyzed);
+    // The timeline plots the set's battery runs, keyed by battery run id.
+    expect(workspace.unitKind).toBe('batteryRun');
+    expect(workspace.setKey).toBe(CC_BATTERY_SET_KEY);
+    expect(workspace.batteryRows.map(row => row.batteryRunId)).toEqual([12, 11]);
+    expect([...workspace.notAnalyzedUnits!]).toEqual([[11, 'leftOut']]);
+    expect(workspace.subjectLabel).toBe('GPT-5 high · Two initial suites (revision 1)');
+  });
+
+  it('hands a run-by-run timeline its runs and the model as the subject', () => {
+    chooseModel();
+    tab(2).click();
+    fixture.detectChanges();
+    const workspace = wizard.timelineWorkspace!;
+    expect(workspace.unitKind).toBe('run');
+    expect(workspace.setKey).toBeNull();
+    expect(workspace.notAnalyzedUnits!.size).toBe(0);
+    expect(workspace.subjectLabel).toBe('GPT-5 high');
   });
 
   it('asks for another compared set from step 1', () => {

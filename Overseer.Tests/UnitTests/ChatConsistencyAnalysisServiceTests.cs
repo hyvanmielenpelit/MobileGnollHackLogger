@@ -20,7 +20,8 @@ using Xunit;
 /// The chat consistency analysis over an in-memory database: one subject in two periods with call
 /// telemetry and a control subject. Covers persistence, determinism, the headline, a quality drop, an
 /// Overseer event, the minimum-sample and legacy caps, the re-grade's refusals and job, and the delete guard;
-/// and battery and suite comparison sets, in the analysis and in the evidence the builder loads for them.
+/// and battery and suite comparison sets, in the analysis, in the evidence the builder loads for them and
+/// in the timeline's battery points.
 /// No network: the re-grade runs a fake calibration runner.
 /// </summary>
 public class ChatConsistencyAnalysisServiceTests
@@ -1080,6 +1081,230 @@ public class ChatConsistencyAnalysisServiceTests
         await Refused(
             Request(key) with { ComparisonSet = CoreSuiteSet(), BaselineBatteryRunIds = new long[] { 101 } },
             "Battery run ids need a battery comparison set.");
+    }
+
+    // --- Battery and suite sets: the timeline ----------------------------------------------------
+
+    private static Task<ChatConsistencyTimeline> Timeline(ApplicationDbContext db, string key, DateTime? fromUtc = null, DateTime? toUtc = null)
+        => new ChatConsistencyEvidenceBuilder(db).GetTimelineAsync(key, fromUtc, toUtc, TestContext.Current.CancellationToken);
+
+    /// <summary>A stored, complete battery analysis of <paramref name="batteryRunId"/> over <paramref name="memberRunIds"/>.</summary>
+    private static BenchmarkBatteryAnalysis BatteryAnalysis(long id, long batteryRunId, DateTime computedAtUtc, double overallIndex, params long[] memberRunIds) => new()
+    {
+        Id = id,
+        BenchmarkBatteryRunId = batteryRunId,
+        ComputedAtUtc = computedAtUtc,
+        MemberRunIdsJson = JsonSerializer.Serialize(memberRunIds),
+        ResultJson = JsonSerializer.Serialize(new BenchmarkBatteryStatisticsResult
+        {
+            Complete = true,
+            OverallIndex = new BenchmarkBatteryOverallIndex { PointEstimate = overallIndex }
+        }),
+        DefinitionSha256 = TwoSuites().DefinitionSha256,
+        Complete = true
+    };
+
+    /// <summary>A calibration of <paramref name="runId"/> by assessor snapshot <paramref name="snapshotId"/>, one verdict per quality.</summary>
+    private static BenchmarkAssessorCalibration Calibration(long id, long runId, long snapshotId, DateTime createdAtUtc, params double[] qualities) => new()
+    {
+        Id = id,
+        BenchmarkRunId = runId,
+        AssessorModelSnapshotId = snapshotId,
+        CreatedAtUtc = createdAtUtc,
+        AnswerCount = qualities.Length,
+        VerdictsJson = JsonSerializer.Serialize(qualities.Select((q, i) => new { orderIndex = i, calibrationQualityScore = q }))
+    };
+
+    [Fact]
+    public async Task ATimelineBatteryPointPoolsTheAnswersOfItsMembers()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        // Run #21 reaches its first answer text 5 s later from its seventh question on, and its last answer was never delivered.
+        var second = db.BenchmarkRuns.Local.Single(r => r.Id == 21);
+        foreach (var answer in second.Answers.Where(a => a.OrderIndex >= 6))
+        {
+            foreach (var call in answer.ModelCalls) call.FirstOutputMs += 5000;
+        }
+
+        second.Answers.Single(a => a.OrderIndex == QuestionCount - 1).Status = BenchmarkAnswerStatus.ProviderError;
+        db.SaveChanges();
+
+        var timeline = await Timeline(db, key);
+
+        Assert.Equal(new long[] { 101, 102, 103, 104 }, timeline.BatteryPoints.Select(p => p.RunId));
+        var point = timeline.BatteryPoints[0];
+        Assert.Equal(new long[] { 1, 21 }, point.MemberRunIds);
+        Assert.Equal(BaselineDay1.AddMinutes(-1), point.StartedAtUtc);
+        Assert.Equal(BaselineDay1.AddMinutes(-1).AddDays(1), point.CompletedAtUtc);
+        Assert.Equal(BatteryKey(TwoSuites()), point.SetKey);
+        Assert.Equal(BatteryName, point.BatteryName);
+        Assert.Equal(BatteryName + " (revision 1)", point.SuiteName);
+        Assert.Equal(1, point.DefinitionRevision);
+        Assert.Equal(2, point.SuiteCount);
+        Assert.True(point.Complete);
+        Assert.Null(point.IncompleteReason);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, point.BatteryStatus);
+        Assert.Equal(BenchmarkRunStatus.Completed, point.Status);
+        Assert.Null(point.SuiteId);
+        Assert.Null(point.QualityIndex);
+        Assert.False(point.IsLegacy);
+        Assert.Equal("telemetry", point.LatencyLabel);
+
+        // Every answer counts; the measures of speed and work read the 47 delivered ones together.
+        Assert.Equal(2 * QuestionCount, point.AnswerCount);
+        Assert.Equal(1.0 / (2 * QuestionCount), point.TerminalFailureRate!.Value, 9);
+        var members = new[] { db.BenchmarkRuns.Local.Single(r => r.Id == 1), second };
+        var delivered = members.SelectMany(r => r.Answers).Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
+        Assert.Equal(2 * QuestionCount - 1, delivered.Count);
+        Assert.Equal(delivered.Average(a => (double)a.OutputTokens!.Value), point.OutputTokensPerAnswer!.Value, 9);
+
+        // The pooled median is the 24th of the 47 answers, not the mean of the members' medians.
+        var runOne = timeline.Points.Single(p => p.RunId == 1);
+        var runTwentyOne = timeline.Points.Single(p => p.RunId == 21);
+        Assert.Equal(872.5, runOne.MedianTimeToFirstAnswerTextMs);
+        Assert.Equal(5870.0, runTwentyOne.MedianTimeToFirstAnswerTextMs);
+        Assert.Equal(900.0, point.MedianTimeToFirstAnswerTextMs);
+        Assert.NotEqual((872.5 + 5870.0) / 2, point.MedianTimeToFirstAnswerTextMs!.Value);
+        Assert.Equal(runOne.AnswerCount + runTwentyOne.AnswerCount, point.AnswerCount);
+
+        var json = JsonNode.Parse(JsonSerializer.Serialize(timeline, ChatConsistencyJson.Options))!;
+        var node = json["batteryPoints"]![0]!;
+        Assert.Equal(101L, node["runId"]!.GetValue<long>());
+        Assert.Equal("completed", node["batteryStatus"]!.GetValue<string>());
+        Assert.Equal("completed", node["status"]!.GetValue<string>());
+        Assert.Equal(BatteryKey(TwoSuites()), node["setKey"]!.GetValue<string>());
+        Assert.Equal(900.0, node["medianTimeToFirstAnswerTextMs"]!.GetValue<double>());
+        Assert.Equal("[1,21]", node["memberRunIds"]!.ToJsonString());
+
+        // With the dates ending before run #21 started, the battery point still pools both members.
+        var early = await Timeline(db, key, null, BaselineDay1.AddHours(1));
+        Assert.Equal(new long[] { 1 }, early.Points.Select(p => p.RunId));
+        var earlyPoint = Assert.Single(early.BatteryPoints);
+        Assert.Equal(101L, earlyPoint.RunId);
+        Assert.Equal(new long[] { 1, 21 }, earlyPoint.MemberRunIds);
+        Assert.Equal(2 * QuestionCount, earlyPoint.AnswerCount);
+        Assert.Equal(900.0, earlyPoint.MedianTimeToFirstAnswerTextMs);
+    }
+
+    [Fact]
+    public async Task ATimelineBatteryPointTakesTheOverallIndexOfItsLatestCurrentAnalysis()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+        db.BenchmarkBatteryAnalyses.AddRange(
+            BatteryAnalysis(1, 101, ComparisonDay2, 70.0, 1, 21),
+            BatteryAnalysis(2, 101, ComparisonDay2.AddHours(1), 83.5, 21, 1),
+            BatteryAnalysis(3, 103, ComparisonDay2, 80.0, 3, 99));
+        db.SaveChanges();
+
+        var timeline = await Timeline(db, key);
+
+        Assert.Equal(new long[] { 101, 102, 103, 104 }, timeline.BatteryPoints.Select(p => p.RunId));
+        var current = timeline.BatteryPoints[0];
+        Assert.Equal(83.5, current.OverallIndex);
+        Assert.Null(current.OverallIndexNote);
+
+        var none = timeline.BatteryPoints[1];
+        Assert.Null(none.OverallIndex);
+        Assert.Equal("No battery analysis. Compute it from the battery report.", none.OverallIndexNote);
+
+        var stale = timeline.BatteryPoints[2];
+        Assert.Null(stale.OverallIndex);
+        Assert.Equal("The battery analysis was computed over other member runs. Recompute it from the battery report.", stale.OverallIndexNote);
+    }
+
+    [Fact]
+    public async Task ATimelineHasABatteryPointForEveryBatteryRunOfTheModelAndAnIncompleteOneHasNoOverallIndex()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db, extras: true);
+
+        var timeline = await Timeline(db, key);
+
+        Assert.Equal(new long[] { 101, 102, 107, 105, 106, 103, 104 }, timeline.BatteryPoints.Select(p => p.RunId));
+
+        var incomplete = timeline.BatteryPoints.Single(p => p.RunId == 105);
+        Assert.False(incomplete.Complete);
+        Assert.Equal("1 of 2 suites usable", incomplete.IncompleteReason);
+        Assert.Equal(new long[] { 5 }, incomplete.MemberRunIds);
+        Assert.Equal(QuestionCount, incomplete.AnswerCount);
+        Assert.Null(incomplete.OverallIndex);
+        Assert.Equal("The battery run is incomplete (1 of 2 suites usable), so it has no Overall Index.", incomplete.OverallIndexNote);
+
+        // Another definition has its own set key; a battery run sharing a run with another lists it too.
+        var other = timeline.BatteryPoints.Single(p => p.RunId == 106);
+        Assert.Equal(BatteryKey(TwoSuites() with { Scheme = BenchmarkBatteryWeightingScheme.ItemCount }), other.SetKey);
+        Assert.NotEqual(BatteryKey(TwoSuites()), other.SetKey);
+        Assert.True(other.Complete);
+        Assert.Equal(new long[] { 6, 26 }, other.MemberRunIds);
+        Assert.Equal(new long[] { 2, 27 }, timeline.BatteryPoints.Single(p => p.RunId == 107).MemberRunIds);
+    }
+
+    [Fact]
+    public async Task ATimelineBatteryPointWeighsCommonGraderQualityByItemsAndOmitsASnapshotAMemberLacks()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+        db.BenchmarkAssessorCalibrations.AddRange(
+            Calibration(1, 1, 900, ComparisonDay2, 80, 80, 80),
+            Calibration(2, 21, 900, ComparisonDay2.AddHours(1), 40),
+            Calibration(3, 1, 901, ComparisonDay2, 90));
+        db.SaveChanges();
+
+        var timeline = await Timeline(db, key);
+
+        // (3 · 80 + 1 · 40) / 4, not the mean of the members' means (60); snapshot 901 graded run #1 alone.
+        var grader = Assert.Single(timeline.BatteryPoints.Single(p => p.RunId == 101).CommonGraderQuality);
+        Assert.Equal(900L, grader.SnapshotId);
+        Assert.Equal(70.0, grader.MeanQuality, 9);
+        Assert.Equal(4, grader.ItemCount);
+        Assert.Equal(2L, grader.CalibrationId);
+        Assert.Equal(ComparisonDay2.AddHours(1), grader.CalibratedAtUtc);
+        Assert.Empty(timeline.BatteryPoints.Single(p => p.RunId == 102).CommonGraderQuality);
+
+        // The run points keep each run's own figures.
+        var runOne = timeline.Points.Single(p => p.RunId == 1);
+        Assert.Equal(new long[] { 900, 901 }, runOne.CommonGraderQuality.Select(g => g.SnapshotId));
+        Assert.Equal(80.0, runOne.CommonGraderQuality[0].MeanQuality, 9);
+        Assert.Equal(3, runOne.CommonGraderQuality[0].ItemCount);
+    }
+
+    [Fact]
+    public async Task ATimelineRunPointMeasuresOneRunAndAModelWithoutBatteryRunsHasNoBatteryPoints()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario());
+
+        var timeline = await Timeline(db, key);
+
+        Assert.Equal(new long[] { 1, 2, 3, 4 }, timeline.Points.Select(p => p.RunId));
+        Assert.Empty(timeline.BatteryPoints);
+        var point = timeline.Points[0];
+        Assert.Equal(BaselineDay1, point.StartedAtUtc);
+        Assert.Equal("Core Suite", point.SuiteName);
+        Assert.Equal(7L, point.SuiteId);
+        Assert.Equal(BenchmarkRunStatus.Completed, point.Status);
+        Assert.Equal(HarnessImpactLedger.CurrentVersion, point.HarnessVersion);
+        Assert.False(point.IsLegacy);
+        Assert.Equal("telemetry", point.LatencyLabel);
+        Assert.Equal(QuestionCount, point.AnswerCount);
+        Assert.Equal(872.5, point.MedianTimeToFirstAnswerTextMs);
+        Assert.Equal(525.0, point.OutputTokensPerAnswer!.Value, 9);
+        Assert.Equal(2.0, point.ToolCallsPerAnswer);
+        Assert.Equal(0.0, point.RefusalRate);
+        var served = Assert.Single(point.ServedModelIds);
+        Assert.Equal("gpt-test-2026-09-01", served.ModelId);
+        Assert.Equal(QuestionCount, served.CallCount);
+
+        using var legacyDb = NewDb();
+        string legacyKey = Seed(legacyDb, new Scenario { Legacy = true });
+        var legacy = (await Timeline(legacyDb, legacyKey)).Points[0];
+        Assert.True(legacy.IsLegacy);
+        Assert.Equal("legacy proxy", legacy.LatencyLabel);
+        Assert.Null(legacy.RefusalRate);
+        Assert.Null(legacy.MedianTimeToFirstAnswerTextMs);
     }
 
     // --- Re-grade --------------------------------------------------------------------------------

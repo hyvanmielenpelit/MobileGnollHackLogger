@@ -887,6 +887,24 @@ public class ChatConsistencyEvidenceBuilder
         return (states, memberRuns);
     }
 
+    /// <summary><paramref name="query"/> narrowed to the battery runs started between the bounds (inclusive, either may be null).</summary>
+    private static IQueryable<BenchmarkBatteryRun> StartedBetween(IQueryable<BenchmarkBatteryRun> query, DateTime? fromUtc, DateTime? toUtc)
+    {
+        if (fromUtc.HasValue)
+        {
+            DateTime from = fromUtc.Value;
+            query = query.Where(b => b.StartedAtUtc >= from);
+        }
+
+        if (toUtc.HasValue)
+        {
+            DateTime to = toUtc.Value;
+            query = query.Where(b => b.StartedAtUtc <= to);
+        }
+
+        return query;
+    }
+
     /// <summary>
     /// <paramref name="row"/> read for <paramref name="modelKey"/>: a member is usable when
     /// <see cref="BenchmarkBatteryPlanner.UnusableReason"/> finds nothing against it and its run is on the
@@ -1273,20 +1291,36 @@ public class ChatConsistencyEvidenceBuilder
             .ToList();
     }
 
-    /// <summary>One point per usable run of the subject between the bounds (inclusive, either may be null), with the subject's events and annotations.</summary>
+    /// <summary>
+    /// One point per usable run of the subject between the bounds (inclusive, either may be null), and one
+    /// per battery run of any definition started between them with a non-superseded member on the subject's
+    /// axis, with the subject's events and annotations.
+    /// </summary>
     public async Task<ChatConsistencyTimeline> GetTimelineAsync(string modelKey, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelKey);
         var runs = await LoadSubjectRunsAsync(modelKey, fromUtc, toUtc, includeTelemetry: true, ct);
         var latest = runs.LastOrDefault();
         var subject = ChatConsistencyMeasures.SubjectOf(modelKey, latest);
-        var calibrations = await LoadCalibrationsAsync(runs.Select(r => r.Id).ToList(), ct);
+
+        // The battery runs' members come from the runs in the dates, and any member started after them.
+        var (batteryStates, memberHeaders) = await LoadBatteryStatesAsync(modelKey, q => StartedBetween(q, fromUtc, toUtc), ct);
+        batteryStates = batteryStates.Where(s => s.OnAxis).ToList();
+        var loaded = runs.Select(r => r.Id).ToHashSet();
+        var later = await LoadFullAsync(
+            batteryStates.SelectMany(s => s.MemberRunIds).Where(id => !loaded.Contains(id)).Distinct().ToList(), includeTelemetry: true, ct);
+        var runById = runs.Concat(later).ToDictionary(r => r.Id);
+        var calibrations = await LoadCalibrationsAsync(runById.Keys.ToList(), ct);
 
         var (priceCard, pricing) = latest == null
             ? (new ChatConsistencyPriceCard { Available = false, Source = "none" }, (ModelPricing?)null)
             : await ResolvePriceCardAsync(latest);
 
         var points = runs.Select(run => TimelinePoint(run, calibrations.Where(c => c.BenchmarkRunId == run.Id).ToList(), pricing)).ToList();
+        var overallIndexes = await BatteryOverallIndexesAsync(batteryStates, ct);
+        var batteryPoints = batteryStates
+            .Select(s => BatteryTimelinePoint(s, modelKey, runById, memberHeaders, calibrations, pricing, overallIndexes[s.Row.Id]))
+            .ToList();
 
         var events = runs.Count == 0
             ? new List<ChatConsistencyEventView>()
@@ -1311,6 +1345,7 @@ public class ChatConsistencyEvidenceBuilder
             FromUtc = fromUtc,
             ToUtc = toUtc,
             Points = points,
+            BatteryPoints = batteryPoints,
             Events = events,
             Annotations = annotations,
             PriceCard = priceCard
@@ -1337,22 +1372,7 @@ public class ChatConsistencyEvidenceBuilder
         string modelKey, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelKey);
-        var (states, _) = await LoadBatteryStatesAsync(modelKey, q =>
-        {
-            if (fromUtc.HasValue)
-            {
-                DateTime from = fromUtc.Value;
-                q = q.Where(b => b.StartedAtUtc >= from);
-            }
-
-            if (toUtc.HasValue)
-            {
-                DateTime to = toUtc.Value;
-                q = q.Where(b => b.StartedAtUtc <= to);
-            }
-
-            return q;
-        }, ct);
+        var (states, _) = await LoadBatteryStatesAsync(modelKey, q => StartedBetween(q, fromUtc, toUtc), ct);
         states = states.Where(s => s.OnAxis).ToList();
         if (states.Count == 0) return Array.Empty<ChatConsistencyBatteryRunRow>();
 
@@ -1488,6 +1508,116 @@ public class ChatConsistencyEvidenceBuilder
             Members = members,
             Eligibility = eligibility
         };
+    }
+
+    private const string NoBatteryAnalysisNote = "No battery analysis. Compute it from the battery report.";
+    private const string StaleBatteryAnalysisNote = "The battery analysis was computed over other member runs. Recompute it from the battery report.";
+    private const string NoOverallIndexNote = "The stored battery analysis has no Overall Index. Recompute it from the battery report.";
+
+    /// <summary>
+    /// The timeline point of <paramref name="state"/>: the measures pooled over its usable members' answers
+    /// (<see cref="PooledPoint"/>), identified by the battery run and labeled with the battery's name and
+    /// revision. Without a usable member, the status is the newest on-axis member's.
+    /// </summary>
+    private static ChatConsistencyBatteryTimelinePoint BatteryTimelinePoint(
+        BatteryRunState state,
+        string modelKey,
+        IReadOnlyDictionary<long, BenchmarkRun> runById,
+        IReadOnlyDictionary<long, BenchmarkRun> memberHeaders,
+        IReadOnlyList<BenchmarkAssessorCalibration> calibrations,
+        ModelPricing? pricing,
+        (double? Index, string? Note) overall)
+    {
+        var row = state.Row;
+        var memberIds = state.MemberRunIds.ToList();
+        var members = memberIds.Where(runById.ContainsKey).Select(id => runById[id]).ToList();
+        var memberSet = memberIds.ToHashSet();
+        var pooled = PooledPoint(members, calibrations.Where(c => memberSet.Contains(c.BenchmarkRunId)).ToList(), pricing);
+
+        var status = pooled.Status;
+        if (members.Count == 0)
+        {
+            var newestOnAxis = (row.Members ?? new List<BenchmarkBatteryRunMember>())
+                .Where(m => !m.Superseded && memberHeaders.ContainsKey(m.BenchmarkRunId))
+                .Select(m => memberHeaders[m.BenchmarkRunId])
+                .Where(r => ChatConsistencyComparability.ModelAxisKey(r) == modelKey)
+                .OrderBy(r => r.StartedAtUtc)
+                .ThenBy(r => r.Id)
+                .LastOrDefault();
+            if (newestOnAxis != null) status = newestOnAxis.Status;
+        }
+
+        int revision = state.Definition?.Revision ?? 0;
+        return new ChatConsistencyBatteryTimelinePoint(pooled)
+        {
+            RunId = row.Id,
+            StartedAtUtc = ChatConsistencyMeasures.AsUtc(row.StartedAtUtc),
+            SuiteName = BatteryLabel(row.BatteryName, new[] { revision }),
+            SuiteId = null,
+            Status = status,
+            QualityIndex = null,
+            IsAnchor = false,
+            SetKey = ChatConsistencyComparisonSetKinds.BatteryKeyPrefix + row.DefinitionSha256,
+            BatteryName = row.BatteryName,
+            DefinitionRevision = state.Definition?.Revision,
+            CompletedAtUtc = row.CompletedAtUtc.HasValue ? ChatConsistencyMeasures.AsUtc(row.CompletedAtUtc.Value) : null,
+            BatteryStatus = row.Status,
+            SuiteCount = state.Definition?.Suites.Count ?? 0,
+            Complete = state.Complete,
+            IncompleteReason = state.IncompleteReason,
+            MemberRunIds = memberIds,
+            OverallIndex = overall.Index,
+            OverallIndexNote = overall.Note
+        };
+    }
+
+    /// <summary>
+    /// Each battery run's Overall Index, or why it has none. A complete battery run reads its latest stored
+    /// battery analysis, by computation time, then id (<see cref="BenchmarkBatteryAnalysisService.GetLatestAsync"/>),
+    /// when that analysis is current over the usable members on the axis and complete; an incomplete battery
+    /// run has none. Two queries for all the battery runs.
+    /// </summary>
+    private async Task<Dictionary<long, (double? Index, string? Note)>> BatteryOverallIndexesAsync(
+        IReadOnlyList<BatteryRunState> states, CancellationToken ct)
+    {
+        var ids = states.Where(s => s.Complete).Select(s => s.Row.Id).Distinct().ToList();
+        var latest = new Dictionary<long, BenchmarkBatteryAnalysis>();
+        if (ids.Count > 0)
+        {
+            var heads = await _db.BenchmarkBatteryAnalyses.AsNoTracking()
+                .Where(a => ids.Contains(a.BenchmarkBatteryRunId))
+                .Select(a => new { a.Id, a.BenchmarkBatteryRunId, a.ComputedAtUtc })
+                .ToListAsync(ct);
+            var latestIds = heads
+                .GroupBy(a => a.BenchmarkBatteryRunId)
+                .Select(g => g.OrderByDescending(a => a.ComputedAtUtc).ThenByDescending(a => a.Id).First().Id)
+                .ToList();
+            if (latestIds.Count > 0)
+            {
+                latest = await _db.BenchmarkBatteryAnalyses.AsNoTracking()
+                    .Where(a => latestIds.Contains(a.Id))
+                    .ToDictionaryAsync(a => a.BenchmarkBatteryRunId, ct);
+            }
+        }
+
+        var result = new Dictionary<long, (double? Index, string? Note)>();
+        foreach (var state in states)
+        {
+            result[state.Row.Id] = OverallIndexOf(state, latest.GetValueOrDefault(state.Row.Id));
+        }
+
+        return result;
+    }
+
+    /// <summary>The Overall Index of <paramref name="state"/> from <paramref name="analysis"/>, its latest stored analysis, or why there is none.</summary>
+    private static (double? Index, string? Note) OverallIndexOf(BatteryRunState state, BenchmarkBatteryAnalysis? analysis)
+    {
+        if (!state.Complete) return (null, "The battery run is incomplete (" + state.IncompleteReason + "), so it has no Overall Index.");
+        if (analysis == null) return (null, NoBatteryAnalysisNote);
+        if (BenchmarkBatteryAnalysisService.IsStale(state.MemberRunIds.ToList(), analysis)) return (null, StaleBatteryAnalysisNote);
+
+        var overall = analysis.Complete ? BenchmarkBatteryAnalysisService.DeserializeResult(analysis)?.OverallIndex : null;
+        return overall == null ? (null, NoOverallIndexNote) : (overall.PointEstimate, null);
     }
 
     /// <summary>
@@ -1690,21 +1820,101 @@ public class ChatConsistencyEvidenceBuilder
     private static List<BenchmarkRun> Ordered(IEnumerable<BenchmarkRun> runs)
         => runs.OrderBy(r => r.StartedAtUtc).ThenBy(r => r.Id).ToList();
 
+    /// <summary>The timeline point of one run.</summary>
     private static ChatConsistencyTimelinePoint TimelinePoint(BenchmarkRun run, List<BenchmarkAssessorCalibration> calibrations, ModelPricing? pricing)
+        => PooledPoint(new[] { run }, calibrations, pricing) with
+        {
+            RunId = run.Id,
+            StartedAtUtc = ChatConsistencyMeasures.AsUtc(run.StartedAtUtc),
+            SuiteName = run.SuiteName ?? string.Empty,
+            SuiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId,
+            IsAnchor = run.IsConsistencyAnchor,
+            QualityIndex = run.QualityIndex
+        };
+
+    /// <summary>
+    /// The measures of <paramref name="runs"/> pooled over the union of their answers: medians, means and
+    /// rates over every member's answers together, each answer costed with its own run, and the refusal rate
+    /// over the answers of the members with call telemetry. Legacy only when every member is; the latency
+    /// label <c>mixed</c> when members differ. Common-grader quality only for a snapshot calibrated on every
+    /// member: the item-weighted mean of the members' figures, their item counts summed, the newest
+    /// calibration's id and time. Served models summed per model, strata united, the most parallel questions,
+    /// and the harness version and status of the newest member. The run, start, suite, quality index and
+    /// anchor are left for the caller.
+    /// </summary>
+    private static ChatConsistencyTimelinePoint PooledPoint(
+        IReadOnlyList<BenchmarkRun> runs, IReadOnlyList<BenchmarkAssessorCalibration> calibrations, ModelPricing? pricing)
     {
-        var answers = run.Answers;
+        var pairs = runs.SelectMany(r => r.Answers.Select(a => (Run: r, Answer: a))).ToList();
+        var answers = pairs.Select(p => p.Answer).ToList();
         var delivered = answers.Where(ChatConsistencyMeasures.IsDelivered).ToList();
-        bool legacy = !run.CallTelemetryVersion.HasValue;
-        var timings = ChatConsistencyMeasures.AnswerTimings(run);
+        int legacyRuns = runs.Count(r => !r.CallTelemetryVersion.HasValue);
+        bool legacy = runs.Count > 0 && legacyRuns == runs.Count;
+        var telemetryAnswers = pairs.Where(p => p.Run.CallTelemetryVersion.HasValue).Select(p => p.Answer).ToList();
+        var timings = runs.SelectMany(r => ChatConsistencyMeasures.AnswerTimings(r).Values).ToList();
+        var newest = runs.OrderBy(r => r.StartedAtUtc).ThenBy(r => r.Id).LastOrDefault();
 
         var native = answers.Select(ChatConsistencyMeasures.NativeQuality).Where(q => q.HasValue).Select(q => q!.Value).ToList();
         var ttfat = delivered.Select(CallTelemetryMeasures.TimeToFirstAnswerTextMs).Where(v => v.HasValue).Select(v => (double)v!.Value).ToList();
         var rates = delivered.Select(CallTelemetryMeasures.AnswerStreamingRate).Where(v => v.HasValue).Select(v => v!.Value).ToList();
         var modelTimes = delivered.Select(a => (double)a.ModelTimeMs).ToList();
         var outputs = delivered.Where(a => a.OutputTokens.HasValue).Select(a => (double)a.OutputTokens!.Value).ToList();
-        var costs = answers.Select(a => ChatConsistencyMeasures.AnswerCost(a, run, pricing)).Where(c => c.HasValue).Select(c => (double)c!.Value).ToList();
+        var costs = pairs.Select(p => ChatConsistencyMeasures.AnswerCost(p.Answer, p.Run, pricing)).Where(c => c.HasValue).Select(c => (double)c!.Value).ToList();
 
-        var common = calibrations
+        var perRun = runs.Select(r => CommonGraderPoints(calibrations.Where(c => c.BenchmarkRunId == r.Id))).ToList();
+        var common = perRun.Count == 1
+            ? perRun[0]
+            : perRun.Count == 0
+                ? new List<ChatConsistencyCommonGraderPoint>()
+                : perRun[0]
+                    .Select(p => p.SnapshotId)
+                    .Where(id => perRun.All(points => points.Any(p => p.SnapshotId == id)))
+                    .Select(id => MergedGraderPoint(perRun.Select(points => points.First(p => p.SnapshotId == id)).ToList()))
+                    .ToList();
+
+        var served = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (var count in runs.SelectMany(r => ChatConsistencyMeasures.ServedModels(r)))
+        {
+            served[count.ModelId] = served.TryGetValue(count.ModelId, out int known) ? known + count.CallCount : count.CallCount;
+        }
+
+        static double? Rate(List<BenchmarkRunAnswer> pool, Func<BenchmarkRunAnswer, bool> predicate)
+            => pool.Count == 0 ? null : pool.Count(predicate) / (double)pool.Count;
+
+        return new ChatConsistencyTimelinePoint
+        {
+            HarnessVersion = newest?.HarnessVersion,
+            Status = newest?.Status ?? default,
+            IsLegacy = legacy,
+            NativeMeanQuality = native.Count > 0 ? native.Average() : null,
+            CommonGraderQuality = common,
+            MedianTimeToFirstAnswerTextMs = BenchmarkGroupStatistics.Median(ttfat),
+            MedianStreamingRate = BenchmarkGroupStatistics.Median(rates.Select(r => r.TokensPerSecond).ToList()),
+            StreamingRateEstimated = rates.Any(r => r.Estimated),
+            MedianModelTimeMs = BenchmarkGroupStatistics.Median(modelTimes),
+            LatencyLabel = legacyRuns == 0 ? "telemetry" : legacy ? "legacy proxy" : "mixed",
+            OutputTokensPerAnswer = outputs.Count > 0 ? outputs.Average() : null,
+            ToolCallsPerAnswer = delivered.Count > 0 ? delivered.Average(a => (double)ChatConsistencyMeasures.ToolCalls(a)) : null,
+            CostPerQuestionUsd = costs.Count > 0 ? costs.Average() : null,
+            TerminalFailureRate = Rate(answers, ChatConsistencyMeasures.IsTerminalFailure),
+            TimeoutRate = Rate(answers, ChatConsistencyMeasures.IsTimeout),
+            EmptyAnswerRate = Rate(answers, ChatConsistencyMeasures.IsEmptyAnswer),
+            RefusalRate = legacy ? null : Rate(telemetryAnswers, ChatConsistencyMeasures.IsRefusal),
+            ToolBudgetExhaustedRate = Rate(answers, ChatConsistencyMeasures.IsToolBudgetExhausted),
+            ServedModelIds = served.Select(p => new ChatConsistencyServedModelCount(p.Key, p.Value)).ToList(),
+            Strata = timings.Select(t => t.Stratum).Distinct().OrderBy(s => s).Select(ChatConsistencyStatistics.StratumLabel).ToList(),
+            StrataEstimated = timings.Any(t => t.Estimated),
+            AnswerCount = answers.Count,
+            MaxParallelQuestions = runs.Count > 0 ? runs.Max(r => r.MaxParallelQuestionsUsed) : 0
+        };
+    }
+
+    /// <summary>
+    /// One run's common-grader quality per assessor snapshot, ordered by snapshot: the latest error-free
+    /// calibration's mean verdict quality over the answers it graded; a snapshot without verdicts is left out.
+    /// </summary>
+    private static List<ChatConsistencyCommonGraderPoint> CommonGraderPoints(IEnumerable<BenchmarkAssessorCalibration> calibrations)
+        => calibrations
             .Where(c => c.AssessorModelSnapshotId.HasValue && c.ErrorMessage == null)
             .GroupBy(c => c.AssessorModelSnapshotId!.Value)
             .OrderBy(g => g.Key)
@@ -1728,39 +1938,18 @@ public class ChatConsistencyEvidenceBuilder
             .Select(p => p!)
             .ToList();
 
-        double? Rate(Func<BenchmarkRunAnswer, bool> predicate) => answers.Count == 0 ? null : answers.Count(predicate) / (double)answers.Count;
-
-        return new ChatConsistencyTimelinePoint
+    /// <summary>
+    /// One snapshot's common-grader quality over several members: the mean over all their graded items
+    /// (<c>Σ mean·items / Σ items</c>), the item counts summed, and the newest calibration's id and time.
+    /// </summary>
+    private static ChatConsistencyCommonGraderPoint MergedGraderPoint(IReadOnlyList<ChatConsistencyCommonGraderPoint> parts)
+    {
+        var newest = parts.OrderBy(p => p.CalibratedAtUtc).ThenBy(p => p.CalibrationId).Last();
+        int items = parts.Sum(p => p.ItemCount);
+        return newest with
         {
-            RunId = run.Id,
-            StartedAtUtc = ChatConsistencyMeasures.AsUtc(run.StartedAtUtc),
-            SuiteName = run.SuiteName ?? string.Empty,
-            SuiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId,
-            HarnessVersion = run.HarnessVersion,
-            Status = run.Status,
-            IsLegacy = legacy,
-            IsAnchor = run.IsConsistencyAnchor,
-            QualityIndex = run.QualityIndex,
-            NativeMeanQuality = native.Count > 0 ? native.Average() : null,
-            CommonGraderQuality = common,
-            MedianTimeToFirstAnswerTextMs = BenchmarkGroupStatistics.Median(ttfat),
-            MedianStreamingRate = BenchmarkGroupStatistics.Median(rates.Select(r => r.TokensPerSecond).ToList()),
-            StreamingRateEstimated = rates.Any(r => r.Estimated),
-            MedianModelTimeMs = BenchmarkGroupStatistics.Median(modelTimes),
-            LatencyLabel = legacy ? "legacy proxy" : "telemetry",
-            OutputTokensPerAnswer = outputs.Count > 0 ? outputs.Average() : null,
-            ToolCallsPerAnswer = delivered.Count > 0 ? delivered.Average(a => (double)ChatConsistencyMeasures.ToolCalls(a)) : null,
-            CostPerQuestionUsd = costs.Count > 0 ? costs.Average() : null,
-            TerminalFailureRate = Rate(ChatConsistencyMeasures.IsTerminalFailure),
-            TimeoutRate = Rate(ChatConsistencyMeasures.IsTimeout),
-            EmptyAnswerRate = Rate(ChatConsistencyMeasures.IsEmptyAnswer),
-            RefusalRate = legacy ? null : Rate(ChatConsistencyMeasures.IsRefusal),
-            ToolBudgetExhaustedRate = Rate(ChatConsistencyMeasures.IsToolBudgetExhausted),
-            ServedModelIds = ChatConsistencyMeasures.ServedModels(run),
-            Strata = timings.Values.Select(t => t.Stratum).Distinct().OrderBy(s => s).Select(ChatConsistencyStatistics.StratumLabel).ToList(),
-            StrataEstimated = timings.Values.Any(t => t.Estimated),
-            AnswerCount = answers.Count,
-            MaxParallelQuestions = run.MaxParallelQuestionsUsed
+            MeanQuality = parts.Sum(p => p.MeanQuality * p.ItemCount) / items,
+            ItemCount = items
         };
     }
 

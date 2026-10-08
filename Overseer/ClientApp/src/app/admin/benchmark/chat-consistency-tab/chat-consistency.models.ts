@@ -136,6 +136,30 @@ export interface CcTimelinePoint {
   maxParallelQuestions: number;
 }
 
+/**
+ * One battery run of the subject on the timeline: its usable members pooled into one point. `runId`
+ * is the battery run id; the measures are over the union of the members' answers, and the quality is
+ * `overallIndex`, the battery analysis's Overall Index (`qualityIndex` is always null).
+ */
+export interface CcBatteryTimelinePoint extends CcTimelinePoint {
+  /** `battery:` plus the definition hash. */
+  setKey: string;
+  batteryName: string;
+  definitionRevision: number | null;
+  completedAtUtc: string | null;
+  batteryStatus: CcBatteryRunStatus;
+  suiteCount: number;
+  /** Every suite slot holds a usable member. */
+  complete: boolean;
+  /** For example `1 of 2 suites usable`; null when complete. */
+  incompleteReason: string | null;
+  /** The usable members on the subject's axis, in suite order. */
+  memberRunIds: number[];
+  /** The latest current battery analysis's Overall Index; null with `overallIndexNote` saying why. */
+  overallIndex: CcNumber | null;
+  overallIndexNote: string | null;
+}
+
 export interface CcEvent {
   atUtc: string;
   kind: string;
@@ -176,6 +200,8 @@ export interface CcTimeline {
   fromUtc: string | null;
   toUtc: string | null;
   points: CcTimelinePoint[];
+  /** Every battery run in the dates with a member on the subject's axis, of every battery; by start, then id. */
+  batteryPoints: CcBatteryTimelinePoint[];
   events: CcEvent[];
   annotations: CcAnnotation[];
   priceCard: CcPriceCard;

@@ -11,7 +11,8 @@
   padding: 0.75rem;
   border: 1px solid var(--border-glass);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.15);
+  // The surface the chart palette is validated against (`CC_SCREEN_THEME.surface`).
+  background: #121212;
   font-size: var(--text-body);
   line-height: var(--leading-body);
 
@@ -26,6 +27,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.125rem;
+  margin-block-end: 0.25rem;
 }
 
 .cc-figure-title {

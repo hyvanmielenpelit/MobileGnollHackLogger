@@ -25,11 +25,13 @@ import {
   comparisonSetUnits,
   isBatteryRunRow,
   notAnalyzedSetRuns,
+  notAnalyzedUnits,
   scopeIsDefault,
   scopeKey,
   scopeRuns,
   scopeSpanDays,
   scopedMemberRuns,
+  setUnitKind,
   suiteSetRuns
 } from '../chat-consistency-scope';
 import {
@@ -41,7 +43,8 @@ import {
   CcModelAxis,
   CcOpenDocumentsRequest,
   CcRunRow,
-  CcTimeline
+  CcTimeline,
+  CcUnitKind
 } from '../chat-consistency.models';
 import { CcModelStepComponent } from '../model-step/model-step.component';
 import { CcTimelineWorkspaceComponent } from '../timeline-workspace/timeline-workspace.component';
@@ -242,6 +245,24 @@ export class CcWizardComponent {
     return this.scopeState().notAnalyzed;
   }
 
+  /** In a battery set, the battery runs not in the analysis, keyed by battery run id, with why. */
+  get notAnalyzedUnits(): ReadonlyMap<number, CcRunInclusion> {
+    return this.scopeState().notAnalyzedUnits;
+  }
+
+  /** What step 1 counts, and so what the timeline plots: battery runs in a battery set, runs otherwise. */
+  get unitKind(): CcUnitKind {
+    return setUnitKind(this.compareSet?.key);
+  }
+
+  /** The charts' subject: `Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1)`, the model alone without a set. */
+  get subjectLabel(): string {
+    const axis = this.axis;
+    if (!axis) return '';
+    const set = this.compareSet;
+    return set ? `${axis.displayName} · ${set.label}` : axis.displayName;
+  }
+
   /** The UTC days of the first and last unit in the analysis; null with none. */
   get analysisSpan(): { first: string; last: string } | null {
     return this.scopeState().span;
@@ -264,6 +285,7 @@ export class CcWizardComponent {
     setBatteryRows: readonly CcBatteryRunRow[];
     setRows: readonly CcRunRow[];
     notAnalyzed: ReadonlyMap<number, CcRunInclusion>;
+    notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion>;
     span: { first: string; last: string } | null;
     key: string;
   } | null = null;
@@ -290,6 +312,7 @@ export class CcWizardComponent {
       setBatteryRows: batterySetRuns(this.batteryRows, setKey),
       setRows: suiteSetRuns(this.rows, setKey),
       notAnalyzed: notAnalyzedSetRuns(this.rows, this.batteryRows, setKey, this.scope),
+      notAnalyzedUnits: notAnalyzedUnits(this.batteryRows, setKey, this.scope),
       span: scopeSpanDays(scoped),
       key: scopeKey(this.scope, setKey)
     };

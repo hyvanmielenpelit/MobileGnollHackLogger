@@ -341,6 +341,18 @@ export function notAnalyzedSetRuns(
   return result;
 }
 
+/**
+ * The battery runs of a battery set that the analysis does not use, keyed by battery run id, for a
+ * timeline drawn by battery run: left out, outside the span or incomplete. Empty without a battery set.
+ */
+export function notAnalyzedUnits(
+  batteryRows: readonly CcBatteryRunRow[],
+  setKey: string | null | undefined,
+  scope: CcRunScope
+): ReadonlyMap<number, CcRunInclusion> {
+  return notAnalyzedRuns(batterySetRuns(batteryRows, setKey), scope);
+}
+
 /** The runs the analysis uses: the members of the scoped battery runs in a battery set, else the scoped runs. */
 export function scopedMemberRuns(scoped: readonly CcScopeUnit[]): CcRunRow[] {
   return scoped.flatMap(unit => (isBatteryRunRow(unit) ? unit.members : [unit]));

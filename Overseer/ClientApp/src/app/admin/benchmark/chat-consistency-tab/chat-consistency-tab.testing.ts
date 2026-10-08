@@ -19,6 +19,7 @@ import {
   CcAnnotation,
   CcAttributionResult,
   CcBatteryRunRow,
+  CcBatteryTimelinePoint,
   CcComparisonSets,
   CcEndpointResult,
   CcEvent,
@@ -102,6 +103,33 @@ export function ccPoint(runId: number, startedAtUtc: string, overrides: Partial<
   };
 }
 
+/**
+ * A complete battery run of *Two initial suites* (revision 1, {@link CC_BATTERY_SET_KEY}) as a timeline
+ * point, its members runs `batteryRunId * 100 + 1` and `+ 2` unless `overrides` names them, with an
+ * Overall Index of 80.
+ */
+export function ccBatteryPoint(
+  batteryRunId: number,
+  startedAtUtc: string,
+  overrides: Partial<CcBatteryTimelinePoint> = {}
+): CcBatteryTimelinePoint {
+  return {
+    ...ccPoint(batteryRunId, startedAtUtc, { suiteName: 'Two initial suites', suiteId: null, qualityIndex: null, answerCount: 40 }),
+    setKey: CC_BATTERY_SET_KEY,
+    batteryName: 'Two initial suites',
+    definitionRevision: 1,
+    completedAtUtc: new Date(Date.parse(startedAtUtc) + 60 * 60_000).toISOString(),
+    batteryStatus: 'completed',
+    suiteCount: 2,
+    complete: true,
+    incompleteReason: null,
+    memberRunIds: [batteryRunId * 100 + 1, batteryRunId * 100 + 2],
+    overallIndex: 80,
+    overallIndexNote: null,
+    ...overrides
+  };
+}
+
 export function ccRunRow(runId: number, startedAtUtc: string, overrides: Partial<CcRunRow> = {}): CcRunRow {
   return {
     runId,
@@ -180,6 +208,7 @@ export function ccTimeline(overrides: Partial<CcTimeline> = {}): CcTimeline {
       ccPoint(105, '2026-09-26T08:00:00Z', { qualityIndex: 71 }),
       ccPoint(106, '2026-10-01T08:00:00Z', { qualityIndex: 73 })
     ],
+    batteryPoints: [],
     events: [ccEvent()],
     annotations: [ccAnnotation(1)],
     priceCard: {

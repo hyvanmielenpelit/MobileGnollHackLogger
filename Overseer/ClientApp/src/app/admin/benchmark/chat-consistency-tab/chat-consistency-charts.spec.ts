@@ -5,6 +5,7 @@ import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
+  CC_HEADER_LOGO_PX,
   CC_PRINT_THEME,
   CC_REPORT_FIGURES,
   CC_SCREEN_THEME,
@@ -16,10 +17,14 @@ import {
   CcFigure,
   CcFigureInput,
   analysisBands,
+  analysisChartPoints,
   buildCcFigures,
   buildMarkers,
+  ccHeaderHeight,
   ccTagBandHeight,
   ccTagRows,
+  ccTimeTickLabel,
+  ccTimeTicks,
   costFigure,
   dominantCommonGrader,
   dominantServedModel,
@@ -29,12 +34,16 @@ import {
   streamingRateFigure,
   timeToFirstAnswerFigure,
   timelineOverviewFigure,
+  toolCallsFigure,
   workFigure
 } from './chat-consistency-charts';
 import { CcMarkerFilter, CcMarkerKind, eventGroupLabel, groupOverseerEvents } from './chat-consistency-events';
 import { CC_REPORT_FIGURE_KEYS } from './chat-consistency.models';
 import {
+  CC_BATTERY_SET_KEY,
+  ccAnalysisResult,
   ccAnnotation,
+  ccBatteryPoint,
   ccEvent,
   ccEventAnnotations,
   ccEventPoints,
@@ -98,7 +107,7 @@ describe('chat-consistency-charts', () => {
       expect(telemetry.label).toBe('Time to first answer text (telemetry)');
       expect(proxy.label).toBe('Model time per answer (legacy proxy)');
       expect(proxy.borderDash).toEqual([4, 4]);
-      expect(proxy.pointBackgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(proxy.pointBackgroundColor).toBe(CC_SCREEN_THEME.surface);
       // Only run 103 has no telemetry time, so only it carries a proxy value.
       expect((proxy.data as CcChartPoint[]).filter(p => p.y !== null).map(p => p.runId)).toEqual([103]);
       expect(figure.takeaway).toBe(
@@ -116,11 +125,22 @@ describe('chat-consistency-charts', () => {
     });
   });
 
-  it('puts tool calls on a second axis in the work figure', () => {
-    const figure = workFigure(input);
-    expect(figure.config!.data.datasets[1].yAxisID).toBe('y1');
-    expect(figure.config!.options.scales!['y1']).toBeDefined();
-    expect(figure.takeaway).toBe('Across 6 runs, output tokens per answer ranged from 1,200 to 1,200; tool calls per answer from 3.5 to 3.5.');
+  it('draws output tokens and tool calls as two charts of one axis each', () => {
+    const work = workFigure(input);
+    expect(work.title).toBe('Output tokens per answer');
+    expect(work.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tokens']);
+    expect(work.config!.options.scales!['y1']).toBeUndefined();
+    expect(work.takeaway).toBe('Output tokens per answer ranged from 1,200 to 1,200 across 6 runs.');
+    expect(work.table.columns).toEqual(['Run', 'Started', 'Output tokens per answer']);
+
+    const tools = toolCallsFigure(input);
+    expect(tools.key).toBe('tools');
+    expect(tools.title).toBe('Tool calls per answer');
+    expect(tools.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['tools.calls']);
+    expect(tools.config!.options.scales!['y1']).toBeUndefined();
+    expect(tools.takeaway).toBe('Tool calls per answer ranged from 3.5 to 3.5 across 6 runs.');
+    expect(tools.table.rows[0]).toEqual(['#101', '2026-09-01 08:00 UTC', '3.5']);
+    expect(CC_REPORT_FIGURES['cc3-work']).toBe('work');
   });
 
   it('captions cost at one price card', () => {
@@ -240,9 +260,58 @@ describe('chat-consistency-charts', () => {
     });
   });
 
-  it('formats the time axis as UTC dates', () => {
-    const x = qualityFigure(input).config!.options.scales!['x'] as unknown as { ticks: { callback: (v: number) => string } };
-    expect(x.ticks.callback.call(null, at('2026-09-05T08:00:00Z'))).toBe('2026-09-05');
+  describe('time ticks', () => {
+    const HOUR = 3_600_000;
+    const DAY = 86_400_000;
+
+    it('picks the smallest UTC-aligned step that keeps the ticks to the limit', () => {
+      // A two-day span with six ticks: 12-hour steps on the half day.
+      const twoDays = ccTimeTicks(at('2026-10-07T18:00:00Z'), at('2026-10-09T18:00:00Z'), 6);
+      expect(twoDays.stepMs).toBe(12 * HOUR);
+      expect(twoDays.values).toEqual([at('2026-10-08T00:00:00Z'), at('2026-10-08T12:00:00Z'), at('2026-10-09T00:00:00Z'),
+        at('2026-10-09T12:00:00Z')]);
+      expect(ccTimeTicks(at('2026-10-08T05:10:00Z'), at('2026-10-08T07:50:00Z'), 6).values)
+        .toEqual([at('2026-10-08T06:00:00Z'), at('2026-10-08T07:00:00Z')]);
+      // Weeks start on Monday; 2026-09-07 is a Monday.
+      const weeks = ccTimeTicks(at('2026-09-01T00:00:00Z'), at('2026-10-10T00:00:00Z'), 6);
+      expect(weeks.stepMs).toBe(7 * DAY);
+      expect(weeks.values[0]).toBe(at('2026-09-07T00:00:00Z'));
+      expect(new Date(weeks.values[1]).getUTCDay()).toBe(1);
+    });
+
+    it('steps by months from the first of a month, and by years beyond', () => {
+      const months = ccTimeTicks(at('2026-01-15T00:00:00Z'), at('2026-06-20T00:00:00Z'), 6);
+      expect(months.values).toEqual(['02', '03', '04', '05', '06'].map(m => at(`2026-${m}-01T00:00:00Z`)));
+      const quarters = ccTimeTicks(at('2025-11-15T00:00:00Z'), at('2027-02-01T00:00:00Z'), 6);
+      expect(quarters.values).toEqual([at('2026-01-01T00:00:00Z'), at('2026-04-01T00:00:00Z'), at('2026-07-01T00:00:00Z'),
+        at('2026-10-01T00:00:00Z'), at('2027-01-01T00:00:00Z')]);
+      const decades = ccTimeTicks(at('2000-01-01T00:00:00Z'), at('2030-01-01T00:00:00Z'), 4);
+      expect(decades.values.length).toBeLessThanOrEqual(4);
+      expect(decades.values.length).toBeGreaterThan(0);
+      expect(ccTimeTicks(5, 5, 6).values).toEqual([]);
+    });
+
+    it('labels hours with the date on each day\'s first tick, days as month and day, long spans as months', () => {
+      const first = at('2026-10-08T12:00:00Z');
+      expect(ccTimeTickLabel(first, null, 12 * HOUR, 2 * DAY)).toBe('2026-10-08 12:00');
+      expect(ccTimeTickLabel(at('2026-10-08T18:00:00Z'), first, 6 * HOUR, 2 * DAY)).toBe('18:00');
+      expect(ccTimeTickLabel(at('2026-10-09T00:00:00Z'), at('2026-10-08T18:00:00Z'), 6 * HOUR, 2 * DAY)).toBe('2026-10-09 00:00');
+      expect(ccTimeTickLabel(at('2026-10-08T00:00:00Z'), null, DAY, 20 * DAY)).toBe('Oct 8');
+      expect(ccTimeTickLabel(at('2026-10-01T00:00:00Z'), null, 90 * DAY, 500 * DAY)).toBe('2026-10');
+    });
+
+    it('builds the time axis from them', () => {
+      const x = qualityFigure(input).config!.options.scales!['x'] as unknown as {
+        afterBuildTicks: (scale: { min: number; max: number; width: number; ticks: { value: number }[] }) => void;
+        grid: { display: boolean };
+        title: { text: string };
+      };
+      const scale = { min: at('2026-10-07T18:00:00Z'), max: at('2026-10-09T18:00:00Z'), width: 660, ticks: [] as { value: number }[] };
+      x.afterBuildTicks(scale);
+      expect(scale.ticks.map(tick => tick.value)).toEqual(ccTimeTicks(scale.min, scale.max, 6).values);
+      expect(x.grid.display).toBe(false);
+      expect(x.title.text).toBe('Run start (UTC)');
+    });
   });
 
   it('builds the overview with every marker kind counted', () => {
@@ -252,7 +321,7 @@ describe('chat-consistency-charts', () => {
   });
 
   it('builds the timeline figures in order and maps every report key to one', () => {
-    expect(buildCcFigures(input).map(f => f.key)).toEqual(['quality', 'ttfat', 'rate', 'work', 'cost', 'reliability', 'timeline']);
+    expect(buildCcFigures(input).map(f => f.key)).toEqual(['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability', 'timeline']);
     expect(CC_REPORT_FIGURE_KEYS.map(key => CC_REPORT_FIGURES[key])).toEqual(['quality', 'ttfat', 'work', 'timeline']);
   });
 
@@ -283,10 +352,16 @@ describe('chat-consistency-charts', () => {
     });
 
     it('gives every drawn dataset the series id CC_FIGURE_SERIES lists for its figure', () => {
+      // A run's quality is its native Quality Index, a battery run's the Overall Index.
+      const forRuns = (key: string) => CC_FIGURE_SERIES[key as keyof typeof CC_FIGURE_SERIES]
+        .map(series => series.id).filter(id => id !== 'quality.overall');
       for (const figure of buildCcFigures(full)) {
-        expect(figure.config!.data.datasets.map(ds => ds.seriesId), figure.key)
-          .toEqual(CC_FIGURE_SERIES[figure.key].map(series => series.id));
+        expect(figure.config!.data.datasets.map(ds => ds.seriesId), figure.key).toEqual(forRuns(figure.key));
       }
+      const battery = qualityFigure({
+        points: [ccBatteryPoint(12, '2026-10-08T10:00:00Z', { commonGraderQuality: [grader] })], unitKind: 'batteryRun'
+      });
+      expect(battery.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['quality.overall', 'quality.common']);
       expect(Object.keys(CC_FIGURE_SERIES)).toEqual(CC_FIGURE_KEYS.map(entry => entry.key));
     });
   });
@@ -301,18 +376,12 @@ describe('chat-consistency-charts', () => {
       expect(hidden.takeaway).toBe(shown.takeaway);
     });
 
-    it('removes the tool-call axis with the tool-call series', () => {
-      const shown = workFigure(input);
-      const hidden = workFigure(input, { hiddenSeries: new Set(['work.tools']) });
-      expect(hidden.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tokens']);
-      expect(hidden.config!.options.scales!['y1']).toBeUndefined();
+    it('hides the legacy proxy alone and keeps the telemetry series', () => {
+      const shown = timeToFirstAnswerFigure(input);
+      const hidden = timeToFirstAnswerFigure(input, { hiddenSeries: new Set(['ttfat.proxy']) });
+      expect(hidden.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['ttfat.telemetry']);
       expect(hidden.table).toEqual(shown.table);
-      expect(hidden.table.columns).toContain('Tool calls per answer');
       expect(hidden.takeaway).toBe(shown.takeaway);
-
-      const tokensHidden = workFigure(input, { hiddenSeries: new Set(['work.tokens']) });
-      expect(tokensHidden.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tools']);
-      expect(tokensHidden.config!.options.scales!['y1']).toBeDefined();
     });
 
     it('draws nothing when every series of a figure is hidden, and still describes the data', () => {
@@ -347,8 +416,8 @@ describe('chat-consistency-charts', () => {
       // Every value axis but the overview's fixed one already starts at zero.
       for (const figure of plain.filter(f => f.key !== 'timeline')) {
         expect(axis(figure, 'y')!.beginAtZero, figure.key).toBe(true);
+        expect(axis(figure, 'y1'), figure.key).toBeUndefined();
       }
-      expect(axis(workFigure(input), 'y1')!.beginAtZero).toBe(true);
     });
   });
 
@@ -400,8 +469,9 @@ describe('chat-consistency-charts', () => {
       expect(ccTagBandHeight(3)).toBe(52);
     });
 
-    it('reserves the tag rows in their own layout box, leaving the chart padding alone', () => {
-      expect(qualityFigure(input).config!.options.layout!.padding).toEqual({ top: 4, right: 8 });
+    it('reserves the tag rows in their own layout box, leaving the top padding alone', () => {
+      expect((qualityFigure(input).config!.options.layout!.padding as { top: number }).top).toBe(4);
+      expect((reliabilityFigure(input).config!.options.layout!.padding as { right: number }).right).toBe(8);
     });
   });
 
@@ -424,7 +494,7 @@ describe('chat-consistency-charts', () => {
     it('draws each run not in the analysis as an unfilled gray cross and every other run as before', () => {
       const ds = qualityFigure(marked).config!.data.datasets[0];
       const cross = ['crossRot', 'rgba(0, 0, 0, 0)', muted, 4.5, 2];
-      const plain = ['circle', CC_SCREEN_THEME.series[0], CC_SCREEN_THEME.series[0], 3.5, 1];
+      const plain = ['circle', CC_SCREEN_THEME.series[0], CC_SCREEN_THEME.surface, 4, 2];
       expect([0, 1, 2, 3, 4, 5].map(i => pointLook(ds, i))).toEqual([cross, plain, plain, cross, plain, plain]);
       // The data, and so the scales and gaps, are unchanged.
       expect(ds.data).toEqual(qualityFigure(input).config!.data.datasets[0].data);
@@ -434,7 +504,7 @@ describe('chat-consistency-charts', () => {
       const figure = timeToFirstAnswerFigure({ ...input, notAnalyzed: new Map([[101, 'left out in step 1']]) }, { theme: CC_PRINT_THEME });
       const proxy = figure.config!.data.datasets[1];
       // Run 103, the legacy proxy, stays hollow on the print page; run 101 is a cross in every dataset.
-      expect(pointLook(proxy, 2)).toEqual(['circle', '#ffffff', CC_PRINT_THEME.series[3], 3.5, 2]);
+      expect(pointLook(proxy, 2)).toEqual(['circle', '#ffffff', CC_PRINT_THEME.series[2], 4, 2]);
       expect(pointLook(proxy, 0)).toEqual(['crossRot', 'rgba(0, 0, 0, 0)', CC_PRINT_THEME.muted, 4.5, 2]);
       expect(proxy.borderDash).toEqual([4, 4]);
     });
@@ -519,12 +589,17 @@ describe('chat-consistency-charts', () => {
         yAxisID: 'y',
         borderColor: CC_SCREEN_THEME.series[0],
         backgroundColor: CC_SCREEN_THEME.series[0],
+        pointStyle: 'circle',
         pointBackgroundColor: CC_SCREEN_THEME.series[0],
-        pointBorderColor: CC_SCREEN_THEME.series[0],
-        pointBorderWidth: 1,
-        pointRadius: 3.5,
-        pointHoverRadius: 5,
-        borderWidth: 1.5,
+        pointBorderColor: CC_SCREEN_THEME.surface,
+        pointBorderWidth: 2,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointHoverBorderWidth: 2,
+        pointHitRadius: 12,
+        borderWidth: 2,
+        borderJoinStyle: 'round',
+        borderCapStyle: 'round',
         borderDash: [],
         spanGaps: false,
         tension: 0
@@ -562,11 +637,200 @@ describe('chat-consistency-charts', () => {
         const drawn = mount(timeToFirstAnswerFigure(marked));
         const points = drawn.getDatasetMeta(0).data.map(point => point.options as Record<string, unknown>);
         expect([points[0]['pointStyle'], points[0]['radius'], points[0]['borderColor']]).toEqual(['crossRot', 4.5, muted]);
-        expect([points[1]['pointStyle'], points[1]['radius'], points[1]['borderColor']]).toEqual(['circle', 3.5, CC_SCREEN_THEME.series[0]]);
+        expect([points[1]['pointStyle'], points[1]['radius'], points[1]['borderColor']]).toEqual(['circle', 4, CC_SCREEN_THEME.surface]);
         expect(drawn.legend!.legendItems!.map(item => [item.text, item.pointStyle, item.fillStyle, item.strokeStyle, item.lineWidth])).toEqual([
-          ['Time to first answer text (telemetry)', 'circle', CC_SCREEN_THEME.series[0], CC_SCREEN_THEME.series[0], 1],
-          ['Model time per answer (legacy proxy)', 'circle', 'rgba(0, 0, 0, 0)', CC_SCREEN_THEME.series[3], 2]
+          ['Time to first answer text (telemetry)', 'circle', CC_SCREEN_THEME.series[1], CC_SCREEN_THEME.surface, 2],
+          ['Model time per answer (legacy proxy)', 'circle', CC_SCREEN_THEME.surface, CC_SCREEN_THEME.series[2], 2]
         ]);
+      });
+    });
+  });
+
+  describe('battery runs', () => {
+    const memberLabels = new Map([[301, 'Board Suite'], [302, 'Wiki Suite'], [303, 'Board Suite'], [304, 'Wiki Suite']]);
+    const battery: CcFigureInput = {
+      points: [
+        ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 86, memberRunIds: [303, 304] }),
+        ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 79, memberRunIds: [301, 302] })
+      ],
+      unitKind: 'batteryRun',
+      memberLabels
+    };
+
+    it('plots one point per battery run, its quality the Overall Index', () => {
+      const figure = qualityFigure(battery);
+      const ds = figure.config!.data.datasets[0];
+      expect(ds.label).toBe('Overall Index (battery)');
+      expect((ds.data as CcChartPoint[]).map(p => [p.runId, p.y])).toEqual([[11, 79], [12, 86]]);
+      expect(figure.takeaway).toBe('The Overall Index ranged from 79 to 86 across 2 battery runs; the latest battery run scored 86.');
+      expect(figure.altText).toBe(`Quality per battery run. ${figure.takeaway}`);
+      expect(figure.table.columns).toEqual(['Battery run', 'Started', 'Overall Index', 'Note', 'Suites', 'Member runs']);
+      expect(figure.table.rows[0]).toEqual(['#11', '2026-10-08 06:00 UTC', '79.0', '', '2', '#301, #302']);
+    });
+
+    it('says which battery runs have no Overall Index, and why', () => {
+      const figure = qualityFigure({
+        ...battery,
+        points: [
+          ccBatteryPoint(11, '2026-10-08T06:00:00Z', {
+            overallIndex: null, overallIndexNote: 'No battery analysis. Compute it from the battery report.'
+          }),
+          ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 86 })
+        ]
+      });
+      expect(figure.takeaway).toBe('The Overall Index was 86 in the one battery run of this range. 1 battery run has no Overall Index: no battery analysis.');
+      expect(figure.table.rows[0][3]).toBe('No battery analysis. Compute it from the battery report.');
+      expect(figure.table.rows[0][2]).toBe('—');
+    });
+
+    it('puts the Suites and Member runs columns on every table', () => {
+      for (const figure of buildCcFigures(battery)) {
+        expect(figure.table.columns[0], figure.key).toBe('Battery run');
+        expect(figure.table.columns.slice(-2), figure.key).toEqual(['Suites', 'Member runs']);
+      }
+    });
+
+    it('names battery runs on the axis, in the tooltip, the notes and the reliability takeaway', () => {
+      const marked = qualityFigure({ ...battery, notAnalyzed: new Map([[11, 'left out in step 1']]) });
+      const config = marked.config!;
+      const callbacks = config.options.plugins!.tooltip!.callbacks! as unknown as Record<string, (items: unknown) => string>;
+      const raw = config.data.datasets[0].data[0];
+      expect(callbacks['title']([{ raw }])).toBe('Battery run #11 · 2026-10-08 06:00 UTC');
+      expect(callbacks['footer']([{ raw }])).toBe('Members: #301 (Board Suite), #302 (Wiki Suite)');
+      expect((config.options.scales!['x'] as unknown as { title: { text: string } }).title.text).toBe('Battery run start (UTC)');
+      expect(marked.takeaway.endsWith(' 1 battery run not in the analysis is drawn as a gray cross.')).toBe(true);
+      expect(marked.table.columns[marked.table.columns.length - 1]).toBe('In the analysis');
+
+      const failing = reliabilityFigure({
+        ...battery, points: [...battery.points.slice(1), ccBatteryPoint(12, '2026-10-08T10:00:00Z', { timeoutRate: 0.05 })]
+      });
+      expect(failing.takeaway).toBe('The highest rate was timeouts at 5.0 % in battery run #12, across 2 battery runs.');
+      // A run's tooltip has no members line.
+      const runConfig = qualityFigure(input).config!;
+      const runCallbacks = runConfig.options.plugins!.tooltip!.callbacks! as unknown as Record<string, (items: unknown) => string>;
+      expect(runCallbacks['footer']([{ raw: runConfig.data.datasets[0].data[0] }])).toBe('');
+    });
+
+    it('names the battery run of a served-model change', () => {
+      const markers = buildMarkers([
+        ccBatteryPoint(11, '2026-10-08T06:00:00Z', { servedModelIds: [{ modelId: 'a', callCount: 9 }] }),
+        ccBatteryPoint(12, '2026-10-08T10:00:00Z', { servedModelIds: [{ modelId: 'b', callCount: 9 }] })
+      ]);
+      expect(markers.map(m => m.label)).toEqual(['Served model changed from a to b (battery run #12)']);
+    });
+
+    it('draws a battery analysis\'s battery runs and a run analysis\'s runs', () => {
+      const batteryPoints = [
+        ccBatteryPoint(11, '2026-10-08T06:00:00Z'),
+        ccBatteryPoint(12, '2026-10-08T10:00:00Z'),
+        ccBatteryPoint(13, '2026-10-08T12:00:00Z', { setKey: `battery:${'d'.repeat(64)}` })
+      ];
+      const result = ccAnalysisResult({
+        comparisonSet: { kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)' },
+        units: [
+          { unitId: 12, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T10:00:00Z', memberRunIds: [1201, 1202] },
+          { unitId: 13, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T12:00:00Z', memberRunIds: [1301, 1302] }
+        ]
+      });
+      const drawn = analysisChartPoints(result, timeline.points, batteryPoints);
+      expect(drawn.unitKind).toBe('batteryRun');
+      expect(drawn.points.map(p => p.runId)).toEqual([12]);
+
+      const runs = analysisChartPoints(ccAnalysisResult(), timeline.points, batteryPoints);
+      expect(runs.unitKind).toBe('run');
+      expect(runs.points.map(p => p.runId)).toEqual([101, 102, 103, 104, 105, 106]);
+    });
+  });
+
+  describe('styling', () => {
+    const s = CC_SCREEN_THEME.series;
+
+    it('keeps the validated palettes', () => {
+      expect(CC_SCREEN_THEME.series).toEqual(['#c98500', '#3987e5', '#d95926', '#199e70', '#9085e9', '#d55181']);
+      expect(CC_SCREEN_THEME.surface).toBe('#121212');
+      expect(CC_PRINT_THEME.series).toEqual(['#b07400', '#2a78d6', '#eb6834', '#14936a', '#4a3aa7', '#cc4f86']);
+      expect(CC_PRINT_THEME.surface).toBe('#ffffff');
+    });
+
+    it('colors each measure with its own palette slot, never by rank', () => {
+      const colors = buildCcFigures(input).filter(f => f.key !== 'reliability')
+        .map(f => [f.key, f.config!.data.datasets[0].borderColor]);
+      expect(colors).toEqual([
+        ['quality', s[0]], ['ttfat', s[1]], ['rate', s[3]], ['work', s[4]], ['tools', s[2]], ['cost', s[5]], ['timeline', s[0]]
+      ]);
+    });
+
+    it('gives each reliability rate its own point shape', () => {
+      expect(reliabilityFigure(input).config!.data.datasets.map(ds => ds.pointStyle))
+        .toEqual(['circle', 'rect', 'triangle', 'rectRot', 'star']);
+    });
+
+    it('shows a legend only when a chart draws two or more series', () => {
+      expect(qualityFigure(input).config!.options.plugins!.legend!.display).toBe(false);
+      expect(timeToFirstAnswerFigure(input).config!.options.plugins!.legend!.display).toBe(true);
+      expect(reliabilityFigure(input).config!.options.plugins!.legend!.display).toBe(true);
+    });
+
+    it('makes room on the right for the end labels of up to two series, and none on reliability or the overview', () => {
+      const right = (figure: CcFigure) => (figure.config!.options.layout!.padding as { right: number }).right;
+      // '73', two characters: 2 × 6.5 rounded up, plus 22.
+      expect(right(qualityFigure(input))).toBe(35);
+      expect(right(reliabilityFigure(input))).toBe(8);
+      expect(right(timelineOverviewFigure(input))).toBe(8);
+    });
+
+    it('styles the screen tooltip and leaves the print one to Chart.js', () => {
+      const tooltip = (theme: typeof CC_SCREEN_THEME) =>
+        qualityFigure(input, { theme }).config!.options.plugins!.tooltip as unknown as Record<string, unknown>;
+      expect([tooltip(CC_SCREEN_THEME)['backgroundColor'], tooltip(CC_SCREEN_THEME)['cornerRadius']]).toEqual(['rgba(20, 20, 20, 0.96)', 8]);
+      expect(tooltip(CC_PRINT_THEME)['backgroundColor']).toBeUndefined();
+    });
+  });
+
+  describe('header band', () => {
+    const logo = () => ({ image: document.createElement('canvas'), aspectRatio: 3248 / 850, heightPx: CC_HEADER_LOGO_PX });
+
+    it('takes no height without a title, a subject or a logo', () => {
+      expect(ccHeaderHeight(null, null, 600)).toBe(0);
+      expect(ccHeaderHeight({ title: null, subject: null }, null, 600)).toBe(0);
+    });
+
+    it('fits the title and subject, or the logo where it is taller', () => {
+      expect(ccHeaderHeight({ title: 'Quality per run', subject: 'GPT-5 high · runs' }, null, 600)).toBe(42);
+      expect(ccHeaderHeight({ title: null, subject: null }, logo(), 600)).toBe(36);
+      // At 100 px the logo is capped at 40 % of the width.
+      expect(ccHeaderHeight({ title: null, subject: null }, logo(), 100)).toBe(Math.ceil(40 / (3248 / 850) + 8));
+    });
+
+    describe('on a chart', () => {
+      let chart: Chart | null = null;
+
+      beforeAll(() => {
+        Chart.register(...APP_CHART_REGISTRABLES);
+      });
+
+      afterEach(() => {
+        const canvas = chart?.canvas;
+        chart?.destroy();
+        canvas?.remove();
+        chart = null;
+      });
+
+      it('leaves the plot at least 160 px high at 320 × 320 with the header and the logo', () => {
+        const figure = qualityFigure(input, {
+          header: { title: 'Quality per run', subject: 'GPT-5 high · Board Suite · runs' }, logo: logo()
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 320;
+        document.body.appendChild(canvas);
+        chart = new Chart(canvas, {
+          ...figure.config!,
+          options: { ...figure.config!.options, responsive: false, animation: false }
+        } as unknown as ChartConfiguration);
+        expect(chart.chartArea.bottom - chart.chartArea.top).toBeGreaterThanOrEqual(160);
+        // The header band sits above the plot.
+        expect(chart.chartArea.top).toBeGreaterThanOrEqual(42);
       });
     });
   });

@@ -191,8 +191,9 @@ event of one UTC day under one harness version is one composite, and a harness c
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
 takes the events one per kind and change, as above. Report charts are drawn the same way, and
-`CC_REPORT_CHART_VERSION` (3, in `chat-consistency-report-charts.ts`) enters their settings hash, so newly
-drawn report charts are told apart from those drawn before the grouping or the timeline numbering below;
+`CC_REPORT_CHART_VERSION` (4, in `chat-consistency-report-charts.ts`) enters their settings hash, so newly
+drawn report charts are told apart from those drawn before the grouping, the timeline numbering below,
+or the battery-run points, the validated palette and the GnollBench logo of version 4;
 documents already written keep their charts. An `E` number in an older report therefore need not match
 the one the tab shows today.
 
@@ -661,7 +662,8 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close*
      run selection in step 1 was cleared to show the saved analysis.*); a reload that no longer lists a
      marked or left-out run drops it and says so. The dates stay.
 2. **Timeline** — the chart workspace (§ 17.3). It draws every run in the dates, not only the runs in
-   the analysis, so the composite events keep their numbers.
+   the analysis, so the composite events keep their numbers; with a battery compared, one point per
+   battery run of the set (*Plot by: Member runs* shows the runs).
 3. **Periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an annotation*,
    *Before vs after an Overseer change*, which offers the composite events of § 5.2, *Confirm on later
    data*, *Custom dates*) or by hand, as inclusive UTC dates in the same date fields as step 1; Protocol
@@ -711,12 +713,45 @@ this browser and restored when the tab loads again (§ 17.1).
 ### 17.3 The Timeline step
 
 A settings sidebar — resizable from 18 to 40 rem (at most half the workspace, 26 rem by default) and
-collapsible from the view bar — beside two views of the live charts. There is one chart per measure:
-quality per run (native and common-grader), time to first answer text (legacy proxy points hollow),
-answer streaming rate, work per answer, cost per question, reliability, and *Runs and events*. Each draws
-its markers — composite Overseer events `E<n>`, annotations `A<n>` and served-model changes `S<n>`,
-their tags staggered in a band above the plot — names them under the chart, and has a *Show data*
-table.
+collapsible from the view bar — beside two views of the live charts. Its tab row wraps onto a second
+line when the sidebar is too narrow for *Data · Events · Annotations · Download*, so no tab is cut off;
+Left and Right still move through the four tabs in order. There is one chart per measure: quality per
+run (native and common-grader), time to first answer text (legacy proxy points hollow), answer
+streaming rate, **output tokens per answer**, **tool calls per answer**, cost per question, reliability,
+and *Runs and events*. Output tokens and tool calls are two charts rather than one with two value axes,
+which would suggest a relation between two arbitrary scales. Each chart draws its markers — composite
+Overseer events `E<n>`, annotations `A<n>` and served-model changes `S<n>`, their tags staggered in a
+band above the plot — names them under the chart, and has a *Show data* table.
+
+**Battery runs.** With a battery compared in step 1, the charts draw **one point per battery run** of
+the set, as the analysis counts it: the timeline's `batteryPoints`
+(`ChatConsistencyTimeline.BatteryPoints`) pool each battery run's usable members — medians and means
+over the union of their answers, not the mean of the members' medians, and a common grader's mean
+weighted by items, kept only when every member was calibrated by it. A battery run's quality is its
+battery analysis's **Overall Index**, the number the battery report, the leaderboard and Model
+Comparison show: the latest stored analysis, used only while it covers the battery run's current
+members. Without one, with a stale one, or for an incomplete battery run there is no quality point,
+and the caption and the *Show data* table's *Note* column say why (*No battery analysis. Compute it
+from the battery report.*). Every table of a battery chart adds *Suites* and *Member runs*, and the
+tooltip names the members with their suites. **Plot by** on the Data tab switches to *Member runs*, the
+per-run charts, for looking inside a battery; it returns to *Battery runs* when another set is chosen.
+
+**The styling.** The series colors come from a palette validated for color-vision deficiencies and
+contrast on the chart surface, and the color follows the measure, not the rank: quality gold, time to
+first answer text blue, streaming rate aqua, output tokens violet, tool calls orange, cost magenta.
+Lines are 2 px with ringed points; each reliability rate has its own point shape as well as color. A
+chart with one series has no legend box (its title names the series) and an area wash under the line;
+up to two series end in a label with the latest value. The time axis ticks fit the span (hours with the
+date on each day's first tick under a day's step, *Oct 8* under a year, *2026-10* beyond), there are no
+vertical grid lines, the period bands are named at their top left, and the markers are drawn in neutral
+inks — told apart by dash, tag letter and a filled or outlined tag — so color stays with the data.
+
+**The header band.** Each chart draws its title and a subject line — the model, the compared set and
+what a point is (*Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1) · battery runs*) — with
+the **GnollBench logo** on the right. It is the same on screen, in **Copy**, **Download**, **Download
+all** and, logo only, in the report charts, whose documents print their own captions. On screen the
+figure's own title is visually hidden, still naming the figure for assistive technology; the takeaway
+sentence stays above the chart.
 
 **Runs not in the analysis** — left out in step 1, or before its first or after its last run — are
 drawn as **gray crosses**, and every line segment touching one is gray and dotted, so shape and dash,
@@ -728,9 +763,9 @@ step-1 selection the charts are drawn as before. The values, scales and gaps do 
 
 The sidebar has four tabs:
 
-- **Data** — which charts are shown, which series of the charts that draw more than one, *Start the
-  quality axis at zero*, and **Mark runs not in the analysis** (on by default; off draws every run
-  alike).
+- **Data** — with a battery compared, **Plot by** (*Battery runs* or *Member runs*); which charts are
+  shown, which series of the charts that draw more than one, *Start the quality axis at zero*, and
+  **Mark runs not in the analysis** (on by default; off draws every run alike).
 - **Events** — which markers the charts show (*Overseer changes*, *Annotations*, *Served-model
   changes*), which Overseer change kinds (each with the number of composite events holding it), and the
   **event list**: one section per UTC day, oldest first. A composite event shows its title (*Harness 26 →
@@ -742,7 +777,9 @@ The sidebar has four tabs:
 - **Annotations** — dated notes on the timeline: *Model release*, *Provider statement*, *Provider
   confirmed a cause*, *Price change*, *Change on our side*, *Other*, for every provider, one provider or
   one model, with an optional http(s) source. Annotations are added and deleted; they are not edited.
-- **Download** — *Chart size*, *Image format* and the theme, *As shown (dark)* or *Light, for print*.
+- **Download** — *Chart size*, *Image format*, the theme, *As shown (dark)* or *Light, for print*, and
+  **Show the GnollBench logo** (on by default), which turns the logo off on the charts and in every
+  image.
 
 The two views are **All charts**, every shown chart in one column, each tile with **Copy**, **Download**
 and **Open in Single view**, and a toolbar with the zoom, *Fit width*, *Fit height* and **Download all**;
@@ -758,9 +795,9 @@ pixel density changes only the file. The zoom reaches from 25 % (lower where a f
 In a view, outside a form field and without Ctrl, ⌘ or Alt, `+` or `=` zooms in, `-` zooms out, `0`
 fits (one chart's height in All charts, the screen in Single chart) and, in Single chart, `1` is 100 %.
 
-**The image is the plot alone** — without its title, caption or marker list — in the chosen theme, with
-the series and markers the sidebar shows, and the gray crosses while runs not in the analysis are
-marked. **Download** writes PNG or WebP (quality 75–100) at a size
+**The image is the chart as shown** — its title, the model and the GnollBench logo in the header band,
+without the takeaway or the marker list — in the chosen theme, with the series and markers the sidebar
+shows, and the gray crosses while runs not in the analysis are marked. **Download** writes PNG or WebP (quality 75–100) at a size
 preset, grouped by aspect ratio (16:9, 16:10, 4:3, 3:2, 1:1, 21:9 and print), or at a custom width and
 height, with a pixel density and a text size: the controls of Model Comparison. A browser that cannot
 encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image type clipboards take.
@@ -768,7 +805,8 @@ encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image ty
 it skipped for having nothing to draw. The files are
 `chat-consistency_<model key>_<chart>_<yyyyMMdd_HHmmss>.<png|webp>` and
 `chat-consistency_<model key>_charts_<yyyyMMdd_HHmmss>.zip`. The workspace layout, the chart choices
-(*Mark runs not in the analysis* included) and the download settings are kept per browser.
+(*Mark runs not in the analysis* and *Show the GnollBench logo* included) and the download settings are
+kept per browser; a layout stored before the *Work per answer* chart was split shows both of its charts.
 
 ### 17.4 Repeat this run's setup
 

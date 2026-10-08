@@ -331,7 +331,8 @@
 @if (isMounted('results')) {
   <div class="cc-wiz-step" data-step="results" [hidden]="step !== 'results'">
     @if (result) {
-      <app-cc-results-view [result]="result" [points]="timeline?.points ?? []" [eventNumbering]="eventGroups"
+      <app-cc-results-view [result]="result" [points]="timeline?.points ?? []"
+                           [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
                            (repeatSetup)="repeatSetup.emit($event)"></app-cc-results-view>
     }
   </div>
@@ -342,7 +343,7 @@
     @if (result) {
       <app-cc-reports-step [result]="result" [writerOptions]="pickerOptions" [writerConfigs]="pickerConfigs"
                            [pickerEmptyHint]="pickerEmptyHint" [points]="timeline?.points ?? []"
-                           [eventNumbering]="eventGroups"
+                           [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
                            (openDocuments)="openDocuments.emit($event)"></app-cc-reports-step>
     }
   </div>

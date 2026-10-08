@@ -5,6 +5,7 @@ import { MINUS } from '../chat-consistency-format';
 import {
   CC_BATTERY_SET_KEY,
   ccAnalysisResult,
+  ccBatteryPoint,
   ccEndpoint,
   ccEventAnnotations,
   ccEventPoints,
@@ -83,11 +84,32 @@ describe('CcResultsViewComponent', () => {
 
   it('draws the charts over the analysis\'s runs only, and shows limitations, data quality and identity', () => {
     const figures = Array.from(el.querySelectorAll('figure.cc-figure')).map(f => f.getAttribute('data-figure'));
-    expect(figures).toEqual(['quality', 'ttfat', 'rate', 'work', 'cost', 'timeline']);
+    expect(figures).toEqual(['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'timeline']);
     expect(textOf(el.querySelector('figure[data-figure="quality"] figcaption'))).toContain('across 6 runs');
     expect(textOf(el.querySelector('.cc-res-list'))).toBe('Only one time stratum is common to both periods.');
     expect(textOf(el.querySelector('.cc-res-identity'))).toContain('#7');
     expect(textOf(el.querySelector('.cc-sha'))).toBe('a'.repeat(64));
+  });
+
+  it('draws a battery analysis\'s charts over its battery runs, matched by unit id', () => {
+    fixture.componentRef.setInput('result', ccAnalysisResult({
+      comparisonSet: { kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)' },
+      unitKind: 'batteryRun',
+      units: [
+        { unitId: 11, kind: 'batteryRun', period: 'baseline', startedAtUtc: '2026-10-08T06:00:00Z', memberRunIds: [1101, 1102] },
+        { unitId: 12, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T10:00:00Z', memberRunIds: [1201, 1202] }
+      ]
+    }));
+    fixture.componentRef.setInput('batteryPoints', [
+      ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 79 }),
+      ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 86 }),
+      ccBatteryPoint(13, '2026-10-08T12:00:00Z')
+    ]);
+    fixture.detectChanges();
+    const quality = fixture.componentInstance.figures.find(figure => figure.key === 'quality')!;
+    expect(quality.config!.data.datasets[0].data.map(point => point.runId)).toEqual([11, 12]);
+    expect(quality.table.columns[0]).toBe('Battery run');
+    expect(textOf(el.querySelector('figure[data-figure="quality"] figcaption'))).toContain('across 2 battery runs');
   });
 
   it('draws the figures in one column, each in a 352 px box, even when wide', () => {
@@ -95,7 +117,7 @@ describe('CcResultsViewComponent', () => {
     try {
       el.style.inlineSize = '1280px';
       const figures = Array.from(el.querySelectorAll<HTMLElement>('.cc-res-figures > app-cc-chart-figure'));
-      expect(figures.length).toBe(6);
+      expect(figures.length).toBe(7);
       const boxes = figures.map(figure => figure.getBoundingClientRect());
       expect(new Set(boxes.map(box => Math.round(box.left))).size).toBe(1);
       for (let i = 1; i < boxes.length; i++) {
@@ -115,7 +137,7 @@ describe('CcResultsViewComponent', () => {
     expect(el.querySelector('.cc-marker-list')).toBeNull();
     expect(el.querySelector('.cc-marker')).toBeNull();
     const figures = Array.from(el.querySelectorAll<HTMLElement>('figure.cc-figure'));
-    expect(figures.length).toBe(6);
+    expect(figures.length).toBe(7);
     for (const figure of figures) {
       const key = figure.getAttribute('data-figure');
       const lines = figure.querySelectorAll('p.cc-figure-markers');

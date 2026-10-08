@@ -7,7 +7,9 @@ import { groupOverseerEvents } from '../chat-consistency-events';
 import { CcOpenDocumentsRequest } from '../chat-consistency.models';
 import {
   CC_API,
+  CC_BATTERY_SET_KEY,
   ccAnalysisResult,
+  ccBatteryPoint,
   ccConfig,
   ccPoint,
   ccReportEstimate,
@@ -79,6 +81,21 @@ describe('CcReportsStepComponent', () => {
     expect(input.eventNumbering).toBe(numbering);
     expect(input.events).toEqual(ccAnalysisResult().events);
     expect(input.bands!.map(band => band.name)).toEqual(['Baseline', 'Comparison']);
+    expect(input.unitKind).toBe('run');
+  });
+
+  it('draws a battery analysis\'s attached charts over its battery runs, with the runs for the harness', () => {
+    fixture.componentRef.setInput('result', ccAnalysisResult({
+      comparisonSet: { kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)' },
+      unitKind: 'batteryRun',
+      units: [{ unitId: 12, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T10:00:00Z', memberRunIds: [1201, 1202] }]
+    }));
+    fixture.componentRef.setInput('batteryPoints', [ccBatteryPoint(11, '2026-10-08T06:00:00Z'), ccBatteryPoint(12, '2026-10-08T10:00:00Z')]);
+    fixture.detectChanges();
+    const input = fixture.componentInstance.chartInput();
+    expect(input.unitKind).toBe('batteryRun');
+    expect(input.points.map(point => point.runId)).toEqual([12]);
+    expect(input.harnessPoints!.map(point => point.runId)).toEqual([101, 102, 103, 104, 105, 106]);
   });
 
   it('lists the four documents, the first three checked', () => {

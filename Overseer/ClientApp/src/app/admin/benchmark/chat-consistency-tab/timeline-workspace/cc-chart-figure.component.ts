@@ -127,6 +127,8 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
   @Input() deviceRatio: number | null = null;
   /** False keeps the sized box and draws no canvas. */
   @Input() render = true;
+  /** The chart's header band shows the title, so the caption's title is visually hidden. */
+  @Input() titleInChart = false;
 
   /** Asks the host to show the event list; the button is shown only while a host listens. */
   @Output() readonly showEvents = new EventEmitter<void>();
@@ -168,5 +170,10 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
 
   get markersId(): string {
     return `${this.figureId}-markers`;
+  }
+
+  /** `run` or `battery run`: what a table row is, from its first column. */
+  get unitNoun(): string {
+    return (this.figure?.table.columns[0] ?? 'Run').toLowerCase();
   }
 }

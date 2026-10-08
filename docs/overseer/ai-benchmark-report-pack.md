@@ -2835,7 +2835,7 @@ an event*) cannot drop text; a note of either marks the document **Completed wit
 |---|---|
 | `cc1-quality` | Quality per run (native, and common grader where one exists) |
 | `cc2-speed` | Time to first answer text (telemetry; the legacy proxy hollow) |
-| `cc3-work` | Work per answer (output tokens and tool calls) |
+| `cc3-work` | Output tokens per answer |
 | `cc4-timeline` | Runs and events (telemetry and legacy runs; Overseer changes, annotations, served-model changes) |
 
 Two anchors: `ChatConsistencyResults` (13), after the verdict table, and `ChatConsistencyEvents` (14),

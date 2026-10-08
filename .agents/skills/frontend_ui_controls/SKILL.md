@@ -1243,9 +1243,15 @@ keyboard model below is unchanged and stays **linear** — Left/Right step throu
 and wrap from the last tab to the first, whatever line each sits on; Up and Down are not taken. Use it
 for a row whose tabs are each a destination a user must be able to see at once, where a hidden,
 scrolled-off tab would go unnoticed — the GnollBench sub-tab row (`benchmark.component.html`, with
-`.gh-tabs-secondary`) is the one user. Keep the scrolling row for long or open-ended sets, where a
+`.gh-tabs-secondary`) and the two figure-workspace sidebars, Model Comparison's and the Chat
+Consistency Timeline's (`.gh-fig-sidebar-tabs`, whose wrapped lines sit flush with `row-gap: 0` over
+one rule). Keep the scrolling row for long or open-ended sets, where a
 wrapped block of tabs would push the panel down by several lines. Render the row from one `@for` over
 the component's tab array, so the wrapped order is always the array's order.
+
+*Changed 2026-10-08: the figure-workspace sidebars of Model Comparison and the Chat Consistency
+Timeline joined the GnollBench sub-tab row as `.gh-tabs-wrap` users, because at their default and
+minimum widths the last tab (*Download*) was cut off and could only be scrolled to.*
 
 The PDF viewer (`shared/pdf-viewer/pdf-viewer-dialog`) uses `.gh-tabs-segmented` for its disclosure
 versions (`variants`) and, when the request carries `secondaryVariants`, for a second, independent row

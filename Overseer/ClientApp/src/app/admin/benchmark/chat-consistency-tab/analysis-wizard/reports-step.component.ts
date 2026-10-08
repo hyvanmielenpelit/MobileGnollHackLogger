@@ -32,13 +32,14 @@ import {
   reportJobStatusText
 } from '../../run-ai-reports/report-documents-list';
 import { reportWriterRefusal, reportWriterWarning, reportWriterWarningText } from '../../run-ai-reports/report-writer-policy';
-import { CcFigureInput, analysisBands } from '../chat-consistency-charts';
+import { CcFigureInput, analysisBands, analysisChartPoints } from '../chat-consistency-charts';
 import { CcEventGroup } from '../chat-consistency-events';
 import { formatUsd } from '../chat-consistency-format';
 import { publishCcReportCharts } from '../chat-consistency-report-charts';
 import {
   CC_REPORT_AUDIENCES,
   CcAnalysisResult,
+  CcBatteryTimelinePoint,
   CcOpenDocumentsRequest,
   CcReportEstimate,
   CcTimelinePoint
@@ -89,6 +90,8 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   @Input() pickerEmptyHint: string | null = null;
   /** The subject's timeline points, for the attached charts. */
   @Input() points: readonly CcTimelinePoint[] = [];
+  /** The timeline's battery points, which a battery analysis's attached charts draw. */
+  @Input() batteryPoints: readonly CcBatteryTimelinePoint[] = [];
   /** The timeline's composite events, whose E numbers the attached charts reuse. */
   @Input() eventNumbering: readonly CcEventGroup[] = [];
 
@@ -441,13 +444,15 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * What the attached charts draw: the analyzed runs, the analysis's events and annotations, its
-   * period bands, every timeline point for the events' harness lookup, and the timeline's E numbers.
+   * What the attached charts draw: the analyzed units (battery runs in a battery analysis, runs
+   * otherwise), the analysis's events and annotations, its period bands, every timeline point for the
+   * events' harness lookup, and the timeline's E numbers.
    */
   chartInput(): CcFigureInput {
-    const ids = new Set([...this.result.baseline.runIds, ...this.result.comparison.runIds]);
+    const { points, unitKind } = analysisChartPoints(this.result, this.points, this.batteryPoints);
     return {
-      points: this.points.filter(point => ids.has(point.runId)),
+      points,
+      unitKind,
       events: this.result.events,
       annotations: this.result.annotations,
       bands: analysisBands(this.result.baseline, this.result.comparison),

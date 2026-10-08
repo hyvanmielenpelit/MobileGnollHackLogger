@@ -1,7 +1,8 @@
 <figure class="cc-figure" [class.is-fixed-width]="boxWidth !== null" [style.inline-size.px]="boxWidth"
         [attr.data-figure]="figure.key" [attr.aria-labelledby]="figureId + '-title'">
   <figcaption class="cc-figure-caption">
-    <span class="cc-figure-title" [id]="figureId + '-title'">{{ figure.title }}</span>
+    <!-- The chart's header band draws the title; this one names the figure for assistive technology. -->
+    <span class="cc-figure-title" [class.visually-hidden]="titleInChart" [id]="figureId + '-title'">{{ figure.title }}</span>
     <span class="cc-figure-takeaway" [id]="figureId + '-takeaway'">{{ figure.takeaway }}</span>
   </figcaption>
 
@@ -40,7 +41,7 @@
     <div class="gh-disclosure-body">
       <div class="cc-figure-table-scroll">
         <table class="gh-table cc-figure-table">
-          <caption class="visually-hidden" [id]="figureId + '-table-caption'">{{ figure.title }}: data per run</caption>
+          <caption class="visually-hidden" [id]="figureId + '-table-caption'">{{ figure.title }}: data per {{ unitNoun }}</caption>
           <thead>
             <tr>
               @for (column of figure.table.columns; track $index) {
@@ -60,7 +61,7 @@
                 }
               </tr>
             } @empty {
-              <tr><td [attr.colspan]="figure.table.columns.length">No runs in this range.</td></tr>
+              <tr><td [attr.colspan]="figure.table.columns.length">No {{ unitNoun }}s in this range.</td></tr>
             }
           </tbody>
         </table>

@@ -121,7 +121,8 @@ describe('cc-chart-export', () => {
 
   describe('ccExportTheme', () => {
     it('draws the screen theme on an opaque dark ground', () => {
-      expect(ccExportTheme('screen')).toEqual({ ...CC_SCREEN_THEME, background: '#101010' });
+      expect(ccExportTheme('screen')).toEqual({ ...CC_SCREEN_THEME, background: '#121212' });
+      expect(ccExportTheme('screen').background).toBe(CC_SCREEN_THEME.surface);
       // The on-screen theme itself stays transparent.
       expect(CC_SCREEN_THEME.background).toBeNull();
     });

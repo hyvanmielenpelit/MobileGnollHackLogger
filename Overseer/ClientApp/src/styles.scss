@@ -5585,6 +5585,12 @@ progress.job-progress {
   z-index: 1;
   padding-top: var(--gh-fig-tabs-inset-top);
   background: rgba(16, 16, 16, 0.98);
+
+  /* A narrow sidebar wraps the tabs: the lines sit flush, one strip over one rule, so no tab is
+     cut off. The row's own width drives the wrap. */
+  &.gh-tabs-wrap {
+    row-gap: 0;
+  }
 }
 
 .gh-fig-side-panel {

@@ -36,7 +36,7 @@ const STORAGE_KEYS = [
   CC_RUNS_VIEW_STORAGE_KEY, CC_BATTERY_RUNS_VIEW_STORAGE_KEY
 ];
 
-const FIGURE_ORDER = ['quality', 'ttfat', 'rate', 'work', 'cost', 'reliability', 'timeline'];
+const FIGURE_ORDER = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability', 'timeline'];
 
 function clearStorage(): void {
   for (const key of STORAGE_KEYS) {

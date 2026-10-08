@@ -6,7 +6,7 @@
        view bar, which stays rendered outside it; resized by the handle on its right edge.
        =========================================================================================== -->
   <aside id="cc-tl-sidebar" class="gh-fig-sidebar cc-tl-sidebar" aria-label="Timeline settings" [hidden]="sidebarCollapsed">
-    <div #sideTabs class="gh-tabs gh-tabs-secondary gh-fig-sidebar-tabs" role="tablist" aria-label="Settings sections">
+    <div #sideTabs class="gh-tabs gh-tabs-secondary gh-tabs-wrap gh-fig-sidebar-tabs" role="tablist" aria-label="Settings sections">
       @for (tab of sidebarTabs; track tab.id; let i = $index) {
         <button type="button" role="tab" class="gh-tab"
                 [id]="'cc-tl-side-tab-' + tab.id"
@@ -23,6 +23,22 @@
         <div class="gh-fig-side-panel" role="tabpanel" id="cc-tl-side-panel-data"
              aria-labelledby="cc-tl-side-tab-data" tabindex="0">
           <p class="cc-tl-hint cc-tl-readout">{{ readout }}</p>
+
+          @if (batterySet) {
+            <fieldset class="gh-choice cc-tl-group cc-tl-plot-by">
+              <legend>Plot by</legend>
+              <label class="gh-radio">
+                <input type="radio" name="cc-tl-plot-by" id="cc-tl-plot-by-battery" value="batteryRuns"
+                       [checked]="plotBy === 'batteryRuns'" (change)="setPlotBy('batteryRuns')">
+                Battery runs
+              </label>
+              <label class="gh-radio">
+                <input type="radio" name="cc-tl-plot-by" id="cc-tl-plot-by-members" value="memberRuns"
+                       [checked]="plotBy === 'memberRuns'" (change)="setPlotBy('memberRuns')">
+                Member runs
+              </label>
+            </fieldset>
+          }
 
           <fieldset class="gh-fieldset cc-tl-group">
             <legend>Charts</legend>
@@ -151,7 +167,17 @@
             </label>
           </fieldset>
 
-          <p class="cc-tl-hint">The image is the plot alone, without its title, caption or marker list. Download one chart from its tile or from Single chart, or all of them at once from All charts.</p>
+          <label class="checkbox-label align-start cc-tl-logo">
+            <input type="checkbox" id="cc-tl-show-logo" [checked]="showLogo"
+                   aria-describedby="cc-tl-show-logo-hint"
+                   (change)="setShowLogo($any($event.target).checked)">
+            <span>
+              Show the GnollBench logo
+              <span id="cc-tl-show-logo-hint" class="form-hint">On the charts and in every image.</span>
+            </span>
+          </label>
+
+          <p class="cc-tl-hint">The image is the chart as shown: its title, the model and the GnollBench logo, without the takeaway or the marker list. Download one chart from its tile or from Single chart, or all of them at once from All charts.</p>
 
           @if (sizeError) {
             <p class="gh-field-error cc-tl-size-error" role="alert">
@@ -335,7 +361,7 @@
                     <div #tile class="gh-fig-tile cc-tl-tile" [attr.data-figure]="figure.key">
                       <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-' + figure.key"
                                            [boxWidth]="boxWidth" [boxHeight]="boxHeight"
-                                           [deviceRatio]="deviceRatio" [render]="isNear(figure.key)"
+                                           [deviceRatio]="deviceRatio" [titleInChart]="true" [render]="isNear(figure.key)"
                                            (showEvents)="onShowEvents()"></app-cc-chart-figure>
                       <!-- Shown while the tile is hovered or holds focus, and always without hover; all
                            three are tab stops, and the tile itself is not focusable. The handlers
@@ -516,7 +542,7 @@
                 <div class="gh-fig-tile cc-tl-tile" [attr.data-figure]="figure.key">
                   <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-single-' + figure.key"
                                        [boxWidth]="boxWidth" [boxHeight]="boxHeight"
-                                       [deviceRatio]="deviceRatio"
+                                       [deviceRatio]="deviceRatio" [titleInChart]="true"
                                        (showEvents)="onShowEvents()"></app-cc-chart-figure>
                 </div>
               } @else {

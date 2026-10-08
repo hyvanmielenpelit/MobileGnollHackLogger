@@ -49,6 +49,7 @@ import {
   sizeErrors,
   writeStoredSizeSettings
 } from '../../model-comparison/figure-size';
+import { FigureLogo, ensureFigureLogo, figureLogoAspect } from '../../model-comparison/figure-logo';
 import {
   PREVIEW_SLIDER_STEPS,
   PreviewZoomRange,
@@ -64,7 +65,9 @@ import { CcAnnotationsPanelComponent } from '../annotations/annotations-panel.co
 import {
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
+  CC_HEADER_LOGO_PX,
   CC_SCREEN_THEME,
+  CcChartOptions,
   CcChartTheme,
   CcFigure,
   CcFigureInput,
@@ -86,8 +89,8 @@ import {
   servedModelChanges
 } from '../chat-consistency-events';
 import { formatUtcDate } from '../chat-consistency-format';
-import { CC_INCLUSION_TEXT, CcRunInclusion } from '../chat-consistency-scope';
-import { CcModelAxis, CcTimeline } from '../chat-consistency.models';
+import { CC_INCLUSION_TEXT, CcRunInclusion, unitNoun } from '../chat-consistency-scope';
+import { CcBatteryRunRow, CcModelAxis, CcTimeline, CcTimelinePoint, CcUnitKind } from '../chat-consistency.models';
 import { CcEventListComponent } from '../event-list/cc-event-list.component';
 import { CcChartFigureComponent } from './cc-chart-figure.component';
 import { CcExportPlan, ccChartArchiveFilename, ccChartFilename, ccExportLayout, ccExportTheme } from './cc-chart-export';
@@ -108,6 +111,8 @@ import {
 export type CcTimelineSidebarTab = 'data' | 'events' | 'annotations' | 'download';
 export type CcTimelineViewTab = 'all' | 'single';
 export type CcImageTheme = 'screen' | 'print';
+/** In a battery set, what one point is: a battery run, or one of its member runs. */
+export type CcPlotBy = 'batteryRuns' | 'memberRuns';
 
 /** The workspace layout and the chart settings, per browser. Read and written in `try/catch`. */
 export const CC_TIMELINE_STORAGE_KEY = 'overseer.benchmark.chatConsistency.timeline';
@@ -159,7 +164,12 @@ export interface CcTimelineLayout {
   readonly chartSizeOpen: boolean;
   readonly imageFormatOpen: boolean;
   readonly singleFigure: CcFigureKey;
+  /** The GnollBench logo on the charts and in every image. */
+  readonly logo: boolean;
 }
+
+/** The version `writeStoredTimelineLayout` writes. Version 1 had one *Work per answer* chart, `work`, with `work.tools`. */
+export const CC_TIMELINE_LAYOUT_VERSION = 2;
 
 const FIGURE_KEY_ORDER: readonly CcFigureKey[] = CC_FIGURE_KEYS.map(entry => entry.key);
 const SERIES_IDS: ReadonlySet<string> = new Set(
@@ -184,7 +194,8 @@ export function defaultTimelineLayout(): CcTimelineLayout {
     webpQuality: DEFAULT_WEBP_QUALITY,
     chartSizeOpen: false,
     imageFormatOpen: false,
-    singleFigure: 'quality'
+    singleFigure: 'quality',
+    logo: true
   };
 }
 
@@ -195,11 +206,19 @@ function listOf<T extends string>(value: unknown, accept: (item: string) => bool
   return order ? order.filter(item => items.has(item)) : [...items] as T[];
 }
 
-/** A stored layout read field by field: a missing field, or one of the wrong kind, takes its default. */
+/**
+ * A stored layout read field by field: a missing field, or one of the wrong kind, takes its default.
+ * A layout before version 2 that shows `work` shows `tools` too; its retired `work.tools` series id is
+ * dropped with every other unknown id.
+ */
 export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
   const fallback = defaultTimelineLayout();
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return fallback;
-  const record = stored as Record<string, unknown>;
+  const record = { ...(stored as Record<string, unknown>) };
+  const version = typeof record['version'] === 'number' ? record['version'] as number : 1;
+  if (version < CC_TIMELINE_LAYOUT_VERSION && Array.isArray(record['figures']) && record['figures'].includes('work')) {
+    record['figures'] = [...record['figures'], 'tools'];
+  }
   const flag = (key: string, otherwise: boolean): boolean => typeof record[key] === 'boolean' ? record[key] as boolean : otherwise;
   const oneOf = <T extends string | number>(key: string, options: readonly T[], otherwise: T): T =>
     options.includes(record[key] as T) ? record[key] as T : otherwise;
@@ -224,7 +243,8 @@ export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
     webpQuality: oneOf<WebpQuality>('webpQuality', WEBP_QUALITY_OPTIONS, fallback.webpQuality),
     chartSizeOpen: flag('chartSizeOpen', fallback.chartSizeOpen),
     imageFormatOpen: flag('imageFormatOpen', fallback.imageFormatOpen),
-    singleFigure: oneOf('singleFigure', FIGURE_KEY_ORDER, fallback.singleFigure)
+    singleFigure: oneOf('singleFigure', FIGURE_KEY_ORDER, fallback.singleFigure),
+    logo: flag('logo', fallback.logo)
   };
 }
 
@@ -240,7 +260,7 @@ export function readStoredTimelineLayout(): CcTimelineLayout {
 
 export function writeStoredTimelineLayout(layout: CcTimelineLayout): void {
   try {
-    localStorage.setItem(CC_TIMELINE_STORAGE_KEY, JSON.stringify({ version: 1, ...layout }));
+    localStorage.setItem(CC_TIMELINE_STORAGE_KEY, JSON.stringify({ version: CC_TIMELINE_LAYOUT_VERSION, ...layout }));
   } catch {
     // Private mode or blocked storage: the layout still applies for this session.
   }
@@ -272,6 +292,8 @@ interface CcExportSnapshot {
   readonly theme: CcChartTheme;
   readonly hiddenSeries: ReadonlySet<string>;
   readonly zeroBaseline: boolean;
+  readonly subject: string | null;
+  readonly logo: FigureLogo | null;
   readonly webpQuality: WebpQuality;
   readonly modelKey: string;
 }
@@ -326,6 +348,16 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   @Input() notAnalyzed: ReadonlyMap<number, CcRunInclusion> | null = null;
   /** The step-1 dates as step 1 names them, for the readout; the timeline's bounds when empty. */
   @Input() rangeLabel = '';
+  /** What step 1 counts: battery runs in a battery set, which the charts then plot; runs otherwise. */
+  @Input() unitKind: CcUnitKind = 'run';
+  /** The compared set's key; its battery points are the ones plotted in a battery set. */
+  @Input() setKey: string | null = null;
+  /** The battery runs of the compared set, for the member runs' suite names. */
+  @Input() batteryRows: readonly CcBatteryRunRow[] = [];
+  /** The battery runs of the set not in the analysis, keyed by battery run id, with why. */
+  @Input() notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion> | null = null;
+  /** The model and the compared set, `Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1)`; the charts' subject line adds what a point is. */
+  @Input() subjectLabel = '';
 
   /** An annotation was added or deleted; the host reads the timeline again. */
   @Output() readonly annotationsChanged = new EventEmitter<void>();
@@ -378,7 +410,12 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   imageTheme: CcImageTheme = this.stored.imageTheme;
   imageFormat: FigureExportFormat = this.stored.imageFormat;
   webpQuality: WebpQuality = this.stored.webpQuality;
+  showLogo = this.stored.logo;
   private singleKey: CcFigureKey = this.stored.singleFigure;
+  /** In a battery set, what a point is; kept per component, since the set changes with step 1. */
+  plotBy: CcPlotBy = 'batteryRuns';
+  /** The decoded wide logo; null until it loads, and when it fails to. */
+  private logoImage: FigureLogo | null = null;
 
   chartSize: FigureSizeSettings = readStoredSizeSettings(CC_CHART_SIZE_STORAGE_KEY, this.defaultChartSize, false);
   /** The chart box at 100 %: the last usable size's layout box. */
@@ -443,15 +480,25 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    void ensureFigureLogo('wide').then(image => {
+      if (!image || this.destroyed) return;
+      this.logoImage = { image, aspectRatio: figureLogoAspect('wide'), heightPx: CC_HEADER_LOGO_PX };
+      if (this.showLogo) {
+        this.rebuildFigures();
+        this.cdr.markForCheck();
+        this.scheduleMeasure();
+      }
+    });
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['timeline']) {
+    if (changes['timeline'] || changes['unitKind'] || changes['setKey']) {
+      if (changes['setKey'] && !changes['setKey'].firstChange) this.plotBy = 'batteryRuns';
       this.rebuildTimeline();
       this.rebuildFigures();
       this.rebuildEvents();
       this.scheduleMeasure();
-    } else if (changes['notAnalyzed']) {
+    } else if (changes['notAnalyzed'] || changes['notAnalyzedUnits'] || changes['batteryRows'] || changes['subjectLabel']) {
       this.rebuildFigures();
       this.scheduleMeasure();
     }
@@ -493,22 +540,81 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     return { kinds: this.markerKinds, hiddenEventKinds: this.hiddenEventKinds };
   }
 
+  /** A battery set is compared: the *Plot by* choice is offered. */
+  get batterySet(): boolean {
+    return this.unitKind === 'batteryRun';
+  }
+
+  /** The charts plot battery runs: a battery set, plotted by battery run. */
+  get plotsBatteryRuns(): boolean {
+    return this.batterySet && this.plotBy === 'batteryRuns';
+  }
+
+  /** The plotted points: the set's battery points, or the runs. */
+  private plotPoints(): readonly CcTimelinePoint[] {
+    const timeline = this.timeline;
+    if (!timeline) return [];
+    return this.plotsBatteryRuns
+      ? (timeline.batteryPoints ?? []).filter(point => point.setKey === this.setKey)
+      : timeline.points;
+  }
+
+  /** Member run id → its suite name, from the set's battery runs. Kept per input list. */
+  private memberLabels(): ReadonlyMap<number, string> {
+    if (this.memberLabelsMemo?.source !== this.batteryRows) {
+      const labels = new Map<number, string>();
+      for (const row of this.batteryRows) {
+        for (const member of row.members) labels.set(member.runId, member.suiteName);
+      }
+      this.memberLabelsMemo = { source: this.batteryRows, labels };
+    }
+    return this.memberLabelsMemo.labels;
+  }
+
+  private memberLabelsMemo: { source: readonly CcBatteryRunRow[]; labels: ReadonlyMap<number, string> } | null = null;
+
   private figureInput(): CcFigureInput | null {
     const timeline = this.timeline;
     if (!timeline) return null;
+    const battery = this.plotsBatteryRuns;
     const input: CcFigureInput = {
-      points: timeline.points,
+      points: this.plotPoints(),
       events: timeline.events,
       annotations: timeline.annotations,
-      markerFilter: this.markerFilter
+      markerFilter: this.markerFilter,
+      // Battery points carry no harness of their own, so the runs group and number the events.
+      ...(battery ? { unitKind: 'batteryRun' as const, harnessPoints: timeline.points, memberLabels: this.memberLabels() } : {})
     };
-    const notAnalyzed = this.markNotAnalyzed ? this.notAnalyzedText() : null;
+    const notAnalyzed = this.markNotAnalyzed ? this.notAnalyzedText(battery ? this.notAnalyzedUnits : this.notAnalyzed) : null;
     return notAnalyzed ? { ...input, notAnalyzed } : input;
   }
 
-  /** `notAnalyzed` as the charts take it, run id to reason text; null when empty. Kept per input map. */
-  private notAnalyzedText(): ReadonlyMap<number, string> | null {
-    const source = this.notAnalyzed;
+  /** `plural noun`: `battery runs`, `member runs` or `runs`, the subject line's last part. */
+  private get plottedNoun(): string {
+    if (!this.batterySet) return `${unitNoun('run')}s`;
+    return this.plotsBatteryRuns ? `${unitNoun('batteryRun')}s` : 'member runs';
+  }
+
+  /** The charts' subject line: `Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1) · battery runs`. */
+  get chartSubject(): string | null {
+    const label = this.subjectLabel || this.axis?.displayName || this.timeline?.subject.displayName || '';
+    return label ? `${label} · ${this.plottedNoun}` : null;
+  }
+
+  /** The chart options shared by the screen and every export, in `theme`. */
+  private chartOptions(theme: CcChartTheme, reducedMotion: boolean, key: CcFigureKey): CcChartOptions {
+    return {
+      theme,
+      reducedMotion,
+      hiddenSeries: this.hiddenSeries,
+      zeroBaseline: this.zeroBaseline,
+      header: { title: figureTitle(key), subject: this.chartSubject },
+      logo: this.showLogo ? this.logoImage : null
+    };
+  }
+
+  /** `source` as the charts take it, point id to reason text; null when empty. Kept per input map. */
+  private notAnalyzedText(source: ReadonlyMap<number, CcRunInclusion> | null): ReadonlyMap<number, string> | null {
     if (!source || source.size === 0) return null;
     if (this.notAnalyzedMemo?.source !== source) {
       const text = new Map<number, string>();
@@ -537,11 +643,13 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       this.totalEventItems = 0;
       return;
     }
+    // The served-model changes are over the plotted points, so the list's S tags are the charts'.
+    const points = this.plotPoints();
     this.eventGroups = groupOverseerEvents(timeline.events, timeline.points);
-    this.servedChanges = servedModelChanges(timeline.points);
+    this.servedChanges = servedModelChanges(points);
     this.kindSummary = eventKindSummary(this.eventGroups);
     this.totalEventItems = eventItemCount(buildEventDays(this.eventGroups, timeline.annotations, this.servedChanges));
-    const bare: CcFigureInput = { points: timeline.points, events: [], annotations: [] };
+    const bare: CcFigureInput = { points, unitKind: this.plotsBatteryRuns ? 'batteryRun' : 'run', events: [], annotations: [] };
     for (const { key } of CC_FIGURE_KEYS) {
       const config = buildCcFigure(key, bare, { reducedMotion: true }).config;
       this.presentSeries[key] = config
@@ -553,12 +661,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   private rebuildFigures(): void {
     const input = this.figureInput();
     this.figures = input
-      ? this.shownKeys.map(key => buildCcFigure(key, input, {
-        theme: CC_SCREEN_THEME,
-        reducedMotion: this.reducedMotion,
-        hiddenSeries: this.hiddenSeries,
-        zeroBaseline: this.zeroBaseline
-      }))
+      ? this.shownKeys.map(key => buildCcFigure(key, input, this.chartOptions(CC_SCREEN_THEME, this.reducedMotion, key)))
       : [];
     this.seriesGroups = this.shownKeys
       .map(key => ({ key, title: figureTitle(key), series: this.presentSeries[key] ?? [] }))
@@ -690,6 +793,15 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.afterFigureSettings();
   }
 
+  /** Battery runs, or their member runs; not stored, so a new set opens on battery runs. */
+  setPlotBy(plotBy: CcPlotBy): void {
+    if (plotBy === this.plotBy) return;
+    this.plotBy = plotBy;
+    this.rebuildTimeline();
+    this.rebuildEvents();
+    this.afterFigureSettings();
+  }
+
   /** An element id for a series id, which carries a dot. */
   seriesDomId(id: string): string {
     return `cc-tl-series-${id.replace(/[^A-Za-z0-9_-]/g, '-')}`;
@@ -799,6 +911,13 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.imageTheme = theme;
     this.persist();
     this.cdr.markForCheck();
+  }
+
+  /** The logo on the charts and in every image. */
+  setShowLogo(on: boolean): void {
+    if (on === this.showLogo) return;
+    this.showLogo = on;
+    this.afterFigureSettings();
   }
 
   // --- Views ---
@@ -1213,12 +1332,17 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       theme: ccExportTheme(this.imageTheme),
       hiddenSeries: this.hiddenSeries,
       zeroBaseline: this.zeroBaseline,
+      subject: this.chartSubject,
+      logo: this.showLogo ? this.logoImage : null,
       webpQuality: this.webpQuality,
       modelKey: this.modelKey
     };
   }
 
-  /** Composes one chart off-screen, plot only, in the snapshot's theme, series and markers. */
+  /**
+   * Composes one chart off-screen as the screen draws it — header band, logo, series and markers — in
+   * the snapshot's theme.
+   */
   private async chartImage(key: CcFigureKey, format: FigureExportFormat, snapshot: CcExportSnapshot): Promise<CcChartImage> {
     const { plan, input } = snapshot;
     if (!plan.layout) return { result: null, refusal: plan.refusal ?? snapshot.sizeError, empty: false };
@@ -1227,7 +1351,9 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       theme: snapshot.theme,
       reducedMotion: true,
       hiddenSeries: snapshot.hiddenSeries,
-      zeroBaseline: snapshot.zeroBaseline
+      zeroBaseline: snapshot.zeroBaseline,
+      header: { title: figureTitle(key), subject: snapshot.subject },
+      logo: snapshot.logo
     });
     if (!figure.config) return { result: null, refusal: null, empty: true };
     const canvas = await renderPlotOffscreen(figure.config as unknown as OffscreenPlotConfig, plan.layout);
@@ -1375,7 +1501,8 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       webpQuality: this.webpQuality,
       chartSizeOpen: this.chartSizeOpen,
       imageFormatOpen: this.imageFormatOpen,
-      singleFigure: this.singleKey
+      singleFigure: this.singleKey,
+      logo: this.showLogo
     });
   }
 }

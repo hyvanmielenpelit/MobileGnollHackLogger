@@ -96,6 +96,9 @@
         <h4 class="gh-section-title cc-wizard-heading cc-wizard-fig-heading" id="cc-step-heading-2" tabindex="-1">{{ stepTitles[2] }}</h4>
         <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="timelineError"
                                    [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeText"
+                                   [unitKind]="unitKind" [setKey]="compareSet?.key ?? null"
+                                   [batteryRows]="setBatteryRows" [notAnalyzedUnits]="notAnalyzedUnits"
+                                   [subjectLabel]="subjectLabel"
                                    (annotationsChanged)="annotationsChanged.emit()"
                                    (exportingChange)="onExportingChange()"></app-cc-timeline-workspace>
       </section>

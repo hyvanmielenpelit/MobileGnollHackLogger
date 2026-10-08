@@ -245,6 +245,8 @@ export interface CcServedChange {
   tag: string;
   atUtc: string;
   runId: number;
+  /** What `runId` names: `run`, or `battery run` for a battery point. */
+  unit: string;
   from: string;
   to: string;
 }
@@ -273,7 +275,8 @@ export function servedModelChanges(points: readonly CcTimelinePoint[]): CcServed
     const current = dominantServedModel(point);
     if (current === null) continue;
     if (previous !== null && current !== previous) {
-      changes.push({ tag: `S${changes.length + 1}`, atUtc: point.startedAtUtc, runId: point.runId, from: previous, to: current });
+      const unit = 'memberRunIds' in point ? 'battery run' : 'run';
+      changes.push({ tag: `S${changes.length + 1}`, atUtc: point.startedAtUtc, runId: point.runId, unit, from: previous, to: current });
     }
     previous = current;
   }
@@ -282,7 +285,7 @@ export function servedModelChanges(points: readonly CcTimelinePoint[]): CcServed
 
 /** The marker label of a served-model change. */
 export function servedChangeLabel(change: CcServedChange): string {
-  return `Served model changed from ${change.from} to ${change.to} (run #${change.runId})`;
+  return `Served model changed from ${change.from} to ${change.to} (${change.unit} #${change.runId})`;
 }
 
 export interface CcTaggedAnnotation {

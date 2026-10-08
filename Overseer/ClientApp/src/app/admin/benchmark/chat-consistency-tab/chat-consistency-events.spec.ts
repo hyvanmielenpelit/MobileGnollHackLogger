@@ -310,8 +310,8 @@ describe('chat-consistency-events', () => {
   describe('served-model changes', () => {
     it('tags the runs whose dominant served model differs from the previous one, S1 first', () => {
       expect(servedModelChanges(ccEventPoints())).toEqual([
-        { tag: 'S1', atUtc: '2026-09-05T08:00:00Z', runId: 204, from: 'gpt-5-2026-08', to: 'gpt-5-2026-09' },
-        { tag: 'S2', atUtc: '2026-09-08T08:00:00Z', runId: 205, from: 'gpt-5-2026-09', to: 'gpt-5-2026-08' }
+        { tag: 'S1', atUtc: '2026-09-05T08:00:00Z', runId: 204, unit: 'run', from: 'gpt-5-2026-08', to: 'gpt-5-2026-09' },
+        { tag: 'S2', atUtc: '2026-09-08T08:00:00Z', runId: 205, unit: 'run', from: 'gpt-5-2026-09', to: 'gpt-5-2026-08' }
       ]);
     });
 
@@ -324,7 +324,7 @@ describe('chat-consistency-events', () => {
         ccPoint(3, 'garbage', { servedModelIds: served('c') }),
         ccPoint(5, '2026-09-05T00:00:00Z', { servedModelIds: served('b') })
       ]);
-      expect(changes).toEqual([{ tag: 'S1', atUtc: '2026-09-04T00:00:00Z', runId: 4, from: 'a', to: 'b' }]);
+      expect(changes).toEqual([{ tag: 'S1', atUtc: '2026-09-04T00:00:00Z', runId: 4, unit: 'run', from: 'a', to: 'b' }]);
       expect(servedChangeLabel(changes[0])).toBe('Served model changed from a to b (run #4)');
     });
   });

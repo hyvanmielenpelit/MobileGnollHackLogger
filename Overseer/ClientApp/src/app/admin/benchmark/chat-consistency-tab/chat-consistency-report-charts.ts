@@ -9,8 +9,9 @@ import { firstValueFrom } from 'rxjs';
 
 import { AdminBenchmarkService, ReportDocumentChartUpload } from '../../../services/admin-benchmark.service';
 import { FigureExportLayout, OffscreenPlotConfig, encodeFigureImage, renderPlotOffscreen } from '../model-comparison/figure-export';
+import { FigureLogo, ensureFigureLogo, figureLogoAspect } from '../model-comparison/figure-logo';
 import { canonicalJson } from '../report-pack/report-charts';
-import { CC_PRINT_THEME, CC_REPORT_FIGURES, CcFigureInput, buildCcFigure } from './chat-consistency-charts';
+import { CC_HEADER_LOGO_PX, CC_PRINT_THEME, CC_REPORT_FIGURES, CcFigureInput, buildCcFigure } from './chat-consistency-charts';
 import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from './chat-consistency.models';
 
 /** A 16:9 plot, written at twice its layout size. */
@@ -25,7 +26,7 @@ export const CC_REPORT_CHART_LAYOUT: FigureExportLayout = Object.freeze({
 });
 
 /** Bumped whenever the drawing changes, so the settings hash tells old charts from new ones. */
-export const CC_REPORT_CHART_VERSION = 3;
+export const CC_REPORT_CHART_VERSION = 4;
 
 /** SHA-256 of the drawing settings, 64 lowercase hex characters; throws outside a secure context. */
 export async function ccReportChartSettingsHash(): Promise<string> {
@@ -54,13 +55,29 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-/** One figure as an upload, or null when it has nothing to draw or the drawing fails. */
+/** The wide GnollBench logo at the header band's height; null when it does not load. */
+export async function ccReportLogo(): Promise<FigureLogo | null> {
+  const image = await ensureFigureLogo('wide');
+  return image ? { image, aspectRatio: figureLogoAspect('wide'), heightPx: CC_HEADER_LOGO_PX } : null;
+}
+
+/**
+ * One figure as an upload, or null when it has nothing to draw or the drawing fails. The header band
+ * carries the logo alone: the document prints the title and caption itself. The logo is loaded here
+ * unless `logo` is given.
+ */
 export async function composeCcReportChart(
   key: CcReportFigureKey,
   input: CcFigureInput,
-  settingsHash: string
+  settingsHash: string,
+  logo?: FigureLogo | null
 ): Promise<ReportDocumentChartUpload | null> {
-  const figure = buildCcFigure(CC_REPORT_FIGURES[key], input, { theme: CC_PRINT_THEME, reducedMotion: true });
+  const figure = buildCcFigure(CC_REPORT_FIGURES[key], input, {
+    theme: CC_PRINT_THEME,
+    reducedMotion: true,
+    header: { title: null, subject: null },
+    logo: logo === undefined ? await ccReportLogo() : logo
+  });
   if (!figure.config) return null;
   // The figure's line configuration, erased to the union the offscreen renderer takes.
   const plot = await renderPlotOffscreen(figure.config as unknown as OffscreenPlotConfig, CC_REPORT_CHART_LAYOUT);
@@ -92,9 +109,10 @@ export async function publishCcReportCharts(
   const result: CcChartPublishResult = { published: [], failed: [] };
   if (documentIds.length === 0) return result;
   const settingsHash = await ccReportChartSettingsHash();
+  const logo = await ccReportLogo();
   const uploads: ReportDocumentChartUpload[] = [];
   for (const key of CC_REPORT_FIGURE_KEYS) {
-    const upload = await composeCcReportChart(key, input, settingsHash);
+    const upload = await composeCcReportChart(key, input, settingsHash, logo);
     if (upload) uploads.push(upload);
   }
   if (uploads.length === 0) {

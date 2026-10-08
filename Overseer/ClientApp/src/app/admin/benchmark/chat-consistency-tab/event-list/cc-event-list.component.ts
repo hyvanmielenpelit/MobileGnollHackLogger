@@ -188,7 +188,7 @@ function servedRow(change: CcServedChange, id: string): CcEventRowServed {
     atUtc: change.atUtc,
     from: change.from,
     to: change.to,
-    run: `run #${change.runId}`,
+    run: `${change.unit} #${change.runId}`,
     time: time === '' ? '' : `${time} UTC`
   };
 }
