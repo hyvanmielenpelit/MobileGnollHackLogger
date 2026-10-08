@@ -1,9 +1,8 @@
 <figure class="cc-figure" [class.is-fixed-width]="boxWidth !== null" [style.inline-size.px]="boxWidth"
         [attr.data-figure]="figure.key" [attr.aria-labelledby]="figureId + '-title'">
-  <figcaption class="cc-figure-caption">
-    <!-- The chart's header band draws the title; this one names the figure for assistive technology. -->
-    <span class="cc-figure-title" [class.visually-hidden]="titleInChart" [id]="figureId + '-title'">{{ figure.title }}</span>
-    <span class="cc-figure-takeaway" [id]="figureId + '-takeaway'">{{ figure.takeaway }}</span>
+  <!-- The chart's header band draws the title; this one names the figure for assistive technology. -->
+  <figcaption class="cc-figure-caption" [class.visually-hidden]="titleInChart">
+    <span class="cc-figure-title" [id]="figureId + '-title'">{{ figure.title }}</span>
   </figcaption>
 
   @if (chartData) {
@@ -18,54 +17,62 @@
     <p class="cc-figure-empty">Nothing to chart in this range.</p>
   }
 
+  <p class="cc-figure-takeaway" [id]="figureId + '-takeaway'">{{ figure.takeaway }}</p>
+
   @if (figure.markers.length > 0) {
     <ul class="visually-hidden" [id]="markersId" [attr.aria-label]="'Markers on ' + figure.title">
       @for (marker of figure.markers; track marker.tag) {
         <li>{{ marker.tag }}: {{ marker.label }}</li>
       }
     </ul>
-
-    <!-- The spaces and punctuation are pieces of their own: whitespace-only template text is dropped. -->
-    <p class="cc-figure-markers">
-      @for (piece of markerPieces; track $index) {
-        <span [class]="piece.className">{{ piece.text }}</span>
-      }
-      @if (showEvents.observed) {
-        <button type="button" class="btn-link cc-figure-show-events" (click)="showEvents.emit()">Show events</button>
-      }
-    </p>
   }
+
+  <!-- Hidden by CSS while it holds neither markers nor projected actions. -->
+  <div class="cc-figure-footer">
+    @if (figure.markers.length > 0) {
+      <!-- The spaces and punctuation are pieces of their own: whitespace-only template text is dropped. -->
+      <p class="cc-figure-markers">
+        @for (piece of markerPieces; track $index) {
+          <span [class]="piece.className">{{ piece.text }}</span>
+        }
+        @if (showEvents.observed) {
+          <button type="button" class="btn-link cc-figure-show-events" (click)="showEvents.emit()">Show events</button>
+        }
+      </p>
+    }
+    <div class="cc-figure-actions"><ng-content select="[ccFigureActions]" /></div>
+  </div>
 
   <details class="gh-disclosure cc-figure-data">
     <summary>Show data</summary>
     <div class="gh-disclosure-body">
-      <div class="cc-figure-table-scroll">
-        <table class="gh-table cc-figure-table">
-          <caption class="visually-hidden" [id]="figureId + '-table-caption'">{{ figure.title }}: data per {{ unitNoun }}</caption>
-          <thead>
-            <tr>
-              @for (column of figure.table.columns; track $index) {
-                <th scope="col">{{ column }}</th>
-              }
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of figure.table.rows; track $index) {
-              <tr>
-                @for (cell of row; track $index) {
-                  @if ($first) {
-                    <th scope="row">{{ cell }}</th>
-                  } @else {
-                    <td>{{ cell }}</td>
-                  }
+      <p class="visually-hidden" [id]="figureId + '-data-title'">{{ figure.title }}: data per {{ unitNoun }}</p>
+      <ul role="list" class="cc-data-cards" [attr.aria-labelledby]="figureId + '-data-title'">
+        @for (card of dataCards; track card.id) {
+          <li>
+            <article class="cc-data-card" [attr.aria-labelledby]="card.id + '-title'">
+              <div class="cc-data-card-head">
+                @if (dataHeadingLevel === 5) {
+                  <h5 class="cc-data-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
+                } @else {
+                  <h6 class="cc-data-card-title" [id]="card.id + '-title'">{{ card.title }}</h6>
                 }
-              </tr>
-            } @empty {
-              <tr><td [attr.colspan]="figure.table.columns.length">No {{ unitNoun }}s in this range.</td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
+                <span class="cc-data-card-meta">{{ card.started }}</span>
+              </div>
+              <dl class="cc-data-card-fields">
+                @for (field of card.fields; track $index) {
+                  <div class="cc-data-field" [class.is-wide]="field.wide">
+                    <dt>{{ field.label }}</dt>
+                    <dd>{{ field.value }}</dd>
+                  </div>
+                }
+              </dl>
+            </article>
+          </li>
+        } @empty {
+          <li class="cc-data-empty">No {{ unitNoun }}s in this range.</li>
+        }
+      </ul>
     </div>
   </details>
 </figure>

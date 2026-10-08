@@ -477,7 +477,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     - `timeline-workspace/` (`app-cc-timeline-workspace`, step 2, in a `.gh-fig-host` step): the global
       `gh-fig-*` workspace — a sidebar (`#cc-tl-sidebar`, 18–40 rem, at most half the workspace, 26 rem
       by default, `app-pane-resizer`, width as `--gh-fig-sidebar-width`; collapsed by the view bar's
-      toggle) with the tabs **Data** (charts, series, *Start the quality axis at zero*, and **Mark runs
+      toggle) with the tabs **Data** (charts, series, *Show the full 0–100 Intelligence scale*
+      `#cc-tl-zero-baseline`, stored as `zeroBaseline`, and **Mark runs
       not in the analysis** `#cc-tl-mark-not-analyzed`, on by default), **Events**
       (marker kinds, Overseer change kinds with composite counts, and `app-cc-event-list`), **Annotations**
       (`annotations/`, `app-cc-annotations-panel`: add and delete only; there is no edit) and
@@ -485,14 +486,18 @@ To find specific popups, look in the corresponding component's `.html` template:
       `app-export-format-section`, id prefix `cc-image-format`; the theme radios *As shown (dark)* /
       *Light, for print*); and the views **All charts** (one column of `app-cc-chart-figure` tiles, a
       canvas only within one viewport height of view, each tile's Copy / Download / Open in Single view
-      cluster; toolbar zoom, **Fit width**, **Fit height**, **Download all**) and **Single chart**
-      (Previous / select / Next, zoom, **Fit to screen**, **Actual size**, Copy, Download). Zoom is
+      projected into the figure's footer as `[ccFigureActions]` `.cc-tl-tile-actions`, always shown;
+      toolbar zoom, **Fit width**, **Fit to screen**, **Download all**) and **Single chart**
+      (Previous / select / Next, zoom, **Fit to screen**, **Actual size**, Copy, Download); both views
+      open at Fit to screen. `app-cc-chart-figure` puts the takeaway under the chart, then the footer
+      (marker line, projected actions), and *Show data* as a card list (`ccDataCards`, headings at
+      `dataHeadingLevel`, 5 under the step's `h4`, 6 by default). Zoom is
       `cc-chart-zoom.ts`: it **resizes the live Chart.js charts**, never a bitmap — at 1 the box is
       `layoutBoxFor` of the chart size (`ccChartBox`; density ignored), so text keeps its size and every
       run keeps its tooltip; the range is 25 % (lower where a fit is) to 400 %, the slider applies once per
       frame, and a chart canvas is capped at 8 M device pixels (`ccCanvasRatio`). Keys on a view panel,
-      outside form fields and without Ctrl / ⌘ / Alt: `+` / `=`, `-`, `0` (Fit height in All, Fit to
-      screen in Single) and `1` (100 %, Single only). Exports are `cc-chart-export.ts`
+      outside form fields and without Ctrl / ⌘ / Alt: `+` / `=`, `-`, `0` (Fit to screen in both
+      views) and `1` (100 %, Single only). Exports are `cc-chart-export.ts`
       (`ccExportLayout`, the plot-only layout through `bitmapRefusal`; `ccChartFilename`,
       `ccChartArchiveFilename`; `ccExportTheme`, the screen theme on `#101010` or the print theme)
       through Model Comparison's `renderPlotOffscreen`, `encodeFigureImage`, `copyImageToClipboard` and

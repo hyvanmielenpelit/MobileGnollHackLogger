@@ -205,7 +205,7 @@ you already read the label, it is noise; drop it.
 | download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Timeline step) | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts (the *All charts* toolbar of Model Comparison and of the Chat Consistency Timeline step) | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Timeline step) | "Copies to the clipboard" — nothing is saved to disk |
-| maximize (Feather: four corner brackets) | **Fit to screen** (*Single chart*) and **Fit height** (*All charts*), icon-only, in Model Comparison and the Chat Consistency Timeline step | "Fit the view to the space" — the zoom that makes the chart fill the view |
+| maximize (Feather: four corner brackets) | **Fit to screen** (*Single chart*, and *All charts* of the Chat Consistency Timeline step) and **Fit height** (*All charts* of Model Comparison), icon-only | "Fit the view to the space" — the zoom that makes the chart fill the view |
 | fit-width (a two-headed horizontal arrow: Feather geometry `<polyline points="7 8 3 12 7 16">`, `<polyline points="17 8 21 12 17 16">`, `<line x1="3" y1="12" x2="21" y2="12">`) | **Fit width** (icon-only, the *All charts* toolbar of the Chat Consistency Timeline step) | "Stretch to the width" — the one fit that fills across only, told apart from *maximize*, which fits the height or the whole chart |
 | eye | Open in Single view (Model Comparison and each Chat Consistency Timeline tile), the Chat Consistency Timeline step's **Single chart** view tab, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
 | more (three dots in a row) | **More actions** (icon-only, each Report Pack row of the Download Center in the Model Comparison wizard's Documents step; opens a §4f action popover with *Update charts* and *Remove charts*) | "More actions are behind this" — the row keeps its frequent actions as visible icon buttons and puts the rarer, worded ones in the popover |
@@ -443,8 +443,8 @@ compass*, like Open Comparison Wizard, and is the page's only `.btn-gh`. The wiz
 icon-only **Reload runs** (*rotate*, steps 1 and 2, `aria-disabled` while the runs load or no model is
 chosen) beside the close `.btn-icon-action`. The Timeline step reuses Model Comparison's step-2
 controls: the view tabs **All charts** (*grid*) and **Single chart** (*eye*); each All-charts tile's
-Copy, Download and Open in Single view (*copy*, *download*, *eye*), shown while the tile is hovered or
-holds focus; the *All charts* toolbar's zoom, **Fit height** (*maximize*) and **Download all**
+Copy, Download and Open in Single view (*copy*, *download*, *eye*), always shown in the figure's footer
+under the chart; the *All charts* toolbar's zoom, **Fit to screen** (*maximize*) and **Download all**
 (*download-all*); the *Single chart* toolbar's zoom, **Fit to screen** (*maximize*), **Actual size**
 (the 1:1 glyph), **Copy** and **Download**. One glyph is new, *fit-width*, a two-headed horizontal arrow
 for the *All charts* toolbar's **Fit width**, meaning "stretch to the width"; no other control uses it.

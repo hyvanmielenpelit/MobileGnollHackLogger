@@ -85,7 +85,7 @@ describe('CcResultsViewComponent', () => {
   it('draws the charts over the analysis\'s runs only, and shows limitations, data quality and identity', () => {
     const figures = Array.from(el.querySelectorAll('figure.cc-figure')).map(f => f.getAttribute('data-figure'));
     expect(figures).toEqual(['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'timeline']);
-    expect(textOf(el.querySelector('figure[data-figure="quality"] figcaption'))).toContain('across 6 runs');
+    expect(textOf(el.querySelector('figure[data-figure="quality"] .cc-figure-takeaway'))).toContain('across 6 runs');
     expect(textOf(el.querySelector('.cc-res-list'))).toBe('Only one time stratum is common to both periods.');
     expect(textOf(el.querySelector('.cc-res-identity'))).toContain('#7');
     expect(textOf(el.querySelector('.cc-sha'))).toBe('a'.repeat(64));
@@ -109,7 +109,7 @@ describe('CcResultsViewComponent', () => {
     const quality = fixture.componentInstance.figures.find(figure => figure.key === 'quality')!;
     expect(quality.config!.data.datasets[0].data.map(point => point.runId)).toEqual([11, 12]);
     expect(quality.table.columns[0]).toBe('Battery run');
-    expect(textOf(el.querySelector('figure[data-figure="quality"] figcaption'))).toContain('across 2 battery runs');
+    expect(textOf(el.querySelector('figure[data-figure="quality"] .cc-figure-takeaway'))).toContain('across 2 battery runs');
   });
 
   it('draws the figures in one column, each in a 352 px box, even when wide', () => {

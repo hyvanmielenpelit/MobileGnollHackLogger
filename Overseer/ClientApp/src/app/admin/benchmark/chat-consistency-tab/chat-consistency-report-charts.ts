@@ -26,7 +26,7 @@ export const CC_REPORT_CHART_LAYOUT: FigureExportLayout = Object.freeze({
 });
 
 /** Bumped whenever the drawing changes, so the settings hash tells old charts from new ones. */
-export const CC_REPORT_CHART_VERSION = 4;
+export const CC_REPORT_CHART_VERSION = 5;
 
 /** SHA-256 of the drawing settings, 64 lowercase hex characters; throws outside a secure context. */
 export async function ccReportChartSettingsHash(): Promise<string> {

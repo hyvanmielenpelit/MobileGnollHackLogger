@@ -122,6 +122,21 @@
   max-inline-size: none;
 }
 
+// Copy, Download and Open in the figure's footer, under the chart; always shown.
+.cc-tl-tile-actions {
+  display: flex;
+  gap: 4px;
+
+  .action-btn {
+    margin: 0;
+
+    &[aria-disabled="true"] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
 .cc-tl-empty {
   margin: 0;
   color: var(--nav-color);

@@ -12,7 +12,7 @@ import {
 import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
-import { CcChartMarker, CcFigure, CcMarkerKind } from '../chat-consistency-charts';
+import { CcChartMarker, CcFigure, CcFigureTable, CcMarkerKind } from '../chat-consistency-charts';
 
 /** A run of marker tags of one kind with consecutive numbers: `E1`–`E4`, or `E7` alone. */
 export interface CcMarkerTagRun {
@@ -101,11 +101,54 @@ export function markerSummaryPieces(groups: readonly CcMarkerSummaryGroup[]): Cc
   return pieces;
 }
 
+/** One field of a data card: a table column's label and the row's value in it. */
+export interface CcDataField {
+  label: string;
+  value: string;
+  /** Spans the whole card row: a list, a note or a long value. */
+  wide: boolean;
+}
+
+/** One row of a figure's table as a card: `Battery run #11`, its start, and every other column. */
+export interface CcDataCard {
+  id: string;
+  title: string;
+  started: string;
+  fields: CcDataField[];
+}
+
+/** The columns whose values always take a whole card row. */
+const WIDE_COLUMNS: ReadonlySet<string> = new Set(['Member runs', 'Note', 'In the analysis', 'Served model']);
+/** A value longer than this takes a whole card row. */
+const WIDE_VALUE_LENGTH = 32;
+
 /**
- * One Chat Consistency chart as a `<figure>`: the title and the takeaway sentence as its caption,
- * the chart (a canvas named by the takeaway and described by a visually hidden list of its
- * markers) in a box of the size the host chooses, a one-line summary of the markers, and a
- * *Show data* disclosure holding the same numbers as a real table.
+ * The table's rows as cards, ids derived from `idPrefix`: column 0 and its cell make the title,
+ * column 1 the start, and every other column a field; an empty cell reads `—`, and an empty *Note*
+ * is left out.
+ */
+export function ccDataCards(table: CcFigureTable, idPrefix: string): CcDataCard[] {
+  const [unit = 'Run', , ...labels] = table.columns;
+  return table.rows.map((row, r) => ({
+    id: `${idPrefix}-row-${r}`,
+    title: `${unit} ${row[0] ?? ''}`.trim(),
+    started: row[1] ?? '',
+    fields: labels
+      .map((label, i) => ({ label, value: (row[i + 2] ?? '').trim() }))
+      .filter(field => !(field.label === 'Note' && field.value === ''))
+      .map(field => {
+        const value = field.value === '' ? '—' : field.value;
+        return { label: field.label, value, wide: WIDE_COLUMNS.has(field.label) || value.length > WIDE_VALUE_LENGTH };
+      })
+  }));
+}
+
+/**
+ * One Chat Consistency chart as a `<figure>`: the title as its caption, the chart (a canvas named by
+ * the takeaway and described by a visually hidden list of its markers) in a box of the size the host
+ * chooses, the takeaway sentence under it, a footer row with a one-line summary of the markers and
+ * the actions the host projects (`[ccFigureActions]`), and a *Show data* disclosure holding the same
+ * numbers as a list of cards.
  */
 @Component({
   selector: 'app-cc-chart-figure',
@@ -127,8 +170,10 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
   @Input() deviceRatio: number | null = null;
   /** False keeps the sized box and draws no canvas. */
   @Input() render = true;
-  /** The chart's header band shows the title, so the caption's title is visually hidden. */
+  /** The chart's header band shows the title, so the caption is visually hidden. */
   @Input() titleInChart = false;
+  /** The data cards' heading level, one under the host's section heading. */
+  @Input() dataHeadingLevel: 5 | 6 = 6;
 
   /** Asks the host to show the event list; the button is shown only while a host listens. */
   @Output() readonly showEvents = new EventEmitter<void>();
@@ -141,6 +186,7 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
   chartOptions: ChartConfiguration['options'] = {};
   chartPlugins: Plugin[] = [];
   markerPieces: CcMarkerSummaryPiece[] = [];
+  dataCards: CcDataCard[] = [];
 
   /** Chart.js applies a new device ratio only on a resize, so a ratio change asks for one. */
   private ratioChanged = false;
@@ -157,6 +203,9 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
     if (changes['figure']) {
       this.markerPieces = markerSummaryPieces(markerSummary(this.figure?.markers ?? []));
     }
+    if (changes['figure'] || changes['figureId']) {
+      this.dataCards = this.figure ? ccDataCards(this.figure.table, this.figureId) : [];
+    }
     if (changes['deviceRatio'] && !changes['deviceRatio'].firstChange) {
       this.ratioChanged = true;
     }
@@ -172,7 +221,7 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
     return `${this.figureId}-markers`;
   }
 
-  /** `run` or `battery run`: what a table row is, from its first column. */
+  /** `run` or `battery run`: what a data card is, from the table's first column. */
   get unitNoun(): string {
     return (this.figure?.table.columns[0] ?? 'Run').toLowerCase();
   }

@@ -715,33 +715,52 @@ this browser and restored when the tab loads again (§ 17.1).
 A settings sidebar — resizable from 18 to 40 rem (at most half the workspace, 26 rem by default) and
 collapsible from the view bar — beside two views of the live charts. Its tab row wraps onto a second
 line when the sidebar is too narrow for *Data · Events · Annotations · Download*, so no tab is cut off;
-Left and Right still move through the four tabs in order. There is one chart per measure: quality per
-run (native and common-grader), time to first answer text (legacy proxy points hollow), answer
-streaming rate, **output tokens per answer**, **tool calls per answer**, cost per question, reliability,
-and *Runs and events*. Output tokens and tool calls are two charts rather than one with two value axes,
+Left and Right still move through the four tabs in order. There is one chart per measure:
+**Intelligence per run** (native and common-grader), time to first answer text (legacy proxy points
+hollow), answer streaming rate, **output tokens per answer**, **tool calls per answer**, cost per
+question, reliability, and *Runs and events*. Output tokens and tool calls are two charts rather than one with two value axes,
 which would suggest a relation between two arbitrary scales. Each chart draws its markers — composite
 Overseer events `E<n>`, annotations `A<n>` and served-model changes `S<n>`, their tags staggered in a
-band above the plot — names them under the chart, and has a *Show data* table.
+band above the plot — names them under the chart, and has a *Show data* list of data cards.
 
 **Battery runs.** With a battery compared in step 1, the charts draw **one point per battery run** of
 the set, as the analysis counts it: the timeline's `batteryPoints`
 (`ChatConsistencyTimeline.BatteryPoints`) pool each battery run's usable members — medians and means
 over the union of their answers, not the mean of the members' medians, and a common grader's mean
-weighted by items, kept only when every member was calibrated by it. A battery run's quality is its
-battery analysis's **Overall Index**, the number the battery report, the leaderboard and Model
-Comparison show: the latest stored analysis, used only while it covers the battery run's current
-members. Without one, with a stale one, or for an incomplete battery run there is no quality point,
-and the caption and the *Show data* table's *Note* column say why (*No battery analysis. Compute it
-from the battery report.*). Every table of a battery chart adds *Suites* and *Member runs*, and the
-tooltip names the members with their suites. **Plot by** on the Data tab switches to *Member runs*, the
+weighted by items, kept only when every member was calibrated by it. A battery run's Intelligence is
+its battery analysis's **Overall Intelligence Index**, the number the battery report, the leaderboard
+and Model Comparison show: the latest stored analysis, used only while it covers the battery run's
+current members. Without one, with a stale one, or for an incomplete battery run there is no
+Intelligence point, and the takeaway and the data card's *Note* field say why (*No battery analysis.
+Compute it from the battery report.*). Every data card of a battery chart adds *Suites* and *Member
+runs*, the members named with their suites. **Plot by** on the Data tab switches to *Member runs*, the
 per-run charts, for looking inside a battery; it returns to *Battery runs* when another set is chosen.
 
 **The styling.** The series colors come from a palette validated for color-vision deficiencies and
-contrast on the chart surface, and the color follows the measure, not the rank: quality gold, time to
-first answer text blue, streaming rate aqua, output tokens violet, tool calls orange, cost magenta.
+contrast on the chart surface, and the color follows the measure, not the rank: Intelligence gold, time
+to first answer text blue, streaming rate aqua, output tokens violet, tool calls orange, cost magenta.
 Lines are 2 px with ringed points; each reliability rate has its own point shape as well as color. A
-chart with one series has no legend box (its title names the series) and an area wash under the line;
-up to two series end in a label with the latest value. The time axis ticks fit the span (hours with the
+chart with one series has no legend box (its title names the series) and an area wash under the line.
+On a chart drawing **at most two series, every point carries its value**, in the data cards' precision
+(*82.0*, *39.3 s*), above the point (the second series below it, either flipping where the plot's edge
+would cut it), over a halo of the background so it reads across lines and fills; a point not in the
+analysis has its value muted. Where labels would collide, the lower-priority one is dropped: the latest
+point, the highest and the lowest are placed first, then the rest left to right, so those three always
+remain on a dense timeline and zooming in shows more. *Reliability* and *Runs and events* carry none.
+
+**The value axes** never mislead. The ratio measures — time, streaming rate, output tokens, tool calls,
+cost and the reliability shares — **start at zero**, so a point's height is proportional to its value;
+the reliability axis ends at 100 % at most and shows at least 0–10 %, so all-zero rates do not fill the
+plot. The **Intelligence axis** keeps its 0–100 scale's context and shows **at least 20 points** on
+nice bounds (two battery runs at 82.0 and 82.4 draw on 70–90, ticks every 5): Artificial Analysis
+states its Intelligence Index's 95 % confidence interval as under ±1 point after more than ten repeats,
+and a GnollBench battery run is one repeat of far fewer questions, so differences of a few points are
+within noise, and a 20-point window keeps a ±2-point wobble at about a tenth of the plot height instead
+of filling it. *Show the full 0–100 Intelligence scale* on the Data tab draws 0–100. Each axis pads the
+data by 15 % of its span, snaps both bounds to a step of 1, 2, 2.5 or 5 × 10ᵏ chosen for about five
+intervals, and widens step by step to its least span (downward first for Intelligence); the tick labels
+take the decimals their step needs, so no two read alike. The bounds come from the drawn series, as the
+time range does. The time axis ticks fit the span (hours with the
 date on each day's first tick under a day's step, *Oct 8* under a year, *2026-10* beyond), there are no
 vertical grid lines, the period bands are named at their top left, and the markers are drawn in neutral
 inks — told apart by dash, tag letter and a filled or outlined tag — so color stays with the data.
@@ -750,21 +769,34 @@ inks — told apart by dash, tag letter and a filled or outlined tag — so colo
 what a point is (*Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1) · battery runs*) — with
 the **GnollBench logo** on the right. It is the same on screen, in **Copy**, **Download**, **Download
 all** and, logo only, in the report charts, whose documents print their own captions. On screen the
-figure's own title is visually hidden, still naming the figure for assistive technology; the takeaway
-sentence stays above the chart.
+header band is the top of the figure: the figure's own caption is visually hidden, still naming the
+figure for assistive technology, and **the takeaway sentence follows the chart**, then a footer row
+with the marker line and *Show events* on the left and, on an All charts tile, its **Copy**,
+**Download** and **Open in Single view** on the right.
+
+**The tooltip** appears only over a point, not anywhere over the plot, and is small: the point and its
+start as the title (*#11 · 2026-10-08 07:14 UTC*) and one line per series with its short name and value
+(*Estimated: 422.2 tok/s*, *Overall Index: 82.4*), the series color only on a chart drawing more than
+one. A battery run's members are on its data card, not in the tooltip.
+
+**Show data** opens the chart's numbers as a list of **data cards**, one per run or battery run,
+spanning the figure's width with nothing scrolling sideways: the unit as the card's heading (*Battery
+run #11*), its start beside it, and every other column as a labeled field; *Member runs*, *Note*, *In
+the analysis*, *Served model* and any long value take a whole row, an empty value reads *—*, and an
+empty *Note* is left out. The list scrolls on its own beyond 24 rem.
 
 **Runs not in the analysis** — left out in step 1, or before its first or after its last run — are
 drawn as **gray crosses**, and every line segment touching one is gray and dotted, so shape and dash,
 not only color, mark them; the legend keeps each series' own symbol. The caption counts them (*2 runs
 not in the analysis are drawn as gray crosses.*, counting runs with a value in any of the chart's
-series), the tooltip appends the reason (*— not in the analysis (left out in step 1)*), and the
-*Show data* table gains an *In the analysis* column (*Yes*, *No — before the first run*). Without a
+series), the tooltip adds the reason on a second line (*Not in the analysis: left out in step 1*), and
+every data card gains an *In the analysis* field (*Yes*, *No — before the first run*). Without a
 step-1 selection the charts are drawn as before. The values, scales and gaps do not change.
 
 The sidebar has four tabs:
 
 - **Data** — with a battery compared, **Plot by** (*Battery runs* or *Member runs*); which charts are
-  shown, which series of the charts that draw more than one, *Start the quality axis at zero*, and
+  shown, which series of the charts that draw more than one, *Show the full 0–100 Intelligence scale*, and
   **Mark runs not in the analysis** (on by default; off draws every run alike).
 - **Events** — which markers the charts show (*Overseer changes*, *Annotations*, *Served-model
   changes*), which Overseer change kinds (each with the number of composite events holding it), and the
@@ -782,10 +814,10 @@ The sidebar has four tabs:
   image.
 
 The two views are **All charts**, every shown chart in one column, each tile with **Copy**, **Download**
-and **Open in Single view**, and a toolbar with the zoom, *Fit width*, *Fit height* and **Download all**;
-and **Single chart**, one chart with *Previous chart*, a chart select and *Next chart*, the zoom, *Fit
-to screen*, *Actual size* (100 %), **Copy** and **Download**. All charts opens at *Fit width*, Single
-chart at *Fit to screen*.
+and **Open in Single view** under its chart, and a toolbar with the zoom, *Fit width*, *Fit to screen*
+and **Download all**; and **Single chart**, one chart with *Previous chart*, a chart select and *Next
+chart*, the zoom, *Fit to screen*, *Actual size* (100 %), **Copy** and **Download**. Both views open at
+**Fit to screen**: one whole chart, its *Show data* summary included, fits the view.
 
 **Zoom resizes the live charts; it does not scale a picture.** Zooming in gives a chart more room — a
 longer time axis and a taller value axis — at the same text size, and every run keeps its hover tooltip.
@@ -793,7 +825,7 @@ At 100 % a chart's box is the download's layout box for the chosen chart size, s
 agree there. The chart size's aspect ratio and text size therefore shape the charts on screen too; its
 pixel density changes only the file. The zoom reaches from 25 % (lower where a fit needs it) to 400 %.
 In a view, outside a form field and without Ctrl, ⌘ or Alt, `+` or `=` zooms in, `-` zooms out, `0`
-fits (one chart's height in All charts, the screen in Single chart) and, in Single chart, `1` is 100 %.
+fits one whole chart to the screen in both views and, in Single chart, `1` is 100 %.
 
 **The image is the chart as shown** — its title, the model and the GnollBench logo in the header band,
 without the takeaway or the marker list — in the chosen theme, with the series and markers the sidebar

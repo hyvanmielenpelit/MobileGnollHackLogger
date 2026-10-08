@@ -2833,7 +2833,7 @@ an event*) cannot drop text; a note of either marks the document **Completed wit
 
 | Key | Figure |
 |---|---|
-| `cc1-quality` | Quality per run (native, and common grader where one exists) |
+| `cc1-quality` | Intelligence per run (native, and common grader where one exists) |
 | `cc2-speed` | Time to first answer text (telemetry; the legacy proxy hollow) |
 | `cc3-work` | Output tokens per answer |
 | `cc4-timeline` | Runs and events (telemetry and legacy runs; Overseer changes, annotations, served-model changes) |

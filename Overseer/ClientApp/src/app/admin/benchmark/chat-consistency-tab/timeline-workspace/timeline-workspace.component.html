@@ -78,7 +78,7 @@
             <label class="checkbox-label">
               <input type="checkbox" id="cc-tl-zero-baseline" [checked]="zeroBaseline"
                      (change)="setZeroBaseline($any($event.target).checked)">
-              Start the quality axis at zero
+              Show the full 0–100 Intelligence scale
             </label>
           </fieldset>
 
@@ -314,9 +314,9 @@
                     <line x1="3" y1="12" x2="21" y2="12"></line>
                   </svg>
                 </button>
-                <button type="button" class="action-btn cc-tl-fit-height" aria-label="Fit height"
-                        interestfor="cc-tl-tip-all-fit-height" style="anchor-name: --cc-tl-tip-all-fit-height"
-                        (click)="fitHeight()">
+                <button type="button" class="action-btn cc-tl-fit-screen" aria-label="Fit to screen"
+                        interestfor="cc-tl-tip-all-fit-screen" style="anchor-name: --cc-tl-tip-all-fit-screen"
+                        (click)="fitScreen()">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
                   </svg>
@@ -346,8 +346,8 @@
                  style="position-anchor: --cc-tl-tip-all-zoom-in">Zoom in (+)</div>
             <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-fit-width"
                  style="position-anchor: --cc-tl-tip-all-fit-width">Fit the charts to the width</div>
-            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-fit-height"
-                 style="position-anchor: --cc-tl-tip-all-fit-height">Fit one chart's height to the view (0)</div>
+            <div popover="hint" class="gh-tooltip" id="cc-tl-tip-all-fit-screen"
+                 style="position-anchor: --cc-tl-tip-all-fit-screen">Fit one whole chart to the view (0)</div>
             <div popover="hint" class="gh-tooltip" id="cc-tl-tip-download-all"
                  style="position-anchor: --cc-tl-tip-download-all">{{ downloadAllTooltip }}</div>
 
@@ -362,45 +362,46 @@
                       <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-' + figure.key"
                                            [boxWidth]="boxWidth" [boxHeight]="boxHeight"
                                            [deviceRatio]="deviceRatio" [titleInChart]="true" [render]="isNear(figure.key)"
-                                           (showEvents)="onShowEvents()"></app-cc-chart-figure>
-                      <!-- Shown while the tile is hovered or holds focus, and always without hover; all
-                           three are tab stops, and the tile itself is not focusable. The handlers
-                           refuse on their own while the buttons are aria-disabled. -->
-                      <div class="gh-fig-tile-actions">
-                        <button type="button" class="action-btn cc-tl-copy"
-                                [attr.aria-label]="'Copy ' + figure.title + ' to the clipboard'"
-                                [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
-                                [attr.interestfor]="tipId('copy', figure.key)"
-                                [attr.style]="'anchor-name: --' + tipId('copy', figure.key)"
-                                (click)="copyChart(figure)">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                          </svg>
-                        </button>
-                        <button type="button" class="action-btn cc-tl-download"
-                                [attr.aria-label]="'Download ' + figure.title"
-                                [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
-                                [attr.interestfor]="tipId('download', figure.key)"
-                                [attr.style]="'anchor-name: --' + tipId('download', figure.key)"
-                                (click)="downloadChart(figure)">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                          </svg>
-                        </button>
-                        <button type="button" class="action-btn cc-tl-open"
-                                [attr.aria-label]="'Open ' + figure.title + ' in Single view'"
-                                [attr.interestfor]="tipId('single', figure.key)"
-                                [attr.style]="'anchor-name: --' + tipId('single', figure.key)"
-                                (click)="openInSingle(figure.key)">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                            <circle cx="12" cy="12" r="3"></circle>
-                          </svg>
-                        </button>
-                      </div>
+                                           [dataHeadingLevel]="5" (showEvents)="onShowEvents()">
+                        <!-- In the figure's footer, under the chart; all three are tab stops, and the tile
+                             itself is not focusable. The handlers refuse on their own while the buttons
+                             are aria-disabled. -->
+                        <div ccFigureActions class="cc-tl-tile-actions" role="group" [attr.aria-label]="'Actions for ' + figure.title">
+                          <button type="button" class="action-btn cc-tl-copy"
+                                  [attr.aria-label]="'Copy ' + figure.title + ' to the clipboard'"
+                                  [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
+                                  [attr.interestfor]="tipId('copy', figure.key)"
+                                  [attr.style]="'anchor-name: --' + tipId('copy', figure.key)"
+                                  (click)="copyChart(figure)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                          </button>
+                          <button type="button" class="action-btn cc-tl-download"
+                                  [attr.aria-label]="'Download ' + figure.title"
+                                  [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
+                                  [attr.interestfor]="tipId('download', figure.key)"
+                                  [attr.style]="'anchor-name: --' + tipId('download', figure.key)"
+                                  (click)="downloadChart(figure)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                              <polyline points="7 10 12 15 17 10"></polyline>
+                              <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                          </button>
+                          <button type="button" class="action-btn cc-tl-open"
+                                  [attr.aria-label]="'Open ' + figure.title + ' in Single view'"
+                                  [attr.interestfor]="tipId('single', figure.key)"
+                                  [attr.style]="'anchor-name: --' + tipId('single', figure.key)"
+                                  (click)="openInSingle(figure.key)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                              <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                          </button>
+                        </div>
+                      </app-cc-chart-figure>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('copy', figure.key)"
                            [attr.style]="'position-anchor: --' + tipId('copy', figure.key)">{{ copyTooltip(figure) }}</div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('download', figure.key)"
@@ -413,7 +414,7 @@
               }
             </div>
             <p id="cc-tl-all-hint" class="visually-hidden">Every shown chart in one column. Plus and minus zoom
-              them all, and 0 fits one chart's height to the view. Zoom changes only this view; the downloads
+              them all, and 0 fits one whole chart to the view. Zoom changes only this view; the downloads
               keep the chart size.</p>
           </div>
         } @else {
@@ -543,7 +544,7 @@
                   <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-single-' + figure.key"
                                        [boxWidth]="boxWidth" [boxHeight]="boxHeight"
                                        [deviceRatio]="deviceRatio" [titleInChart]="true"
-                                       (showEvents)="onShowEvents()"></app-cc-chart-figure>
+                                       [dataHeadingLevel]="5" (showEvents)="onShowEvents()"></app-cc-chart-figure>
                 </div>
               } @else {
                 <p class="cc-tl-empty">No chart is shown. Choose charts under Data.</p>

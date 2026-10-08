@@ -443,7 +443,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   // --- Zoom ---
 
-  private allView: CcZoomView = 'fitWidth';
+  private allView: CcZoomView = 'fitScreen';
   private singleView: CcZoomView = 'fitScreen';
   /** The viewport's content box, in CSS px; null until it has been measured with a size. */
   private viewportBox: { width: number; height: number } | null = null;
@@ -653,7 +653,10 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     for (const { key } of CC_FIGURE_KEYS) {
       const config = buildCcFigure(key, bare, { reducedMotion: true }).config;
       this.presentSeries[key] = config
-        ? config.data.datasets.map(dataset => ({ id: dataset.seriesId, label: dataset.label ?? dataset.seriesId }))
+        ? config.data.datasets.map(dataset => {
+          const label = dataset.label ?? dataset.seriesId;
+          return { id: dataset.seriesId, label, shortLabel: CC_FIGURE_SERIES[key].find(series => series.id === dataset.seriesId)?.shortLabel ?? label };
+        })
         : [];
     }
   }
@@ -922,12 +925,12 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   // --- Views ---
 
-  /** Each view opens at its own fit: All charts at *Fit width*, Single chart at *Fit to screen*. */
+  /** Each view opens at *Fit to screen*: All charts and Single chart alike. */
   selectView(view: CcTimelineViewTab): void {
     if (view === this.view) return;
     this.view = view;
     if (view === 'all') {
-      this.allView = 'fitWidth';
+      this.allView = 'fitScreen';
     } else {
       this.singleView = 'fitScreen';
     }
@@ -1000,10 +1003,9 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     };
   }
 
-  /** The fit the view's stops and slider are built around: Fit width in All, Fit to screen in Single. */
+  /** The fit the view's stops and slider are built around: Fit to screen, in both views. */
   private get viewFit(): number {
-    const fits = this.fits;
-    return this.view === 'all' ? fits.width : fits.screen;
+    return this.fits.screen;
   }
 
   get zoomRange(): PreviewZoomRange {
@@ -1037,7 +1039,6 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   private get fitName(): { label: string; text: string } | null {
     switch (this.activeZoomView) {
       case 'fitWidth': return { label: 'Fit width', text: 'fitted to the width' };
-      case 'fitHeight': return { label: 'Fit height', text: 'fitted to the height' };
       case 'fitScreen': return { label: 'Fit to screen', text: 'fitted to the screen' };
       default: return null;
     }
@@ -1094,11 +1095,6 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.scheduleMeasure();
   }
 
-  fitHeight(): void {
-    this.setZoomView('fitHeight');
-    this.scheduleMeasure();
-  }
-
   fitScreen(): void {
     this.setZoomView('fitScreen');
     this.scheduleMeasure();
@@ -1119,7 +1115,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   }
 
   /**
-   * `+` / `=` zoom in, `-` out, `0` fits (one chart's height in All, the screen in Single) and, in
+   * `+` / `=` zoom in, `-` out, `0` fits one whole chart to the screen and, in
    * Single, `1` is 100 %; anywhere in the panel but a form field, and without Ctrl, ⌘ or Alt, which
    * stay the browser's zoom.
    */
@@ -1129,7 +1125,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       '+': () => this.zoomIn(),
       '=': () => this.zoomIn(),
       '-': () => this.zoomOut(),
-      '0': () => (this.view === 'all' ? this.fitHeight() : this.fitScreen())
+      '0': () => this.fitScreen()
     };
     if (this.view === 'single') {
       actions['1'] = () => this.actualSize();

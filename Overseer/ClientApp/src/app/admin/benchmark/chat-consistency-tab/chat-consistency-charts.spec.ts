@@ -21,10 +21,13 @@ import {
   buildCcFigures,
   buildMarkers,
   ccHeaderHeight,
+  ccPlaceLabels,
+  ccStepDecimals,
   ccTagBandHeight,
   ccTagRows,
   ccTimeTickLabel,
   ccTimeTicks,
+  ccValueAxis,
   costFigure,
   dominantCommonGrader,
   dominantServedModel,
@@ -66,15 +69,15 @@ describe('chat-consistency-charts', () => {
   describe('quality', () => {
     it('captions a narrow range as held and labels the native grades', () => {
       const figure = qualityFigure(input);
-      expect(figure.takeaway).toBe('Quality held between 71 and 74 across 6 runs.');
-      expect(figure.config!.data.datasets.map(ds => ds.label)).toEqual(['Quality Index (native grades)']);
-      expect(figure.table.columns).toEqual(['Run', 'Started', 'Quality Index (native)']);
+      expect(figure.takeaway).toBe('The Intelligence Index held between 71 and 74 across 6 runs.');
+      expect(figure.config!.data.datasets.map(ds => ds.label)).toEqual(['Intelligence Index (native grades)']);
+      expect(figure.table.columns).toEqual(['Run', 'Started', 'Intelligence Index (native)']);
       expect(figure.table.rows[0]).toEqual(['#101', '2026-09-01 08:00 UTC', '71']);
     });
 
     it('captions a wide range with the latest score', () => {
       const figure = qualityFigure({ points: [ccPoint(1, '2026-09-01T00:00:00Z', { qualityIndex: 60 }), ccPoint(2, '2026-09-02T00:00:00Z', { qualityIndex: 70 })] });
-      expect(figure.takeaway).toBe('Quality ranged from 60 to 70 across 2 runs; the latest run scored 70.');
+      expect(figure.takeaway).toBe('The Intelligence Index ranged from 60 to 70 across 2 runs; the latest run scored 70.');
     });
 
     it('adds the common grader that covers most runs as its own labeled series', () => {
@@ -87,7 +90,7 @@ describe('chat-consistency-charts', () => {
       expect(dominantCommonGrader(points)).toEqual({ snapshotId: 5, display: 'Opus' });
       const figure = qualityFigure({ points });
       const common = figure.config!.data.datasets[1];
-      expect(common.label).toBe('Mean quality (common grader: Opus)');
+      expect(common.label).toBe('Intelligence, common grader (Opus)');
       // The latest calibration of the snapshot on a run wins.
       expect((common.data as CcChartPoint[]).map(p => p.y)).toEqual([70, 71]);
       expect(figure.table.columns[3]).toBe('Common grader (Opus)');
@@ -96,7 +99,7 @@ describe('chat-consistency-charts', () => {
     it('says there is nothing to chart without values', () => {
       const figure = qualityFigure({ points: [ccPoint(1, '2026-09-01T00:00:00Z', { qualityIndex: null })] });
       expect(figure.config).toBeNull();
-      expect(figure.takeaway).toBe('No run in this range has a quality figure.');
+      expect(figure.takeaway).toBe('No run in this range has an Intelligence figure.');
     });
   });
 
@@ -352,7 +355,7 @@ describe('chat-consistency-charts', () => {
     });
 
     it('gives every drawn dataset the series id CC_FIGURE_SERIES lists for its figure', () => {
-      // A run's quality is its native Quality Index, a battery run's the Overall Index.
+      // A run's Intelligence is its native Intelligence Index, a battery run's the Overall Intelligence Index.
       const forRuns = (key: string) => CC_FIGURE_SERIES[key as keyof typeof CC_FIGURE_SERIES]
         .map(series => series.id).filter(id => id !== 'quality.overall');
       for (const figure of buildCcFigures(full)) {
@@ -395,29 +398,177 @@ describe('chat-consistency-charts', () => {
     });
   });
 
-  describe('zero baseline', () => {
-    type ValueAxis = { beginAtZero?: boolean; min?: number; max?: number } | undefined;
+  describe('value axes', () => {
+    type ValueAxis = {
+      beginAtZero?: boolean; min?: number; max?: number;
+      ticks: { stepSize?: number; callback: (value: number) => string };
+    } | undefined;
     const axis = (figure: CcFigure, id: 'y' | 'y1'): ValueAxis => figure.config!.options.scales![id] as unknown as ValueAxis;
-    const bounds = (figure: CcFigure) => (['y', 'y1'] as const).map(id => {
-      const scale = axis(figure, id);
-      return scale ? { beginAtZero: scale.beginAtZero, min: scale.min, max: scale.max } : null;
+    const bounds = (figure: CcFigure) => {
+      const scale = axis(figure, 'y')!;
+      return { min: scale.min, max: scale.max, stepSize: scale.ticks.stepSize };
+    };
+    const intelligence = { floor: 0, ceiling: 100, zeroBased: false, minSpan: 20, steps: [5, 10] };
+
+    it('shows at least 20 points of Intelligence on nice bounds inside 0–100', () => {
+      expect(ccValueAxis([82.0, 82.4], intelligence)).toEqual({ min: 70, max: 90, stepSize: 5 });
+      // Near the ceiling, the window grows downward.
+      expect(ccValueAxis([98, 99], intelligence)).toEqual({ min: 80, max: 100, stepSize: 5 });
+      expect(ccValueAxis([1, 2], intelligence)).toEqual({ min: 0, max: 20, stepSize: 5 });
+      // A wide spread is padded and snapped, never past the scale.
+      const wide = ccValueAxis([40, 75], intelligence);
+      expect(wide.min).toBeLessThanOrEqual(35);
+      expect(wide.max).toBeGreaterThanOrEqual(80);
+      expect([wide.min >= 0, wide.max <= 100, wide.stepSize]).toEqual([true, true, 10]);
     });
 
-    it('starts the quality axis at zero only when asked', () => {
-      expect(axis(qualityFigure(input), 'y')!.beginAtZero).toBe(false);
-      expect(axis(qualityFigure(input, { zeroBaseline: false }), 'y')!.beginAtZero).toBe(false);
-      expect(axis(qualityFigure(input, { zeroBaseline: true }), 'y')!.beginAtZero).toBe(true);
+    it('draws the battery runs 82.0 and 82.4 on 70–90, and the full scale on request', () => {
+      const figureInput: CcFigureInput = {
+        points: [
+          ccBatteryPoint(11, '2026-10-08T07:14:00Z', { overallIndex: 82.0 }),
+          ccBatteryPoint(12, '2026-10-08T09:00:00Z', { overallIndex: 82.4 })
+        ],
+        unitKind: 'batteryRun'
+      };
+      expect(bounds(qualityFigure(figureInput))).toEqual({ min: 70, max: 90, stepSize: 5 });
+      expect(bounds(qualityFigure(figureInput, { zeroBaseline: true }))).toEqual({ min: 0, max: 100, stepSize: 10 });
+      const ticks = [70, 75, 80, 85, 90].map(value => axis(qualityFigure(figureInput), 'y')!.ticks.callback(value));
+      expect(ticks).toEqual(['70', '75', '80', '85', '90']);
+      expect(axis(qualityFigure(figureInput), 'y')!.beginAtZero).toBeUndefined();
     });
 
-    it('leaves the other figures’ value axes unchanged', () => {
-      const plain = buildCcFigures(input).filter(f => f.key !== 'quality');
-      const zero = buildCcFigures(input, { zeroBaseline: true }).filter(f => f.key !== 'quality');
-      expect(zero.map(bounds)).toEqual(plain.map(bounds));
-      // Every value axis but the overview's fixed one already starts at zero.
-      for (const figure of plain.filter(f => f.key !== 'timeline')) {
-        expect(axis(figure, 'y')!.beginAtZero, figure.key).toBe(true);
+    it('starts the ratio measures at zero', () => {
+      const ratio = (minSpan: number, ceiling: number | null = null) => ({ floor: 0, ceiling, zeroBased: true, minSpan });
+      expect(ccValueAxis([38_700, 39_300], ratio(1000)).min).toBe(0);
+      expect(ccValueAxis([317, 422], ratio(10))).toEqual({ min: 0, max: 500, stepSize: 100 });
+      expect(ccValueAxis([0, 0], ratio(1))).toEqual({ min: 0, max: 1, stepSize: 0.2 });
+      // Reliability at all zero reads 0–10 %, not 0–1 %.
+      expect(ccValueAxis([0, 0, 0], ratio(10, 100))).toEqual({ min: 0, max: 10, stepSize: 2 });
+      for (const figure of buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline')) {
+        expect(bounds(figure).min, figure.key).toBe(0);
         expect(axis(figure, 'y1'), figure.key).toBeUndefined();
       }
+    });
+
+    it('keeps a minimum span without values, from zero or the floor', () => {
+      expect(ccValueAxis([], { floor: 0, ceiling: null, zeroBased: true, minSpan: 10 })).toEqual({ min: 0, max: 10, stepSize: 2 });
+      expect(ccValueAxis([], intelligence)).toEqual({ min: 0, max: 20, stepSize: 5 });
+    });
+
+    it('writes the decimals each step needs', () => {
+      expect([5, 10, 2.5, 0.2, 0.002, 0.0025].map(ccStepDecimals)).toEqual([0, 0, 1, 1, 3, 4]);
+    });
+
+    it('divides every figure’s axis into whole steps whose tick labels all differ', () => {
+      const inputs: CcFigureInput[] = [
+        input,
+        { points: [ccPoint(1, '2026-09-01T00:00:00Z'), ccPoint(2, '2026-09-02T00:00:00Z')] },
+        {
+          points: [
+            ccPoint(1, '2026-09-01T00:00:00Z', { qualityIndex: 82, medianTimeToFirstAnswerTextMs: 38_700, medianStreamingRate: 317, toolCallsPerAnswer: 0, costPerQuestionUsd: 0.0021 }),
+            ccPoint(2, '2026-09-02T00:00:00Z', { qualityIndex: 83, medianTimeToFirstAnswerTextMs: 39_300, medianStreamingRate: 422, toolCallsPerAnswer: 0, costPerQuestionUsd: 0.0024 })
+          ]
+        },
+        { points: [ccPoint(1, '2026-09-01T00:00:00Z', { medianTimeToFirstAnswerTextMs: 240, costPerQuestionUsd: 2.5, timeoutRate: 0.5 })] }
+      ];
+      for (const figureInput of inputs) {
+        for (const zeroBaseline of [false, true]) {
+          for (const figure of buildCcFigures(figureInput, { zeroBaseline }).filter(f => f.key !== 'timeline' && f.config)) {
+            const scale = axis(figure, 'y')!;
+            const { min, max, stepSize } = { min: scale.min!, max: scale.max!, stepSize: scale.ticks.stepSize! };
+            const intervals = (max - min) / stepSize;
+            expect(Math.abs(intervals - Math.round(intervals)), `${figure.key} ${min}–${max} by ${stepSize}`).toBeLessThan(1e-6);
+            const labels = Array.from({ length: Math.round(intervals) + 1 }, (_, i) => scale.ticks.callback(min + i * stepSize));
+            expect(new Set(labels).size, `${figure.key}: ${labels.join(' | ')}`).toBe(labels.length);
+          }
+        }
+      }
+    });
+
+    it('takes the bounds from the drawn series only', () => {
+      const figureInput: CcFigureInput = {
+        points: [
+          ccPoint(1, '2026-09-01T00:00:00Z', { medianTimeToFirstAnswerTextMs: 2000 }),
+          ccPoint(2, '2026-09-02T00:00:00Z', { medianTimeToFirstAnswerTextMs: null, medianModelTimeMs: 90_000 })
+        ]
+      };
+      expect(bounds(timeToFirstAnswerFigure(figureInput)).max).toBeGreaterThanOrEqual(90_000);
+      expect(bounds(timeToFirstAnswerFigure(figureInput, { hiddenSeries: new Set(['ttfat.proxy']) })).max).toBeLessThan(5000);
+    });
+
+    it('leaves the other figures’ value axes unchanged by the full Intelligence scale', () => {
+      const plain = buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline');
+      const zero = buildCcFigures(input, { zeroBaseline: true }).filter(f => f.key !== 'quality' && f.key !== 'timeline');
+      expect(zero.map(bounds)).toEqual(plain.map(bounds));
+    });
+  });
+
+  describe('point labels', () => {
+    const box = (left: number, top: number, width = 20, height = 11) => ({ left, top, right: left + width, bottom: top + height });
+    const area = box(0, 0, 600, 300);
+
+    it('keeps labels in priority order and drops one that overlaps a kept label', () => {
+      // The latest, the highest and the lowest come first; the fourth sits on the latest.
+      const candidates = [box(500, 100), box(300, 20), box(100, 250), box(510, 105), box(200, 150)];
+      expect(ccPlaceLabels(candidates, area)).toEqual([0, 1, 2, 4]);
+    });
+
+    it('keeps a 2 px gap between labels and drops one outside the area', () => {
+      expect(ccPlaceLabels([box(0, 0), box(22, 0)], area)).toEqual([0, 1]);
+      expect(ccPlaceLabels([box(0, 0), box(21, 0)], area)).toEqual([0]);
+      expect(ccPlaceLabels([box(-5, 0), box(590, 0)], area)).toEqual([]);
+    });
+
+    describe('on a chart', () => {
+      let chart: Chart | null = null;
+      const drawn: string[] = [];
+
+      beforeAll(() => {
+        Chart.register(...APP_CHART_REGISTRABLES);
+      });
+
+      afterEach(() => {
+        const canvas = chart?.canvas;
+        chart?.destroy();
+        canvas?.remove();
+        chart = null;
+        drawn.length = 0;
+      });
+
+      function mount(figure: CcFigure): Chart {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 320;
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d')!;
+        const fillText = ctx.fillText.bind(ctx);
+        ctx.fillText = (text: string, x: number, y: number) => {
+          drawn.push(text);
+          fillText(text, x, y);
+        };
+        chart = new Chart(canvas, {
+          ...figure.config!,
+          options: { ...figure.config!.options, responsive: false, animation: false }
+        } as unknown as ChartConfiguration);
+        return chart;
+      }
+
+      it('writes the value of both points of a two-point chart in the table’s format', () => {
+        mount(qualityFigure({
+          points: [
+            ccBatteryPoint(11, '2026-10-08T07:14:00Z', { overallIndex: 82.0 }),
+            ccBatteryPoint(12, '2026-10-08T09:00:00Z', { overallIndex: 82.4 })
+          ],
+          unitKind: 'batteryRun'
+        }));
+        expect(drawn).toContain('82.0');
+        expect(drawn).toContain('82.4');
+      });
+
+      it('writes no point values on the reliability chart', () => {
+        mount(reliabilityFigure({ points: [ccPoint(1, '2026-09-01T00:00:00Z', { timeoutRate: 0.04 }), ccPoint(2, '2026-09-02T00:00:00Z')] }));
+        expect(drawn.some(text => text.endsWith(' %') && text.includes('.'))).toBe(false);
+      });
     });
   });
 
@@ -520,10 +671,10 @@ describe('chat-consistency-charts', () => {
 
     it('counts the plotted runs not in the analysis in the takeaway and the alt text', () => {
       expect(qualityFigure(marked).takeaway)
-        .toBe('Quality held between 71 and 74 across 6 runs. 2 runs not in the analysis are drawn as gray crosses.');
+        .toBe('The Intelligence Index held between 71 and 74 across 6 runs. 2 runs not in the analysis are drawn as gray crosses.');
       const one = qualityFigure({ ...input, notAnalyzed: new Map([[104, 'left out in step 1']]) });
-      expect(one.takeaway).toBe('Quality held between 71 and 74 across 6 runs. 1 run not in the analysis is drawn as a gray cross.');
-      expect(one.altText).toBe(`Quality per run. ${one.takeaway}`);
+      expect(one.takeaway).toBe('The Intelligence Index held between 71 and 74 across 6 runs. 1 run not in the analysis is drawn as a gray cross.');
+      expect(one.altText).toBe(`Intelligence per run. ${one.takeaway}`);
 
       // Run 103 has no streaming rate, so the rate figure does not draw it; its legacy proxy is drawn.
       const legacy: CcFigureInput = { ...input, notAnalyzed: new Map([[103, 'after the last run']]) };
@@ -538,18 +689,18 @@ describe('chat-consistency-charts', () => {
         .toBe('6 runs, 1 Overseer change, 1 annotation and 0 served-model changes in this range. 2 runs not in the analysis are drawn as gray crosses.');
     });
 
-    it('names the reason in the tooltip of a run not in the analysis', () => {
+    it('names the reason on a second tooltip line for a run not in the analysis', () => {
       const config = qualityFigure(marked).config!;
       const ds = config.data.datasets[0];
-      const label = config.options.plugins!.tooltip!.callbacks!.label as unknown as (item: unknown) => string;
-      expect(label({ raw: ds.data[3], dataset: ds })).toBe('Quality Index (native grades): 72 — not in the analysis (left out in step 1)');
-      expect(label({ raw: ds.data[0], dataset: ds })).toBe('Quality Index (native grades): 71 — not in the analysis (before the first run)');
-      expect(label({ raw: ds.data[1], dataset: ds })).toBe('Quality Index (native grades): 73');
+      const label = config.options.plugins!.tooltip!.callbacks!.label as unknown as (item: unknown) => string | string[];
+      expect(label({ raw: ds.data[3], dataset: ds })).toEqual(['Intelligence: 72', 'Not in the analysis: left out in step 1']);
+      expect(label({ raw: ds.data[0], dataset: ds })).toEqual(['Intelligence: 71', 'Not in the analysis: before the first run']);
+      expect(label({ raw: ds.data[1], dataset: ds })).toBe('Intelligence: 73');
     });
 
     it('adds an In the analysis column to every data table', () => {
       const table = qualityFigure(marked).table;
-      expect(table.columns).toEqual(['Run', 'Started', 'Quality Index (native)', 'In the analysis']);
+      expect(table.columns).toEqual(['Run', 'Started', 'Intelligence Index (native)', 'In the analysis']);
       expect(table.rows.map(cells => cells[cells.length - 1]))
         .toEqual(['No — before the first run', 'Yes', 'Yes', 'No — left out in step 1', 'Yes', 'Yes']);
       expect(table.rows[0].slice(0, 3)).toEqual(qualityFigure(input).table.rows[0]);
@@ -584,7 +735,7 @@ describe('chat-consistency-charts', () => {
       const native = plain[0].config!.data.datasets[0];
       expect(native).toEqual({
         seriesId: 'quality.native',
-        label: 'Quality Index (native grades)',
+        label: 'Intelligence Index (native grades)',
         data: native.data,
         yAxisID: 'y',
         borderColor: CC_SCREEN_THEME.series[0],
@@ -660,12 +811,12 @@ describe('chat-consistency-charts', () => {
     it('plots one point per battery run, its quality the Overall Index', () => {
       const figure = qualityFigure(battery);
       const ds = figure.config!.data.datasets[0];
-      expect(ds.label).toBe('Overall Index (battery)');
+      expect(ds.label).toBe('Overall Intelligence Index (battery)');
       expect((ds.data as CcChartPoint[]).map(p => [p.runId, p.y])).toEqual([[11, 79], [12, 86]]);
-      expect(figure.takeaway).toBe('The Overall Index ranged from 79 to 86 across 2 battery runs; the latest battery run scored 86.');
-      expect(figure.altText).toBe(`Quality per battery run. ${figure.takeaway}`);
-      expect(figure.table.columns).toEqual(['Battery run', 'Started', 'Overall Index', 'Note', 'Suites', 'Member runs']);
-      expect(figure.table.rows[0]).toEqual(['#11', '2026-10-08 06:00 UTC', '79.0', '', '2', '#301, #302']);
+      expect(figure.takeaway).toBe('The Overall Intelligence Index ranged from 79.0 to 86.0 across 2 battery runs; the latest battery run scored 86.0.');
+      expect(figure.altText).toBe(`Intelligence per battery run. ${figure.takeaway}`);
+      expect(figure.table.columns).toEqual(['Battery run', 'Started', 'Overall Intelligence Index', 'Note', 'Suites', 'Member runs']);
+      expect(figure.table.rows[0]).toEqual(['#11', '2026-10-08 06:00 UTC', '79.0', '', '2', '#301 (Board Suite), #302 (Wiki Suite)']);
     });
 
     it('says which battery runs have no Overall Index, and why', () => {
@@ -678,7 +829,7 @@ describe('chat-consistency-charts', () => {
           ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 86 })
         ]
       });
-      expect(figure.takeaway).toBe('The Overall Index was 86 in the one battery run of this range. 1 battery run has no Overall Index: no battery analysis.');
+      expect(figure.takeaway).toBe('The Overall Intelligence Index was 86.0 in the one battery run of this range. 1 battery run has no Overall Intelligence Index: no battery analysis.');
       expect(figure.table.rows[0][3]).toBe('No battery analysis. Compute it from the battery report.');
       expect(figure.table.rows[0][2]).toBe('—');
     });
@@ -693,10 +844,13 @@ describe('chat-consistency-charts', () => {
     it('names battery runs on the axis, in the tooltip, the notes and the reliability takeaway', () => {
       const marked = qualityFigure({ ...battery, notAnalyzed: new Map([[11, 'left out in step 1']]) });
       const config = marked.config!;
-      const callbacks = config.options.plugins!.tooltip!.callbacks! as unknown as Record<string, (items: unknown) => string>;
-      const raw = config.data.datasets[0].data[0];
-      expect(callbacks['title']([{ raw }])).toBe('Battery run #11 · 2026-10-08 06:00 UTC');
-      expect(callbacks['footer']([{ raw }])).toBe('Members: #301 (Board Suite), #302 (Wiki Suite)');
+      const callbacks = config.options.plugins!.tooltip!.callbacks! as unknown as Record<string, (items: unknown) => unknown>;
+      const ds = config.data.datasets[0];
+      const raw = ds.data[0];
+      expect(callbacks['title']([{ raw }])).toBe('#11 · 2026-10-08 06:00 UTC');
+      expect(callbacks['label']({ raw: ds.data[1], dataset: ds })).toBe('Overall Index: 86.0');
+      // The members are on the data cards, not in the tooltip.
+      expect(callbacks['footer']).toBeUndefined();
       expect((config.options.scales!['x'] as unknown as { title: { text: string } }).title.text).toBe('Battery run start (UTC)');
       expect(marked.takeaway.endsWith(' 1 battery run not in the analysis is drawn as a gray cross.')).toBe(true);
       expect(marked.table.columns[marked.table.columns.length - 1]).toBe('In the analysis');
@@ -705,10 +859,25 @@ describe('chat-consistency-charts', () => {
         ...battery, points: [...battery.points.slice(1), ccBatteryPoint(12, '2026-10-08T10:00:00Z', { timeoutRate: 0.05 })]
       });
       expect(failing.takeaway).toBe('The highest rate was timeouts at 5.0 % in battery run #12, across 2 battery runs.');
-      // A run's tooltip has no members line.
-      const runConfig = qualityFigure(input).config!;
-      const runCallbacks = runConfig.options.plugins!.tooltip!.callbacks! as unknown as Record<string, (items: unknown) => string>;
-      expect(runCallbacks['footer']([{ raw: runConfig.data.datasets[0].data[0] }])).toBe('');
+    });
+
+    it('says the Overall Intelligence Index held at one value when both battery runs format alike', () => {
+      const figure = qualityFigure({
+        ...battery,
+        points: [
+          ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 82.02 }),
+          ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 81.98 })
+        ]
+      });
+      expect(figure.takeaway).toBe('The Overall Intelligence Index held at 82.0 across 2 battery runs.');
+      const close = qualityFigure({
+        ...battery,
+        points: [
+          ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 82.0 }),
+          ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 82.4 })
+        ]
+      });
+      expect(close.takeaway).toBe('The Overall Intelligence Index held between 82.0 and 82.4 across 2 battery runs.');
     });
 
     it('names the battery run of a served-model change', () => {
@@ -771,19 +940,49 @@ describe('chat-consistency-charts', () => {
       expect(reliabilityFigure(input).config!.options.plugins!.legend!.display).toBe(true);
     });
 
-    it('makes room on the right for the end labels of up to two series, and none on reliability or the overview', () => {
+    it('makes room on the right for half the widest point label of up to two series, and none on reliability or the overview', () => {
       const right = (figure: CcFigure) => (figure.config!.options.layout!.padding as { right: number }).right;
-      // '73', two characters: 2 × 6.5 rounded up, plus 22.
-      expect(right(qualityFigure(input))).toBe(35);
+      // '73', two characters: half of 2 × 6.5, rounded up, plus 4; the 8 px floor otherwise.
+      expect(right(qualityFigure(input))).toBe(11);
+      // '1,200', five characters.
+      expect(right(workFigure(input))).toBe(Math.ceil(5 * 6.5 / 2) + 4);
       expect(right(reliabilityFigure(input))).toBe(8);
       expect(right(timelineOverviewFigure(input))).toBe(8);
     });
 
-    it('styles the screen tooltip and leaves the print one to Chart.js', () => {
+    it('styles a compact screen tooltip and leaves the print one to Chart.js', () => {
       const tooltip = (theme: typeof CC_SCREEN_THEME) =>
         qualityFigure(input, { theme }).config!.options.plugins!.tooltip as unknown as Record<string, unknown>;
-      expect([tooltip(CC_SCREEN_THEME)['backgroundColor'], tooltip(CC_SCREEN_THEME)['cornerRadius']]).toEqual(['rgba(20, 20, 20, 0.96)', 8]);
+      const screen = tooltip(CC_SCREEN_THEME);
+      expect([screen['backgroundColor'], screen['cornerRadius'], screen['padding'], screen['caretSize']])
+        .toEqual(['rgba(20, 20, 20, 0.96)', 6, { x: 8, y: 6 }, 5]);
+      expect([(screen['titleFont'] as { size: number }).size, (screen['bodyFont'] as { size: number }).size]).toEqual([11, 11]);
+      expect([screen['boxWidth'], screen['boxHeight']]).toEqual([6, 6]);
       expect(tooltip(CC_PRINT_THEME)['backgroundColor']).toBeUndefined();
+    });
+
+    it('shows the tooltip on a point only, its title the point and one line per series', () => {
+      const config = streamingRateFigure({ points: [
+        ccPoint(11, '2026-10-08T07:14:00Z', { medianStreamingRate: 422.2, streamingRateEstimated: true }),
+        ccPoint(12, '2026-10-08T09:00:00Z', { medianStreamingRate: 317 })
+      ], unitKind: 'run' }).config!;
+      expect(config.options.interaction).toEqual({ mode: 'nearest', intersect: true, axis: 'xy' });
+      const callbacks = config.options.plugins!.tooltip!.callbacks! as unknown as Record<string, (items: unknown) => unknown>;
+      const estimated = config.data.datasets.find(ds => ds.seriesId === 'rate.estimated')!;
+      expect(callbacks['title']([{ raw: estimated.data[0] }])).toBe('#11 · 2026-10-08 07:14 UTC');
+      expect(callbacks['label']({ raw: estimated.data[0], dataset: estimated })).toBe('Estimated: 422.2 tok/s');
+      expect(callbacks['footer']).toBeUndefined();
+      // The series color only where the chart draws more than one series.
+      expect(config.options.plugins!.tooltip!.displayColors).toBe(true);
+      expect(qualityFigure(input).config!.options.plugins!.tooltip!.displayColors).toBe(false);
+    });
+
+    it('gives every series a short tooltip name', () => {
+      for (const series of Object.values(CC_FIGURE_SERIES).flat()) {
+        expect(series.shortLabel.length, series.id).toBeGreaterThan(0);
+        expect(series.shortLabel.length, series.id).toBeLessThanOrEqual(series.label.length);
+      }
+      expect(CC_FIGURE_SERIES.quality.map(series => series.shortLabel)).toEqual(['Intelligence', 'Overall Index', 'Common grader']);
     });
   });
 

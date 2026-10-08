@@ -403,17 +403,21 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(q('#cc-tl-series-reliability-timeoutRate')).toBeNull();
   });
 
-  it('starts the quality axis at zero on request', async () => {
+  it('shows the full 0–100 Intelligence scale on request', async () => {
     await create();
-    const beginAtZero = (key: CcFigureKey): boolean | undefined =>
-      (figure(key).config!.options.scales!['y'] as unknown as { beginAtZero?: boolean }).beginAtZero;
-    expect(beginAtZero('quality')).toBe(false);
-    expect(beginAtZero('ttfat')).toBe(true);
+    const bounds = (key: CcFigureKey): [number | undefined, number | undefined] => {
+      const y = figure(key).config!.options.scales!['y'] as unknown as { min?: number; max?: number };
+      return [y.min, y.max];
+    };
+    expect(textOf(q('#cc-tl-zero-baseline')!.closest('label'))).toBe('Show the full 0–100 Intelligence scale');
+    expect(bounds('quality')).not.toEqual([0, 100]);
+    expect(bounds('ttfat')[0]).toBe(0);
+    const ttfat = bounds('ttfat');
 
     clickOn('#cc-tl-zero-baseline');
     expect(q<HTMLInputElement>('#cc-tl-zero-baseline')!.checked).toBe(true);
-    expect(beginAtZero('quality')).toBe(true);
-    expect(beginAtZero('ttfat')).toBe(true);
+    expect(bounds('quality')).toEqual([0, 100]);
+    expect(bounds('ttfat')).toEqual(ttfat);
     expect(storedLayout()['zeroBaseline']).toBe(true);
   });
 
@@ -512,20 +516,25 @@ describe('CcTimelineWorkspaceComponent', () => {
 
   // --- Zoom ---
 
-  it('opens All charts at Fit width, and zooms with the buttons, the slider and the keys', async () => {
+  it('opens All charts at Fit to screen, and zooms with the buttons, the slider and the keys', async () => {
     await create();
     const fullHd = ccChartBox(defaultFigureSize());
     const panel = q('#cc-tl-view-panel-all')!;
     expect(panel.getAttribute('aria-keyshortcuts')).toBe('+ - 0');
-    expect(ws.zoomLabel).toMatch(/^\d+(\.\d)?% · Fit width$/);
+    expect(ws.zoomLabel).toMatch(/^\d+(\.\d)?% · Fit to screen$/);
     expect(textOf(q('#cc-tl-view-panel-all .gh-zoom-value'))).toBe(ws.zoomLabel);
-    expect(q('#cc-tl-all-zoom')!.getAttribute('aria-valuetext')).toMatch(/ percent, fitted to the width$/);
-    const fitWidth = ws.zoom;
-    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBe(Math.max(1, Math.floor(fullHd.width * fitWidth)));
+    expect(q('#cc-tl-all-zoom')!.getAttribute('aria-valuetext')).toMatch(/ percent, fitted to the screen$/);
+    const fitScreen = ws.zoom;
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBe(Math.max(1, Math.floor(fullHd.width * fitScreen)));
+    // The toolbar offers Fit width and Fit to screen.
+    expect(q('#cc-tl-view-panel-all .cc-tl-fit-width')).not.toBeNull();
+    expect(q('#cc-tl-view-panel-all .cc-tl-fit-screen')!.getAttribute('aria-label')).toBe('Fit to screen');
+    expect(q('#cc-tl-view-panel-all .cc-tl-fit-height')).toBeNull();
+    expect(textOf(q('#cc-tl-tip-all-fit-screen'))).toBe('Fit one whole chart to the view (0)');
 
     zoomButton('Zoom all charts in').click();
     fixture.detectChanges();
-    expect(ws.zoom).toBeGreaterThan(fitWidth);
+    expect(ws.zoom).toBeGreaterThan(fitScreen);
     expect(ws.zoomLabel).toMatch(/^\d+(\.\d)?%$/);
     expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBe(Math.max(1, Math.floor(fullHd.width * ws.zoom)));
     expect(boxSize('.cc-tl-tile[data-figure="quality"]').height).toBe(Math.max(1, Math.floor(fullHd.height * ws.zoom)));
@@ -535,12 +544,14 @@ describe('CcTimelineWorkspaceComponent', () => {
     fixture.detectChanges();
     expect(ws.zoom).toBeLessThan(zoomedIn);
 
-    clickOn('.cc-tl-fit-height');
-    expect(ws.zoomLabel).toMatch(/ · Fit height$/);
-
     clickOn('.cc-tl-fit-width');
     expect(ws.zoomLabel).toMatch(/ · Fit width$/);
-    expect(ws.zoom).toBeCloseTo(fitWidth, 6);
+    // One whole chart fits the screen no wider than the width does.
+    expect(ws.zoom).toBeGreaterThanOrEqual(fitScreen - 1e-6);
+
+    clickOn('#cc-tl-view-panel-all .cc-tl-fit-screen');
+    expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
+    expect(ws.zoom).toBeCloseTo(fitScreen, 6);
 
     // The slider applies on the next frame.
     const slider = q<HTMLInputElement>('#cc-tl-all-zoom')!;
@@ -562,7 +573,8 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(ws.zoom).toBeGreaterThan(lowered);
 
     press(panel, '0');
-    expect(ws.zoomLabel).toMatch(/ · Fit height$/);
+    expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
+    expect(ws.zoom).toBeCloseTo(fitScreen, 6);
 
     // Ctrl stays the browser's zoom, a form field keeps its keys, and 1 belongs to Single chart.
     const withCtrl = press(panel, '+', { ctrlKey: true });
@@ -570,7 +582,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     press(slider, '+');
     const one = press(panel, '1');
     expect(one.defaultPrevented).toBe(false);
-    expect(ws.zoomLabel).toMatch(/ · Fit height$/);
+    expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
   });
 
   it('gives a canvas only to the tiles near the view, keeping the others\' boxes', async () => {
@@ -588,6 +600,8 @@ describe('CcTimelineWorkspaceComponent', () => {
 
   it('reshapes the chart boxes on a chart size change, re-fitting a fit view and keeping a numeric zoom', async () => {
     await create();
+    clickOn('#cc-tl-view-panel-all .cc-tl-fit-width');
+    await settle();
     const before = boxSize('.cc-tl-tile[data-figure="quality"]');
     const fullHd = ccChartBox(defaultFigureSize());
     expect(before.height / before.width).toBeCloseTo(fullHd.height / fullHd.width, 1);
@@ -689,7 +703,7 @@ describe('CcTimelineWorkspaceComponent', () => {
 
     clickOn('#cc-tl-view-tab-all');
     await settle();
-    expect(ws.zoomLabel).toMatch(/ · Fit width$/);
+    expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
 
     clickOn('#cc-tl-view-tab-single');
     await settle();
@@ -773,7 +787,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     const saved = captureSaves();
 
     const button = q<HTMLButtonElement>('.cc-tl-tile[data-figure="quality"] .cc-tl-download')!;
-    expect(button.getAttribute('aria-label')).toBe('Download Quality per run');
+    expect(button.getAttribute('aria-label')).toBe('Download Intelligence per run');
     expect(button.getAttribute('aria-disabled')).toBeNull();
     expect(textOf(q('#cc-tl-tip-download-quality'))).toContain('WebP q90');
     button.click();
@@ -783,7 +797,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(saved.names).toHaveLength(1);
     expect(saved.names[0]).toMatch(new RegExp(`^chat-consistency_${MODEL_PART}_quality_\\d{8}_\\d{6}\\.webp$`));
     expect(saved.blobs[0].type).toBe('image/webp');
-    expect(textOf(q('.cc-tl-status'))).toBe('Downloaded Quality per run.');
+    expect(textOf(q('.cc-tl-status'))).toBe('Downloaded Intelligence per run.');
   }, 20_000);
 
   it('names a download .png and says so when the browser cannot encode WebP', async () => {
@@ -798,7 +812,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(calls).toEqual([{ type: 'image/webp', quality: 0.9 }]);
     expect(saved.names).toHaveLength(1);
     expect(saved.names[0]).toMatch(new RegExp(`^chat-consistency_${MODEL_PART}_quality_\\d{8}_\\d{6}\\.png$`));
-    expect(textOf(q('.cc-tl-status'))).toBe('Downloaded Quality per run. Written as PNG: this browser cannot encode WebP.');
+    expect(textOf(q('.cc-tl-status'))).toBe('Downloaded Intelligence per run. Written as PNG: this browser cannot encode WebP.');
   }, 20_000);
 
   it('copies a PNG whatever the download format, and reports each clipboard outcome', async () => {
@@ -809,14 +823,14 @@ describe('CcTimelineWorkspaceComponent', () => {
     withClipboard({ write: (items: ClipboardItem[]) => { written.push(...items); return Promise.resolve(); } });
 
     const copy = q<HTMLButtonElement>('.cc-tl-tile[data-figure="quality"] .cc-tl-copy')!;
-    expect(copy.getAttribute('aria-label')).toBe('Copy Quality per run to the clipboard');
+    expect(copy.getAttribute('aria-label')).toBe('Copy Intelligence per run to the clipboard');
     expect(textOf(q('#cc-tl-tip-copy-quality'))).toBe('Copy as a PNG image');
     copy.click();
     await untilExported();
     expect(calls).toEqual([{ type: 'image/png', quality: undefined }]);
     expect(written).toHaveLength(1);
     expect(written[0].types).toEqual(['image/png']);
-    expect(textOf(q('.cc-tl-status'))).toBe('Copied Quality per run to the clipboard.');
+    expect(textOf(q('.cc-tl-status'))).toBe('Copied Intelligence per run to the clipboard.');
 
     withClipboard({ write: () => Promise.reject(new Error('denied')) });
     copy.click();
@@ -847,7 +861,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(saved.names).toHaveLength(1);
     expect(saved.names[0]).toMatch(new RegExp(`^chat-consistency_${MODEL_PART}_quality_\\d{8}_\\d{6}\\.png$`));
     expect(zip.load).not.toHaveBeenCalled();
-    expect(textOf(q('.cc-tl-status'))).toBe('Downloaded Quality per run.');
+    expect(textOf(q('.cc-tl-status'))).toBe('Downloaded Intelligence per run.');
   }, 20_000);
 
   it('downloads all charts as one ZIP when several are shown, every file under the archive\'s timestamp', async () => {
@@ -1030,11 +1044,11 @@ describe('CcTimelineWorkspaceComponent', () => {
   it('plots one point per battery run of the compared set, and member runs on request', async () => {
     await createBattery(new Map<number, CcRunInclusion>([[11, 'leftOut']]));
     expect(plottedIds('quality')).toEqual([11, 12]);
-    expect(figure('quality').config!.data.datasets[0].label).toBe('Overall Index (battery)');
+    expect(figure('quality').config!.data.datasets[0].label).toBe('Overall Intelligence Index (battery)');
     expect(figure('quality').table.columns[0]).toBe('Battery run');
     expect(figure('quality').takeaway).toContain('1 battery run not in the analysis is drawn as a gray cross.');
-    expect(header('quality')).toEqual({ title: 'Quality per run', subject: 'GPT-5 high · Two initial suites (revision 1) · battery runs' });
-    expect(textOf(q('.cc-tl-tile[data-figure="quality"] caption'))).toBe('Quality per run: data per battery run');
+    expect(header('quality')).toEqual({ title: 'Intelligence per run', subject: 'GPT-5 high · Two initial suites (revision 1) · battery runs' });
+    expect(textOf(q('#cc-tl-fig-quality-data-title'))).toBe('Intelligence per run: data per battery run');
 
     const radios = qa<HTMLInputElement>('input[name="cc-tl-plot-by"]');
     expect(radios.map(radio => [radio.id, radio.checked])).toEqual([['cc-tl-plot-by-battery', true], ['cc-tl-plot-by-members', false]]);
@@ -1052,7 +1066,7 @@ describe('CcTimelineWorkspaceComponent', () => {
   it('offers no Plot by choice without a battery set, and names runs in the subject', async () => {
     await create();
     expect(q('input[name="cc-tl-plot-by"]')).toBeNull();
-    expect(header('quality')).toEqual({ title: 'Quality per run', subject: 'GPT-5 high · runs' });
+    expect(header('quality')).toEqual({ title: 'Intelligence per run', subject: 'GPT-5 high · runs' });
   });
 
   it('draws the GnollBench logo on the charts and in every image until it is turned off', async () => {
@@ -1078,12 +1092,22 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(snapshot.subject).toBe('GPT-5 high · runs');
   });
 
-  it('hides the HTML figure title visually, since the chart draws it', async () => {
+  it('hides the HTML figure caption visually, since the chart draws the title, and puts the takeaway and actions under the chart', async () => {
     await create();
-    const title = q('.cc-tl-tile[data-figure="quality"] .cc-figure-title')!;
-    expect(title.classList).toContain('visually-hidden');
-    expect(textOf(title)).toBe('Quality per run');
-    expect(q('.cc-tl-tile[data-figure="quality"] .cc-figure-takeaway')!.classList).not.toContain('visually-hidden');
+    const tile = q('.cc-tl-tile[data-figure="quality"]')!;
+    expect(tile.querySelector('figcaption')!.classList).toContain('visually-hidden');
+    expect(textOf(tile.querySelector('.cc-figure-title'))).toBe('Intelligence per run');
+    const takeaway = tile.querySelector('.cc-figure-takeaway')!;
+    expect(takeaway.classList).not.toContain('visually-hidden');
+    expect(takeaway.previousElementSibling!.classList).toContain('cc-chart-box');
+    // Copy, Download and Open sit in the figure's footer, after the marker line.
+    const actions = tile.querySelector('app-cc-chart-figure .cc-figure-footer .cc-figure-actions .cc-tl-tile-actions')!;
+    expect(actions.getAttribute('role')).toBe('group');
+    expect(actions.getAttribute('aria-label')).toBe('Actions for Intelligence per run');
+    expect(Array.from(actions.querySelectorAll('button')).map(button => button.classList[1])).toEqual(['cc-tl-copy', 'cc-tl-download', 'cc-tl-open']);
+    expect(tile.querySelector('.gh-fig-tile-actions')).toBeNull();
+    // The data cards' headings sit under the step's h4.
+    expect(tile.querySelector('.cc-data-card-title')!.tagName).toBe('H5');
   });
 
   it('wraps the settings tabs and keeps the event list\'s sticky headings under the measured row', async () => {

@@ -283,7 +283,7 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
     const figures = Array.from(dialog().querySelectorAll('app-cc-timeline-workspace figure.cc-figure'));
     expect(figures.map(entry => entry.getAttribute('data-figure'))).toEqual(FIGURE_ORDER);
-    expect(textOf(figures[0].querySelector('figcaption'))).toContain('Quality held between 71 and 74 across 6 runs.');
+    expect(textOf(figures[0].querySelector('.cc-figure-takeaway'))).toBe('The Intelligence Index held between 71 and 74 across 6 runs.');
   });
 
   /** Chooses a preset in step 1's Dates select. */
