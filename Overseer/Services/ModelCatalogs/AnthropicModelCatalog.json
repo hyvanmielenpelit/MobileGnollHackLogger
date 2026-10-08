@@ -158,6 +158,29 @@
       "cacheWritePerMillion": 2.50,
       "asOf": "2026-09-29"
     }
+  },
+  {
+    "prefixes": ["claude-haiku-5-5"],
+    "displayName": "Claude 5.5 Haiku",
+    "releaseDate": "2026-10-07",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 0.10,
+      "outputPerMillion": 0.50,
+      "cachedInputPerMillion": 0.01,
+      "cacheWritePerMillion": 0.125,
+      "asOf": "2026-10-08",
+      "longContext": {
+        "thresholdInputTokens": 100000,
+        "inputPerMillion": 0.50,
+        "outputPerMillion": 2.50,
+        "cachedInputPerMillion": 0.05,
+        "cacheWritePerMillion": 0.625
+      }
+    }
   }
 ]
 
