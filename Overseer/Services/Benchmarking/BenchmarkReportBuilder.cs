@@ -1266,41 +1266,73 @@ public static class BenchmarkReportBuilder
         => ReadClaimVerificationRetry(a.ClaimVerificationCallUsageJson).Retried;
 
     /// <summary>
+    /// True when the answer's <see cref="BenchmarkRunAnswer.ClaimVerificationCallUsageJson"/> holds an
+    /// entry marked <c>"pe":1</c>, a call of a verification repeated after a provider error; false on
+    /// null or invalid JSON.
+    /// </summary>
+    internal static bool ClaimVerificationHadProviderErrorRetry(BenchmarkRunAnswer a)
+        => ReadClaimVerificationRetry(a.ClaimVerificationCallUsageJson).ProviderErrorRetried;
+
+    /// <summary>
     /// " — parse retry: N model call(s) after the first attempt (how it ended)", counting the retry
     /// entries whose prompt or output tokens are above zero, or "… no model call reported usage …"
-    /// when none is; the parenthesis only when the first retry entry carries <c>"e"</c>. Empty when
-    /// the answer was not retried.
+    /// when none is; the parenthesis only when the first retry entry carries <c>"e"</c>. Then
+    /// "; provider-error retry after: (error head)" when the verification was repeated after a
+    /// provider error, the head read from the <c>"e"</c> of its first <c>"pe":1</c> entry, on one
+    /// line, with backticks replaced and no closing period. Empty when neither retry ran.
     /// </summary>
     internal static string ClaimVerificationRetryText(BenchmarkRunAnswer a)
     {
-        var (retried, callsWithUsage, firstAttemptEnd) = ReadClaimVerificationRetry(a.ClaimVerificationCallUsageJson);
-        if (!retried) return string.Empty;
+        var (retried, callsWithUsage, firstAttemptEnd, providerErrorRetried, providerError) =
+            ReadClaimVerificationRetry(a.ClaimVerificationCallUsageJson);
 
-        string end = string.IsNullOrEmpty(firstAttemptEnd) ? string.Empty : $" ({firstAttemptEnd})";
-        return callsWithUsage > 0
-            ? $" — parse retry: {Inv(callsWithUsage, "N0")} model call(s) after the first attempt{end}"
-            : $" — parse retry: no model call reported usage after the first attempt{end}";
+        string parseText = string.Empty;
+        if (retried)
+        {
+            string end = string.IsNullOrEmpty(firstAttemptEnd) ? string.Empty : $" ({firstAttemptEnd})";
+            parseText = callsWithUsage > 0
+                ? $" — parse retry: {Inv(callsWithUsage, "N0")} model call(s) after the first attempt{end}"
+                : $" — parse retry: no model call reported usage after the first attempt{end}";
+        }
+
+        string providerText = string.Empty;
+        if (providerErrorRetried)
+        {
+            string head = Regex.Replace(providerError ?? string.Empty, @"\s*[\r\n]+\s*", " ").Replace('`', '\'').Trim().TrimEnd('.').TrimEnd();
+            providerText = $"; provider-error retry after: {(head.Length > 0 ? head : "an unrecorded error")}";
+        }
+
+        return parseText + providerText;
     }
 
-    private static (bool Retried, int CallsWithUsage, string? FirstAttemptEnd) ReadClaimVerificationRetry(string? json)
+    private static (bool Retried, int CallsWithUsage, string? FirstAttemptEnd, bool ProviderErrorRetried, string? ProviderError) ReadClaimVerificationRetry(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return (false, 0, null);
+        if (string.IsNullOrWhiteSpace(json)) return (false, 0, null, false, null);
 
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array) return (false, 0, null);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return (false, 0, null, false, null);
 
             bool retried = false;
             int callsWithUsage = 0;
             string? firstAttemptEnd = null;
+            bool providerErrorRetried = false;
+            string? providerError = null;
             foreach (var entry in doc.RootElement.EnumerateArray())
             {
-                if (entry.ValueKind != JsonValueKind.Object
-                    || !entry.TryGetProperty("r", out var r)
-                    || r.ValueKind != JsonValueKind.Number
-                    || !r.TryGetInt32(out int retryMark)
-                    || retryMark != 1)
+                if (entry.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (IsMarked(entry, "pe") && !providerErrorRetried)
+                {
+                    providerErrorRetried = true;
+                    providerError = EndOf(entry);
+                }
+
+                if (!IsMarked(entry, "r"))
                 {
                     continue;
                 }
@@ -1308,26 +1340,67 @@ public static class BenchmarkReportBuilder
                 if (!retried)
                 {
                     retried = true;
-                    firstAttemptEnd = entry.TryGetProperty("e", out var e) && e.ValueKind == JsonValueKind.String
-                        ? e.GetString()
-                        : null;
+                    firstAttemptEnd = EndOf(entry);
                 }
 
                 if (UsageAboveZero(entry, "p") || UsageAboveZero(entry, "o")) callsWithUsage++;
             }
 
-            return (retried, callsWithUsage, firstAttemptEnd);
+            return (retried, callsWithUsage, firstAttemptEnd, providerErrorRetried, providerError);
         }
         catch (JsonException)
         {
-            return (false, 0, null);
+            return (false, 0, null, false, null);
         }
+
+        static bool IsMarked(JsonElement entry, string property)
+            => entry.TryGetProperty(property, out var mark)
+               && mark.ValueKind == JsonValueKind.Number
+               && mark.TryGetInt32(out int value)
+               && value == 1;
+
+        static string? EndOf(JsonElement entry)
+            => entry.TryGetProperty("e", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
 
         static bool UsageAboveZero(JsonElement entry, string property)
             => entry.TryGetProperty(property, out var value)
                && value.ValueKind == JsonValueKind.Number
                && value.TryGetInt64(out long tokens)
                && tokens > 0;
+    }
+
+    /// <summary>The parenthesis under the Harness Stage Failures heading, without its emphasis.</summary>
+    internal const string HarnessStageFailuresSubtitle =
+        "(Advisory infrastructure failures. The candidate's answer is intact; a lost claim verification leaves its claims unchecked and, in a panel run, can leave a split critical error unresolved. **Retry claim verification** in the run's **Re-run** menu repeats it.)";
+
+    /// <summary>
+    /// The <c>OUT-OF-SCOPE:</c> marker of completeness evidence, as
+    /// <see cref="BenchmarkVerdictConsistency.HasOutOfScopeMarker"/> reads it.
+    /// </summary>
+    private static readonly Regex OutOfScopeMarkerRegex = new(
+        @"\bout[-\s]?of[-\s]?scope\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A source location: a path under one of the GnollHack source directories (<c>src/makemon.c</c>,
+    /// <c>include/layer.h</c>) or a bare C source or header file name (<c>makemon.c</c>).
+    /// </summary>
+    private static readonly Regex SourceLocationRegex = new(
+        @"(?<![\w/])(?:src|include|dat|win|sys)/[A-Za-z0-9_./-]+|\b[A-Za-z0-9_]+\.(?:c|h)\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when <paramref name="completenessEvidence"/>, before any <c>OUT-OF-SCOPE:</c> marker,
+    /// names a source file or path (<see cref="SourceLocationRegex"/>): in a run whose candidate was
+    /// told not to cite them, a source location charged as missing.
+    /// </summary>
+    internal static bool ChargesASourceLocation(string? completenessEvidence)
+    {
+        if (string.IsNullOrWhiteSpace(completenessEvidence)) return false;
+
+        var marker = OutOfScopeMarkerRegex.Match(completenessEvidence);
+        string charged = marker.Success ? completenessEvidence.Substring(0, marker.Index) : completenessEvidence;
+        return SourceLocationRegex.IsMatch(charged);
     }
 
     /// <summary>
@@ -3157,6 +3230,9 @@ public static class BenchmarkReportBuilder
                     int retriedAnswers = answers.Count(ClaimVerificationWasRetried);
                     string retriedPart = $"{Inv(retriedAnswers, "N0")} answer(s) needed a parse retry";
                     string retriedClause = retriedAnswers > 0 ? $"; {retriedPart}" : string.Empty;
+                    int providerRetriedAnswers = answers.Count(ClaimVerificationHadProviderErrorRetry);
+                    string providerRetriedPart = $"{Inv(providerRetriedAnswers, "N0")} answer(s) needed a provider-error retry";
+                    string providerRetriedClause = providerRetriedAnswers > 0 ? $"; {providerRetriedPart}" : string.Empty;
                     if (claimsChecked > 0 && accusedChecked.Count == 0 && assessorChecked.Count == 0)
                     {
                         decimal costPerClaim = verifierTotalCost / claimsChecked;
@@ -3164,7 +3240,7 @@ public static class BenchmarkReportBuilder
                         sb.AppendLine(
                             $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} claim(s) checked — " +
                             $"{Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
-                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate{unansweredClause}{retriedClause}. " +
+                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate{unansweredClause}{retriedClause}{providerRetriedClause}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
                     else if (accusedChecked.Count > 0 || assessorChecked.Count > 0)
@@ -3194,6 +3270,10 @@ public static class BenchmarkReportBuilder
                         if (retriedAnswers > 0)
                         {
                             parts.Add(retriedPart);
+                        }
+                        if (providerRetriedAnswers > 0)
+                        {
+                            parts.Add(providerRetriedPart);
                         }
                         sb.AppendLine(
                             $"- **Claim Verification Yield:** {string.Join(" + ", heads)} checked — {string.Join("; ", parts)}. " +
@@ -4291,6 +4371,28 @@ public static class BenchmarkReportBuilder
                 }
             }
 
+            // Source locations charged as missing, in a run whose candidate prompt disallowed them:
+            // each member's Completeness evidence before its OUT-OF-SCOPE: marker, read at render time.
+            if (!BenchmarkAssessmentPrompt.SourceReferencesAllowed(run))
+            {
+                var sourceChargedA = scoredAnswers
+                    .Where(a => ChargesASourceLocation(ReadEvidence(a).Completeness))
+                    .ToList();
+                if (isPanelRun)
+                {
+                    var sourceChargedB = memberBRecords
+                        .Where(x => ChargesASourceLocation(x.Record.CompletenessEvidence))
+                        .Select(x => x.Answer)
+                        .ToList();
+                    sb.AppendLine($"- **Source locations charged:** A {sourceChargedA.Count} ({QuestionList(sourceChargedA)}), B {sourceChargedB.Count} ({QuestionList(sourceChargedB)})");
+                }
+                else
+                {
+                    sb.AppendLine($"- **Source locations charged:** {sourceChargedA.Count} ({QuestionList(sourceChargedA)})");
+                }
+                sb.AppendLine("  - Answers whose Completeness evidence names a source file or path as missing, in a run whose candidate was told not to cite them; the grading instruction is not to deduct for them.");
+            }
+
             // The Readability counterpart, printed on the same terms and suppressed at zero for the
             // same reason: a v9 run where the assessor found nothing to set aside and a run graded
             // before the marker existed are indistinguishable in this count.
@@ -5163,7 +5265,7 @@ public static class BenchmarkReportBuilder
                     string verifierName = a.ClaimVerificationByModelSnapshot.Label() ?? run.ClaimVerifierModelSnapshot.Label() ?? "claim verifier";
                     string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
                     string errEnd = err.EndsWith('.') || err.EndsWith('!') || err.EndsWith('?') ? string.Empty : ".";
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}{errEnd} The unverified claims above were not checked{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}.{ClaimVerificationRawTextHead(a)}");
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}{errEnd} The unverified claims above were not checked{ClaimVerificationSpendText(a)}{ClaimVerificationRetryText(a)}. Use **Retry claim verification** to repeat it.{ClaimVerificationRawTextHead(a)}");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson) || a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue)
                 {
@@ -5458,7 +5560,7 @@ public static class BenchmarkReportBuilder
         if (stageFailedAnswers.Count > 0)
         {
             sb.AppendLine("### Harness Stage Failures");
-            sb.AppendLine("*(Advisory infrastructure failures; candidate output was not damaged)*");
+            sb.AppendLine($"*{HarnessStageFailuresSubtitle}*");
             sb.AppendLine();
             foreach (var sfa in stageFailedAnswers)
             {

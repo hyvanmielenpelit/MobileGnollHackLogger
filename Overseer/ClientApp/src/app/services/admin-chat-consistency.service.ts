@@ -10,6 +10,8 @@ import {
   CcAnchorResponse,
   CcAnnotation,
   CcAnnotationRequest,
+  CcBatteryRunRow,
+  CcComparisonSets,
   CcModelAxis,
   CcRegradeEstimate,
   CcRegradeJob,
@@ -75,6 +77,18 @@ export class AdminChatConsistencyService {
   /** The subject's run table over the range. */
   getRuns(modelKey: string, fromUtc?: string | null, toUtc?: string | null): Observable<CcRunRow[]> {
     return this.http.get<CcRunRow[]>(`${CHAT_CONSISTENCY_ENDPOINT}/runs`, { params: rangeParams(modelKey, fromUtc, toUtc) });
+  }
+
+  /** The batteries and suites the subject can be compared within over the range, and the default one. */
+  getComparisonSets(modelKey: string, fromUtc?: string | null, toUtc?: string | null): Observable<CcComparisonSets> {
+    return this.http.get<CcComparisonSets>(`${CHAT_CONSISTENCY_ENDPOINT}/comparison-sets`,
+      { params: rangeParams(modelKey, fromUtc, toUtc) });
+  }
+
+  /** The subject's battery runs over the range, each with its usable members. */
+  getBatteryRuns(modelKey: string, fromUtc?: string | null, toUtc?: string | null): Observable<CcBatteryRunRow[]> {
+    return this.http.get<CcBatteryRunRow[]>(`${CHAT_CONSISTENCY_ENDPOINT}/battery-runs`,
+      { params: rangeParams(modelKey, fromUtc, toUtc) });
   }
 
   // --- Analyses ---

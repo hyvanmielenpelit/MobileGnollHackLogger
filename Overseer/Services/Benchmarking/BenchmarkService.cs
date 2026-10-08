@@ -3809,8 +3809,119 @@ public class BenchmarkService
     /// </summary>
     internal const int ClaimVerificationCallUsageMaxEntries = 64;
 
-    /// <summary>The most characters of the <c>"e"</c> field of a parse retry's first usage entry.</summary>
+    /// <summary>
+    /// The most characters of the <c>"e"</c> field of a parse retry's or a provider-error repeat's
+    /// first usage entry.
+    /// </summary>
     internal const int ClaimVerificationFirstAttemptEndMaxLength = 200;
+
+    /// <summary>The default for <c>Benchmark:ClaimVerification:ProviderErrorRetries</c>.</summary>
+    internal const int DefaultClaimVerificationProviderErrorRetries = 1;
+
+    /// <summary>The default for <c>Benchmark:ClaimVerification:ProviderErrorRetryDelaySeconds</c>.</summary>
+    internal const int DefaultClaimVerificationProviderErrorRetryDelaySeconds = 30;
+
+    /// <summary>
+    /// One agent loop of a claim verification: its result, the error it ended with (null when it
+    /// ended without one), and whether that error was the verification's own timeout.
+    /// </summary>
+    internal sealed record ClaimVerificationAttempt(AgentRunResult Result, string? TerminalError, bool TimedOut = false);
+
+    /// <summary>
+    /// Where the calls of a verification repeated after a provider error begin in its per-call usage
+    /// list, and the error of the attempt before it.
+    /// </summary>
+    internal readonly record struct ClaimVerificationProviderErrorRetry(int CallStart, string? Error);
+
+    /// <summary>
+    /// The cost of a verification's attempts taken together: tokens, completed tool calls and model
+    /// calls summed over every attempt; every call's usage in attempt order, with where each repeat's
+    /// calls begin; and the last service tier a provider reported. An attempt that ended in an error
+    /// counts the tokens its provider reported; one that did not falls back to the estimate when
+    /// none was reported.
+    /// </summary>
+    internal sealed record ClaimVerificationAttemptTotals(
+        int InputTokens,
+        int OutputTokens,
+        int CacheReadTokens,
+        int CacheCreationTokens,
+        int ToolCallCount,
+        int ModelCallCount,
+        IReadOnlyList<TokenUsageReport> CallUsages,
+        IReadOnlyList<ClaimVerificationProviderErrorRetry> ProviderErrorRetries,
+        string? ServedServiceTier);
+
+    /// <summary>The <see cref="ClaimVerificationAttemptTotals"/> of <paramref name="attempts"/>, in the order they ran.</summary>
+    internal static ClaimVerificationAttemptTotals TotalClaimVerificationAttempts(IReadOnlyList<ClaimVerificationAttempt> attempts)
+    {
+        int inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0, toolCalls = 0, modelCalls = 0;
+        var callUsages = new List<TokenUsageReport>();
+        var providerErrorRetries = new List<ClaimVerificationProviderErrorRetry>();
+        string? servedServiceTier = null;
+
+        for (int i = 0; i < attempts.Count; i++)
+        {
+            var r = attempts[i].Result;
+            bool failed = !string.IsNullOrWhiteSpace(attempts[i].TerminalError);
+            inputTokens += failed || r.TotalPromptTokens > 0 ? r.TotalPromptTokens : r.EstimatedInputTokens;
+            outputTokens += failed || r.OutputTokens > 0 ? r.OutputTokens : r.EstimatedOutputTokens;
+            cacheReadTokens += r.CacheReadTokens;
+            cacheCreationTokens += r.CacheCreationTokens;
+            toolCalls += r.ToolCalls.Count(tc => tc.Status == "completed");
+            modelCalls += r.ModelCallCount;
+            if (i > 0)
+            {
+                providerErrorRetries.Add(new ClaimVerificationProviderErrorRetry(callUsages.Count, attempts[i - 1].TerminalError));
+            }
+
+            callUsages.AddRange(r.ModelCallUsages);
+            servedServiceTier = r.ActualServiceTier ?? servedServiceTier;
+        }
+
+        return new ClaimVerificationAttemptTotals(
+            inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, toolCalls, modelCalls,
+            callUsages, providerErrorRetries, servedServiceTier);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="runAttempt"/>, given the attempt's 0-based number, and runs it again while
+    /// the latest attempt ended in an error <see cref="ProviderErrorRetryPolicy.IsRetryable"/> accepts
+    /// and that was not the verification's timeout, at most <paramref name="providerErrorRetries"/>
+    /// times, waiting <paramref name="retryDelay"/> first; <paramref name="cancellationToken"/> ends
+    /// the wait. <paramref name="onRetry"/> is told the number of the attempt about to run and the
+    /// error that caused it. Every attempt, in the order they ran.
+    /// </summary>
+    internal static async Task<IReadOnlyList<ClaimVerificationAttempt>> RunClaimVerificationAttemptsAsync(
+        Func<int, Task<ClaimVerificationAttempt>> runAttempt,
+        int providerErrorRetries,
+        TimeSpan retryDelay,
+        CancellationToken cancellationToken,
+        Action<int, string>? onRetry = null)
+    {
+        var attempts = new List<ClaimVerificationAttempt>();
+        while (true)
+        {
+            var attempt = await runAttempt(attempts.Count);
+            attempts.Add(attempt);
+
+            string? error = attempt.TerminalError;
+            if (string.IsNullOrWhiteSpace(error)
+                || attempt.TimedOut
+                || attempts.Count > providerErrorRetries
+                || !ProviderErrorRetryPolicy.IsRetryable(error))
+            {
+                return attempts;
+            }
+
+            onRetry?.Invoke(attempts.Count, error);
+            if (retryDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(retryDelay, cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
 
     /// <summary>The length of <see cref="BenchmarkRunAnswer.ClaimVerificationServiceTierUsed"/>.</summary>
     private const int ClaimVerificationServiceTierMaxLength = 32;
@@ -3824,8 +3935,13 @@ public class BenchmarkService
     /// begin: each of its entries carries <c>"r":1</c>, a retry that reported no usage leaves one
     /// <c>{"p":0,"c":0,"o":0,"r":1}</c> placeholder, the first retry entry carries <c>"e"</c>,
     /// <paramref name="firstAttemptEnd"/> cut to <see cref="ClaimVerificationFirstAttemptEndMaxLength"/>
-    /// characters, and the cap cuts the first attempt's entries, never the retry's. Null when no call
-    /// reported usage and no retry ran.
+    /// characters, and the cap cuts the first attempt's entries, never the retry's. When the
+    /// verification was repeated after a provider error, each of <paramref name="providerErrorRetries"/>
+    /// says where a repeat's calls begin, before any parse retry's: each of its entries carries
+    /// <c>"pe":1</c>, a repeat that reported no usage leaves one <c>{"p":0,"c":0,"o":0,"pe":1}</c>
+    /// placeholder, and its first entry carries <c>"e"</c>, the error of the attempt before it, cut
+    /// the same way; the cap cuts the entries before the first repeat ahead of a repeat's, and a
+    /// repeat's ahead of the parse retry's. Null when no call reported usage and no retry ran.
     /// </summary>
     internal static void RecordClaimVerificationModelCalls(
         BenchmarkRunAnswer answer,
@@ -3833,10 +3949,11 @@ public class BenchmarkService
         IReadOnlyList<TokenUsageReport> callUsages,
         string? servedServiceTier,
         int? retryCallStart = null,
-        string? firstAttemptEnd = null)
+        string? firstAttemptEnd = null,
+        IReadOnlyList<ClaimVerificationProviderErrorRetry>? providerErrorRetries = null)
     {
         answer.ClaimVerificationModelCallCount = modelCallCount;
-        answer.ClaimVerificationCallUsageJson = SerializeClaimVerificationCallUsage(callUsages, retryCallStart, firstAttemptEnd);
+        answer.ClaimVerificationCallUsageJson = SerializeClaimVerificationCallUsage(callUsages, retryCallStart, firstAttemptEnd, providerErrorRetries);
         answer.ClaimVerificationServiceTierUsed = string.IsNullOrWhiteSpace(servedServiceTier)
             ? null
             : servedServiceTier.Length > ClaimVerificationServiceTierMaxLength
@@ -3848,13 +3965,37 @@ public class BenchmarkService
     private static string? SerializeClaimVerificationCallUsage(
         IReadOnlyList<TokenUsageReport> callUsages,
         int? retryCallStart,
-        string? firstAttemptEnd)
+        string? firstAttemptEnd,
+        IReadOnlyList<ClaimVerificationProviderErrorRetry>? providerErrorRetries)
     {
         int retryStart = retryCallStart.HasValue
             ? Math.Clamp(retryCallStart.Value, 0, callUsages.Count)
             : callUsages.Count;
 
-        var firstAttempt = callUsages.Take(retryStart).Select(ClaimVerificationCallUsageEntry.From).ToList();
+        var repeatsFrom = providerErrorRetries ?? Array.Empty<ClaimVerificationProviderErrorRetry>();
+        int repeatStart = repeatsFrom.Count > 0 ? Math.Clamp(repeatsFrom[0].CallStart, 0, retryStart) : retryStart;
+
+        var firstAttempt = callUsages.Take(repeatStart).Select(ClaimVerificationCallUsageEntry.From).ToList();
+        var repeats = new List<ClaimVerificationCallUsageEntry>();
+        for (int i = 0; i < repeatsFrom.Count; i++)
+        {
+            int start = Math.Clamp(repeatsFrom[i].CallStart, repeatStart, retryStart);
+            int end = i + 1 < repeatsFrom.Count ? Math.Clamp(repeatsFrom[i + 1].CallStart, start, retryStart) : retryStart;
+            var attempt = callUsages.Skip(start).Take(end - start).Select(ClaimVerificationCallUsageEntry.From).ToList();
+            if (attempt.Count == 0)
+            {
+                attempt.Add(new ClaimVerificationCallUsageEntry());
+            }
+
+            foreach (var entry in attempt)
+            {
+                entry.ProviderErrorRetry = 1;
+            }
+
+            attempt[0].FirstAttemptEnd = CutFirstAttemptEnd(repeatsFrom[i].Error);
+            repeats.AddRange(attempt);
+        }
+
         var retry = callUsages.Skip(retryStart).Select(ClaimVerificationCallUsageEntry.From).ToList();
         if (retryCallStart.HasValue)
         {
@@ -3871,15 +4012,21 @@ public class BenchmarkService
             retry[0].FirstAttemptEnd = CutFirstAttemptEnd(firstAttemptEnd);
         }
 
-        if (firstAttempt.Count == 0 && retry.Count == 0) return null;
+        if (firstAttempt.Count == 0 && repeats.Count == 0 && retry.Count == 0) return null;
 
         if (retry.Count > ClaimVerificationCallUsageMaxEntries)
         {
             retry = retry.Take(ClaimVerificationCallUsageMaxEntries).ToList();
         }
 
+        if (repeats.Count > ClaimVerificationCallUsageMaxEntries - retry.Count)
+        {
+            repeats = repeats.Take(ClaimVerificationCallUsageMaxEntries - retry.Count).ToList();
+        }
+
         var entries = firstAttempt
-            .Take(ClaimVerificationCallUsageMaxEntries - retry.Count)
+            .Take(ClaimVerificationCallUsageMaxEntries - retry.Count - repeats.Count)
+            .Concat(repeats)
             .Concat(retry);
         return JsonSerializer.Serialize(entries);
     }
@@ -3910,7 +4057,18 @@ public class BenchmarkService
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public int? Retry { get; set; }
 
-        /// <summary>On the first retry entry, how the first attempt ended; otherwise null.</summary>
+        /// <summary>
+        /// 1 on an entry of an agent loop that repeated the verification after a provider error;
+        /// null otherwise.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("pe")]
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public int? ProviderErrorRetry { get; set; }
+
+        /// <summary>
+        /// On the first parse retry entry, how the first attempt ended; on the first entry of each
+        /// provider-error repeat, the error of the attempt before it; otherwise null.
+        /// </summary>
         [System.Text.Json.Serialization.JsonPropertyName("e")]
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public string? FirstAttemptEnd { get; set; }
@@ -4005,76 +4163,115 @@ public class BenchmarkService
             manifest.Select(m => m.Roles).ToList(),
             manifest.Select(m => m.QuotedFragments).ToList());
 
-        var runRequest = BuildClaimVerificationRequest(
-            verifierConfig,
-            verifierApiKey,
-            EndpointFor(verifierConfig),
-            prompt,
-            allowedTools,
-            maxOutputTokens,
-            toolIterations,
-            totalModelCalls,
-            toolCallBudget,
-            maxResultLength,
-            run.Id,
-            answer.OrderIndex,
-            run.StartedByUserId);
+        AgentRunRequest BuildAttemptRequest(int attemptNumber)
+        {
+            var request = BuildClaimVerificationRequest(
+                verifierConfig,
+                verifierApiKey,
+                EndpointFor(verifierConfig),
+                prompt,
+                allowedTools,
+                maxOutputTokens,
+                toolIterations,
+                totalModelCalls,
+                toolCallBudget,
+                maxResultLength,
+                run.Id,
+                answer.OrderIndex,
+                run.StartedByUserId);
+
+            // A repeat after a provider error spends a tool-call budget of its own.
+            if (attemptNumber > 0 && request.ToolExecutionContext != null)
+            {
+                request.ToolExecutionContext.ToolBudgetScopeId += $"_attempt{attemptNumber + 1}";
+            }
+
+            return request;
+        }
 
         using var verifyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        verifyCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-        var runResult = new AgentRunResult();
+        int providerErrorRetries = _configuration.GetValue<int>(
+            "Benchmark:ClaimVerification:ProviderErrorRetries", DefaultClaimVerificationProviderErrorRetries);
+        int providerErrorRetryDelaySeconds = Math.Max(0, _configuration.GetValue<int>(
+            "Benchmark:ClaimVerification:ProviderErrorRetryDelaySeconds", DefaultClaimVerificationProviderErrorRetryDelaySeconds));
+
         var sw = Stopwatch.StartNew();
-        string? terminalError = null;
 
-        // Every turn's result, the parse retry's included, for the telemetry rows.
-        var verificationTurns = new List<AgentRunResult> { runResult };
+        // The latest attempt's request; the parse retry is built from it.
+        AgentRunRequest runRequest = null!;
 
-        try
-        {
-            // A request that would not carry the board ahead of the question is a verification
-            // failure, re-runnable, and nothing is sent. The board figure is recorded only once the
-            // probe passed.
-            VerifyClaimVerificationDelivery(runRequest, run, answer.OrderIndex);
-            answer.VerifierBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
-            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, verifyCts.Token))
+        // The whole verification, run again from its first request after a retryable provider
+        // error, each attempt on a fresh request, budget and timeout.
+        var attempts = await RunClaimVerificationAttemptsAsync(
+            async attemptNumber =>
             {
-                if (evt.Type == "error")
+                runRequest = BuildAttemptRequest(attemptNumber);
+                var attemptResult = new AgentRunResult();
+                string? attemptError = null;
+                bool timedOut = false;
+                verifyCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+                try
                 {
-                    terminalError = evt.Data?.ToString();
+                    // A request that would not carry the board ahead of the question is a verification
+                    // failure, re-runnable, and nothing is sent. The board figure is recorded only once the
+                    // probe passed.
+                    VerifyClaimVerificationDelivery(runRequest, run, answer.OrderIndex);
+                    answer.VerifierBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
+                    await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, attemptResult, verifyCts.Token))
+                    {
+                        if (evt.Type == "error")
+                        {
+                            attemptError = evt.Data?.ToString();
+                        }
+                    }
                 }
-            }
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && verifyCts.IsCancellationRequested)
-        {
-            terminalError = $"Claim verification timeout exceeded ({timeoutSeconds} s).";
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            terminalError = ex.Message;
-        }
-        int inputTokens;
-        int outputTokens;
-        if (!string.IsNullOrWhiteSpace(terminalError))
-        {
-            inputTokens = runResult.TotalPromptTokens;
-            outputTokens = runResult.OutputTokens;
-        }
-        else
-        {
-            inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
-            outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
-        }
-        int cacheReadTokens = runResult.CacheReadTokens;
-        int cacheCreationTokens = runResult.CacheCreationTokens;
-        int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
-        int modelCallCount = runResult.ModelCallCount;
-        var callUsages = new List<TokenUsageReport>(runResult.ModelCallUsages);
-        string? servedServiceTier = runResult.ActualServiceTier;
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && verifyCts.IsCancellationRequested)
+                {
+                    attemptError = $"Claim verification timeout exceeded ({timeoutSeconds} s).";
+                    timedOut = true;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    attemptError = ex.Message;
+                }
+
+                // A failed attempt's timeout stops, so the wait before a repeat cannot expire it.
+                if (!string.IsNullOrWhiteSpace(attemptError) && !timedOut)
+                {
+                    verifyCts.CancelAfter(System.Threading.Timeout.InfiniteTimeSpan);
+                }
+
+                return new ClaimVerificationAttempt(attemptResult, attemptError, timedOut);
+            },
+            providerErrorRetries,
+            TimeSpan.FromSeconds(providerErrorRetryDelaySeconds),
+            cancellationToken,
+            (attemptNumber, error) => _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: claim verification ended in a provider error ({Error}). Running it again in {Delay} s (attempt {Attempt}).",
+                run.Id, answer.OrderIndex, error, providerErrorRetryDelaySeconds, attemptNumber + 1));
+
+        var lastAttempt = attempts[attempts.Count - 1];
+        var runResult = lastAttempt.Result;
+        string? terminalError = lastAttempt.TerminalError;
+
+        // Every turn's result, each attempt's and the parse retry's, for the telemetry rows.
+        var verificationTurns = attempts.Select(a => a.Result).ToList();
+
+        var totals = TotalClaimVerificationAttempts(attempts);
+        int inputTokens = totals.InputTokens;
+        int outputTokens = totals.OutputTokens;
+        int cacheReadTokens = totals.CacheReadTokens;
+        int cacheCreationTokens = totals.CacheCreationTokens;
+        int toolCallsCount = totals.ToolCallCount;
+        int modelCallCount = totals.ModelCallCount;
+        var callUsages = new List<TokenUsageReport>(totals.CallUsages);
+        string? servedServiceTier = totals.ServedServiceTier;
         bool verdictsPersisted = false;
 
         if (!string.IsNullOrWhiteSpace(terminalError))
@@ -4086,7 +4283,8 @@ public class BenchmarkService
             answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
-            RecordClaimVerificationModelCalls(answer, modelCallCount, callUsages, servedServiceTier);
+            RecordClaimVerificationModelCalls(
+                answer, modelCallCount, callUsages, servedServiceTier, providerErrorRetries: totals.ProviderErrorRetries);
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
             answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
             answer.ClaimVerificationRawText = null;
@@ -4178,7 +4376,8 @@ public class BenchmarkService
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
             RecordClaimVerificationModelCalls(
-                answer, modelCallCount, callUsages, servedServiceTier, retryCallStart, DescribeVerificationEnd(firstResult));
+                answer, modelCallCount, callUsages, servedServiceTier, retryCallStart, DescribeVerificationEnd(firstResult),
+                totals.ProviderErrorRetries);
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
 
             if (!string.IsNullOrWhiteSpace(terminalError))

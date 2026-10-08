@@ -40,6 +40,9 @@
         }
       </dd>
     </div>
+    @if (compareLabel) {
+      <div data-fact="compared"><dt>Compared</dt><dd class="cc-current-compared">{{ compareLabel }}</dd></div>
+    }
     @if (runsInAnalysis !== null) {
       <div data-fact="analysis-runs"><dt>In the analysis</dt><dd>{{ runsInAnalysisText }}</dd></div>
     }

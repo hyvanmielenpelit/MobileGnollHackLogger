@@ -994,10 +994,40 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Equal(0, answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction);
     }
 
+    // Run 98 Q16, member A's Accuracy evidence verbatim. The answer and rubric below are
+    // constructed around the sentence it quotes; the stored answer is not reproduced.
+    private const string Run98Q16EvidenceA =
+        "Rubric's adj_lev point: the code \"adds 1 per 5 points of level_difficulty() above that sum\", but the answer inverts the direction — \"A species' base level goes up by 1 for every 5 levels the current depth is below it\" (the bonus applies when depth is *above* the base level, as the answer's own worked example correctly shows). Remaining adjudicable claims (band values 3–8, 2–9, 0–11; difficulty-rating bounds; disabled game-difficulty adjustment; disabled NetHack group generation replaced by encounters) match the rubric exactly.";
+
+    private const string Run98Q16InvertedSentence =
+        "A species' base level goes up by 1 for every 5 levels the current depth is below it.";
+
+    private const string Run98Q16Answer =
+        "#### Individual monster level\n\n"
+        + Run98Q16InvertedSentence + " A player experience level above the base level adds 1 per 4 levels.\n\n"
+        + "Example: a base-level-2 species generated at difficulty 12 gains 2 levels and arrives at level 4.\n";
+
+    private const string Run98Q16Rubric =
+        "- adj_lev: the code adds 1 per 5 points of level_difficulty() above that sum.";
+
+    [Fact]
+    public void Extract_Run98Q16_MemberA_AccusesTheInvertedSentence_AlthoughItsClauseSaysCorrectly()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run98Q16Answer, Run98Q16EvidenceA, Run98Q16Rubric));
+
+        // The first double-quoted span is the rubric's text, not the answer's, so it is the
+        // rubric quote rather than an accused sentence.
+        Assert.Equal(Run98Q16InvertedSentence, quote.Text);
+        Assert.Equal(new[] { "A species' base level goes up by 1 for every 5 levels the current depth is below it" }, quote.QuotedFragments);
+        Assert.True(quote.RubricCited);
+        Assert.Equal("adds 1 per 5 points of level_difficulty() above that sum", quote.RubricQuote);
+    }
+
     [Theory]
     [InlineData("the answer is correct here", true)]
     [InlineData("consistent with the source", true)]
     [InlineData("correct but overstated", false)]
+    [InlineData("the answer inverts the direction, as its own worked example correctly shows", false)]
     [InlineData("this implies more than it says", false)]
     [InlineData("the answer says", null)]
     [InlineData("a notable claim", null)]

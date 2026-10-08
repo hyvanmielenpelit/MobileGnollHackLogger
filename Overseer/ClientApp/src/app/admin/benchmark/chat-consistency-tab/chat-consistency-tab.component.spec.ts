@@ -5,24 +5,36 @@ import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import {
   CC_LAUNCHER_STORAGE_KEY,
   CC_LEAVE_REFUSAL,
+  CC_SET_CHANGE_NOTE,
   CC_SUBJECT_STORAGE_KEY,
   ChatConsistencyTabComponent
 } from './chat-consistency-tab.component';
 import { endOfUtcDay, startOfUtcDay } from './chat-consistency-format';
+import { CC_EMPTY_BATTERY_SCOPE } from './chat-consistency-scope';
+import { CcBatteryRunRow, CcComparisonSets, CcRunRow } from './chat-consistency.models';
 import {
   CC_API,
+  CC_BATTERY_SET_KEY,
   ccAnalysisResult,
   ccAnalysisSummary,
   ccAxis,
+  ccBatteryMemberRows,
+  ccBatteryRunRows,
+  ccComparisonSets,
+  ccNoComparisonSets,
   ccRunRows,
   ccTimeline,
   chatConsistencyTestProviders,
   textOf
 } from './chat-consistency-tab.testing';
+import { CC_BATTERY_RUNS_VIEW_STORAGE_KEY, CC_RUNS_VIEW_STORAGE_KEY } from './model-step/model-step.component';
 import { CC_CHART_SIZE_STORAGE_KEY, CC_TIMELINE_STORAGE_KEY } from './timeline-workspace/timeline-workspace.component';
 
 /** Every Chat Consistency storage key, cleared around each test. */
-const STORAGE_KEYS = [CC_LAUNCHER_STORAGE_KEY, CC_SUBJECT_STORAGE_KEY, CC_TIMELINE_STORAGE_KEY, CC_CHART_SIZE_STORAGE_KEY];
+const STORAGE_KEYS = [
+  CC_LAUNCHER_STORAGE_KEY, CC_SUBJECT_STORAGE_KEY, CC_TIMELINE_STORAGE_KEY, CC_CHART_SIZE_STORAGE_KEY,
+  CC_RUNS_VIEW_STORAGE_KEY, CC_BATTERY_RUNS_VIEW_STORAGE_KEY
+];
 
 const FIGURE_ORDER = ['quality', 'ttfat', 'rate', 'work', 'cost', 'reliability', 'timeline'];
 
@@ -37,6 +49,13 @@ function clearStorage(): void {
 }
 
 const macrotask = (): Promise<void> => new Promise<void>(resolve => setTimeout(resolve));
+
+/** What a subject load answers with, where a test differs from the run-by-run defaults. */
+interface SubjectData {
+  rows?: CcRunRow[];
+  sets?: CcComparisonSets;
+  batteryRows?: CcBatteryRunRow[];
+}
 
 describe('ChatConsistencyTabComponent', () => {
   let fixture: ComponentFixture<ChatConsistencyTabComponent>;
@@ -91,8 +110,11 @@ describe('ChatConsistencyTabComponent', () => {
     return new Promise<void>(resolve => dialog().addEventListener('close', () => resolve(), { once: true }));
   }
 
-  /** Chooses the model with step 1's picker and answers the timeline and run requests it makes. */
-  function chooseModelInWizard(): void {
+  /**
+   * Chooses the model with step 1's picker and answers the timeline, run, comparison-set and battery-run
+   * requests it makes. By default no set is offered, so the runs are listed one by one, as before sets.
+   */
+  function chooseModelInWizard(subject: SubjectData = {}): void {
     const step = dialog().querySelector('#cc-step-panel-1')!;
     step.querySelector<HTMLButtonElement>('.cc-subject-model-selector .selector-trigger')!.click();
     fixture.detectChanges();
@@ -107,8 +129,28 @@ describe('ChatConsistencyTabComponent', () => {
     expect(timeline.request.params.get('modelKey')).toBe('openai/gpt-5|high');
     const runs = http.expectOne(r => r.url === `${CC_API}/runs`);
     expect(runs.request.params.get('modelKey')).toBe('openai/gpt-5|high');
+    const sets = http.expectOne(r => r.url === `${CC_API}/comparison-sets`);
+    expect(sets.request.params.get('modelKey')).toBe('openai/gpt-5|high');
+    const batteryRuns = http.expectOne(r => r.url === `${CC_API}/battery-runs`);
+    expect(batteryRuns.request.params.get('modelKey')).toBe('openai/gpt-5|high');
     timeline.flush(ccTimeline());
-    runs.flush(ccRunRows());
+    runs.flush(subject.rows ?? ccRunRows());
+    sets.flush(subject.sets ?? ccNoComparisonSets());
+    batteryRuns.flush(subject.batteryRows ?? []);
+    fixture.detectChanges();
+  }
+
+  /** The battery fixtures: six standalone runs, two battery runs of two members each, and three sets. */
+  function batterySubject(): SubjectData {
+    return { rows: [...ccBatteryMemberRows(), ...ccRunRows()], sets: ccComparisonSets(), batteryRows: ccBatteryRunRows() };
+  }
+
+  /** Answers the four requests of a subject load, outstanding after a model choice or a date change. */
+  function flushSubject(subject: SubjectData = {}): void {
+    http.expectOne(r => r.url === `${CC_API}/timeline`).flush(ccTimeline());
+    http.expectOne(r => r.url === `${CC_API}/runs`).flush(subject.rows ?? ccRunRows());
+    http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(subject.sets ?? ccNoComparisonSets());
+    http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush(subject.batteryRows ?? []);
     fixture.detectChanges();
   }
 
@@ -232,7 +274,9 @@ describe('ChatConsistencyTabComponent', () => {
       ['Suites', 'Board Suite'],
       ['Latest analysis', '#7 · Analysis 7 · saved 2026-10-02 Overseer chat with GPT-5 high: quality equivalent']
     ]);
-    expect(storedSubject()).toEqual({ version: 1, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null } });
+    expect(storedSubject()).toEqual({
+      version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null }, compare: null
+    });
 
     // The Timeline step draws the loaded timeline without a request of its own.
     dialog().querySelector<HTMLButtonElement>('#cc-step-tab-2')!.click();
@@ -250,15 +294,24 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Answers the timeline and run requests of the subject, returning their `from` and `to` parameters. */
-  function answerSubject(rows = ccRunRows()): { from: string | null; to: string | null } {
+  /**
+   * Answers the timeline, run, comparison-set and battery-run requests of the subject, which all carry
+   * the same bounds, returning their `from` and `to` parameters.
+   */
+  function answerSubject(rows = ccRunRows(), subject: SubjectData = {}): { from: string | null; to: string | null } {
     const timeline = http.expectOne(r => r.url === `${CC_API}/timeline`);
     const runs = http.expectOne(r => r.url === `${CC_API}/runs`);
+    const sets = http.expectOne(r => r.url === `${CC_API}/comparison-sets`);
+    const batteryRuns = http.expectOne(r => r.url === `${CC_API}/battery-runs`);
     const bounds = { from: timeline.request.params.get('from'), to: timeline.request.params.get('to') };
-    expect(runs.request.params.get('from')).toBe(bounds.from);
-    expect(runs.request.params.get('to')).toBe(bounds.to);
+    for (const request of [runs, sets, batteryRuns]) {
+      expect(request.request.params.get('from')).toBe(bounds.from);
+      expect(request.request.params.get('to')).toBe(bounds.to);
+    }
     timeline.flush(ccTimeline());
     runs.flush(rows);
+    sets.flush(subject.sets ?? ccNoComparisonSets());
+    batteryRuns.flush(subject.batteryRows ?? []);
     fixture.detectChanges();
     return bounds;
   }
@@ -298,12 +351,15 @@ describe('ChatConsistencyTabComponent', () => {
       expect(storedSubject()).toBeNull();
       openWizard();
       chooseModelInWizard();
-      expect(storedSubject()).toEqual({ version: 1, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null } });
+      expect(storedSubject()).toEqual({
+        version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null }, compare: null
+      });
 
       choosePreset('7d');
       answerSubject();
       expect(storedSubject()).toEqual({
-        version: 1, modelKey: 'openai/gpt-5|high', range: { preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T12:00:00.000Z' }
+        version: 2, modelKey: 'openai/gpt-5|high', range: { preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T12:00:00.000Z' },
+        compare: null
       });
 
       vi.setSystemTime(new Date('2026-10-07T15:30:00Z'));
@@ -311,7 +367,8 @@ describe('ChatConsistencyTabComponent', () => {
       fixture.detectChanges();
       answerSubject();
       expect(storedSubject()).toEqual({
-        version: 1, modelKey: 'openai/gpt-5|high', range: { preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T15:30:00.000Z' }
+        version: 2, modelKey: 'openai/gpt-5|high', range: { preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T15:30:00.000Z' },
+        compare: null
       });
     });
 
@@ -347,7 +404,7 @@ describe('ChatConsistencyTabComponent', () => {
     });
 
     it('ignores a record of another version, and keeps it', () => {
-      const record = JSON.stringify({ version: 2, modelKey: 'openai/gpt-5|high', range });
+      const record = JSON.stringify({ version: 3, modelKey: 'openai/gpt-5|high', range, compare: null });
       localStorage.setItem(CC_SUBJECT_STORAGE_KEY, record);
       createTab();
       expect(fixture.componentInstance.selectedKey).toBeNull();
@@ -407,7 +464,7 @@ describe('ChatConsistencyTabComponent', () => {
     tab.setScope({ firstRunId: 102, lastRunId: null, leftOut: new Set<number>() });
     tab.selectModel('anthropic/claude');
     expect(tab.scope.firstRunId).toBeNull();
-    http.match(r => r.url === `${CC_API}/timeline` || r.url === `${CC_API}/runs`).forEach(request => request.flush([]));
+    flushSubject({ rows: [] });
   });
 
   it('reads custom dates as UTC day bounds', () => {
@@ -432,6 +489,8 @@ describe('ChatConsistencyTabComponent', () => {
     expect(runs.request.params.get('from')).toBe('2026-09-10T00:00:00.000Z');
     timeline.flush(ccTimeline());
     runs.flush(ccRunRows());
+    http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(ccNoComparisonSets());
+    http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush([]);
     fixture.detectChanges();
     expect(currentFact('Dates')).toBe('From 2026-09-10 · 6 runs in these dates');
 
@@ -446,6 +505,8 @@ describe('ChatConsistencyTabComponent', () => {
     expect(runs.request.params.get('to')).toBe(endOfUtcDay('2026-09-30'));
     timeline.flush(ccTimeline());
     runs.flush(ccRunRows());
+    http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(ccNoComparisonSets());
+    http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush([]);
     fixture.detectChanges();
     expect(currentFact('Dates')).toBe('2026-09-10 to 2026-09-30 · 6 runs in these dates');
     expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · 2026-09-10 to 2026-09-30');  });
@@ -470,6 +531,8 @@ describe('ChatConsistencyTabComponent', () => {
 
     timeline.flush(ccTimeline());
     runs.flush(ccRunRows());
+    http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(ccNoComparisonSets());
+    http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush([]);
     fixture.detectChanges();
     const wizard = fixture.componentInstance.wizard!;
     expect(wizard.step).toBe(5);
@@ -717,6 +780,127 @@ describe('ChatConsistencyTabComponent', () => {
     expect(el.querySelector<HTMLDialogElement>('dialog.cc-delete-dialog')!.open).toBe(false);
     expect(el.querySelector('.cc-analysis-card')).toBeNull();
     expect(textOf(el.querySelector('.cc-saved-empty'))).toContain('No analysis is saved yet.');
+  });
+
+  // --- Comparison sets ---
+
+  describe('comparison sets', () => {
+    const compare = (): HTMLSelectElement => dialog().querySelector<HTMLSelectElement>('#cc-compare')!;
+
+    function chooseSet(key: string): void {
+      compare().value = key;
+      compare().dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    }
+
+    it('compares within the server\'s default set, lists its battery runs and names it in the header and the card', () => {
+      createTab();
+      openWizard();
+      chooseModelInWizard(batterySubject());
+      const tab = fixture.componentInstance;
+
+      expect(tab.compareKey).toBe(CC_BATTERY_SET_KEY);
+      expect(tab.scope).toBe(CC_EMPTY_BATTERY_SCOPE);
+      expect(compare().value).toBe(CC_BATTERY_SET_KEY);
+      const cards = Array.from(dialog().querySelectorAll('.cc-battery-card')).map(card => card.getAttribute('data-battery-run-id'));
+      expect(cards).toEqual(['12', '11']);
+      expect(dialog().querySelector('.cc-run-card:not(.cc-battery-card)')).toBeNull();
+      expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · Two initial suites (revision 1) · 2 battery runs · All dates');
+      expect(currentFact('Compared')).toBe('Two initial suites (revision 1)');
+      expect(storedSubject()).toEqual({
+        version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null },
+        compare: { kind: 'battery', key: CC_BATTERY_SET_KEY }
+      });
+    });
+
+    it('clears the selection when another set is compared, and says so', () => {
+      createTab();
+      openWizard();
+      chooseModelInWizard(batterySubject());
+      const tab = fixture.componentInstance;
+
+      dialog().querySelector<HTMLInputElement>('#cc-brun-11-include')!.click();
+      fixture.detectChanges();
+      expect([...tab.scope.leftOut]).toEqual([11]);
+      expect(currentFact('In the analysis')).toBe('1 battery run');
+
+      chooseSet('suite:id:5');
+      http.expectNone(r => r.url === `${CC_API}/runs`);
+      expect(tab.compareKey).toBe('suite:id:5');
+      expect(tab.scope.leftOut.size).toBe(0);
+      expect(tab.scope.unitKind ?? 'run').toBe('run');
+      expect(textOf(dialog().querySelector('.cc-tl-announcement'))).toBe(CC_SET_CHANGE_NOTE);
+      // The suite's own runs and the members of the battery runs that ran it.
+      expect(dialog().querySelectorAll('.cc-run-card').length).toBe(8);
+      expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · Board Suite · 8 runs · All dates');
+      expect((storedSubject() as { compare: unknown }).compare).toEqual({ kind: 'suite', key: 'suite:id:5' });
+
+      // Nothing selected: switching again says nothing.
+      chooseSet(CC_BATTERY_SET_KEY);
+      expect(tab.announcement).toBe('');
+    });
+
+    it('restores a stored set while it is offered, and reads a version-1 record as no stored set', () => {
+      localStorage.setItem(CC_SUBJECT_STORAGE_KEY, JSON.stringify({
+        version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null },
+        compare: { kind: 'suite', key: 'suite:id:6' }
+      }));
+      createTab();
+      flushSubject(batterySubject());
+      expect(fixture.componentInstance.compareKey).toBe('suite:id:6');
+      expect(currentFact('Compared')).toBe('Wiki Suite');
+      fixture.destroy();
+
+      localStorage.setItem(CC_SUBJECT_STORAGE_KEY, JSON.stringify({
+        version: 1, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null }
+      }));
+      createTab();
+      expect(fixture.componentInstance.selectedKey).toBe('openai/gpt-5|high');
+      flushSubject(batterySubject());
+      expect(fixture.componentInstance.compareKey).toBe(CC_BATTERY_SET_KEY);
+      expect((storedSubject() as { version: number }).version).toBe(2);
+    });
+
+    it('falls back to the default set when the stored one is no longer offered', () => {
+      localStorage.setItem(CC_SUBJECT_STORAGE_KEY, JSON.stringify({
+        version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null },
+        compare: { kind: 'suite', key: 'suite:id:99' }
+      }));
+      createTab();
+      flushSubject(batterySubject());
+      expect(fixture.componentInstance.compareKey).toBe(CC_BATTERY_SET_KEY);
+    });
+
+    it('names each saved analysis\'s compared set, and nothing for one without', () => {
+      fixture = TestBed.createComponent(ChatConsistencyTabComponent);
+      el = fixture.nativeElement as HTMLElement;
+      fixture.detectChanges();
+      http.expectOne(`${CC_API}/models`).flush([ccAxis()]);
+      http.expectOne(`${CC_API}/analyses`).flush([
+        ccAnalysisSummary(7),
+        ccAnalysisSummary(8, { comparisonSetKey: CC_BATTERY_SET_KEY, comparisonSetLabel: 'Two initial suites (revision 1)' })
+      ]);
+      fixture.detectChanges();
+      expect(el.querySelector('.cc-analysis-card[data-analysis-id="7"] .cc-analysis-compared')).toBeNull();
+      const compared = el.querySelector('.cc-analysis-card[data-analysis-id="8"] .cc-analysis-compared')!;
+      expect(textOf(compared.querySelector('dt'))).toBe('Compared');
+      expect(textOf(compared.querySelector('dd'))).toBe('Two initial suites (revision 1)');
+    });
+
+    it('opens a battery run report and a member\'s run report through the shell', () => {
+      createTab();
+      openWizard();
+      chooseModelInWizard(batterySubject());
+      const batteryReport = vi.spyOn(bridge, 'openBatteryRunReport').mockImplementation(() => undefined);
+      const runReport = vi.spyOn(bridge, 'viewRunDetail').mockImplementation(() => undefined);
+      const card = dialog().querySelector<HTMLElement>('.cc-battery-card[data-battery-run-id="12"]')!;
+
+      card.querySelector<HTMLButtonElement>('.cc-open-battery-report-btn')!.click();
+      expect(batteryReport).toHaveBeenCalledWith(12);
+      card.querySelector<HTMLButtonElement>('.cc-battery-member[data-run-id="304"] .cc-open-report-btn')!.click();
+      expect(runReport).toHaveBeenCalledWith(304);
+      expect(dialog().open).toBe(true);
+    });
   });
 
   // --- Teardown ---

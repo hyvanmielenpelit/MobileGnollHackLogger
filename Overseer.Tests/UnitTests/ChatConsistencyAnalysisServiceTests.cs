@@ -19,7 +19,8 @@ using Xunit;
 /// <summary>
 /// The chat consistency analysis over an in-memory database: one subject in two periods with call
 /// telemetry and a control subject. Covers persistence, determinism, the headline, a quality drop, an
-/// Overseer event, the minimum-sample and legacy caps, the re-grade's refusals and job, and the delete guard.
+/// Overseer event, the minimum-sample and legacy caps, the re-grade's refusals and job, and the delete guard;
+/// and battery and suite comparison sets, in the analysis and in the evidence the builder loads for them.
 /// No network: the re-grade runs a fake calibration runner.
 /// </summary>
 public class ChatConsistencyAnalysisServiceTests
@@ -703,6 +704,382 @@ public class ChatConsistencyAnalysisServiceTests
         Assert.Null(reloaded.RunSelection.RangeLabel);
         Assert.Empty(reloaded.RunSelection.LeftOutRunIds);
         Assert.Empty(reloaded.RunSelection.UnanalyzedRuns);
+    }
+
+    // --- Battery and suite sets ------------------------------------------------------------------
+
+    private const string SecondSuite = "Second Suite";
+    private const string BatteryName = "Two initial suites";
+
+    private static BenchmarkBatteryDefinition TwoSuites() => new(
+        1, BatteryName, 1, BenchmarkBatteryWeightingScheme.Equal,
+        new[] { new BenchmarkBatteryDefinitionSuite(0, 7, "Core Suite", null), new BenchmarkBatteryDefinitionSuite(1, 8, SecondSuite, null) });
+
+    private static string BatteryKey(BenchmarkBatteryDefinition definition) => ChatConsistencyComparisonSetKinds.BatteryKeyPrefix + definition.DefinitionSha256;
+
+    private static ChatConsistencyComparisonSetRef BatterySet() => new() { Kind = ChatConsistencyComparisonSetKinds.Battery, Key = BatteryKey(TwoSuites()) };
+
+    private static ChatConsistencyComparisonSetRef CoreSuiteSet() => new() { Kind = ChatConsistencyComparisonSetKinds.Suite, Key = "suite:id:7" };
+
+    /// <summary>The run moved to Second Suite (id 8), its questions numbered from 101 so its items never pair with Core Suite's.</summary>
+    private static BenchmarkRun OnSecondSuite(BenchmarkRun run)
+    {
+        run.BenchmarkSuiteIdUsed = 8;
+        run.SuiteName = SecondSuite;
+        foreach (var answer in run.Answers) answer.BenchmarkQuestionIdUsed += 100;
+        return run;
+    }
+
+    private static BenchmarkBatteryRun BatteryRun(long id, DateTime start, BenchmarkBatteryDefinition definition, params (long RunId, int SuiteIndex)[] members)
+    {
+        var row = new BenchmarkBatteryRun
+        {
+            Id = id,
+            BatteryName = definition.Name,
+            DefinitionJson = definition.ToJson(),
+            DefinitionSha256 = definition.DefinitionSha256,
+            RunsPerSuite = 1,
+            RequestedMemberCount = definition.Suites.Count,
+            CompletedMemberCount = members.Length,
+            Status = BenchmarkRunSeriesStatus.Completed,
+            StartRequestJson = "{}",
+            StartedAtUtc = start,
+            CompletedAtUtc = start.AddDays(1)
+        };
+        for (int i = 0; i < members.Length; i++)
+        {
+            row.Members.Add(new BenchmarkBatteryRunMember
+            {
+                Id = id * 100 + i,
+                BenchmarkRunId = members[i].RunId,
+                SuiteIndex = members[i].SuiteIndex,
+                Round = 1,
+                AddedAtUtc = start
+            });
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// The subject's Core Suite runs #1–#4 at the usual times and Second Suite runs #21–#24, each a day after
+    /// its Core Suite partner, all with a quality index and no controls; battery runs #101–#104 of
+    /// <see cref="TwoSuites"/> pair them, two per period on two days, each starting a minute before its Core
+    /// Suite run. With <paramref name="extras"/>, in the baseline: #105, an incomplete battery run (#5, and
+    /// #25 which failed); #106 under another definition (#6, #26); #107, sharing run #2 with #102, plus #27;
+    /// and #31, a Core Suite run in no battery.
+    /// </summary>
+    private static string SeedBatteries(ApplicationDbContext db, bool extras = false, bool firstRunAtOtherScoring = false)
+    {
+        var subject = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-test");
+        var assessor = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "test-assessor");
+        Func<int, int> steady = q => 85 + q % 5 - 2;
+        BenchmarkRun Core(long id, DateTime start, int scoring = 14)
+            => Run(id, start, subject, assessor, GuidesBefore, steady, false, 1.0, "gpt-test-2026-09-01", scoring);
+        BenchmarkRun Second(long id, DateTime start) => OnSecondSuite(Core(id, start));
+
+        var runs = new List<BenchmarkRun>
+        {
+            Core(1, BaselineDay1, firstRunAtOtherScoring ? 13 : 14), Second(21, BaselineDay1.AddDays(1)),
+            Core(2, BaselineDay2), Second(22, BaselineDay2.AddDays(1)),
+            Core(3, ComparisonDay1), Second(23, ComparisonDay1.AddDays(1)),
+            Core(4, ComparisonDay2), Second(24, ComparisonDay2.AddDays(1))
+        };
+
+        var definition = TwoSuites();
+        var batteries = new List<BenchmarkBatteryRun>
+        {
+            BatteryRun(101, BaselineDay1.AddMinutes(-1), definition, (1, 0), (21, 1)),
+            BatteryRun(102, BaselineDay2.AddMinutes(-1), definition, (2, 0), (22, 1)),
+            BatteryRun(103, ComparisonDay1.AddMinutes(-1), definition, (3, 0), (23, 1)),
+            BatteryRun(104, ComparisonDay2.AddMinutes(-1), definition, (4, 0), (24, 1))
+        };
+
+        if (extras)
+        {
+            var sep3 = new DateTime(2026, 9, 3, 12, 0, 0, DateTimeKind.Utc);
+            var sep4 = new DateTime(2026, 9, 4, 9, 0, 0, DateTimeKind.Utc);
+            var failed = Second(25, sep3.AddHours(1));
+            failed.Status = BenchmarkRunStatus.Failed;
+            runs.AddRange(new[]
+            {
+                Core(5, sep3), failed, Core(6, sep4), Second(26, sep4.AddDays(1)),
+                Second(27, BaselineDay2.AddDays(1).AddHours(3)), Core(31, sep4.AddHours(6))
+            });
+            batteries.Add(BatteryRun(105, sep3.AddMinutes(-1), definition, (5, 0), (25, 1)));
+            batteries.Add(BatteryRun(106, sep4.AddMinutes(-1), definition with { Scheme = BenchmarkBatteryWeightingScheme.ItemCount }, (6, 0), (26, 1)));
+            batteries.Add(BatteryRun(107, BaselineDay2.AddHours(2), definition, (2, 0), (27, 1)));
+        }
+
+        foreach (var run in runs) run.QualityIndex = 85;
+        db.BenchmarkRuns.AddRange(runs);
+        db.BenchmarkBatteryRuns.AddRange(batteries);
+        db.SaveChanges();
+        return ChatConsistencyComparability.ModelAxisKey(runs[0]);
+    }
+
+    private static Task<ChatConsistencyEvidence> Evidence(ApplicationDbContext db, ChatConsistencyAnalysisRequest request)
+        => new ChatConsistencyEvidenceBuilder(db).LoadAsync(request, TestContext.Current.CancellationToken);
+
+    [Fact]
+    public async Task ABatterySetAnalyzesItsBatteryRunsAsUnits()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        var result = await Service(db).AnalyzeAsync(Request(key) with { ComparisonSet = BatterySet() }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(4, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
+        Assert.Equal(4, result.AnalysisCodeVersion);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.BatteryRunUnit, result.UnitKind);
+        Assert.Equal(BatteryKey(TwoSuites()), result.ComparisonSet!.Key);
+        Assert.Equal(BatteryName + " (revision 1)", result.ComparisonSet.Label);
+        Assert.Equal(
+            new[]
+            {
+                (101L, "baseline", "1,21"),
+                (102L, "baseline", "2,22"),
+                (103L, "comparison", "3,23"),
+                (104L, "comparison", "4,24")
+            },
+            result.Units.Select(u => (u.UnitId, u.Period, string.Join(",", u.MemberRunIds))).ToList());
+        Assert.All(result.Units, u => Assert.Equal(ChatConsistencyComparisonSetKinds.BatteryRunUnit, u.Kind));
+        Assert.Equal(BaselineDay1.AddMinutes(-1), result.Units[0].StartedAtUtc);
+
+        var p1 = EndpointOf(result, ChatConsistencyEndpointIds.Quality);
+        Assert.True(p1.MinimumSampleMet, p1.MinimumSampleDetail);
+
+        var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
+        Assert.Equal("[1,2,3,4,21,22,23,24]", row.TargetRunIdsJson);
+        Assert.Equal(4, row.AnalysisCodeVersion);
+
+        var summary = Assert.Single(await Service(db).ListAnalysesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BatteryKey(TwoSuites()), summary.ComparisonSetKey);
+        Assert.Equal(BatteryName + " (revision 1)", summary.ComparisonSetLabel);
+    }
+
+    [Fact]
+    public async Task OneBatteryRunPerPeriodFallsShortOfTheMinimumSampleItsMemberRunsWouldMeet()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+        var service = Service(db);
+
+        var battery = await service.AnalyzeAsync(
+            Request(key) with { ComparisonSet = BatterySet(), BaselineBatteryRunIds = new long[] { 101 }, ComparisonBatteryRunIds = new long[] { 103 } },
+            TestContext.Current.CancellationToken);
+        var p1 = EndpointOf(battery, ChatConsistencyEndpointIds.Quality);
+        Assert.False(p1.MinimumSampleMet);
+        Assert.Contains("battery run", p1.MinimumSampleDetail);
+        Assert.Equal(new long[] { 101, 103 }, battery.Units.Select(u => u.UnitId));
+
+        // Run by run, the same members are two runs on two days per period.
+        var runs = await service.AnalyzeAsync(
+            Request(key) with { BaselineRunIds = new long[] { 1, 21 }, ComparisonRunIds = new long[] { 3, 23 } },
+            TestContext.Current.CancellationToken);
+        Assert.True(EndpointOf(runs, ChatConsistencyEndpointIds.Quality).MinimumSampleMet);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.RunUnit, runs.UnitKind);
+        Assert.Null(runs.ComparisonSet);
+    }
+
+    [Fact]
+    public async Task RunIdsWithABatterySetAreRefused()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+        var request = Request(key) with { ComparisonSet = BatterySet(), BaselineRunIds = new long[] { 1, 21 }, ComparisonRunIds = new long[] { 3, 23 } };
+
+        var refusal = await Assert.ThrowsAsync<ChatConsistencyRequestException>(
+            () => Service(db).AnalyzeAsync(request, TestContext.Current.CancellationToken));
+
+        Assert.Equal("A battery comparison takes battery run ids.", refusal.Message);
+        Assert.Empty(db.ChatConsistencyAnalyses.ToList());
+    }
+
+    [Fact]
+    public async Task ABatteryRunWithAMemberTheSegmentRuleDropsIsDroppedWhole()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db, firstRunAtOtherScoring: true);
+
+        var result = await Service(db).AnalyzeAsync(Request(key) with { ComparisonSet = BatterySet() }, TestContext.Current.CancellationToken);
+
+        // Run #1 alone was scored by another method; its partner #21 goes with it, leaving one baseline battery run for quality.
+        var p1 = EndpointOf(result, ChatConsistencyEndpointIds.Quality);
+        Assert.False(p1.MinimumSampleMet, p1.MinimumSampleDetail);
+        Assert.Contains(result.DataQuality, n => n.Kind == "segment" && n.Text.Contains("#101", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WithoutASetEveryEndpointEqualsASuiteSetOverTheSameSingleSuiteRuns()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+
+        var plain = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+        var suite = await service.AnalyzeAsync(Request(key) with { ComparisonSet = CoreSuiteSet() }, TestContext.Current.CancellationToken);
+
+        static string Json(object value) => JsonSerializer.Serialize(value, ChatConsistencyJson.Options);
+        Assert.Equal(Json(plain.Endpoints), Json(suite.Endpoints));
+        Assert.Equal(Json(plain.Baseline), Json(suite.Baseline));
+        Assert.Equal(Json(plain.Comparison), Json(suite.Comparison));
+        Assert.Equal(Json(plain.Controls), Json(suite.Controls));
+        Assert.Equal(Json(plain.Reliability), Json(suite.Reliability));
+        Assert.Equal(Json(plain.SecondaryFamilies), Json(suite.SecondaryFamilies));
+        Assert.Equal(plain.Headline, suite.Headline);
+
+        Assert.Null(plain.ComparisonSet);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.RunUnit, plain.UnitKind);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.RunUnit, suite.UnitKind);
+        Assert.Equal("suite:id:7", suite.ComparisonSet!.Key);
+        Assert.Equal("Core Suite", suite.ComparisonSet.Label);
+        Assert.Equal(new long[] { 1, 2, 3, 4 }, suite.Units.Select(u => u.UnitId));
+    }
+
+    // --- Battery and suite sets: the evidence ----------------------------------------------------
+
+    [Fact]
+    public async Task TheEvidenceOfABatterySetMapsEveryMemberToItsBatteryRun()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        var evidence = await Evidence(db, Request(key) with { ComparisonSet = BatterySet() });
+
+        Assert.Equal(new long[] { 1, 21, 2, 22 }, evidence.BaselineRuns.Select(r => r.Id));
+        Assert.Equal(new long[] { 3, 23, 4, 24 }, evidence.ComparisonRuns.Select(r => r.Id));
+        Assert.Equal(ChatConsistencyComparisonSetKinds.BatteryRunUnit, evidence.UnitKind);
+        Assert.Equal(
+            new Dictionary<long, long> { [1] = 101, [21] = 101, [2] = 102, [22] = 102, [3] = 103, [23] = 103, [4] = 104, [24] = 104 },
+            evidence.UnitOf.OrderBy(p => p.Key).ToDictionary(p => p.Key, p => p.Value));
+        Assert.Equal(ComparisonDay2.AddMinutes(-1), evidence.UnitStartedAtUtc[104]);
+        Assert.Equal(4, evidence.UnitStartedAtUtc.Count);
+        Assert.Equal(102L, evidence.UnitIdOf(22));
+        Assert.Equal(new ChatConsistencyComparedSet { Kind = "battery", Key = BatteryKey(TwoSuites()), Label = BatteryName + " (revision 1)" }, evidence.ComparisonSet);
+        Assert.Empty(evidence.Notes);
+        Assert.Empty(evidence.UnanalyzedRuns);
+    }
+
+    [Fact]
+    public async Task IncompleteForeignMissingAndSharingBatteryRunsAreLeftOutWithNotes()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db, extras: true);
+        var request = Request(key) with
+        {
+            ComparisonSet = BatterySet(),
+            BaselineBatteryRunIds = new long[] { 107, 106, 105, 102, 101, 999 },
+            ComparisonBatteryRunIds = new long[] { 103, 104 },
+            RunSelection = new ChatConsistencyRunSelection { LeftOutBatteryRunIds = new long[] { 105 } }
+        };
+
+        var evidence = await Evidence(db, request);
+
+        Assert.Equal(
+            new[]
+            {
+                "Battery run #105 is incomplete (1 of 2 suites usable) and was left out.",
+                "Battery run #106 belongs to another battery definition and was left out.",
+                "Battery run #999 was not found.",
+                "Battery run #107 shares run #2 with battery run #102 and was left out."
+            },
+            evidence.Notes.Where(n => n.Kind == "excludedBatteryRun").Select(n => n.Text).ToList());
+        Assert.Equal(new long[] { 1, 21, 2, 22 }, evidence.BaselineRuns.Select(r => r.Id));
+        Assert.Equal(new long[] { 101, 102, 103, 104 }, evidence.UnitStartedAtUtc.Keys.OrderBy(i => i));
+
+        // The set's other battery runs list their usable members; every other run of the model is outside the set.
+        Assert.Equal(
+            new[]
+            {
+                (27L, "baseline", ChatConsistencyUnanalyzedReasons.NotSelected, (long?)107),
+                (5L, "baseline", ChatConsistencyUnanalyzedReasons.LeftOut, (long?)105),
+                (6L, "baseline", ChatConsistencyUnanalyzedReasons.OutsideComparisonSet, (long?)null),
+                (31L, "baseline", ChatConsistencyUnanalyzedReasons.OutsideComparisonSet, (long?)null),
+                (26L, "baseline", ChatConsistencyUnanalyzedReasons.OutsideComparisonSet, (long?)null)
+            },
+            evidence.UnanalyzedRuns.Select(u => (u.RunId, u.Period, u.Reason, u.BatteryRunId)).ToList());
+    }
+
+    [Fact]
+    public async Task ASuiteSetTakesOnlyItsSuitesRunsAndListsTheOthersAsOutsideTheSet()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        var automatic = await Evidence(db, Request(key) with { ComparisonSet = CoreSuiteSet() });
+        Assert.Equal(new long[] { 1, 2 }, automatic.BaselineRuns.Select(r => r.Id));
+        Assert.Equal(new long[] { 3, 4 }, automatic.ComparisonRuns.Select(r => r.Id));
+        Assert.Equal("Core Suite", automatic.ComparisonSet!.Label);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.RunUnit, automatic.UnitKind);
+        Assert.Equal(3L, automatic.UnitIdOf(3));
+
+        var given = await Evidence(db, Request(key) with
+        {
+            ComparisonSet = CoreSuiteSet(),
+            BaselineRunIds = new long[] { 1, 2, 21 },
+            ComparisonRunIds = new long[] { 3, 4 }
+        });
+        Assert.Equal(new long[] { 1, 2 }, given.BaselineRuns.Select(r => r.Id));
+        var note = Assert.Single(given.Notes);
+        Assert.Equal("excludedRun", note.Kind);
+        Assert.Equal("Run #21 answered another suite and was left out.", note.Text);
+        Assert.Equal(new long[] { 21, 22, 23, 24 }, given.UnanalyzedRuns.Select(u => u.RunId));
+        Assert.All(given.UnanalyzedRuns, u =>
+        {
+            Assert.Equal(ChatConsistencyUnanalyzedReasons.OutsideComparisonSet, u.Reason);
+            Assert.Null(u.BatteryRunId);
+        });
+    }
+
+    [Fact]
+    public async Task WithoutASetRunsOfSeveralSuitesAreAnalyzedWithAMixedSuitesNote()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        var evidence = await Evidence(db, Request(key));
+
+        Assert.Equal(new long[] { 1, 21, 2, 22 }, evidence.BaselineRuns.Select(r => r.Id));
+        Assert.Null(evidence.ComparisonSet);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.RunUnit, evidence.UnitKind);
+        Assert.All(evidence.UnitOf, p => Assert.Equal(p.Key, p.Value));
+        Assert.Equal(8, evidence.UnitOf.Count);
+        var note = Assert.Single(evidence.Notes);
+        Assert.Equal("mixedSuites", note.Kind);
+        Assert.Equal(
+            "The analyzed runs answered 2 suites (Core Suite, Second Suite); their items pair by question and revision across them. "
+            + "Choose a battery or a suite to compare within.",
+            note.Text);
+    }
+
+    [Fact]
+    public async Task AMalformedComparisonSetOrMisplacedBatteryRunIdsAreRefused()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        async Task Refused(ChatConsistencyAnalysisRequest request, string message)
+        {
+            var refusal = await Assert.ThrowsAsync<ChatConsistencyRequestException>(() => Evidence(db, request));
+            Assert.Equal(message, refusal.Message);
+        }
+
+        await Refused(
+            Request(key) with { ComparisonSet = new ChatConsistencyComparisonSetRef { Kind = "battery", Key = "suite:id:7" } },
+            "A battery comparison set's key is battery: followed by the battery definition hash.");
+        await Refused(
+            Request(key) with { ComparisonSet = new ChatConsistencyComparisonSetRef { Kind = "suite", Key = "suite:" } },
+            "A suite comparison set's key is suite: followed by the suite identity.");
+        await Refused(
+            Request(key) with { ComparisonSet = new ChatConsistencyComparisonSetRef { Kind = "group", Key = "group:1" } },
+            "A comparison set is a battery or a suite.");
+        await Refused(
+            Request(key) with { ComparisonSet = BatterySet(), BaselineRunIds = new long[] { 1 } },
+            "A battery comparison takes battery run ids.");
+        await Refused(
+            Request(key) with { ComparisonSet = CoreSuiteSet(), BaselineBatteryRunIds = new long[] { 101 } },
+            "Battery run ids need a battery comparison set.");
     }
 
     // --- Re-grade --------------------------------------------------------------------------------

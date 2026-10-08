@@ -297,11 +297,21 @@ new protocol version. The protocol is stored with every analysis (`ProtocolJson`
   replicates, seed 20261007, every resampling seeded from the protocol.
 - **Items** pair only on an identical question and item revision; a revised item drops out on both
   sides, and an unrecorded revision pairs only with another unrecorded one. Both are data-quality notes.
-- **Minimum replication**:
-  - P1, P4, P5 — **at least 2 runs per period, on at least 2 distinct UTC days, and at least 20 paired
-    items**;
-  - P2, P3 — **at least 3 runs per period in at least one common stratum**;
+- **Minimum replication** counts **units**: a run, or, in a battery comparison (§ 17.2), a **battery
+  run**, whose usable members are merged into one unit:
+  - P1, P4, P5 — **at least 2 units per period, on at least 2 distinct UTC days of the unit start, and
+    at least 20 paired items**;
+  - P2, P3 — **at least 3 units per period in at least one common stratum**;
   - fewer, and a decisive verdict is at most **Indicated**.
+- **Battery runs as units** (analysis code version 4). A battery run's members answer different suites,
+  so their item keys are disjoint; the unit's item map merges them (a key two members share, as with
+  several rounds of one suite, is averaged). The bootstrap, leave-one-out, the retry-free and tier
+  sensitivities and the minimum detectable effect resample or drop whole battery runs, and the speed
+  strata's observation lists are per battery run. A battery run with a member outside the measurement
+  segment, or not usable on an endpoint's axis, is left out whole with a `segment` note (*"Quality:
+  battery run #12 was left out: its run #98 is outside the measurement segment; …"*). One battery run
+  of two suites is therefore one unit, never the two runs the minimum would otherwise count. In a suite
+  comparison, or with no compared set, every unit is one run and every number equals code version 3's.
 - **Other constants**: power 0.8 for the minimum detectable effect; a common stratum enters the
   across-strata check with at least 2 runs per period; an own-wait share moving by 0.05 is material;
   an answer passes for the flip rate at quality ≥ 50 without a critical error; grader drift passes
@@ -513,15 +523,22 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 3; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
+currently 4; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
 streaming rate with its measurability bounds (§ 4.4), and the streaming-rate caveat counts the delivered
 answers with no measurable rate: *"k delivered answer(s) have no rate: the visible text arrived in one
-burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*). A stored analysis
-keeps the version it was computed under; its fingerprint and result do not change.
+burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*; version 4 compares
+within a battery or a suite and records the compared set as `comparisonSet` (`kind`, `key`, `label`),
+`unitKind` (`run` or `batteryRun`) and `units` (each analyzed unit's id, kind, period, start and member
+run ids), with battery runs as the unit of a battery comparison, § 9). A stored analysis keeps the
+version it was computed under; its fingerprint and result do not change. **Run-mode invariance:** in a
+suite comparison, or with no compared set, every number of a version-4 analysis equals version 3's on
+the same runs; only the code version, the fingerprint and the new set and unit fields differ, and a test
+pins it.
 
 - **`InputSha256`** is the SHA-256 of a canonical serialization of every input: the code version, the
   request (its run selection included: the date label, the UTC bounds, the first and last run and the
-  sorted left-out run ids), the protocol, each run with the fields and per-answer values the analysis
+  sorted left-out run ids, and the battery fields), the compared set and the battery run ids, the
+  protocol, the unit kind and each unit's member run ids, each run with the fields and per-answer values the analysis
   reads (its call telemetry included), the unanalyzed runs (id, period, reason), the calibrations and
   anchor calibrations, the annotations and the price card, all in id order. Two analyses that differ
   only in the recorded selection have different fingerprints. Analyses saved under code version 1 keep
@@ -552,24 +569,29 @@ Consistency wizard**, six steps in a full-screen dialog.
   - **In the analysis** — the runs the analysis uses, only while step 1 narrows them;
   - **First run** and **Latest run** (*#106 · 2026-10-01*);
   - **Suites** — the suites the model's runs answered;
+  - **Compared** — the battery or suite step 1 compares within (*Two initial suites (revision 1)*);
   - **Latest analysis** — *#7 · <name> · saved 2026-10-02* with its headline, or *None yet*.
 
   Its actions are **Open latest run report** and, when an analysis exists, **Open analysis #N**. It is a
   read-out; the wizard makes the choice. Its content is read from the database every time the tab loads.
-- **The remembered model.** The chosen model and its dates are kept in this browser, in
-  `localStorage['overseer.benchmark.chatConsistency.subject']` (`{ version: 1, modelKey, range }`),
-  written whenever the model or the dates change. Once the model list loads with no model chosen, the
+- **The remembered model.** The chosen model, its dates and the compared set are kept in this browser,
+  in `localStorage['overseer.benchmark.chatConsistency.subject']` (`{ version: 2, modelKey, range,
+  compare: { kind, key } }`; a version-1 record, `{ version: 1, modelKey, range }`, is read as one with
+  no compared set), written whenever the model, the dates or **Compare** change. A stored set is used
+  while the model's sets still offer it; otherwise the server's default applies. Once the model list loads with no model chosen, the
   tab restores them: a rolling preset (*Last 30 days*) is moved to now, and a record whose model is no
   longer listed, or has no runs, is removed. The run selection, the step and the analysis are not
   remembered. Another browser, private browsing or cleared storage starts without a model.
-- **Saved analyses** — every analysis, newest first, with *Open* and *Delete* (refused while report
-  documents exist). *Open* switches to the analysis's model when it is another and opens the wizard on
+- **Saved analyses** — every analysis, newest first, each with its *Compared* set when it has one
+  (code version 4), with *Open* and *Delete* (refused while report documents exist). *Open* switches to the analysis's model when it is another and opens the wizard on
   **Results**.
 
 ### 17.2 The wizard
 
-A header names the model, its run count and the dates (*GPT-6.1 Sol (medium) · 19 runs · Last 30
-days*, with *· 15 in the analysis* while step 1 narrows the runs), with *Reload runs* on steps 1 and 2
+A header names the model, the compared set with its unit count, and the dates (*Claude 5.5 Haiku
+(xhigh) · Two initial suites (revision 1) · 2 battery runs · Last 30 days*; with no compared set the
+model's run count, *GPT-6.1 Sol (medium) · 19 runs · Last 30 days*), with *· 15 in the analysis* while
+step 1 narrows the units, with *Reload runs* on steps 1 and 2
 and a close button. Under it, the step tabs; at the bottom, *Previous*, the step position with the
 reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close* on step 6.
 
@@ -583,6 +605,33 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close*
      (UTC)**, inclusive UTC calendar days prefilled from the preset it replaces. Each is a `YYYY-MM-DD`
      text field (`2026-9-5`, `2026/9/5` and `2026.9.5` become `2026-09-05`) with a calendar button that
      opens a glass calendar of UTC days.
+   - **Compare**: the battery or suite the analysis compares within, options grouped *Batteries* and
+     *Suites* (*Two initial suites (revision 1) · 2 battery runs*, *GnollHack Player Assistance Benchmark
+     Suite · 3 runs*), with the hint *Results are comparable only within one battery or one suite.* A
+     battery set is one battery definition, every revision with the same definition hash; its label
+     names the revisions. The default is the battery of the model's newest battery run in the dates,
+     else the suite of its newest run; a remembered choice wins while it is offered. Items pair only
+     within one exam, so a comparison across suites would rest on whichever suite both periods happened
+     to answer. Changing the set clears the selection and says so (*The selection in step 1 was cleared
+     because another battery or suite is compared.*).
+   - **With a suite compared**, the run cards below show that suite's runs, battery members included:
+     a member's card carries *Battery run #12 · suite 1 of 2*, and the *Suite* facet is replaced by
+     *Origin* (*Standalone*, *Battery member*).
+   - **With a battery compared**, the cards are **battery runs** (*Battery runs of <model>*), newest
+     first: an *Include battery run #12 in the analysis* checkbox labeled by the battery name; the
+     battery run id, status, harness (*Harness 54*, or *Harnesses 53, 54*) and the *First run*, *Last
+     run*, *Left out* and *Incomplete* tags; the start time and *2 of 2 suites*; **First run** and
+     **Last run** toggles; *Open battery run report*; the eligibility per axis (eligible when every
+     member is, otherwise the members' reasons, each prefixed with its run id); and the member runs
+     (*#98 · GnollHack Player Assistance Benchmark Suite · Completed · harness 54*, each with its run
+     report). **A battery run with a suite that has no usable member** (failed, superseded or
+     guard-failed) is listed with its checkbox disabled and the reason *Incomplete: 1 of 2 suites
+     usable*, and is never analyzed: it would pair on fewer items than the other units of its period.
+     The filter bar searches (`#id`, battery, harness, status, member run), sorts (*Newest first*,
+     *Oldest first*, *Harness*) and filters by *Harness*, *In the analysis* and *Eligibility*. The
+     selection band reads *Battery runs in the analysis — 2 of 3 battery runs in these dates · from #11
+     (2026-10-08) to #12 (2026-10-08) · 1 left out · 1 incomplete*, and the selection below works on
+     battery runs as it does on runs.
    - **Runs of the model**, one card per run, newest first: an *Include run #N in the analysis*
      checkbox labeled by the suite name; the run id, status, harness, *Legacy* or *Recorded*, and the
      *Anchor*, *First run*, *Last run* and *Left out* tags; the start time and served model; **First
@@ -616,18 +665,22 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close*
 3. **Periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an annotation*,
    *Before vs after an Overseer change*, which offers the composite events of § 5.2, *Confirm on later
    data*, *Custom dates*) or by hand, as inclusive UTC dates in the same date fields as step 1; Protocol
-   V1 with its margins, and *Override the protocol* for the margins and α. **The presets span the runs
+   V1 with its margins, and *Override the protocol* for the margins and α. **The presets span the units
    in the analysis**, from the first to the last of them, as the note under the presets says: *Presets
    use the runs chosen in step 1: #21 (2026-09-20) to #93 (2026-10-05), 15 runs.*, or *Presets use
-   every run in the dates: …* while step 1 chooses nothing. A changed selection re-applies the chosen
-   preset; dates typed by hand stay.
+   every run in the dates: …* while step 1 chooses nothing; with a battery compared, *Presets use the
+   battery runs chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.* A changed
+   selection re-applies the chosen preset; dates typed by hand stay. *Confirm on later data* takes the
+   last saved analysis of the same model and the same compared set.
 4. **Runs and controls** — the baseline and comparison runs from the runs in the analysis (eligible
    runs preselected, again whenever the step-1 selection changes), the matched control runs, the
    common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade* is pressed), *Pool
    across measurement segment boundaries*, and a preview of the common strata, the composite Overseer
    events in the span, the missing controls and *Left out in step 1: #45, #51* for left-out runs inside
-   either period. *Analyze* runs and saves the analysis, with the step-1 run selection (§ 19), and moves
-   to Results; *Stop Analysis* stops it.
+   either period. With a battery compared, each period lists battery runs (*Use*, *Battery run*,
+   *Started (UTC)*, *Suites*, *Eligible*, *Matched controls*), eligible complete ones preselected; the
+   controls stay per run. *Analyze* runs and saves the analysis, with the compared set and the step-1
+   selection (§ 19), and moves to Results; *Stop Analysis* stops it.
 5. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
    effects, the attribution grouped by side after the total changes, the next runs (each with *Repeat
    this run's setup*), the charts, the events in the analyzed span as an event list (§ 17.3), the **Run
@@ -637,7 +690,10 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close*
    in step 1* (a run id or *none*), then *Not analyzed*: one line per reason with its runs and period
    (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not selected in step 4: #60
    (comparison)*), or *Every usable run of the model in the periods was analyzed.* An analysis saved
-   under code version 1 has no such section.
+   under code version 1 has no such section. A version-4 analysis adds a *Compared* line under the
+   headline; in a battery analysis the marks and the unanalyzed entries name battery runs (*battery run
+   #11*; *#305 (comparison, battery run #13)*), and runs of another battery or suite are listed as
+   *Outside the compared set*.
 6. **Reports** — the Chat Consistency Report documents (§ 20).
 
 Step 1 is always open; steps 2 and 3 need a model, step 4 valid periods and overrides, and steps 5 and 6
@@ -748,8 +804,22 @@ and also outside the marks is recorded as left out. When any run is unanalyzed, 
   analyzed (see the run selection). The verdicts hold for the analyzed runs; leaving runs out after
   looking at the timeline can bias them."*
 
+**A compared set (code version 4)** adds a last reason, *outside the compared set*
+(`outsideComparisonSet`): every usable run of the subject inside the periods that is not part of the
+compared battery or suite. In a battery comparison the other reasons are decided by battery run, from
+the battery selection (the first and last battery run and the left-out battery runs), and each member
+run of an unanalyzed battery run is listed with its battery run (*#98 of battery run #12 (baseline)*).
+Battery runs the analysis could not use are left out with an `excludedBatteryRun` note: *"Battery run
+#N is incomplete (1 of 2 suites usable) and was left out."*, *"… belongs to another battery definition
+and was left out."*, *"… measured another model axis and was left out."*, *"Battery run #N was not
+found."*, and, since a run may serve several battery runs, *"Battery run #N shares run #M with battery
+run #K and was left out."* In a suite comparison a run of another suite is left out with the
+`excludedRun` note *"Run #N answered another suite and was left out."* An analysis with no compared set
+whose runs span several suites carries a `mixedSuites` note naming them.
+
 A first or last run of the selection that no longer exists is ignored, with the `runSelection` note
-*"The first run of the selection, #21, was not found."* The runs are classified only when the request
+*"The first run of the selection, #21, was not found."* (for a battery run, *"The first battery run of
+the selection, #N, was not found."*) The runs are classified only when the request
 names its baseline and comparison runs, as the wizard always does; without them the server takes every
 usable run in the periods, so none is unanalyzed. The selection never adds or removes a run from the
 analysis. The Timeline marks the runs step 1 keeps out (§ 17.3), and the report documents state the
@@ -765,7 +835,9 @@ routes, which use the run report-documents contract.
 |--------|-------|--------------|
 | GET | `models` | every model axis with usable runs, run counts and first and last run dates |
 | GET | `timeline?modelKey&from&to` | one point per usable run in the inclusive UTC range, with events and annotations; 400 without `modelKey` or when `from` > `to` |
-| GET | `runs?modelKey&from&to` | the runs of step 1's run cards, validated alike |
+| GET | `runs?modelKey&from&to` | the runs of step 1's run cards, validated alike; each with its suite id and key and its newest non-superseded battery membership (`batteryRunId`, `batteryName`, `batterySuitePosition`, `batterySuiteCount`) |
+| GET | `battery-runs?modelKey&from&to` | the battery runs with a non-superseded member on the model axis in the range, newest first, each with its definition hash and revision, `setKey`, `complete` and `incompleteReason`, harness versions, usable members and per-axis eligibility; validated alike |
+| GET | `comparison-sets?modelKey&from&to` | the batteries and suites the model can be compared within, batteries first, each group newest first (`kind`, `key`, `label`, `unitCount`, `memberRunCount`, `latestStartedAtUtc`), and `defaultKey`; validated alike |
 | POST | `analyses` | runs and saves an analysis; 200 with the result and `analysisId`; 400 for malformed or overlapping periods, a period without a usable run, or a malformed or contradictory `runSelection` (below); 499 when the client aborts |
 | GET | `analyses` | every saved analysis, newest first, without the results |
 | GET | `analyses/{id}` | one saved analysis; 404 |
@@ -799,7 +871,28 @@ The result's `runSelection` carries `recorded` (false for an analysis saved befo
 whose JSON has none), the same fields with the left-out ids distinct and ascending, and
 `unanalyzedRuns`: `{ runId, period, startedAtUtc, reason }`, ordered by start, then id, with `period`
 `baseline` or `comparison` and `reason` one of `leftOut`, `outsideDateRange`, `beforeFirstRun`,
-`afterLastRun` and `notSelected` (`ChatConsistencyUnanalyzedReasons`, § 18).
+`afterLastRun`, `notSelected` and `outsideComparisonSet` (`ChatConsistencyUnanalyzedReasons`, § 18),
+plus `batteryRunId` in a battery comparison.
+
+**The compared set.** The request's optional `comparisonSet` (`{ kind, key }`, kind `battery` with key
+`battery:<definition SHA-256>` or kind `suite` with key `suite:<suite identity>`) names the battery or
+suite the analysis compares within; without it the analysis takes the runs one by one, as code
+version 3 did. With a battery set the request names `baselineBatteryRunIds` and
+`comparisonBatteryRunIds` instead of run ids, and `runSelection` carries `firstBatteryRunId`,
+`lastBatteryRunId` and `leftOutBatteryRunIds` (at most 5,000). Refused with 400 and:
+
+- *"The comparison set's kind must be "battery" or "suite"."*, or a key that does not start with its
+  kind's prefix;
+- *"A battery comparison takes battery run ids."* (run ids with a battery set);
+- *"Battery run ids need a battery comparison set."*;
+- *"A battery run cannot be in both periods."*;
+- *"The run selection names battery runs, which only a battery comparison set takes."*;
+- *"Battery run #12 is left out in step 1 but selected for the baseline."* (or *comparison*).
+
+The result carries `comparisonSet` (`kind`, `key`, `label`), `unitKind` and `units`, and `GET analyses`
+each summary's `comparisonSetKey` and `comparisonSetLabel` (null for a run-by-run analysis and before
+code version 4). The report documents state the set as the *Compared* fact (*"Battery Two initial
+suites (revision 1), 4 battery runs"*, *"Suite <name>, N runs"*).
 
 The client calls them through `AdminChatConsistencyService`
 (`Overseer/ClientApp/src/app/services/admin-chat-consistency.service.ts`).

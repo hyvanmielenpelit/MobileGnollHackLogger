@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from 
 import { ProviderBadgeComponent } from '../../../../shared/provider-badge/provider-badge.component';
 import { formatServiceTier, formatThinkingLevel } from '../../../../utils/model-badge-format.util';
 import { NO_VALUE, formatInteger, formatUtcDate, plural } from '../chat-consistency-format';
-import { CcAnalysisSummary, CcModelAxis } from '../chat-consistency.models';
+import { CcAnalysisSummary, CcModelAxis, CcUnitKind } from '../chat-consistency.models';
 
 /**
  * The launcher's *Current model* card: the model chosen in the wizard, its runs and dates, and its
@@ -22,9 +22,13 @@ export class CcCurrentModelCardComponent {
   @Input({ required: true }) axis!: CcModelAxis;
   /** The chosen dates as the wizard names them: `All dates`, `Last 7 days`, `2026-09-01 to 2026-10-05`. */
   @Input() rangeText = '';
+  /** The compared battery or suite as step 1 names it; null while none is compared. */
+  @Input() compareLabel: string | null = null;
+  /** What `runsInAnalysis` counts. */
+  @Input() unitKind: CcUnitKind = 'run';
   /** The runs in the chosen dates; null when every date is chosen or the timeline is not loaded. */
   @Input() runsInRange: number | null = null;
-  /** The runs the analysis uses; null when step 1 does not narrow them. */
+  /** The units the analysis uses; null when step 1 does not narrow them. */
   @Input() runsInAnalysis: number | null = null;
   @Input() latestAnalysis: CcAnalysisSummary | null = null;
   /** The timeline and the runs of the model are being read. */
@@ -53,8 +57,9 @@ export class CcCurrentModelCardComponent {
     return this.runsInRange === null ? '' : `· ${plural(this.runsInRange, 'run')} in these dates`;
   }
 
+  /** `5 runs`, or `2 battery runs` in a battery set. */
   get runsInAnalysisText(): string {
-    return this.runsInAnalysis === null ? '' : plural(this.runsInAnalysis, 'run');
+    return this.runsInAnalysis === null ? '' : plural(this.runsInAnalysis, this.unitKind === 'batteryRun' ? 'battery run' : 'run');
   }
 
   get firstRunText(): string {

@@ -1317,4 +1317,56 @@ public class BenchmarkVerdictConsistencyTests
         Assert.True(parsed.Success);
         Assert.False(parsed.Result!.UnevidencedDeduction);
     }
+
+    // Run 98 Q16, member A, Accuracy 4/6, verbatim. It charges one inversion and approves the
+    // remaining claims as "adjudicable", which is the affirmative form and cites no unverifiability.
+    private const string Run98Q16EvidenceA =
+        "Rubric's adj_lev point: the code \"adds 1 per 5 points of level_difficulty() above that sum\", but the answer inverts the direction — \"A species' base level goes up by 1 for every 5 levels the current depth is below it\" (the bonus applies when depth is *above* the base level, as the answer's own worked example correctly shows). Remaining adjudicable claims (band values 3–8, 2–9, 0–11; difficulty-rating bounds; disabled game-difficulty adjustment; disabled NetHack group generation replaced by encounters) match the rubric exactly.";
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void Run98Q16EvidenceA_IsNeitherUnverifiabilityGrounded_NorUnevidenced(int unverifiedClaimCount)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(4, Run98Q16EvidenceA, unverifiedClaimCount));
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(4, Run98Q16EvidenceA));
+        Assert.False(BenchmarkVerdictConsistency.HasUnevidencedDeduction(4, Run98Q16EvidenceA, 6, "Matches rubric."));
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(4, Run98Q16EvidenceA));
+        Assert.Null(BenchmarkVerdictConsistency.UnverifiabilityBasisOf(Run98Q16EvidenceA));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("""["Monster levels are capped at 49."]""")]
+    public void Parser_Run98Q16EvidenceA_SetsNoUnevidencedOrOutOfRubricDeduction(string unverifiedClaimsJson)
+    {
+        var parsed = BenchmarkAssessmentParser.ParsePerQuestion(PrecisionVerdict(4, Run98Q16EvidenceA, unverifiedClaimsJson));
+
+        Assert.True(parsed.Success);
+        Assert.False(parsed.Result!.UnevidencedDeduction);
+        Assert.False(parsed.Result.AccuracyOutOfRubric);
+    }
+
+    [Theory]
+    [InlineData("Remaining adjudicable claims match the rubric exactly; the stated cap is unsupported.", true)]
+    [InlineData("The detail could not be adjudicated against the rubric.", true)]
+    [InlineData("The detail cannot be adjudicated from the rubric.", true)]
+    [InlineData("The damage claim is not adjudicable from the rubric.", true)]
+    [InlineData("The damage claim is unadjudicable.", true)]
+    [InlineData("Remaining adjudicable claims match the rubric exactly.", false)]
+    [InlineData("All rubric-adjudicable claims are right.", false)]
+    public void UnverifiabilityVocabulary_ReadsAdjudicateOnlyWhenNegated(string evidence, bool flags)
+    {
+        Assert.Equal(flags, BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(5, evidence, 1));
+    }
+
+    [Theory]
+    [InlineData("the answer inverts the direction, as its worked example correctly shows")]
+    [InlineData("the answer reverses the sign, which the table correctly gives")]
+    [InlineData("it states the opposite, although the example is correct")]
+    public void AnInversion_IsAChargeEvenBesideAnApprovalWord(string clause)
+    {
+        Assert.False(BenchmarkVerdictConsistency.AccusationClauseApproves(clause));
+    }
 }

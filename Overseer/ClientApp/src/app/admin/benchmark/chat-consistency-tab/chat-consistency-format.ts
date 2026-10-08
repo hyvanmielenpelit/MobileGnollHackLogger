@@ -7,6 +7,7 @@
 import {
   CcAnnotationKind,
   CcAxis,
+  CcBatteryRunStatus,
   CcEndpointResult,
   CcGrade,
   CcInterval,
@@ -274,6 +275,24 @@ export function runStatusText(status: CcRunStatus | string | null | undefined): 
   return (status && RUN_STATUS_LABELS[status as CcRunStatus]) || String(status ?? '');
 }
 
+const BATTERY_RUN_STATUS_LABELS: Record<CcBatteryRunStatus, string> = {
+  pending: 'Pending',
+  running: 'Running',
+  waitingForCap: 'Waiting for run cap',
+  stopped: 'Stopped',
+  completed: 'Completed',
+  completedWithErrors: 'Completed with errors',
+  cancelled: 'Canceled',
+  failed: 'Failed'
+};
+
+/** A battery run's status as the UI shows it; a PascalCase name reads the same as its camelCase one. */
+export function batteryRunStatusText(status: CcBatteryRunStatus | string | null | undefined): string {
+  if (!status) return '';
+  const key = status.charAt(0).toLowerCase() + status.slice(1);
+  return BATTERY_RUN_STATUS_LABELS[key as CcBatteryRunStatus] ?? status;
+}
+
 export function annotationKindText(kind: CcAnnotationKind | string): string {
   return CC_ANNOTATION_KINDS.find(entry => entry.kind === kind)?.label ?? String(kind);
 }
@@ -321,8 +340,8 @@ export function controlRunsText(row: CcRunRow): string {
   return row.matchedControlRunIds.length === 0 ? 'None' : row.matchedControlRunIds.map(id => `#${id}`).join(', ');
 }
 
-/** A run counts as eligible for an analysis when at least one axis can use it. */
-export function isRunEligible(row: CcRunRow): boolean {
+/** A run, or a battery run, counts as eligible for an analysis when at least one axis can use it. */
+export function isRunEligible(row: Pick<CcRunRow, 'eligibility'>): boolean {
   return row.eligibility.some(entry => entry.eligible);
 }
 

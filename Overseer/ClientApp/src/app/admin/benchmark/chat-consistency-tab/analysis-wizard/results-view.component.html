@@ -11,10 +11,15 @@
   }
 </div>
 
+<!-- The battery or suite compared within leads the facts, right under the headline; an analysis
+     saved before comparison sets has none. -->
 <dl class="cc-res-facts">
+  @if (result.comparisonSet; as compared) {
+    <div class="cc-res-compared"><dt>Compared</dt><dd>{{ compared.label }}</dd></div>
+  }
   <div><dt>Model</dt><dd>{{ result.subject.displayName }} ({{ result.subject.provider }}, {{ result.subject.modelId }})</dd></div>
-  <div><dt>Baseline</dt><dd>{{ day(result.baseline.startUtc) }} to {{ day(result.baseline.endUtc) }} · {{ result.baseline.runCount }} {{ result.baseline.runCount === 1 ? 'run' : 'runs' }}</dd></div>
-  <div><dt>Comparison</dt><dd>{{ day(result.comparison.startUtc) }} to {{ day(result.comparison.endUtc) }} · {{ result.comparison.runCount }} {{ result.comparison.runCount === 1 ? 'run' : 'runs' }}</dd></div>
+  <div><dt>Baseline</dt><dd>{{ day(result.baseline.startUtc) }} to {{ day(result.baseline.endUtc) }}{{ batteryAnalysis ? ' · ' + periodUnitsText('baseline') : '' }} · {{ result.baseline.runCount }} {{ result.baseline.runCount === 1 ? 'run' : 'runs' }}</dd></div>
+  <div><dt>Comparison</dt><dd>{{ day(result.comparison.startUtc) }} to {{ day(result.comparison.endUtc) }}{{ batteryAnalysis ? ' · ' + periodUnitsText('comparison') : '' }} · {{ result.comparison.runCount }} {{ result.comparison.runCount === 1 ? 'run' : 'runs' }}</dd></div>
   <div><dt>Scope</dt><dd>{{ result.scope.text || 'No common time stratum' }}</dd></div>
   <div><dt>Protocol</dt><dd>{{ result.protocolLabel }}</dd></div>
   @if (result.commonGrader; as grader) {
@@ -147,8 +152,8 @@
             }
           </dd>
         </div>
-        <div><dt>First run</dt><dd>{{ runMark(selection.firstRunId) }}</dd></div>
-        <div><dt>Last run</dt><dd>{{ runMark(selection.lastRunId) }}</dd></div>
+        <div><dt>First run</dt><dd>{{ firstMark(selection) }}</dd></div>
+        <div><dt>Last run</dt><dd>{{ lastMark(selection) }}</dd></div>
         <div><dt>Left out in step 1</dt><dd>{{ leftOutText(selection) }}</dd></div>
       </dl>
     }

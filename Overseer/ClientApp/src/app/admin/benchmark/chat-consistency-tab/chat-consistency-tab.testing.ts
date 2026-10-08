@@ -18,6 +18,8 @@ import {
   CcAnalysisSummary,
   CcAnnotation,
   CcAttributionResult,
+  CcBatteryRunRow,
+  CcComparisonSets,
   CcEndpointResult,
   CcEvent,
   CcModelAxis,
@@ -60,6 +62,7 @@ export function ccAxis(overrides: Partial<CcModelAxis> = {}): CcModelAxis {
     lastRunAtUtc: '2026-10-01T08:00:00Z',
     latestRunId: 106,
     suiteNames: ['Board Suite'],
+    batteryRunCount: 0,
     ...overrides
   };
 }
@@ -119,6 +122,12 @@ export function ccRunRow(runId: number, startedAtUtc: string, overrides: Partial
     regradeCoverage: [],
     matchedControlRunIds: [],
     servedModelIds: [{ modelId: 'gpt-5-2026-08', callCount: 40 }],
+    suiteId: 5,
+    suiteKey: 'id:5',
+    batteryRunId: null,
+    batteryName: null,
+    batterySuitePosition: null,
+    batterySuiteCount: null,
     ...overrides
   };
 }
@@ -202,12 +211,102 @@ export function ccRunRows(): CcRunRow[] {
   ];
 }
 
+/** The second suite of the fixtures. */
+const WIKI_SUITE: Partial<CcRunRow> = { suiteName: 'Wiki Suite', suiteId: 6, suiteKey: 'id:6' };
+
 /** `count` runs #1001 onward, one a day from 2026-08-01, newest first; for the card list's batches. */
 export function ccManyRunRows(count: number): CcRunRow[] {
   return Array.from({ length: count }, (_, index) => {
     const day = new Date(Date.UTC(2026, 7, 1 + index, 8)).toISOString();
-    return ccRunRow(1001 + index, day, { suiteName: index % 2 === 0 ? 'Board Suite' : 'Wiki Suite' });
+    return ccRunRow(1001 + index, day, index % 2 === 0 ? {} : WIKI_SUITE);
   }).reverse();
+}
+
+/** The battery definition of the battery fixtures: *Two initial suites*, revision 1, Board Suite then Wiki Suite. */
+export const CC_BATTERY_SET_KEY = `battery:${'c'.repeat(64)}`;
+
+/** A battery run of the subject, complete, with one member per suite: run `memberIds[k]` holds suite k + 1. */
+export function ccBatteryRunRow(
+  batteryRunId: number,
+  startedAtUtc: string,
+  memberIds: readonly number[],
+  overrides: Partial<CcBatteryRunRow> = {}
+): CcBatteryRunRow {
+  const start = Date.parse(startedAtUtc);
+  const members = memberIds.map((runId, index) => ccRunRow(runId, new Date(start + index * 30 * 60_000).toISOString(), {
+    ...(index % 2 === 0 ? {} : WIKI_SUITE),
+    harnessVersion: '54',
+    batteryRunId,
+    batteryName: 'Two initial suites',
+    batterySuitePosition: index + 1,
+    batterySuiteCount: 2
+  }));
+  return {
+    batteryRunId,
+    batteryId: 3,
+    batteryName: 'Two initial suites',
+    definitionSha256: 'c'.repeat(64),
+    definitionRevision: 1,
+    setKey: CC_BATTERY_SET_KEY,
+    startedAtUtc,
+    completedAtUtc: new Date(start + memberIds.length * 30 * 60_000).toISOString(),
+    status: 'completed',
+    suiteCount: 2,
+    complete: true,
+    incompleteReason: null,
+    harnessVersions: ['54'],
+    members,
+    eligibility: [
+      { axis: 'quality', eligible: true, segment: 1, reason: null },
+      { axis: 'speedTelemetry', eligible: true, segment: 1, reason: null },
+      { axis: 'speedLegacy', eligible: true, segment: 1, reason: null },
+      { axis: 'work', eligible: true, segment: 1, reason: null },
+      { axis: 'cost', eligible: true, segment: 1, reason: null }
+    ],
+    ...overrides
+  };
+}
+
+/**
+ * Two battery runs of *Two initial suites* on 2026-10-08, newest first: #12 (runs 303 and 304, the
+ * second matched to control run 404) and #11 (runs 301 and 302).
+ */
+export function ccBatteryRunRows(): CcBatteryRunRow[] {
+  const twelve = ccBatteryRunRow(12, '2026-10-08T10:00:00Z', [303, 304]);
+  twelve.members[1] = { ...twelve.members[1], matchedControlRunIds: [404] };
+  return [twelve, ccBatteryRunRow(11, '2026-10-08T06:00:00Z', [301, 302])];
+}
+
+/** The member runs of {@link ccBatteryRunRows}, newest first, as the run table lists them. */
+export function ccBatteryMemberRows(): CcRunRow[] {
+  return ccBatteryRunRows().flatMap(row => [...row.members].reverse());
+}
+
+/** The sets of the battery fixtures: the battery, then Board Suite and Wiki Suite; the battery is the default. */
+export function ccComparisonSets(overrides: Partial<CcComparisonSets> = {}): CcComparisonSets {
+  return {
+    sets: [
+      {
+        kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)', unitCount: 2, memberRunCount: 4,
+        latestStartedAtUtc: '2026-10-08T10:00:00Z'
+      },
+      {
+        kind: 'suite', key: 'suite:id:5', label: 'Board Suite', unitCount: 8, memberRunCount: 8,
+        latestStartedAtUtc: '2026-10-08T10:00:00Z'
+      },
+      {
+        kind: 'suite', key: 'suite:id:6', label: 'Wiki Suite', unitCount: 2, memberRunCount: 2,
+        latestStartedAtUtc: '2026-10-08T10:30:00Z'
+      }
+    ],
+    defaultKey: CC_BATTERY_SET_KEY,
+    ...overrides
+  };
+}
+
+/** No set to compare within: the runs are listed and analyzed one by one, as before comparison sets. */
+export function ccNoComparisonSets(): CcComparisonSets {
+  return { sets: [], defaultKey: null };
 }
 
 /** A step-1 selection as the analysis request records it. */
@@ -448,6 +547,8 @@ export function ccAnalysisSummary(id: number, overrides: Partial<CcAnalysisSumma
     analysisCodeVersion: 1,
     createdAtUtc: '2026-10-02T09:00:00Z',
     reportDocumentCount: 0,
+    comparisonSetKey: null,
+    comparisonSetLabel: null,
     ...overrides
   };
 }

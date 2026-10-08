@@ -227,7 +227,16 @@ public class BenchmarkChatConsistencyReportFactsTests
             new ChatConsistencyNextRun { Kind = "stratum", Period = "comparison", EndpointId = "P2", Reason = "US business hours were not sampled.", Suggestion = "Run during US business hours.", RepeatRunId = 21 }
         },
         InputSha256 = string.Concat(Enumerable.Repeat("0123456789abcdef", 4)),
-        AnalysisCodeVersion = 3
+        AnalysisCodeVersion = 4
+    };
+
+    private static ChatConsistencyUnitView Unit(long id, string period, params long[] members) => new()
+    {
+        UnitId = id,
+        Kind = ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+        Period = period,
+        StartedAtUtc = Day1,
+        MemberRunIds = members
     };
 
     private static BenchmarkReportFact Fact(BenchmarkReportFactSheet sheet, string key)
@@ -425,6 +434,36 @@ public class BenchmarkChatConsistencyReportFactsTests
             Assert.Equal(limitation, Fact(sheet, "limitation.3").Display);
             Assert.Equal(2, Fact(sheet, "limitation.dataQuality.count").Value!.GetValue<int>());
             Assert.Equal(note, Fact(sheet, "limitation.dataQuality.2").Display);
+        }
+    }
+
+    [Fact]
+    public void TheComparedFact_StatesTheBatteryOrSuite_AndItsAnalyzedUnits()
+    {
+        var battery = Result() with
+        {
+            ComparisonSet = new ChatConsistencyComparedSet { Kind = ChatConsistencyComparisonSetKinds.Battery, Key = "battery:abc", Label = "Two initial suites (revision 1)" },
+            UnitKind = ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+            Units = new[] { Unit(101, "baseline", 10, 40), Unit(102, "baseline", 11, 41), Unit(103, "comparison", 20, 50), Unit(104, "comparison", 21, 51) }
+        };
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(battery, BenchmarkReportAudience.TechnicalReport);
+        var compared = Fact(sheet, "analysis.compared");
+        Assert.Equal("Battery Two initial suites (revision 1), 4 battery runs", compared.Display);
+        Assert.Equal("battery:abc", compared.Value!.GetValue<string>());
+        Assert.Contains("Two initial suites (revision 1)", sheet.KnownNames);
+        Assert.True(BenchmarkReportFactLabels.TryLabel("analysis.compared", out _), "analysis.compared needs a label in BenchmarkReportFactLabels.");
+
+        // A suite set without recorded units counts the periods' runs.
+        var suite = Result() with
+        {
+            ComparisonSet = new ChatConsistencyComparedSet { Kind = ChatConsistencyComparisonSetKinds.Suite, Key = "suite:id:7", Label = "Core suite" }
+        };
+        Assert.Equal("Suite Core suite, 4 runs", Fact(BenchmarkChatConsistencyReportFacts.Build(suite, BenchmarkReportAudience.TechnicalReport), "analysis.compared").Display);
+
+        // Before code version 4, and without a set, there is no such fact.
+        foreach (var result in new[] { battery with { AnalysisCodeVersion = 3 }, battery with { ComparisonSet = null } })
+        {
+            Assert.DoesNotContain(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport).Facts, f => f.Key == "analysis.compared");
         }
     }
 

@@ -808,8 +808,16 @@ public static class BenchmarkAssessmentPrompt
     ///     answers outside either bound are counted as not measurable (A2). The report counts the
     ///     knowledge-base-topic questions that made no get_knowledge_article call (A3).
     ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v55: the SOURCE-CODE REFERENCES rule names source files and paths, forbids listing one as
+    ///     missing in Completeness evidence and leaves function, macro, constant and field names
+    ///     graded as usual (A2); the report counts the answers whose Completeness evidence names a
+    ///     source location as missing in a run that disallowed them (A3); the claim verifier repeats
+    ///     a verification that ended in a retryable provider error (A4); the report says how to
+    ///     repeat a lost claim verification (A5); "inverts", "reverses" and "opposite" count as a
+    ///     stated defect and a charge, and only a negated "adjudicate" reads as unverifiability (A6).
+    ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "54";
+    public const string HarnessVersion = "55";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -892,7 +900,7 @@ public static class BenchmarkAssessmentPrompt
     /// references; see <see cref="BuildPerQuestionPreamble"/>.
     /// </summary>
     public const string SourceReferencesDisallowedRule =
-        "SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a file, path, line or function location. A rubric point that names a file or a line is met when the answer states the mechanic the point describes; the rubric's file and line citations are there for you to check facts, not for the candidate to repeat.";
+        "SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a source file name or path (such as `src/makemon.c` or `include/layer.h`) or a line number, and never list one as missing in `completenessEvidence`. A rubric point or SOURCE line that names a file or a line is met when the answer states the mechanic the point describes; its file and line citations are there for you to check facts, not for the candidate to repeat. This rule does not cover function, macro, constant or field names: the candidate may name them, and a rubric point that asks for one is graded as usual.";
 
     /// <summary>
     /// The synthesis prompt's one-sentence form of <see cref="SourceReferencesDisallowedRule"/>;

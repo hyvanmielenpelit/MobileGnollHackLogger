@@ -54,6 +54,31 @@ describe('AdminChatConsistencyService', () => {
     req.flush([]);
   });
 
+  it('reads the comparison sets with the model key and both UTC bounds', () => {
+    let defaultKey: string | null | undefined;
+    service.getComparisonSets('openai/gpt|high', '2026-09-01T00:00:00.000Z', '2026-10-01T23:59:59.999Z')
+      .subscribe(sets => defaultKey = sets.defaultKey);
+    const req = http.expectOne(r => r.url === `${BASE}/comparison-sets`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('modelKey')).toBe('openai/gpt|high');
+    expect(req.request.params.get('from')).toBe('2026-09-01T00:00:00.000Z');
+    expect(req.request.params.get('to')).toBe('2026-10-01T23:59:59.999Z');
+    req.flush({ sets: [], defaultKey: 'suite:id:5' });
+    expect(defaultKey).toBe('suite:id:5');
+  });
+
+  it('reads the battery runs, leaving a missing bound out', () => {
+    let count = -1;
+    service.getBatteryRuns('m', '2026-09-01T00:00:00.000Z', null).subscribe(rows => count = rows.length);
+    const req = http.expectOne(r => r.url === `${BASE}/battery-runs`);
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('modelKey')).toBe('m');
+    expect(req.request.params.get('from')).toBe('2026-09-01T00:00:00.000Z');
+    expect(req.request.params.has('to')).toBe(false);
+    req.flush([{ batteryRunId: 12 }]);
+    expect(count).toBe(1);
+  });
+
   it('posts an analysis request as the body of POST analyses', () => {
     const body = {
       subjectModelKey: 'm',

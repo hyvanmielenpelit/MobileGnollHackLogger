@@ -80,10 +80,12 @@ public static class BenchmarkVerdictConsistency
 
     /// <summary>
     /// Words by which accuracy evidence charges a sentence it quotes. Whole words,
-    /// case-insensitive. Wins over <see cref="AccusationApprovalRegex"/> when a clause carries both.
+    /// case-insensitive. Wins over <see cref="AccusationApprovalRegex"/> when a clause carries both,
+    /// so "the answer inverts the direction — "…" (as its worked example correctly shows)" charges
+    /// the quoted sentence.
     /// </summary>
     internal static readonly Regex AccusationChargeRegex = new(
-        @"\b(?:not|wrong|wrongly|incorrect|incorrectly|false|overstate|overstates|overstated|imprecise|imprecision|invented|fabricated|misstates|misassigns|needless|without|omits|implies)\b",
+        @"\b(?:not|wrong|wrongly|incorrect|incorrectly|false|overstate|overstates|overstated|imprecise|imprecision|invented|fabricated|misstates|misassigns|needless|without|omits|implies|inverts?|inverted|reverses?|reversed|opposite)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -325,9 +327,13 @@ public static class BenchmarkVerdictConsistency
     /// (and its "beyond verified ..." counterpart) with no following "rubric", which the
     /// "beyond ... rubric" alternative requires; "beyond what can be verified/confirmed"; "without
     /// rubric support", inside the "without support" group
-    /// because that group otherwise needs "support" directly after "without"; "adjudicab" beside
-    /// "adjudicat" for "adjudicable"; and "not established/supported by the source/rubric" beside
-    /// the narrower "supported by the rubric" alternative.
+    /// because that group otherwise needs "support" directly after "without"; and "not
+    /// established/supported by the source/rubric" beside the narrower "supported by the rubric"
+    /// alternative.
+    ///
+    /// "adjudicate" and "adjudicable" count only negated — "could not be adjudicated", "not
+    /// adjudicable", "unadjudicable" — because the affirmative form names the claims that were
+    /// checked: "Remaining adjudicable claims … match the rubric exactly" cites no unverifiability.
     ///
     /// A further band of forms names the same unverifiability without the word "verif" anywhere in
     /// it: the bare "not supported", for a denial of grounding stated on its own rather than tied to
@@ -346,7 +352,7 @@ public static class BenchmarkVerdictConsistency
         + @"|corroborat"
         + @"|unsupported"
         + @"|without\s+(?:any\s+)?(?:basis|support|source\s+support|corroboration|rubric\s+corroboration|rubric\s+support)"
-        + @"|adjudicat|adjudicab"
+        + @"|(?:cannot|can['’]t|could\s+not|couldn['’]t|unable\s+to|not)\s+(?:be\s+)?adjudica[tb]\w*|unadjudica[tb]\w*"
         + @"|beyond\s+(?:the\s+)?(?:verifiable\s+)?rubric"
         + @"|beyond\s+(?:the\s+)?(?:verifiable|verified)"
         + @"|beyond\s+what\s+can\s+be\s+(?:verified|confirmed)"
@@ -365,9 +371,10 @@ public static class BenchmarkVerdictConsistency
     /// <summary>
     /// Vocabulary naming an actual candidate defect. Used to guard <see cref="IsUnverifiabilityGroundedDeduction"/>:
     /// evidence naming a real defect alongside an unverifiable claim is a legitimate deduction and must not flag.
+    /// An inversion ("the answer inverts the direction", "reverses", "the opposite") is such a defect.
     /// </summary>
     private static readonly Regex DefectRegex = new(
-        @"omit|missing|wrong|incorrect|inaccurat|inaccura\w*|contradic|error|misstat|conflat|false|mischaracteris|mischaracteriz|fails to|does not (?:state|mention|include)|rubric(?:'s)? point|imprecis\w*|understat\w*|overstat\w*",
+        @"omit|missing|wrong|incorrect|inaccurat|inaccura\w*|contradic|error|misstat|conflat|false|mischaracteris|mischaracteriz|fails to|does not (?:state|mention|include)|rubric(?:'s)? point|imprecis\w*|understat\w*|overstat\w*|invert|revers|opposite",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>

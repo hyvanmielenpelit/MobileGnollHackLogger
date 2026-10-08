@@ -129,6 +129,7 @@ public class HarnessImpactLedgerTests
     [InlineData("42")]
     [InlineData("46")]
     [InlineData("53")]
+    [InlineData("55")]
     public void GradingOnlyVersionsDoNotTouchCandidateInput(string version)
     {
         Assert.False(HarnessImpactLedger.ImpactOf(version).HasFlag(HarnessImpact.CandidateInput));

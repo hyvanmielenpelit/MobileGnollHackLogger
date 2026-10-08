@@ -7452,6 +7452,122 @@ a harness-53 one on that key: A1 changes the grading input of a run with source 
 and B1 and B2 change tool output. A battery run started under harness 53 refuses to launch members
 under 54 (`HarnessVersionRefusal`).
 
+### Harness Version 55 Updates
+
+The battery run 12 round (runs 98 and 99, 2026-10-08, Claude 5.5 Haiku). The source-location grading
+rule names files and paths, the report counts the answers whose evidence still charges one, the claim
+verifier repeats a verification that ended in a retryable provider error, the report tells the reader how
+to repeat a lost verification, and two detector word lists learn *inverts*. `HarnessVersion` moves to
+**"55"**; `ScoringMethodVersion` stays **14**. No migration and no change to `Overseer/ToolGuides/`, so
+`ToolGuidesSha256` stays `733b710f7524`; `CandidateSystemPromptSha256` does not move. `HarnessImpactLedger`
+classifies 55 as `Grading`.
+
+#### What was wrong
+
+- **A2.** The harness-54 rule ended *"… a file, path, line or function location"*, which read as covering
+  function names too, while the candidate prompt forbids only files, paths and lines. Member B of run 98
+  Q16 listed `src/makemon.c` and `src/encounter.c` among the omissions.
+- **A4.** The claim verifier lost run 98 Q8 and Q9 to `Google stream error: [503] …` after it had
+  streamed: the per-call retry in `AgentLoopRunner` retries only before an attempt has streamed anything,
+  and the verification stage had no retry of its own, so 19 claims went unchecked.
+- **A5.** *Harness Stage Failures* said the candidate's output was not damaged as if nothing could move,
+  and neither it nor the failed-verification line named **Retry claim verification**.
+- **A6.** Member A of run 98 Q16 wrote that the answer *"inverts"* the rubric's direction. `DefectRegex`
+  had no *invert*, and `UnverifiabilityRegex` matched the affirmative *"Remaining adjudicable claims …
+  match"*, so the deduction was flagged *UnevidencedDeduction* and *OutOfRubricAccuracyDeduction*; the
+  accused-quote extraction read the clause's *"correctly shows"* as approval, and the charged sentence
+  never reached the verifier.
+
+#### Grading (A2)
+
+`BenchmarkAssessmentPrompt.SourceReferencesDisallowedRule`, added to the per-question preamble of a run
+whose candidate prompt disallowed source code references (§ *Harness Version 54 Updates*), reads:
+
+> SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line
+> numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a source file name
+> or path (such as `src/makemon.c` or `include/layer.h`) or a line number, and never list one as missing
+> in `completenessEvidence`. A rubric point or SOURCE line that names a file or a line is met when the
+> answer states the mechanic the point describes; its file and line citations are there for you to check
+> facts, not for the candidate to repeat. This rule does not cover function, macro, constant or field
+> names: the candidate may name them, and a rubric point that asks for one is graded as usual.
+
+`SourceReferencesDisallowedSynthesisSentence` does not change. A run that allowed source references
+grades with the harness-53 text, as before.
+
+#### Report: *Source locations charged* (A3)
+
+Beside *Out-of-scope completeness deductions*, a run whose `SourceReferencesAllowed(run)` is false prints
+
+> - **Source locations charged:** A 0 (none), B 1 (Q16)
+>   - Answers whose Completeness evidence names a source file or path as missing, in a run whose
+>     candidate was told not to cite them; the grading instruction is not to deduct for them.
+
+(a single-assessor run prints `n (Qx, …)`), also when both counts are 0. An answer counts when its
+Completeness evidence, cut at any `OUT-OF-SCOPE:` marker, matches a path
+`(?<![\w/])(?:src|include|dat|win|sys)/[A-Za-z0-9_./-]+` or a bare C file name
+`\b[A-Za-z0-9_]+\.(?:c|h)\b`. A run that allowed source references prints no line. The count is computed
+when the report is rendered; it is no stored field and no `BenchmarkAnswerFlags` member, and it moves no
+score.
+
+#### Claim verification: the provider-error repeat (A4)
+
+When `BenchmarkService.VerifyAnswerClaimsCoreAsync` ends with a terminal error that
+`ProviderErrorRetryPolicy.IsRetryable` accepts, it waits `Benchmark:ClaimVerification:ProviderErrorRetryDelaySeconds`
+(**30**; code default 30) and runs the whole verification again from its first request, up to
+`Benchmark:ClaimVerification:ProviderErrorRetries` times (**1**; code default 1; 0 turns it off). Each
+repeat is a fresh agent loop on a fresh tool budget (its `ToolBudgetScopeId` takes an `_attempt2` suffix)
+with its own timeout, which is stopped during the wait; nothing from the failed attempt is reused. A
+deny-listed error (for example `invalid_request_error`) and a timed-out attempt are never repeated, and a
+cancellation during the wait stops the stage.
+
+- **The record.** `ClaimVerificationCallUsageJson` keeps the failed attempt's entries, then appends the
+  repeat's, each carrying `"pe":1`; the first of them also carries `"e"`, the first 200 characters of the
+  error that triggered it. A repeat that reported no usage leaves one zero entry so marked. The parse
+  retry's `"r":1` entries come after them. (`"p"` already holds the prompt tokens, so the marker is
+  `"pe"`.) `ClaimVerificationModelCallCount`, the tokens and the tool calls sum every attempt,
+  `ClaimVerificationDurationMs` includes the wait, and only the last attempt's `ClaimVerificationError` is
+  stored; a success clears it.
+- **The report.** The per-answer *Claim Verification* line appends *"; provider-error retry after:
+  \<error head\>"* when a `"pe":1` entry exists, after any parse-retry text, and the yield line adds
+  *"; N answer(s) needed a provider-error retry"*.
+- **Not changed.** The per-call retry in `AgentLoopRunner`: in live chat a mid-stream retry would repeat
+  text the user has already seen.
+
+#### Report: a lost verification (A5)
+
+- *Harness Stage Failures* reads: *"(Advisory infrastructure failures. The candidate's answer is intact; a
+  lost claim verification leaves its claims unchecked and, in a panel run, can leave a split critical
+  error unresolved. **Retry claim verification** in the run's **Re-run** menu repeats it.)"*
+- A failed verification's line ends *"… were not checked. Use **Retry claim verification** to repeat
+  it."*, before the head of the raw text.
+
+#### Detectors: *inverts* (A6)
+
+In `BenchmarkVerdictConsistency`:
+
+1. `DefectRegex` gains `invert|revers|opposite`, so evidence that says the answer inverts or reverses a
+   rubric point names a defect and `IsUnverifiabilityGroundedDeduction` does not fire. (`HasUndeniedDefect`
+   still strips denials first; a `FalsehoodRegex` veto was not used because denials such as *"no
+   adjudicable falsehood found"* would have stopped the rule from firing where it should.)
+2. The charge-word list the approval scan uses (`AccusationChargeRegex`) gains
+   `inverts?|inverted|reverses?|reversed|opposite`, so a clause that names an inversion is a charge even
+   when it also says *correctly*.
+3. `UnverifiabilityRegex` matches *adjudicate* and *adjudicable* only negated —
+   `(?:cannot|can't|could\s+not|couldn't|unable\s+to|not)\s+(?:be\s+)?adjudica[tb]\w*` and
+   `unadjudica[tb]\w*` — so *"Remaining adjudicable claims … match"* no longer reads as unverifiability.
+
+Run 98 Q16's member-A evidence is the test fixture: no *UnevidencedDeduction*, no
+*OutOfRubricAccuracyDeduction*, and `ExtractAccusedQuotes` returns the inverted answer sentence.
+
+**Re-rendering a harness-54 run.** A3 and A5 are computed when the report is rendered, so a harness-54
+report re-rendered from harness-55 code shows the *Source locations charged* line and the new wording. A2
+(the grading input), A4 (the verifier routing) and A6 (the detectors, which run when an answer is
+graded) are not: a harness-54 run keeps its grades, its stored verification and its stored flags.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 54 → 55: A2 changes the grading input of a
+run with source references disallowed, and A6 the advisory flags. A battery run started under harness 54
+refuses to launch members under 55 (`HarnessVersionRefusal`).
+
 ---
 
 ## 3. Assessor Strategy

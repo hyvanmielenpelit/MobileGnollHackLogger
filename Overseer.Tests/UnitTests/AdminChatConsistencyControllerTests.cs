@@ -23,7 +23,7 @@ using Xunit;
 
 /// <summary>
 /// The chat consistency API over real services and an in-memory database: the model axes, the
-/// timeline and run table, saved analyses and their delete guard, the re-grade's refusals, anchors,
+/// timeline, run table, battery-run table and comparison sets, saved analyses and their delete guard, the re-grade's refusals, anchors,
 /// annotations, and the report documents list accepting chat consistency documents. No network: the
 /// re-grade's calibration runner is a no-op and no job is started.
 /// </summary>
@@ -191,6 +191,68 @@ public class AdminChatConsistencyControllerTests
         return ChatConsistencyComparability.ModelAxisKey(runs[0]);
     }
 
+    private static BenchmarkBatteryDefinition TwoSuites(int revision = 1) => new(
+        1, "Two initial suites", revision, BenchmarkBatteryWeightingScheme.Equal,
+        new[] { new BenchmarkBatteryDefinitionSuite(0, 7, "Core Suite", null), new BenchmarkBatteryDefinitionSuite(1, 8, "Second Suite", null) });
+
+    private static string BatterySetKey => ChatConsistencyComparisonSetKinds.BatteryKeyPrefix + TwoSuites().DefinitionSha256;
+
+    private static BenchmarkBatteryRun BatteryRun(long id, DateTime start, BenchmarkBatteryDefinition definition, params (long RunId, int SuiteIndex)[] members)
+    {
+        var row = new BenchmarkBatteryRun
+        {
+            Id = id,
+            BatteryName = definition.Name,
+            DefinitionJson = definition.ToJson(),
+            DefinitionSha256 = definition.DefinitionSha256,
+            RunsPerSuite = 1,
+            RequestedMemberCount = definition.Suites.Count,
+            CompletedMemberCount = members.Length,
+            Status = BenchmarkRunSeriesStatus.Completed,
+            StartRequestJson = "{}",
+            StartedAtUtc = start,
+            CompletedAtUtc = start.AddDays(1)
+        };
+        for (int i = 0; i < members.Length; i++)
+        {
+            row.Members.Add(new BenchmarkBatteryRunMember { Id = id * 100 + i, BenchmarkRunId = members[i].RunId, SuiteIndex = members[i].SuiteIndex, Round = 1, AddedAtUtc = start });
+        }
+
+        return row;
+    }
+
+    /// <summary>
+    /// <see cref="Seed"/> plus Second Suite (id 8) runs #21–#24, each a day after its Core Suite partner, every
+    /// run with a quality index; battery runs #101–#104 of <see cref="TwoSuites"/> pair them, each starting a
+    /// minute before its Core Suite run. Returns the subject's model key.
+    /// </summary>
+    private static string SeedBatteries(ApplicationDbContext db)
+    {
+        string key = Seed(db);
+        var first = db.BenchmarkRuns.Local.Single(r => r.Id == 1);
+        var subject = first.TestedModelSnapshot!;
+        var assessor = first.AssessorModelSnapshot!;
+        foreach (var (id, start) in new[] { (21L, BaselineDay1), (22L, BaselineDay2), (23L, ComparisonDay1), (24L, ComparisonDay2) })
+        {
+            var run = Run(id, start.AddDays(1), subject, assessor);
+            run.BenchmarkSuiteIdUsed = 8;
+            run.SuiteName = "Second Suite";
+            foreach (var answer in run.Answers) answer.BenchmarkQuestionIdUsed += 100;
+            db.BenchmarkRuns.Add(run);
+        }
+
+        foreach (var run in db.BenchmarkRuns.Local) run.QualityIndex = 85;
+
+        var definition = TwoSuites();
+        db.BenchmarkBatteryRuns.AddRange(
+            BatteryRun(101, BaselineDay1.AddMinutes(-1), definition, (1, 0), (21, 1)),
+            BatteryRun(102, BaselineDay2.AddMinutes(-1), definition, (2, 0), (22, 1)),
+            BatteryRun(103, ComparisonDay1.AddMinutes(-1), definition, (3, 0), (23, 1)),
+            BatteryRun(104, ComparisonDay2.AddMinutes(-1), definition, (4, 0), (24, 1)));
+        db.SaveChanges();
+        return key;
+    }
+
     private static ChatConsistencyAnalysisRequest Request(string subjectKey) => new()
     {
         Name = "GPT test, September",
@@ -295,6 +357,140 @@ public class AdminChatConsistencyControllerTests
         Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.ListModels(aborted.Token)).StatusCode);
         Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.Timeline(key, null, null, aborted.Token)).StatusCode);
         Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.Runs(key, null, null, aborted.Token)).StatusCode);
+    }
+
+    [Fact]
+    public async Task BatteryRunsAndComparisonSetsRequireAModelKeyAndAnOrderedRange()
+    {
+        using var h = new Harness();
+        string key = SeedBatteries(h.Db);
+        var ct = CancellationToken.None;
+
+        Assert.Equal(AdminChatConsistencyController.ModelKeyRequiredError, ErrorOf(await h.Controller.BatteryRuns(null, null, null, ct)));
+        Assert.Equal(AdminChatConsistencyController.ModelKeyRequiredError, ErrorOf(await h.Controller.ComparisonSets(" ", null, null, ct)));
+        Assert.Equal(AdminChatConsistencyController.RangeError, ErrorOf(await h.Controller.BatteryRuns(key, ComparisonDay1, BaselineDay1, ct)));
+        Assert.Equal(AdminChatConsistencyController.RangeError, ErrorOf(await h.Controller.ComparisonSets(key, ComparisonDay1, BaselineDay1, ct)));
+
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.BatteryRuns(key, null, null, aborted.Token)).StatusCode);
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, Assert.IsType<StatusCodeResult>(await h.Controller.ComparisonSets(key, null, null, aborted.Token)).StatusCode);
+    }
+
+    [Fact]
+    public async Task BatteryRunsListsTheSubjectsBatteryRunsNewestFirstWithTheirMembers()
+    {
+        using var h = new Harness();
+        string key = SeedBatteries(h.Db);
+        var ct = CancellationToken.None;
+
+        var rows = ValueOf<IReadOnlyList<ChatConsistencyBatteryRunRow>>(await h.Controller.BatteryRuns(key, null, null, ct));
+        Assert.Equal(new long[] { 104, 103, 102, 101 }, rows.Select(r => r.BatteryRunId));
+
+        var oldest = rows[^1];
+        Assert.Equal("Two initial suites", oldest.BatteryName);
+        Assert.Equal(1, oldest.DefinitionRevision);
+        Assert.Equal(BatterySetKey, oldest.SetKey);
+        Assert.Equal(2, oldest.SuiteCount);
+        Assert.True(oldest.Complete);
+        Assert.Null(oldest.IncompleteReason);
+        Assert.Equal(BaselineDay1.AddMinutes(-1), oldest.StartedAtUtc);
+        Assert.Equal(new long[] { 1, 21 }, oldest.Members.Select(m => m.RunId));
+        Assert.Equal(new int?[] { 1, 2 }, oldest.Members.Select(m => m.BatterySuitePosition));
+        Assert.All(oldest.Members, m => Assert.Equal(101L, m.BatteryRunId));
+        Assert.Equal(new[] { HarnessImpactLedger.CurrentVersion }, oldest.HarnessVersions);
+        Assert.True(oldest.Eligibility.Single(e => e.Axis == ChatConsistencyAxis.Quality).Eligible);
+
+        var baseline = ValueOf<IReadOnlyList<ChatConsistencyBatteryRunRow>>(
+            await h.Controller.BatteryRuns(key, null, new DateTime(2026, 9, 7, 0, 0, 0, DateTimeKind.Utc), ct));
+        Assert.Equal(new long[] { 102, 101 }, baseline.Select(r => r.BatteryRunId));
+
+        // The run table names each run's suite and battery.
+        var run21 = ValueOf<IReadOnlyList<ChatConsistencyRunRow>>(await h.Controller.Runs(key, null, null, ct)).Single(r => r.RunId == 21);
+        Assert.Equal(8L, run21.SuiteId);
+        Assert.Equal("id:8", run21.SuiteKey);
+        Assert.Equal(101L, run21.BatteryRunId);
+        Assert.Equal("Two initial suites", run21.BatteryName);
+        Assert.Equal(2, run21.BatterySuitePosition);
+        Assert.Equal(2, run21.BatterySuiteCount);
+
+        var axis = Assert.Single(ValueOf<IReadOnlyList<ChatConsistencyModelAxis>>(await h.Controller.ListModels(ct)));
+        Assert.Equal(4, axis.BatteryRunCount);
+    }
+
+    [Fact]
+    public async Task AnIncompleteBatteryRunIsListedWithItsReason()
+    {
+        using var h = new Harness();
+        string key = SeedBatteries(h.Db);
+        var ct = CancellationToken.None;
+        h.Db.BenchmarkBatteryRunMembers.Single(m => m.BenchmarkRunId == 23).GuardFailure = "tool guides changed";
+        await h.Db.SaveChangesAsync(ct);
+
+        var row = ValueOf<IReadOnlyList<ChatConsistencyBatteryRunRow>>(await h.Controller.BatteryRuns(key, null, null, ct)).Single(r => r.BatteryRunId == 103);
+        Assert.False(row.Complete);
+        Assert.Equal("1 of 2 suites usable", row.IncompleteReason);
+        Assert.Equal(new long[] { 3 }, row.Members.Select(m => m.RunId));
+    }
+
+    [Fact]
+    public async Task ComparisonSetsListTheBatteryFirstAndDefaultToIt()
+    {
+        using var h = new Harness();
+        string key = SeedBatteries(h.Db);
+        var ct = CancellationToken.None;
+
+        var sets = ValueOf<ChatConsistencyComparisonSets>(await h.Controller.ComparisonSets(key, null, null, ct));
+
+        Assert.Equal(new[] { BatterySetKey, "suite:id:8", "suite:id:7" }, sets.Sets.Select(s => s.Key));
+        Assert.Equal(BatterySetKey, sets.DefaultKey);
+
+        var battery = sets.Sets[0];
+        Assert.Equal(ChatConsistencyComparisonSetKinds.Battery, battery.Kind);
+        Assert.Equal("Two initial suites (revision 1)", battery.Label);
+        Assert.Equal(4, battery.UnitCount);
+        Assert.Equal(8, battery.MemberRunCount);
+        Assert.Equal(ComparisonDay2.AddMinutes(-1), battery.LatestStartedAtUtc);
+
+        var core = sets.Sets[2];
+        Assert.Equal(ChatConsistencyComparisonSetKinds.Suite, core.Kind);
+        Assert.Equal("Core Suite", core.Label);
+        Assert.Equal(4, core.UnitCount);
+        Assert.Equal(4, core.MemberRunCount);
+        Assert.Equal("Second Suite", sets.Sets[1].Label);
+    }
+
+    [Fact]
+    public async Task ComparisonSetsJoinTheRevisionsOfOneDefinition()
+    {
+        using var h = new Harness();
+        string key = SeedBatteries(h.Db);
+        var ct = CancellationToken.None;
+
+        // A later revision with the same suites and weights hashes the same; run #4 serves it as well.
+        h.Db.BenchmarkBatteryRuns.Add(BatteryRun(105, ComparisonDay2.AddHours(3), TwoSuites(revision: 2), (4, 0), (24, 1)));
+        await h.Db.SaveChangesAsync(ct);
+
+        var battery = ValueOf<ChatConsistencyComparisonSets>(await h.Controller.ComparisonSets(key, null, null, ct)).Sets[0];
+        Assert.Equal(BatterySetKey, battery.Key);
+        Assert.Equal("Two initial suites (revisions 1, 2)", battery.Label);
+        Assert.Equal(5, battery.UnitCount);
+        Assert.Equal(8, battery.MemberRunCount);
+    }
+
+    [Fact]
+    public async Task WithoutBatteryRunsTheDefaultIsTheSuiteOfTheNewestRun()
+    {
+        using var h = new Harness();
+        string key = Seed(h.Db);
+
+        var sets = ValueOf<ChatConsistencyComparisonSets>(await h.Controller.ComparisonSets(key, null, null, CancellationToken.None));
+
+        var suite = Assert.Single(sets.Sets);
+        Assert.Equal("suite:id:7", suite.Key);
+        Assert.Equal("Core Suite", suite.Label);
+        Assert.Equal("suite:id:7", sets.DefaultKey);
+        Assert.Empty(ValueOf<IReadOnlyList<ChatConsistencyBatteryRunRow>>(await h.Controller.BatteryRuns(key, null, null, CancellationToken.None)));
     }
 
     [Fact]

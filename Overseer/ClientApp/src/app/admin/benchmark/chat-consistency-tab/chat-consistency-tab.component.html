@@ -56,6 +56,7 @@
   <!-- Only while a model is chosen. A read-out, not a control: the wizard owns the choice. -->
   @if (selectedAxis; as axis) {
     <app-cc-current-model-card [axis]="axis" [rangeText]="currentDatesText"
+                               [compareLabel]="compareSet?.label ?? null" [unitKind]="unitKind"
                                [runsInRange]="runsInRange" [runsInAnalysis]="runsInAnalysis"
                                [latestAnalysis]="latestAnalysis" [loading]="subjectLoading"
                                (openRunReport)="openRunReport($event)"
@@ -96,6 +97,7 @@
   @if (wizardMounted) {
     <app-cc-wizard [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"
                    [selectedKey]="selectedKey" [range]="range" [scope]="scope"
+                   [comparisonSets]="comparisonSets" [compareKey]="compareSet?.key ?? null" [batteryRows]="batteryRows"
                    [timeline]="timeline" [rows]="rows" [loading]="subjectLoading"
                    [timelineError]="timelineError" [runsError]="runsError"
                    [anchorBusy]="anchorBusy" [anchorError]="anchorError" [announcement]="announcement"
@@ -104,9 +106,9 @@
                    [pickerConfigs]="workspace.stableBenchmarkCapableConfigs"
                    [pickerEmptyHint]="workspace.benchmarkPickerEmptyHint"
                    (modelChange)="selectModel($event)" (rangeChange)="setRange($event)"
-                   (scopeChange)="setScope($event)"
+                   (compareChange)="setCompare($event)" (scopeChange)="setScope($event)"
                    (repeatSetup)="repeatSetup($event)" (anchorToggle)="toggleAnchor($event)"
-                   (openRunReport)="openRunReport($event)"
+                   (openRunReport)="openRunReport($event)" (openBatteryRunReport)="openBatteryRunReport($event)"
                    (analysisSaved)="onAnalysisSaved($event)" (runsChanged)="onRunsChanged()"
                    (annotationsChanged)="onAnnotationsChanged()"
                    (openDocuments)="openDocuments.emit($event)"

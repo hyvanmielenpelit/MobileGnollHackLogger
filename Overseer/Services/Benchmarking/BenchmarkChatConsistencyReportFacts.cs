@@ -16,7 +16,7 @@ using Overseer.Services.ChatConsistency;
 //
 // Fact keys (sorted by key, ordinal, on the sheet):
 //
-//   analysis.id, .name, .inputSha256, .codeVersion, .relaxedPooling
+//   analysis.id, .name, .inputSha256, .codeVersion, .relaxedPooling, .compared (code version 4 on, with a comparison set)
 //   subject.label, .provider, .modelId, .thinkingLevel, .serviceTier
 //   verdict.overall, .quality, .headline, .reliabilityIncreases
 //   scope.hours, .excludedShare, .oneTimeStratum
@@ -187,6 +187,7 @@ public static class BenchmarkChatConsistencyReportFacts
         AddSubject(facts, subject);
         AddVerdict(facts, result);
         AddScope(facts, result.Scope ?? new ChatConsistencyScope());
+        AddCompared(facts, result);
         AddPeriod(facts, Baseline, result.Baseline ?? new ChatConsistencyPeriodSummary());
         AddPeriod(facts, Comparison, result.Comparison ?? new ChatConsistencyPeriodSummary());
         AddProtocol(facts, result);
@@ -318,7 +319,7 @@ public static class BenchmarkChatConsistencyReportFacts
     private static string ModelOf(Context ctx, string? controlKey)
         => controlKey != null && ctx.LetterOf.TryGetValue(controlKey, out var letter) ? "Model " + letter : "a control model";
 
-    /// <summary>The names the digit rule masks: the subject's, the controls', the providers', the graders', the served model ids and the suites.</summary>
+    /// <summary>The names the digit rule masks: the subject's, the controls', the providers', the graders', the served model ids, the suites and the compared set's label.</summary>
     private static List<string> KnownNames(ChatConsistencyAnalysisResult result, IReadOnlyList<ControlModel> controls, IReadOnlyList<string> suites)
     {
         var subject = result.Subject ?? new ChatConsistencySubject();
@@ -326,6 +327,7 @@ public static class BenchmarkChatConsistencyReportFacts
         return new string?[] { subject.DisplayName, subject.ModelId, subject.Provider }
             .Concat(controls.SelectMany(c => new string?[] { c.Display, c.Provider }))
             .Concat(suites)
+            .Concat(new[] { ComparedSetOf(result)?.Label })
             .Concat(new[] { result.CommonGrader?.Display })
             .Concat(result.GraderDrift.Select(d => (string?)d.Display))
             .Concat(served.Baseline.Concat(served.Comparison).Select(s => (string?)s.ModelId))
@@ -428,6 +430,32 @@ public static class BenchmarkChatConsistencyReportFacts
         facts.Add("serving.timeOfDayAssessable", scope.TimeOfDayAssessable, scope.TimeOfDayAssessable
             ? "assessable: the common hours include US business hours and other hours"
             : "not assessable: the common hours do not include both US business hours and other hours");
+    }
+
+    /// <summary>The battery or suite compared within, as the analysis recorded it; null before analysis code version 4 and for a run-by-run analysis.</summary>
+    public static ChatConsistencyComparedSet? ComparedSetOf(ChatConsistencyAnalysisResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return result.AnalysisCodeVersion > 3 && result.ComparisonSet is { } set && !string.IsNullOrWhiteSpace(set.Key) ? set : null;
+    }
+
+    /// <summary>
+    /// <c>analysis.compared</c>: "Battery &lt;label&gt;, 4 battery runs" or "Suite &lt;name&gt;, 6 runs", counting the
+    /// analyzed units of both periods, or their runs when the result lists no unit.
+    /// </summary>
+    private static void AddCompared(BenchmarkReportFacts.FactList facts, ChatConsistencyAnalysisResult result)
+    {
+        if (ComparedSetOf(result) is not { } set) return;
+
+        bool battery = set.Kind == ChatConsistencyComparisonSetKinds.Battery;
+        string label = string.IsNullOrWhiteSpace(set.Label) ? set.Key : set.Label.Trim();
+        var units = result.Units ?? Array.Empty<ChatConsistencyUnitView>();
+        string count = units.Count > 0
+            ? Inv(units.Count) + (battery
+                ? (units.Count == 1 ? " battery run" : " battery runs")
+                : (units.Count == 1 ? " run" : " runs"))
+            : Runs((result.Baseline?.RunCount ?? 0) + (result.Comparison?.RunCount ?? 0));
+        facts.Add("analysis.compared", set.Key, (battery ? "Battery " : "Suite ") + label + ", " + count);
     }
 
     private static void AddPeriod(BenchmarkReportFacts.FactList facts, string name, ChatConsistencyPeriodSummary period)

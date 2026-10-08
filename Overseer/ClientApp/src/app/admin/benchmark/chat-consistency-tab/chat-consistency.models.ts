@@ -30,6 +30,18 @@ export type CcAnnotationKind =
   'modelRelease' | 'providerStatement' | 'providerConfirmedCause' | 'priceChange' | 'ourChange' | 'other';
 export type CcRunStatus =
   'running' | 'completed' | 'completedWithErrors' | 'failed' | 'canceled' | 'completedWithLimits';
+/** A battery run's `BenchmarkRunSeriesStatus`; `cancelled` is the server's spelling on the wire. */
+export type CcBatteryRunStatus =
+  'pending' | 'running' | 'waitingForCap' | 'stopped' | 'completed' | 'completedWithErrors' | 'cancelled' | 'failed';
+
+/** What a comparison set holds: one battery definition, or one suite. */
+export type CcComparisonSetKind = 'battery' | 'suite';
+/** What an analysis counts: a run in a suite set or a run-by-run analysis, a battery run in a battery set. */
+export type CcUnitKind = 'run' | 'batteryRun';
+
+/** The key prefixes of the comparison sets: `battery:<DefinitionSha256>`, `suite:<suite identity>`. */
+export const CC_BATTERY_SET_PREFIX = 'battery:';
+export const CC_SUITE_SET_PREFIX = 'suite:';
 
 /** The primary endpoints, in protocol order. */
 export const CC_ENDPOINT_IDS = ['P1', 'P2', 'P3', 'P4', 'P5'] as const;
@@ -63,6 +75,8 @@ export interface CcModelAxis {
   lastRunAtUtc: string;
   latestRunId: number;
   suiteNames: string[];
+  /** Distinct battery runs with a member on this axis. */
+  batteryRunCount: number;
 }
 
 export interface CcSubject {
@@ -194,9 +208,67 @@ export interface CcRunRow {
   regradeCoverage: CcRegradeCoverage[];
   matchedControlRunIds: number[];
   servedModelIds: CcServedModelCount[];
+  suiteId: number | null;
+  /** The run's suite identity (`id:5`, or `name:…` without a recorded id); its suite set's key is `suite:` plus this. */
+  suiteKey: string;
+  /** The newest battery run holding this run as a member; null when none does. */
+  batteryRunId: number | null;
+  batteryName: string | null;
+  /** The 1-based position of the run's suite in that battery run. */
+  batterySuitePosition: number | null;
+  batterySuiteCount: number | null;
 }
 
-// --- Protocol ---
+/** A battery or suite the subject can be compared within, over the step-1 dates. */
+export interface CcComparisonSet {
+  kind: CcComparisonSetKind;
+  /** `battery:<DefinitionSha256>` or `suite:<suite identity>`. */
+  key: string;
+  /** The battery name with its revisions (`Two initial suites (revision 1)`), or the suite name. */
+  label: string;
+  /** Battery runs of a battery set, runs of a suite set. */
+  unitCount: number;
+  memberRunCount: number;
+  latestStartedAtUtc: string;
+}
+
+/** The sets the subject can be compared within: batteries first, then suites, each group newest first. */
+export interface CcComparisonSets {
+  sets: CcComparisonSet[];
+  /** The set step 1 selects by default; null when there is no run. */
+  defaultKey: string | null;
+}
+
+/** A comparison set as a request names it. */
+export interface CcComparisonSetRef {
+  kind: CcComparisonSetKind;
+  key: string;
+}
+
+/** One battery run of the subject, with its usable members. */
+export interface CcBatteryRunRow {
+  batteryRunId: number;
+  batteryId: number | null;
+  batteryName: string;
+  definitionSha256: string;
+  definitionRevision: number;
+  /** `battery:` plus the definition hash. */
+  setKey: string;
+  startedAtUtc: string;
+  completedAtUtc: string | null;
+  status: CcBatteryRunStatus;
+  suiteCount: number;
+  /** Every suite slot holds a usable member; only a complete battery run is analyzed. */
+  complete: boolean;
+  /** For example `1 of 2 suites usable`; null when complete. */
+  incompleteReason: string | null;
+  /** The members' harness versions, distinct, ascending. */
+  harnessVersions: string[];
+  /** The usable members on the subject's axis, in suite order. */
+  members: CcRunRow[];
+  /** Per axis: eligible when every member is, else the members' reasons, each prefixed `#<run id>: `. */
+  eligibility: CcAxisEligibility[];
+}
 
 export interface CcEndpointProtocol {
   id: string;
@@ -275,6 +347,11 @@ export interface CcAnalysisRequest {
   availableOtherProviderModels?: string[] | null;
   /** How the runs were chosen in step 1; recorded with the analysis, never used to pick runs. */
   runSelection?: CcRunSelection | null;
+  /** The battery or suite compared within; absent analyzes the runs one by one. */
+  comparisonSet?: CcComparisonSetRef | null;
+  /** With a battery set, the battery runs of each period; the run ids are then not sent. */
+  baselineBatteryRunIds?: number[] | null;
+  comparisonBatteryRunIds?: number[] | null;
 }
 
 /** The step-1 run selection as the request carries it. */
@@ -287,10 +364,15 @@ export interface CcRunSelection {
   lastRunId: number | null;
   /** Sorted ascending; at most 5,000. */
   leftOutRunIds: number[];
+  /** In a battery set, the first and last battery runs and the battery runs left out (ascending, at most 5,000). */
+  firstBatteryRunId?: number | null;
+  lastBatteryRunId?: number | null;
+  leftOutBatteryRunIds?: number[];
 }
 
 /** Why a usable run of the subject inside a period was not analyzed. */
-export type CcUnanalyzedReason = 'leftOut' | 'outsideDateRange' | 'beforeFirstRun' | 'afterLastRun' | 'notSelected';
+export type CcUnanalyzedReason =
+  'leftOut' | 'outsideDateRange' | 'beforeFirstRun' | 'afterLastRun' | 'notSelected' | 'outsideComparisonSet';
 
 export interface CcUnanalyzedRun {
   runId: number;
@@ -298,6 +380,8 @@ export interface CcUnanalyzedRun {
   period: string;
   startedAtUtc: string;
   reason: CcUnanalyzedReason;
+  /** In a battery set, the battery run the reason applies to. */
+  batteryRunId?: number | null;
 }
 
 /** The run selection as recorded with the analysis. */
@@ -310,8 +394,29 @@ export interface CcRunSelectionView {
   firstRunId: number | null;
   lastRunId: number | null;
   leftOutRunIds: number[];
+  firstBatteryRunId?: number | null;
+  lastBatteryRunId?: number | null;
+  leftOutBatteryRunIds?: number[];
   /** Ordered by start, then id. */
   unanalyzedRuns: CcUnanalyzedRun[];
+}
+
+/** The battery or suite an analysis compared within, as recorded with the result. */
+export interface CcComparedSet {
+  kind: CcComparisonSetKind;
+  key: string;
+  label: string;
+}
+
+/** One analyzed unit: a battery run in a battery set, a run otherwise. */
+export interface CcUnitView {
+  unitId: number;
+  kind: CcUnitKind;
+  /** `baseline` or `comparison`. */
+  period: string;
+  startedAtUtc: string;
+  /** The runs merged into the unit, in suite order; the run itself for a run unit. */
+  memberRunIds: number[];
 }
 
 export interface CcPeriodSummary {
@@ -619,6 +724,12 @@ export interface CcAnalysisResult {
   nextRuns: CcNextRun[];
   /** Absent in analyses saved before the selection was recorded; read it as not recorded. */
   runSelection?: CcRunSelectionView | null;
+  /** The battery or suite compared within; null or absent for a run-by-run analysis and code version 3 or earlier. */
+  comparisonSet?: CcComparedSet | null;
+  /** What the minimum sample, the bootstrap and leave-one-out count; absent reads as `run`. */
+  unitKind?: CcUnitKind;
+  /** The analyzed units of both periods; absent in older analyses. */
+  units?: CcUnitView[];
   inputSha256: string;
   analysisCodeVersion: number;
 }
@@ -639,6 +750,9 @@ export interface CcAnalysisSummary {
   analysisCodeVersion: number;
   createdAtUtc: string;
   reportDocumentCount: number;
+  /** The compared set; null for a run-by-run analysis and code version 3 or earlier. */
+  comparisonSetKey: string | null;
+  comparisonSetLabel: string | null;
 }
 
 // --- Re-grade ---

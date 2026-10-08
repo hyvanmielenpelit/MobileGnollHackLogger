@@ -1,8 +1,13 @@
 import {
+  CC_EMPTY_BATTERY_SCOPE,
   CC_EMPTY_SCOPE,
   CC_INCLUSION_TEXT,
   CcRunScope,
+  batterySetRuns,
+  ccEmptyScope,
+  comparisonSetUnits,
   notAnalyzedRuns,
+  notAnalyzedSetRuns,
   pruneScope,
   runInclusion,
   scopeChangeCount,
@@ -10,12 +15,22 @@ import {
   scopeKey,
   scopeRuns,
   scopeSpanDays,
+  scopedMemberRuns,
   setFirstRun,
   setLastRun,
-  toggleLeftOut
+  setUnitKind,
+  suiteSetRuns,
+  toggleLeftOut,
+  unitIdOf
 } from './chat-consistency-scope';
-import { CcRunRow } from './chat-consistency.models';
-import { ccRunRow } from './chat-consistency-tab.testing';
+import { CcBatteryRunRow, CcRunRow } from './chat-consistency.models';
+import {
+  CC_BATTERY_SET_KEY,
+  ccBatteryMemberRows,
+  ccBatteryRunRow,
+  ccBatteryRunRows,
+  ccRunRow
+} from './chat-consistency-tab.testing';
 
 /** Five runs two days apart, newest first as the card list shows them. */
 function rows(): CcRunRow[] {
@@ -283,7 +298,78 @@ describe('chat-consistency-scope', () => {
     expect(CC_INCLUSION_TEXT).toEqual({
       leftOut: 'left out in step 1',
       beforeSpan: 'before the first run',
-      afterSpan: 'after the last run'
+      afterSpan: 'after the last run',
+      incomplete: 'incomplete battery run',
+      outsideSet: 'outside the compared set'
+    });
+  });
+
+  describe('comparison sets', () => {
+    /** Battery runs #11 and #12 of the fixtures, and an incomplete #13 with run 305 alone. */
+    function batteryRows(): CcBatteryRunRow[] {
+      return [
+        ccBatteryRunRow(13, '2026-10-08T14:00:00Z', [305], { complete: false, incompleteReason: '1 of 2 suites usable' }),
+        ...ccBatteryRunRows()
+      ];
+    }
+
+    it('takes the units of a set by its key: battery runs, a suite\'s runs, or every run', () => {
+      const all = [...rows(), ccRunRow(20, '2026-09-02T08:00:00Z', { suiteName: 'Wiki Suite', suiteId: 6, suiteKey: 'id:6' })];
+      expect(setUnitKind(CC_BATTERY_SET_KEY)).toBe('batteryRun');
+      expect(setUnitKind('suite:id:5')).toBe('run');
+      expect(setUnitKind(null)).toBe('run');
+      expect(comparisonSetUnits(all, batteryRows(), CC_BATTERY_SET_KEY).map(unitIdOf)).toEqual([13, 12, 11]);
+      expect(ids(suiteSetRuns(all, 'suite:id:6'))).toEqual([20]);
+      expect(comparisonSetUnits(all, batteryRows(), 'suite:id:5').length).toBe(5);
+      expect(comparisonSetUnits(all, batteryRows(), null)).toBe(all);
+      expect(batterySetRuns(batteryRows(), 'suite:id:5')).toEqual([]);
+    });
+
+    it('never analyzes an incomplete battery run, and orders battery runs by start', () => {
+      const units = batteryRows();
+      const battery = ccEmptyScope('batteryRun');
+      expect(battery).toBe(CC_EMPTY_BATTERY_SCOPE);
+      expect(ccEmptyScope('run')).toBe(CC_EMPTY_SCOPE);
+      expect(scopeRuns(units, battery).map(unitIdOf)).toEqual([11, 12]);
+      expect(entries(notAnalyzedRuns(units, battery))).toEqual([[13, 'incomplete']]);
+      expect(runInclusion(units[0], units, { ...battery, firstRunId: 13 })).toBe('incomplete');
+      expect(scopeSpanDays(scopeRuns(units, battery))).toEqual({ first: '2026-10-08', last: '2026-10-08' });
+    });
+
+    it('names battery runs in its notes', () => {
+      const units = batteryRows();
+      const last = setLastRun(CC_EMPTY_BATTERY_SCOPE, units, 11).scope;
+      expect(setFirstRun(last, units, 12).note).toBe('Battery run #12 is after the last battery run, so the last battery run was cleared.');
+      expect(pruneScope({ ...CC_EMPTY_BATTERY_SCOPE, leftOut: new Set([9]) }, units).note)
+        .toBe('Left-out battery run #9 is no longer listed and was dropped from the selection.');
+    });
+
+    it('marks the runs outside the compared set, and a battery run\'s members with its reason, for the timeline', () => {
+      const all = [...ccBatteryMemberRows(), ...rows()];
+      const leftOut = { ...CC_EMPTY_BATTERY_SCOPE, leftOut: new Set([11]) };
+      const marks = notAnalyzedSetRuns(all, ccBatteryRunRows(), CC_BATTERY_SET_KEY, leftOut);
+      expect(marks.get(301)).toBe('leftOut');
+      expect(marks.get(302)).toBe('leftOut');
+      expect(marks.has(303)).toBe(false);
+      expect(marks.get(10)).toBe('outsideSet');
+      expect(marks.size).toBe(7);
+
+      const suite = notAnalyzedSetRuns(all, [], 'suite:id:6', scope(null, null, [302]));
+      expect(suite.get(302)).toBe('leftOut');
+      expect(suite.has(304)).toBe(false);
+      expect(suite.get(301)).toBe('outsideSet');
+      expect(notAnalyzedSetRuns(rows(), [], null, scope(null, null, [12]))).toEqual(notAnalyzedRuns(rows(), scope(null, null, [12])));
+    });
+
+    it('hands on the members of the scoped battery runs as the runs of the analysis', () => {
+      expect(ids(scopedMemberRuns(scopeRuns(ccBatteryRunRows(), CC_EMPTY_BATTERY_SCOPE)))).toEqual([301, 302, 303, 304]);
+      expect(ids(scopedMemberRuns(scopeRuns(rows(), CC_EMPTY_SCOPE)))).toEqual([10, 11, 12, 13, 14]);
+    });
+
+    it('keys a scope by its set as well', () => {
+      expect(scopeKey(scope(12, null), 'suite:id:5')).toBe('suite:id:5#12||');
+      expect(scopeKey(scope(12, null), 'suite:id:5')).not.toBe(scopeKey(scope(12, null), 'suite:id:6'));
+      expect(scopeKey(scope(12, null), null)).toBe('12||');
     });
   });
 });

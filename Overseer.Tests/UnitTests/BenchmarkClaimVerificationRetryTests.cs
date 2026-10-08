@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Agents;
@@ -337,5 +339,155 @@ public class BenchmarkClaimVerificationRetryTests
         Assert.Equal(1002, entries[63].GetProperty("p").GetInt32());
         Assert.Equal(1, entries[63].GetProperty("r").GetInt32());
         Assert.False(entries[63].TryGetProperty("e", out _));
+    }
+
+    private const string Google503 =
+        "Google stream error: [503] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.";
+
+    /// <summary>An agent loop result of <paramref name="calls"/> model calls of the given usage each.</summary>
+    private static AgentRunResult LoopResult(int calls, int promptTokens, int outputTokens = 10)
+    {
+        var result = new AgentRunResult
+        {
+            ModelCallCount = calls,
+            TotalPromptTokens = promptTokens * calls,
+            OutputTokens = outputTokens * calls
+        };
+        for (int i = 0; i < calls; i++)
+        {
+            result.ModelCallUsages.Add(Usage(promptTokens, 0, outputTokens));
+        }
+        return result;
+    }
+
+    /// <summary>Attempts that return <paramref name="script"/> in order, recording each attempt number asked for.</summary>
+    private static Func<int, Task<BenchmarkService.ClaimVerificationAttempt>> Scripted(
+        List<int> ran, params BenchmarkService.ClaimVerificationAttempt[] script)
+        => attemptNumber =>
+        {
+            ran.Add(attemptNumber);
+            return Task.FromResult(script[attemptNumber]);
+        };
+
+    [Fact]
+    public async Task AProviderError_ThenASuccess_EndsWithoutAnError_AndRecordsBothAttemptsUsage()
+    {
+        var ran = new List<int>();
+        var retried = new List<(int Attempt, string Error)>();
+
+        var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
+            Scripted(ran,
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(2, 100), Google503),
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
+            providerErrorRetries: 1,
+            TimeSpan.Zero,
+            CancellationToken.None,
+            (attempt, error) => retried.Add((attempt, error)));
+
+        Assert.Equal(new[] { 0, 1 }, ran);
+        Assert.Equal(new[] { (1, Google503) }, retried);
+        Assert.Null(attempts[attempts.Count - 1].TerminalError);
+
+        var totals = BenchmarkService.TotalClaimVerificationAttempts(attempts);
+        Assert.Equal(500, totals.InputTokens);
+        Assert.Equal(30, totals.OutputTokens);
+        Assert.Equal(3, totals.ModelCallCount);
+
+        var answer = new BenchmarkRunAnswer();
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, totals.ModelCallCount, totals.CallUsages, totals.ServedServiceTier,
+            providerErrorRetries: totals.ProviderErrorRetries);
+
+        Assert.Equal(3, answer.ClaimVerificationModelCallCount);
+        Assert.Equal(
+            "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":100,\"c\":0,\"o\":10},{\"p\":300,\"c\":0,\"o\":10,\"pe\":1,\"e\":\"" + Google503 + "\"}]",
+            answer.ClaimVerificationCallUsageJson);
+    }
+
+    [Fact]
+    public async Task ADenyListedProviderError_IsNotRetried()
+    {
+        // The deny list wins over the retryable "503" the same text carries.
+        const string invalidRequest = "OpenAI stream error: [invalid_request_error] The request was rejected (503).";
+        var ran = new List<int>();
+
+        var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
+            Scripted(ran,
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), invalidRequest),
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
+            providerErrorRetries: 1,
+            TimeSpan.Zero,
+            CancellationToken.None);
+
+        Assert.Equal(new[] { 0 }, ran);
+        Assert.Equal(invalidRequest, Assert.Single(attempts).TerminalError);
+    }
+
+    [Fact]
+    public async Task ZeroProviderErrorRetries_DisablesTheRetry()
+    {
+        var ran = new List<int>();
+
+        var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
+            Scripted(ran,
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), Google503),
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
+            providerErrorRetries: 0,
+            TimeSpan.Zero,
+            CancellationToken.None);
+
+        Assert.Equal(new[] { 0 }, ran);
+        Assert.Equal(Google503, Assert.Single(attempts).TerminalError);
+    }
+
+    [Fact]
+    public async Task ATimedOutAttempt_IsNotRetried_EvenWhenItsTextCarriesARetryableCode()
+    {
+        var ran = new List<int>();
+
+        var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
+            Scripted(ran,
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), "Claim verification timeout exceeded (503 s).", TimedOut: true),
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
+            providerErrorRetries: 1,
+            TimeSpan.Zero,
+            CancellationToken.None);
+
+        Assert.Equal(new[] { 0 }, ran);
+        Assert.Single(attempts);
+    }
+
+    [Fact]
+    public async Task ACancellationDuringTheWait_StopsTheRetry()
+    {
+        using var cts = new CancellationTokenSource();
+        var ran = new List<int>();
+
+        Task<BenchmarkService.ClaimVerificationAttempt> RunAttempt(int attemptNumber)
+        {
+            ran.Add(attemptNumber);
+            cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+            return Task.FromResult(new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), Google503));
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            BenchmarkService.RunClaimVerificationAttemptsAsync(RunAttempt, 1, TimeSpan.FromSeconds(30), cts.Token));
+
+        Assert.Equal(new[] { 0 }, ran);
+    }
+
+    [Fact]
+    public void RecordModelCalls_AProviderErrorRepeatWithoutUsage_LeavesOnePlaceholder_BeforeTheParseRetry()
+    {
+        var answer = new BenchmarkRunAnswer();
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 3, new List<TokenUsageReport> { Usage(100, 0, 10), Usage(200, 0, 20) }, null,
+            retryCallStart: 1, firstAttemptEnd: FirstAttemptEnd,
+            providerErrorRetries: new[] { new BenchmarkService.ClaimVerificationProviderErrorRetry(1, Google503) });
+
+        Assert.Equal(
+            "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":0,\"c\":0,\"o\":0,\"pe\":1,\"e\":\"" + Google503 + "\"},{\"p\":200,\"c\":0,\"o\":20,\"r\":1,\"e\":\"" + FirstAttemptEnd + "\"}]",
+            answer.ClaimVerificationCallUsageJson);
     }
 }

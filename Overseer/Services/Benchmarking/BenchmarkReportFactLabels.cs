@@ -114,6 +114,7 @@ public static class BenchmarkReportFactLabels
         ["analysis.inputSha256"] = "Analysis input SHA-256 prefix",
         ["analysis.codeVersion"] = "Analysis code version",
         ["analysis.relaxedPooling"] = "Relaxed pooling across a measurement change",
+        ["analysis.compared"] = "Compared",
         ["verdict.overall"] = "Overall verdict on the chat",
         ["verdict.quality"] = "Verdict on quality",
         ["verdict.headline"] = "Analysis headline",

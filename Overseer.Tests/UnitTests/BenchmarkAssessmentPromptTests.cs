@@ -224,13 +224,14 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyFour()
+    public void HarnessVersion_IsFiftyFive()
     {
-        // Harness 54: a run whose candidate prompt disallowed source code references grades with
-        // the SOURCE-CODE REFERENCES rule and tells its syntheses so; a streaming rate outside the
-        // measurable bounds is counted as not measurable; and the report counts the
-        // knowledge-base-topic questions that made no get_knowledge_article call.
-        Assert.Equal("54", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 55: the SOURCE-CODE REFERENCES rule names source files and paths and leaves
+        // function, macro, constant and field names graded as usual; the report counts the source
+        // locations charged as missing; the claim verifier retries a provider error; the report
+        // says how to repeat a lost claim verification; and 'inverts' counts as a stated defect
+        // and a charge.
+        Assert.Equal("55", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -945,13 +946,14 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs54_ScoringMethodIs14()
+    public void Versions_HarnessIs55_ScoringMethodIs14()
     {
-        Assert.Equal("54", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("55", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 54 adds the SOURCE-CODE REFERENCES rule only to a run whose candidate prompt
-        // disallowed source references, and changes report measures; the ACCURACY anchors, the
-        // weights and the level-to-points mapping do not change, so scoring method 14 stays.
+        // Harness 55 rewords the SOURCE-CODE REFERENCES rule, adds the claim verifier's
+        // provider-error retry and widens the 'inverts' word lists, and changes report lines; the
+        // ACCURACY anchors, the weights and the level-to-points mapping do not change, so scoring
+        // method 14 stays.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
@@ -960,7 +962,7 @@ public class BenchmarkAssessmentPromptTests
     {
         string preamble = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite", sourceReferencesAllowed: false);
 
-        const string paragraph = "SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a file, path, line or function location. A rubric point that names a file or a line is met when the answer states the mechanic the point describes; the rubric's file and line citations are there for you to check facts, not for the candidate to repeat.";
+        const string paragraph = "SOURCE-CODE REFERENCES: The candidate was instructed not to include source file names, paths or line numbers in its answer. Do not lower Completeness or Accuracy because an answer omits a source file name or path (such as `src/makemon.c` or `include/layer.h`) or a line number, and never list one as missing in `completenessEvidence`. A rubric point or SOURCE line that names a file or a line is met when the answer states the mechanic the point describes; its file and line citations are there for you to check facts, not for the candidate to repeat. This rule does not cover function, macro, constant or field names: the candidate may name them, and a rubric point that asks for one is graded as usual.";
         Assert.Equal(paragraph, BenchmarkAssessmentPrompt.SourceReferencesDisallowedRule);
         Assert.Equal(1, CountOf(preamble, paragraph));
 

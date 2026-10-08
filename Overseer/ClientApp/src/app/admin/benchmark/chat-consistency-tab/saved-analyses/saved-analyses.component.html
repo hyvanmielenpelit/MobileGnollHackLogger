@@ -31,6 +31,9 @@
           </div>
           <dl class="cc-analysis-facts">
             <div><dt>Model</dt><dd>{{ subjectName(analysis) }}</dd></div>
+            @if (analysis.comparisonSetLabel) {
+              <div class="cc-analysis-compared"><dt>Compared</dt><dd>{{ analysis.comparisonSetLabel }}</dd></div>
+            }
             <div><dt>Baseline</dt><dd>{{ period(analysis.baselineStartUtc, analysis.baselineEndUtc) }}</dd></div>
             <div><dt>Comparison</dt><dd>{{ period(analysis.comparisonStartUtc, analysis.comparisonEndUtc) }}</dd></div>
             <div><dt>Saved</dt><dd><time [attr.datetime]="analysis.createdAtUtc">{{ created(analysis) }}</time> · Protocol {{ analysis.protocolVersion }}</dd></div>

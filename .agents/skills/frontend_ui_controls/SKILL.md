@@ -1749,7 +1749,8 @@ options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
 four card lists build on it: the Download Center behind a private `list` getter (built on first use,
 because its `idPrefix` is an input), Run History as `historyList`, the batteries tab as `list`
 (`idPrefix: 'bb'`, `overseer.benchmark.batteries.view`), and the Chat Consistency runs as `list`
-(`idPrefix: 'cc-runs'`, `overseer.benchmark.chatConsistency.runs.view`). **A further card list uses it too, rather than
+(`idPrefix: 'cc-runs'`, `overseer.benchmark.chatConsistency.runs.view`) and its battery runs as a second
+`CardListState` (`idPrefix: 'cc-bruns'`, `overseer.benchmark.chatConsistency.batteryRuns.view`). **A further card list uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
@@ -1906,6 +1907,22 @@ under a §8i selection band. It shows how a card list carries **a selection that
 - **The filters never change the selection.** The band says so in one always-visible hint (*The filters
   below change what is shown, not what is analyzed. The saved analysis records this selection.*), and
   the spec pins that filtering emits no scope change.
+- **What the cards are depends on step 1's *Compare* select** (2026-10-08), after *Dates*, options
+  grouped *Batteries* and *Suites* (*Two initial suites (revision 1) · 2 battery runs*), with the hint
+  *Results are comparable only within one battery or one suite.* A **suite** shows the run cards above,
+  filtered to that suite: a battery member carries the tag *Battery run #12 · suite 1 of 2*, and the
+  *Suite* facet is replaced by *Origin* (*Standalone*, *Battery member*). A **battery** shows one card per
+  battery run under *Battery runs of {model}*: the checkbox *Include battery run #12 in the analysis*
+  labeled by the battery name, the kicker `#12` · status · *Harness 54* (or *Harnesses 53, 54*) ·
+  *First run* / *Last run* / *Left out* / *Incomplete*, the meta line with *2 of 2 suites*, the **First
+  run** / **Last run** toggles (*Use battery run #12 as the first run of the analysis*), *Open the
+  battery run report of battery run #12*, the aggregated eligibility, and a member list (*Member runs of
+  battery run #12*: *#98 · GnollHack Player Assistance Benchmark Suite · Completed · harness 54*, each
+  with its own run report button). An incomplete battery run's checkbox and toggles are `aria-disabled`
+  and described by *Incomplete: 1 of 2 suites usable*. Search *#id, battery, harness, status or member
+  run*; sorts *Newest first*, *Oldest first*, *Harness*; facets *Harness*, *In the analysis* (with
+  *Incomplete*) and *Eligibility*; view stored in `overseer.benchmark.chatConsistency.batteryRuns.view`.
+  Changing the compared set clears the selection and announces it.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with
@@ -1957,6 +1974,11 @@ analysis uses rather than a pick from tables, and so differs from the reference 
   under the chips says the filters change what is shown, not what is analyzed. A selection helper's
   note (*Run #40 is after the last run, so the last run was cleared.*) goes to the sibling polite
   `.cc-scope-note`, never into the label.
+
+With a battery compared, the band counts battery runs: *Battery runs in the analysis — 2 of 3 battery
+runs in these dates · from #11 (2026-10-08) to #12 (2026-10-08) · 1 left out · 1 incomplete*, the chips
+*Include battery run #11 again*, and the warning *No battery run is left in the analysis. Check at least
+one battery run.*
 
 ---
 

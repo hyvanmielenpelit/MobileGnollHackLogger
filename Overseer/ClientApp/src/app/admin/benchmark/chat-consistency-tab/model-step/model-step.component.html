@@ -75,6 +75,38 @@
   }
 </div>
 
+<!-- The battery or suite to compare within, under the dates it is offered for. Locked like the Dates
+     select: aria-disabled and focusable, and a change writes the current choice back. -->
+@if (selectedKey) {
+  <div class="cc-compare-field">
+    <label for="cc-compare" class="cc-model-label">Compare</label>
+    <select id="cc-compare" class="gh-input cc-compare-select"
+            [attr.aria-disabled]="lockedReason || sets.length === 0 ? 'true' : null"
+            [attr.aria-describedby]="compareDescribedBy"
+            (change)="onCompareChange($event)">
+      @if (sets.length === 0) {
+        <option value="" selected>{{ loading ? 'Loading the batteries and suites…' : 'No battery or suite in these dates' }}</option>
+      } @else {
+        @if (batterySets.length > 0) {
+          <optgroup label="Batteries">
+            @for (set of batterySets; track set.key) {
+              <option [value]="set.key" [selected]="set.key === compareKey">{{ optionLabel(set) }}</option>
+            }
+          </optgroup>
+        }
+        @if (suiteSets.length > 0) {
+          <optgroup label="Suites">
+            @for (set of suiteSets; track set.key) {
+              <option [value]="set.key" [selected]="set.key === compareKey">{{ optionLabel(set) }}</option>
+            }
+          </optgroup>
+        }
+      }
+    </select>
+    <span id="cc-compare-hint" class="form-hint">Results are comparable only within one battery or one suite.</span>
+  </div>
+}
+
 <p class="cc-tl-status" role="status">
   @if (!selectedKey) {
     Choose a model to see its runs over time.
@@ -94,10 +126,10 @@
 
 @if (selectedKey) {
   <div class="cc-runs-head">
-    <h5 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">Runs of {{ selectedName }}</h5>
+    <h5 id="cc-tl-runs-title" class="gh-section-title cc-tl-runs-title">{{ batteryMode ? 'Battery runs' : 'Runs' }} of {{ selectedName }}</h5>
     <!-- A reload keeps the list in place. The status line above announces it, so this is hidden from
          assistive technology; it shows only after 0.3 s. -->
-    @if (loading && rows.length > 0) {
+    @if (loading && unitRows.length > 0) {
       <span class="cc-runs-updating" aria-hidden="true"><span class="gh-spinner-small"></span>Updating…</span>
     }
     <!-- The list's one polite live region. -->
@@ -109,7 +141,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       <span>{{ runsError }}</span>
     </p>
-  } @else if (rows.length === 0) {
+  } @else if (unitRows.length === 0) {
     @if (loading) {
       <!-- The first load. The status line above announces it; the ring shows only after 0.3 s. -->
       <div class="cc-runs-loading" aria-hidden="true">
@@ -119,18 +151,22 @@
         </svg>
         <p class="cc-runs-loading-text">Loading the runs of {{ selectedName }}…</p>
       </div>
+    } @else if (batteryMode) {
+      <p class="cc-tl-empty">No battery run of this battery in these dates.</p>
+    } @else if (suiteMode) {
+      <p class="cc-tl-empty">No run of this suite in these dates.</p>
     } @else {
       <p class="cc-tl-empty">No run of this model in these dates.</p>
     }
   } @else {
-    <!-- The selection band: which runs the analysis uses. The filters below never change it. -->
+    <!-- The selection band: which units the analysis uses. The filters below never change it. -->
     <div class="cc-scope-band" role="region" aria-labelledby="cc-scope-label">
       <p class="cc-scope-label" id="cc-scope-label" role="status" tabindex="-1">{{ scopeSummary }}</p>
       @if (!scopeIsDefault) {
         <div class="cc-scope-row">
           <button type="button" class="btn-gh btn-gh-cancel btn-gh-small cc-scope-clear"
                   (click)="clearScope()">Clear selection ({{ scopeChangeCount }})</button>
-          <ul class="cc-scope-chips" role="list" aria-label="Run selection">
+          <ul class="cc-scope-chips" role="list" [attr.aria-label]="batteryMode ? 'Battery run selection' : 'Run selection'">
             @for (chip of scopeChips; track chip.key; let i = $index) {
               <li class="cc-scope-chip" [attr.data-kind]="chip.kind">
                 <span class="cc-scope-chip-label">{{ chip.label }}</span>
@@ -157,7 +193,7 @@
       @if (scopedRows.length === 0) {
         <div class="alert alert-warning cc-scope-empty">
           <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-          <div class="alert-content"><div class="alert-body">No run is left in the analysis. Check at least one run.</div></div>
+          <div class="alert-content"><div class="alert-body">{{ emptyScopeText }}</div></div>
         </div>
       }
     </div>
@@ -168,17 +204,17 @@
       <div class="gh-filter-bar cc-runs-filter-bar">
         <div class="gh-filter-bar-row">
           <div class="gh-search-field cc-runs-search">
-            <label class="visually-hidden" for="cc-runs-search">Search runs</label>
+            <label class="visually-hidden" for="cc-runs-search">{{ batteryMode ? 'Search battery runs' : 'Search runs' }}</label>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             <input type="search" class="gh-input" id="cc-runs-search" autocomplete="off"
-                   placeholder="Search #id, suite, harness, status or served model"
-                   [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+                   [attr.placeholder]="batteryMode ? 'Search #id, battery, harness, status or member run' : 'Search #id, suite, harness, status or served model'"
+                   [value]="activeList.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
           </div>
           <div class="cc-runs-sort">
             <label class="cc-runs-sort-label" for="cc-runs-sort">Sort by</label>
             <select class="gh-input cc-runs-sort-select" id="cc-runs-sort" (change)="onSortChange($event)">
-              @for (sort of sorts; track sort.id) {
-                <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
+              @for (sort of activeSorts; track sort.id) {
+                <option [value]="sort.id" [selected]="activeList.sortId === sort.id">{{ sort.label }}</option>
               }
             </select>
           </div>
@@ -188,7 +224,8 @@
           <div class="gh-facet-row cc-runs-facet-row">
             @for (facet of facets; track facet.column) {
               <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
-                                [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="runs"
+                                [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel"
+                                [noun]="batteryMode ? 'battery runs' : 'runs'"
                                 (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
             }
           </div>
@@ -216,9 +253,148 @@
     }
 
     @if (noMatches) {
-      <p class="cc-tl-empty cc-runs-no-matches">No runs match these filters.
+      <p class="cc-tl-empty cc-runs-no-matches">No {{ noun }}s match these filters.
         <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
       </p>
+    } @else if (batteryMode) {
+      <!-- One card per battery run: the unit of a battery set. Its members are listed in the card. -->
+      <ul class="cc-run-cards cc-battery-cards" role="list" aria-labelledby="cc-tl-runs-title" aria-describedby="cc-tl-runs-legend"
+          [class.is-refreshing]="loading" [attr.aria-busy]="loading ? 'true' : null">
+        @for (row of batteryCards; track row.batteryRunId) {
+          @let inclusion = inclusionOf(row);
+          @let reason = outReason(row);
+          @let refused = markRefused(row);
+          <li class="cc-run-card-item">
+            <article class="cc-run-card cc-battery-card" [attr.data-battery-run-id]="row.batteryRunId" [attr.data-inclusion]="inclusion"
+                     [attr.aria-labelledby]="'cc-brun-' + row.batteryRunId + '-title'">
+              <div class="cc-run-select">
+                <input type="checkbox" class="cc-run-include" [id]="'cc-brun-' + row.batteryRunId + '-include'"
+                       [checked]="inclusion === 'included'"
+                       [attr.aria-label]="'Include battery run #' + row.batteryRunId + ' in the analysis'"
+                       [attr.aria-disabled]="reason ? 'true' : null"
+                       [attr.aria-describedby]="reason ? 'cc-brun-' + row.batteryRunId + '-reason' : null"
+                       (click)="onIncludeClick(row, $event)">
+                @if (reason) {
+                  <span class="cc-run-out-reason" [id]="'cc-brun-' + row.batteryRunId + '-reason'">{{ reason }}</span>
+                }
+              </div>
+
+              <header class="cc-run-head">
+                <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+                <div class="cc-run-kicker">
+                  <span class="cc-run-id">#{{ row.batteryRunId }}</span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="cc-run-status">{{ batteryStatus(row) }}</span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="cc-run-harness">{{ batteryHarnessText(row) }}</span>
+                  @if (isFirst(row)) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-mark-tag cc-first-tag">First run</span>
+                  }
+                  @if (isLast(row)) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-mark-tag cc-last-tag">Last run</span>
+                  }
+                  @if (inclusion === 'leftOut') {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-left-out-tag">Left out</span>
+                  }
+                  @if (inclusion === 'incomplete') {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-incomplete-tag">Incomplete</span>
+                  }
+                </div>
+                <!-- Focused after Show more. -->
+                <h6 class="cc-run-title" [id]="'cc-brun-' + row.batteryRunId + '-title'" tabindex="-1">
+                  <label [for]="'cc-brun-' + row.batteryRunId + '-include'">{{ row.batteryName }}</label>
+                </h6>
+                <div class="cc-run-meta">
+                  <span><time class="cc-run-time" [attr.datetime]="row.startedAtUtc">{{ started(row) }}</time></span>
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="cc-battery-suites">{{ batterySuitesText(row) }}</span>
+                </div>
+              </header>
+
+              <div class="cc-run-actions" role="group" [attr.aria-label]="'Actions for battery run #' + row.batteryRunId">
+                <!-- An incomplete battery run is never analyzed, so it cannot bound the analysis: the
+                     marks are aria-disabled and described by the card's reason. -->
+                <button type="button" class="btn-ghost cc-mark-btn cc-first-btn"
+                        [attr.aria-pressed]="isFirst(row) ? 'true' : 'false'"
+                        [attr.aria-label]="'Use battery run #' + row.batteryRunId + ' as the first run of the analysis'"
+                        [attr.aria-disabled]="refused ? 'true' : null"
+                        [attr.aria-describedby]="refused ? 'cc-brun-' + row.batteryRunId + '-reason' : null"
+                        (click)="toggleFirst(row)">
+                  @if (isFirst(row)) {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  }
+                  First run
+                </button>
+                <button type="button" class="btn-ghost cc-mark-btn cc-last-btn"
+                        [attr.aria-pressed]="isLast(row) ? 'true' : 'false'"
+                        [attr.aria-label]="'Use battery run #' + row.batteryRunId + ' as the last run of the analysis'"
+                        [attr.aria-disabled]="refused ? 'true' : null"
+                        [attr.aria-describedby]="refused ? 'cc-brun-' + row.batteryRunId + '-reason' : null"
+                        (click)="toggleLast(row)">
+                  @if (isLast(row)) {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  }
+                  Last run
+                </button>
+                <button type="button" class="action-btn cc-open-battery-report-btn"
+                        [attr.aria-label]="'Open the battery run report of battery run #' + row.batteryRunId"
+                        [attr.interestfor]="'cc-brun-' + row.batteryRunId + '-report-tip'"
+                        [attr.style]="'anchor-name: --cc-brun-' + row.batteryRunId + '-report-tip'"
+                        (click)="openBatteryRunReport.emit(row.batteryRunId)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'cc-brun-' + row.batteryRunId + '-report-tip'"
+                     [attr.style]="'position-anchor: --cc-brun-' + row.batteryRunId + '-report-tip'">Open battery run report</div>
+              </div>
+
+              <div class="cc-run-elig">
+                <ul class="cc-elig-list" role="list" [attr.aria-label]="'Eligibility of battery run #' + row.batteryRunId">
+                  @for (axis of axisOrder; track axis) {
+                    @if (eligibilityOf(row, axis); as entry) {
+                      <li class="cc-elig" [class.is-eligible]="entry.eligible" [class.is-excluded]="!entry.eligible" [attr.data-axis]="axis">
+                        @if (entry.eligible) {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        } @else {
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        }
+                        <span class="cc-elig-axis">{{ axisLabel(axis) }}</span>
+                        <span class="visually-hidden">{{ entry.eligible ? ': eligible' : ': not eligible' }}</span>
+                      </li>
+                    }
+                  }
+                </ul>
+                @for (excluded of ineligibleReasons(row); track excluded.axis) {
+                  <span class="cc-elig-reason">{{ excluded.axis }}: {{ excluded.reason }}</span>
+                }
+              </div>
+
+              <!-- The usable members, in suite order: what the battery run analyzes. -->
+              <ul class="cc-battery-members" role="list" [attr.aria-label]="'Member runs of battery run #' + row.batteryRunId">
+                @for (member of row.members; track member.runId) {
+                  <li class="cc-battery-member" [attr.data-run-id]="member.runId">
+                    <span class="cc-battery-member-text">{{ memberText(member) }}</span>
+                    <button type="button" class="action-btn cc-open-report-btn"
+                            [attr.aria-label]="'Open the run report of run #' + member.runId"
+                            [attr.interestfor]="'cc-brun-member-' + member.runId + '-report-tip'"
+                            [attr.style]="'anchor-name: --cc-brun-member-' + member.runId + '-report-tip'"
+                            (click)="openRunReport.emit(member.runId)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'cc-brun-member-' + member.runId + '-report-tip'"
+                         [attr.style]="'position-anchor: --cc-brun-member-' + member.runId + '-report-tip'">Open run report</div>
+                  </li>
+                } @empty {
+                  <li class="cc-battery-member cc-muted">No usable member run.</li>
+                }
+              </ul>
+            </article>
+          </li>
+        }
+      </ul>
     } @else {
       <ul class="cc-run-cards" role="list" aria-labelledby="cc-tl-runs-title" aria-describedby="cc-tl-runs-legend"
           [class.is-refreshing]="loading" [attr.aria-busy]="loading ? 'true' : null">
@@ -269,6 +445,10 @@
                   @if (inclusion === 'leftOut') {
                     <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                     <span class="gh-tag cc-left-out-tag">Left out</span>
+                  }
+                  @if (memberTag(row); as member) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-member-tag">{{ member }}</span>
                   }
                 </div>
                 <!-- Focused after Show more. -->
@@ -379,11 +559,19 @@
         </div>
       }
     }
-    <p id="cc-tl-runs-legend" class="form-hint cc-tl-legend">
-      Eligibility: a check mark means the run can be used on that axis; a cross means it cannot, with the reason under the badges.
-      First run and Last run bound the runs the analysis uses; a cleared checkbox leaves a run out.
-      The anchor is the run a common grader re-grades on different dates to measure grader drift.
-    </p>
+    @if (batteryMode) {
+      <p id="cc-tl-runs-legend" class="form-hint cc-tl-legend">
+        Each battery run is analyzed as one unit, its member runs together; a battery run with a suite that has no usable run is incomplete and never analyzed.
+        Eligibility: a check mark means every member can be used on that axis; a cross means one cannot, with the reason under the badges.
+        First run and Last run bound the battery runs the analysis uses; a cleared checkbox leaves a battery run out.
+      </p>
+    } @else {
+      <p id="cc-tl-runs-legend" class="form-hint cc-tl-legend">
+        Eligibility: a check mark means the run can be used on that axis; a cross means it cannot, with the reason under the badges.
+        First run and Last run bound the runs the analysis uses; a cleared checkbox leaves a run out.
+        The anchor is the run a common grader re-grades on different dates to measure grader drift.
+      </p>
+    }
   }
 
   <p class="cc-tl-announcement" role="status">{{ announcement }}</p>

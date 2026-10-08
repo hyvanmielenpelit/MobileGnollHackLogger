@@ -46,9 +46,13 @@ streaming-rate caveat counts the delivered answers left without a rate; an analy
 - **Grades**: **Established** needs a decisive verdict, every robustness check passed, the minimum
   sample, telemetry data and no relaxed pooling; **Indicated** is a decisive verdict missing any of
   those; **Not established** is inconclusive or not computable.
-- **Minimum sample**: P1, P4, P5 — at least 2 runs per period on at least 2 UTC days and at least 20
-  paired items; P2, P3 — at least 3 runs per period in one common time stratum. Fewer: at most
-  Indicated.
+- **Minimum sample**: P1, P4, P5 — at least 2 units per period on at least 2 UTC days and at least 20
+  paired items; P2, P3 — at least 3 units per period in one common time stratum. Fewer: at most
+  Indicated. A **unit** is a run, or, when the analysis compares within a battery (`AnalysisCodeVersion`
+  4, step 1's **Compare**), a **battery run**: its usable members are merged into one unit, so one
+  battery run of two suites is one unit, never two, and the bootstrap and leave-one-out resample battery
+  runs. A result is comparable only within one battery definition or one suite; a run-by-run analysis
+  that pools suites carries a `mixedSuites` data-quality note.
 - An **inconclusive** endpoint is never "no change": cite its minimum detectable effect.
 - P1 on native grades with neither a common grader nor an anchor fails *Grader stability*, so it is at
   most Indicated.
@@ -116,7 +120,10 @@ data-quality note naming them and a limitation (*"The operator chose the runs: �
 looking at the timeline can bias them."*), and the report documents state both. **A reader citing a
 verdict must not drop that note or limitation**: a verdict on a hand-picked subset holds for the
 analyzed runs only, and is confirmed only on later data. Analyses saved under code version 1 have no
-selection record (`recorded: false`).
+selection record (`recorded: false`). A battery comparison records its selection the same way, by
+battery run (the first and last battery run and the left-out battery runs), and every usable run of the
+model inside the periods that is not part of the compared battery or suite is listed as not analyzed
+with the reason *outside the compared set*.
 
 ## 9. Classifying a Harness Bump
 

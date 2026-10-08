@@ -103,6 +103,99 @@ public sealed record ChatConsistencyAnalysisRequest
 
     /// <summary>How the operator chose the runs in the wizard's step 1; recorded with the result, never used to pick runs.</summary>
     public ChatConsistencyRunSelection? RunSelection { get; init; }
+
+    /// <summary>The battery or suite compared within; null analyzes the runs one by one, as analysis code version 3 did.</summary>
+    public ChatConsistencyComparisonSetRef? ComparisonSet { get; init; }
+
+    /// <summary>With a battery set, exactly these battery runs form the baseline; their usable members are analyzed.</summary>
+    public IReadOnlyList<long>? BaselineBatteryRunIds { get; init; }
+
+    /// <summary>With a battery set, exactly these battery runs form the comparison.</summary>
+    public IReadOnlyList<long>? ComparisonBatteryRunIds { get; init; }
+}
+
+/// <summary>The kinds of <see cref="ChatConsistencyComparisonSetRef"/>, and the unit each analyzes.</summary>
+public static class ChatConsistencyComparisonSetKinds
+{
+    /// <summary>One battery definition, every revision with that <c>DefinitionSha256</c>; key <c>battery:&lt;sha256&gt;</c>.</summary>
+    public const string Battery = "battery";
+
+    /// <summary>One suite; key <c>suite:&lt;suite identity&gt;</c> as <see cref="ChatConsistencyMeasures.SuiteIdentity"/> renders it.</summary>
+    public const string Suite = "suite";
+
+    public const string BatteryKeyPrefix = "battery:";
+    public const string SuiteKeyPrefix = "suite:";
+
+    /// <summary>The unit kind of a run-by-run analysis and of a suite set.</summary>
+    public const string RunUnit = "run";
+
+    /// <summary>The unit kind of a battery set.</summary>
+    public const string BatteryRunUnit = "batteryRun";
+}
+
+/// <summary>The battery or suite an analysis compares within, as the request names it.</summary>
+public sealed record ChatConsistencyComparisonSetRef
+{
+    /// <summary><c>battery</c> or <c>suite</c>.</summary>
+    public string Kind { get; init; } = string.Empty;
+
+    /// <summary><c>battery:&lt;DefinitionSha256&gt;</c> or <c>suite:&lt;suite identity&gt;</c>.</summary>
+    public string Key { get; init; } = string.Empty;
+}
+
+/// <summary>The battery or suite an analysis compared within, as recorded with the result.</summary>
+public sealed record ChatConsistencyComparedSet
+{
+    public string Kind { get; init; } = string.Empty;
+    public string Key { get; init; } = string.Empty;
+
+    /// <summary>The battery name with its revisions, for example "Two initial suites (revision 1)", or the suite name.</summary>
+    public string Label { get; init; } = string.Empty;
+}
+
+/// <summary>A battery or suite the subject can be compared within, over the step-1 dates.</summary>
+public sealed record ChatConsistencyComparisonSet
+{
+    /// <summary><c>battery</c> or <c>suite</c>.</summary>
+    public string Kind { get; init; } = string.Empty;
+    public string Key { get; init; } = string.Empty;
+
+    /// <summary>The battery name with its revisions joined ("Two initial suites (revisions 1, 2)"), or the suite name.</summary>
+    public string Label { get; init; } = string.Empty;
+
+    /// <summary>Battery runs of the set (battery) or runs of the suite (suite) of the subject in the dates.</summary>
+    public int UnitCount { get; init; }
+
+    /// <summary>The runs behind <see cref="UnitCount"/>; equal to it for a suite.</summary>
+    public int MemberRunCount { get; init; }
+    public DateTime LatestStartedAtUtc { get; init; }
+}
+
+/// <summary>The sets the subject can be compared within, and the one step 1 selects by default.</summary>
+public sealed record ChatConsistencyComparisonSets
+{
+    /// <summary>Battery sets first, then suite sets; each group newest first by <see cref="ChatConsistencyComparisonSet.LatestStartedAtUtc"/>.</summary>
+    public IReadOnlyList<ChatConsistencyComparisonSet> Sets { get; init; } = Array.Empty<ChatConsistencyComparisonSet>();
+
+    /// <summary>The battery set of the subject's newest battery run in the dates, else the suite of its newest run; null when there is no run.</summary>
+    public string? DefaultKey { get; init; }
+}
+
+/// <summary>One analyzed unit: a battery run in a battery set, a run otherwise.</summary>
+public sealed record ChatConsistencyUnitView
+{
+    /// <summary>The battery run id, or the run id.</summary>
+    public long UnitId { get; init; }
+
+    /// <summary><c>run</c> or <c>batteryRun</c>.</summary>
+    public string Kind { get; init; } = string.Empty;
+
+    /// <summary><c>baseline</c> or <c>comparison</c>.</summary>
+    public string Period { get; init; } = string.Empty;
+    public DateTime StartedAtUtc { get; init; }
+
+    /// <summary>The runs merged into the unit, ordered by start, then id; the run itself for a run unit.</summary>
+    public IReadOnlyList<long> MemberRunIds { get; init; } = Array.Empty<long>();
 }
 
 /// <summary>How the operator chose the runs in the wizard's step 1; recorded, never used to pick runs.</summary>
@@ -117,6 +210,13 @@ public sealed record ChatConsistencyRunSelection
 
     /// <summary>Runs the operator unchecked; at most 5,000.</summary>
     public IReadOnlyList<long>? LeftOutRunIds { get; init; }
+
+    /// <summary>In a battery set, the step-1 first and last battery runs.</summary>
+    public long? FirstBatteryRunId { get; init; }
+    public long? LastBatteryRunId { get; init; }
+
+    /// <summary>In a battery set, the battery runs the operator unchecked; at most 5,000.</summary>
+    public IReadOnlyList<long>? LeftOutBatteryRunIds { get; init; }
 }
 
 // --- Result --------------------------------------------------------------------------------------
@@ -551,8 +651,11 @@ public sealed record ChatConsistencyUnanalyzedRun
     public string Period { get; init; } = string.Empty;
     public DateTime StartedAtUtc { get; init; }
 
-    /// <summary><c>leftOut</c>, <c>outsideDateRange</c>, <c>beforeFirstRun</c>, <c>afterLastRun</c> or <c>notSelected</c>.</summary>
+    /// <summary><c>leftOut</c>, <c>outsideDateRange</c>, <c>beforeFirstRun</c>, <c>afterLastRun</c>, <c>notSelected</c> or <c>outsideComparisonSet</c>.</summary>
     public string Reason { get; init; } = string.Empty;
+
+    /// <summary>In a battery set, the battery run the reason applies to; null for a run of a suite set or outside the compared set.</summary>
+    public long? BatteryRunId { get; init; }
 }
 
 /// <summary>Why a usable run of the subject in a period was not analyzed; <see cref="All"/> is the order they are tested in.</summary>
@@ -573,7 +676,10 @@ public static class ChatConsistencyUnanalyzedReasons
     /// <summary>None of the above: unticked or not preselected in step 4.</summary>
     public const string NotSelected = "notSelected";
 
-    public static readonly IReadOnlyList<string> All = new[] { LeftOut, OutsideDateRange, BeforeFirstRun, AfterLastRun, NotSelected };
+    /// <summary>It is not part of the compared battery or suite.</summary>
+    public const string OutsideComparisonSet = "outsideComparisonSet";
+
+    public static readonly IReadOnlyList<string> All = new[] { LeftOut, OutsideDateRange, BeforeFirstRun, AfterLastRun, NotSelected, OutsideComparisonSet };
 }
 
 /// <summary>The run selection as recorded with the analysis.</summary>
@@ -587,6 +693,9 @@ public sealed record ChatConsistencyRunSelectionView
     public long? FirstRunId { get; init; }
     public long? LastRunId { get; init; }
     public IReadOnlyList<long> LeftOutRunIds { get; init; } = Array.Empty<long>();
+    public long? FirstBatteryRunId { get; init; }
+    public long? LastBatteryRunId { get; init; }
+    public IReadOnlyList<long> LeftOutBatteryRunIds { get; init; } = Array.Empty<long>();
 
     /// <summary>Ordered by start, then id.</summary>
     public IReadOnlyList<ChatConsistencyUnanalyzedRun> UnanalyzedRuns { get; init; } = Array.Empty<ChatConsistencyUnanalyzedRun>();
@@ -671,6 +780,15 @@ public sealed record ChatConsistencyAnalysisResult
 
     /// <summary>How the runs were chosen, and the usable runs of the subject in the periods that were not analyzed.</summary>
     public ChatConsistencyRunSelectionView RunSelection { get; init; } = new();
+
+    /// <summary>The battery or suite compared within; null for a run-by-run analysis and for analysis code version 3 or earlier.</summary>
+    public ChatConsistencyComparedSet? ComparisonSet { get; init; }
+
+    /// <summary><c>run</c> or <c>batteryRun</c>: what the minimum sample, the bootstrap and leave-one-out count.</summary>
+    public string UnitKind { get; init; } = ChatConsistencyComparisonSetKinds.RunUnit;
+
+    /// <summary>The analyzed units of both periods, ordered by period, start, then id.</summary>
+    public IReadOnlyList<ChatConsistencyUnitView> Units { get; init; } = Array.Empty<ChatConsistencyUnitView>();
     public string InputSha256 { get; init; } = string.Empty;
     public int AnalysisCodeVersion { get; init; }
 }
@@ -693,6 +811,10 @@ public sealed record ChatConsistencyAnalysisSummary
     public int AnalysisCodeVersion { get; init; }
     public DateTime CreatedAtUtc { get; init; }
     public int ReportDocumentCount { get; init; }
+
+    /// <summary>From the stored result; null for a run-by-run analysis and for analysis code version 3 or earlier.</summary>
+    public string? ComparisonSetKey { get; init; }
+    public string? ComparisonSetLabel { get; init; }
 }
 
 /// <summary>The outcome of a delete request.</summary>
@@ -715,6 +837,9 @@ public sealed record ChatConsistencyModelAxis
     public DateTime LastRunAtUtc { get; init; }
     public long LatestRunId { get; init; }
     public IReadOnlyList<string> SuiteNames { get; init; } = Array.Empty<string>();
+
+    /// <summary>Distinct battery runs with a non-superseded member on this axis.</summary>
+    public int BatteryRunCount { get; init; }
 }
 
 /// <summary>A common-grader quality figure of one run.</summary>
@@ -821,6 +946,51 @@ public sealed record ChatConsistencyRunRow
     public IReadOnlyList<ChatConsistencyRegradeCoverage> RegradeCoverage { get; init; } = Array.Empty<ChatConsistencyRegradeCoverage>();
     public IReadOnlyList<long> MatchedControlRunIds { get; init; } = Array.Empty<long>();
     public IReadOnlyList<ChatConsistencyServedModelCount> ServedModelIds { get; init; } = Array.Empty<ChatConsistencyServedModelCount>();
+
+    public long? SuiteId { get; init; }
+
+    /// <summary>The run's suite as <see cref="ChatConsistencyMeasures.SuiteIdentity"/> renders it; the suite set key is <c>suite:</c> plus this.</summary>
+    public string SuiteKey { get; init; } = string.Empty;
+
+    /// <summary>The newest battery run holding this run as a non-superseded member; null when none does.</summary>
+    public long? BatteryRunId { get; init; }
+    public string? BatteryName { get; init; }
+
+    /// <summary>1-based position of the run's suite in that battery run's definition.</summary>
+    public int? BatterySuitePosition { get; init; }
+    public int? BatterySuiteCount { get; init; }
+}
+
+/// <summary>One battery run of the subject in the step-1 battery-run table.</summary>
+public sealed record ChatConsistencyBatteryRunRow
+{
+    public long BatteryRunId { get; init; }
+    public long? BatteryId { get; init; }
+    public string BatteryName { get; init; } = string.Empty;
+    public string DefinitionSha256 { get; init; } = string.Empty;
+    public int DefinitionRevision { get; init; }
+
+    /// <summary><c>battery:</c> plus <see cref="DefinitionSha256"/>.</summary>
+    public string SetKey { get; init; } = string.Empty;
+    public DateTime StartedAtUtc { get; init; }
+    public DateTime? CompletedAtUtc { get; init; }
+    public BenchmarkRunSeriesStatus Status { get; init; }
+    public int SuiteCount { get; init; }
+
+    /// <summary>Every suite slot holds a usable member on the subject's axis; only a complete battery run is analyzed.</summary>
+    public bool Complete { get; init; }
+
+    /// <summary>For example "1 of 2 suites usable"; null when complete.</summary>
+    public string? IncompleteReason { get; init; }
+
+    /// <summary>The members' harness versions, distinct, ascending.</summary>
+    public IReadOnlyList<string> HarnessVersions { get; init; } = Array.Empty<string>();
+
+    /// <summary>The usable members on the subject's axis, in suite order, then round.</summary>
+    public IReadOnlyList<ChatConsistencyRunRow> Members { get; init; } = Array.Empty<ChatConsistencyRunRow>();
+
+    /// <summary>Per axis: eligible when every member is; otherwise the members' reasons, each prefixed <c>#&lt;run id&gt;: </c>.</summary>
+    public IReadOnlyList<ChatConsistencyAxisEligibility> Eligibility { get; init; } = Array.Empty<ChatConsistencyAxisEligibility>();
 }
 
 // --- Re-grade ------------------------------------------------------------------------------------

@@ -1,8 +1,20 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 
+import { CC_EMPTY_BATTERY_SCOPE } from '../chat-consistency-scope';
 import { CcAnalysisResult } from '../chat-consistency.models';
-import { CC_API, ccAnalysisResult, ccAxis, ccRunRows, chatConsistencyTestProviders, textOf } from '../chat-consistency-tab.testing';
+import {
+  CC_API,
+  CC_BATTERY_SET_KEY,
+  ccAnalysisResult,
+  ccAxis,
+  ccBatteryMemberRows,
+  ccBatteryRunRows,
+  ccComparisonSets,
+  ccRunRows,
+  chatConsistencyTestProviders,
+  textOf
+} from '../chat-consistency-tab.testing';
 import { CcWizardComponent } from './cc-wizard.component';
 
 /** Every Chat Consistency storage key, cleared around each test. */
@@ -169,6 +181,54 @@ describe('CcWizardComponent', () => {
     fixture.detectChanges();
     expect(wizard.timelineWorkspace!.notAnalyzed).toBe(wizard.notAnalyzed);
     expect(wizard.timelineWorkspace!.rangeLabel).toBe('All dates');
+  });
+
+  it('names the compared battery in the subtitle, hands the battery runs and their members to the steps, and marks the runs outside it', () => {
+    fixture.componentRef.setInput('selectedKey', 'openai/gpt-5|high');
+    fixture.componentRef.setInput('rows', [...ccBatteryMemberRows(), ...ccRunRows()]);
+    fixture.componentRef.setInput('batteryRows', ccBatteryRunRows());
+    fixture.componentRef.setInput('comparisonSets', ccComparisonSets());
+    fixture.componentRef.setInput('compareKey', CC_BATTERY_SET_KEY);
+    fixture.componentRef.setInput('scope', CC_EMPTY_BATTERY_SCOPE);
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · Two initial suites (revision 1) · 2 battery runs · All dates');
+    expect(el.querySelectorAll('#cc-step-panel-1 .cc-battery-card').length).toBe(2);
+
+    fixture.componentRef.setInput('scope', { ...CC_EMPTY_BATTERY_SCOPE, leftOut: new Set([11]) });
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · Two initial suites (revision 1) · 2 battery runs · All dates · 1 in the analysis');
+    expect(wizard.scopedBatteryRows.map(row => row.batteryRunId)).toEqual([12]);
+    expect(wizard.scopedRows.map(row => row.runId)).toEqual([303, 304]);
+    expect(wizard.analysisSpan).toEqual({ first: '2026-10-08', last: '2026-10-08' });
+    expect(wizard.notAnalyzed.get(301)).toBe('leftOut');
+    expect(wizard.notAnalyzed.get(106)).toBe('outsideSet');
+    expect(wizard.notAnalyzed.has(303)).toBe(false);
+    expect(wizard.scopeKeyValue).toBe(`${CC_BATTERY_SET_KEY}#||11`);
+
+    tab(3).click();
+    fixture.detectChanges();
+    expect(wizard.analysis!.compareSet?.key).toBe(CC_BATTERY_SET_KEY);
+    expect(wizard.analysis!.batteryRows.map(row => row.batteryRunId)).toEqual([12]);
+    expect(wizard.analysis!.allBatteryRows.length).toBe(2);
+    expect(wizard.analysis!.rows.map(row => row.runId)).toEqual([303, 304]);
+
+    tab(2).click();
+    fixture.detectChanges();
+    expect(wizard.timelineWorkspace!.notAnalyzed).toBe(wizard.notAnalyzed);
+  });
+
+  it('asks for another compared set from step 1', () => {
+    chooseModel();
+    fixture.componentRef.setInput('comparisonSets', ccComparisonSets());
+    fixture.componentRef.setInput('compareKey', 'suite:id:5');
+    fixture.detectChanges();
+    expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · Board Suite · 6 runs · All dates');
+    const chosen: string[] = [];
+    wizard.compareChange.subscribe(key => chosen.push(key));
+    const select = el.querySelector<HTMLSelectElement>('#cc-compare')!;
+    select.value = CC_BATTERY_SET_KEY;
+    select.dispatchEvent(new Event('change'));
+    expect(chosen).toEqual([CC_BATTERY_SET_KEY]);
   });
 
   it('moves between the tabs with Left / Right (wrapping) and Home / End, keeping focus on the tabs', () => {

@@ -20,15 +20,24 @@ import {
   CC_EMPTY_SCOPE,
   CcRunInclusion,
   CcRunScope,
-  notAnalyzedRuns,
+  CcScopeUnit,
+  batterySetRuns,
+  comparisonSetUnits,
+  isBatteryRunRow,
+  notAnalyzedSetRuns,
   scopeIsDefault,
   scopeKey,
   scopeRuns,
-  scopeSpanDays
+  scopeSpanDays,
+  scopedMemberRuns,
+  suiteSetRuns
 } from '../chat-consistency-scope';
 import {
   CcAnalysisResult,
   CcAnalysisSummary,
+  CcBatteryRunRow,
+  CcComparisonSet,
+  CcComparisonSets,
   CcModelAxis,
   CcOpenDocumentsRequest,
   CcRunRow,
@@ -104,10 +113,17 @@ export class CcWizardComponent {
   @Input() axesError: string | null = null;
   @Input() selectedKey: string | null = null;
   @Input() range: CcDateRange = CC_ALL_DATES;
-  /** The runs of step 1 the analysis uses. */
+  /** The units of step 1 the analysis uses: runs, or battery runs in a battery set. */
   @Input() scope: CcRunScope = CC_EMPTY_SCOPE;
+  /** The batteries and suites the subject can be compared within; null until loaded. */
+  @Input() comparisonSets: CcComparisonSets | null = null;
+  /** The compared set; null while none is (the runs are then analyzed one by one). */
+  @Input() compareKey: string | null = null;
   @Input() timeline: CcTimeline | null = null;
+  /** Every run of the subject in the dates. */
   @Input() rows: readonly CcRunRow[] = [];
+  /** Every battery run of the subject in the dates. */
+  @Input() batteryRows: readonly CcBatteryRunRow[] = [];
   /** The timeline and the run table of the subject are loading. */
   @Input() loading = false;
   @Input() timelineError: string | null = null;
@@ -126,10 +142,12 @@ export class CcWizardComponent {
 
   @Output() readonly modelChange = new EventEmitter<string>();
   @Output() readonly rangeChange = new EventEmitter<CcDateRange>();
+  @Output() readonly compareChange = new EventEmitter<string>();
   @Output() readonly scopeChange = new EventEmitter<CcRunScope>();
   @Output() readonly repeatSetup = new EventEmitter<number>();
   @Output() readonly anchorToggle = new EventEmitter<CcRunRow>();
   @Output() readonly openRunReport = new EventEmitter<number>();
+  @Output() readonly openBatteryRunReport = new EventEmitter<number>();
   @Output() readonly analysisSaved = new EventEmitter<CcAnalysisResult>();
   @Output() readonly runsChanged = new EventEmitter<void>();
   @Output() readonly annotationsChanged = new EventEmitter<void>();
@@ -165,33 +183,66 @@ export class CcWizardComponent {
     return ANALYSIS_STEP_OF[this.analysisWizardStep];
   }
 
+  /** The compared set, when the sets offer it. */
+  get compareSet(): CcComparisonSet | null {
+    return this.comparisonSets?.sets.find(set => set.key === this.compareKey) ?? null;
+  }
+
   /**
-   * `GPT-5 high · 18 runs · Last 30 days`, with `· 15 in the analysis` while step 1 narrows the runs,
-   * or the invitation to choose a model.
+   * `GPT-5 high · 18 runs · Last 30 days`, or with a set `Claude 5.5 Haiku (xhigh) · Two initial suites
+   * (revision 1) · 2 battery runs · Last 30 days`, with `· 15 in the analysis` while step 1 narrows the
+   * units, or the invitation to choose a model.
    */
   get subtitle(): string {
     const axis = this.axis;
     if (!axis) return 'Choose a model, then follow the steps';
-    const count = this.timeline?.points.length ?? axis.runCount;
-    const text = `${axis.displayName} · ${plural(count, 'run')} · ${this.rangeText}`;
-    return scopeIsDefault(this.scope) ? text : `${text} · ${this.scopedRows.length} in the analysis`;
+    const set = this.compareSet;
+    let text: string;
+    if (set) {
+      const noun = set.kind === 'battery' ? 'battery run' : 'run';
+      text = `${axis.displayName} · ${set.label} · ${plural(this.scopeState().units.length, noun)} · ${this.rangeText}`;
+    } else {
+      const count = this.timeline?.points.length ?? axis.runCount;
+      text = `${axis.displayName} · ${plural(count, 'run')} · ${this.rangeText}`;
+    }
+    return scopeIsDefault(this.scope) && !this.hasIncompleteUnits ? text : `${text} · ${this.scopeState().scoped.length} in the analysis`;
   }
 
   get rangeText(): string {
     return ccDateRangeText(this.range);
   }
 
-  /** The runs the analysis uses, oldest first. */
-  get scopedRows(): readonly CcRunRow[] {
-    return this.scopeState().scoped;
+  /** A battery run of the set is never analyzed for want of a usable member, so the units are narrowed without a selection. */
+  private get hasIncompleteUnits(): boolean {
+    return this.scopeState().units.some(unit => isBatteryRunRow(unit) && !unit.complete);
   }
 
-  /** The runs of step 1 not in the analysis, with why. */
+  /** The runs the analysis uses, oldest first: in a battery set, the members of the battery runs it uses. */
+  get scopedRows(): readonly CcRunRow[] {
+    return this.scopeState().scopedRows;
+  }
+
+  /** The battery runs the analysis uses, oldest first; empty unless a battery set is compared. */
+  get scopedBatteryRows(): readonly CcBatteryRunRow[] {
+    return this.scopeState().scopedBatteryRows;
+  }
+
+  /** Every battery run of the compared battery set in the dates. */
+  get setBatteryRows(): readonly CcBatteryRunRow[] {
+    return this.scopeState().setBatteryRows;
+  }
+
+  /** Every run of the compared suite set in the dates; every run without a suite set. */
+  get setRows(): readonly CcRunRow[] {
+    return this.scopeState().setRows;
+  }
+
+  /** The runs of step 1 not in the analysis, with why; runs outside the compared set included. */
   get notAnalyzed(): ReadonlyMap<number, CcRunInclusion> {
     return this.scopeState().notAnalyzed;
   }
 
-  /** The UTC days of the first and last run in the analysis; null with none. */
+  /** The UTC days of the first and last unit in the analysis; null with none. */
   get analysisSpan(): { first: string; last: string } | null {
     return this.scopeState().span;
   }
@@ -200,11 +251,18 @@ export class CcWizardComponent {
     return this.scopeState().key;
   }
 
-  /** The scope's derived values, kept until the rows or the scope object change. */
+  /** The scope's derived values, kept until the rows, the battery rows, the set or the scope object change. */
   private scopeMemo: {
     rows: readonly CcRunRow[];
+    batteryRows: readonly CcBatteryRunRow[];
+    compareKey: string | null;
     scope: CcRunScope;
-    scoped: readonly CcRunRow[];
+    units: readonly CcScopeUnit[];
+    scoped: readonly CcScopeUnit[];
+    scopedRows: readonly CcRunRow[];
+    scopedBatteryRows: readonly CcBatteryRunRow[];
+    setBatteryRows: readonly CcBatteryRunRow[];
+    setRows: readonly CcRunRow[];
     notAnalyzed: ReadonlyMap<number, CcRunInclusion>;
     span: { first: string; last: string } | null;
     key: string;
@@ -212,15 +270,28 @@ export class CcWizardComponent {
 
   private scopeState(): NonNullable<CcWizardComponent['scopeMemo']> {
     const memo = this.scopeMemo;
-    if (memo && memo.rows === this.rows && memo.scope === this.scope) return memo;
-    const scoped = scopeRuns(this.rows, this.scope);
+    const setKey = this.compareSet?.key ?? null;
+    if (memo && memo.rows === this.rows && memo.batteryRows === this.batteryRows && memo.compareKey === setKey
+      && memo.scope === this.scope) {
+      return memo;
+    }
+    const units = comparisonSetUnits(this.rows, this.batteryRows, setKey);
+    const scoped = scopeRuns(units, this.scope);
     this.scopeMemo = {
       rows: this.rows,
+      batteryRows: this.batteryRows,
+      compareKey: setKey,
       scope: this.scope,
+      units,
       scoped,
-      notAnalyzed: notAnalyzedRuns(this.rows, this.scope),
+      // Without a battery set the units are runs, and the scoped list itself is handed on.
+      scopedRows: scoped.some(isBatteryRunRow) ? scopedMemberRuns(scoped) : scoped as readonly CcRunRow[],
+      scopedBatteryRows: scoped.filter(isBatteryRunRow),
+      setBatteryRows: batterySetRuns(this.batteryRows, setKey),
+      setRows: suiteSetRuns(this.rows, setKey),
+      notAnalyzed: notAnalyzedSetRuns(this.rows, this.batteryRows, setKey, this.scope),
       span: scopeSpanDays(scoped),
-      key: scopeKey(this.scope)
+      key: scopeKey(this.scope, setKey)
     };
     return this.scopeMemo;
   }
@@ -246,7 +317,7 @@ export class CcWizardComponent {
     return this.workspaceExporting || (this.analysis?.chartsAttaching ?? false);
   }
 
-  /** Why step 1's model and dates cannot change now; empty while they can. */
+  /** Why step 1's model, dates and compared set cannot change now; empty while they can. */
   get subjectLockedReason(): string {
     if (this.workspaceExporting) return 'The model and the dates are locked while the charts export.';
     if (this.analysis?.chartsAttaching) return 'The model and the dates are locked while report charts are attached.';

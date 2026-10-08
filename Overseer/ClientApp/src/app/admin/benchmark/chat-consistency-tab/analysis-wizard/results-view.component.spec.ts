@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { groupOverseerEvents } from '../chat-consistency-events';
 import { MINUS } from '../chat-consistency-format';
 import {
+  CC_BATTERY_SET_KEY,
   ccAnalysisResult,
   ccEndpoint,
   ccEventAnnotations,
@@ -260,6 +261,55 @@ describe('CcResultsViewComponent', () => {
       fixture.detectChanges();
       expect(section()!.querySelector('.cc-res-selection-facts')).toBeNull();
       expect(textOf(section()!.querySelector('.cc-res-unanalyzed'))).toBe('Not selected in step 4: #105 (comparison)');
+    });
+
+    it('names battery runs in a battery analysis, and lists the runs outside the compared set last', () => {
+      fixture.componentRef.setInput('result', ccAnalysisResult({
+        comparisonSet: { kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)' },
+        unitKind: 'batteryRun',
+        runSelection: ccRunSelectionView({
+          firstRunId: null, lastRunId: null, leftOutRunIds: [],
+          firstBatteryRunId: 11, lastBatteryRunId: 12, leftOutBatteryRunIds: [13],
+          unanalyzedRuns: [
+            { runId: 305, period: 'comparison', startedAtUtc: '2026-10-08T12:00:00Z', reason: 'leftOut', batteryRunId: 13 },
+            { runId: 106, period: 'comparison', startedAtUtc: '2026-10-01T08:00:00Z', reason: 'outsideComparisonSet', batteryRunId: null }
+          ]
+        })
+      }));
+      fixture.detectChanges();
+      const facts = Array.from(section()!.querySelectorAll('.cc-res-selection-facts > div'))
+        .map(row => [textOf(row.querySelector('dt')), textOf(row.querySelector('dd'))]);
+      expect(facts.slice(1)).toEqual([
+        ['First run', 'battery run #11'],
+        ['Last run', 'battery run #12'],
+        ['Left out in step 1', 'battery run #13']
+      ]);
+      expect(Array.from(section()!.querySelectorAll('.cc-res-unanalyzed li')).map(item => textOf(item))).toEqual([
+        'Left out in step 1: #305 (comparison, battery run #13)',
+        'Outside the compared set: #106 (comparison)'
+      ]);
+    });
+  });
+
+  describe('the compared set', () => {
+    it('names the compared set first under the headline, and leaves it out for an older analysis', () => {
+      expect(el.querySelector('.cc-res-compared')).toBeNull();
+
+      fixture.componentRef.setInput('result', ccAnalysisResult({
+        comparisonSet: { kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)' },
+        unitKind: 'batteryRun',
+        units: [
+          { unitId: 11, kind: 'batteryRun', period: 'baseline', startedAtUtc: '2026-10-08T06:00:00Z', memberRunIds: [301, 302] },
+          { unitId: 12, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T10:00:00Z', memberRunIds: [303, 304] }
+        ]
+      }));
+      fixture.detectChanges();
+      const first = el.querySelector('.cc-res-facts > div')!;
+      expect(first.classList).toContain('cc-res-compared');
+      expect(textOf(first.querySelector('dt'))).toBe('Compared');
+      expect(textOf(first.querySelector('dd'))).toBe('Two initial suites (revision 1)');
+      const baseline = Array.from(el.querySelectorAll('.cc-res-facts > div')).find(row => textOf(row.querySelector('dt')) === 'Baseline')!;
+      expect(textOf(baseline.querySelector('dd'))).toBe('2026-09-01 to 2026-09-14 · 1 battery run · 3 runs');
     });
   });
 });

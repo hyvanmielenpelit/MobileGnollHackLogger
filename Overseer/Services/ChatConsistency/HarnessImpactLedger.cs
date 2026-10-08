@@ -302,6 +302,8 @@ public static class HarnessImpactLedger
                 "A member whose charge the verifier upheld is never verification-cleared; the synthesis is told the verdicts on its charges; report fixes."),
             new("54", CI | G,
                 "Graders told when source references are disallowed; get_constants reads brace-on-next-line enums and the source miss probe is whole-word; streaming-rate bounds and report fixes."),
+            new("55", G,
+                "Source-location grading rule names files and paths; claim verifier retries a provider error once; 'inverts' counts as a stated defect and a charge."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

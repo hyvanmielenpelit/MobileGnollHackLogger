@@ -36,7 +36,8 @@ export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReas
   { reason: 'outsideDateRange', label: 'Outside the step-1 dates' },
   { reason: 'beforeFirstRun', label: 'Before the first run' },
   { reason: 'afterLastRun', label: 'After the last run' },
-  { reason: 'notSelected', label: 'Not selected in step 4' }
+  { reason: 'notSelected', label: 'Not selected in step 4' },
+  { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
 ];
 
 /** The figures the results draw over the analysis's runs. */
@@ -154,15 +155,41 @@ export class CcResultsViewComponent implements OnChanges {
     return `${from} to ${to}`;
   }
 
-  runMark(runId: number | null): string {
-    return runId === null ? 'none' : `#${runId}`;
+  /** The analysis counted battery runs: its marks and left-out ids are battery runs'. */
+  get batteryAnalysis(): boolean {
+    return this.result.unitKind === 'batteryRun';
+  }
+
+  /** The units of a period: `2 battery runs` in a battery analysis, empty otherwise. */
+  periodUnitsText(period: string): string {
+    if (!this.batteryAnalysis) return '';
+    const count = (this.result.units ?? []).filter(unit => unit.period === period).length;
+    return `${count} ${count === 1 ? 'battery run' : 'battery runs'}`;
+  }
+
+  /** `#102`, or `battery run #12` in a battery analysis; `none` without a mark. */
+  runMark(runId: number | null | undefined): string {
+    if (runId === null || runId === undefined) return 'none';
+    return this.batteryAnalysis ? `battery run #${runId}` : `#${runId}`;
+  }
+
+  firstMark(selection: CcRunSelectionView): string {
+    return this.runMark(this.batteryAnalysis ? selection.firstBatteryRunId : selection.firstRunId);
+  }
+
+  lastMark(selection: CcRunSelectionView): string {
+    return this.runMark(this.batteryAnalysis ? selection.lastBatteryRunId : selection.lastRunId);
   }
 
   leftOutText(selection: CcRunSelectionView): string {
-    return selection.leftOutRunIds.length > 0 ? selection.leftOutRunIds.map(id => `#${id}`).join(', ') : 'none';
+    const ids = this.batteryAnalysis ? selection.leftOutBatteryRunIds ?? [] : selection.leftOutRunIds;
+    return ids.length > 0 ? ids.map(id => this.runMark(id)).join(', ') : 'none';
   }
 
-  /** The unanalyzed runs by reason, in the server's reason order: `#45 (baseline), #51 (comparison)`. */
+  /**
+   * The unanalyzed runs by reason, in the server's reason order: `#45 (baseline), #51 (comparison)`,
+   * with the battery run a reason applies to: `#98 (baseline, battery run #12)`.
+   */
   unanalyzedGroups(selection: CcRunSelectionView): { reason: string; label: string; runs: string }[] {
     return CC_UNANALYZED_REASONS
       .map(({ reason, label }) => ({
@@ -170,7 +197,9 @@ export class CcResultsViewComponent implements OnChanges {
         label,
         runs: selection.unanalyzedRuns
           .filter(run => run.reason === reason)
-          .map(run => `#${run.runId} (${run.period})`)
+          .map(run => run.batteryRunId !== null && run.batteryRunId !== undefined
+            ? `#${run.runId} (${run.period}, battery run #${run.batteryRunId})`
+            : `#${run.runId} (${run.period})`)
           .join(', ')
       }))
       .filter(group => group.runs !== '');

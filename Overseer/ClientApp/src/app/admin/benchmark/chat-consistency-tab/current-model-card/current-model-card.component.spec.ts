@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { CcAnalysisSummary, CcModelAxis } from '../chat-consistency.models';
+import { CcAnalysisSummary, CcModelAxis, CcUnitKind } from '../chat-consistency.models';
 import { ccAnalysisSummary, ccAxis, textOf } from '../chat-consistency-tab.testing';
 import { CcCurrentModelCardComponent } from './current-model-card.component';
 
@@ -23,9 +23,13 @@ describe('CcCurrentModelCardComponent', () => {
     runsInAnalysis?: number | null;
     latestAnalysis?: CcAnalysisSummary | null;
     loading?: boolean;
+    compareLabel?: string | null;
+    unitKind?: CcUnitKind;
   } = {}): void {
     fixture.componentRef.setInput('axis', inputs.axis ?? ccAxis());
     fixture.componentRef.setInput('rangeText', inputs.rangeText ?? 'All dates');
+    fixture.componentRef.setInput('compareLabel', inputs.compareLabel ?? null);
+    fixture.componentRef.setInput('unitKind', inputs.unitKind ?? 'run');
     fixture.componentRef.setInput('runsInRange', inputs.runsInRange ?? null);
     fixture.componentRef.setInput('runsInAnalysis', inputs.runsInAnalysis ?? null);
     fixture.componentRef.setInput('latestAnalysis', inputs.latestAnalysis === undefined ? ccAnalysisSummary(7) : inputs.latestAnalysis);
@@ -106,6 +110,17 @@ describe('CcCurrentModelCardComponent', () => {
     render({ runsInAnalysis: 5 });
     expect(facts().map(([dt]) => dt)).toEqual(['Runs', 'Dates', 'In the analysis', 'First run', 'Latest run', 'Suites', 'Latest analysis']);
     expect(fact('In the analysis')).toBe('5 runs');
+  });
+
+  it('names the compared set after the dates, and counts battery runs in the analysis of a battery set', () => {
+    render({ compareLabel: 'Two initial suites (revision 1)', runsInAnalysis: 1, unitKind: 'batteryRun' });
+    expect(facts().map(([dt]) => dt))
+      .toEqual(['Runs', 'Dates', 'Compared', 'In the analysis', 'First run', 'Latest run', 'Suites', 'Latest analysis']);
+    expect(fact('Compared')).toBe('Two initial suites (revision 1)');
+    expect(fact('In the analysis')).toBe('1 battery run');
+
+    render({ compareLabel: null });
+    expect(fact('Compared')).toBeNull();
   });
 
   it('says None yet without a saved analysis, and offers no Open analysis', () => {

@@ -370,10 +370,18 @@ To find specific popups, look in the corresponding component's `.html` template:
     modeled on the Model Comparison wizard. The state lives as long as the tab component, so a GnollBench
     sub-tab switch loses the run selection, the step and an analysis in progress (`ngOnDestroy` closes an
     open wizard); the model and its dates are remembered in this browser
-    (`localStorage['overseer.benchmark.chatConsistency.subject']`, `{ version: 1, modelKey, range }`,
-    `CC_SUBJECT_STORAGE_KEY`), written on every model or date change and restored once the model axes
+    (`localStorage['overseer.benchmark.chatConsistency.subject']`, `{ version: 2, modelKey, range,
+    compare: { kind, key } }`, `CC_SUBJECT_STORAGE_KEY`; a version-1 record is read as one with no
+    compared set), written on every model, date or **Compare** change and restored once the model axes
     load with no model chosen — a rolling preset moved to now, a record whose model is unknown or has no
-    runs removed. The parts, each in its own folder or file:
+    runs removed. Step 1's **Compare** select (`GET comparison-sets`, groups *Batteries* and *Suites*)
+    picks the battery or suite the analysis compares within; the server's `defaultKey` applies unless the
+    stored key is still offered, and a change clears the selection with an announcement. In a battery set
+    the cards, the selection band, step 3's span and step 4's rows are **battery runs**
+    (`GET battery-runs`, `CcBatteryRunRow`, view stored in
+    `overseer.benchmark.chatConsistency.batteryRuns.view`); `chat-consistency-scope.ts` keys the scope by
+    unit id and unit kind, and `scopeKey` includes the set key. With no set the runs are not filtered and
+    the request carries no `comparisonSet`. The parts, each in its own folder or file:
     - **The launcher** (`chat-consistency-tab.component.*`): the hero with the gold `.btn-gh` **Open Chat
       Consistency Wizard** (*compass*, `#cc-open-wizard`) and the non-exclusive
       *How chat consistency works* disclosure listing `CC_WIZARD_STEPS` under the wizard's own titles

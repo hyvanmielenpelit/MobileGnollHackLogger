@@ -1,12 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 
-import { CcAnalysisResult, CcRunRow } from '../chat-consistency.models';
+import { CC_EMPTY_BATTERY_SCOPE, CcRunScope } from '../chat-consistency-scope';
+import { CcAnalysisResult, CcBatteryRunRow, CcComparisonSet, CcRunRow } from '../chat-consistency.models';
 import {
   CC_API,
+  CC_BATTERY_SET_KEY,
   ccAnalysisResult,
   ccAnalysisSummary,
   ccAxis,
+  ccBatteryMemberRows,
+  ccBatteryRunRow,
+  ccBatteryRunRows,
+  ccComparisonSets,
   ccEventPoints,
   ccEventTimeline,
   ccRunRow,
@@ -79,6 +85,9 @@ describe('CcAnalysisWizardComponent', () => {
   const checked = (period: string): (string | null)[] =>
     Array.from(el.querySelectorAll<HTMLInputElement>(`table[data-period="${period}"] .cc-wiz-run-check`))
       .filter(box => box.checked).map(box => box.closest('tr')!.getAttribute('data-run-id'));
+  const checkedBatteries = (period: string): (string | null)[] =>
+    Array.from(el.querySelectorAll<HTMLInputElement>(`table[data-period="${period}"] .cc-wiz-run-check`))
+      .filter(box => box.checked).map(box => box.closest('tr')!.getAttribute('data-battery-run-id'));
 
   describe('steps', () => {
     it('renders only the body of the step it is given, without navigation of its own', () => {
@@ -521,6 +530,144 @@ describe('CcAnalysisWizardComponent', () => {
       setDay('cc-wiz-bs', '2026-9-3');
       expect(component.days.baselineStart).toBe('2026-09-03');
       expect(component.preset).toBe('custom');
+    });
+  });
+
+  describe('a battery set', () => {
+    const batterySet = (): CcComparisonSet => ccComparisonSets().sets[0];
+
+    /** Battery runs #11 and #12 of 2026-10-08, both in the analysis, oldest first; their members are the rows. */
+    function withBatteries(scope: CcRunScope = CC_EMPTY_BATTERY_SCOPE, batteries: CcBatteryRunRow[] = ccBatteryRunRows().reverse()): void {
+      fixture.componentRef.setInput('compareSet', batterySet());
+      fixture.componentRef.setInput('batteryRows', batteries);
+      fixture.componentRef.setInput('allBatteryRows', batteries);
+      fixture.componentRef.setInput('rows', batteries.flatMap(row => row.members));
+      fixture.componentRef.setInput('allRows', ccBatteryMemberRows());
+      fixture.componentRef.setInput('scope', scope);
+      fixture.componentRef.setInput('span', { first: '2026-10-08', last: '2026-10-08' });
+      fixture.componentRef.setInput('scopeKey', `${CC_BATTERY_SET_KEY}#||`);
+      fixture.detectChanges();
+    }
+
+    /** Battery run #11 a day earlier, on 2026-10-07, so the two fall in separate periods; #12 as before. */
+    function splitBatteries(): CcBatteryRunRow[] {
+      return [ccBatteryRunRow(11, '2026-10-07T06:00:00Z', [301, 302]), ccBatteryRunRows()[0]];
+    }
+
+    /** The baseline is 2026-10-07, holding battery run #11 of {@link splitBatteries}; the comparison 2026-10-08, holding #12. */
+    function batteryPeriods(): void {
+      setDay('cc-wiz-bs', '2026-10-07');
+      setDay('cc-wiz-be', '2026-10-07');
+      setDay('cc-wiz-cs', '2026-10-08');
+      setDay('cc-wiz-ce', '2026-10-08');
+    }
+
+    it('says which battery runs the presets span, and names the compared set', () => {
+      withBatteries();
+      expect(textOf(el.querySelector('.cc-wiz-span-note')))
+        .toBe('Presets use every battery run in the dates: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.');
+      fixture.componentRef.setInput('scope', { ...CC_EMPTY_BATTERY_SCOPE, firstRunId: 11 });
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-wiz-span-note')))
+        .toBe('Presets use the battery runs chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.');
+      const compared = el.querySelector('.cc-wiz-subject .cc-wiz-compared')!;
+      expect(textOf(compared.querySelector('dd'))).toBe('Two initial suites (revision 1)');
+    });
+
+    it('confirms on later data from the last analysis of the same subject and set', () => {
+      withBatteries();
+      fixture.componentRef.setInput('analyses', [
+        ccAnalysisSummary(7, { createdAtUtc: '2026-10-05T09:00:00Z' }),
+        ccAnalysisSummary(9, { createdAtUtc: '2026-10-01T00:00:00Z', comparisonSetKey: CC_BATTERY_SET_KEY })
+      ]);
+      fixture.detectChanges();
+      expect(component.lastAnalysis?.id).toBe(9);
+
+      fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7)]);
+      fixture.detectChanges();
+      el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="later"]')!.click();
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-wiz-preset-note')))
+        .toBe('This model has no saved analysis of Two initial suites (revision 1) yet; there is no earlier look to confirm.');
+    });
+
+    it('lists one row per battery run in each period and preselects the eligible complete ones', () => {
+      withBatteries(CC_EMPTY_BATTERY_SCOPE, splitBatteries());
+      batteryPeriods();
+      goToRuns();
+      component.preselectRuns();
+      fixture.detectChanges();
+
+      const table = el.querySelector<HTMLTableElement>('table.cc-wiz-battery-runs[data-period="comparison"]')!;
+      expect(Array.from(table.querySelectorAll('thead th')).map(th => textOf(th)))
+        .toEqual(['Use', 'Battery run', 'Started (UTC)', 'Suites', 'Eligible', 'Matched controls']);
+      const row = table.querySelector<HTMLTableRowElement>('tr[data-battery-run-id="12"]')!;
+      expect(Array.from(row.cells).slice(1).map(cell => textOf(cell)))
+        .toEqual(['#12', '2026-10-08 10:00 UTC', 'Board Suite, Wiki Suite', 'Yes', '#404']);
+      expect(row.querySelector('.cc-wiz-run-check')!.getAttribute('aria-label')).toBe('Include battery run #12 in the comparison');
+      expect(checkedBatteries('baseline')).toEqual(['11']);
+      expect(checkedBatteries('comparison')).toEqual(['12']);
+      // The controls stay per run: the matched controls of the members.
+      expect(Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check')).map(box => textOf(box.closest('label'))))
+        .toEqual(['Control run #404']);
+      expect(component.regradeRunIds).toEqual([301, 302, 303, 304, 404]);
+      expect(component.missingControls.map(member => member.runId)).toEqual([301, 302, 303]);
+    });
+
+    it('posts the battery runs, the set and the battery selection, and no run ids', () => {
+      withBatteries({ ...CC_EMPTY_BATTERY_SCOPE, firstRunId: 11, leftOut: new Set([13]) }, splitBatteries());
+      fixture.componentRef.setInput('range', { preset: '30d', fromDay: '', toDay: '', anchorUtc: '2026-10-08T12:00:00.000Z' });
+      fixture.detectChanges();
+      batteryPeriods();
+      goToRuns();
+      component.preselectRuns();
+      component.analyze();
+      const post = http.expectOne(`${CC_API}/analyses`);
+      const body = post.request.body;
+      expect(body.comparisonSet).toEqual({ kind: 'battery', key: CC_BATTERY_SET_KEY });
+      expect(body.baselineBatteryRunIds).toEqual([11]);
+      expect(body.comparisonBatteryRunIds).toEqual([12]);
+      expect('baselineRunIds' in body).toBe(false);
+      expect('comparisonRunIds' in body).toBe(false);
+      expect(body.controlRunIds).toEqual([404]);
+      expect(body.runSelection).toEqual({
+        rangeLabel: 'Last 30 days',
+        rangeFromUtc: '2026-09-08T12:00:00.000Z',
+        rangeToUtc: null,
+        firstRunId: null,
+        lastRunId: null,
+        leftOutRunIds: [],
+        firstBatteryRunId: 11,
+        lastBatteryRunId: null,
+        leftOutBatteryRunIds: [13]
+      });
+      post.flush(ccAnalysisResult());
+    });
+
+    it('posts a suite set with the run ids, as before', () => {
+      fixture.componentRef.setInput('compareSet', ccComparisonSets().sets[1]);
+      fixture.detectChanges();
+      goToRuns();
+      component.preselectRuns();
+      const request = component.buildRequest()!;
+      expect(request.comparisonSet).toEqual({ kind: 'suite', key: 'suite:id:5' });
+      expect(request.baselineRunIds).toEqual([101, 102, 103]);
+      expect(request.baselineBatteryRunIds).toBeUndefined();
+      expect(request.runSelection!.firstBatteryRunId).toBeUndefined();
+    });
+
+    it('selects the battery runs of a saved battery analysis from its units', () => {
+      withBatteries();
+      component.showResult(ccAnalysisResult({
+        unitKind: 'batteryRun',
+        comparisonSet: { kind: 'battery', key: CC_BATTERY_SET_KEY, label: 'Two initial suites (revision 1)' },
+        units: [
+          { unitId: 11, kind: 'batteryRun', period: 'baseline', startedAtUtc: '2026-10-08T06:00:00Z', memberRunIds: [301, 302] },
+          { unitId: 12, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T10:00:00Z', memberRunIds: [303, 304] }
+        ]
+      }));
+      expect([...component.baselineSelected]).toEqual([11]);
+      expect([...component.comparisonSelected]).toEqual([12]);
     });
   });
 

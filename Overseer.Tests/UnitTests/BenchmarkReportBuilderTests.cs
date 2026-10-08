@@ -2789,7 +2789,7 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
 
         Assert.EndsWith(
-            "The unverified claims above were not checked \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + ").",
+            "The unverified claims above were not checked \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + "). Use **Retry claim verification** to repeat it.",
             ClaimVerificationLine(report));
     }
 
@@ -2805,7 +2805,7 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
 
         Assert.EndsWith(
-            "The unverified claims above were not checked \u2014 1 model call(s) \u2014 parse retry: no model call reported usage after the first attempt (" + RetryFirstAttemptEnd + ").",
+            "The unverified claims above were not checked \u2014 1 model call(s) \u2014 parse retry: no model call reported usage after the first attempt (" + RetryFirstAttemptEnd + "). Use **Retry claim verification** to repeat it.",
             ClaimVerificationLine(report));
     }
 
@@ -2886,6 +2886,110 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains(
             "- **Claim Verification Yield:** 10 claim(s) checked \u2014 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a parse retry. $1.70 ($0.17/claim), 67% of run cost.",
+            report);
+    }
+
+    private const string ProviderError503 =
+        "Google stream error: [503] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.";
+
+    private const string ProviderRetriedUsageJson =
+        "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":300,\"c\":0,\"o\":30,\"pe\":1,\"e\":\"" + ProviderError503 + "\"}]";
+
+    [Fact]
+    public void ClaimVerification_VerdictLine_NamesTheProviderErrorRetry_WithoutTheErrorsClosingPeriod()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimVerificationModelCallCount = 2;
+        q1.ClaimVerificationCallUsageJson = ProviderRetriedUsageJson;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.True(BenchmarkReportBuilder.ClaimVerificationHadProviderErrorRetry(q1));
+        Assert.False(BenchmarkReportBuilder.ClaimVerificationWasRetried(q1));
+        Assert.EndsWith(
+            "advisory, not reflected in the score.* \u2014 2 model call(s); provider-error retry after: "
+            + "Google stream error: [503] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later",
+            ClaimVerificationLine(report));
+    }
+
+    [Fact]
+    public void ClaimVerificationRetryText_NamesTheParseRetryThenTheProviderErrorRetry()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            ClaimVerificationCallUsageJson =
+                "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":300,\"c\":0,\"o\":30,\"pe\":1,\"e\":\"[overloaded_error] Overloaded\"},{\"p\":200,\"c\":0,\"o\":20,\"r\":1,\"e\":\"" + RetryFirstAttemptEnd + "\"}]"
+        };
+
+        Assert.Equal(
+            " \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + "); provider-error retry after: [overloaded_error] Overloaded",
+            BenchmarkReportBuilder.ClaimVerificationRetryText(answer));
+    }
+
+    [Fact]
+    public void ClaimVerification_FailedLine_EndsByNamingTheRetryAction()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "Claim verification timeout exceeded (600 s).";
+        q1.ClaimVerificationModelCallCount = 1;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.EndsWith(
+            "failed \u2014 Claim verification timeout exceeded (600 s). The unverified claims above were not checked \u2014 1 model call(s). Use **Retry claim verification** to repeat it.",
+            ClaimVerificationLine(report));
+    }
+
+    [Fact]
+    public void HarnessStageFailures_SubtitleSaysWhatALostVerificationCosts_AndHowToRepeatIt()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "Claim verification timeout exceeded (600 s).";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        Assert.Contains(
+            "### Harness Stage Failures" + Environment.NewLine
+            + "*(Advisory infrastructure failures. The candidate's answer is intact; a lost claim verification leaves its claims unchecked and, in a panel run, can leave a split critical error unresolved. **Retry claim verification** in the run's **Re-run** menu repeats it.)*" + Environment.NewLine,
+            report);
+        Assert.DoesNotContain("candidate output was not damaged", report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_CountsTheAnswersThatNeededAProviderErrorRetry()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationCallUsageJson = ProviderRetriedUsageJson;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 3;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 10 claim(s) checked \u2014 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a provider-error retry. $1.70 ($0.17/claim), 67% of run cost.",
             report);
     }
 
@@ -5860,6 +5964,79 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("dimension outliers: A 0, B 0", report);
         Assert.Contains("- **Out-of-scope completeness deductions:** A 1 (Q2), B 1 (Q2)", report);
         Assert.Contains("- **Rubric format suggestions not followed:** A 0 (none), B 1 (Q2)", report);
+    }
+
+    // Run 98 Q16's Completeness evidence, verbatim: member B charged src/makemon.c and
+    // src/encounter.c as missing, member A named no source location.
+    private const string Run98Q16CompletenessB =
+        "The answer covers the three main mechanisms but omits substantial source-level detail required by the rubric: src/makemon.c, adj_lev(), newmonhp(), get_generated_monster_minmax_levels(), src/encounter.c function names, the exact base-plus-manual-adjustment formula, MAX_MONSTER_LEVEL = 127, MAXULEV = 50, integer truncation, the full −4…+4 multiplier table, Luck-based maximum adjustments, and the G_NOGEN/G_UNIQ/G_GENO and frequency eligibility gates.";
+
+    private const string Run98Q16CompletenessA =
+        "Omits the Luck modifier on maxmlev (+10% per point for tame with good Luck / hostile with bad Luck), the numeric hard cap MAX_MONSTER_LEVEL = 127 and MAXULEV = 50 depth clamp, and the G_NOGEN/G_UNIQ/G_GENO eligibility flags and generation frequency gating.";
+
+    private const string SourceLocationsChargedNote =
+        "  - Answers whose Completeness evidence names a source file or path as missing, in a run whose candidate was told not to cite them; the grading instruction is not to deduct for them.";
+
+    /// <summary>
+    /// <see cref="PanelReportRun"/> with Q5 carrying run 98 Q16's Completeness evidence from both
+    /// members, its candidate prompt allowing or disallowing source references.
+    /// </summary>
+    private static BenchmarkRun SourceLocationPanelRun(bool allowSourceReferences)
+    {
+        var run = PanelReportRun();
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { AllowSourceCodeReferences = allowSourceReferences }.ToCanonicalJson();
+        var q5 = run.Answers.Single(a => a.OrderIndex == 5);
+        q5.AssessmentEvidenceJson = JsonSerializer.Serialize(new { completeness = Run98Q16CompletenessA });
+        var record = BenchmarkCoAssessmentRecord.Parse(q5.CoAssessmentJson)!;
+        record.CompletenessEvidence = Run98Q16CompletenessB;
+        q5.CoAssessmentJson = record.Serialize();
+        return run;
+    }
+
+    [Fact]
+    public void SourceLocationsCharged_CountsEachMembersCompletenessEvidence_WhenSourceReferencesWereDisallowed()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(SourceLocationPanelRun(allowSourceReferences: false));
+
+        Assert.Contains(
+            "- **Source locations charged:** A 0 (none), B 1 (Q5)" + Environment.NewLine + SourceLocationsChargedNote + Environment.NewLine,
+            report);
+    }
+
+    [Fact]
+    public void SourceLocationsCharged_IsOmitted_WhenSourceReferencesWereAllowed()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(SourceLocationPanelRun(allowSourceReferences: true));
+
+        Assert.DoesNotContain("Source locations charged", report);
+    }
+
+    [Fact]
+    public void SourceLocationsCharged_SingleAssessorRun_CountsTheAssessorsEvidence()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.AssessmentEvidenceJson = JsonSerializer.Serialize(new { completeness = Run98Q16CompletenessB });
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        q2.AssessmentEvidenceJson = JsonSerializer.Serialize(new { completeness = Run98Q16CompletenessA });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2);
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { AllowSourceCodeReferences = false }.ToCanonicalJson();
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Source locations charged:** 1 (Q1)" + Environment.NewLine + SourceLocationsChargedNote + Environment.NewLine, report);
+    }
+
+    [Theory]
+    [InlineData(Run98Q16CompletenessB, true)]
+    [InlineData(Run98Q16CompletenessA, false)]
+    [InlineData("Omits the cap in makemon.c.", true)]
+    [InlineData("Omits the layer flags of include/layer.h.", true)]
+    [InlineData("Omits adj_lev() and MAX_MONSTER_LEVEL.", false)]
+    [InlineData("Omits the cap. OUT-OF-SCOPE: the src/makemon.c reference.", false)]
+    [InlineData(null, false)]
+    public void ChargesASourceLocation_ReadsFilesAndPaths_BeforeTheOutOfScopeMarker(string? evidence, bool expected)
+    {
+        Assert.Equal(expected, BenchmarkReportBuilder.ChargesASourceLocation(evidence));
     }
 
     [Fact]

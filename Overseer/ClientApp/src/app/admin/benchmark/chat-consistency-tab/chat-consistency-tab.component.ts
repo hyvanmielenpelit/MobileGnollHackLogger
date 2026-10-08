@@ -28,14 +28,29 @@ import {
   ccDateRangeText,
   ccRangeBounds
 } from './chat-consistency-range';
-import { CC_EMPTY_SCOPE, CcRunScope, pruneScope, scopeIsDefault, scopeRuns } from './chat-consistency-scope';
+import {
+  CC_EMPTY_SCOPE,
+  CcRunScope,
+  CcScopeUnit,
+  ccEmptyScope,
+  comparisonSetUnits,
+  pruneScope,
+  scopeIsDefault,
+  scopeRuns,
+  setUnitKind
+} from './chat-consistency-scope';
 import {
   CcAnalysisResult,
   CcAnalysisSummary,
+  CcBatteryRunRow,
+  CcComparisonSet,
+  CcComparisonSetRef,
+  CcComparisonSets,
   CcModelAxis,
   CcOpenDocumentsRequest,
   CcRunRow,
-  CcTimeline
+  CcTimeline,
+  CcUnitKind
 } from './chat-consistency.models';
 import { CcCurrentModelCardComponent } from './current-model-card/current-model-card.component';
 import { CcSavedAnalysesComponent } from './saved-analyses/saved-analyses.component';
@@ -46,18 +61,25 @@ export const CC_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.chatConsistency.launc
 /** The version of the stored launcher record; a record of another version reads as none. */
 const CC_LAUNCHER_STORAGE_VERSION = 1;
 
-/** Where the current model and its dates are kept, per browser, so a reload keeps them. */
+/** Where the current model, its dates and the compared set are kept, per browser, so a reload keeps them. */
 export const CC_SUBJECT_STORAGE_KEY = 'overseer.benchmark.chatConsistency.subject';
 
-/** The version of the stored subject record; a record of another version reads as none. */
-const CC_SUBJECT_STORAGE_VERSION = 1;
+/**
+ * The version of the stored subject record. Version 1, which had no compared set, is still read as a
+ * record without one; a record of any other version reads as none.
+ */
+const CC_SUBJECT_STORAGE_VERSION = 2;
 
-/** The stored subject: the model's axis key and the date range chosen for it. */
+/** The stored subject: the model's axis key, the date range chosen for it and the compared set. */
 interface CcStoredSubject {
   version: number;
   modelKey: string;
   range: CcDateRange;
+  compare: CcComparisonSetRef | null;
 }
+
+/** The announcement when another compared set clears a step-1 selection. */
+export const CC_SET_CHANGE_NOTE = 'The selection in step 1 was cleared because another battery or suite is compared.';
 
 /** The run report's refusal to switch sub-tabs while the wizard is blocked. */
 export const CC_LEAVE_REFUSAL =
@@ -109,10 +131,17 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   selectedKey: string | null = null;
   range: CcDateRange = CC_ALL_DATES;
-  /** The runs of step 1 the analysis uses: the first and last run marks and the runs left out. */
+  /**
+   * The compared battery or suite. Before the sets arrive it is the preferred one (the stored choice),
+   * which the load keeps while it is offered and otherwise replaces with the server's default.
+   */
+  compareKey: string | null = null;
+  /** The units of step 1 the analysis uses: the first and last unit marks and the units left out. */
   scope: CcRunScope = CC_EMPTY_SCOPE;
   timeline: CcTimeline | null = null;
   rows: CcRunRow[] = [];
+  comparisonSets: CcComparisonSets | null = null;
+  batteryRows: CcBatteryRunRow[] = [];
   subjectLoading = false;
   timelineError: string | null = null;
   runsError: string | null = null;
@@ -167,6 +196,21 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     return this.axes.find(axis => axis.key === this.selectedKey) ?? null;
   }
 
+  /** The compared set, once the sets are loaded and offer it. */
+  get compareSet(): CcComparisonSet | null {
+    return this.comparisonSets?.sets.find(set => set.key === this.compareKey) ?? null;
+  }
+
+  /** What step 1's selection counts: battery runs in a battery set, runs otherwise. */
+  get unitKind(): CcUnitKind {
+    return setUnitKind(this.compareSet?.key);
+  }
+
+  /** The units of the compared set; every run while no set is compared. */
+  private units(): readonly CcScopeUnit[] {
+    return comparisonSetUnits(this.rows, this.batteryRows, this.compareSet?.key);
+  }
+
   // --- The Current model card ---
 
   get currentDatesText(): string {
@@ -178,9 +222,9 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     return this.range.preset !== 'all' && this.timeline ? this.timeline.points.length : null;
   }
 
-  /** The runs the analysis uses; null when step 1 does not narrow them. */
+  /** The units the analysis uses; null when step 1 does not narrow them. */
   get runsInAnalysis(): number | null {
-    return scopeIsDefault(this.scope) ? null : scopeRuns(this.rows, this.scope).length;
+    return scopeIsDefault(this.scope) ? null : scopeRuns(this.units(), this.scope).length;
   }
 
   /** The newest saved analysis of the current model. */
@@ -246,11 +290,17 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   // --- The remembered subject ---
 
-  /** Records the current model and its dates; nothing while no model is chosen. */
+  /** Records the current model, its dates and the compared set; nothing while no model is chosen. */
   private persistSubject(): void {
     const modelKey = this.selectedKey;
     if (!modelKey) return;
-    const record: CcStoredSubject = { version: CC_SUBJECT_STORAGE_VERSION, modelKey, range: this.range };
+    const key = this.compareKey;
+    const record: CcStoredSubject = {
+      version: CC_SUBJECT_STORAGE_VERSION,
+      modelKey,
+      range: this.range,
+      compare: key ? { kind: setUnitKind(key) === 'batteryRun' ? 'battery' : 'suite', key } : null
+    };
     try {
       localStorage.setItem(CC_SUBJECT_STORAGE_KEY, JSON.stringify(record));
     } catch {
@@ -258,9 +308,19 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** A stored compared set, or null when it is absent or not a set reference. */
+  private static readStoredCompare(value: unknown): CcComparisonSetRef | null {
+    if (!value || typeof value !== 'object') return null;
+    const raw = value as { kind?: unknown; key?: unknown };
+    const kind = raw.kind === 'battery' ? 'battery' : raw.kind === 'suite' ? 'suite' : null;
+    const key = raw.key;
+    if (kind === null || typeof key !== 'string' || key === '') return null;
+    return { kind, key };
+  }
+
   /**
-   * The stored subject, or null when there is none, it is of another version or its shape is not a
-   * subject's.
+   * The stored subject, or null when there is none, it is of an unknown version or its shape is not a
+   * subject's. A version-1 record is read as a subject without a compared set.
    */
   private readStoredSubject(): CcStoredSubject | null {
     let stored: string | null;
@@ -277,8 +337,8 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
       return null;
     }
     if (!record || typeof record !== 'object') return null;
-    const candidate = record as { version?: unknown; modelKey?: unknown; range?: unknown };
-    if (candidate.version !== CC_SUBJECT_STORAGE_VERSION) return null;
+    const candidate = record as { version?: unknown; modelKey?: unknown; range?: unknown; compare?: unknown };
+    if (candidate.version !== CC_SUBJECT_STORAGE_VERSION && candidate.version !== 1) return null;
     const modelKey = candidate.modelKey;
     if (typeof modelKey !== 'string' || modelKey === '') return null;
     const range = candidate.range as { preset?: unknown; fromDay?: unknown; toDay?: unknown; anchorUtc?: unknown } | null;
@@ -292,13 +352,15 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     return {
       version: CC_SUBJECT_STORAGE_VERSION,
       modelKey,
-      range: { preset, fromDay, toDay, anchorUtc: typeof anchorUtc === 'string' ? anchorUtc : null }
+      range: { preset, fromDay, toDay, anchorUtc: typeof anchorUtc === 'string' ? anchorUtc : null },
+      compare: candidate.version === CC_SUBJECT_STORAGE_VERSION ? ChatConsistencyTabComponent.readStoredCompare(candidate.compare) : null
     };
   }
 
   /**
-   * Selects the stored model with its dates, a rolling preset moved to now, when it is among the
-   * models with runs. A stored model that is not is forgotten.
+   * Selects the stored model with its dates, a rolling preset moved to now, and its compared set as
+   * the preferred one, when the model is among the models with runs. A stored model that is not is
+   * forgotten.
    */
   private restoreSubject(): void {
     const stored = this.readStoredSubject();
@@ -313,6 +375,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     }
     this.selectedKey = stored.modelKey;
     this.range = ccAnchorRange(stored.range, new Date());
+    this.compareKey = stored.compare?.key ?? null;
     this.loadSubject();
   }
 
@@ -432,11 +495,28 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.selectedKey = key;
     this.timeline = null;
     this.rows = [];
+    this.batteryRows = [];
+    this.comparisonSets = null;
+    this.compareKey = null;
     this.scope = CC_EMPTY_SCOPE;
     this.anchorError = null;
     this.announcement = '';
     this.persistSubject();
     this.loadSubject();
+  }
+
+  /**
+   * Compares within another battery or suite. The selection counts the new set's units, so it is
+   * cleared, and the clearing announced when there was one.
+   */
+  setCompare(key: string): void {
+    if (key === this.compareKey || !this.comparisonSets?.sets.some(set => set.key === key)) return;
+    const hadSelection = !scopeIsDefault(this.scope);
+    this.compareKey = key;
+    this.scope = ccEmptyScope(setUnitKind(key));
+    this.announcement = hadSelection ? CC_SET_CHANGE_NOTE : '';
+    this.persistSubject();
+    this.cdr.markForCheck();
   }
 
   setRange(range: CcDateRange): void {
@@ -445,7 +525,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.loadSubject();
   }
 
-  /** The step-1 run selection changed. */
+  /** The step-1 unit selection changed. */
   setScope(scope: CcRunScope): void {
     this.scope = scope;
     this.cdr.markForCheck();
@@ -459,8 +539,10 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * The timeline and the run table of the subject over the range, together. Marks and left-out runs
-   * that no longer appear among the rows are dropped from the selection, and the drop is announced.
+   * The timeline, the run table, the comparison sets and the battery runs of the subject over the
+   * range, together. The compared set stays while it is offered, else becomes the server's default,
+   * which clears the selection and says so. Marks and left-out units that no longer appear among the
+   * set's units are dropped from the selection, and the drop is announced.
    */
   loadSubject(): void {
     const key = this.selectedKey;
@@ -473,16 +555,31 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
     this.subjectSub = forkJoin({
       timeline: this.service.getTimeline(key, from, to),
-      rows: this.service.getRuns(key, from, to)
+      rows: this.service.getRuns(key, from, to),
+      sets: this.service.getComparisonSets(key, from, to),
+      batteryRows: this.service.getBatteryRuns(key, from, to)
     }).subscribe({
-      next: ({ timeline, rows }) => {
+      next: ({ timeline, rows, sets, batteryRows }) => {
         if (this.selectedKey !== key) return;
         this.subjectLoading = false;
         this.timeline = timeline;
         this.rows = rows;
-        const pruned = pruneScope(this.scope, rows);
+        this.batteryRows = Array.isArray(batteryRows) ? batteryRows : [];
+        this.comparisonSets = sets && Array.isArray(sets.sets) ? sets : { sets: [], defaultKey: null };
+        const offered = (candidate: string | null) => !!candidate && this.comparisonSets!.sets.some(set => set.key === candidate);
+        const previousKey = this.compareKey;
+        const nextKey = offered(previousKey) ? previousKey : (offered(this.comparisonSets.defaultKey) ? this.comparisonSets.defaultKey : null);
+        const notes: string[] = [];
+        if (nextKey !== previousKey) {
+          if (!scopeIsDefault(this.scope)) notes.push(CC_SET_CHANGE_NOTE);
+          this.compareKey = nextKey;
+          this.scope = ccEmptyScope(setUnitKind(nextKey));
+          this.persistSubject();
+        }
+        const pruned = pruneScope(this.scope, this.units());
         this.scope = pruned.scope;
-        if (pruned.note) this.announcement = pruned.note;
+        if (pruned.note) notes.push(pruned.note);
+        if (notes.length > 0) this.announcement = notes.join(' ');
         this.cdr.markForCheck();
       },
       error: err => {
@@ -514,6 +611,11 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   /** The run report is a shell dialog opened after the wizard, so it shows above it. */
   openRunReport(runId: number): void {
     this.bridge.viewRunDetail(runId);
+  }
+
+  /** The Battery Run Report is a shell dialog too, as Run History opens it. */
+  openBatteryRunReport(batteryRunId: number): void {
+    this.bridge.openBatteryRunReport(batteryRunId);
   }
 
   /** Marks or unmarks the run as the grader anchor, and updates the row and its timeline point in place. */
@@ -563,8 +665,9 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Opens a saved analysis in the wizard on its results, switching the subject to its model first. The
-   * step-1 run selection is cleared, since the analysis carries its own record of the runs it used.
+   * Opens a saved analysis in the wizard on its results, switching the subject to its model and step 1
+   * to its compared set first. The step-1 run selection is cleared, since the analysis carries its own
+   * record of the runs it used.
    */
   openAnalysis(id: number): void {
     this.openingId = id;
@@ -578,8 +681,23 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
         if (result.subject.key && result.subject.key !== this.selectedKey) {
           this.selectModel(result.subject.key);
         }
+        const setKey = result.comparisonSet?.key ?? null;
+        let switched = false;
+        if (setKey && setKey !== this.compareKey) {
+          if (!this.comparisonSets) {
+            // Still loading: the load keeps it while it is offered.
+            this.compareKey = setKey;
+          } else if (this.comparisonSets.sets.some(set => set.key === setKey)) {
+            // Loaded: switched only when the set is offered in these dates.
+            this.compareKey = setKey;
+            this.persistSubject();
+            switched = true;
+          }
+        }
+        if (hadSelection || switched) {
+          this.scope = ccEmptyScope(this.unitKind);
+        }
         if (hadSelection) {
-          this.scope = CC_EMPTY_SCOPE;
           this.announcement = 'The run selection in step 1 was cleared to show the saved analysis.';
         }
         // Renders the wizard with the new subject before the result is handed to it.

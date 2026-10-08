@@ -1,10 +1,15 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { CC_ALL_DATES, CcDateRange } from '../chat-consistency-range';
-import { CC_EMPTY_SCOPE, CcRunScope } from '../chat-consistency-scope';
-import { CcRunRow } from '../chat-consistency.models';
+import { CC_EMPTY_BATTERY_SCOPE, CC_EMPTY_SCOPE, CcRunScope } from '../chat-consistency-scope';
+import { CcBatteryRunRow, CcRunRow } from '../chat-consistency.models';
 import {
+  CC_BATTERY_SET_KEY,
   ccAxis,
+  ccBatteryMemberRows,
+  ccBatteryRunRow,
+  ccBatteryRunRows,
+  ccComparisonSets,
   ccManyRunRows,
   ccRunRow,
   ccRunRows,
@@ -12,7 +17,12 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
-import { CC_RUNS_VIEW_STORAGE_KEY, CcModelStepComponent, axisPickerOptions } from './model-step.component';
+import {
+  CC_BATTERY_RUNS_VIEW_STORAGE_KEY,
+  CC_RUNS_VIEW_STORAGE_KEY,
+  CcModelStepComponent,
+  axisPickerOptions
+} from './model-step.component';
 
 describe('CcModelStepComponent', () => {
   let fixture: ComponentFixture<CcModelStepComponent>;
@@ -20,7 +30,10 @@ describe('CcModelStepComponent', () => {
   let el: HTMLElement;
 
   beforeEach(async () => {
-    try { localStorage.removeItem(CC_RUNS_VIEW_STORAGE_KEY); } catch { /* storage unavailable */ }
+    try {
+      localStorage.removeItem(CC_RUNS_VIEW_STORAGE_KEY);
+      localStorage.removeItem(CC_BATTERY_RUNS_VIEW_STORAGE_KEY);
+    } catch { /* storage unavailable */ }
     await TestBed.configureTestingModule({
       imports: [CcModelStepComponent],
       providers: chatConsistencyTestProviders()
@@ -601,6 +614,228 @@ describe('CcModelStepComponent', () => {
       fixture.componentRef.changeDetectorRef.markForCheck();
       fixture.detectChanges();
       expect(textOf(el.querySelector('.cc-runs-no-matches'))).toContain('No runs match these filters.');
+    });
+  });
+
+  describe('comparison sets', () => {
+    /** Battery runs #12 and #11, then an incomplete #13 with only its Board Suite member. */
+    function batteryRows(): CcBatteryRunRow[] {
+      return [
+        ccBatteryRunRow(13, '2026-10-08T14:00:00Z', [305], {
+          complete: false, incompleteReason: '1 of 2 suites usable', status: 'completedWithErrors', harnessVersions: ['53', '54']
+        }),
+        ...ccBatteryRunRows()
+      ];
+    }
+
+    /** The model with the battery fixtures, comparing within `key`, the selection kept as the host would. */
+    function withSets(key: string, scope: CcRunScope = key === CC_BATTERY_SET_KEY ? CC_EMPTY_BATTERY_SCOPE : CC_EMPTY_SCOPE): void {
+      fixture.componentRef.setInput('selectedKey', 'openai/gpt-5|high');
+      fixture.componentRef.setInput('timeline', ccTimeline());
+      fixture.componentRef.setInput('rows', [...ccBatteryMemberRows(), ...ccRunRows()]);
+      fixture.componentRef.setInput('batteryRows', batteryRows());
+      fixture.componentRef.setInput('comparisonSets', ccComparisonSets());
+      fixture.componentRef.setInput('compareKey', key);
+      fixture.componentRef.setInput('scope', scope);
+      fixture.detectChanges();
+    }
+
+    const batteryCard = (id: number): HTMLElement => el.querySelector<HTMLElement>(`.cc-battery-card[data-battery-run-id="${id}"]`)!;
+    const batteryIds = (): string[] =>
+      Array.from(el.querySelectorAll('.cc-battery-card')).map(item => item.getAttribute('data-battery-run-id')!);
+
+    it('offers the sets under Compare, batteries then suites, with the compared one chosen and the hint', () => {
+      withSets(CC_BATTERY_SET_KEY);
+      expect(textOf(el.querySelector('label[for="cc-compare"]'))).toBe('Compare');
+      const select = el.querySelector<HTMLSelectElement>('#cc-compare')!;
+      expect(select.value).toBe(CC_BATTERY_SET_KEY);
+      expect(select.getAttribute('aria-describedby')).toBe('cc-compare-hint');
+      expect(textOf(el.querySelector('#cc-compare-hint'))).toBe('Results are comparable only within one battery or one suite.');
+      const groups = Array.from(select.querySelectorAll('optgroup'));
+      expect(groups.map(group => group.label)).toEqual(['Batteries', 'Suites']);
+      expect(Array.from(groups[0].querySelectorAll('option')).map(option => textOf(option)))
+        .toEqual(['Two initial suites (revision 1) · 2 battery runs']);
+      expect(Array.from(groups[1].querySelectorAll('option')).map(option => textOf(option)))
+        .toEqual(['Board Suite · 8 runs', 'Wiki Suite · 2 runs']);
+      // The Compare field follows the dates.
+      expect(el.querySelector('#cc-tl-range')!.compareDocumentPosition(select) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('asks for another set, and refuses while locked, writing the choice back', () => {
+      withSets(CC_BATTERY_SET_KEY);
+      const chosen: string[] = [];
+      component.compareChange.subscribe(key => chosen.push(key));
+      const select = el.querySelector<HTMLSelectElement>('#cc-compare')!;
+      select.value = 'suite:id:6';
+      select.dispatchEvent(new Event('change'));
+      expect(chosen).toEqual(['suite:id:6']);
+
+      fixture.componentRef.setInput('lockedReason', 'The model and the dates are locked while the charts export.');
+      fixture.detectChanges();
+      expect(select.getAttribute('aria-disabled')).toBe('true');
+      expect(select.getAttribute('aria-describedby')).toBe('cc-compare-hint cc-tl-lock-reason');
+      select.value = 'suite:id:5';
+      select.dispatchEvent(new Event('change'));
+      expect(chosen).toEqual(['suite:id:6']);
+      expect(select.value).toBe(CC_BATTERY_SET_KEY);
+    });
+
+    it('lists one card per battery run, newest first, with its kicker, members and report', () => {
+      withSets(CC_BATTERY_SET_KEY);
+      expect(textOf(el.querySelector('h5#cc-tl-runs-title'))).toBe('Battery runs of GPT-5 high');
+      expect(batteryIds()).toEqual(['13', '12', '11']);
+      expect(el.querySelector('.cc-run-card:not(.cc-battery-card)')).toBeNull();
+      expect(textOf(el.querySelector('#cc-runs-status'))).toBe('Showing 3 of 3 battery runs');
+
+      const twelve = batteryCard(12);
+      const include = twelve.querySelector<HTMLInputElement>('#cc-brun-12-include')!;
+      expect(include.checked).toBe(true);
+      expect(include.getAttribute('aria-label')).toBe('Include battery run #12 in the analysis');
+      const title = twelve.querySelector<HTMLElement>('h6#cc-brun-12-title')!;
+      expect(title.querySelector('label')!.getAttribute('for')).toBe('cc-brun-12-include');
+      expect(textOf(title)).toBe('Two initial suites');
+      const kicker = textOf(twelve.querySelector('.cc-run-kicker'));
+      expect(kicker).toContain('#12');
+      expect(kicker).toContain('Completed');
+      expect(kicker).toContain('Harness 54');
+      expect(textOf(twelve.querySelector('.cc-battery-suites'))).toBe('2 of 2 suites');
+      expect(textOf(batteryCard(13).querySelector('.cc-run-harness'))).toBe('Harnesses 53, 54');
+      expect(textOf(batteryCard(13).querySelector('.cc-run-status'))).toBe('Completed with errors');
+
+      const members = Array.from(twelve.querySelectorAll('.cc-battery-member')).map(item => textOf(item.querySelector('.cc-battery-member-text')));
+      expect(members).toEqual([
+        '#303 · Board Suite · Completed · harness 54',
+        '#304 · Wiki Suite · Completed · harness 54'
+      ]);
+      expect(twelve.querySelector('.cc-battery-members')!.getAttribute('aria-label')).toBe('Member runs of battery run #12');
+
+      const reports: number[] = [];
+      const batteryReports: number[] = [];
+      component.openRunReport.subscribe(id => reports.push(id));
+      component.openBatteryRunReport.subscribe(id => batteryReports.push(id));
+      const open = twelve.querySelector<HTMLButtonElement>('.cc-open-battery-report-btn')!;
+      expect(open.getAttribute('aria-label')).toBe('Open the battery run report of battery run #12');
+      open.click();
+      twelve.querySelector<HTMLButtonElement>('.cc-battery-member[data-run-id="303"] .cc-open-report-btn')!.click();
+      expect(batteryReports).toEqual([12]);
+      expect(reports).toEqual([303]);
+    });
+
+    it('disables an incomplete battery run with its reason, and leaves it out of the analysis', () => {
+      const scopes = hostScope();
+      withSets(CC_BATTERY_SET_KEY);
+      const include = el.querySelector<HTMLInputElement>('#cc-brun-13-include')!;
+      expect(include.checked).toBe(false);
+      expect(include.disabled).toBe(false);
+      expect(include.getAttribute('aria-disabled')).toBe('true');
+      expect(include.getAttribute('aria-describedby')).toBe('cc-brun-13-reason');
+      expect(textOf(el.querySelector('#cc-brun-13-reason'))).toBe('Incomplete: 1 of 2 suites usable');
+      expect(textOf(batteryCard(13).querySelector('.cc-incomplete-tag'))).toBe('Incomplete');
+      expect(batteryCard(13).getAttribute('data-inclusion')).toBe('incomplete');
+
+      include.click();
+      fixture.detectChanges();
+      const first = batteryCard(13).querySelector<HTMLButtonElement>('.cc-first-btn')!;
+      expect(first.getAttribute('aria-disabled')).toBe('true');
+      first.click();
+      fixture.detectChanges();
+      expect(scopes).toEqual([]);
+
+      expect(textOf(el.querySelector('#cc-scope-label')))
+        .toBe('Battery runs in the analysis — 2 of 3 battery runs in these dates · from #11 (2026-10-08) to #12 (2026-10-08) · 1 incomplete');
+    });
+
+    it('sums up the battery runs in the band, with chips and Clear selection over battery runs', async () => {
+      withSets(CC_BATTERY_SET_KEY);
+      fixture.componentRef.setInput('batteryRows', ccBatteryRunRows());
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('#cc-scope-label'))).toBe('Battery runs in the analysis — all 2 battery runs in these dates');
+
+      const scopes = hostScope();
+      el.querySelector<HTMLInputElement>('#cc-brun-11-include')!.click();
+      fixture.detectChanges();
+      expect([...scopes[0].leftOut]).toEqual([11]);
+      expect(scopes[0].unitKind).toBe('batteryRun');
+      expect(textOf(el.querySelector('#cc-scope-label')))
+        .toBe('Battery runs in the analysis — 1 of 2 battery runs in these dates · only #12 (2026-10-08) · 1 left out');
+      expect(textOf(batteryCard(11).querySelector('.cc-left-out-tag'))).toBe('Left out');
+      const remove = el.querySelector<HTMLButtonElement>('.cc-scope-chip-remove')!;
+      expect(remove.getAttribute('aria-label')).toBe('Include battery run #11 again');
+
+      el.querySelector<HTMLInputElement>('#cc-brun-12-include')!.click();
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-scope-empty'))).toBe('No battery run is left in the analysis. Check at least one battery run.');
+
+      el.querySelector<HTMLButtonElement>('.cc-scope-clear')!.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component.scope).toBe(CC_EMPTY_BATTERY_SCOPE);
+      expect(document.activeElement).toBe(el.querySelector('#cc-scope-label'));
+    });
+
+    it('marks the first and last battery runs with pressed toggles', () => {
+      const scopes = hostScope();
+      withSets(CC_BATTERY_SET_KEY);
+      const first = batteryCard(12).querySelector<HTMLButtonElement>('.cc-first-btn')!;
+      expect(first.getAttribute('aria-label')).toBe('Use battery run #12 as the first run of the analysis');
+      first.click();
+      fixture.detectChanges();
+      expect(scopes[scopes.length - 1].firstRunId).toBe(12);
+      expect(batteryCard(12).querySelector('.cc-first-btn')!.getAttribute('aria-pressed')).toBe('true');
+      expect(textOf(batteryCard(12).querySelector('.cc-first-tag'))).toBe('First run');
+      expect(textOf(el.querySelector('#cc-brun-11-reason'))).toBe('Before the first battery run (#12)');
+
+      batteryCard(11).querySelector<HTMLButtonElement>('.cc-last-btn')!.click();
+      fixture.detectChanges();
+      expect(scopes[scopes.length - 1].firstRunId).toBeNull();
+      expect(scopes[scopes.length - 1].lastRunId).toBe(11);
+      expect(textOf(el.querySelector('.cc-scope-note'))).toBe('Battery run #11 is before the first battery run, so the first battery run was cleared.');
+    });
+
+    it('offers the Harness, In the analysis and Eligibility facets over battery runs, and battery sorts', () => {
+      withSets(CC_BATTERY_SET_KEY);
+      expect(component.facets.map(facet => facet.label)).toEqual(['Harness', 'In the analysis', 'Eligibility']);
+      expect(component.facets.find(facet => facet.column === 'inclusion')!.options).toEqual([
+        { value: 'included', label: 'Included', count: 2 },
+        { value: 'incomplete', label: 'Incomplete', count: 1 }
+      ]);
+      expect(component.facets[0].facetId).toBe('cc-bruns-facet-harness');
+      expect(Array.from(el.querySelectorAll<HTMLOptionElement>('#cc-runs-sort option')).map(option => textOf(option)))
+        .toEqual(['Newest first', 'Oldest first', 'Harness']);
+
+      component.onFacetChange('inclusion', ['incomplete']);
+      expect(batteryIds()).toEqual(['13']);
+      expect(textOf(el.querySelector('#cc-runs-status'))).toBe('One battery run · filtered from 3');
+    });
+
+    it('lists a suite\'s runs in a suite set, members tagged with their battery run, under an Origin facet', () => {
+      withSets('suite:id:5');
+      expect(textOf(el.querySelector('h5#cc-tl-runs-title'))).toBe('Runs of GPT-5 high');
+      expect(cardIds()).toEqual(['303', '301', '106', '105', '104', '103', '102', '101']);
+      expect(el.querySelector('.cc-battery-card')).toBeNull();
+      expect(textOf(card(303).querySelector('.cc-member-tag'))).toBe('Battery run #12 · suite 1 of 2');
+      expect(card(106).querySelector('.cc-member-tag')).toBeNull();
+      expect(textOf(el.querySelector('#cc-scope-label'))).toBe('Runs in the analysis — all 8 runs in these dates');
+
+      const labels = component.facets.map(facet => facet.label);
+      expect(labels).toContain('Origin');
+      expect(labels).not.toContain('Suite');
+      expect(component.facets.find(facet => facet.column === 'origin')!.options).toEqual([
+        { value: 'Standalone', label: 'Standalone', count: 6 },
+        { value: 'Battery member', label: 'Battery member', count: 2 }
+      ]);
+      component.onFacetChange('origin', ['Battery member']);
+      expect(cardIds()).toEqual(['303', '301']);
+    });
+
+    it('starts the list over when another set is compared', () => {
+      withSets('suite:id:5');
+      component.onFacetChange('origin', ['Battery member']);
+      expect(cardIds().length).toBe(2);
+      fixture.componentRef.setInput('compareKey', 'suite:id:6');
+      fixture.detectChanges();
+      expect(cardIds()).toEqual(['304', '302']);
+      expect(component.chips).toEqual([]);
     });
   });
 });

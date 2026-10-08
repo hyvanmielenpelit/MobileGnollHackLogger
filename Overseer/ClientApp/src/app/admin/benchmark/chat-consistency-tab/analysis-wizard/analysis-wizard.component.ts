@@ -38,6 +38,8 @@ import {
   CcAnalysisResult,
   CcAnalysisSummary,
   CcAnnotation,
+  CcBatteryRunRow,
+  CcComparisonSet,
   CcModelAxis,
   CcOpenDocumentsRequest,
   CcProtocolOverrides,
@@ -178,15 +180,24 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
 
   @Input() axis: CcModelAxis | null = null;
   @Input() timeline: CcTimeline | null = null;
-  /** The runs in the analysis: the step-1 dates narrowed by the step-1 selection. */
+  /**
+   * The runs in the analysis: the step-1 dates narrowed by the step-1 selection; in a battery set, the
+   * members of the battery runs in the analysis.
+   */
   @Input() rows: readonly CcRunRow[] = [];
-  /** Every run in the step-1 dates, those left out included. */
+  /** Every run of the compared set in the step-1 dates, those left out included. */
   @Input() allRows: readonly CcRunRow[] = [];
-  /** The step-1 selection, recorded with the analysis. */
+  /** The battery or suite compared within; null analyzes the runs one by one. */
+  @Input() compareSet: CcComparisonSet | null = null;
+  /** In a battery set, the battery runs in the analysis, oldest first. */
+  @Input() batteryRows: readonly CcBatteryRunRow[] = [];
+  /** In a battery set, every battery run of the set in the step-1 dates. */
+  @Input() allBatteryRows: readonly CcBatteryRunRow[] = [];
+  /** The step-1 selection, recorded with the analysis: battery run ids in a battery set. */
   @Input() scope: CcRunScope = CC_EMPTY_SCOPE;
   /** The step-1 dates, recorded with the analysis. */
   @Input() range: CcDateRange = CC_ALL_DATES;
-  /** The days of the first and last run in the analysis, which the presets span; null with none. */
+  /** The days of the first and last unit in the analysis, which the presets span; null with none. */
   @Input() span: CcRunSpan | null = null;
   /** Changes with the step-1 selection, so a new selection preselects the runs again. */
   @Input() scopeKey = '';
@@ -225,6 +236,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   marginOverrides: Record<string, string> = {};
   alphaOverride = '';
 
+  /** The selected units of each period: run ids, or battery run ids in a battery set. */
   readonly baselineSelected = new Set<number>();
   readonly comparisonSelected = new Set<number>();
   readonly controlSelected = new Set<number>();
@@ -256,7 +268,12 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     if (spanChange && !reset && !sameSpan(spanChange.previousValue, this.span) && this.preset !== 'custom') {
       this.choosePreset(this.preset);
     }
-    if ((changes['rows'] || changes['scopeKey']) && this.step === 'runs') this.preselectRuns();
+    if ((changes['rows'] || changes['batteryRows'] || changes['scopeKey']) && this.step === 'runs') this.preselectRuns();
+  }
+
+  /** A battery set is compared: the units are battery runs. */
+  get batteryMode(): boolean {
+    return this.compareSet?.kind === 'battery';
   }
 
   ngOnDestroy(): void {
@@ -318,8 +335,14 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.preset = 'custom';
     this.presetNote = '';
     this.relaxedPooling = result.endpoints.some(endpoint => endpoint.relaxedPooling);
-    this.replaceSelection(this.baselineSelected, result.baseline.runIds);
-    this.replaceSelection(this.comparisonSelected, result.comparison.runIds);
+    if (result.unitKind === 'batteryRun' && result.units) {
+      const unitsOf = (period: string) => result.units!.filter(unit => unit.period === period).map(unit => unit.unitId);
+      this.replaceSelection(this.baselineSelected, unitsOf('baseline'));
+      this.replaceSelection(this.comparisonSelected, unitsOf('comparison'));
+    } else {
+      this.replaceSelection(this.baselineSelected, result.baseline.runIds);
+      this.replaceSelection(this.comparisonSelected, result.comparison.runIds);
+    }
     this.replaceSelection(this.controlSelected, result.controls.controlRunIds);
     this.selectionKey = this.periodKey;
     this.changed();
@@ -349,12 +372,16 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return cache.groups;
   }
 
-  /** The most recent saved analysis of this subject: the last look *Confirm on later data* starts after. */
+  /**
+   * The most recent saved analysis of this subject, within the same battery or suite while a set is
+   * compared: the last look *Confirm on later data* starts after.
+   */
   get lastAnalysis(): CcAnalysisSummary | null {
     const key = this.axis?.key;
     if (!key) return null;
+    const setKey = this.compareSet?.key ?? null;
     return [...this.analyses]
-      .filter(analysis => analysis.subjectModelKey === key)
+      .filter(analysis => analysis.subjectModelKey === key && (setKey === null || analysis.comparisonSetKey === setKey))
       .sort((a, b) => utcMillis(b.createdAtUtc) - utcMillis(a.createdAtUtc))[0] ?? null;
   }
 
@@ -391,7 +418,9 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
       case 'later': {
         const last = this.lastAnalysis;
         if (!last) {
-          this.presetNote = 'This model has no saved analysis yet; there is no earlier look to confirm.';
+          this.presetNote = this.compareSet
+            ? `This model has no saved analysis of ${this.compareSet.label} yet; there is no earlier look to confirm.`
+            : 'This model has no saved analysis yet; there is no earlier look to confirm.';
           break;
         }
         this.days = laterDataPreset(axis, last, this.span);
@@ -413,20 +442,28 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   }
 
   /**
-   * Which runs the presets span: `Presets use the runs chosen in step 1: #21 (2026-09-20) to #93
-   * (2026-10-05), 15 runs.`, or every run in the dates while step 1 leaves the selection alone.
+   * Which units the presets span: `Presets use the runs chosen in step 1: #21 (2026-09-20) to #93
+   * (2026-10-05), 15 runs.`, or every run in the dates while step 1 leaves the selection alone; in a
+   * battery set `Presets use the battery runs chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08),
+   * 2 battery runs.`
    */
   get spanNote(): string {
-    if (this.rows.length === 0) return '';
-    const ordered = [...this.rows].sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc) || a.runId - b.runId);
+    const battery = this.batteryMode;
+    const units = battery
+      ? this.batteryRows.map(row => ({ id: row.batteryRunId, startedAtUtc: row.startedAtUtc }))
+      : this.rows.map(row => ({ id: row.runId, startedAtUtc: row.startedAtUtc }));
+    if (units.length === 0) return '';
+    const noun = battery ? 'battery run' : 'run';
+    const ordered = units.sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc) || a.id - b.id);
     const first = ordered[0];
     const last = ordered[ordered.length - 1];
     const runs = first === last
-      ? `#${first.runId} (${formatUtcDate(first.startedAtUtc)}), 1 run`
-      : `#${first.runId} (${formatUtcDate(first.startedAtUtc)}) to #${last.runId} (${formatUtcDate(last.startedAtUtc)}), ${plural(ordered.length, 'run')}`;
-    return scopeIsDefault(this.scope)
-      ? `Presets use every run in the dates: ${runs}.`
-      : `Presets use the runs chosen in step 1: ${runs}.`;
+      ? `#${first.id} (${formatUtcDate(first.startedAtUtc)}), 1 ${noun}`
+      : `#${first.id} (${formatUtcDate(first.startedAtUtc)}) to #${last.id} (${formatUtcDate(last.startedAtUtc)}), ${plural(ordered.length, noun)}`;
+    const incomplete = battery && this.allBatteryRows.some(row => !row.complete);
+    return scopeIsDefault(this.scope) && !incomplete
+      ? `Presets use every ${noun} in the dates: ${runs}.`
+      : `Presets use the ${noun}s chosen in step 1: ${runs}.`;
   }
 
   onDayInput(field: keyof CcPeriodDays, value: string): void {
@@ -482,15 +519,18 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return `${this.axis?.key}|${d.baselineStart}|${d.baselineEnd}|${d.comparisonStart}|${d.comparisonEnd}|${this.scopeKey}`;
   }
 
-  /** The runs left out in step 1 that fall inside either period, ascending. */
+  /** The units left out in step 1 that fall inside either period, ascending: battery run ids in a battery set. */
   get leftOutInPeriods(): number[] {
     if (this.scope.leftOut.size === 0) return [];
     const d = this.days;
-    return this.allRows
-      .filter(row => this.scope.leftOut.has(row.runId)
-        && (withinUtcDays(row.startedAtUtc, d.baselineStart, d.baselineEnd)
-          || withinUtcDays(row.startedAtUtc, d.comparisonStart, d.comparisonEnd)))
-      .map(row => row.runId)
+    const units = this.batteryMode
+      ? this.allBatteryRows.map(row => ({ id: row.batteryRunId, startedAtUtc: row.startedAtUtc }))
+      : this.allRows.map(row => ({ id: row.runId, startedAtUtc: row.startedAtUtc }));
+    return units
+      .filter(unit => this.scope.leftOut.has(unit.id)
+        && (withinUtcDays(unit.startedAtUtc, d.baselineStart, d.baselineEnd)
+          || withinUtcDays(unit.startedAtUtc, d.comparisonStart, d.comparisonEnd)))
+      .map(unit => unit.id)
       .sort((a, b) => a - b);
   }
 
@@ -499,27 +539,56 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return ids.map(id => `#${id}`).join(', ');
   }
 
-  periodRows(period: 'baseline' | 'comparison'): CcRunRow[] {
-    const [start, end] = period === 'baseline'
+  private periodBounds(period: 'baseline' | 'comparison'): [string, string] {
+    return period === 'baseline'
       ? [this.days.baselineStart, this.days.baselineEnd]
       : [this.days.comparisonStart, this.days.comparisonEnd];
+  }
+
+  /** The runs in the analysis that started in the period; in a battery set, the members of its battery runs. */
+  periodRows(period: 'baseline' | 'comparison'): CcRunRow[] {
+    if (this.batteryMode) return this.periodBatteryRows(period).flatMap(row => row.members);
+    const [start, end] = this.periodBounds(period);
     return [...this.rows]
       .filter(row => withinUtcDays(row.startedAtUtc, start, end))
       .sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc));
   }
 
+  /** In a battery set, the battery runs in the analysis that started in the period, oldest first. */
+  periodBatteryRows(period: 'baseline' | 'comparison'): CcBatteryRunRow[] {
+    const [start, end] = this.periodBounds(period);
+    return [...this.batteryRows]
+      .filter(row => withinUtcDays(row.startedAtUtc, start, end))
+      .sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc) || a.batteryRunId - b.batteryRunId);
+  }
+
+  /** The member runs of the selected battery runs of both periods. */
+  private selectedMemberRows(): CcRunRow[] {
+    const selected = new Set([...this.baselineSelected, ...this.comparisonSelected]);
+    return [...this.periodBatteryRows('baseline'), ...this.periodBatteryRows('comparison')]
+      .filter(row => selected.has(row.batteryRunId))
+      .flatMap(row => row.members);
+  }
+
   /**
-   * Selects the eligible runs of each period and every matched control, the first time these periods
-   * reach *Runs and controls*; the outer wizard calls it on entering that step.
+   * Selects the eligible units of each period and every matched control, the first time these periods
+   * reach *Runs and controls*; the outer wizard calls it on entering that step. In a battery set the
+   * units are the eligible complete battery runs.
    */
   preselectRuns(): void {
     const key = this.periodKey;
     if (key === this.selectionKey) return;
-    // Runs still loading: chosen when they arrive (ngOnChanges).
-    if (this.rows.length === 0) return;
+    // Units still loading: chosen when they arrive (ngOnChanges).
+    if (this.batteryMode ? this.batteryRows.length === 0 : this.rows.length === 0) return;
     this.selectionKey = key;
-    this.replaceSelection(this.baselineSelected, this.periodRows('baseline').filter(isRunEligible).map(row => row.runId));
-    this.replaceSelection(this.comparisonSelected, this.periodRows('comparison').filter(isRunEligible).map(row => row.runId));
+    if (this.batteryMode) {
+      const eligible = (row: CcBatteryRunRow) => row.complete && isRunEligible(row);
+      this.replaceSelection(this.baselineSelected, this.periodBatteryRows('baseline').filter(eligible).map(row => row.batteryRunId));
+      this.replaceSelection(this.comparisonSelected, this.periodBatteryRows('comparison').filter(eligible).map(row => row.batteryRunId));
+    } else {
+      this.replaceSelection(this.baselineSelected, this.periodRows('baseline').filter(isRunEligible).map(row => row.runId));
+      this.replaceSelection(this.comparisonSelected, this.periodRows('comparison').filter(isRunEligible).map(row => row.runId));
+    }
     this.replaceSelection(this.controlSelected, this.controlCandidates);
     this.changed();
   }
@@ -558,9 +627,20 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return [...ids].sort((a, b) => a - b);
   }
 
-  /** The runs a re-grade covers: the selected target runs and the selected controls. */
+  /** The runs a re-grade covers: the selected target runs (the members of selected battery runs) and the selected controls. */
   get regradeRunIds(): number[] {
-    return [...new Set([...this.baselineSelected, ...this.comparisonSelected, ...this.controlSelected])].sort((a, b) => a - b);
+    const targets = this.batteryMode
+      ? this.selectedMemberRows().map(row => row.runId)
+      : [...this.baselineSelected, ...this.comparisonSelected];
+    return [...new Set([...targets, ...this.controlSelected])].sort((a, b) => a - b);
+  }
+
+  /** The selected runs of a period: the members of its selected battery runs in a battery set. */
+  private selectedRunIds(period: 'baseline' | 'comparison'): ReadonlySet<number> {
+    const selected = this.selection(period);
+    if (!this.batteryMode) return selected;
+    return new Set(this.periodBatteryRows(period).filter(row => selected.has(row.batteryRunId))
+      .flatMap(row => row.members.map(member => member.runId)));
   }
 
   private pointsOf(ids: ReadonlySet<number>): CcTimelinePoint[] {
@@ -570,8 +650,8 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   /** The time strata both periods' selected runs sampled. */
   get commonStrata(): string[] {
     const strataOf = (ids: ReadonlySet<number>) => new Set(this.pointsOf(ids).flatMap(point => point.strata));
-    const baseline = strataOf(this.baselineSelected);
-    const comparison = strataOf(this.comparisonSelected);
+    const baseline = strataOf(this.selectedRunIds('baseline'));
+    const comparison = strataOf(this.selectedRunIds('comparison'));
     return [...baseline].filter(stratum => comparison.has(stratum)).sort();
   }
 
@@ -580,8 +660,9 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return this.eventGroups.filter(group => withinUtcDays(group.atUtc, this.days.baselineStart, this.days.comparisonEnd));
   }
 
-  /** Selected target runs without a matched control run. */
+  /** Selected target runs without a matched control run; the members of selected battery runs in a battery set. */
   get missingControls(): CcRunRow[] {
+    if (this.batteryMode) return this.selectedMemberRows().filter(row => row.matchedControlRunIds.length === 0);
     const selected = new Set([...this.baselineSelected, ...this.comparisonSelected]);
     return [...this.periodRows('baseline'), ...this.periodRows('comparison')]
       .filter(row => selected.has(row.runId) && row.matchedControlRunIds.length === 0);
@@ -591,12 +672,13 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     if (!this.axis) return 'Choose a model in step 1 first.';
     if (this.periodsError) return this.periodsError;
     if (this.overridesError) return this.overridesError;
-    if (this.baselineSelected.size === 0) return 'Select at least one baseline run.';
-    if (this.comparisonSelected.size === 0) return 'Select at least one comparison run.';
+    const noun = this.batteryMode ? 'battery run' : 'run';
+    if (this.baselineSelected.size === 0) return `Select at least one baseline ${noun}.`;
+    if (this.comparisonSelected.size === 0) return `Select at least one comparison ${noun}.`;
     return '';
   }
 
-  started(row: CcRunRow): string {
+  started(row: CcRunRow | CcBatteryRunRow): string {
     return formatUtcDateTime(row.startedAtUtc);
   }
 
@@ -604,25 +686,45 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return controlRunsText(row);
   }
 
-  eligible(row: CcRunRow): boolean {
+  eligible(row: CcRunRow | CcBatteryRunRow): boolean {
     return isRunEligible(row);
+  }
+
+  /** `Board Suite, Wiki Suite`: a battery run's members' suites, in suite order. */
+  batterySuites(row: CcBatteryRunRow): string {
+    return [...new Set(row.members.map(member => member.suiteName))].join(', ') || '—';
+  }
+
+  /** The matched control runs of a battery run's members. */
+  batteryControls(row: CcBatteryRunRow): string {
+    const ids = [...new Set(row.members.flatMap(member => member.matchedControlRunIds))].sort((a, b) => a - b);
+    return ids.length === 0 ? 'None' : ids.map(id => `#${id}`).join(', ');
   }
 
   /** The request Analyze sends. */
   buildRequest(): CcAnalysisRequest | null {
     const axis = this.axis;
     if (!axis || this.analyzeBlocked) return null;
+    const baseline = [...this.baselineSelected].sort((a, b) => a - b);
+    const comparison = [...this.comparisonSelected].sort((a, b) => a - b);
     const request: CcAnalysisRequest = {
       subjectModelKey: axis.key,
       baselineStartUtc: startOfUtcDay(this.days.baselineStart)!,
       baselineEndUtc: endOfUtcDay(this.days.baselineEnd)!,
       comparisonStartUtc: startOfUtcDay(this.days.comparisonStart)!,
       comparisonEndUtc: endOfUtcDay(this.days.comparisonEnd)!,
-      baselineRunIds: [...this.baselineSelected].sort((a, b) => a - b),
-      comparisonRunIds: [...this.comparisonSelected].sort((a, b) => a - b),
       relaxedPooling: this.relaxedPooling,
       runSelection: this.runSelection()
     };
+    // A battery set takes the battery runs and refuses run ids; a suite set and no set take run ids.
+    if (this.batteryMode) {
+      request.baselineBatteryRunIds = baseline;
+      request.comparisonBatteryRunIds = comparison;
+    } else {
+      request.baselineRunIds = baseline;
+      request.comparisonRunIds = comparison;
+    }
+    if (this.compareSet) request.comparisonSet = { kind: this.compareSet.kind, key: this.compareSet.key };
     const name = this.name.trim();
     if (name) request.name = name;
     // Without matched candidates the server chooses the controls itself.
@@ -632,17 +734,27 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return request;
   }
 
-  /** The step-1 selection as the analysis records it; sent with every request, the default one included. */
+  /**
+   * The step-1 selection as the analysis records it; sent with every request, the default one
+   * included. In a battery set the marks and left-out ids are battery runs' and go in the battery fields.
+   */
   private runSelection(): CcRunSelection {
     const bounds = ccRangeBounds(this.range);
-    return {
+    const leftOut = [...this.scope.leftOut].sort((a, b) => a - b);
+    const selection: CcRunSelection = {
       rangeLabel: ccDateRangeText(this.range),
       rangeFromUtc: bounds.fromUtc,
       rangeToUtc: bounds.toUtc,
-      firstRunId: this.scope.firstRunId,
-      lastRunId: this.scope.lastRunId,
-      leftOutRunIds: [...this.scope.leftOut].sort((a, b) => a - b)
+      firstRunId: this.batteryMode ? null : this.scope.firstRunId,
+      lastRunId: this.batteryMode ? null : this.scope.lastRunId,
+      leftOutRunIds: this.batteryMode ? [] : leftOut
     };
+    if (this.batteryMode) {
+      selection.firstBatteryRunId = this.scope.firstRunId;
+      selection.lastBatteryRunId = this.scope.lastRunId;
+      selection.leftOutBatteryRunIds = leftOut;
+    }
+    return selection;
   }
 
   private protocolOverrides(): CcProtocolOverrides | null {

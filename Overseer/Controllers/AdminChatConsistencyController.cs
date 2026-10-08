@@ -14,7 +14,8 @@ using Overseer.Services.Benchmarking;
 using Overseer.Services.ChatConsistency;
 
 /// <summary>
-/// The GnollBench chat consistency API: the model axes, a subject's timeline and run table, saved
+/// The GnollBench chat consistency API: the model axes, a subject's timeline, run table, battery-run
+/// table and comparison sets, saved
 /// analyses and their AI-written report documents, the common-grader re-grade, grader anchors and
 /// timeline annotations. HTTP mapping only; the work is done by <see cref="ChatConsistencyAnalysisService"/>,
 /// <see cref="ChatConsistencyEvidenceBuilder"/>, <see cref="ChatConsistencyRegradeService"/> and
@@ -99,6 +100,46 @@ public class AdminChatConsistencyController : ControllerBase
         try
         {
             return Payload(await _evidence.GetRunTableAsync(modelKey!, fromUtc, toUtc, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// The battery runs of <paramref name="modelKey"/> started in the range, newest first, with their
+    /// completeness and usable members, validated as <see cref="Timeline"/> is; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("battery-runs")]
+    public async Task<IActionResult> BatteryRuns([FromQuery] string? modelKey, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+    {
+        var (fromUtc, toUtc, invalid) = ValidateRange(modelKey, from, to);
+        if (invalid != null) return invalid;
+
+        try
+        {
+            return Payload(await _evidence.GetBatteryRunTableAsync(modelKey!, fromUtc, toUtc, ct));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// The batteries and suites <paramref name="modelKey"/> can be compared within over the range, with the
+    /// default set, validated as <see cref="Timeline"/> is; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("comparison-sets")]
+    public async Task<IActionResult> ComparisonSets([FromQuery] string? modelKey, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
+    {
+        var (fromUtc, toUtc, invalid) = ValidateRange(modelKey, from, to);
+        if (invalid != null) return invalid;
+
+        try
+        {
+            return Payload(await _evidence.GetComparisonSetsAsync(modelKey!, fromUtc, toUtc, ct));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
