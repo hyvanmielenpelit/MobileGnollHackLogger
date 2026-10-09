@@ -522,8 +522,11 @@ function readStoredDownloadSettings(): StoredDownloadSettings {
   }
 }
 
-/** The chart families the Charts tab styles; the Theme tab's appearance is not one of them. */
-type ChartStyleFamily = Exclude<FigureStylePanelKind, 'appearance'>;
+/**
+ * The chart families the Charts tab styles; the Theme tab's appearance and Chat Consistency's
+ * timeline are not among them.
+ */
+type ChartStyleFamily = Exclude<FigureStylePanelKind, 'appearance' | 'timeline'>;
 
 /** The filter each filterable display column carries, by display key. */
 const TABLE_COLUMN_FILTERS: Readonly<Record<string, string>> = { model: 'label', stateCol: 'state' };
@@ -1736,7 +1739,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   get figureBackdropStyle(): string | null {
     const appearance = this.figureStyle.appearance;
     return appearance.background === 'transparent' && appearance.previewBackdrop === 'color'
-      ? `--mc-figure-backdrop: ${appearance.previewBackdropColor}`
+      ? `--gh-fig-backdrop: ${appearance.previewBackdropColor}`
       : null;
   }
 

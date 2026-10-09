@@ -3,11 +3,15 @@ import {
   BAR_RANGE_CONTROLS,
   CHROME_RANGE_CONTROLS,
   DEFAULT_FIGURE_STYLE,
+  DEFAULT_TIMELINE_STYLE,
   HIDDEN_INTERVALS_NOTE,
   MAX_TEXT_SIZE_PX,
   SCATTER_RANGE_CONTROLS,
+  TIMELINE_RANGE_CONTROLS,
+  TimelineFigureStyle,
   badgeControlsFor,
-  normalizeFigureStyle
+  normalizeFigureStyle,
+  timelineRangeControl
 } from './figure-style';
 
 describe('figure-style', () => {
@@ -106,8 +110,13 @@ describe('figure-style', () => {
       expect(value, control.key).toBeGreaterThanOrEqual(control.min);
       expect(value, control.key).toBeLessThanOrEqual(control.max);
     }
+    for (const control of TIMELINE_RANGE_CONTROLS) {
+      const value = DEFAULT_FIGURE_STYLE.timeline[control.key];
+      expect(value, control.key).toBeGreaterThanOrEqual(control.min);
+      expect(value, control.key).toBeLessThanOrEqual(control.max);
+    }
     for (const control of CHROME_RANGE_CONTROLS) {
-      for (const family of ['bar', 'scatter', 'profile'] as const) {
+      for (const family of ['bar', 'scatter', 'profile', 'timeline'] as const) {
         const value = DEFAULT_FIGURE_STYLE[family][control.key];
         expect(value, `${family} ${control.key}`).toBeGreaterThanOrEqual(control.min);
         expect(value, `${family} ${control.key}`).toBeLessThanOrEqual(control.max);
@@ -171,7 +180,7 @@ describe('figure-style', () => {
 
   it('offers the Better badge for bars and trade-offs, first, but not for the profile', () => {
     expect(badgeControlsFor('bar').map(control => control.kind)).toEqual(['direction', 'models', 'runs', 'questions', 'pricing']);
-    expect(badgeControlsFor('scatter')[0].kind).toBe('direction');
+    expect(badgeControlsFor('scatter').map(control => control.kind)).toEqual(['direction', 'models', 'runs', 'questions', 'pricing']);
     expect(badgeControlsFor('bar')[0].hint).toContain('value axis');
     expect(badgeControlsFor('scatter')[0].hint).toBe('An arrow toward the better corner of the chart.');
     expect(badgeControlsFor('profile').map(control => control.kind)).toEqual(['models', 'runs', 'questions', 'pricing']);
@@ -219,7 +228,7 @@ describe('figure-style', () => {
     });
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, gridlines: false });
     expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, frontierIntervalsNote: false });
-    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'numbers', 'appearance', 'table']);
+    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'timeline', 'numbers', 'appearance', 'table']);
     expect('colour' in style.bar).toBe(false);
   });
 
@@ -307,7 +316,7 @@ describe('figure-style', () => {
   });
 
   it('keeps known badge kinds once each, in control order, and drops the rest', () => {
-    expect(BADGE_CONTROLS.map(control => control.kind)).toEqual(['direction', 'models', 'runs', 'questions', 'pricing']);
+    expect(BADGE_CONTROLS.map(control => control.kind)).toEqual(['direction', 'models', 'runs', 'questions', 'pricing', 'model', 'dates']);
     const style = normalizeFigureStyle({
       bar: { hiddenBadges: ['pricing', 'models'] },
       scatter: { hiddenBadges: ['runs', 'colour', 'runs', 7, null, 'questions'] },
@@ -521,5 +530,144 @@ describe('figure-style', () => {
     expect(style.bar.axisTitleWeight).toBe(600);
     expect(style.bar.plotFrame).toBe(true);
     expect(style.scatter.axisTitleWeight).toBe(400);
+  });
+
+  describe('the timeline family', () => {
+    /** A valid stored timeline whose every field differs from its default. */
+    const changed: TimelineFigureStyle = {
+      titleSizePx: 20,
+      badgeTextSizePx: 13,
+      footerTextSizePx: 10,
+      footer: false,
+      axisTextSizePx: 14,
+      axisTitleSizePx: 15,
+      axisTitleWeight: 700,
+      gridlines: false,
+      plotFrame: true,
+      valueLabels: false,
+      valueLabelSizePx: 13,
+      legendTextSizePx: 14,
+      markerTagSizePx: 16,
+      lineWidthPx: 3,
+      pointRadiusPx: 6,
+      areaWash: false,
+      markerNote: false,
+      notAnalyzedNote: false,
+      hiddenBadges: ['direction', 'dates'],
+      betterBadgePlacement: 'always'
+    };
+
+    /** A value each field rejects. */
+    const invalid: Record<keyof TimelineFigureStyle, unknown> = {
+      titleSizePx: '20',
+      badgeTextSizePx: null,
+      footerTextSizePx: Number.NaN,
+      footer: 'no',
+      axisTextSizePx: '14',
+      axisTitleSizePx: true,
+      axisTitleWeight: 450,
+      gridlines: 0,
+      plotFrame: 'true',
+      valueLabels: null,
+      valueLabelSizePx: [13],
+      legendTextSizePx: {},
+      markerTagSizePx: Number.POSITIVE_INFINITY,
+      lineWidthPx: '3',
+      pointRadiusPx: null,
+      areaWash: 1,
+      markerNote: 'false',
+      notAnalyzedNote: [],
+      hiddenBadges: 'dates',
+      betterBadgePlacement: 'sometimes'
+    };
+
+    it('defaults to the shared caption defaults plus Model Comparison\'s sizes, every element shown', () => {
+      expect(DEFAULT_TIMELINE_STYLE).toEqual({
+        ...chromeDefaults,
+        axisTextSizePx: 11,
+        axisTitleSizePx: 12,
+        axisTitleWeight: 400,
+        gridlines: true,
+        plotFrame: false,
+        valueLabels: true,
+        valueLabelSizePx: 11,
+        legendTextSizePx: 12,
+        markerTagSizePx: 10,
+        lineWidthPx: 2,
+        pointRadiusPx: 4,
+        areaWash: true,
+        markerNote: true,
+        notAnalyzedNote: true,
+        hiddenBadges: [],
+        betterBadgePlacement: 'fit'
+      });
+      expect(DEFAULT_FIGURE_STYLE.timeline).toBe(DEFAULT_TIMELINE_STYLE);
+    });
+
+    it('offers the text sizes from 8 to 48 px and its own ranges for the lines, points and marker tags', () => {
+      for (const key of ['valueLabelSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'legendTextSizePx'] as const) {
+        expect([timelineRangeControl(key).min, timelineRangeControl(key).max], key).toEqual([8, MAX_TEXT_SIZE_PX]);
+      }
+      expect([timelineRangeControl('lineWidthPx').min, timelineRangeControl('lineWidthPx').max]).toEqual([1, 6]);
+      expect([timelineRangeControl('pointRadiusPx').min, timelineRangeControl('pointRadiusPx').max]).toEqual([2, 10]);
+      expect([timelineRangeControl('markerTagSizePx').min, timelineRangeControl('markerTagSizePx').max]).toEqual([8, 24]);
+      expect(TIMELINE_RANGE_CONTROLS.length).toBe(7);
+    });
+
+    it('keeps a valid stored timeline whole', () => {
+      expect(normalizeFigureStyle({ timeline: changed }).timeline).toEqual(changed);
+    });
+
+    it('repairs each field on its own, invalid or missing, and keeps the rest', () => {
+      for (const key of Object.keys(invalid) as (keyof TimelineFigureStyle)[]) {
+        const repaired = normalizeFigureStyle({ timeline: { ...changed, [key]: invalid[key] } }).timeline;
+        expect(repaired, `invalid ${key}`).toEqual({ ...changed, [key]: DEFAULT_TIMELINE_STYLE[key] });
+
+        const stored: Record<string, unknown> = { ...changed };
+        delete stored[key];
+        expect(normalizeFigureStyle({ timeline: stored }).timeline, `missing ${key}`)
+          .toEqual({ ...changed, [key]: DEFAULT_TIMELINE_STYLE[key] });
+      }
+      expect(Object.keys(invalid).sort()).toEqual(Object.keys(DEFAULT_TIMELINE_STYLE).sort());
+    });
+
+    it('clamps and rounds its numbers into their ranges', () => {
+      const style = normalizeFigureStyle({
+        timeline: { lineWidthPx: 9, pointRadiusPx: 1, markerTagSizePx: 30, legendTextSizePx: 60, valueLabelSizePx: 3.4, axisTextSizePx: 12.6 }
+      });
+      expect(style.timeline.lineWidthPx).toBe(6);
+      expect(style.timeline.pointRadiusPx).toBe(2);
+      expect(style.timeline.markerTagSizePx).toBe(24);
+      expect(style.timeline.legendTextSizePx).toBe(48);
+      expect(style.timeline.valueLabelSizePx).toBe(8);
+      expect(style.timeline.axisTextSizePx).toBe(13);
+    });
+
+    it('falls back to the defaults when the timeline is missing or malformed, and drops unknown keys', () => {
+      for (const value of [undefined, null, 'timeline', [], 42]) {
+        expect(normalizeFigureStyle({ timeline: value }).timeline, String(value)).toEqual(DEFAULT_TIMELINE_STYLE);
+      }
+      expect('extra' in normalizeFigureStyle({ timeline: { extra: 1 } }).timeline).toBe(false);
+    });
+
+    it('offers the Better badge, Model, Number of runs and Dates, in that order', () => {
+      const controls = badgeControlsFor('timeline');
+      expect(controls.map(control => control.kind)).toEqual(['direction', 'model', 'runs', 'dates']);
+      expect(controls.map(control => control.label)).toEqual(['Better badge', 'Model', 'Number of runs', 'Dates']);
+      expect(controls[0].hint).toContain('value axis');
+
+      const style = normalizeFigureStyle({ timeline: { hiddenBadges: ['dates', 'colour', 'direction', 'dates'] } });
+      expect(style.timeline.hiddenBadges).toEqual(['direction', 'dates']);
+    });
+
+    it('leaves the other families as they are', () => {
+      const style = normalizeFigureStyle({ timeline: changed });
+      expect(style.bar).toEqual(DEFAULT_FIGURE_STYLE.bar);
+      expect(style.scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
+      expect(style.profile).toEqual(DEFAULT_FIGURE_STYLE.profile);
+      expect(style.appearance).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+      expect(style.numbers).toEqual(DEFAULT_FIGURE_STYLE.numbers);
+      expect(style.table).toEqual(DEFAULT_FIGURE_STYLE.table);
+    });
   });
 });

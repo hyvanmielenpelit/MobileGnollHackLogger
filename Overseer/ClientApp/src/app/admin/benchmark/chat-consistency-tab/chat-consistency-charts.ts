@@ -11,7 +11,9 @@
  * plot), and the value of every point of a chart drawing at most two series (`ccPlaceLabels`). A
  * legacy latency proxy is drawn with hollow points and a dashed line, so it is told apart by shape as
  * well as by its legend label. Every dataset carries a stable series id (`seriesId`). Every value
- * axis follows its measure's `CcAxisPolicy` (`ccValueAxis`).
+ * axis follows its measure's `CcAxisPolicy` (`ccValueAxis`). A `CcChartStyle` sets the text sizes,
+ * line and point sizes and the optional parts; without one the charts draw `CC_CHART_STYLE_DEFAULTS`.
+ * A theme without a tooltip box draws a chart that never reacts to the pointer.
  *
  * A point is a run, or a battery run with its members pooled (`CcFigureInput.unitKind`); a battery
  * run's Intelligence is its battery analysis's Overall Intelligence Index.
@@ -38,6 +40,8 @@ import type {
 } from 'chart.js';
 
 import { FIGURE_LOGO_GAP, FigureLogo, drawFigureLogo, figureLogoBox } from '../model-comparison/figure-logo';
+import type { FigureFontWeight, TimelineFigureStyle } from '../model-comparison/figure-style';
+import type { ResolvedFigureTheme } from '../model-comparison/figure-theme';
 import {
   CcAnalysisResult,
   CcAnnotation,
@@ -124,9 +128,14 @@ export interface CcChartTheme {
   served: string;
   baselineBand: string;
   comparisonBand: string;
-  /** The tooltip box; null keeps Chart.js's own, for a theme that is never interactive. */
+  /**
+   * The tooltip box; null draws a chart without a tooltip or hover look that ignores the pointer, for
+   * a theme that is never interactive.
+   */
   tooltip: { background: string; border: string } | null;
   fontFamily: string;
+  /** The plot frame's stroke; `muted` when absent. */
+  frame?: string;
 }
 
 /**
@@ -168,6 +177,28 @@ export const CC_PRINT_THEME: CcChartTheme = Object.freeze({
   tooltip: null,
   fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
 });
+
+/**
+ * Model Comparison's resolved appearance as a chart theme, for a chart drawn inside a composed
+ * figure: the series palette, the marker inks and the band tints of the print theme on a light theme
+ * and of the screen theme otherwise, the text, grid and frame inks of `theme`, no background (the
+ * composer paints the ground) and no tooltip.
+ */
+export function ccChartThemeFor(theme: ResolvedFigureTheme): CcChartTheme {
+  const base = theme.name === 'light' ? CC_PRINT_THEME : CC_SCREEN_THEME;
+  return {
+    ...base,
+    text: theme.chart.inkPrimary,
+    secondary: theme.chart.inkSecondary,
+    muted: theme.chart.inkMuted,
+    grid: theme.chart.gridline,
+    background: null,
+    surface: theme.surface,
+    tooltip: null,
+    fontFamily: theme.fonts.chartStack ?? CC_SCREEN_THEME.fontFamily,
+    frame: theme.frameColor
+  };
+}
 
 /** A Chart.js line dataset with its stable series id from `CC_FIGURE_SERIES`. */
 export type CcChartDataset = ChartDataset<'line', CcChartPoint[]> & { seriesId: string };
@@ -294,7 +325,32 @@ export interface CcChartOptions {
   logo?: FigureLogo | null;
   /** The decimals of the point labels, tooltip, takeaway and table; the axis ticks keep their step's. */
   decimals?: CcDecimalPlaces;
+  /** The sizes and optional parts; absent draws `CC_CHART_STYLE_DEFAULTS`. */
+  style?: CcChartStyle;
 }
+
+/** The chart-drawing part of a timeline figure's style, and the weight of the point labels and the legend. */
+export type CcChartStyle = Pick<TimelineFigureStyle,
+  'axisTextSizePx' | 'axisTitleSizePx' | 'axisTitleWeight' | 'gridlines' | 'plotFrame' | 'valueLabels'
+  | 'valueLabelSizePx' | 'legendTextSizePx' | 'markerTagSizePx' | 'lineWidthPx' | 'pointRadiusPx' | 'areaWash'>
+  & { readonly labelWeight: FigureFontWeight };
+
+/** The drawing without a style: the sizes and parts of the screen charts and the report charts. */
+export const CC_CHART_STYLE_DEFAULTS: CcChartStyle = Object.freeze<CcChartStyle>({
+  axisTextSizePx: 11,
+  axisTitleSizePx: 12,
+  axisTitleWeight: 600,
+  gridlines: true,
+  plotFrame: false,
+  valueLabels: true,
+  valueLabelSizePx: 11,
+  legendTextSizePx: 12,
+  markerTagSizePx: 10,
+  lineWidthPx: 2,
+  pointRadiusPx: 4,
+  areaWash: true,
+  labelWeight: 600
+});
 
 /** One dataset of a figure: its stable id, its legend label and the tooltip's short name for it. */
 export interface CcFigureSeries {
@@ -594,13 +650,22 @@ function maxTicksFor(width: number): number {
 
 // --- The overlay plugin ---
 
-/** The height of one row of marker tags, a 14 px box and a 2 px gap. */
+/** The height of one row of 10 px marker tags, a 14 px box and a 2 px gap. */
 export const CC_TAG_ROW_HEIGHT = 16;
 /** The most rows of marker tags a chart lays out. */
 export const CC_TAG_MAX_ROWS = 3;
 /** The least horizontal gap between two tags of one row, and the gap above the top row. */
 export const CC_TAG_GAP = 4;
-const TAG_BOX_HEIGHT = 14;
+
+/** A marker tag's box for its text size: the text and 2 px above and below it. */
+function tagBoxHeight(tagSizePx: number): number {
+  return tagSizePx + 4;
+}
+
+/** The height of one row of marker tags for their text size: the box and a 2 px gap. */
+export function ccTagRowHeight(tagSizePx: number): number {
+  return tagBoxHeight(tagSizePx) + 2;
+}
 
 /** The header band's text sizes and the logo's height, in layout px. */
 export const CC_HEADER_TITLE_PX = 14;
@@ -637,8 +702,8 @@ export function ccTagRows(
 }
 
 /** The height of the tag band for `rows` rows: the rows and the gap above them, nothing without tags. */
-export function ccTagBandHeight(rows: number): number {
-  return rows > 0 ? rows * CC_TAG_ROW_HEIGHT + CC_TAG_GAP : 0;
+export function ccTagBandHeight(rows: number, rowHeight: number = CC_TAG_ROW_HEIGHT): number {
+  return rows > 0 ? rows * rowHeight + CC_TAG_GAP : 0;
 }
 
 /**
@@ -668,6 +733,7 @@ interface CcTagBand extends LayoutItem {
   markers: readonly CcChartMarker[];
   range: { min: number; max: number } | null;
   font: string;
+  rowHeight: number;
 }
 
 const TAG_BANDS = new WeakMap<object, CcTagBand>();
@@ -708,12 +774,13 @@ function tagBandOf(chart: Chart<'line'>): CcTagBand {
     markers: [],
     range: null,
     font: '',
+    rowHeight: CC_TAG_ROW_HEIGHT,
     isHorizontal: () => true,
     draw: () => undefined,
     update(width: number) {
       band.rows = tagBandRows(chart, band, width);
       band.width = width;
-      band.height = ccTagBandHeight(band.rows);
+      band.height = ccTagBandHeight(band.rows, band.rowHeight);
     }
   };
   layouts.addBox(chart as unknown as Chart, band);
@@ -827,6 +894,20 @@ export interface CcOverlayDecor {
   pointLabels?: readonly CcPointLabelSet[];
   /** Point ids whose labels are muted: the points not in the analysis. */
   notAnalyzed?: ReadonlyMap<number, string> | null;
+  /** The point labels' font and distance; `ccPointLabelFont()` when absent. */
+  labelFont?: CcPointLabelFont;
+  /** The marker tags' text size in px; 10 when absent. */
+  tagSizePx?: number;
+  /** A 1 px frame around the plot in the theme's frame color. */
+  frame?: boolean;
+}
+
+/** How the point labels are written. */
+export interface CcPointLabelFont {
+  sizePx: number;
+  weight: FigureFontWeight;
+  /** From the point's center to the label's near edge, in px. */
+  offsetPx: number;
 }
 
 /** A label's box in canvas px. */
@@ -839,9 +920,13 @@ export interface CcLabelBox {
 
 /** The least gap between two point labels, in px. */
 const POINT_LABEL_GAP = 2;
-/** The point labels' text size, and their distance from the point's center, in px. */
-const POINT_LABEL_PX = 11;
-const POINT_LABEL_OFFSET = 8;
+/** The point labels' distance beyond the point's radius, in px. */
+const POINT_LABEL_CLEARANCE = 4;
+
+/** The point labels of `style`; without a style, 600 at 11 px, 8 px from the point's center. */
+export function ccPointLabelFont(style: CcChartStyle = CC_CHART_STYLE_DEFAULTS): CcPointLabelFont {
+  return { sizePx: style.valueLabelSizePx, weight: style.labelWeight, offsetPx: style.pointRadiusPx + POINT_LABEL_CLEARANCE };
+}
 
 /**
  * The point labels kept, as indices into `candidates`, which come in priority order: each box is kept
@@ -877,8 +962,10 @@ interface PointLabel {
 function pointLabelCandidates(
   chart: Chart<'line'>,
   sets: readonly CcPointLabelSet[],
-  notAnalyzed: ReadonlyMap<number, string> | null
+  notAnalyzed: ReadonlyMap<number, string> | null,
+  font: CcPointLabelFont
 ): PointLabel[] {
+  const { sizePx, offsetPx } = font;
   const area = chart.chartArea;
   const ctx = chart.ctx;
   const first: PointLabel[] = [];
@@ -894,14 +981,14 @@ function pointLabelCandidates(
       const text = set.format(point.y);
       const width = ctx.measureText(text).width;
       const left = Math.min(Math.max(element.x - width / 2, 1), chart.width - width - 1);
-      const aboveTop = element.y - POINT_LABEL_OFFSET - POINT_LABEL_PX;
-      const belowTop = element.y + POINT_LABEL_OFFSET;
+      const aboveTop = element.y - offsetPx - sizePx;
+      const belowTop = element.y + offsetPx;
       let top = set.below ? belowTop : aboveTop;
       if (!set.below && aboveTop < area.top) top = belowTop;
-      if (set.below && belowTop + POINT_LABEL_PX > area.bottom) top = aboveTop;
+      if (set.below && belowTop + sizePx > area.bottom) top = aboveTop;
       labels.push({
         text, value: point.y, x: element.x, muted: notAnalyzed?.has(point.runId) ?? false,
-        box: { left, top, right: left + width, bottom: top + POINT_LABEL_PX }
+        box: { left, top, right: left + width, bottom: top + sizePx }
       });
     });
     if (labels.length === 0) continue;
@@ -920,13 +1007,14 @@ function drawPointLabels(
   chart: Chart<'line'>,
   sets: readonly CcPointLabelSet[],
   theme: CcChartTheme,
-  notAnalyzed: ReadonlyMap<number, string> | null
+  notAnalyzed: ReadonlyMap<number, string> | null,
+  font: CcPointLabelFont
 ): void {
   if (sets.length === 0) return;
   const ctx = chart.ctx;
   ctx.save();
-  ctx.font = `600 ${POINT_LABEL_PX}px ${theme.fontFamily}`;
-  const candidates = pointLabelCandidates(chart, sets, notAnalyzed);
+  ctx.font = `${font.weight} ${font.sizePx}px ${theme.fontFamily}`;
+  const candidates = pointLabelCandidates(chart, sets, notAnalyzed, font);
   const kept = ccPlaceLabels(candidates.map(label => label.box), { left: 0, top: 0, right: chart.width, bottom: chart.height });
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -969,10 +1057,11 @@ function lineRuns(chart: Chart<'line'>, datasetIndex: number): { x: number; y: n
 }
 
 /**
- * Draws the header band, the period bands and the area wash under the datasets, and the markers and
- * end labels over them: a vertical line per marker and its tag in a small box above the plot, the
- * line dashed for an event, dotted for an annotation and dash-dotted for a served-model change, its
- * tag box filled for an event and outlined otherwise, so the kinds differ by shape, not by color.
+ * Draws the header band, the period bands and the area wash under the datasets, and the plot frame,
+ * the markers and the point labels over them: a vertical line per marker and its tag in a small box
+ * above the plot, the line dashed for an event, dotted for an annotation and dash-dotted for a
+ * served-model change, its tag box filled for an event and outlined otherwise, so the kinds differ by
+ * shape, not by color.
  *
  * The tags sit in a band of up to `CC_TAG_MAX_ROWS` rows between the legend and the plot, laid out
  * by `ccTagRows`; the band is sized from the markers within `range` (the x axis's bounds when null)
@@ -987,7 +1076,10 @@ export function ccOverlayPlugin(
 ): Plugin<'line'> {
   const dash: Record<CcMarkerKind, number[]> = { event: [6, 4], annotation: [2, 3], served: [8, 3, 2, 3] };
   const color: Record<CcMarkerKind, string> = { event: theme.event, annotation: theme.annotation, served: theme.served };
-  const font = `bold 10px ${theme.fontFamily}`;
+  const tagSizePx = decor.tagSizePx ?? CC_CHART_STYLE_DEFAULTS.markerTagSizePx;
+  const font = `bold ${tagSizePx}px ${theme.fontFamily}`;
+  const rowHeight = ccTagRowHeight(tagSizePx);
+  const boxHeight = tagBoxHeight(tagSizePx);
   return {
     id: 'ccOverlay',
     beforeLayout(chart) {
@@ -999,6 +1091,7 @@ export function ccOverlayPlugin(
       band.markers = markers;
       band.range = range;
       band.font = font;
+      band.rowHeight = rowHeight;
     },
     stop(chart) {
       removeBands(chart);
@@ -1052,6 +1145,12 @@ export function ccOverlayPlugin(
       if (!x || !area) return;
       const { ctx } = chart;
       ctx.save();
+      if (decor.frame) {
+        ctx.strokeStyle = theme.frame ?? theme.muted;
+        ctx.lineWidth = 1;
+        // Half a pixel in, so the 1 px stroke covers whole pixels inside the area.
+        ctx.strokeRect(area.left + 0.5, area.top + 0.5, area.right - area.left - 1, area.bottom - area.top - 1);
+      }
       ctx.font = font;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
@@ -1064,15 +1163,15 @@ export function ccOverlayPlugin(
       const { row } = ccTagRows(placed.map(entry => ({ center: entry.px, width: entry.width })),
         reserved > 0 ? reserved : CC_TAG_MAX_ROWS);
       const tagTop = (r: number) => reserved > 0
-        ? area.top - (reserved - r) * CC_TAG_ROW_HEIGHT
-        : area.top + r * CC_TAG_ROW_HEIGHT;
+        ? area.top - (reserved - r) * rowHeight
+        : area.top + r * rowHeight;
       // The lines first, so every tag box covers the lines of the rows above it.
       ctx.lineWidth = 1.5;
       placed.forEach(({ marker, px }, i) => {
         ctx.strokeStyle = color[marker.kind];
         ctx.setLineDash(dash[marker.kind]);
         ctx.beginPath();
-        ctx.moveTo(px, tagTop(row[i]) + TAG_BOX_HEIGHT);
+        ctx.moveTo(px, tagTop(row[i]) + boxHeight);
         ctx.lineTo(px, area.bottom);
         ctx.stroke();
       });
@@ -1083,13 +1182,13 @@ export function ccOverlayPlugin(
         const filled = marker.kind === 'event';
         ctx.strokeStyle = color[marker.kind];
         ctx.fillStyle = filled ? color[marker.kind] : theme.background ?? theme.surface;
-        ctx.fillRect(px - width / 2, top, width, TAG_BOX_HEIGHT);
-        ctx.strokeRect(px - width / 2, top, width, TAG_BOX_HEIGHT);
+        ctx.fillRect(px - width / 2, top, width, boxHeight);
+        ctx.strokeRect(px - width / 2, top, width, boxHeight);
         ctx.fillStyle = filled ? theme.background ?? theme.surface : color[marker.kind];
-        ctx.fillText(marker.tag, px, top + TAG_BOX_HEIGHT / 2);
+        ctx.fillText(marker.tag, px, top + boxHeight / 2);
       });
       ctx.restore();
-      drawPointLabels(chart, decor.pointLabels ?? [], theme, decor.notAnalyzed ?? null);
+      drawPointLabels(chart, decor.pointLabels ?? [], theme, decor.notAnalyzed ?? null, decor.labelFont ?? ccPointLabelFont());
     }
   };
 }
@@ -1298,10 +1397,17 @@ function chartOptions(
   y: AxisSpec,
   yAxis: CcValueAxis | null,
   legend: boolean,
-  paddingRight: number
+  paddingRight: number,
+  style: CcChartStyle,
+  /** The legend's weight; null leaves Chart.js's own. */
+  legendWeight: FigureFontWeight | null
 ): ChartOptions<'line'> {
-  const tick = { color: theme.muted, font: { family: theme.fontFamily, size: 11 } };
-  const axisTitle = { display: true, color: theme.secondary, font: { family: theme.fontFamily, size: 12, weight: 600 } };
+  const tick = { color: theme.muted, font: { family: theme.fontFamily, size: style.axisTextSizePx } };
+  const axisTitle = {
+    display: true,
+    color: theme.secondary,
+    font: { family: theme.fontFamily, size: style.axisTitleSizePx, weight: style.axisTitleWeight }
+  };
   const { series, marks } = tooltip;
   const tooltipBox = theme.tooltip
     ? {
@@ -1320,6 +1426,8 @@ function chartOptions(
     responsive: true,
     maintainAspectRatio: false,
     animation: reducedMotion ? false : { duration: 250 },
+    // A theme without a tooltip box draws a figure that nothing on it reacts to.
+    ...(theme.tooltip ? {} : { events: [] }),
     // On a point only (its hit radius keeps it easy to reach), never anywhere over the plot.
     interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
     layout: { padding: { top: 4, right: paddingRight } },
@@ -1352,7 +1460,7 @@ function chartOptions(
           ...(yAxis ? { stepSize: yAxis.stepSize } : {}),
           callback: value => yAxis ? y.tick(Number(value), yAxis) : ''
         },
-        grid: { color: theme.grid, lineWidth: 1 },
+        grid: { ...(style.gridlines ? {} : { display: false }), color: theme.grid, lineWidth: 1 },
         border: { display: false },
         title: { ...axisTitle, text: y.title }
       }
@@ -1363,7 +1471,7 @@ function chartOptions(
         align: 'start',
         labels: {
           color: theme.text,
-          font: { family: theme.fontFamily, size: 12 },
+          font: { family: theme.fontFamily, size: style.legendTextSizePx, ...(legendWeight === null ? {} : { weight: legendWeight }) },
           usePointStyle: true,
           boxWidth: 8,
           boxHeight: 8,
@@ -1372,6 +1480,7 @@ function chartOptions(
         }
       },
       tooltip: {
+        ...(theme.tooltip ? {} : { enabled: false }),
         usePointStyle: true,
         displayColors: tooltip.colors,
         boxWidth: 6,
@@ -1419,17 +1528,34 @@ interface PointLook {
   pointRadius: number;
 }
 
-function pointLook(spec: DatasetSpec, theme: CcChartTheme): PointLook {
+/** How a chart's datasets are drawn: its style's line and point sizes, and whether points grow on hover. */
+interface DatasetLook {
+  style: CcChartStyle;
+  hover: boolean;
+}
+
+/** The point radius, and the cross and hover radii, of the unstyled drawing. */
+const POINT_RADIUS_PX = 4;
+const CROSS_RADIUS_PX = 4.5;
+const HOVER_RADIUS_PX = 6;
+
+/** `px` of the unstyled drawing at the style's point size. */
+function scaledRadius(px: number, style: CcChartStyle): number {
+  return px * style.pointRadiusPx / POINT_RADIUS_PX;
+}
+
+function pointLook(spec: DatasetSpec, theme: CcChartTheme, draw: DatasetLook): PointLook {
   return {
     pointStyle: spec.pointStyle ?? 'circle',
     pointBackgroundColor: spec.hollow ? theme.surface : spec.color,
     pointBorderColor: spec.hollow ? spec.color : theme.surface,
     pointBorderWidth: 2,
-    pointRadius: 4
+    pointRadius: draw.style.pointRadiusPx
   };
 }
 
-function dataset(spec: DatasetSpec, theme: CcChartTheme): CcChartDataset {
+function dataset(spec: DatasetSpec, theme: CcChartTheme, draw: DatasetLook): CcChartDataset {
+  const resting = pointLook(spec, theme, draw);
   return {
     seriesId: spec.id,
     label: spec.label,
@@ -1437,11 +1563,11 @@ function dataset(spec: DatasetSpec, theme: CcChartTheme): CcChartDataset {
     yAxisID: 'y',
     borderColor: spec.color,
     backgroundColor: spec.color,
-    ...pointLook(spec, theme),
-    pointHoverRadius: 6,
-    pointHoverBorderWidth: 2,
+    ...resting,
+    pointHoverRadius: draw.hover ? scaledRadius(HOVER_RADIUS_PX, draw.style) : resting.pointRadius,
+    pointHoverBorderWidth: resting.pointBorderWidth,
     pointHitRadius: 12,
-    borderWidth: 2,
+    borderWidth: draw.style.lineWidthPx,
     borderJoinStyle: 'round',
     borderCapStyle: 'round',
     borderDash: spec.hollow ? [4, 4] : [],
@@ -1453,25 +1579,29 @@ function dataset(spec: DatasetSpec, theme: CcChartTheme): CcChartDataset {
 /**
  * `dataset` with each point of `notAnalyzed` drawn as a gray, unfilled, rotated cross, and each
  * segment touching one gray and dotted; the other points keep the dataset's own look, and the other
- * segments its line.
+ * segments its line. Without hover, a point keeps its resting radius under the pointer.
  */
 function markedDataset(
   spec: DatasetSpec,
   theme: CcChartTheme,
-  notAnalyzed: ReadonlyMap<number, string>
+  notAnalyzed: ReadonlyMap<number, string>,
+  draw: DatasetLook
 ): CcChartDataset {
-  const look = pointLook(spec, theme);
+  const look = pointLook(spec, theme, draw);
+  const crossRadius = scaledRadius(CROSS_RADIUS_PX, draw.style);
   const marked = (point: CcChartPoint | undefined) => point !== undefined && notAnalyzed.has(point.runId);
   const at = (ctx: ScriptableContext<'line'>) => marked(ctx.raw as CcChartPoint | undefined);
   const segmentAt = (ctx: ScriptableLineSegmentContext) =>
     marked(spec.data[ctx.p0DataIndex]) || marked(spec.data[ctx.p1DataIndex]);
+  const pointRadius = (ctx: ScriptableContext<'line'>) => at(ctx) ? crossRadius : look.pointRadius;
   return {
-    ...dataset(spec, theme),
+    ...dataset(spec, theme, draw),
     pointStyle: (ctx: ScriptableContext<'line'>): PointStyle => at(ctx) ? 'crossRot' : look.pointStyle,
     pointBackgroundColor: (ctx: ScriptableContext<'line'>) => at(ctx) ? 'rgba(0, 0, 0, 0)' : look.pointBackgroundColor,
     pointBorderColor: (ctx: ScriptableContext<'line'>) => at(ctx) ? theme.muted : look.pointBorderColor,
     pointBorderWidth: (ctx: ScriptableContext<'line'>) => at(ctx) ? 2 : look.pointBorderWidth,
-    pointRadius: (ctx: ScriptableContext<'line'>) => at(ctx) ? 4.5 : look.pointRadius,
+    pointRadius,
+    ...(draw.hover ? {} : { pointHoverRadius: pointRadius }),
     segment: {
       borderColor: (ctx: ScriptableLineSegmentContext) => segmentAt(ctx) ? theme.muted : undefined,
       borderDash: (ctx: ScriptableLineSegmentContext) => segmentAt(ctx) ? [2, 3] : undefined
@@ -1492,8 +1622,9 @@ interface ConfigStyle {
   wash?: boolean;
 }
 
-/** About 6.5 px a character for the 600-weight, 11 px point labels. */
+/** About 6.5 px a character for the 600-weight, 11 px point labels; in proportion at other sizes. */
 const POINT_LABEL_CHAR_PX = 6.5;
+const POINT_LABEL_CHAR_SIZE_PX = 11;
 
 function config(
   datasets: DatasetSpec[],
@@ -1504,33 +1635,40 @@ function config(
   style: ConfigStyle = {}
 ): CcChartConfig | null {
   const theme = options.theme ?? CC_SCREEN_THEME;
+  const chartStyle = options.style ?? CC_CHART_STYLE_DEFAULTS;
+  const draw: DatasetLook = { style: chartStyle, hover: theme.tooltip !== null };
   const drawn = datasets.filter(spec => !options.hiddenSeries?.has(spec.id) && spec.data.some(point => point.y !== null));
   if (drawn.length === 0) return null;
   const bands = input.bands ?? [];
   const range = xRange(drawn.map(spec => spec.data), markers, bands);
   const notAnalyzed = notAnalyzedOf(input);
-  const marks = notAnalyzed ? { notAnalyzed, looks: drawn.map(spec => pointLook(spec, theme)) } : null;
+  const marks = notAnalyzed ? { notAnalyzed, looks: drawn.map(spec => pointLook(spec, theme, draw)) } : null;
 
   const formatOf = (spec: DatasetSpec) => spec.format ?? y.format;
-  const pointLabels: CcPointLabelSet[] = style.pointLabels && drawn.length <= 2
+  const pointLabels: CcPointLabelSet[] = style.pointLabels && chartStyle.valueLabels && drawn.length <= 2
     ? drawn.map((spec, datasetIndex) => ({ datasetIndex, format: formatOf(spec), below: datasetIndex === 1 }))
     : [];
   // Room for half the widest point label, centered on the last point, and a 4 px margin.
+  const charPx = POINT_LABEL_CHAR_PX * chartStyle.valueLabelSizePx / POINT_LABEL_CHAR_SIZE_PX;
   const widest = Math.max(0, ...pointLabels.flatMap((set, i) =>
     valuesOf(drawn[i].data).map(value => set.format(value).length)));
-  const paddingRight = Math.max(8, widest > 0 ? Math.ceil(widest * POINT_LABEL_CHAR_PX / 2) + 4 : 0);
-  const wash = style.wash && drawn.length === 1 && !drawn[0].hollow ? { datasetIndex: 0, color: drawn[0].color } : null;
+  const paddingRight = Math.max(8, widest > 0 ? Math.ceil(widest * charPx / 2) + 4 : 0);
+  const wash = style.wash && chartStyle.areaWash && drawn.length === 1 && !drawn[0].hollow
+    ? { datasetIndex: 0, color: drawn[0].color }
+    : null;
   // The bounds follow the drawn series, as the time range does.
   const yAxis = y.policy ? ccValueAxis(drawn.flatMap(spec => valuesOf(spec.data)), y.policy) : null;
 
   const series = new Map(drawn.map(spec => [spec.id, { name: seriesShortLabel(spec.id), format: formatOf(spec) }]));
   return {
     type: 'line',
-    data: { datasets: drawn.map(spec => notAnalyzed ? markedDataset(spec, theme, notAnalyzed) : dataset(spec, theme)) },
+    data: { datasets: drawn.map(spec => notAnalyzed ? markedDataset(spec, theme, notAnalyzed, draw) : dataset(spec, theme, draw)) },
     options: chartOptions(theme, options.reducedMotion ?? false, range,
-      { input, series, marks, colors: drawn.length > 1 }, y, yAxis, drawn.length > 1, paddingRight),
+      { input, series, marks, colors: drawn.length > 1 }, y, yAxis, drawn.length > 1, paddingRight,
+      chartStyle, options.style ? options.style.labelWeight : null),
     plugins: [ccOverlayPlugin(markers, bands, theme, range, {
-      header: options.header ?? null, logo: options.logo ?? null, wash, pointLabels, notAnalyzed
+      header: options.header ?? null, logo: options.logo ?? null, wash, pointLabels, notAnalyzed,
+      labelFont: ccPointLabelFont(chartStyle), tagSizePx: chartStyle.markerTagSizePx, frame: chartStyle.plotFrame
     })]
   };
 }

@@ -713,15 +713,16 @@ this browser and restored when the tab loads again (§ 17.1).
 ### 17.3 The Timeline step
 
 A settings sidebar — resizable from 18 to 40 rem (at most half the workspace, 26 rem by default) and
-collapsible from the view bar — beside two views of the live charts. Its tab row wraps onto a second
-line when the sidebar is too narrow for *Data · Events · Annotations · Download*, so no tab is cut off;
-Left and Right still move through the four tabs in order. There is one chart per measure:
+collapsible from the view bar — beside two views of the charts, each shown as its download. Its tab
+row wraps onto further lines when the sidebar is too narrow for *Data · Events · Annotations · Theme ·
+Charts · Download*, so no tab is cut off; Left and Right still move through the six tabs in order.
+There is one chart per measure:
 **Intelligence per run** (native and common-grader), time to first answer text (legacy proxy points
 hollow), answer streaming rate, **output tokens per answer**, **tool calls per answer**, cost per
 question, reliability, and *Runs and events*. Output tokens and tool calls are two charts rather than one with two value axes,
 which would suggest a relation between two arbitrary scales. Each chart draws its markers — composite
 Overseer events `E<n>`, annotations `A<n>` and served-model changes `S<n>`, their tags staggered in a
-band above the plot — names them under the chart, and has a *Show data* list of data cards.
+band above the plot — names them in a note on the image, and has a *Show data* list of data cards.
 
 **Battery runs.** With a battery compared in step 1, the charts draw **one point per battery run** of
 the set, as the analysis counts it: the timeline's `batteryPoints`
@@ -737,16 +738,19 @@ runs*, the members named with their suites. **Plot by** on the Data tab switches
 per-run charts, for looking inside a battery; it returns to *Battery runs* when another set is chosen.
 
 **The styling.** The series colors come from a palette validated for color-vision deficiencies and
-contrast on the chart surface, and the color follows the measure, not the rank: Intelligence gold, time
-to first answer text blue, streaming rate aqua, output tokens violet, tool calls orange, cost magenta.
-Lines are 2 px with ringed points; each reliability rate has its own point shape as well as color. A
-chart with one series has no legend box (its title names the series) and an area wash under the line.
+contrast on the chart surface (the light theme takes the print palette, validated against white), and
+the color follows the measure, not the rank: Intelligence gold, time to first answer text blue,
+streaming rate aqua, output tokens violet, tool calls orange, cost magenta. Lines are 2 px with ringed
+points by default; each reliability rate has its own point shape as well as color. A chart with one
+series has no legend box (its title names the series) and an area wash under the line. The **Charts**
+tab sets the line width, point size, area wash, value labels, text sizes, gridlines and plot frame.
 On a chart drawing **at most two series, every point carries its value**, in the data cards' precision
-(*82.0*, *39.3 s*), or the chart's **Decimal places**, above the point (the second series below it, either flipping where the plot's edge
+(*82.0*, *39.3 s*), or the chart's **Decimal places** on the Charts tab, above the point (the second series below it, either flipping where the plot's edge
 would cut it), over a halo of the background so it reads across lines and fills; a point not in the
 analysis has its value muted. Where labels would collide, the lower-priority one is dropped: the latest
 point, the highest and the lowest are placed first, then the rest left to right, so those three always
-remain on a dense timeline and zooming in shows more. *Reliability* and *Runs and events* carry none.
+remain on a dense timeline and a larger chart size shows more (zooming does not: the screen shows the
+file's layout). *Reliability* and *Runs and events* carry none.
 
 **The value axes** never mislead. The ratio measures — time, streaming rate, output tokens, tool calls,
 cost and the reliability shares — **start at zero**, so a point's height is proportional to its value;
@@ -765,19 +769,30 @@ date on each day's first tick under a day's step, *Oct 8* under a year, *2026-10
 vertical grid lines, the period bands are named at their top left, and the markers are drawn in neutral
 inks — told apart by dash, tag letter and a filled or outlined tag — so color stays with the data.
 
-**The header band.** Each chart draws its title and a subject line — the model, the compared set and
-what a point is (*Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1) · battery runs*) — with
-the **GnollBench logo** on the right. It is the same on screen, in **Copy**, **Download**, **Download
-all** and, logo only, in the report charts, whose documents print their own captions. On screen the
-header band is the top of the figure: the figure's own caption is visually hidden, still naming the
-figure for assistive technology, and **the takeaway sentence follows the chart**, then a footer row
-with the marker line and *Show events* on the left and, on an All charts tile, its **Copy**,
-**Download** and **Open in Single view** on the right.
+**The heading, badges and footer.** Every Timeline chart is composed by Model Comparison's figure
+composer with its defaults, on screen exactly as in **Copy**, **Download** and **Download all**. The
+heading is the chart's title (18 px at the heading weight, gold in the dark theme) over a row of
+badges: the model, the number of plotted points (*12 runs*, *4 battery runs*, *30 member runs*) and
+step 1's dates (*Last 30 days*). Intelligence, time to first answer text, streaming rate, cost and
+reliability add the **↑ Better** badge; output tokens per answer, tool calls per answer and *Runs and
+events* have none, since protocol reads such as these are more or less, not better or worse. The
+**GnollBench logo** is at the top right. The image carries two notes, each behind a switch on the
+Charts tab: the marker key (*Markers: E1–E4 Overseer changes · A1–A2 annotations · S1–S2 served-model
+changes*) and the gray-crosses sentence of *Runs not in the analysis* below. Its footer names the
+compared set, *BATTERY* or *SUITE* and its name, or *SUITES* and *All suites* without one, and on the
+right the time the workspace received the timeline. On screen the image is the top of the figure: the figure's own caption is
+visually hidden, still naming the figure for assistive technology, which also reads the image's
+badges and notes after its alt text, and **the takeaway sentence follows the image**, then a footer
+row with *Show events* on the left and, on an All charts tile, its **Copy**, **Download** and **Open in
+Single view** on the right. The takeaway and *Show data* are HTML under the image and are not in the
+file. The report charts keep a header band of their own with the logo alone, since their documents
+print their own captions.
 
-**The tooltip** appears only over a point, not anywhere over the plot, and is small: the point and its
-start as the title (*#11 · 2026-10-08 07:14 UTC*) and one line per series with its short name and value
-(*Estimated: 422.2 tok/s*, *Overall Index: 82.4*), the series color only on a chart drawing more than
-one. A battery run's members are on its data card, not in the tooltip.
+**The Timeline charts have no hover tooltips**: a composed image does not react to the pointer and
+shows the default cursor. The values are on the points and the dates on the time axis, and *Show data*
+has the rest: each data card's heading names the unit, then its start, every series' value at the
+chart's decimal places and, while runs not in the analysis are marked, *In the analysis* with the
+reason. The Results step (step 5) keeps live charts with their tooltips.
 
 **Show data** opens the chart's numbers as one bordered list of **data cards**, one row per run or
 battery run, separated by hairlines and spanning the figure's width with nothing scrolling sideways;
@@ -790,22 +805,18 @@ under the heading and the fields stack in one column. The list scrolls on its ow
 
 **Runs not in the analysis** — left out in step 1, or before its first or after its last run — are
 drawn as **gray crosses**, and every line segment touching one is gray and dotted, so shape and dash,
-not only color, mark them; the legend keeps each series' own symbol. The caption counts them (*2 runs
+not only color, mark them; the legend keeps each series' own symbol. The takeaway counts them (*2 runs
 not in the analysis are drawn as gray crosses.*, counting runs with a value in any of the chart's
-series), the tooltip adds the reason on a second line (*Not in the analysis: left out in step 1*), and
-every data card gains an *In the analysis* field (*Yes*, *No — before the first run*). Without a
+series), and so does the image's note while its switch is on, and every data card gains an *In the
+analysis* field that gives the reason (*Yes*, *No — before the first run*). Without a
 step-1 selection the charts are drawn as before. The values, scales and gaps do not change.
 
-The sidebar has four tabs:
+The sidebar has six tabs:
 
 - **Data** — with a battery compared, **Plot by** (*Battery runs* or *Member runs*); which charts are
-  shown, which series of the charts that draw more than one, *Show the full 0–100 Intelligence scale*,
-  **Decimal places** per chart — *Automatic* (the precision above, named in the choice, such as
-  *Automatic (2–4)* for cost) or 0–3, cost 0–4 — for the point labels, tooltips, takeaways and *Show
-  data* on the Timeline and in its downloads, while the axis ticks keep the decimals their step needs and
-  times under a second stay whole milliseconds (the Results step and the report charts keep the automatic
-  precision), with *All automatic* to reset them, and **Mark runs not in the analysis** (on by default;
-  off draws every run alike).
+  shown, which series of the charts that draw more than one, *Show the full 0–100 Intelligence scale*
+  under *Value axes*, and, under *Runs*, **Mark runs not in the analysis** (on by default; off draws
+  every run alike).
 - **Events** — which markers the charts show (*Overseer changes*, *Annotations*, *Served-model
   changes*), which Overseer change kinds (each with the number of composite events holding it), and the
   **event list**: one section per UTC day, oldest first. A composite event shows its title (*Harness 26 →
@@ -817,27 +828,48 @@ The sidebar has four tabs:
 - **Annotations** — dated notes on the timeline: *Model release*, *Provider statement*, *Provider
   confirmed a cause*, *Price change*, *Change on our side*, *Other*, for every provider, one provider or
   one model, with an optional http(s) source. Annotations are added and deleted; they are not edited.
-- **Download** — *Chart size*, *Image format*, the theme, *As shown (dark)* or *Light, for print*, and
-  **Show the GnollBench logo** (on by default), which turns the logo off on the charts and in every
-  image.
+- **Theme** — Model Comparison's Theme tab, on this workspace's own stored style: dark or light theme,
+  theme, transparent or custom background (a transparent one is shown over a checkerboard or a chosen
+  color that is never exported), font family, heading and label weights, heading and text colors with
+  contrast warnings, a figure border, and the **GnollBench logo** (shown by default) with its variant
+  and height.
+- **Charts** — Model Comparison's chart style controls for the timelines, in the sections *Heading and
+  badges* (title and badge text sizes, which badges are shown, the Better badge's position), *Lines and
+  points*, *Values and axes*, *Markers and legend*, *Notes* (the marker key and the gray-crosses
+  sentence) and *Footer* (shown or not, its text size), then this workspace's own **Number format**:
+  **Decimal places** per chart — *Automatic* (the precision above, named in the choice, such as
+  *Automatic (2–4)* for cost) or 0–3, cost 0–4 — for the values at the points, the takeaways and *Show
+  data* on the Timeline and in its downloads, while the axis ticks keep the decimals their step needs
+  and times under a second stay whole milliseconds (the Results step and the report charts keep the
+  automatic precision), with *All automatic* to reset them.
+- **Download** — *Chart size* and *Image format*, settings only: each chart downloads from its tile or
+  from Single chart, all of them from All charts.
 
 The two views are **All charts**, every shown chart in one column, each tile with **Copy**, **Download**
 and **Open in Single view** under its chart, and a toolbar with the zoom, *Fit width*, *Fit to screen*
 and **Download all**; and **Single chart**, one chart with *Previous chart*, a chart select and *Next
 chart*, the zoom, *Fit to screen*, *Actual size* (100 %), **Copy** and **Download**. Both views open at
-**Fit to screen**: one whole chart, its *Show data* summary included, fits the view.
+**Fit to screen**: one whole chart — the image and the HTML under it, its takeaway, footer row and
+*Show data* summary — fits the view without any scrollbar. In All charts the column of tiles keeps its
+scrollbar, and Fit to screen fits one whole tile.
 
-**Zoom resizes the live charts; it does not scale a picture.** Zooming in gives a chart more room — a
-longer time axis and a taller value axis — at the same text size, and every run keeps its hover tooltip.
-At 100 % a chart's box is the download's layout box for the chosen chart size, so the page and the file
-agree there. The chart size's aspect ratio and text size therefore shape the charts on screen too; its
-pixel density changes only the file. The zoom reaches from 25 % (lower where a fit needs it) to 400 %.
-In a view, outside a form field and without Ctrl, ⌘ or Alt, `+` or `=` zooms in, `-` zooms out, `0`
-fits one whole chart to the screen in both views and, in Single chart, `1` is 100 %.
+**Both views show the download itself.** Every chart is composed at the chart size, as its file, and
+rasterized for the screen; the screen and the file differ only in pixel density and pixel size. The
+chart size's aspect ratio, text size and theme therefore shape the charts on screen too, and zooming
+scales the picture without moving anything in it. A zoom is device pixels per file pixel: at 100 % one
+pixel of the file is one pixel of the display, so a Full HD chart at 200 % density (3840 × 2160) shows
+1920 CSS px wide at 100 % on a 2× display. The zoom reaches from 10 % (lower where a fit needs it) to
+800 %. A fit is floored to whole CSS px, so a fitted chart never overflows the view by a fraction of a
+pixel, and *Fit width* leaves room for a vertical scrollbar only where the chart will be taller than the
+view. In a view, outside a form field and without Ctrl, ⌘ or Alt, `+` or `=` zooms in, `-` zooms out,
+`0` fits one whole chart to the screen in both views and, in Single chart, `1` is 100 %. Only the
+charts near the view are composed, once changes pause; until its first image a chart keeps its box with
+a spinner, a newer image replaces the last one, which stays shown and scaled in the meantime, and a
+chart size that is refused shows the refusal in the image's place.
 
-**The image is the chart as shown** — its title, the model and the GnollBench logo in the header band,
-without the takeaway or the marker list — in the chosen theme, with the series and markers the sidebar
-shows, and the gray crosses while runs not in the analysis are marked. **Download** writes PNG or WebP (quality 75–100) at a size
+**The image is the chart as shown** — its heading, badges, logo, notes and footer, without the
+takeaway or *Show data* — in the Theme tab's theme and the Charts tab's style, with the series and
+markers the sidebar shows, and the gray crosses while runs not in the analysis are marked. **Download** writes PNG or WebP (quality 75–100) at a size
 preset, grouped by aspect ratio (16:9, 16:10, 4:3, 3:2, 1:1, 21:9 and print), or at a custom width and
 height, with a pixel density and a text size: the controls of Model Comparison. A browser that cannot
 encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image type clipboards take.
@@ -845,8 +877,11 @@ encode WebP writes a PNG and says so. **Copy** always writes a PNG, the image ty
 it skipped for having nothing to draw. The files are
 `chat-consistency_<model key>_<chart>_<yyyyMMdd_HHmmss>.<png|webp>` and
 `chat-consistency_<model key>_charts_<yyyyMMdd_HHmmss>.zip`. The workspace layout, the chart choices
-(the decimal places, *Mark runs not in the analysis* and *Show the GnollBench logo* included) and the download settings are
-kept per browser; a layout stored before the *Work per answer* chart was split shows both of its charts.
+(the decimal places and *Mark runs not in the analysis* included), the Theme and Charts tabs' style and
+the download settings are kept per browser, the style apart from Model Comparison's; a layout stored
+before the *Work per answer* chart was split shows both of its charts, and a theme or logo choice
+stored before the Theme tab existed seeds that tab once (*Light, for print* is the light theme, and a
+hidden logo stays hidden).
 
 ### 17.4 Repeat this run's setup
 

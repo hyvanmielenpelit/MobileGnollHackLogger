@@ -221,10 +221,13 @@ describe('CcWizardComponent', () => {
     expect(workspace.setKey).toBe(CC_BATTERY_SET_KEY);
     expect(workspace.batteryRows.map(row => row.batteryRunId)).toEqual([12, 11]);
     expect([...workspace.notAnalyzedUnits!]).toEqual([[11, 'leftOut']]);
-    expect(workspace.subjectLabel).toBe('GPT-5 high · Two initial suites (revision 1)');
+    // The set names the charts' footer.
+    expect(workspace.setLabel).toBe('Two initial suites (revision 1)');
+    expect(workspace.setKind).toBe('battery');
+    expect(workspace.rangeLabel).toBe(wizard.rangeText);
   });
 
-  it('hands a run-by-run timeline its runs and the model as the subject', () => {
+  it('hands a run-by-run timeline its runs and no compared set', () => {
     chooseModel();
     tab(2).click();
     fixture.detectChanges();
@@ -232,7 +235,8 @@ describe('CcWizardComponent', () => {
     expect(workspace.unitKind).toBe('run');
     expect(workspace.setKey).toBeNull();
     expect(workspace.notAnalyzedUnits!.size).toBe(0);
-    expect(workspace.subjectLabel).toBe('GPT-5 high');
+    expect(workspace.setLabel).toBe('');
+    expect(workspace.setKind).toBeNull();
   });
 
   it('asks for another compared set from step 1', () => {

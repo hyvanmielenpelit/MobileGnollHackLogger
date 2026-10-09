@@ -219,6 +219,7 @@ describe('FigureStylePanelComponent', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['runs'] },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, hiddenBadges: ['models'] },
       profile: { ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['questions', 'pricing'] },
+      timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
       table: DEFAULT_FIGURE_STYLE.table
@@ -369,6 +370,7 @@ describe('FigureStylePanelComponent', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 5, intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 12, intervals: false, frontierIntervalsNote: false },
       profile: DEFAULT_FIGURE_STYLE.profile,
+      timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
       table: DEFAULT_FIGURE_STYLE.table
@@ -409,7 +411,7 @@ describe('FigureStylePanelComponent', () => {
   });
 
   it('labels every control, and every id is unique', () => {
-    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline'] as const) {
       render(kind);
       const inputs = Array.from(host().querySelectorAll('input'));
       expect(inputs.length, kind).toBeGreaterThan(kind === 'profile' ? 3 : 5);
@@ -423,7 +425,7 @@ describe('FigureStylePanelComponent', () => {
     }
   });
   it('opens the first section of each family by default and leaves the rest closed', () => {
-    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline'] as const) {
       render(kind);
       const sections = Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
       expect(sections[0].id, kind).toBe(`mc-style-${kind}-section-heading`);
@@ -511,7 +513,7 @@ describe('FigureStylePanelComponent', () => {
   });
 
   it('puts every hint into an info tip the control is described by, and no hint paragraph remains', () => {
-    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline'] as const) {
       render(kind);
       expect(host().querySelectorAll('.gh-fieldset-hint').length, kind).toBe(0);
       const described = Array.from(host().querySelectorAll('[aria-describedby]'));
@@ -666,7 +668,7 @@ describe('FigureStylePanelComponent', () => {
   }
 
   it('claims every style field of each family in exactly one section', () => {
-    for (const kind of ['bar', 'scatter', 'profile', 'appearance'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline', 'appearance'] as const) {
       const keys = FIGURE_STYLE_SECTIONS[kind].filter(section => !section.shared).flatMap(section => [...section.keys]);
       expect(new Set(keys).size, `${kind} duplicates`).toBe(keys.length);
       expect([...keys].sort(), kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
@@ -674,7 +676,7 @@ describe('FigureStylePanelComponent', () => {
   });
 
   it('gives every section a named reset button with a tooltip, disabled at defaults', () => {
-    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline'] as const) {
       // The page's defaults: names on the marks, no values.
       fixture.componentRef.setInput('directLabels', kind === 'scatter');
       fixture.componentRef.setInput('inlineValues', false);
@@ -944,7 +946,7 @@ describe('FigureStylePanelComponent', () => {
   });
 
   it('gives every number control and title-break radio a distinct id', () => {
-    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline'] as const) {
       render(kind);
       const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
       expect(new Set(ids).size, kind).toBe(ids.length);
@@ -1349,7 +1351,7 @@ describe('FigureStylePanelComponent', () => {
   });
 
   it('uses the shared gh-radio and gh-choice look for every radio group, in every kind', () => {
-    for (const kind of ['bar', 'scatter', 'profile', 'appearance'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'timeline', 'appearance'] as const) {
       render(kind);
       expect(host().querySelectorAll('.fsp-radio, .fsp-choice').length, kind).toBe(0);
       for (const radio of Array.from(host().querySelectorAll<HTMLInputElement>('input[type="radio"]'))) {
@@ -1357,5 +1359,227 @@ describe('FigureStylePanelComponent', () => {
         expect(radio.closest('fieldset')?.classList.contains('gh-choice'), `${kind} ${radio.id}`).toBe(true);
       }
     }
+  });
+
+  // --- The timeline kind (Chat Consistency) ------------------------------------------------------
+
+  describe('the timeline kind', () => {
+    const readout = (name: string): string =>
+      host().querySelector(`#mc-style-timeline-section-${name} > summary .gh-disclosure-summary-value`)!.textContent!.trim();
+
+    function withTimeline(timeline: Partial<FigureStyle['timeline']>): FigureStyle {
+      return { ...DEFAULT_FIGURE_STYLE, timeline: { ...DEFAULT_FIGURE_STYLE.timeline, ...timeline } };
+    }
+
+    it('renders its six sections, no Number format, the text size note and a reset button', () => {
+      render('timeline');
+      expect(host().querySelector('#mc-style-timeline-heading')?.textContent?.trim()).toBe('Timeline charts');
+      expect(sectionTitles()).toEqual(['Heading and badges', 'Lines and points', 'Values and axes', 'Markers and legend', 'Notes', 'Footer']);
+      expect(host().querySelector('#mc-style-timeline-section-numbers')).toBeNull();
+      expect(host().querySelectorAll('select').length).toBe(0);
+      expect(FIGURE_STYLE_SECTIONS.timeline.some(section => section.shared)).toBe(false);
+      expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('The sizes are at 100 % text; Download → Text size scales them all.');
+      const reset = host().querySelector('#mc-style-timeline-reset') as HTMLButtonElement;
+      expect(reset.textContent!.trim()).toBe('Reset timeline style');
+    });
+
+    it('offers the Better badge, Model, Number of runs and Dates, and the Better badge position', () => {
+      render('timeline');
+      const checkboxes = Array.from(host().querySelectorAll<HTMLInputElement>('#mc-style-timeline-section-heading .fsp-show-grid input[type="checkbox"]'));
+      expect(checkboxes.map(input => input.id)).toEqual([
+        'mc-style-timeline-badge-direction',
+        'mc-style-timeline-badge-model',
+        'mc-style-timeline-badge-runs',
+        'mc-style-timeline-badge-dates'
+      ]);
+      expect(checkboxes.map(input => input.closest('label')!.textContent!.trim())).toEqual(['Better badge', 'Model', 'Number of runs', 'Dates']);
+      expect(checkboxes.every(input => input.checked)).toBe(true);
+      expect(control('mc-style-timeline-betterBadgePlacement-fit').checked).toBe(true);
+
+      setChecked(control('mc-style-timeline-badge-dates'), false);
+      expect(emitted[0].timeline).toEqual({ ...DEFAULT_FIGURE_STYLE.timeline, hiddenBadges: ['dates'] });
+      expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+
+      control('mc-style-timeline-betterBadgePlacement-always').click();
+      fixture.detectChanges();
+      expect(emitted[emitted.length - 1].timeline.betterBadgePlacement).toBe('always');
+    });
+
+    it('edits each of its fields from its own control, leaving the other fields and families alone', () => {
+      const checkboxes: readonly [string, boolean][] = [
+        ['areaWash', false],
+        ['valueLabels', false],
+        ['gridlines', false],
+        ['plotFrame', true],
+        ['markerNote', false],
+        ['notAnalyzedNote', false],
+        ['footer', false]
+      ];
+      const ranges: readonly [string, number][] = [
+        ['lineWidthPx', 4],
+        ['pointRadiusPx', 6],
+        ['valueLabelSizePx', 14],
+        ['axisTextSizePx', 13],
+        ['axisTitleSizePx', 15],
+        ['markerTagSizePx', 12],
+        ['legendTextSizePx', 14],
+        ['titleSizePx', 22],
+        ['badgeTextSizePx', 13],
+        ['footerTextSizePx', 10]
+      ];
+      render('timeline');
+      for (const [key, value] of checkboxes) {
+        const input = control(`mc-style-timeline-${key}`);
+        expect(input.checked, key).toBe(!value);
+        setChecked(input, value);
+        const last = emitted[emitted.length - 1];
+        expect(last.timeline, key).toEqual({ ...DEFAULT_FIGURE_STYLE.timeline, [key]: value });
+        expect(last.bar, key).toBe(DEFAULT_FIGURE_STYLE.bar);
+      }
+      for (const [key, value] of ranges) {
+        setRange(control(`mc-style-timeline-${key}`), value);
+        const last = emitted[emitted.length - 1];
+        expect(last.timeline, key).toEqual({ ...DEFAULT_FIGURE_STYLE.timeline, [key]: value });
+        expect(last.scatter, key).toBe(DEFAULT_FIGURE_STYLE.scatter);
+      }
+      setChecked(control('mc-style-timeline-axisTitleWeight-700'), true);
+      expect(emitted[emitted.length - 1].timeline).toEqual({ ...DEFAULT_FIGURE_STYLE.timeline, axisTitleWeight: 700 });
+    });
+
+    it('offers the ranges of the timeline controls', () => {
+      render('timeline');
+      const bounds = (key: string): string[] => {
+        const input = control(`mc-style-timeline-${key}`);
+        return [input.min, input.max];
+      };
+      expect(bounds('lineWidthPx')).toEqual(['1', '6']);
+      expect(bounds('pointRadiusPx')).toEqual(['2', '10']);
+      expect(bounds('markerTagSizePx')).toEqual(['8', '24']);
+      for (const key of ['valueLabelSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'legendTextSizePx']) {
+        expect(bounds(key), key).toEqual(['8', '48']);
+      }
+    });
+
+    it('grays the value label size while the values are hidden', () => {
+      render('timeline');
+      expect(control('mc-style-timeline-valueLabelSizePx').disabled).toBe(false);
+      render('timeline', withTimeline({ valueLabels: false }));
+      expect(control('mc-style-timeline-valueLabelSizePx').disabled).toBe(true);
+      expect(readout('values')).toBe('no values · axis 11/12 px · gridlines');
+    });
+
+    it('summarizes each section in its read-out', () => {
+      render('timeline');
+      expect(readout('heading')).toBe('18 px · badges 11 px · Better, model, runs, dates');
+      expect(readout('lines')).toBe('line 2 px · points 4 px · area wash');
+      expect(readout('values')).toBe('values 11 px · axis 11/12 px · gridlines');
+      expect(readout('markers')).toBe('tags 10 px · legend 12 px');
+      expect(readout('notes')).toBe('markers, gray crosses');
+      expect(readout('footer')).toBe('shown · 12 px');
+
+      render('timeline', withTimeline({ areaWash: false, markerNote: false, notAnalyzedNote: false, hiddenBadges: ['model'] }));
+      expect(readout('lines')).toBe('line 2 px · points 4 px');
+      expect(readout('notes')).toBe('none');
+      expect(readout('heading')).toBe('18 px · badges 11 px · Better, runs, dates');
+    });
+
+    it('resets one section, then the whole timeline style, and nothing else', () => {
+      const changed = withTimeline({ lineWidthPx: 5, areaWash: false, markerNote: false });
+      render('timeline', changed);
+      resetButton('mc-style-timeline-section-lines-reset').click();
+      fixture.detectChanges();
+      expect(emitted[0].timeline).toEqual({ ...DEFAULT_FIGURE_STYLE.timeline, markerNote: false });
+      expect(statusText()).toBe('Lines and points reset to defaults.');
+
+      (host().querySelector('#mc-style-timeline-reset') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(emitted[1].timeline).toEqual(DEFAULT_FIGURE_STYLE.timeline);
+      expect(emitted[1].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+      expect(statusText()).toBe('Timeline style reset to defaults.');
+    });
+  });
+
+  describe('the id prefix', () => {
+    /** Every id the panel writes, and every id an ARIA or `for` reference names, resolved in the panel. */
+    function expectPrefixed(prefix: string): void {
+      const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
+      expect(ids.length).toBeGreaterThan(10);
+      for (const id of ids) {
+        expect(id.startsWith(`${prefix}-`), id).toBe(true);
+      }
+      expect(new Set(ids).size).toBe(ids.length);
+      for (const attribute of ['for', 'aria-labelledby', 'aria-describedby', 'aria-controls', 'interestfor']) {
+        for (const element of Array.from(host().querySelectorAll(`[${attribute}]`))) {
+          for (const id of element.getAttribute(attribute)!.split(' ')) {
+            expect(host().querySelector(`#${id}`), `${attribute} ${id}`).not.toBeNull();
+          }
+        }
+      }
+    }
+
+    it('writes mc-style ids by default', () => {
+      for (const kind of ['timeline', 'appearance'] as const) {
+        render(kind);
+        expectPrefixed('mc-style');
+      }
+    });
+
+    it('writes every appearance id with the given prefix', () => {
+      fixture.componentRef.setInput('idPrefix', 'cc-style');
+      render('appearance');
+      expectPrefixed('cc-style');
+      expect(host().querySelector('#cc-style-appearance-heading')).not.toBeNull();
+      const dark = control('cc-style-appearance-theme-dark');
+      expect(dark.name).toBe('cc-style-appearance-theme');
+      expect(dark.closest('fieldset')!.getAttribute('aria-labelledby')).toBe('cc-style-appearance-theme-label');
+      expect(control('cc-style-appearance-logo').getAttribute('aria-describedby')).toBe('cc-style-appearance-logo-tip');
+      expect(host().querySelector('#cc-style-appearance-fontLoadStatus')).not.toBeNull();
+      expect(host().querySelector('#cc-style-appearance-reset')).not.toBeNull();
+      expect(host().querySelector('[id^="mc-style"]')).toBeNull();
+    });
+
+    it('writes every timeline id with the given prefix', () => {
+      fixture.componentRef.setInput('idPrefix', 'cc-style');
+      render('timeline');
+      expectPrefixed('cc-style');
+      expect(host().querySelector('#cc-style-timeline-section-heading')).not.toBeNull();
+      expect(control('cc-style-timeline-badge-dates').checked).toBe(true);
+      expect(control('cc-style-timeline-axisTitleWeight-400').name).toBe('cc-style-timeline-axisTitleWeight');
+      expect(host().querySelector('[id^="mc-style"]')).toBeNull();
+    });
+  });
+
+  describe('the open sections storage key', () => {
+    const KEY = 'overseer.test.figureStylePanel.open';
+
+    afterEach(() => {
+      localStorage.removeItem(KEY);
+    });
+
+    it('stores the open sections under the given key, leaving the default key untouched', () => {
+      fixture.componentRef.setInput('openStorageKey', KEY);
+      render('timeline');
+      expect(section('mc-style-timeline-section-heading').open).toBe(true);
+      toggleSection('mc-style-timeline-section-notes');
+      expect(JSON.parse(localStorage.getItem(KEY)!).timeline).toEqual(['heading', 'notes']);
+      expect(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)).toBeNull();
+    });
+
+    it('reads the open sections from the given key, not from the default one', () => {
+      fixture.destroy();
+      localStorage.setItem(KEY, JSON.stringify({ timeline: ['markers'] }));
+      localStorage.setItem(FIGURE_STYLE_PANEL_OPEN_KEY, JSON.stringify({ timeline: ['lines'] }));
+      create();
+      fixture.componentRef.setInput('openStorageKey', KEY);
+      render('timeline');
+      expect(section('mc-style-timeline-section-markers').open).toBe(true);
+      expect(section('mc-style-timeline-section-lines').open).toBe(false);
+      expect(section('mc-style-timeline-section-heading').open).toBe(false);
+    });
+
+    it('keeps the default key for Model Comparison', () => {
+      expect(fixture.componentInstance.openStorageKey).toBe('overseer.figureStylePanel.open');
+      expect(FIGURE_STYLE_PANEL_OPEN_KEY).toBe('overseer.figureStylePanel.open');
+    });
   });
 });

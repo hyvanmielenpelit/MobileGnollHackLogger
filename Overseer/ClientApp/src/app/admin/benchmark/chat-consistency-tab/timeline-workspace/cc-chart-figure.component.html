@@ -1,11 +1,35 @@
-<figure class="cc-figure" [class.is-fixed-width]="boxWidth !== null" [style.inline-size.px]="boxWidth"
+<figure class="cc-figure" [class.is-fixed-width]="figureWidth !== null" [style.inline-size.px]="figureWidth"
         [attr.data-figure]="figure.key" [attr.aria-labelledby]="figureId + '-title'">
   <!-- The chart's header band draws the title; this one names the figure for assistive technology. -->
   <figcaption class="cc-figure-caption" [class.visually-hidden]="titleInChart">
     <span class="cc-figure-title" [id]="figureId + '-title'">{{ figure.title }}</span>
   </figcaption>
 
-  @if (chartData) {
+  @if (composed; as image) {
+    @if (figure.config) {
+      <!-- The download, composed: its heading, badges, logo, notes and footer are in the bitmap. -->
+      <div class="cc-chart-box cc-chart-image-box" [style.inline-size.px]="image.cssWidth" [style.block-size.px]="image.cssHeight">
+        @if (image.refusal) {
+          <p class="cc-figure-refusal">{{ image.refusal }}</p>
+        } @else if (image.canvas) {
+          <canvas #bitmap class="gh-fig-canvas cc-chart-image" role="img" [class.is-transparent-figure]="image.transparent"
+                  [attr.aria-label]="composedLabel"
+                  [attr.aria-describedby]="figure.markers.length > 0 ? markersId : null"
+                  [style.inline-size.px]="image.cssWidth" [style.block-size.px]="image.cssHeight"></canvas>
+        } @else if (render) {
+          <span class="cc-chart-pending" role="status">
+            <svg class="dc-ring" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+              <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+              <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+            </svg>
+            <span class="visually-hidden">Drawing {{ figure.title }}…</span>
+          </span>
+        }
+      </div>
+    } @else {
+      <p class="cc-figure-empty">Nothing to chart in this range.</p>
+    }
+  } @else if (chartData) {
     <div class="cc-chart-box" [style.inline-size.px]="boxWidth" [style.block-size.px]="boxHeight">
       @if (render) {
         <canvas baseChart role="img" [attr.aria-label]="figure.altText"
@@ -27,9 +51,16 @@
     </ul>
   }
 
-  <!-- Hidden by CSS while it holds neither markers nor projected actions. -->
+  <!-- Hidden by CSS while it holds neither markers nor projected actions. A composed image carries
+       the marker key itself, so the row keeps only Show events. -->
   <div class="cc-figure-footer">
-    @if (figure.markers.length > 0) {
+    @if (composed) {
+      @if (figure.markers.length > 0 && showEvents.observed) {
+        <p class="cc-figure-markers">
+          <button type="button" class="btn-link cc-figure-show-events" (click)="showEvents.emit()">Show events</button>
+        </p>
+      }
+    } @else if (figure.markers.length > 0) {
       <!-- The spaces and punctuation are pieces of their own: whitespace-only template text is dropped. -->
       <p class="cc-figure-markers">
         @for (piece of markerPieces; track $index) {

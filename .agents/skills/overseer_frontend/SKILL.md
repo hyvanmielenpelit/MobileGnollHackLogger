@@ -116,7 +116,11 @@ Harness-neutral, and the floor for any Overseer frontend work.
     without it a `[hidden]` panel stays visible),
     `.gh-fig-tile*` (a tile and its hover-or-focus action cluster), `.gh-fig-toolbar*` (the toolbar row
     and its zoom, figure and export groups), `.gh-fig-all-toolbar` and `.gh-fig-figure-select`, with
-    the zoom controls `.gh-zoom-*` (`-label`, `-slider`, `-value`) and the read-out `.gh-range-value`;
+    the zoom controls `.gh-zoom-*` (`-label`, `-slider`, `-value`) and the read-out `.gh-range-value`,
+    and the figure canvas `.gh-fig-canvas` (block display, so no inline baseline gap under the bitmap)
+    with `.gh-fig-canvas.is-transparent-figure`, the preview backdrop behind a transparent figure as the
+    canvas's own CSS background, never in a written file: the color is `--gh-fig-backdrop`, inherited
+    from the scroller (each wizard's `figureBackdropStyle`), the checkerboard without it;
     shared by Model Comparison step 2 and the Chat Consistency Timeline step. Model Comparison keeps its
     `mc-` classes beside them, which its specs query.
   - **`bm-launcher*`** — the launcher page of a benchmark sub-tab whose task is a full-screen wizard
@@ -479,53 +483,97 @@ To find specific popups, look in the corresponding component's `.html` template:
     - `timeline-workspace/` (`app-cc-timeline-workspace`, step 2, in a `.gh-fig-host` step): the global
       `gh-fig-*` workspace — a sidebar (`#cc-tl-sidebar`, 18–40 rem, at most half the workspace, 26 rem
       by default, `app-pane-resizer`, width as `--gh-fig-sidebar-width`; collapsed by the view bar's
-      toggle) with the tabs **Data** (charts, series, *Show the full 0–100 Intelligence scale*
-      `#cc-tl-zero-baseline`, stored as `zeroBaseline`, **Decimal places** — one select per value
-      chart, `#cc-tl-decimals-<key>`, *Automatic (n)* from `ccAutoDecimalsText` and the choices of
-      `CC_DECIMAL_CHOICES`, reaching the figure builders as `CcChartOptions.decimals` for point labels,
-      tooltip, takeaway and table but never the axis ticks; Results and the report charts pass none —
-      and **Mark runs not in the analysis** `#cc-tl-mark-not-analyzed`, on by default), **Events**
-      (marker kinds, Overseer change kinds with composite counts, and `app-cc-event-list`), **Annotations**
-      (`annotations/`, `app-cc-annotations-panel`: add and delete only; there is no edit) and
-      **Download** (`app-export-size-section` *Chart size*, id prefix `cc-export`;
-      `app-export-format-section`, id prefix `cc-image-format`; the theme radios *As shown (dark)* /
-      *Light, for print*); and the views **All charts** (one column of `app-cc-chart-figure` tiles, a
-      canvas only within one viewport height of view, each tile's Copy / Download / Open in Single view
-      projected into the figure's footer as `[ccFigureActions]` `.cc-tl-tile-actions`, always shown;
-      toolbar zoom, **Fit width**, **Fit to screen**, **Download all**) and **Single chart**
+      toggle) with the six tabs of `CC_TIMELINE_SIDEBAR_TABS`: **Data** (*Plot by* in a battery set,
+      charts, series, *Value axes* — *Show the full 0–100 Intelligence scale* `#cc-tl-zero-baseline`,
+      stored as `zeroBaseline` — and *Runs* — **Mark runs not in the analysis**
+      `#cc-tl-mark-not-analyzed`, on by default), **Events** (marker kinds, Overseer change kinds with
+      composite counts, and `app-cc-event-list`), **Annotations** (`annotations/`,
+      `app-cc-annotations-panel`: add and delete only; there is no edit), **Theme**
+      (`app-figure-style-panel kind="appearance"`), **Charts** (`app-figure-style-panel kind="timeline"`
+      — *Heading and badges*, *Lines and points*, *Values and axes*, *Markers and legend*, *Notes*,
+      *Footer*, no *Number format* section — then the workspace's own *Number format* fieldset
+      `.cc-tl-decimals`: **Decimal places**, one select per value chart, `#cc-tl-decimals-<key>`,
+      *Automatic (n)* from `ccAutoDecimalsText` and the choices of `CC_DECIMAL_CHOICES`, reaching the
+      figure builders as `CcChartOptions.decimals` for point labels, takeaway and table but never the
+      axis ticks, and *All automatic*; Results and the report charts pass none), both panels with
+      `idPrefix="cc-style"` and `[openStorageKey]="figureStylePanelOpenKey"`, and **Download** (settings
+      only: `app-export-size-section` *Chart size*, id prefix `cc-export`; `app-export-format-section`,
+      id prefix `cc-image-format`; a hint; the theme and the logo are the Theme tab's); and the views
+      **All charts** (one column of `app-cc-chart-figure` tiles, each tile's Copy / Download / Open in
+      Single view projected into the figure's footer as `[ccFigureActions]` `.cc-tl-tile-actions`, always
+      shown; toolbar zoom, **Fit width**, **Fit to screen**, **Download all**) and **Single chart**
       (Previous / select / Next, zoom, **Fit to screen**, **Actual size**, Copy, Download); both views
-      open at Fit to screen. `app-cc-chart-figure` puts the takeaway under the chart, then the footer
-      (marker line, projected actions), and *Show data* as a single bordered list of rows, its summary
-      counting them (`ccDataCards`, headings at `dataHeadingLevel`, 5 under the step's `h4`, 6 by
-      default; a column in `CcFigureTable.lists`, *Member runs*, shows one item per line as
-      `.cc-data-list`, the string cell still holding them joined). Zoom is
-      `cc-chart-zoom.ts`: it **resizes the live Chart.js charts**, never a bitmap — at 1 the box is
-      `layoutBoxFor` of the chart size (`ccChartBox`; density ignored), so text keeps its size and every
-      run keeps its tooltip; the range is 25 % (lower where a fit is) to 400 %, the slider applies once per
-      frame, and a chart canvas is capped at 8 M device pixels (`ccCanvasRatio`). Keys on a view panel,
-      outside form fields and without Ctrl / ⌘ / Alt: `+` / `=`, `-`, `0` (Fit to screen in both
-      views) and `1` (100 %, Single only). Exports are `cc-chart-export.ts`
-      (`ccExportLayout`, the plot-only layout through `bitmapRefusal`; `ccChartFilename`,
-      `ccChartArchiveFilename`; `ccExportTheme`, the screen theme on `#101010` or the print theme)
-      through Model Comparison's `renderPlotOffscreen`, `encodeFigureImage`, `copyImageToClipboard` and
-      `buildFigureArchive`: Download in the chosen PNG or WebP, Copy always PNG, Download all one file
-      or a ZIP. `exporting` is emitted as `exportingChange` for the close guard. Stored per browser in
-      `try/catch`: `overseer.benchmark.chatConsistency.timeline` (`{ version: 2, … }`: sidebar, view,
-      charts, series, markers, hidden event kinds, zero baseline, `decimals`, `markNotAnalyzed`, theme,
-      format, WebP quality, section open states, Single chart; `parseTimelineLayout` migrates a
-      version-1 layout's *Work per answer* chart to `work` and `tools`, reads a missing or non-boolean
-      `markNotAnalyzed` as `true` and keeps only the `decimals` each chart offers, so neither of those
-      changed the record version), and
-      `overseer.benchmark.chatConsistency.chartSize`, apart from Model Comparison's `figureSize`. The
-      workspace draws **every run in the step-1 dates** (the composite events would otherwise renumber);
+      open at Fit to screen. **Every chart is a bitmap composed by `cc-figure-compose.ts`**, on screen
+      exactly as in Copy, Download and Download all, with **no hover tooltip**: `buildComposedCcFigure`
+      builds the chart with `ccComposedChartOptions` (`ccChartThemeFor` of the resolved appearance,
+      whose `tooltip: null` gives the chart `events: []` and a disabled tooltip; the `timeline` family as
+      `CcChartStyle`; no header band, no logo, no animation), `ccFigureChrome` gives Model Comparison's
+      heading (the title; the badges `model`, `runs` — `plural(count, unitNoun)` over the plotted
+      points — and `dates`, step 1's range text, less `hiddenBadges`; the Better badge from
+      `CC_FIGURE_DIRECTIONS` on quality, ttfat, rate, cost and reliability, none on work, tools and the
+      overview; the notes `ccMarkerNoteText` and `ccNotAnalyzedNoteText` behind `markerNote` and
+      `notAnalyzedNote`), `ccFigureFooter` the footer (`label` *Battery* or *Suite* with the set's name,
+      else *Suites* and *All suites*; `computedAt` from `loadedAt`, when the workspace received the
+      timeline), `ccFigureLayout` the file's layout or its refusal through `resolveFigureLayout`, and
+      `composeCcFigure` renders the plot with `renderPlotOffscreen` and frames it with
+      `composeFigureImage`. The screen passes `ccPreviewLayout` of that layout (`previewLayoutFor`,
+      which changes only the density and the pixel size), so the screen is the download. Only tiles
+      within one viewport height of the All view are composed (`isNear`); `invalidateImages` bumps
+      `composeVersion` and composes once changes have been quiet for `COMPOSE_DEBOUNCE_MS` (150 ms), a
+      pass of an older version is abandoned, every pass awaits `ensureFigureFont` and the logo first,
+      and the last image stays shown, scaled to the new box, until its replacement arrives.
+      `app-cc-chart-figure` takes the image as `composed` (`CcComposedFigure`): the bitmap copied into
+      `canvas.gh-fig-canvas.cc-chart-image` (`role="img"`, `cursor: default`, named by the alt text
+      plus `ccFigureSummary`; `is-transparent-figure` on a transparent background, the scroller passing
+      `--gh-fig-backdrop` as `figureBackdropStyle`), a `.cc-chart-pending` spinner in a box of the
+      reserved size before the first image, or `.cc-figure-refusal` in its place for a refused size; its
+      footer row keeps *Show events* and the projected actions, without the marker pills the live chart
+      shows. Without `composed` it draws the live `BaseChartDirective` chart with its tooltip (Results).
+      The figure puts the takeaway under the image, then the footer, and *Show data* as a single bordered
+      list of rows, its summary counting them (`ccDataCards`, headings at `dataHeadingLevel`, 5 under
+      the step's `h4`, 6 by default; a column in `CcFigureTable.lists`, *Member runs*, shows one item per
+      line as `.cc-data-list`, the string cell still holding them joined). Zoom is `cc-chart-zoom.ts`,
+      on Model Comparison's `preview-view.ts`: a zoom is **device pixels per file pixel**, 1 showing one
+      pixel of the file (`ccTargetPixels`) on one device pixel (`ccPreviewDpr`, 1–4); the range is
+      `ccZoomRange` (`previewZoomRange`: 10 %, lower where a fit is, to 800 %), and the slider applies
+      once per frame. **A fit is whole CSS px**: `ccFitWidthZoom` / `ccFitHeightZoom` /
+      `ccFitScreenZoom` leave room for the figure's HTML (`CcFigureChrome`: the figure's box less the
+      image's, rounded up, an open *Show data* body left out), `ccDisplaySize` floors a fitted box, the
+      viewport is its border box less borders and padding, floored (`previewStageContentBox`),
+      `.cc-tl-viewport` reserves no scrollbar gutter, and `ccFitWidthWithScrollbar` fits against a
+      narrower width only where the fitted figure will be taller than the view; with more than one tile
+      the All column keeps its scrollbar and every fit leaves it room, so Fit to screen fits one whole
+      tile. Keys on a view panel, outside form fields and without Ctrl / ⌘ / Alt: `+` / `=`, `-`, `0`
+      (Fit to screen in both views) and `1` (100 %, Single only). `cc-chart-export.ts` holds only the
+      file names (`ccChartFilename`, `ccChartArchiveFilename`); a file is `composeCcFigure` at
+      `ccFigureLayout` from one export snapshot, then Model Comparison's `encodeFigureImage`,
+      `copyImageToClipboard` and `buildFigureArchive`: Download in the chosen PNG or WebP, Copy always
+      PNG, Download all one file or a ZIP. `exporting` is emitted as `exportingChange` for the close
+      guard. Stored per browser in `try/catch`: `overseer.benchmark.chatConsistency.timeline`
+      (`{ version: 2, … }`: sidebar, view, charts, series, markers, hidden event kinds, zero baseline,
+      `decimals`, `markNotAnalyzed`, format, WebP quality, section open states, Single chart, and no
+      `imageTheme` or `logo`; `parseTimelineLayout` migrates a version-1 layout's *Work per answer*
+      chart to `work` and `tools`, reads a missing or non-boolean `markNotAnalyzed` as `true` and keeps
+      only the `decimals` each chart offers, so neither of those changed the record version);
+      `overseer.benchmark.chatConsistency.figureStyle` (`CC_FIGURE_STYLE_STORAGE_KEY`,
+      `{ version: 1, appearance, timeline }`, repaired by `normalizeFigureStyle`, apart from Model
+      Comparison's `overseer.modelComparison.figureStyle`; where none is stored,
+      `readStoredTimelineFigureStyle` seeds it once from the layout record's legacy fields,
+      `imageTheme: 'print'` as `appearance.theme = 'light'` and `logo: false` as
+      `appearance.logo = false`); `overseer.benchmark.chatConsistency.figureStylePanel.open`
+      (`CC_FIGURE_STYLE_PANEL_OPEN_KEY`, the panel's open sections, apart from Model Comparison's
+      `overseer.figureStylePanel.open`); and `overseer.benchmark.chatConsistency.chartSize`, apart
+      from Model Comparison's `figureSize`. The workspace draws **every run in the step-1 dates** (the composite events would otherwise renumber);
       its `notAnalyzed` input (the wizard's `notAnalyzedRuns`) reaches `CcFigureInput.notAnalyzed` as
       `CC_INCLUSION_TEXT` reasons while the switch is on, for the screen and the exports alike, and
       `chat-consistency-charts.ts` draws those runs as gray `crossRot` points with gray `[2, 3]` dotted
       segments (scriptable options only when the map is non-empty, so charts without one are unchanged),
       keeps each series' own symbol in the legend, adds the caption sentence *N runs not in the analysis
-      are drawn as gray crosses.* (runs with a value in any of the figure's series), the tooltip suffix
-      *— not in the analysis (reason)* and the table column *In the analysis*. The report charts pass no
-      map. Its `rangeLabel` input gives the read-out *model · Last 30 days · change in step 1*.
+      are drawn as gray crosses.* (runs with a value in any of the figure's series; a composed image
+      repeats it as a note while `notAnalyzedNote` is on), the tooltip line *Not in the analysis: reason* (only a theme with a tooltip box draws
+      it, so never the Timeline, whose data cards carry the reason) and the table column *In the
+      analysis*. The report charts pass no map. Its `rangeLabel` input gives the read-out *model · Last
+      30 days · change in step 1* and the charts' *dates* badge.
     - `chat-consistency-events.ts`: `groupOverseerEvents` groups the timeline's Overseer events into
       **composite events** — one per UTC day and harness version, tagged `E1`… in time order — for the
       chart markers, the event list, the Runs and controls preview and the *Before vs after an Overseer
@@ -1623,6 +1671,14 @@ To find specific popups, look in the corresponding component's `.html` template:
       image.
     - **Charts**: the segmented *Bar panels / Profile / Trade-offs* tab row over
       `app-figure-style-panel`.
+    - `app-figure-style-panel` (kinds `bar`, `scatter`, `profile`, `timeline` and `appearance`) has
+      **two hosts**: these Theme and Charts tabs, with the default `idPrefix="mc-style"` and the
+      default `openStorageKey`, `overseer.figureStylePanel.open`; and the Chat Consistency Timeline's
+      Theme (`kind="appearance"`) and Charts (`kind="timeline"`) tabs, with `idPrefix="cc-style"` and
+      `overseer.benchmark.chatConsistency.figureStylePanel.open`, on a figure style of their own
+      (`overseer.benchmark.chatConsistency.figureStyle`). Control ids derive from `idPrefix`, so both
+      can be in one document, and a section opened in one host stays closed in the other. The
+      `timeline` kind has no *Number format* section; the Timeline adds its own per-chart decimals.
     - **Table**: `app-table-settings-panel` — *Columns* (an `app-reorderable-list` of the 28
       display columns, checkable, *Model* locked, reordered by drag or with the handle's Move menu;
       *Default columns*, *Only columns with values*, *All columns*) and **Row style** (*Shade

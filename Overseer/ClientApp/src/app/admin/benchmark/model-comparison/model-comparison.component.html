@@ -835,7 +835,7 @@
                                [style.width.px]="allTileCssWidth" [style.height.px]="allTileCssHeight"
                                [style.contain-intrinsic-size]="i >= allTilesPerRow ? allTileIntrinsicSize : null"
                                (click)="openInSingle(card)" (keydown)="onAllTileKeydown($event, card)">
-                            <canvas class="mc-all-canvas" role="img" [attr.data-figure-id]="card.id"
+                            <canvas class="mc-all-canvas gh-fig-canvas" role="img" [attr.data-figure-id]="card.id"
                                     [class.is-transparent-figure]="isTransparentFigure"
                                     [attr.aria-label]="card.ariaLabel"
                                     [attr.aria-describedby]="card.id === profileCard?.id && profileAxes ? card.id + '-axis-ends' : null"></canvas>
@@ -1071,7 +1071,7 @@
                          aria-describedby="mc-preview-view-hint"
                          aria-keyshortcuts="+ - 0 1" [attr.style]="figureBackdropStyle"
                          (keydown)="onPreviewViewportKeydown($event)">
-                      <canvas #previewCanvas class="mc-preview-canvas" role="img"
+                      <canvas #previewCanvas class="mc-preview-canvas gh-fig-canvas" role="img"
                               [class.is-transparent-figure]="isTransparentFigure"
                               [attr.aria-label]="previewAriaLabel"></canvas>
                     </div>

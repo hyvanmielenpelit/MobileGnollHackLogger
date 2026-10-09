@@ -50,6 +50,29 @@
   }
 }
 
+// The composed download: a bitmap that reacts to no pointer, in a box of whole CSS px. A pending or
+// refused image keeps the same box, so nothing under it moves.
+.cc-chart-image-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.cc-chart-image {
+  flex: none;
+  cursor: default;
+}
+
+.cc-figure-refusal {
+  align-self: stretch;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  color: var(--nav-color);
+  font-size: var(--text-secondary);
+}
+
 .cc-figure-empty {
   margin: 0;
   color: var(--nav-color);
@@ -94,6 +117,10 @@
 .cc-figure-show-events {
   margin-inline-start: 0.5rem;
   font-size: var(--text-secondary);
+
+  &:first-child {
+    margin-inline-start: 0;
+  }
 }
 
 .cc-figure-data > summary {

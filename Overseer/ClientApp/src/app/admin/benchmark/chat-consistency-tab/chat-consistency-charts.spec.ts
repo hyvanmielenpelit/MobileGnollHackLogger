@@ -2,7 +2,11 @@ import { Chart } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js';
 
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
+import { DEFAULT_FIGURE_STYLE } from '../model-comparison/figure-style';
+import type { FigureAppearanceStyle } from '../model-comparison/figure-style';
+import { resolveFigureTheme } from '../model-comparison/figure-theme';
 import {
+  CC_CHART_STYLE_DEFAULTS,
   CC_DECIMAL_CHOICES,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
@@ -15,17 +19,23 @@ import {
   CC_TAG_ROW_HEIGHT,
   CcChartDataset,
   CcChartPoint,
+  CcChartStyle,
+  CcChartTheme,
   CcFigure,
   CcFigureInput,
   analysisBands,
   analysisChartPoints,
+  buildCcFigure,
   buildCcFigures,
   buildMarkers,
   ccAutoDecimalsText,
+  ccChartThemeFor,
   ccHeaderHeight,
   ccPlaceLabels,
+  ccPointLabelFont,
   ccStepDecimals,
   ccTagBandHeight,
+  ccTagRowHeight,
   ccTagRows,
   ccTimeTickLabel,
   ccTimeTicks,
@@ -1041,7 +1051,7 @@ describe('chat-consistency-charts', () => {
       expect(right(timelineOverviewFigure(input))).toBe(8);
     });
 
-    it('styles a compact screen tooltip and leaves the print one to Chart.js', () => {
+    it('styles a compact screen tooltip and gives the print theme none', () => {
       const tooltip = (theme: typeof CC_SCREEN_THEME) =>
         qualityFigure(input, { theme }).config!.options.plugins!.tooltip as unknown as Record<string, unknown>;
       const screen = tooltip(CC_SCREEN_THEME);
@@ -1050,6 +1060,7 @@ describe('chat-consistency-charts', () => {
       expect([(screen['titleFont'] as { size: number }).size, (screen['bodyFont'] as { size: number }).size]).toEqual([11, 11]);
       expect([screen['boxWidth'], screen['boxHeight']]).toEqual([6, 6]);
       expect(tooltip(CC_PRINT_THEME)['backgroundColor']).toBeUndefined();
+      expect(tooltip(CC_PRINT_THEME)['enabled']).toBe(false);
     });
 
     it('shows the tooltip on a point only, its title the point and one line per series', () => {
@@ -1122,6 +1133,366 @@ describe('chat-consistency-charts', () => {
         // The header band sits above the plot.
         expect(chart.chartArea.top).toBeGreaterThanOrEqual(42);
       });
+    });
+  });
+
+  describe('chart style', () => {
+    const styled: CcChartStyle = {
+      axisTextSizePx: 13,
+      axisTitleSizePx: 15,
+      axisTitleWeight: 400,
+      gridlines: false,
+      plotFrame: true,
+      valueLabels: true,
+      valueLabelSizePx: 13,
+      legendTextSizePx: 14,
+      markerTagSizePx: 14,
+      lineWidthPx: 3,
+      pointRadiusPx: 6,
+      areaWash: false,
+      labelWeight: 700
+    };
+    type Font = { family: string; size: number; weight?: number };
+    type ScaleOptions = { ticks: { font: Font }; title: { font: Font }; grid: Record<string, unknown> };
+    const scale = (figure: CcFigure, axis: 'x' | 'y') => figure.config!.options.scales![axis] as unknown as ScaleOptions;
+    const legendFont = (figure: CcFigure) => figure.config!.options.plugins!.legend!.labels!.font as unknown as Font;
+    const sizes = (figure: CcFigure) => figure.config!.data.datasets
+      .map(ds => [ds.borderWidth, ds.pointRadius, ds.pointHoverRadius, ds.pointHoverBorderWidth]);
+    const right = (figure: CcFigure) => (figure.config!.options.layout!.padding as { right: number }).right;
+    const family = CC_SCREEN_THEME.fontFamily;
+
+    it('draws the sizes and parts of the screen and report charts without a style', () => {
+      expect(CC_CHART_STYLE_DEFAULTS).toEqual({
+        axisTextSizePx: 11, axisTitleSizePx: 12, axisTitleWeight: 600, gridlines: true, plotFrame: false, valueLabels: true,
+        valueLabelSizePx: 11, legendTextSizePx: 12, markerTagSizePx: 10, lineWidthPx: 2, pointRadiusPx: 4, areaWash: true,
+        labelWeight: 600
+      });
+      const figure = timeToFirstAnswerFigure(input);
+      for (const axis of ['x', 'y'] as const) {
+        expect(scale(figure, axis).ticks.font, axis).toEqual({ family, size: 11 });
+        expect(scale(figure, axis).title.font, axis).toEqual({ family, size: 12, weight: 600 });
+      }
+      expect(scale(figure, 'y').grid).toEqual({ color: CC_SCREEN_THEME.grid, lineWidth: 1 });
+      expect(legendFont(figure)).toEqual({ family, size: 12 });
+      expect(sizes(figure)).toEqual([[2, 4, 6, 2], [2, 4, 6, 2]]);
+      expect(ccPointLabelFont()).toEqual({ sizePx: 11, weight: 600, offsetPx: 8 });
+      expect(ccTagRowHeight(CC_CHART_STYLE_DEFAULTS.markerTagSizePx)).toBe(CC_TAG_ROW_HEIGHT);
+      expect(right(qualityFigure(input))).toBe(11);
+    });
+
+    it('replaces the fonts, the grid and the line and point sizes with a given style', () => {
+      const figure = timeToFirstAnswerFigure(input, { style: styled });
+      for (const axis of ['x', 'y'] as const) {
+        expect(scale(figure, axis).ticks.font, axis).toEqual({ family, size: 13 });
+        expect(scale(figure, axis).title.font, axis).toEqual({ family, size: 15, weight: 400 });
+      }
+      expect(scale(figure, 'y').grid).toEqual({ display: false, color: CC_SCREEN_THEME.grid, lineWidth: 1 });
+      expect(legendFont(figure)).toEqual({ family, size: 14, weight: 700 });
+      // The hover radius scales with the point: 6 × 6 / 4.
+      expect(sizes(figure)).toEqual([[3, 6, 9, 2], [3, 6, 9, 2]]);
+      expect(ccPointLabelFont(styled)).toEqual({ sizePx: 13, weight: 700, offsetPx: 10 });
+      expect(ccTagRowHeight(styled.markerTagSizePx)).toBe(20);
+      expect(ccTagBandHeight(2, 20)).toBe(44);
+    });
+
+    it('scales the cross of a run not in the analysis with the point size', () => {
+      type PointOption = (ctx: { raw: unknown; dataIndex: number }) => unknown;
+      const ds = qualityFigure({ ...input, notAnalyzed: new Map([[104, 'left out in step 1']]) }, { style: styled })
+        .config!.data.datasets[0];
+      const radius = (i: number) => (ds.pointRadius as unknown as PointOption)({ raw: ds.data[i], dataIndex: i });
+      expect([radius(0), radius(3)]).toEqual([6, 6.75]);
+      expect(ds.pointHoverRadius).toBe(9);
+    });
+
+    it('leaves room for the point labels at their size, and none without them', () => {
+      // '73', two characters of 6.5 × 22 / 11 px: half of 26, plus 4.
+      expect(right(qualityFigure(input, { style: { ...styled, valueLabelSizePx: 22 } }))).toBe(17);
+      expect(right(qualityFigure(input, { style: { ...styled, valueLabels: false } }))).toBe(8);
+    });
+
+    describe('on a chart', () => {
+      let chart: Chart | null = null;
+      const texts: { text: string; font: string }[] = [];
+      const rects: { args: number[]; stroke: string }[] = [];
+      let gradients = 0;
+
+      beforeAll(() => {
+        Chart.register(...APP_CHART_REGISTRABLES);
+      });
+
+      afterEach(() => {
+        const canvas = chart?.canvas;
+        chart?.destroy();
+        canvas?.remove();
+        chart = null;
+        texts.length = 0;
+        rects.length = 0;
+        gradients = 0;
+      });
+
+      /** Mounts the figure, recording each text with its font, each outlined box and each gradient. */
+      function mount(figure: CcFigure): Chart {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 320;
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d')!;
+        const fillText = ctx.fillText.bind(ctx);
+        ctx.fillText = (text: string, x: number, y: number) => {
+          texts.push({ text, font: ctx.font });
+          fillText(text, x, y);
+        };
+        const strokeRect = ctx.strokeRect.bind(ctx);
+        ctx.strokeRect = (x: number, y: number, w: number, h: number) => {
+          rects.push({ args: [x, y, w, h], stroke: String(ctx.strokeStyle) });
+          strokeRect(x, y, w, h);
+        };
+        const createLinearGradient = ctx.createLinearGradient.bind(ctx);
+        ctx.createLinearGradient = (x0: number, y0: number, x1: number, y1: number) => {
+          gradients++;
+          return createLinearGradient(x0, y0, x1, y1);
+        };
+        chart = new Chart(canvas, {
+          ...figure.config!,
+          options: { ...figure.config!.options, responsive: false, animation: false }
+        } as unknown as ChartConfiguration);
+        return chart;
+      }
+
+      const fontOf = (text: string) => texts.find(entry => entry.text === text)?.font ?? '';
+      const tagBand = (drawn: Chart) =>
+        (drawn as unknown as { boxes: object[] }).boxes.find(box => 'rowHeight' in box) as unknown as { rows: number; height: number };
+      const frameRect = (drawn: Chart) => {
+        const area = drawn.chartArea;
+        return [area.left + 0.5, area.top + 0.5, area.right - area.left - 1, area.bottom - area.top - 1].join();
+      };
+
+      it('draws the tags, the point labels and the wash as before, and no frame, without a style', () => {
+        const drawn = mount(qualityFigure(input));
+        expect(fontOf('A1')).toMatch(/^bold 10px /);
+        expect(fontOf('73')).toMatch(/^600 11px /);
+        const band = tagBand(drawn);
+        expect(band.rows).toBeGreaterThan(0);
+        expect(band.height).toBe(band.rows * CC_TAG_ROW_HEIGHT + CC_TAG_GAP);
+        expect(gradients).toBeGreaterThan(0);
+        expect(rects.some(rect => rect.args.join() === frameRect(drawn))).toBe(false);
+      });
+
+      it('draws a given style’s tags, point labels and frame, and no wash', () => {
+        const theme = ccChartThemeFor(resolveFigureTheme(DEFAULT_FIGURE_STYLE.appearance));
+        const drawn = mount(qualityFigure(input, { theme, style: styled }));
+        expect(fontOf('A1')).toMatch(/^bold 14px /);
+        expect(fontOf('73')).toMatch(/^(bold|700) 13px /);
+        const band = tagBand(drawn);
+        expect(band.rows).toBeGreaterThan(0);
+        expect(band.height).toBe(band.rows * 20 + CC_TAG_GAP);
+        expect(gradients).toBe(0);
+        expect(rects.find(rect => rect.args.join() === frameRect(drawn))?.stroke).toBe(theme.frame);
+      });
+
+      it('writes no point values when the style turns them off', () => {
+        mount(qualityFigure(input, { style: { ...styled, valueLabels: false } }));
+        expect(texts.some(entry => ['71', '72', '73', '74'].includes(entry.text))).toBe(false);
+        expect(texts.some(entry => entry.text === 'A1')).toBe(true);
+      });
+    });
+  });
+
+  describe('a theme without a tooltip', () => {
+    /** `value` with every function replaced by a marker, so two builds of one figure compare equal. */
+    const shape = (value: unknown): unknown => typeof value === 'function'
+      ? 'function'
+      : Array.isArray(value)
+        ? value.map(shape)
+        : value !== null && typeof value === 'object'
+          ? Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, shape(entry)]))
+          : value;
+    /** The options without the events and the tooltip. */
+    const withoutInteraction = (figure: CcFigure) => {
+      const options = shape(figure.config!.options) as Record<string, unknown> & { plugins: Record<string, unknown> };
+      delete options['events'];
+      delete options.plugins['tooltip'];
+      return options;
+    };
+    /** The datasets without their hover radii. */
+    const withoutHover = (figure: CcFigure) => figure.config!.data.datasets.map(ds => {
+      const copy = shape(ds) as Record<string, unknown>;
+      delete copy['pointHoverRadius'];
+      return copy;
+    });
+
+    it('turns the tooltip off and ignores the pointer', () => {
+      const options = qualityFigure(input, { theme: ccChartThemeFor(resolveFigureTheme()) }).config!.options;
+      expect(options.plugins!.tooltip!.enabled).toBe(false);
+      expect(options.events).toEqual([]);
+      const screen = qualityFigure(input).config!.options;
+      expect(screen.plugins!.tooltip!.enabled).toBeUndefined();
+      expect('events' in screen).toBe(false);
+    });
+
+    it('differs from the same theme with a tooltip box only in the tooltip, the events and the hover radii', () => {
+      const boxed: CcChartTheme = { ...CC_PRINT_THEME, tooltip: { background: '#ffffff', border: '#d1d5db' } };
+      const marked: CcFigureInput = { ...input, notAnalyzed: new Map([[104, 'left out in step 1']]) };
+      for (const figureInput of [input, marked]) {
+        for (const { key } of CC_FIGURE_KEYS) {
+          const bare = buildCcFigure(key, figureInput, { theme: CC_PRINT_THEME });
+          const hover = buildCcFigure(key, figureInput, { theme: boxed });
+          expect(withoutInteraction(bare), key).toEqual(withoutInteraction(hover));
+          expect(withoutHover(bare), key).toEqual(withoutHover(hover));
+          expect(bare.config!.options.events, key).toEqual([]);
+          expect(hover.config!.options.events, key).toBeUndefined();
+          expect(bare.config!.options.plugins!.tooltip!.enabled, key).toBe(false);
+          expect(hover.config!.options.plugins!.tooltip!.enabled, key).toBeUndefined();
+        }
+      }
+      // Without a tooltip box every point keeps its resting radius under the pointer, a cross included.
+      expect(buildCcFigure('quality', input, { theme: CC_PRINT_THEME }).config!.data.datasets[0].pointHoverRadius).toBe(4);
+      expect(buildCcFigure('quality', input, { theme: boxed }).config!.data.datasets[0].pointHoverRadius).toBe(6);
+      const ds = buildCcFigure('quality', marked, { theme: CC_PRINT_THEME }).config!.data.datasets[0];
+      expect(ds.pointHoverRadius).toBe(ds.pointRadius);
+    });
+  });
+
+  describe('ccChartThemeFor', () => {
+    const appearance = DEFAULT_FIGURE_STYLE.appearance;
+    const mapped = (overrides: Partial<FigureAppearanceStyle>) => {
+      const resolved = resolveFigureTheme({ ...appearance, ...overrides });
+      return { resolved, theme: ccChartThemeFor(resolved) };
+    };
+
+    it('maps the dark appearance onto the screen palette with the appearance’s inks', () => {
+      const { resolved, theme } = mapped({});
+      expect(theme).toEqual({
+        ...CC_SCREEN_THEME,
+        text: resolved.chart.inkPrimary,
+        secondary: resolved.chart.inkSecondary,
+        muted: resolved.chart.inkMuted,
+        grid: resolved.chart.gridline,
+        background: null,
+        surface: resolved.surface,
+        tooltip: null,
+        fontFamily: CC_SCREEN_THEME.fontFamily,
+        frame: resolved.frameColor
+      });
+      expect(theme.series).toEqual(CC_SCREEN_THEME.series);
+    });
+
+    it('maps the light appearance onto the print palette', () => {
+      const { resolved, theme } = mapped({ theme: 'light', fontFamily: 'inter' });
+      expect(theme).toEqual({
+        ...CC_PRINT_THEME,
+        text: resolved.chart.inkPrimary,
+        secondary: resolved.chart.inkSecondary,
+        muted: resolved.chart.inkMuted,
+        grid: resolved.chart.gridline,
+        background: null,
+        surface: resolved.surface,
+        tooltip: null,
+        fontFamily: resolved.fonts.chartStack,
+        frame: resolved.frameColor
+      });
+      expect(theme.fontFamily).toContain('Inter');
+      expect([theme.event, theme.baselineBand]).toEqual([CC_PRINT_THEME.event, CC_PRINT_THEME.baselineBand]);
+    });
+
+    it('writes a custom text color as the text, the axis titles and a muted mix', () => {
+      const { resolved, theme } = mapped({ textColor: '#ff8800' });
+      expect([theme.text, theme.secondary]).toEqual(['#ff8800', '#ff8800']);
+      expect(theme.muted).toBe(resolved.chart.inkMuted);
+      expect(theme.muted).not.toBe(resolveFigureTheme(appearance).chart.inkMuted);
+    });
+
+    it('paints no background on a transparent appearance and rings the points in its ground', () => {
+      const { resolved, theme } = mapped({ background: 'transparent' });
+      expect(resolved.background).toBeNull();
+      expect(theme.background).toBeNull();
+      expect(theme.surface).toBe(resolved.surface);
+      expect(mapped({ background: 'custom', backgroundColor: '#203040' }).theme.surface).toBe('#203040');
+    });
+  });
+
+  describe('the data table', () => {
+    /** The table column of each series' value. */
+    const COLUMNS: Readonly<Record<string, string>> = {
+      'quality.native': 'Intelligence Index (native)',
+      'quality.overall': 'Overall Intelligence Index',
+      'ttfat.telemetry': 'Time to first answer text',
+      'ttfat.proxy': 'Legacy proxy',
+      'rate.measured': 'Streaming rate',
+      'rate.estimated': 'Streaming rate',
+      'work.tokens': 'Output tokens per answer',
+      'tools.calls': 'Tool calls per answer',
+      'cost.cost': 'Cost per question',
+      ...Object.fromEntries(CC_FIGURE_SERIES.reliability.map(series => [series.id, series.label])),
+      'timeline.telemetry': 'Measure',
+      'timeline.legacy': 'Measure'
+    };
+    type Callbacks = { title: (items: unknown[]) => string; label: (item: unknown) => string | string[] };
+
+    const battery: CcFigureInput = {
+      points: [
+        ccBatteryPoint(11, '2026-10-08T07:14:00Z', { overallIndex: 79, timeoutRate: 0.04 }),
+        ccBatteryPoint(12, '2026-10-08T09:00:00Z', { overallIndex: 86, medianStreamingRate: 31.5, streamingRateEstimated: true })
+      ],
+      unitKind: 'batteryRun',
+      memberLabels: new Map([[1101, 'Board Suite'], [1102, 'Wiki Suite']])
+    };
+    const notAnalyzed = new Map<number, string>([[101, 'before the first run'], [104, 'left out in step 1']]);
+
+    /**
+     * Every fact the figure's tooltip writes about a plotted point is in the point's table row: the unit
+     * and its start, each series' value, and whether it is in the analysis.
+     */
+    function expectTooltipFactsInTable(figure: CcFigure, figureInput: CcFigureInput): void {
+      const config = figure.config!;
+      const callbacks = config.options.plugins!.tooltip!.callbacks as unknown as Callbacks;
+      const { columns, rows } = figure.table;
+      const marks = figureInput.notAnalyzed;
+      expect(columns.slice(0, 2), figure.key).toEqual([figureInput.unitKind === 'batteryRun' ? 'Battery run' : 'Run', 'Started']);
+      if (marks) expect(columns[columns.length - 1], figure.key).toBe('In the analysis');
+      let checked = 0;
+      for (const ds of config.data.datasets) {
+        const column = columns.indexOf(COLUMNS[ds.seriesId]);
+        expect(column, ds.seriesId).toBeGreaterThan(1);
+        for (const raw of ds.data) {
+          if (raw.y === null) continue;
+          const where = `${ds.seriesId} #${raw.runId}`;
+          const row = rows.find(cells => cells[0] === `#${raw.runId}`)!;
+          expect(row, where).toBeDefined();
+          expect(callbacks.title([{ raw }]), where).toBe(`${row[0]} · ${row[1]}`);
+          const lines = [callbacks.label({ raw, dataset: ds })].flat();
+          if (ds.seriesId.startsWith('timeline.')) {
+            expect(row[column], where).toBe(ds.seriesId === 'timeline.legacy' ? 'legacy' : 'telemetry');
+          } else {
+            expect(row[column], where).toBe(lines[0].slice(lines[0].indexOf(': ') + 2));
+          }
+          if (ds.seriesId.startsWith('rate.')) {
+            expect(row[columns.indexOf('Estimated')], where).toBe(ds.seriesId === 'rate.estimated' ? 'Yes' : 'No');
+          }
+          const reason = marks?.get(raw.runId);
+          expect(lines[1], where).toBe(reason === undefined ? undefined : `Not in the analysis: ${reason}`);
+          if (marks) expect(row[row.length - 1], where).toBe(reason === undefined ? 'Yes' : `No — ${reason}`);
+          checked++;
+        }
+      }
+      expect(checked, figure.key).toBeGreaterThan(0);
+    }
+
+    it('carries the unit, the start and every series’ value of a run', () => {
+      for (const { key } of CC_FIGURE_KEYS) expectTooltipFactsInTable(buildCcFigure(key, input), input);
+    });
+
+    it('carries the unit, the start and every series’ value of a battery run', () => {
+      for (const { key } of CC_FIGURE_KEYS) expectTooltipFactsInTable(buildCcFigure(key, battery), battery);
+    });
+
+    it('carries whether a run or a battery run is in the analysis, and why not', () => {
+      const runs: CcFigureInput = { ...input, notAnalyzed };
+      const batteries: CcFigureInput = { ...battery, notAnalyzed: new Map([[11, 'left out in step 1']]) };
+      for (const { key } of CC_FIGURE_KEYS) {
+        expectTooltipFactsInTable(buildCcFigure(key, runs), runs);
+        expectTooltipFactsInTable(buildCcFigure(key, batteries), batteries);
+      }
     });
   });
 });

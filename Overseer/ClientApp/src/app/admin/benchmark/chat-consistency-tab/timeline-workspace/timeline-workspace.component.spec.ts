@@ -6,13 +6,14 @@ import { By } from '@angular/platform-browser';
 import { Chart } from 'chart.js';
 
 import { APP_CHART_REGISTRABLES } from '../../../../chart-registrables';
-import { ZipWriterModule, zipWriterModule } from '../../model-comparison/figure-export';
-import { defaultFigureSize } from '../../model-comparison/figure-size';
+import { FigureExportLayout, ZipWriterModule, zipWriterModule } from '../../model-comparison/figure-export';
+import { FigureSizeSettings, defaultFigureSize } from '../../model-comparison/figure-size';
+import { DEFAULT_FIGURE_STYLE, FigureStyle } from '../../model-comparison/figure-style';
 import { PREVIEW_SLIDER_STEPS } from '../../model-comparison/preview-view';
 import { figureLogoIo, resetFigureLogoCache } from '../../model-comparison/figure-logo';
-import { CC_FIGURE_KEYS, CcChartOptions, CcFigureInput, CcFigureKey } from '../chat-consistency-charts';
+import { CC_FIGURE_KEYS, CcFigure, CcFigureInput, CcFigureKey } from '../chat-consistency-charts';
 import { CcRunInclusion } from '../chat-consistency-scope';
-import { CcBatteryRunRow, CcModelAxis, CcTimeline, CcUnitKind } from '../chat-consistency.models';
+import { CcBatteryRunRow, CcComparisonSetKind, CcModelAxis, CcTimeline, CcUnitKind } from '../chat-consistency.models';
 import {
   CC_API,
   CC_BATTERY_SET_KEY,
@@ -23,16 +24,33 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
-import { ccChartBox } from './cc-chart-zoom';
+import { ccDisplaySize, ccTargetPixels } from './cc-chart-zoom';
+import { CcComposeContext, ccFigureChrome, ccFigureRequest } from './cc-figure-compose';
 import {
   CC_CHART_SIZE_STORAGE_KEY,
+  CC_FIGURE_STYLE_PANEL_OPEN_KEY,
+  CC_FIGURE_STYLE_STORAGE_KEY,
   CC_TIMELINE_STORAGE_KEY,
   CcTimelineWorkspaceComponent,
+  parseLegacyImageSettings,
   parseTimelineLayout
 } from './timeline-workspace.component';
 
 /** Every Chat Consistency storage key, cleared around each test. */
-const STORAGE_KEYS = [CC_TIMELINE_STORAGE_KEY, CC_CHART_SIZE_STORAGE_KEY, 'overseer.benchmark.chatConsistency.launcher'];
+const STORAGE_KEYS = [
+  CC_TIMELINE_STORAGE_KEY, CC_CHART_SIZE_STORAGE_KEY, CC_FIGURE_STYLE_STORAGE_KEY, CC_FIGURE_STYLE_PANEL_OPEN_KEY,
+  'overseer.benchmark.chatConsistency.launcher'
+];
+
+/** The workspace's private composition members the specs read. */
+interface WorkspaceInternals {
+  dpr: number;
+  composeContext(): CcComposeContext;
+  screenLayout(figure: CcFigure, context: CcComposeContext): { layout: FigureExportLayout | null; refusal: string };
+  fileComposition(key: CcFigureKey, snapshot: unknown): { figure: CcFigure | null; layout: FigureExportLayout | null };
+  exportSnapshot(): { context: CcComposeContext };
+  screenImages: Map<CcFigureKey, { canvas: HTMLCanvasElement | null; refusal: string; version: number }>;
+}
 
 const FIGURE_ORDER: CcFigureKey[] = CC_FIGURE_KEYS.map(entry => entry.key);
 
@@ -58,7 +76,7 @@ function clearStorage(): void {
       <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="error"
                                  [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeLabel"
                                  [unitKind]="unitKind" [setKey]="setKey" [batteryRows]="batteryRows"
-                                 [notAnalyzedUnits]="notAnalyzedUnits" [subjectLabel]="subjectLabel"
+                                 [notAnalyzedUnits]="notAnalyzedUnits" [setLabel]="setLabel" [setKind]="setKind"
                                  (exportingChange)="exportingEvents.push($event)"></app-cc-timeline-workspace>
     </section>`
 })
@@ -73,7 +91,8 @@ class TimelineWorkspaceHostComponent {
   @Input() setKey: string | null = null;
   @Input() batteryRows: readonly CcBatteryRunRow[] = [];
   @Input() notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion> | null = null;
-  @Input() subjectLabel = '';
+  @Input() setLabel = '';
+  @Input() setKind: CcComparisonSetKind | null = null;
   readonly exportingEvents: boolean[] = [];
 }
 
@@ -175,8 +194,46 @@ describe('CcTimelineWorkspaceComponent', () => {
     return JSON.parse(localStorage.getItem(CC_CHART_SIZE_STORAGE_KEY) ?? 'null') as Record<string, unknown>;
   }
 
-  function openSideTab(id: 'data' | 'events' | 'annotations' | 'download'): void {
+  function openSideTab(id: 'data' | 'events' | 'annotations' | 'theme' | 'charts' | 'download'): void {
     clickOn(`#cc-tl-side-tab-${id}`);
+  }
+
+  function internals(): WorkspaceInternals {
+    return ws as unknown as WorkspaceInternals;
+  }
+
+  /** The image box a size and zoom give, as the workspace computes it. */
+  function expectedBox(settings: FigureSizeSettings, zoom: number, fit: boolean): { width: number; height: number } {
+    const box = ccDisplaySize(ccTargetPixels(settings)!, zoom, internals().dpr, fit);
+    return { width: box.cssWidth, height: box.cssHeight };
+  }
+
+  /** Waits until a chart's screen image is composed at the current settings. */
+  async function untilComposed(key: CcFigureKey): Promise<HTMLCanvasElement> {
+    let canvas: HTMLCanvasElement | null = null;
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      const image = internals().screenImages.get(key);
+      const current = (ws as unknown as { composeVersion: number }).composeVersion;
+      if (!image?.canvas || image.version !== current) throw new Error(`${key} is not composed yet.`);
+      canvas = image.canvas;
+    }, { timeout: 15_000, interval: 20 });
+    fixture.detectChanges();
+    return canvas!;
+  }
+
+  /** Gives the hosting step a desktop size, larger than the test page, and lets the views re-fit. */
+  async function desktopHost(width = 1600, height = 1000): Promise<void> {
+    const section = q<HTMLElement>('section.gh-fig-host')!;
+    section.style.width = `${width}px`;
+    section.style.height = `${height}px`;
+    await settle(8);
+  }
+
+  /** The workspace's figure style with `appearance` changed, through the panel's change event. */
+  function changeAppearance(change: Partial<FigureStyle['appearance']>): void {
+    ws.onFigureStyleChange({ ...ws.figureStyle, appearance: { ...ws.figureStyle.appearance, ...change } });
+    fixture.detectChanges();
   }
 
   function tileKeys(): string[] {
@@ -264,9 +321,9 @@ describe('CcTimelineWorkspaceComponent', () => {
   it('switches the settings tabs by click and by Left / Right with wrap and Home / End, and stores the tab', async () => {
     await create();
     const tabs = qa<HTMLButtonElement>('[role="tablist"][aria-label="Settings sections"] [role="tab"]');
-    expect(tabs.map(tab => textOf(tab))).toEqual(['Data', 'Events', 'Annotations', 'Download']);
-    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
-    expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
+    expect(tabs.map(tab => textOf(tab))).toEqual(['Data', 'Events', 'Annotations', 'Theme', 'Charts', 'Download']);
+    expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false', 'false']);
+    expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
     expect(q('#cc-tl-side-panel-data')!.getAttribute('aria-labelledby')).toBe('cc-tl-side-tab-data');
     expect(q('#cc-tl-sidebar')!.getAttribute('aria-label')).toBe('Timeline settings');
 
@@ -435,8 +492,12 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(storedLayout()['zeroBaseline']).toBe(true);
   });
 
-  it('sets each chart\'s decimal places, stores them, and resets them with All automatic', async () => {
+  it('sets each chart\'s decimal places under Charts, stores them, and resets them with All automatic', async () => {
     await create();
+    expect(q('select[id^="cc-tl-decimals-"]')).toBeNull();
+    openSideTab('charts');
+    expect(q('#cc-tl-side-panel-charts .cc-tl-decimals legend')).not.toBeNull();
+    expect(textOf(q('#cc-tl-side-panel-charts .cc-tl-decimals legend'))).toBe('Number format');
     const keys = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability'];
     const selects = qa<HTMLSelectElement>('select[id^="cc-tl-decimals-"]');
     expect(selects.map(select => select.id)).toEqual(keys.map(key => `cc-tl-decimals-${key}`));
@@ -528,15 +589,20 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(parseTimelineLayout({ version: 1, figures: ['quality'] }).figures).toEqual(['quality']);
     // A version-2 layout means what it says.
     expect(parseTimelineLayout({ version: 2, figures: ['work'] }).figures).toEqual(['work']);
-    expect(parseTimelineLayout({}).logo).toBe(true);
-    expect(parseTimelineLayout({ version: 2, logo: false }).logo).toBe(false);
   });
 
-  it('writes the layout as version 2', async () => {
+  it('reads a stored layout\'s legacy image theme and logo, each null where absent or of the wrong kind', () => {
+    expect(parseLegacyImageSettings({ version: 2, imageTheme: 'print', logo: false })).toEqual({ imageTheme: 'print', logo: false });
+    expect(parseLegacyImageSettings({ imageTheme: 'sepia', logo: 'no' })).toEqual({ imageTheme: null, logo: null });
+    expect(parseLegacyImageSettings(null)).toEqual({ imageTheme: null, logo: null });
+  });
+
+  it('writes the layout as version 2, without the image theme and logo the figure style holds', async () => {
     await create();
     clickOn('#cc-tl-zero-baseline');
     expect(storedLayout()['version']).toBe(2);
-    expect(storedLayout()['logo']).toBe(true);
+    expect(storedLayout()['logo']).toBeUndefined();
+    expect(storedLayout()['imageTheme']).toBeUndefined();
   });
 
   // --- Events ---
@@ -587,14 +653,16 @@ describe('CcTimelineWorkspaceComponent', () => {
 
   it('opens All charts at Fit to screen, and zooms with the buttons, the slider and the keys', async () => {
     await create();
-    const fullHd = ccChartBox(defaultFigureSize());
+    const size = ws.chartSize;
     const panel = q('#cc-tl-view-panel-all')!;
     expect(panel.getAttribute('aria-keyshortcuts')).toBe('+ - 0');
     expect(ws.zoomLabel).toMatch(/^\d+(\.\d)?% · Fit to screen$/);
     expect(textOf(q('#cc-tl-view-panel-all .gh-zoom-value'))).toBe(ws.zoomLabel);
     expect(q('#cc-tl-all-zoom')!.getAttribute('aria-valuetext')).toMatch(/ percent, fitted to the screen$/);
     const fitScreen = ws.zoom;
-    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBe(Math.max(1, Math.floor(fullHd.width * fitScreen)));
+    // A fit is whole CSS px.
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]')).toEqual(expectedBox(size, fitScreen, true));
+    expect(Number.isInteger(boxSize('.cc-tl-tile[data-figure="quality"]').width)).toBe(true);
     // The toolbar offers Fit width and Fit to screen.
     expect(q('#cc-tl-view-panel-all .cc-tl-fit-width')).not.toBeNull();
     expect(q('#cc-tl-view-panel-all .cc-tl-fit-screen')!.getAttribute('aria-label')).toBe('Fit to screen');
@@ -605,8 +673,9 @@ describe('CcTimelineWorkspaceComponent', () => {
     fixture.detectChanges();
     expect(ws.zoom).toBeGreaterThan(fitScreen);
     expect(ws.zoomLabel).toMatch(/^\d+(\.\d)?%$/);
-    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBe(Math.max(1, Math.floor(fullHd.width * ws.zoom)));
-    expect(boxSize('.cc-tl-tile[data-figure="quality"]').height).toBe(Math.max(1, Math.floor(fullHd.height * ws.zoom)));
+    const zoomedBox = expectedBox(size, ws.zoom, false);
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBeCloseTo(zoomedBox.width, 3);
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]').height).toBeCloseTo(zoomedBox.height, 3);
     const zoomedIn = ws.zoom;
 
     zoomButton('Zoom all charts out').click();
@@ -627,13 +696,13 @@ describe('CcTimelineWorkspaceComponent', () => {
     slider.value = String(PREVIEW_SLIDER_STEPS);
     slider.dispatchEvent(new Event('input', { bubbles: true }));
     await settle(1);
-    expect(ws.zoomLabel).toBe('400%');
+    expect(ws.zoomLabel).toBe('800%');
     expect(zoomButton('Zoom all charts in').getAttribute('aria-disabled')).toBe('true');
 
     const minus = press(panel, '-');
     expect(minus.defaultPrevented).toBe(true);
     const lowered = ws.zoom;
-    expect(lowered).toBeLessThan(4);
+    expect(lowered).toBeLessThan(8);
     press(panel, '+');
     expect(ws.zoom).toBeGreaterThan(lowered);
     press(panel, '-');
@@ -654,37 +723,39 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
   });
 
-  it('gives a canvas only to the tiles near the view, keeping the others\' boxes', async () => {
+  it('composes only the tiles near the view, keeping the others\' boxes', async () => {
     await create();
-    expect(q('.cc-tl-tile[data-figure="quality"] canvas')).not.toBeNull();
+    await untilComposed('quality');
+    expect(q('.cc-tl-tile[data-figure="quality"] canvas.cc-chart-image')).not.toBeNull();
     const last = q('.cc-tl-tile[data-figure="timeline"]')!;
     expect(last.querySelector('canvas')).toBeNull();
     expect(last.querySelector('.cc-chart-box')).not.toBeNull();
+    expect(internals().screenImages.has('timeline')).toBe(false);
 
     const viewport = q('#cc-tl-view-panel-all .gh-fig-viewport')!;
     viewport.scrollTop = viewport.scrollHeight;
     await settle();
-    expect(last.querySelector('canvas')).not.toBeNull();
-  });
+    await untilComposed('timeline');
+    expect(last.querySelector('canvas.cc-chart-image')).not.toBeNull();
+  }, 30_000);
 
-  it('reshapes the chart boxes on a chart size change, re-fitting a fit view and keeping a numeric zoom', async () => {
+  it('reshapes the images on a chart size change, re-fitting a fit view and keeping a numeric zoom', async () => {
     await create();
     clickOn('#cc-tl-view-panel-all .cc-tl-fit-width');
     await settle();
     const before = boxSize('.cc-tl-tile[data-figure="quality"]');
-    const fullHd = ccChartBox(defaultFigureSize());
-    expect(before.height / before.width).toBeCloseTo(fullHd.height / fullHd.width, 1);
+    expect(before.height / before.width).toBeCloseTo(1080 / 1920, 2);
 
     openSideTab('download');
     await settle(1);
     setSelect('#cc-export-resolution', 'uw1080');
     await settle();
     expect(storedSize()['resolutionId']).toBe('uw1080');
-    const ultrawide = ccChartBox({ ...defaultFigureSize(), resolutionId: 'uw1080' });
     const after = boxSize('.cc-tl-tile[data-figure="quality"]');
-    expect(after.height / after.width).toBeCloseTo(ultrawide.height / ultrawide.width, 1);
+    const ultrawide = ccTargetPixels({ ...ws.chartSize })!;
+    expect(after.height / after.width).toBeCloseTo(ultrawide.pixelHeight / ultrawide.pixelWidth, 2);
     expect(ws.zoomLabel).toMatch(/ · Fit width$/);
-    // Fit width fills the same width with the wider box.
+    // Fit width fills the same width with the wider image.
     expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
     expect(after.height).toBeLessThan(before.height);
 
@@ -696,10 +767,10 @@ describe('CcTimelineWorkspaceComponent', () => {
 
     setSelect('#cc-export-resolution', 'square1080');
     await settle();
-    const square = ccChartBox({ ...defaultFigureSize(), resolutionId: 'square1080' });
     expect(ws.zoomLabel).toBe(label);
-    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBe(Math.max(1, Math.floor(square.width * zoom)));
-    expect(boxSize('.cc-tl-tile[data-figure="quality"]').height).toBe(Math.max(1, Math.floor(square.height * zoom)));
+    const square = expectedBox(ws.chartSize, zoom, false);
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]').width).toBeCloseTo(square.width, 3);
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]').height).toBeCloseTo(square.height, 3);
   });
 
   // --- Views ---
@@ -735,11 +806,13 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(singleTileKey()).toBe('cost');
     expect(storedLayout()['singleFigure']).toBe('cost');
 
-    const fullHd = ccChartBox(defaultFigureSize());
     const one = press(panel, '1');
     expect(one.defaultPrevented).toBe(true);
     expect(ws.zoomLabel).toBe('100%');
-    expect(boxSize('#cc-tl-view-panel-single .cc-tl-tile')).toEqual({ width: Math.floor(fullHd.width), height: Math.floor(fullHd.height) });
+    // One file pixel on one device pixel: the file's pixels over the display's ratio.
+    const target = ccTargetPixels(ws.chartSize)!;
+    expect(boxSize('#cc-tl-view-panel-single .cc-tl-tile'))
+      .toEqual({ width: target.pixelWidth / internals().dpr, height: target.pixelHeight / internals().dpr });
 
     press(panel, '+');
     expect(ws.zoom).toBeGreaterThan(1);
@@ -811,15 +884,18 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(size.hasAttribute('title')).toBe(false);
     expect(textOf(q('#cc-export-section summary .gh-disclosure-summary-title'))).toBe('Chart size');
     expect(q<HTMLDetailsElement>('#cc-export-section')!.open).toBe(false);
-    expect(textOf(q('#cc-export-text-scale-hint'))).toBe('100 % is the text size the charts have on screen at 100 % zoom.');
+    expect(textOf(q('#cc-export-text-scale-hint'))).toBe('Scales every text of the charts, on screen and in every image; the pixel size stays.');
     expect(q<HTMLSelectElement>('#cc-export-resolution')!.value).toBe('fullhd');
 
     expect(q('app-export-format-section')).not.toBeNull();
     expect(textOf(q('#cc-image-format-note'))).toBe('Every chart is downloaded in this format. Copy always writes a PNG.');
     expect(q<HTMLInputElement>('#cc-image-format-format-png')!.checked).toBe(true);
     expect(q('#cc-image-format-quality')).toBeNull();
-    expect(q<HTMLInputElement>('#cc-tl-image-theme-screen')!.checked).toBe(true);
-    expect(qa('.cc-tl-hint').some(hint => textOf(hint).startsWith('The image is the chart as shown: its title, the model and the GnollBench logo'))).toBe(true);
+    // The theme and the logo live in the Theme tab.
+    expect(q('input[name="cc-tl-image-theme"]')).toBeNull();
+    expect(q('#cc-tl-show-logo')).toBeNull();
+    expect(qa('.cc-tl-hint').some(hint => textOf(hint).startsWith(
+      'The image is the chart as shown: its heading, badges, logo, notes and footer, without the takeaway or Show data.'))).toBe(true);
     expect(q('.cc-tl-size-error')).toBeNull();
 
     clickOn('#cc-image-format-format-webp');
@@ -827,9 +903,6 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(q<HTMLSelectElement>('#cc-image-format-quality')!.value).toBe('85');
     setSelect('#cc-image-format-quality', '95');
     expect(storedLayout()['webpQuality']).toBe(95);
-
-    clickOn('#cc-tl-image-theme-print');
-    expect(storedLayout()['imageTheme']).toBe('print');
 
     setSelect('#cc-export-resolution', 'qhd');
     expect(storedSize()['resolutionId']).toBe('qhd');
@@ -989,7 +1062,9 @@ describe('CcTimelineWorkspaceComponent', () => {
     await settle(1);
     expect(saved.names).toEqual([]);
     expect(host.exportingEvents).toEqual([]);
-    // The charts keep the last usable box.
+    // Each chart shows the refusal in its image's place, in the words of the export.
+    expect(textOf(q('.cc-tl-tile[data-figure="quality"] .cc-figure-refusal'))).toBe(reason);
+    expect(q('.cc-tl-tile[data-figure="quality"] canvas')).toBeNull();
     const after = boxSize('.cc-tl-tile[data-figure="quality"]');
     expect(after.height / after.width).toBeCloseTo(before.height / before.width, 1);
   });
@@ -1041,7 +1116,8 @@ describe('CcTimelineWorkspaceComponent', () => {
     // The retired `work.tools` series is dropped with the unknown one.
     expect([...ws.hiddenSeries]).toEqual(['ttfat.proxy']);
     expect(ws.zeroBaseline).toBe(true);
-    expect(ws.imageTheme).toBe('print');
+    // The retired image theme seeds the figure style.
+    expect(ws.figureStyle.appearance.theme).toBe('light');
     // A quality that is not offered falls back to the default.
     expect(ws.webpQuality).toBe(85);
     expect(ws.chartSize.resolutionId).toBe('uw1080');
@@ -1068,8 +1144,10 @@ describe('CcTimelineWorkspaceComponent', () => {
     await settle(1);
     setSelect('#cc-export-resolution', 'uw1080');
     expect(ws.chartSize.resolutionId).toBe('uw1080');
-    clickOn('#cc-tl-image-theme-print');
-    expect(ws.imageTheme).toBe('print');
+    // The figure style is the default, and a change still applies for the session.
+    expect(ws.figureStyle).toEqual(DEFAULT_FIGURE_STYLE);
+    changeAppearance({ theme: 'light' });
+    expect(ws.figureStyle.appearance.theme).toBe('light');
   });
 
   // --- Battery runs, the header band and the logo ---
@@ -1091,7 +1169,8 @@ describe('CcTimelineWorkspaceComponent', () => {
     fixture.componentRef.setInput('setKey', CC_BATTERY_SET_KEY);
     fixture.componentRef.setInput('batteryRows', ccBatteryRunRows());
     fixture.componentRef.setInput('notAnalyzedUnits', notAnalyzedUnits);
-    fixture.componentRef.setInput('subjectLabel', 'GPT-5 high · Two initial suites (revision 1)');
+    fixture.componentRef.setInput('setLabel', 'Two initial suites (revision 1)');
+    fixture.componentRef.setInput('setKind', 'battery');
     fixture.detectChanges();
     ws = fixture.debugElement.query(By.directive(CcTimelineWorkspaceComponent)).componentInstance as CcTimelineWorkspaceComponent;
     el = fixture.nativeElement as HTMLElement;
@@ -1102,12 +1181,9 @@ describe('CcTimelineWorkspaceComponent', () => {
     return (figure(key).config!.data.datasets[0].data as { runId: number }[]).map(point => point.runId);
   }
 
-  function header(key: CcFigureKey): CcChartOptions['header'] {
-    const input = (ws as unknown as { figureInput(): CcFigureInput }).figureInput();
-    const options = (ws as unknown as { chartOptions(theme: unknown, reduced: boolean, key: CcFigureKey): CcChartOptions })
-      .chartOptions(null, true, key);
-    expect(input).not.toBeNull();
-    return options.header;
+  /** The badges of a chart's composed heading. */
+  function badges(key: CcFigureKey): string[] {
+    return ccFigureChrome(figure(key), internals().composeContext()).badges.map(badge => badge.text);
   }
 
   it('plots one point per battery run of the compared set, and member runs on request', async () => {
@@ -1116,7 +1192,8 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(figure('quality').config!.data.datasets[0].label).toBe('Overall Intelligence Index (battery)');
     expect(figure('quality').table.columns[0]).toBe('Battery run');
     expect(figure('quality').takeaway).toContain('1 battery run not in the analysis is drawn as a gray cross.');
-    expect(header('quality')).toEqual({ title: 'Intelligence per run', subject: 'GPT-5 high · Two initial suites (revision 1) · battery runs' });
+    expect(badges('quality').slice(0, 2)).toEqual(['GPT-5 high', '2 battery runs']);
+    expect(internals().composeContext().set).toEqual({ kind: 'battery', label: 'Two initial suites (revision 1)' });
     expect(textOf(q('#cc-tl-fig-quality-data-title'))).toBe('Intelligence per run: data per battery run');
 
     const radios = qa<HTMLInputElement>('input[name="cc-tl-plot-by"]');
@@ -1124,7 +1201,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     clickOn('#cc-tl-plot-by-members');
     expect(plottedIds('quality')).toEqual([201, 202, 203, 204, 205, 206]);
     expect(figure('quality').table.columns[0]).toBe('Run');
-    expect(header('quality')!.subject).toBe('GPT-5 high · Two initial suites (revision 1) · member runs');
+    expect(badges('quality')[1]).toBe('6 member runs');
     // Component state, not stored.
     expect(storedLayout()['plotBy']).toBeUndefined();
 
@@ -1134,39 +1211,33 @@ describe('CcTimelineWorkspaceComponent', () => {
 
   it('labels the automatic Intelligence decimals by what the charts plot', async () => {
     await createBattery();
+    openSideTab('charts');
     const auto = () => textOf(q<HTMLSelectElement>('#cc-tl-decimals-quality')!.options[0]);
     expect(auto()).toBe('Automatic (1)');
+    openSideTab('data');
     clickOn('#cc-tl-plot-by-members');
+    openSideTab('charts');
     expect(auto()).toBe('Automatic (0)');
   });
 
-  it('offers no Plot by choice without a battery set, and names runs in the subject', async () => {
+  it('offers no Plot by choice without a battery set, counts runs, and names every suite in the footer', async () => {
     await create();
     expect(q('input[name="cc-tl-plot-by"]')).toBeNull();
-    expect(header('quality')).toEqual({ title: 'Intelligence per run', subject: 'GPT-5 high · runs' });
+    expect(badges('quality').slice(0, 2)).toEqual(['GPT-5 high', '6 runs']);
+    expect(internals().composeContext().set).toBeNull();
   });
 
-  it('draws the GnollBench logo on the charts and in every image until it is turned off', async () => {
+  it('draws the GnollBench logo on the charts and in every image until the Theme tab turns it off', async () => {
     await create();
     await vi.waitFor(() => {
-      if (!figure('quality')) throw new Error('No figure.');
-      const options = (ws as unknown as { chartOptions(theme: unknown, reduced: boolean, key: CcFigureKey): CcChartOptions })
-        .chartOptions(null, true, 'quality');
-      if (!options.logo) throw new Error('No logo yet.');
+      if (!internals().composeContext().logo) throw new Error('No logo yet.');
     });
-    openSideTab('download');
-    const box = q<HTMLInputElement>('#cc-tl-show-logo')!;
-    expect(box.checked).toBe(true);
-    expect(textOf(q('#cc-tl-show-logo-hint'))).toBe('On the charts and in every image.');
+    expect(internals().composeContext().logo!.heightPx).toBe(DEFAULT_FIGURE_STYLE.appearance.logoHeightPx);
 
-    clickOn('#cc-tl-show-logo');
-    const options = (ws as unknown as { chartOptions(theme: unknown, reduced: boolean, key: CcFigureKey): CcChartOptions })
-      .chartOptions(null, true, 'quality');
-    expect(options.logo).toBeNull();
-    expect(storedLayout()['logo']).toBe(false);
-    const snapshot = (ws as unknown as { exportSnapshot(): { logo: unknown; subject: string | null } }).exportSnapshot();
-    expect(snapshot.logo).toBeNull();
-    expect(snapshot.subject).toBe('GPT-5 high · runs');
+    changeAppearance({ logo: false });
+    expect(internals().composeContext().logo).toBeNull();
+    expect(internals().exportSnapshot().context.logo).toBeNull();
+    expect(JSON.parse(localStorage.getItem(CC_FIGURE_STYLE_STORAGE_KEY)!).appearance.logo).toBe(false);
   });
 
   it('hides the HTML figure caption visually, since the chart draws the title, and puts the takeaway and actions under the chart', async () => {
@@ -1185,6 +1256,169 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(tile.querySelector('.gh-fig-tile-actions')).toBeNull();
     // The data cards' headings sit under the step's h4.
     expect(tile.querySelector('.cc-data-card-title')!.tagName).toBe('H5');
+  });
+
+  // --- Theme and Charts, and the screen as the download ---
+
+  it('hosts Model Comparison\'s Theme and Charts panels under the cc-style prefix and its own open-sections key', async () => {
+    await create();
+    openSideTab('theme');
+    const theme = q('#cc-tl-side-panel-theme app-figure-style-panel')!;
+    expect(theme).not.toBeNull();
+    expect(theme.querySelector('[id^="cc-style-appearance"]')).not.toBeNull();
+    expect(theme.querySelector('[id^="mc-style"]')).toBeNull();
+
+    openSideTab('charts');
+    const charts = q('#cc-tl-side-panel-charts app-figure-style-panel')!;
+    expect(charts).not.toBeNull();
+    expect(charts.querySelector('[id^="mc-style"]')).toBeNull();
+    // The decimal places follow the panel in the same tab.
+    expect(charts.nextElementSibling!.classList).toContain('cc-tl-decimals');
+    expect(q('#cc-tl-side-panel-data')).toBeNull();
+  });
+
+  it('seeds the figure style once from a stored layout\'s print theme and hidden logo', async () => {
+    localStorage.setItem(CC_TIMELINE_STORAGE_KEY, JSON.stringify({ version: 2, imageTheme: 'print', logo: false }));
+    await create();
+    expect(ws.figureStyle.appearance.theme).toBe('light');
+    expect(ws.figureStyle.appearance.logo).toBe(false);
+    const stored = JSON.parse(localStorage.getItem(CC_FIGURE_STYLE_STORAGE_KEY)!);
+    expect(stored.version).toBe(1);
+    expect(stored.appearance.theme).toBe('light');
+    expect(Object.keys(stored).sort()).toEqual(['appearance', 'timeline', 'version']);
+    fixture.destroy();
+
+    // From then on the figure style is authoritative.
+    localStorage.setItem(CC_FIGURE_STYLE_STORAGE_KEY, JSON.stringify({ version: 1, appearance: { ...DEFAULT_FIGURE_STYLE.appearance } }));
+    localStorage.setItem(CC_TIMELINE_STORAGE_KEY, JSON.stringify({ version: 2, imageTheme: 'print', logo: false }));
+    await create();
+    expect(ws.figureStyle.appearance.theme).toBe('dark');
+    expect(ws.figureStyle.appearance.logo).toBe(true);
+  });
+
+  it('shows the text size on screen: the composition is laid out in a smaller box', async () => {
+    await create();
+    await desktopHost();
+    const first = await untilComposed('quality');
+    const layoutWidth = () => internals().screenLayout(figure('quality'), internals().composeContext()).layout!.layoutWidth;
+    expect(layoutWidth()).toBeCloseTo(960, 6);
+
+    ws.onChartSizeChange({ ...ws.chartSize, textScalePercent: 140 });
+    await settle();
+    expect(layoutWidth()).toBeCloseTo(960 / 1.4, 6);
+    const second = await untilComposed('quality');
+    expect(second).not.toBe(first);
+    // The pixels stay, so the image box does too.
+    expect(boxSize('.cc-tl-tile[data-figure="quality"]')).toEqual(expectedBox(ws.chartSize, ws.zoom, true));
+  }, 30_000);
+
+  it('shows the light theme on screen', async () => {
+    await create();
+    await desktopHost();
+    // The ground in the image's top left corner, inside its padding.
+    const ground = (canvas: HTMLCanvasElement) => canvas.getContext('2d')!.getImageData(1, 1, 1, 1).data[0];
+    const dark = await untilComposed('quality');
+    expect(ground(dark)).toBeLessThan(64);
+
+    changeAppearance({ theme: 'light' });
+    await settle();
+    await vi.waitFor(() => {
+      if (internals().composeContext().theme.name !== 'light') throw new Error('Not light yet.');
+    });
+    const light = await untilComposed('quality');
+    expect(ground(light)).toBeGreaterThan(200);
+    expect(JSON.parse(localStorage.getItem(CC_FIGURE_STYLE_STORAGE_KEY)!).appearance.theme).toBe('light');
+  }, 30_000);
+
+  it('composes the screen and the download from the same request, apart from the density and the pixels', async () => {
+    await create();
+    await desktopHost();
+    clickOn('#cc-tl-view-tab-single');
+    await settle();
+    await untilComposed('quality');
+    const context = internals().composeContext();
+    const screenLayout = internals().screenLayout(figure('quality'), context).layout!;
+    const file = internals().fileComposition('quality', internals().exportSnapshot());
+    const screen = ccFigureRequest(figure('quality'), context, screenLayout)!;
+    const download = ccFigureRequest(file.figure!, internals().exportSnapshot().context, file.layout!)!;
+
+    const { layout: screenBox, ...screenRest } = screen.request;
+    const { layout: fileBox, ...fileRest } = download.request;
+    expect(screenRest).toEqual(fileRest);
+    const shape = (layout: FigureExportLayout) => [layout.layoutWidth, layout.layoutHeight, layout.plotWidth, layout.plotHeight];
+    expect(shape(screenBox!)).toEqual(shape(fileBox!));
+    // The datasets: Chart.js adds an empty `labels` to a data object it has rendered.
+    expect(JSON.stringify(screen.config.data.datasets)).toBe(JSON.stringify(download.config.data.datasets));
+    expect(Object.keys(screen.config.options).sort()).toEqual(Object.keys(download.config.options).sort());
+    expect([fileBox!.pixelWidth, fileBox!.pixelHeight]).toEqual([ccTargetPixels(ws.chartSize)!.pixelWidth, ccTargetPixels(ws.chartSize)!.pixelHeight]);
+  }, 30_000);
+
+  it('shows a bitmap that invites no hover, with the values in Show data', async () => {
+    await create();
+    await untilComposed('quality');
+    const tile = q('.cc-tl-tile[data-figure="quality"]')!;
+    expect(tile.querySelector('canvas[basechart]')).toBeNull();
+    const image = tile.querySelector<HTMLCanvasElement>('canvas.cc-chart-image')!;
+    expect(getComputedStyle(image).cursor).toBe('default');
+    expect(figure('quality').config!.options.events).toEqual([]);
+    expect(textOf(tile.querySelector('.cc-figure-data > summary'))).toBe('Show data · 6 runs');
+    expect(tile.querySelectorAll('article.cc-data-card').length).toBe(6);
+  }, 30_000);
+
+  describe('no scrollbar at Fit to screen', () => {
+    function expectNoScrollbar(label: string): void {
+      const viewport = q<HTMLElement>('.cc-tl-viewport')!;
+      expect(viewport.scrollHeight, `${label}: vertical`).toBeLessThanOrEqual(viewport.clientHeight);
+      expect(viewport.scrollWidth, `${label}: horizontal`).toBeLessThanOrEqual(viewport.clientWidth);
+    }
+
+    it('fits one whole chart in Single chart at every aspect, after a sidebar resize, and with Show data or a long takeaway', async () => {
+      await create();
+      await desktopHost();
+      clickOn('#cc-tl-view-tab-single');
+      await settle(8);
+      for (const id of ['fullhd', 'square1080', 'uw1080', 'a4p']) {
+        ws.onChartSizeChange({ ...ws.chartSize, resolutionId: id });
+        await settle(8);
+        expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
+        expectNoScrollbar(id);
+      }
+
+      ws.onChartSizeChange({ ...ws.chartSize, resolutionId: 'fullhd' });
+      await settle(8);
+      const resizer = q('app-pane-resizer')!;
+      for (let i = 0; i < 4; i++) press(resizer, 'ArrowRight');
+      await settle(8);
+      expectNoScrollbar('wider sidebar');
+      for (let i = 0; i < 8; i++) press(resizer, 'ArrowLeft');
+      await settle(8);
+      expectNoScrollbar('narrower sidebar');
+
+      const data = q<HTMLDetailsElement>('#cc-tl-view-panel-single details.cc-figure-data')!;
+      data.open = true;
+      await settle(8);
+      data.open = false;
+      await settle(8);
+      expectNoScrollbar('Show data closed again');
+
+      fixture.componentRef.setInput('notAnalyzed', new Map<number, CcRunInclusion>([[201, 'beforeSpan'], [204, 'leftOut']]));
+      fixture.detectChanges();
+      await settle(8);
+      expect(figure('quality').takeaway).toContain('not in the analysis');
+      expectNoScrollbar('long takeaway');
+    }, 60_000);
+
+    it('fits the first tile, its image and HTML, into All charts\' scroller', async () => {
+      await create();
+      await desktopHost();
+      expect(ws.zoomLabel).toMatch(/ · Fit to screen$/);
+      const viewport = q<HTMLElement>('.cc-tl-viewport')!;
+      const style = getComputedStyle(viewport);
+      const contentHeight = viewport.clientHeight - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom);
+      const tile = q('.cc-tl-tile[data-figure="quality"]')!;
+      expect(tile.getBoundingClientRect().height).toBeLessThanOrEqual(contentHeight + 1e-6);
+      expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.clientWidth);
+    }, 30_000);
   });
 
   it('wraps the settings tabs and keeps the event list\'s sticky headings under the measured row', async () => {

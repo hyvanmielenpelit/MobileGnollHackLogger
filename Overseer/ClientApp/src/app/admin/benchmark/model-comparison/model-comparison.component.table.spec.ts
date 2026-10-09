@@ -1298,7 +1298,7 @@ describe('ModelComparisonComponent', () => {
     expect(chrome.theme).toBe(component.figureTheme);
     expect(fixture.debugElement.queryAll(By.css('.mc-all-canvas.is-transparent-figure')).length).toBe(7);
     const viewport = fixture.debugElement.query(By.css('.mc-all-viewport')).nativeElement as HTMLElement;
-    expect(viewport.getAttribute('style') ?? '').toContain('--mc-figure-backdrop: #123456');
+    expect(viewport.getAttribute('style') ?? '').toContain('--gh-fig-backdrop: #123456');
   });
 
   it('copies one figure to the clipboard and names the card in the status', async () => {

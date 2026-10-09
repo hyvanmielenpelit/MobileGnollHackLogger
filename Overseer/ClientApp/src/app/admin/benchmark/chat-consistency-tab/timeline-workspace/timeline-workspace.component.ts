@@ -23,12 +23,14 @@ import { PaneResizerComponent } from '../../../../shared/pane-resizer/pane-resiz
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../../utils/polyfills.util';
 import { ExportFormatSectionComponent } from '../../model-comparison/export-format-section.component';
 import { ExportSizeSectionComponent } from '../../model-comparison/export-size-section.component';
+import { figureFont } from '../../model-comparison/figure-fonts';
+import { ensureFigureFont } from '../../model-comparison/figure-font-loader';
 import {
   DEFAULT_WEBP_QUALITY,
   FigureArchiveEntry,
   FigureExportFormat,
+  FigureExportLayout,
   FigureExportResult,
-  OffscreenPlotConfig,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   buildFigureArchive,
@@ -36,7 +38,6 @@ import {
   densityPercentLabel,
   displayDensity,
   encodeFigureImage,
-  renderPlotOffscreen,
   saveFigureBlob
 } from '../../model-comparison/figure-export';
 import {
@@ -50,6 +51,9 @@ import {
   writeStoredSizeSettings
 } from '../../model-comparison/figure-size';
 import { FigureLogo, ensureFigureLogo, figureLogoAspect } from '../../model-comparison/figure-logo';
+import { DEFAULT_FIGURE_STYLE, FigureLogoVariant, FigureStyle, normalizeFigureStyle } from '../../model-comparison/figure-style';
+import { FigureStylePanelComponent } from '../../model-comparison/figure-style-panel.component';
+import { ResolvedFigureTheme, resolveFigureTheme } from '../../model-comparison/figure-theme';
 import {
   PREVIEW_SLIDER_STEPS,
   PreviewZoomRange,
@@ -57,6 +61,7 @@ import {
   canZoomPreviewOut,
   formatPreviewZoom,
   nextPreviewZoomStop,
+  previewStageContentBox,
   previousPreviewZoomStop,
   sliderToZoom,
   zoomToSlider
@@ -66,10 +71,6 @@ import {
   CC_DECIMAL_CHOICES,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
-  CC_HEADER_LOGO_PX,
-  CC_SCREEN_THEME,
-  CcChartOptions,
-  CcChartTheme,
   CcDecimalPlaces,
   CcFigure,
   CcFigureInput,
@@ -94,25 +95,43 @@ import {
 } from '../chat-consistency-events';
 import { formatUtcDate } from '../chat-consistency-format';
 import { CC_INCLUSION_TEXT, CcRunInclusion, unitNoun } from '../chat-consistency-scope';
-import { CcBatteryRunRow, CcModelAxis, CcTimeline, CcTimelinePoint, CcUnitKind } from '../chat-consistency.models';
-import { CcEventListComponent } from '../event-list/cc-event-list.component';
-import { CcChartFigureComponent } from './cc-chart-figure.component';
-import { CcExportPlan, ccChartArchiveFilename, ccChartFilename, ccExportLayout, ccExportTheme } from './cc-chart-export';
 import {
-  CcChartBox,
+  CcBatteryRunRow,
+  CcComparisonSetKind,
+  CcModelAxis,
+  CcTimeline,
+  CcTimelinePoint,
+  CcUnitKind
+} from '../chat-consistency.models';
+import { CcEventListComponent } from '../event-list/cc-event-list.component';
+import { CcChartFigureComponent, CcComposedFigure } from './cc-chart-figure.component';
+import { ccChartArchiveFilename, ccChartFilename } from './cc-chart-export';
+import {
+  CcFigureChrome,
+  CcTargetPixels,
   CcZoomView,
-  ccCanvasRatio,
-  ccChartBox,
+  ccDisplaySize,
   ccFitHeightZoom,
   ccFitScreenZoom,
-  ccFitWidthZoom,
+  ccFitWidthWithScrollbar,
+  ccPreviewDpr,
+  ccPreviewLayout,
   ccResolveZoom,
+  ccTargetPixels,
   ccZoomRange
 } from './cc-chart-zoom';
+import {
+  CcComposeContext,
+  buildComposedCcFigure,
+  ccFigureChrome,
+  ccFigureLayout,
+  ccFigureSummary,
+  composeCcFigure
+} from './cc-figure-compose';
 
 // --- Stored layout ---
 
-export type CcTimelineSidebarTab = 'data' | 'events' | 'annotations' | 'download';
+export type CcTimelineSidebarTab = 'data' | 'events' | 'annotations' | 'theme' | 'charts' | 'download';
 export type CcTimelineViewTab = 'all' | 'single';
 export type CcImageTheme = 'screen' | 'print';
 /** In a battery set, what one point is: a battery run, or one of its member runs. */
@@ -124,6 +143,16 @@ export const CC_TIMELINE_STORAGE_KEY = 'overseer.benchmark.chatConsistency.timel
 /** The chart size, per browser, apart from Model Comparison's own. */
 export const CC_CHART_SIZE_STORAGE_KEY = 'overseer.benchmark.chatConsistency.chartSize';
 
+/**
+ * The Theme and Charts tabs' figure style, per browser and apart from Model Comparison's, as
+ * `{ version: 1, appearance, timeline }`. Read and written in `try/catch`, repaired by
+ * `normalizeFigureStyle`.
+ */
+export const CC_FIGURE_STYLE_STORAGE_KEY = 'overseer.benchmark.chatConsistency.figureStyle';
+
+/** The figure style panel's open sections in this workspace, apart from Model Comparison's. */
+export const CC_FIGURE_STYLE_PANEL_OPEN_KEY = 'overseer.benchmark.chatConsistency.figureStylePanel.open';
+
 /** The settings sidebar's width, in CSS px: 26 rem by default, adjustable from 18 rem to 40 rem or half the workspace. */
 export const CC_SIDEBAR_WIDTH_DEFAULT = 416;
 export const CC_SIDEBAR_WIDTH_MIN = 288;
@@ -133,6 +162,8 @@ export const CC_TIMELINE_SIDEBAR_TABS: readonly { readonly id: CcTimelineSidebar
   { id: 'data', label: 'Data' },
   { id: 'events', label: 'Events' },
   { id: 'annotations', label: 'Annotations' },
+  { id: 'theme', label: 'Theme' },
+  { id: 'charts', label: 'Charts' },
   { id: 'download', label: 'Download' }
 ];
 
@@ -164,14 +195,20 @@ export interface CcTimelineLayout {
   readonly decimals: CcDecimalPlaces;
   /** Runs not in the analysis are drawn as gray crosses with dotted segments. */
   readonly markNotAnalyzed: boolean;
-  readonly imageTheme: CcImageTheme;
   readonly imageFormat: FigureExportFormat;
   readonly webpQuality: WebpQuality;
   readonly chartSizeOpen: boolean;
   readonly imageFormatOpen: boolean;
   readonly singleFigure: CcFigureKey;
-  /** The GnollBench logo on the charts and in every image. */
-  readonly logo: boolean;
+}
+
+/**
+ * The image theme and logo a layout stored before the figure style existed, which seed the figure
+ * style once: `print` is the light theme, and `logo: false` hides the logo. Null where not stored.
+ */
+export interface CcLegacyImageSettings {
+  readonly imageTheme: CcImageTheme | null;
+  readonly logo: boolean | null;
 }
 
 /** The version `writeStoredTimelineLayout` writes. Version 1 had one *Work per answer* chart, `work`, with `work.tools`. */
@@ -196,13 +233,11 @@ export function defaultTimelineLayout(): CcTimelineLayout {
     zeroBaseline: false,
     decimals: {},
     markNotAnalyzed: true,
-    imageTheme: 'screen',
     imageFormat: 'png',
     webpQuality: DEFAULT_WEBP_QUALITY,
     chartSizeOpen: false,
     imageFormatOpen: false,
-    singleFigure: 'quality',
-    logo: true
+    singleFigure: 'quality'
   };
 }
 
@@ -258,23 +293,73 @@ export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
     zeroBaseline: flag('zeroBaseline', fallback.zeroBaseline),
     decimals: decimalsOf(record['decimals']),
     markNotAnalyzed: flag('markNotAnalyzed', fallback.markNotAnalyzed),
-    imageTheme: oneOf<CcImageTheme>('imageTheme', ['screen', 'print'], fallback.imageTheme),
     imageFormat: oneOf<FigureExportFormat>('imageFormat', ['png', 'webp'], fallback.imageFormat),
     webpQuality: oneOf<WebpQuality>('webpQuality', WEBP_QUALITY_OPTIONS, fallback.webpQuality),
     chartSizeOpen: flag('chartSizeOpen', fallback.chartSizeOpen),
     imageFormatOpen: flag('imageFormatOpen', fallback.imageFormatOpen),
-    singleFigure: oneOf('singleFigure', FIGURE_KEY_ORDER, fallback.singleFigure),
-    logo: flag('logo', fallback.logo)
+    singleFigure: oneOf('singleFigure', FIGURE_KEY_ORDER, fallback.singleFigure)
   };
+}
+
+/** A stored layout's image theme and logo, each null where absent or of the wrong kind. */
+export function parseLegacyImageSettings(stored: unknown): CcLegacyImageSettings {
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return { imageTheme: null, logo: null };
+  const record = stored as Record<string, unknown>;
+  const theme = record['imageTheme'];
+  return {
+    imageTheme: theme === 'screen' || theme === 'print' ? theme : null,
+    logo: typeof record['logo'] === 'boolean' ? record['logo'] as boolean : null
+  };
+}
+
+/** The stored layout's raw record; null wherever storage is absent, unreadable or throws. */
+function readStoredLayoutRecord(): unknown {
+  try {
+    const raw = localStorage.getItem(CC_TIMELINE_STORAGE_KEY);
+    return raw === null ? null : JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** The stored layout; the default wherever storage is absent, unreadable or throws. */
 export function readStoredTimelineLayout(): CcTimelineLayout {
+  return parseTimelineLayout(readStoredLayoutRecord());
+}
+
+/**
+ * The stored figure style. Without one, the default seeded once from the layout's legacy image
+ * settings: *Light, for print* is the light theme, and a hidden logo stays hidden. The default where
+ * storage throws, with nothing seeded.
+ */
+export function readStoredTimelineFigureStyle(): FigureStyle {
   try {
-    const raw = localStorage.getItem(CC_TIMELINE_STORAGE_KEY);
-    return parseTimelineLayout(raw === null ? null : JSON.parse(raw));
+    const raw = localStorage.getItem(CC_FIGURE_STYLE_STORAGE_KEY);
+    if (raw !== null) return normalizeFigureStyle(JSON.parse(raw));
   } catch {
-    return defaultTimelineLayout();
+    return DEFAULT_FIGURE_STYLE;
+  }
+  const legacy = parseLegacyImageSettings(readStoredLayoutRecord());
+  if (legacy.imageTheme !== 'print' && legacy.logo !== false) return DEFAULT_FIGURE_STYLE;
+  const seeded = normalizeFigureStyle({
+    ...DEFAULT_FIGURE_STYLE,
+    appearance: {
+      ...DEFAULT_FIGURE_STYLE.appearance,
+      ...(legacy.imageTheme === 'print' ? { theme: 'light' } : {}),
+      ...(legacy.logo === false ? { logo: false } : {})
+    }
+  });
+  writeStoredTimelineFigureStyle(seeded);
+  return seeded;
+}
+
+/** Writes the two families the timeline reads. */
+export function writeStoredTimelineFigureStyle(style: FigureStyle): void {
+  try {
+    localStorage.setItem(CC_FIGURE_STYLE_STORAGE_KEY,
+      JSON.stringify({ version: 1, appearance: style.appearance, timeline: style.timeline }));
+  } catch {
+    // Private mode or blocked storage: the style still applies for this session.
   }
 }
 
@@ -304,31 +389,33 @@ function figureTitle(key: CcFigureKey): string {
   return CC_FIGURE_KEYS.find(entry => entry.key === key)?.title ?? key;
 }
 
-/** One copy, download or archive attempt: the encoded image, or why there is none. */
+function capitalized(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** One copy, download or archive attempt, read once so a change during it cannot mix two states. */
 interface CcExportSnapshot {
-  readonly plan: CcExportPlan;
-  readonly sizeError: string;
+  readonly size: FigureSizeSettings;
   readonly input: CcFigureInput | null;
-  readonly theme: CcChartTheme;
-  readonly hiddenSeries: ReadonlySet<string>;
-  readonly zeroBaseline: boolean;
-  readonly decimals: CcDecimalPlaces;
-  readonly subject: string | null;
-  readonly logo: FigureLogo | null;
+  readonly context: CcComposeContext;
   readonly webpQuality: WebpQuality;
   readonly modelKey: string;
 }
 
 interface CcChartImage {
   readonly result: FigureExportResult | null;
-  /** The size is refused; the same for every chart. */
+  /** The size is refused for this chart, in the words the screen shows. */
   readonly refusal: string | null;
   /** The chart has nothing to draw with the current series and range. */
   readonly empty: boolean;
 }
 
-/** The figure's chrome around its chart box, in CSS px, until the first tile is measured. */
-const DEFAULT_CHROME = { width: 26, height: 120 } as const;
+/** One chart's composition on screen, and the composition version it was made at. */
+interface CcScreenImage {
+  readonly canvas: HTMLCanvasElement | null;
+  readonly refusal: string;
+  readonly version: number;
+}
 
 /** The sidebar tab row's height until it is measured. */
 const DEFAULT_TAB_BAR_HEIGHT = 44;
@@ -336,11 +423,18 @@ const DEFAULT_TAB_BAR_HEIGHT = 44;
 /** Below this, a measured length is the same as the last one. */
 const MEASURE_TOLERANCE = 0.5;
 
+/** The quiet time after a style change, a zoom or a resize before the charts are composed again. */
+const COMPOSE_DEBOUNCE_MS = 150;
+
+/** The image box shown while the chart size is refused, in CSS px. */
+const REFUSED_BOX = { cssWidth: 480, cssHeight: 270 } as const;
+
 /**
  * The Timeline step of the Chat Consistency wizard: a resizable, collapsible settings sidebar (Data,
- * Events, Annotations, Download) beside the *All charts* and *Single chart* views of the live charts,
- * with zoom, Copy, Download and Download all. The chart size sets the charts' shape on screen as in
- * the downloads: at 100 % zoom a chart's box is its download's layout box.
+ * Events, Annotations, Theme, Charts, Download) beside the *All charts* and *Single chart* views, with
+ * zoom, Copy, Download and Download all. Each view shows the download itself: every chart is composed
+ * by `cc-figure-compose.ts` at the chart size and rasterized for the screen, so at 100 % zoom one pixel
+ * of the file is one device pixel.
  */
 @Component({
   selector: 'app-cc-timeline-workspace',
@@ -351,6 +445,7 @@ const MEASURE_TOLERANCE = 0.5;
     CcEventListComponent,
     ExportFormatSectionComponent,
     ExportSizeSectionComponent,
+    FigureStylePanelComponent,
     PaneResizerComponent
   ],
   templateUrl: './timeline-workspace.component.html',
@@ -377,8 +472,10 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   @Input() batteryRows: readonly CcBatteryRunRow[] = [];
   /** The battery runs of the set not in the analysis, keyed by battery run id, with why. */
   @Input() notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion> | null = null;
-  /** The model and the compared set, `Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1)`; the charts' subject line adds what a point is. */
-  @Input() subjectLabel = '';
+  /** The compared set's name, `Two initial suites (revision 1)`, for the charts' footer; empty without a set. */
+  @Input() setLabel = '';
+  /** What the compared set is, for the footer's label; null when none is compared. */
+  @Input() setKind: CcComparisonSetKind | null = null;
 
   /** An annotation was added or deleted; the host reads the timeline again. */
   @Output() readonly annotationsChanged = new EventEmitter<void>();
@@ -395,8 +492,9 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   readonly sliderSteps = PREVIEW_SLIDER_STEPS;
   readonly SIDEBAR_WIDTH_MIN = CC_SIDEBAR_WIDTH_MIN;
   readonly SIDEBAR_WIDTH_DEFAULT = CC_SIDEBAR_WIDTH_DEFAULT;
-  readonly textSizeHint = '100 % is the text size the charts have on screen at 100 % zoom.';
+  readonly textSizeHint = 'Scales every text of the charts, on screen and in every image; the pixel size stays.';
   readonly formatNote = 'Every chart is downloaded in this format. Copy always writes a PNG.';
+  readonly figureStylePanelOpenKey = CC_FIGURE_STYLE_PANEL_OPEN_KEY;
 
   /** Sampled once: the density option the size section marks *(this display)*. */
   readonly displayDensity = displayDensity();
@@ -429,23 +527,30 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   zeroBaseline = this.stored.zeroBaseline;
   decimals: CcDecimalPlaces = this.stored.decimals;
   markNotAnalyzed = this.stored.markNotAnalyzed;
-  imageTheme: CcImageTheme = this.stored.imageTheme;
   imageFormat: FigureExportFormat = this.stored.imageFormat;
   webpQuality: WebpQuality = this.stored.webpQuality;
-  showLogo = this.stored.logo;
   private singleKey: CcFigureKey = this.stored.singleFigure;
   /** In a battery set, what a point is; kept per component, since the set changes with step 1. */
   plotBy: CcPlotBy = 'batteryRuns';
-  /** The decoded wide logo; null until it loads, and when it fails to. */
-  private logoImage: FigureLogo | null = null;
+
+  /** The Theme and Charts tabs' style; only its `appearance` and `timeline` families are read. */
+  figureStyle: FigureStyle = readStoredTimelineFigureStyle();
+  /** `figureStyle.appearance` resolved, once per appearance. */
+  private figureTheme: ResolvedFigureTheme = resolveFigureTheme(this.figureStyle.appearance);
+  /** Whether the chosen font family loaded, for the Theme tab's status line. Empty for Overseer default. */
+  fontLoadStatus = '';
+  /** The decoded logo per variant, once loaded. */
+  private figureLogos: Partial<Record<FigureLogoVariant, CanvasImageSource>> = {};
+  /** When the workspace received the timeline: the charts' footer time. */
+  private loadedAt = new Date().toISOString();
 
   chartSize: FigureSizeSettings = readStoredSizeSettings(CC_CHART_SIZE_STORAGE_KEY, this.defaultChartSize, false);
-  /** The chart box at 100 %: the last usable size's layout box. */
-  private box: CcChartBox = ccChartBox(sizeErrors(this.chartSize, 'chart').any === '' ? this.chartSize : this.defaultChartSize);
+  /** The file's pixel size: the last usable chart size's. */
+  private target: CcTargetPixels = ccTargetPixels(this.chartSize) ?? ccTargetPixels(this.defaultChartSize)!;
 
   // --- Derived from the timeline and the settings ---
 
-  /** The shown charts in order, drawn in the screen theme. */
+  /** The shown charts in order, built for composition. */
   figures: CcFigure[] = [];
   /** The series each chart draws with none hidden, by chart; what the *Series* checklist offers. */
   private presentSeries: Partial<Record<CcFigureKey, CcFigureSeries[]>> = {};
@@ -467,12 +572,31 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   private allView: CcZoomView = 'fitScreen';
   private singleView: CcZoomView = 'fitScreen';
-  /** The viewport's content box, in CSS px; null until it has been measured with a size. */
+  /**
+   * The viewport's content box with no scrollbar, in whole CSS px, and the vertical scrollbar's width
+   * last seen; null until it has been measured with a size.
+   */
   private viewportBox: { width: number; height: number } | null = null;
-  private chrome: { width: number; height: number } = { ...DEFAULT_CHROME };
+  private scrollbarWidth = 0;
+  /** The figure's HTML around the image, in whole CSS px; none until a figure has been measured. */
+  private chrome: CcFigureChrome = { width: 0, height: 0 };
+  /** The device pixel ratio the views rasterize at, sampled with each measurement. */
+  private dpr = ccPreviewDpr(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
   /** Tiles within one viewport height of the All view; every tile without IntersectionObserver. */
   private nearKeys = new Set<CcFigureKey>();
   private readonly nearAll = typeof IntersectionObserver === 'undefined';
+
+  // --- Composition ---
+
+  /** Bumped by every change that alters an image; a composition of an older version is stale. */
+  private composeVersion = 0;
+  /** The screen composition per chart; kept while a newer one is made, so the old image stays shown. */
+  private screenImages = new Map<CcFigureKey, CcScreenImage>();
+  /** Per chart, the summary its image's accessible name reads after the alt text. */
+  private summaries = new Map<CcFigureKey, string>();
+  private composeTimer: ReturnType<typeof setTimeout> | null = null;
+  private composeFrame: number | null = null;
+  private styleTimer: ReturnType<typeof setTimeout> | null = null;
 
   @ViewChild('workspace') private workspaceRef?: ElementRef<HTMLElement>;
   @ViewChild('sideTabs') private sideTabsRef?: ElementRef<HTMLElement>;
@@ -489,6 +613,8 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   private viewportEl: HTMLElement | null = null;
   private viewportObserver: ResizeObserver | null = null;
+  /** The measured figure, observed for its HTML under the image. */
+  private measuredFigure: HTMLElement | null = null;
   private tileObserver: IntersectionObserver | null = null;
   private tabBarObserver: ResizeObserver | null = null;
   private tileChanges: Subscription | null = null;
@@ -502,25 +628,24 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
-    void ensureFigureLogo('wide').then(image => {
-      if (!image || this.destroyed) return;
-      this.logoImage = { image, aspectRatio: figureLogoAspect('wide'), heightPx: CC_HEADER_LOGO_PX };
-      if (this.showLogo) {
-        this.rebuildFigures();
-        this.cdr.markForCheck();
-        this.scheduleMeasure();
-      }
+    // The stored font and logo start loading now, so the first composition rarely waits for them.
+    void this.prepareComposition().then(() => {
+      if (this.destroyed) return;
+      this.cdr.markForCheck();
+      this.invalidateImages(0);
     });
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['timeline']) this.loadedAt = new Date().toISOString();
     if (changes['timeline'] || changes['unitKind'] || changes['setKey']) {
       if (changes['setKey'] && !changes['setKey'].firstChange) this.plotBy = 'batteryRuns';
       this.rebuildTimeline();
       this.rebuildFigures();
       this.rebuildEvents();
       this.scheduleMeasure();
-    } else if (changes['notAnalyzed'] || changes['notAnalyzedUnits'] || changes['batteryRows'] || changes['subjectLabel']) {
+    } else if (changes['notAnalyzed'] || changes['notAnalyzedUnits'] || changes['batteryRows']
+      || changes['setLabel'] || changes['setKind'] || changes['rangeLabel'] || changes['axis']) {
       this.rebuildFigures();
       this.scheduleMeasure();
     }
@@ -554,6 +679,10 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     if (this.zoomFrame !== null) cancelAnimationFrame(this.zoomFrame);
     this.measureFrame = null;
     this.zoomFrame = null;
+    this.cancelScheduledCompose();
+    if (this.styleTimer !== null) clearTimeout(this.styleTimer);
+    this.styleTimer = null;
+    this.screenImages.clear();
   }
 
   // --- Derived data ---
@@ -611,28 +740,36 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     return notAnalyzed ? { ...input, notAnalyzed } : input;
   }
 
-  /** `plural noun`: `battery runs`, `member runs` or `runs`, the subject line's last part. */
+  /** What one plotted point is, for the charts' count badge: `battery run`, `member run` or `run`. */
   private get plottedNoun(): string {
-    if (!this.batterySet) return `${unitNoun('run')}s`;
-    return this.plotsBatteryRuns ? `${unitNoun('batteryRun')}s` : 'member runs';
+    if (!this.batterySet) return unitNoun('run');
+    return this.plotsBatteryRuns ? unitNoun('batteryRun') : 'member run';
   }
 
-  /** The charts' subject line: `Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1) · battery runs`. */
-  get chartSubject(): string | null {
-    const label = this.subjectLabel || this.axis?.displayName || this.timeline?.subject.displayName || '';
-    return label ? `${label} · ${this.plottedNoun}` : null;
+  /** The logo the composer draws, or null while it is hidden or not loaded. */
+  private figureLogo(): FigureLogo | null {
+    const appearance = this.figureStyle.appearance;
+    const image = appearance.logo ? this.figureLogos[appearance.logoVariant] : undefined;
+    return image
+      ? { image, aspectRatio: figureLogoAspect(appearance.logoVariant), heightPx: appearance.logoHeightPx }
+      : null;
   }
 
-  /** The chart options shared by the screen and every export, in `theme`. */
-  private chartOptions(theme: CcChartTheme, reducedMotion: boolean, key: CcFigureKey): CcChartOptions {
+  /** Everything a composition reads besides the data, the same for the screen and every export. */
+  private composeContext(): CcComposeContext {
+    const timeline = this.timeline;
     return {
-      theme,
-      reducedMotion,
+      style: { appearance: this.figureStyle.appearance, timeline: this.figureStyle.timeline },
+      theme: this.figureTheme,
+      logo: this.figureLogo(),
+      modelLabel: this.axis?.displayName ?? timeline?.subject.displayName ?? '',
+      unitNoun: this.plottedNoun,
+      datesLabel: this.rangeLabel || capitalized(ccRangeText(timeline?.fromUtc, timeline?.toUtc)),
+      set: this.setKind ? { kind: this.setKind, label: this.setLabel } : null,
+      loadedAt: this.loadedAt,
       hiddenSeries: this.hiddenSeries,
       zeroBaseline: this.zeroBaseline,
-      decimals: this.decimals,
-      header: { title: figureTitle(key), subject: this.chartSubject },
-      logo: this.showLogo ? this.logoImage : null
+      decimals: this.decimals
     };
   }
 
@@ -684,14 +821,16 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     }
   }
 
+  /** Builds the shown charts for composition, with their image summaries, and marks every image stale. */
   private rebuildFigures(): void {
     const input = this.figureInput();
-    this.figures = input
-      ? this.shownKeys.map(key => buildCcFigure(key, input, this.chartOptions(CC_SCREEN_THEME, this.reducedMotion, key)))
-      : [];
+    const context = this.composeContext();
+    this.figures = input ? this.shownKeys.map(key => buildComposedCcFigure(key, input, context)) : [];
+    this.summaries = new Map(this.figures.map(figure => [figure.key, ccFigureSummary(ccFigureChrome(figure, context))]));
     this.seriesGroups = this.shownKeys
       .map(key => ({ key, title: figureTitle(key), series: this.presentSeries[key] ?? [] }))
       .filter(group => group.series.length > 1);
+    this.invalidateImages(0);
   }
 
   private rebuildEvents(): void {
@@ -930,15 +1069,17 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     }
   }
 
-  /** A usable size gives the charts their new box; a numeric zoom keeps its value, a fit re-fits. */
+  /**
+   * A usable size gives the charts their new file pixels; a numeric zoom keeps its value, a fit
+   * re-fits. Every chart is composed again, at the new size or with its refusal.
+   */
   private setChartSize(settings: FigureSizeSettings): void {
     this.chartSize = { ...settings };
     writeStoredSizeSettings(CC_CHART_SIZE_STORAGE_KEY, this.chartSize);
-    if (sizeErrors(this.chartSize, 'chart').any === '') {
-      this.box = ccChartBox(this.chartSize);
-    }
+    this.target = ccTargetPixels(this.chartSize) ?? this.target;
     this.cdr.markForCheck();
     this.scheduleMeasure();
+    this.invalidateImages(COMPOSE_DEBOUNCE_MS);
   }
 
   onImageFormatChange(format: FigureExportFormat): void {
@@ -967,17 +1108,81 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.cdr.markForCheck();
   }
 
-  setImageTheme(theme: CcImageTheme): void {
-    this.imageTheme = theme;
-    this.persist();
+  // --- Theme and Charts tabs ---
+
+  /**
+   * Stores the style at once, so the panel's own controls follow it, and composes the charts again
+   * once the change pauses: a range drag or a color picker fires on every step. A newly chosen font,
+   * and a newly shown or chosen logo, starts loading at once.
+   */
+  onFigureStyleChange(style: FigureStyle): void {
+    const previous = this.figureStyle.appearance;
+    this.figureStyle = normalizeFigureStyle(style);
+    writeStoredTimelineFigureStyle(this.figureStyle);
+    const appearance = this.figureStyle.appearance;
+    if (appearance.fontFamily !== previous.fontFamily) {
+      void this.loadFigureFont();
+    }
+    if (appearance.logo && (appearance.logo !== previous.logo || appearance.logoVariant !== previous.logoVariant)) {
+      void this.loadFigureLogo();
+    }
+    if (this.styleTimer !== null) clearTimeout(this.styleTimer);
+    this.styleTimer = setTimeout(() => {
+      this.styleTimer = null;
+      if (this.destroyed) return;
+      this.figureTheme = resolveFigureTheme(this.figureStyle.appearance);
+      this.rebuildFigures();
+      this.cdr.markForCheck();
+      this.scheduleMeasure();
+    }, COMPOSE_DEBOUNCE_MS);
     this.cdr.markForCheck();
   }
 
-  /** The logo on the charts and in every image. */
-  setShowLogo(on: boolean): void {
-    if (on === this.showLogo) return;
-    this.showLogo = on;
-    this.afterFigureSettings();
+  /** A transparent background, which the page shows over the preview backdrop and never exports. */
+  get isTransparentFigure(): boolean {
+    return this.figureStyle.appearance.background === 'transparent';
+  }
+
+  /** The backdrop color for the canvases' scroller to pass down; null keeps the checkerboard. */
+  get figureBackdropStyle(): string | null {
+    const appearance = this.figureStyle.appearance;
+    return appearance.background === 'transparent' && appearance.previewBackdrop === 'color'
+      ? `--gh-fig-backdrop: ${appearance.previewBackdropColor}`
+      : null;
+  }
+
+  /**
+   * Loads the chosen font family before anything is measured with it, and says in the Theme tab
+   * whether it loaded: a canvas does not wait for web fonts.
+   */
+  private async loadFigureFont(): Promise<void> {
+    const id = this.figureStyle.appearance.fontFamily;
+    const loaded = await ensureFigureFont(id);
+    const label = figureFont(id).label;
+    const status = id === 'default'
+      ? ''
+      : loaded
+        ? `${label} is loaded.`
+        : `${label} could not be loaded, so the charts use the fallback font.`;
+    // A later choice may have replaced this one while it loaded.
+    if (id === this.figureStyle.appearance.fontFamily && status !== this.fontLoadStatus && !this.destroyed) {
+      this.fontLoadStatus = status;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Loads the chosen logo variant while the logo is shown. A logo that fails to load draws nothing. */
+  private async loadFigureLogo(): Promise<void> {
+    const appearance = this.figureStyle.appearance;
+    if (!appearance.logo) return;
+    const variant = appearance.logoVariant;
+    const image = await ensureFigureLogo(variant);
+    if (image) this.figureLogos[variant] = image;
+  }
+
+  /** The font and the logo every composition draws with, loaded together. */
+  private async prepareComposition(): Promise<void> {
+    await Promise.all([this.loadFigureFont(), this.loadFigureLogo()]);
   }
 
   // --- Views ---
@@ -995,6 +1200,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.cdr.detectChanges();
     refreshAnchorPositioning();
     this.scheduleMeasure();
+    this.invalidateImages(0);
   }
 
   onViewTabKeydown(event: KeyboardEvent, index: number): void {
@@ -1016,6 +1222,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.persist();
     this.cdr.markForCheck();
     this.scheduleMeasure();
+    this.scheduleCompose(0);
   }
 
   /** Wrapping, so neither end of the set is a dead control. */
@@ -1038,10 +1245,36 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     document.getElementById('cc-tl-single-figure')?.focus();
   }
 
-  /** In All charts, whether the tile is near enough to the view to hold a canvas. */
+  /** In All charts, whether the tile is near enough to the view to be composed. */
   isNear(key: CcFigureKey): boolean {
     return this.nearAll || this.nearKeys.has(key);
   }
+
+  /**
+   * What a figure shows in place of a live chart: its last composition, scaled to the box the current
+   * zoom gives, until a newer one replaces it; a pending box before the first; the refusal for a size
+   * that is refused.
+   */
+  composedFor(figure: CcFigure): CcComposedFigure {
+    const image = this.screenImages.get(figure.key) ?? null;
+    const sizeRefused = this.sizeError !== '';
+    const box = sizeRefused ? REFUSED_BOX : this.displaySize;
+    const next: CcComposedFigure = {
+      canvas: sizeRefused ? null : image?.canvas ?? null,
+      cssWidth: box.cssWidth,
+      cssHeight: box.cssHeight,
+      summary: this.summaries.get(figure.key) ?? '',
+      refusal: sizeRefused ? this.sizeError : image?.refusal ?? '',
+      transparent: this.isTransparentFigure
+    };
+    // The same object while nothing changed, so the binding is stable between checks.
+    const last = this.composedMemo.get(figure.key);
+    if (last && (Object.keys(next) as (keyof CcComposedFigure)[]).every(field => last[field] === next[field])) return last;
+    this.composedMemo.set(figure.key, next);
+    return next;
+  }
+
+  private composedMemo = new Map<CcFigureKey, CcComposedFigure>();
 
   // --- Zoom ---
 
@@ -1049,14 +1282,27 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     return this.view === 'all' ? this.allView : this.singleView;
   }
 
+  /** All charts stacks more than one tile, so its column always scrolls. */
+  private get stackScrolls(): boolean {
+    return this.view === 'all' && this.figures.length > 1;
+  }
+
+  /**
+   * The view's fits against the viewport's full content box. A column of tiles keeps its vertical
+   * scrollbar, so both fits leave it room; a single figure's *Fit width* leaves it room only where the
+   * figure will be taller than the view. Not a number until the viewport is measured.
+   */
   private get fits(): { width: number; height: number; screen: number } {
     const viewport = this.viewportBox;
-    if (!viewport) return { width: 1, height: 1, screen: 1 };
-    const width = viewport.width - this.chrome.width;
+    if (!viewport) return { width: Number.NaN, height: Number.NaN, screen: Number.NaN };
+    const scrollbar = this.stackScrolls ? this.scrollbarWidth : 0;
+    const width = this.stackScrolls
+      ? ccFitWidthWithScrollbar(this.target, viewport.width - scrollbar, 0, this.chrome, this.dpr, 0)
+      : ccFitWidthWithScrollbar(this.target, viewport.width, viewport.height, this.chrome, this.dpr, this.scrollbarWidth);
     return {
-      width: ccFitWidthZoom(this.box, width),
-      height: ccFitHeightZoom(this.box, viewport.height, this.chrome.height),
-      screen: ccFitScreenZoom(this.box, width, viewport.height, this.chrome.height)
+      width,
+      height: ccFitHeightZoom(this.target, viewport.height, this.chrome, this.dpr),
+      screen: ccFitScreenZoom(this.target, viewport.width - scrollbar, viewport.height, this.chrome, this.dpr)
     };
   }
 
@@ -1066,27 +1312,18 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   }
 
   get zoomRange(): PreviewZoomRange {
-    const fits = this.fits;
-    return ccZoomRange(Math.min(fits.width, fits.height, fits.screen));
+    const usable = Object.values(this.fits).filter(fit => Number.isFinite(fit) && fit > 0);
+    return ccZoomRange(usable.length > 0 ? Math.min(...usable) : Number.NaN);
   }
 
+  /** Device pixels per file pixel: 1 shows one pixel of the download on one pixel of the display. */
   get zoom(): number {
     return ccResolveZoom(this.activeZoomView, this.fits);
   }
 
-  /** The chart box at the current zoom, in whole CSS px. */
-  get boxWidth(): number {
-    return Math.max(1, Math.floor(this.box.width * this.zoom));
-  }
-
-  get boxHeight(): number {
-    return Math.max(1, Math.floor(this.box.height * this.zoom));
-  }
-
-  /** The display's ratio, lowered so no chart canvas passes 8 M device pixels. */
-  get deviceRatio(): number {
-    const ratio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-    return ccCanvasRatio(this.boxWidth, this.boxHeight, ratio);
+  /** The image's CSS box at the current zoom; whole CSS px at a fit. */
+  get displaySize(): { cssWidth: number; cssHeight: number } {
+    return ccDisplaySize(this.target, this.zoom, this.dpr, typeof this.activeZoomView === 'string');
   }
 
   get sliderValue(): number {
@@ -1157,11 +1394,12 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.scheduleMeasure();
   }
 
-  /** 100 %: the on-screen box is the download's layout box. */
+  /** 100 %: one pixel of the download on one pixel of the display. */
   actualSize(): void {
     this.setZoomView(1);
   }
 
+  /** The image keeps its last bitmap, scaled to the new box, until the quiet recomposition replaces it. */
   private setZoomView(view: CcZoomView): void {
     if (this.view === 'all') {
       this.allView = view;
@@ -1169,6 +1407,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       this.singleView = view;
     }
     this.cdr.markForCheck();
+    this.invalidateImages(COMPOSE_DEBOUNCE_MS);
   }
 
   /**
@@ -1202,9 +1441,11 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   // --- Observers and measuring ---
 
+  /** The viewport and the measured figure share one observer: either resizing re-fits the view. */
   private observeViewport(): void {
     this.viewportObserver?.disconnect();
     this.viewportObserver = null;
+    this.measuredFigure = null;
     const viewport = this.viewportEl;
     if (viewport && typeof ResizeObserver !== 'undefined') {
       // A size of zero (a hidden step) keeps the last fit; the observer fires again once shown.
@@ -1214,7 +1455,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.observeTiles();
   }
 
-  /** Only tiles within one viewport height of view hold a canvas; the rest keep their sized box. */
+  /** Only tiles within one viewport height of view are composed; the rest keep their sized box. */
   private observeTiles(): void {
     this.tileObserver?.disconnect();
     this.tileObserver = null;
@@ -1238,6 +1479,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     if (next.size !== this.nearKeys.size || [...next].some(key => !this.nearKeys.has(key))) {
       this.nearKeys = next;
       this.cdr.markForCheck();
+      this.scheduleCompose(0);
     }
   }
 
@@ -1255,10 +1497,11 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   }
 
   /**
-   * Measures on the next frame. A change that moves the charts' boxes can rewrap their captions, so
-   * a measurement that changed something measures again, at most `followUps` times.
+   * Measures on the next frame, so the figures have laid out once. A change that moves the images'
+   * boxes can rewrap the takeaway under them, so a measurement that changed something measures again,
+   * at most `followUps` times.
    */
-  private scheduleMeasure(followUps = 2): void {
+  private scheduleMeasure(followUps = 3): void {
     this.measureFollowUps = followUps;
     if (this.measureFrame !== null || this.destroyed) return;
     this.measureFrame = requestAnimationFrame(() => {
@@ -1271,51 +1514,177 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     });
   }
 
-  /** The viewport's content box and the figure chrome; false when nothing changed or nothing has a size. */
+  /**
+   * The viewport's full content box, the scrollbar it shows, the figure's HTML and the device ratio;
+   * false when nothing changed or nothing has a size. A change that moves the zoom marks every image
+   * stale.
+   *
+   * The box is the scroller's border box less its borders and padding, floored to whole CSS px
+   * (`previewStageContentBox`): `clientHeight` rounds, and can be a pixel too generous. Scrollbars are
+   * inside the border box, so the box is the room a fit has once they are gone.
+   */
   private measure(): boolean {
     const viewport = this.viewportEl;
     if (!viewport) return false;
     const style = getComputedStyle(viewport);
     const px = (value: string) => Number.parseFloat(value) || 0;
-    const width = Math.floor(viewport.clientWidth - px(style.paddingLeft) - px(style.paddingRight) + 1e-6);
-    const height = Math.floor(viewport.clientHeight - px(style.paddingTop) - px(style.paddingBottom) + 1e-6);
+    const rect = viewport.getBoundingClientRect();
+    const borders = {
+      left: px(style.borderLeftWidth), right: px(style.borderRightWidth),
+      top: px(style.borderTopWidth), bottom: px(style.borderBottomWidth)
+    };
+    const { width, height } = previewStageContentBox(rect.width, rect.height, {
+      left: borders.left + px(style.paddingLeft),
+      right: borders.right + px(style.paddingRight),
+      top: borders.top + px(style.paddingTop),
+      bottom: borders.bottom + px(style.paddingBottom)
+    });
     if (!(width > 0) || !(height > 0)) return false;
 
+    const scrollbar = Math.max(0, viewport.offsetWidth - viewport.clientWidth - borders.left - borders.right);
     const chrome = this.measureChrome(viewport) ?? this.chrome;
+    const dpr = ccPreviewDpr(window.devicePixelRatio || 1);
     const before = this.viewportBox;
     const changed = !before
       || Math.abs(before.width - width) >= MEASURE_TOLERANCE
       || Math.abs(before.height - height) >= MEASURE_TOLERANCE
       || Math.abs(this.chrome.width - chrome.width) >= MEASURE_TOLERANCE
-      || Math.abs(this.chrome.height - chrome.height) >= MEASURE_TOLERANCE;
+      || Math.abs(this.chrome.height - chrome.height) >= MEASURE_TOLERANCE
+      || (scrollbar > 0 && scrollbar !== this.scrollbarWidth)
+      || dpr !== this.dpr;
     if (!changed) return false;
+    const zoom = before ? this.zoom : Number.NaN;
     this.viewportBox = { width, height };
     this.chrome = chrome;
+    this.dpr = dpr;
+    if (scrollbar > 0) this.scrollbarWidth = scrollbar;
+    if (this.zoom !== zoom) this.invalidateImages(before ? COMPOSE_DEBOUNCE_MS : 0);
     return true;
   }
 
   /**
-   * The first drawn figure's size less its chart box: the caption, marker line and *Show data*
-   * summary across and down, an open *Show data* table left out.
+   * The first figure's HTML around its image, in whole CSS px, rounded up: across, its padding and
+   * border; down, the takeaway, the footer row and the *Show data* summary with their gaps, its
+   * padding and border, an open *Show data* body left out. Measured as the figure's box less the
+   * image's, never as a sum of rounded parts. The figure is observed, so a late change re-fits.
    */
-  private measureChrome(viewport: HTMLElement): { width: number; height: number } | null {
+  private measureChrome(viewport: HTMLElement): CcFigureChrome | null {
     for (const figure of Array.from(viewport.querySelectorAll<HTMLElement>('.cc-figure'))) {
-      const chartBox = figure.querySelector<HTMLElement>('.cc-chart-box');
-      if (!chartBox) continue;
+      const imageBox = figure.querySelector<HTMLElement>('.cc-chart-box');
+      if (!imageBox) continue;
+      if (figure !== this.measuredFigure) {
+        if (this.measuredFigure) this.viewportObserver?.unobserve(this.measuredFigure);
+        this.measuredFigure = figure;
+        this.viewportObserver?.observe(figure);
+      }
       const outer = figure.getBoundingClientRect();
-      const inner = chartBox.getBoundingClientRect();
-      let table = 0;
+      const inner = imageBox.getBoundingClientRect();
+      let body = 0;
       const data = figure.querySelector<HTMLDetailsElement>('details.cc-figure-data');
       if (data?.open) {
         const summary = data.querySelector('summary');
-        table = data.getBoundingClientRect().height - (summary?.getBoundingClientRect().height ?? 0);
+        body = data.getBoundingClientRect().height - (summary?.getBoundingClientRect().height ?? 0);
       }
       return {
-        width: Math.max(0, Math.ceil(outer.width - inner.width)),
-        height: Math.max(0, Math.ceil(outer.height - inner.height - table))
+        width: Math.max(0, Math.ceil(outer.width - inner.width - 1e-6)),
+        height: Math.max(0, Math.ceil(outer.height - inner.height - body - 1e-6))
       };
     }
     return null;
+  }
+
+  // --- Composition ---
+
+  /** Marks every image stale and composes the visible ones once changes have been quiet for `delay` ms. */
+  private invalidateImages(delay: number): void {
+    this.composeVersion++;
+    this.scheduleCompose(delay);
+  }
+
+  /** Composes the stale, visible images on the first frame after `delay` ms; a request supersedes the one before. */
+  private scheduleCompose(delay: number): void {
+    if (this.destroyed) return;
+    this.cancelScheduledCompose();
+    this.composeTimer = setTimeout(() => {
+      this.composeTimer = null;
+      this.composeFrame = requestAnimationFrame(() => {
+        this.composeFrame = null;
+        void this.composeVisible();
+      });
+    }, delay);
+  }
+
+  private cancelScheduledCompose(): void {
+    if (this.composeTimer !== null) clearTimeout(this.composeTimer);
+    if (this.composeFrame !== null) cancelAnimationFrame(this.composeFrame);
+    this.composeTimer = null;
+    this.composeFrame = null;
+  }
+
+  private composing = false;
+  private composeAgain = false;
+
+  /** One pass at a time; a request during a pass runs another after it. */
+  private async composeVisible(): Promise<void> {
+    if (this.composing) {
+      this.composeAgain = true;
+      return;
+    }
+    this.composing = true;
+    try {
+      await this.composeStale();
+    } finally {
+      this.composing = false;
+    }
+    if (this.composeAgain && !this.destroyed) {
+      this.composeAgain = false;
+      this.scheduleCompose(0);
+    }
+  }
+
+  /**
+   * Composes each visible chart whose image is older than the current version: the Single chart, or
+   * the tiles near the All view. The font and the logo are loaded first; a newer version abandons the
+   * pass, which its own pass replaces.
+   */
+  private async composeStale(): Promise<void> {
+    const version = this.composeVersion;
+    if (!this.viewportBox || !this.timeline) return;
+    await this.prepareComposition();
+    if (version !== this.composeVersion || this.destroyed) return;
+    const single = this.singleFigure;
+    const figures = this.view === 'all' ? this.figures.filter(figure => this.isNear(figure.key)) : single ? [single] : [];
+    for (const figure of figures) {
+      if (this.screenImages.get(figure.key)?.version === version) continue;
+      const image = await this.composeForScreen(figure);
+      if (version !== this.composeVersion || this.destroyed) return;
+      this.screenImages.set(figure.key, { ...image, version });
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * The screen's layout for one chart: the file's own (`ccFigureLayout`), rasterized at the current
+   * zoom, which changes only its density and pixel size; or why the file is refused.
+   */
+  private screenLayout(figure: CcFigure, context: CcComposeContext): { layout: FigureExportLayout | null; refusal: string } {
+    const target = ccFigureLayout(figure, context, this.chartSize);
+    if (!target.layout) return { layout: null, refusal: target.refusal ?? '' };
+    return { layout: ccPreviewLayout(target.layout, this.zoom, this.dpr)?.layout ?? null, refusal: '' };
+  }
+
+  private async composeForScreen(figure: CcFigure): Promise<{ canvas: HTMLCanvasElement | null; refusal: string }> {
+    if (!figure.config) return { canvas: null, refusal: '' };
+    const context = this.composeContext();
+    const { layout, refusal } = this.screenLayout(figure, context);
+    if (!layout) return { canvas: null, refusal };
+    let canvas: HTMLCanvasElement | null;
+    try {
+      canvas = await composeCcFigure(figure, context, layout);
+    } catch {
+      canvas = null;
+    }
+    return { canvas, refusal: canvas ? '' : `${figure.title} could not be composed: its chart could not be built.` };
   }
 
   // --- Copy and Download ---
@@ -1379,39 +1748,39 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   /** The data and settings of one export, read once so a change during it cannot mix two states. */
   private exportSnapshot(): CcExportSnapshot {
     return {
-      plan: ccExportLayout(this.chartSize),
-      sizeError: this.sizeError,
+      size: { ...this.chartSize },
       input: this.figureInput(),
-      theme: ccExportTheme(this.imageTheme),
-      hiddenSeries: this.hiddenSeries,
-      zeroBaseline: this.zeroBaseline,
-      decimals: this.decimals,
-      subject: this.chartSubject,
-      logo: this.showLogo ? this.logoImage : null,
+      context: this.composeContext(),
       webpQuality: this.webpQuality,
       modelKey: this.modelKey
     };
   }
 
+  /** The snapshot once the font and the logo every composition measures and draws with have loaded. */
+  private async preparedExportSnapshot(): Promise<CcExportSnapshot> {
+    await this.prepareComposition();
+    return this.exportSnapshot();
+  }
+
   /**
-   * Composes one chart off-screen as the screen draws it — header band, logo, series and markers — in
-   * the snapshot's theme.
+   * What the file of one chart composes: the chart built from the snapshot's data and the plot and
+   * frame at the file's own layout, the screen's request apart from the density and the pixel size.
    */
+  private fileComposition(key: CcFigureKey, snapshot: CcExportSnapshot): {
+    figure: CcFigure | null; layout: FigureExportLayout | null; refusal: string | null;
+  } {
+    if (!snapshot.input) return { figure: null, layout: null, refusal: null };
+    const figure = buildComposedCcFigure(key, snapshot.input, snapshot.context);
+    const target = ccFigureLayout(figure, snapshot.context, snapshot.size);
+    return { figure, layout: target.layout, refusal: target.layout ? null : target.refusal };
+  }
+
+  /** Composes one chart at the chart size, exactly as the screen shows it, and encodes it. */
   private async chartImage(key: CcFigureKey, format: FigureExportFormat, snapshot: CcExportSnapshot): Promise<CcChartImage> {
-    const { plan, input } = snapshot;
-    if (!plan.layout) return { result: null, refusal: plan.refusal ?? snapshot.sizeError, empty: false };
-    if (!input) return { result: null, refusal: null, empty: true };
-    const figure = buildCcFigure(key, input, {
-      theme: snapshot.theme,
-      reducedMotion: true,
-      hiddenSeries: snapshot.hiddenSeries,
-      zeroBaseline: snapshot.zeroBaseline,
-      decimals: snapshot.decimals,
-      header: { title: figureTitle(key), subject: snapshot.subject },
-      logo: snapshot.logo
-    });
-    if (!figure.config) return { result: null, refusal: null, empty: true };
-    const canvas = await renderPlotOffscreen(figure.config as unknown as OffscreenPlotConfig, plan.layout);
+    const { figure, layout, refusal } = this.fileComposition(key, snapshot);
+    if (!figure || !figure.config) return { result: null, refusal: null, empty: true };
+    if (!layout) return { result: null, refusal: refusal ?? '', empty: false };
+    const canvas = await composeCcFigure(figure, snapshot.context, layout);
     if (!canvas) return { result: null, refusal: null, empty: false };
     return { result: await encodeFigureImage(canvas, format, snapshot.webpQuality), refusal: null, empty: false };
   }
@@ -1423,7 +1792,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.exportStatus = '';
     this.setExporting(true);
     try {
-      const image = await this.chartImage(figure.key, 'png', this.exportSnapshot());
+      const image = await this.chartImage(figure.key, 'png', await this.preparedExportSnapshot());
       if (!image.result) {
         this.exportStatus = image.refusal ?? `${title} could not be copied.`;
         return;
@@ -1447,8 +1816,9 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.exportStatus = '';
     this.setExporting(true);
     try {
-      const snapshot = this.exportSnapshot();
-      const image = await this.chartImage(figure.key, this.imageFormat, snapshot);
+      const format = this.imageFormat;
+      const snapshot = await this.preparedExportSnapshot();
+      const image = await this.chartImage(figure.key, format, snapshot);
       if (!image.result) {
         this.exportStatus = image.refusal ?? `${title} could not be downloaded.`;
         return;
@@ -1470,7 +1840,6 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     if (this.downloadAllBlockReason) return;
     const figures = [...this.figures];
     const format = this.imageFormat;
-    const snapshot = this.exportSnapshot();
     this.exportStatus = '';
     this.setExporting(true);
     const stamp = new Date();
@@ -1479,6 +1848,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     const failed: string[] = [];
     let fellBack = false;
     try {
+      const snapshot = await this.preparedExportSnapshot();
       for (const figure of figures) {
         const image = await this.chartImage(figure.key, format, snapshot);
         if (image.refusal) {
@@ -1552,13 +1922,11 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       zeroBaseline: this.zeroBaseline,
       decimals: this.decimals,
       markNotAnalyzed: this.markNotAnalyzed,
-      imageTheme: this.imageTheme,
       imageFormat: this.imageFormat,
       webpQuality: this.webpQuality,
       chartSizeOpen: this.chartSizeOpen,
       imageFormatOpen: this.imageFormatOpen,
-      singleFigure: this.singleKey,
-      logo: this.showLogo
+      singleFigure: this.singleKey
     });
   }
 }

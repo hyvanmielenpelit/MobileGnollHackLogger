@@ -2,7 +2,7 @@
      [style.--gh-fig-sidebar-width]="sidebarWidth + 'px'">
 
   <!-- ===========================================================================================
-       THE SETTINGS SIDEBAR: Data · Events · Annotations · Download. Collapsed by its toggle in the
+       THE SETTINGS SIDEBAR: Data · Events · Annotations · Theme · Charts · Download. Collapsed by its toggle in the
        view bar, which stays rendered outside it; resized by the handle on its right edge.
        =========================================================================================== -->
   <aside id="cc-tl-sidebar" class="gh-fig-sidebar cc-tl-sidebar" aria-label="Timeline settings" [hidden]="sidebarCollapsed">
@@ -82,27 +82,6 @@
             </label>
           </fieldset>
 
-          <fieldset class="gh-fieldset cc-tl-group cc-tl-decimals" aria-describedby="cc-tl-decimals-hint">
-            <legend>Decimal places</legend>
-            <p id="cc-tl-decimals-hint" class="cc-tl-hint">For point labels, tooltips, takeaways and Show data. Axis ticks keep the decimals their step needs; times under one second stay in whole milliseconds.</p>
-            <div class="cc-tl-decimals-grid">
-              @for (row of decimalRows; track row.key) {
-                <label class="cc-tl-decimals-label" [for]="'cc-tl-decimals-' + row.key">{{ row.title }}</label>
-                <select class="gh-input cc-tl-decimals-select" [id]="'cc-tl-decimals-' + row.key"
-                        (change)="setDecimals(row.key, $any($event.target).value)">
-                  <option value="" [selected]="row.value === null">{{ row.autoText }}</option>
-                  @for (n of row.choices; track n) {
-                    <option [value]="n" [selected]="row.value === n">{{ n }}</option>
-                  }
-                </select>
-              }
-            </div>
-            <div class="cc-tl-checklist-actions">
-              <button type="button" class="btn-link cc-tl-decimals-reset" [attr.aria-disabled]="anyDecimals ? null : 'true'"
-                      (click)="anyDecimals && resetDecimals()">All automatic<span class="visually-hidden"> decimal places</span></button>
-            </div>
-          </fieldset>
-
           <fieldset class="gh-fieldset cc-tl-group">
             <legend>Runs</legend>
             <label class="checkbox-label align-start">
@@ -152,6 +131,47 @@
         </div>
       }
 
+      @case ('theme') {
+        <!-- Model Comparison's Theme tab, on this workspace's own stored style and open sections. -->
+        <div class="gh-fig-side-panel cc-tl-style-panel" role="tabpanel" id="cc-tl-side-panel-theme"
+             aria-labelledby="cc-tl-side-tab-theme" tabindex="0">
+          <app-figure-style-panel kind="appearance" idPrefix="cc-style" [openStorageKey]="figureStylePanelOpenKey"
+                                  [figureStyle]="figureStyle" [fontLoadStatus]="fontLoadStatus"
+                                  (figureStyleChange)="onFigureStyleChange($event)"></app-figure-style-panel>
+        </div>
+      }
+
+      @case ('charts') {
+        <div class="gh-fig-side-panel cc-tl-style-panel" role="tabpanel" id="cc-tl-side-panel-charts"
+             aria-labelledby="cc-tl-side-tab-charts" tabindex="0">
+          <app-figure-style-panel kind="timeline" idPrefix="cc-style" [openStorageKey]="figureStylePanelOpenKey"
+                                  [figureStyle]="figureStyle"
+                                  (figureStyleChange)="onFigureStyleChange($event)"></app-figure-style-panel>
+
+          <!-- Per chart, not per measure, so it stays this workspace's own. -->
+          <fieldset class="gh-fieldset cc-tl-group cc-tl-decimals" aria-describedby="cc-tl-decimals-hint">
+            <legend>Number format</legend>
+            <p id="cc-tl-decimals-hint" class="cc-tl-hint">Decimal places for the values at the points, the takeaways and Show data. Axis ticks keep the decimals their step needs; times under one second stay in whole milliseconds.</p>
+            <div class="cc-tl-decimals-grid">
+              @for (row of decimalRows; track row.key) {
+                <label class="cc-tl-decimals-label" [for]="'cc-tl-decimals-' + row.key">{{ row.title }}</label>
+                <select class="gh-input cc-tl-decimals-select" [id]="'cc-tl-decimals-' + row.key"
+                        (change)="setDecimals(row.key, $any($event.target).value)">
+                  <option value="" [selected]="row.value === null">{{ row.autoText }}</option>
+                  @for (n of row.choices; track n) {
+                    <option [value]="n" [selected]="row.value === n">{{ n }}</option>
+                  }
+                </select>
+              }
+            </div>
+            <div class="cc-tl-checklist-actions">
+              <button type="button" class="btn-link cc-tl-decimals-reset" [attr.aria-disabled]="anyDecimals ? null : 'true'"
+                      (click)="anyDecimals && resetDecimals()">All automatic<span class="visually-hidden"> decimal places</span></button>
+            </div>
+          </fieldset>
+        </div>
+      }
+
       @case ('download') {
         <!-- Settings only: each chart downloads from its tile or from Single chart, all of them from All charts. -->
         <div class="gh-fig-side-panel" role="tabpanel" id="cc-tl-side-panel-download"
@@ -174,31 +194,7 @@
                                      (openChange)="onImageFormatOpenChange($event)"
                                      (reset)="resetImageFormat()"></app-export-format-section>
 
-          <fieldset class="gh-choice cc-tl-theme">
-            <legend>Theme</legend>
-            <label class="gh-radio">
-              <input type="radio" name="cc-tl-image-theme" id="cc-tl-image-theme-screen" value="screen"
-                     [checked]="imageTheme === 'screen'" (change)="setImageTheme('screen')">
-              As shown (dark)
-            </label>
-            <label class="gh-radio">
-              <input type="radio" name="cc-tl-image-theme" id="cc-tl-image-theme-print" value="print"
-                     [checked]="imageTheme === 'print'" (change)="setImageTheme('print')">
-              Light, for print
-            </label>
-          </fieldset>
-
-          <label class="checkbox-label align-start cc-tl-logo">
-            <input type="checkbox" id="cc-tl-show-logo" [checked]="showLogo"
-                   aria-describedby="cc-tl-show-logo-hint"
-                   (change)="setShowLogo($any($event.target).checked)">
-            <span>
-              Show the GnollBench logo
-              <span id="cc-tl-show-logo-hint" class="form-hint">On the charts and in every image.</span>
-            </span>
-          </label>
-
-          <p class="cc-tl-hint">The image is the chart as shown: its title, the model and the GnollBench logo, without the takeaway or the marker list. Download one chart from its tile or from Single chart, or all of them at once from All charts.</p>
+          <p class="cc-tl-hint">The image is the chart as shown: its heading, badges, logo, notes and footer, without the takeaway or Show data. Download one chart from its tile or from Single chart, or all of them at once from All charts.</p>
 
           @if (sizeError) {
             <p class="gh-field-error cc-tl-size-error" role="alert">
@@ -372,8 +368,9 @@
             <div popover="hint" class="gh-tooltip" id="cc-tl-tip-download-all"
                  style="position-anchor: --cc-tl-tip-download-all">{{ downloadAllTooltip }}</div>
 
-            <!-- One column of tiles. Only tiles near the view draw a canvas; the rest keep their box. -->
-            <div #viewport class="gh-fig-viewport cc-tl-viewport">
+            <!-- One column of tiles, each its download composed for the screen. Only tiles near the view
+                 are composed; the rest keep their box. -->
+            <div #viewport class="gh-fig-viewport cc-tl-viewport" [attr.style]="figureBackdropStyle">
               @if (figures.length === 0) {
                 <p class="cc-tl-empty">No chart is shown. Choose charts under Data.</p>
               } @else {
@@ -381,8 +378,7 @@
                   @for (figure of figures; track figure.key) {
                     <div #tile class="gh-fig-tile cc-tl-tile" [attr.data-figure]="figure.key">
                       <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-' + figure.key"
-                                           [boxWidth]="boxWidth" [boxHeight]="boxHeight"
-                                           [deviceRatio]="deviceRatio" [titleInChart]="true" [render]="isNear(figure.key)"
+                                           [composed]="composedFor(figure)" [titleInChart]="true" [render]="isNear(figure.key)"
                                            [dataHeadingLevel]="5" (showEvents)="onShowEvents()">
                         <!-- In the figure's footer, under the chart; all three are tab stops, and the tile
                              itself is not focusable. The handlers refuse on their own while the buttons
@@ -434,9 +430,9 @@
                 </div>
               }
             </div>
-            <p id="cc-tl-all-hint" class="visually-hidden">Every shown chart in one column. Plus and minus zoom
-              them all, and 0 fits one whole chart to the view. Zoom changes only this view; the downloads
-              keep the chart size.</p>
+            <p id="cc-tl-all-hint" class="visually-hidden">Every shown chart in one column, each as its download
+              shows it. Plus and minus zoom them all, and 0 fits one whole chart to the view. Zoom changes only
+              this view; the downloads keep the chart size. Show data under each chart lists its values.</p>
           </div>
         } @else {
           <div class="gh-fig-panel cc-tl-panel" role="tabpanel" tabindex="0"
@@ -559,21 +555,21 @@
             <div popover="hint" class="gh-tooltip" id="cc-tl-tip-single-download"
                  style="position-anchor: --cc-tl-tip-single-download">{{ downloadTooltip(singleFigure) }}</div>
 
-            <div #viewport class="gh-fig-viewport cc-tl-viewport">
+            <div #viewport class="gh-fig-viewport cc-tl-viewport" [attr.style]="figureBackdropStyle">
               @if (singleFigure; as figure) {
                 <div class="gh-fig-tile cc-tl-tile" [attr.data-figure]="figure.key">
                   <app-cc-chart-figure [figure]="figure" [figureId]="'cc-tl-fig-single-' + figure.key"
-                                       [boxWidth]="boxWidth" [boxHeight]="boxHeight"
-                                       [deviceRatio]="deviceRatio" [titleInChart]="true"
+                                       [composed]="composedFor(figure)" [titleInChart]="true"
                                        [dataHeadingLevel]="5" (showEvents)="onShowEvents()"></app-cc-chart-figure>
                 </div>
               } @else {
                 <p class="cc-tl-empty">No chart is shown. Choose charts under Data.</p>
               }
             </div>
-            <p id="cc-tl-single-hint" class="visually-hidden">One chart. Plus and minus zoom it, 0 fits it to the
-              screen and 1 shows it at 100 %, the layout of its download. Zoom changes only this view; the
-              downloads keep the chart size.</p>
+            <p id="cc-tl-single-hint" class="visually-hidden">One chart, as its download shows it. Plus and minus
+              zoom it, 0 fits it to the screen and 1 shows it at 100 %, one pixel of the download on one pixel of
+              the display. Zoom changes only this view; the downloads keep the chart size. Show data under the
+              chart lists its values.</p>
           </div>
         }
       </div>

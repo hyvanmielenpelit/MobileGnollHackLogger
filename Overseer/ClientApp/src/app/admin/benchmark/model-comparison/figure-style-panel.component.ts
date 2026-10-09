@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
 import type { FigureBadgeKind } from './figure-chrome';
@@ -22,16 +22,19 @@ import {
   HIDDEN_INTERVALS_NOTE,
   NumericAppearanceStyleKey,
   NumericBarStyleKey,
+  NumericTimelineStyleKey,
   ProfileFigureStyle,
   RangeControl,
   ScatterFigureStyle,
+  TimelineFigureStyle,
   appearanceRangeControl,
   badgeControlsFor,
   barRangeControl,
   chromeRangeControl,
   clampToControl,
   normalizeHexColor,
-  scatterRangeControl
+  scatterRangeControl,
+  timelineRangeControl
 } from './figure-style';
 import { FIGURE_FONTS, figureFont } from './figure-fonts';
 import { appearanceWarnings } from './figure-theme';
@@ -52,10 +55,13 @@ import type { CostMeasure, SpeedMeasure } from './model-comparison-charts';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 
-/** Which control set the panel shows: the bar panels', the trade-off scatters', the profile's, or the theme tab's. */
-export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile' | 'appearance';
+/**
+ * Which control set the panel shows: the bar panels', the trade-off scatters', the profile's, Chat
+ * Consistency's timelines', or the theme tab's.
+ */
+export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile' | 'timeline' | 'appearance';
 
-type StyleFamily = 'bar' | 'scatter' | 'profile';
+type StyleFamily = 'bar' | 'scatter' | 'profile' | 'timeline';
 
 /** Every kind the generic section, range and reset methods operate over. */
 type PanelFamily = StyleFamily | 'appearance';
@@ -113,6 +119,18 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
     NUMBERS_SECTION,
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
   ],
+  timeline: [
+    { name: 'heading', title: 'Heading and badges', keys: DIRECTED_HEADING_KEYS },
+    { name: 'lines', title: 'Lines and points', keys: ['lineWidthPx', 'pointRadiusPx', 'areaWash'] },
+    {
+      name: 'values',
+      title: 'Values and axes',
+      keys: ['valueLabels', 'valueLabelSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'axisTitleWeight', 'gridlines', 'plotFrame']
+    },
+    { name: 'markers', title: 'Markers and legend', keys: ['markerTagSizePx', 'legendTextSizePx'] },
+    { name: 'notes', title: 'Notes', keys: ['markerNote', 'notAnalyzedNote'] },
+    { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
+  ],
   appearance: [
     { name: 'theme', title: 'Theme and background', keys: ['theme', 'background', 'backgroundColor', 'previewBackdrop', 'previewBackdropColor'] },
     { name: 'font', title: 'Font', keys: ['fontFamily', 'headingWeight', 'labelWeight'] },
@@ -129,12 +147,13 @@ export interface NumberOption {
 }
 
 /**
- * Where the open sections are kept, per browser, as `{ bar: [...], scatter: [...], profile: [...],
- * appearance: [...] }`. A family missing from the stored value opens its first section.
+ * Where the open sections are kept by default, per browser, as `{ bar: [...], scatter: [...],
+ * profile: [...], timeline: [...], appearance: [...] }`. A family missing from the stored value
+ * opens its first section.
  */
 export const FIGURE_STYLE_PANEL_OPEN_KEY = 'overseer.figureStylePanel.open';
 
-const FAMILIES: readonly PanelFamily[] = ['bar', 'scatter', 'profile', 'appearance'];
+const FAMILIES: readonly PanelFamily[] = ['bar', 'scatter', 'profile', 'timeline', 'appearance'];
 
 /** The badge names a Heading and badges read-out lists. */
 const BADGE_READOUT_NAMES: Record<FigureBadgeKind, string> = {
@@ -142,7 +161,9 @@ const BADGE_READOUT_NAMES: Record<FigureBadgeKind, string> = {
   models: 'models',
   runs: 'runs',
   questions: 'questions',
-  pricing: 'pricing'
+  pricing: 'pricing',
+  model: 'model',
+  dates: 'dates'
 };
 
 const THEME_LABELS: Record<FigureThemeName, string> = { dark: 'Dark', light: 'Light' };
@@ -178,8 +199,9 @@ function sameStyleValue(a: unknown, b: unknown): boolean {
 
 /**
  * The sidebar's Theme tab and Style sections: one control set for the three bar panels, another
- * for the three trade-off charts, a caption set for the profile, and the theme, font and border
- * controls shared by every chart and the table image — each as a stack of collapsible sections.
+ * for the three trade-off charts, a caption set for the profile, one for Chat Consistency's
+ * timelines, and the theme, font and border controls shared by every chart and the table image —
+ * each as a stack of collapsible sections.
  *
  * Every style change is emitted as a whole new style, and the wizard owns the style, its persistence
  * and the rebuild. The panel keeps only the last finite bar width, the last chosen colour of a
@@ -194,10 +216,16 @@ function sameStyleValue(a: unknown, b: unknown): boolean {
   styleUrls: ['./figure-style-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FigureStylePanelComponent implements OnInit {
+export class FigureStylePanelComponent implements OnChanges, OnInit {
   @Input() kind: FigureStylePanelKind = 'bar';
 
   @Input() figureStyle: FigureStyle = DEFAULT_FIGURE_STYLE;
+
+  /** What every element id the panel writes starts with, so two hosts' panels never share an id. */
+  @Input() idPrefix = 'mc-style';
+
+  /** The `localStorage` key of the open sections, so each host keeps its own. */
+  @Input() openStorageKey = FIGURE_STYLE_PANEL_OPEN_KEY;
 
   /** The wizard's *Label models inside the chart* toggle. */
   @Input() directLabels = false;
@@ -236,6 +264,13 @@ export class FigureStylePanelComponent implements OnInit {
   readonly scatterLabelControl = scatterRangeControl('labelTextSizePx');
   readonly scatterAxisControls = [scatterRangeControl('axisTextSizePx'), scatterRangeControl('axisTitleSizePx')];
 
+  readonly timelineLineControls: readonly RangeControl<NumericTimelineStyleKey>[] =
+    (['lineWidthPx', 'pointRadiusPx'] as const).map(timelineRangeControl);
+  readonly timelineValueControl = timelineRangeControl('valueLabelSizePx');
+  readonly timelineAxisControls = [timelineRangeControl('axisTextSizePx'), timelineRangeControl('axisTitleSizePx')];
+  readonly timelineMarkerControls: readonly RangeControl<NumericTimelineStyleKey>[] =
+    (['markerTagSizePx', 'legendTextSizePx'] as const).map(timelineRangeControl);
+
   readonly appearanceBorderControls: readonly RangeControl<NumericAppearanceStyleKey>[] =
     (['borderWidthPx', 'borderRadiusPx'] as const).map(appearanceRangeControl);
   readonly appearanceLogoControls: readonly RangeControl<NumericAppearanceStyleKey>[] =
@@ -244,7 +279,8 @@ export class FigureStylePanelComponent implements OnInit {
   readonly badgeControls: Readonly<Record<StyleFamily, readonly BadgeControl[]>> = {
     bar: badgeControlsFor('bar'),
     scatter: badgeControlsFor('scatter'),
-    profile: badgeControlsFor('profile')
+    profile: badgeControlsFor('profile'),
+    timeline: badgeControlsFor('timeline')
   };
 
   readonly orientationOptions = [
@@ -294,8 +330,8 @@ export class FigureStylePanelComponent implements OnInit {
   readonly meanTimeHint = `Adds, on mean time per question: ${MEAN_TIME_NO_INTERVAL_NOTE}`;
   readonly frontierHint = `Adds, when it applies: ${FRONTIER_UNCERTAINTY_NOTE}`;
 
-  /** Open section keys, `bar.heading` and the like. */
-  openSections: Set<string> = this.readOpenSections();
+  /** Open section keys, `bar.heading` and the like; read from `openStorageKey` once the inputs are set. */
+  openSections: Set<string> = new Set<string>();
 
   /** What the status region announces after a reset; cleared by the next control change. */
   resetStatus = '';
@@ -309,8 +345,16 @@ export class FigureStylePanelComponent implements OnInit {
   /** Where a colour that can follow the theme returns to when it is switched back to a fixed value. */
   private lastNullableColor: Partial<Record<NullableAppearanceColorKey, string>> = {};
 
+  ngOnChanges(changes: SimpleChanges): void {
+    const key = changes['openStorageKey'];
+    if (key && !key.firstChange) {
+      this.openSections = this.readOpenSections();
+    }
+  }
+
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.openSections = this.readOpenSections();
   }
 
   get bar(): BarFigureStyle {
@@ -323,6 +367,10 @@ export class FigureStylePanelComponent implements OnInit {
 
   get profile(): ProfileFigureStyle {
     return this.figureStyle.profile;
+  }
+
+  get timeline(): TimelineFigureStyle {
+    return this.figureStyle.timeline;
   }
 
   get appearance(): FigureAppearanceStyle {
@@ -357,7 +405,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   controlId(family: PanelFamily, key: string): string {
-    return `mc-style-${family}-${key}`;
+    return `${this.idPrefix}-${family}-${key}`;
   }
 
   tipId(family: PanelFamily, key: string): string {
@@ -392,6 +440,9 @@ export class FigureStylePanelComponent implements OnInit {
     if (family === 'scatter') {
       return (key === 'labelTextSizePx' && !this.labelsShown)
         || (key === 'frontierWidthPx' && !this.scatter.frontierLine);
+    }
+    if (family === 'timeline') {
+      return key === 'valueLabelSizePx' && !this.timeline.valueLabels;
     }
     return false;
   }
@@ -451,12 +502,16 @@ export class FigureStylePanelComponent implements OnInit {
     this.setFamily('profile', key, value);
   }
 
+  setTimeline<K extends keyof TimelineFigureStyle>(key: K, value: TimelineFigureStyle[K]): void {
+    this.setFamily('timeline', key, value);
+  }
+
   setAppearance<K extends keyof FigureAppearanceStyle>(key: K, value: FigureAppearanceStyle[K]): void {
     this.setFamily('appearance', key, value);
   }
 
   badgeControlId(family: StyleFamily, kind: FigureBadgeKind): string {
-    return `mc-style-${family}-badge-${kind}`;
+    return `${this.idPrefix}-${family}-badge-${kind}`;
   }
 
   badgeShown(family: StyleFamily, kind: FigureBadgeKind): boolean {
@@ -477,12 +532,8 @@ export class FigureStylePanelComponent implements OnInit {
     return family === 'profile' ? 'fit' : this.figureStyle[family].betterBadgePlacement;
   }
 
-  setBetterBadgePlacement(family: 'bar' | 'scatter', value: BetterBadgePlacement): void {
-    if (family === 'bar') {
-      this.setBar('betterBadgePlacement', value);
-    } else {
-      this.setScatter('betterBadgePlacement', value);
-    }
+  setBetterBadgePlacement(family: 'bar' | 'scatter' | 'timeline', value: BetterBadgePlacement): void {
+    this.setFamily(family, 'betterBadgePlacement', value);
   }
 
   checkedOf(event: Event): boolean {
@@ -617,7 +668,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   numberControlId(family: StyleFamily, measure: NumberMeasure): string {
-    return `mc-style-${family}-number-${measure}`;
+    return `${this.idPrefix}-${family}-number-${measure}`;
   }
 
   /** What the row's `<output>` shows: the family's sample written at the measure's current decimal count. */
@@ -626,7 +677,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   numberSampleId(family: StyleFamily, measure: NumberMeasure): string {
-    return `mc-style-${family}-number-${measure}-sample`;
+    return `${this.idPrefix}-${family}-number-${measure}-sample`;
   }
 
   onNumber(measure: NumberMeasure, event: Event): void {
@@ -668,6 +719,11 @@ export class FigureStylePanelComponent implements OnInit {
   resetProfile(): void {
     this.figureStyleChange.emit({ ...this.figureStyle, profile: DEFAULT_FIGURE_STYLE.profile });
     this.resetStatus = 'Profile style reset to defaults.';
+  }
+
+  resetTimeline(): void {
+    this.figureStyleChange.emit({ ...this.figureStyle, timeline: DEFAULT_FIGURE_STYLE.timeline });
+    this.resetStatus = 'Timeline style reset to defaults.';
   }
 
   /** Whether every field the section edits, and for Labels and legend the two page toggles, is at its default. */
@@ -755,7 +811,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   sectionId(family: PanelFamily, name: string): string {
-    return `mc-style-${family}-section-${name}`;
+    return `${this.idPrefix}-${family}-section-${name}`;
   }
 
   isOpen(family: PanelFamily, name: string): boolean {
@@ -823,7 +879,35 @@ export class FigureStylePanelComponent implements OnInit {
         return [state, note].filter((part) => part !== '').join(' · ');
       }
       default:
-        return family === 'bar' ? this.barReadout(name) : this.scatterReadout(name);
+        return family === 'bar' ? this.barReadout(name)
+          : family === 'timeline' ? this.timelineReadout(name)
+            : this.scatterReadout(name);
+    }
+  }
+
+  private timelineReadout(name: string): string {
+    const timeline = this.timeline;
+    switch (name) {
+      case 'lines':
+        return [
+          `line ${timeline.lineWidthPx} px`,
+          `points ${timeline.pointRadiusPx} px`,
+          ...(timeline.areaWash ? ['area wash'] : [])
+        ].join(' · ');
+      case 'values':
+        return [
+          timeline.valueLabels ? `values ${timeline.valueLabelSizePx} px` : 'no values',
+          `axis ${timeline.axisTextSizePx}/${timeline.axisTitleSizePx} px`,
+          timeline.gridlines ? 'gridlines' : 'no gridlines'
+        ].join(' · ');
+      case 'markers':
+        return [`tags ${timeline.markerTagSizePx} px`, `legend ${timeline.legendTextSizePx} px`].join(' · ');
+      case 'notes': {
+        const notes = [...(timeline.markerNote ? ['markers'] : []), ...(timeline.notAnalyzedNote ? ['gray crosses'] : [])];
+        return notes.length > 0 ? notes.join(', ') : 'none';
+      }
+      default:
+        return '';
     }
   }
 
@@ -891,7 +975,7 @@ export class FigureStylePanelComponent implements OnInit {
   private readOpenSections(): Set<string> {
     let stored: unknown = null;
     try {
-      const raw = localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY);
+      const raw = localStorage.getItem(this.openStorageKey);
       stored = raw === null ? null : JSON.parse(raw);
     } catch {
       stored = null;
@@ -920,7 +1004,7 @@ export class FigureStylePanelComponent implements OnInit {
         .filter((name) => open.has(`${family}.${name}`));
     }
     try {
-      localStorage.setItem(FIGURE_STYLE_PANEL_OPEN_KEY, JSON.stringify(record));
+      localStorage.setItem(this.openStorageKey, JSON.stringify(record));
     } catch {
       // Private mode or blocked storage: the sections still open and close for this session.
     }

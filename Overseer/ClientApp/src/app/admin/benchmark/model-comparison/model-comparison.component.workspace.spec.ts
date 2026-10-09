@@ -95,6 +95,7 @@ describe('ModelComparisonComponent', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, titleSizePx: 30, badgeTextSizePx: 14, footerTextSizePx: 16 },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, footer: false },
       profile: { ...DEFAULT_FIGURE_STYLE.profile, titleSizePx: 22 },
+      timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
       table: DEFAULT_FIGURE_STYLE.table

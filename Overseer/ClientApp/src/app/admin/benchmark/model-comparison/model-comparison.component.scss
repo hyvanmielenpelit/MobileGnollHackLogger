@@ -1215,11 +1215,3 @@
   top: 12px;
   right: 12px;
 }
-
-/* A transparent background, shown over the preview backdrop: the element's own CSS background,
-   behind the bitmap, so a written file never contains it. The colour arrives as
-   `--mc-figure-backdrop`, inherited from the canvas's scroller; without it, the checkerboard. */
-.mc-all-canvas.is-transparent-figure,
-.mc-preview-canvas.is-transparent-figure {
-  background: var(--mc-figure-backdrop, repeating-conic-gradient(#8a8a8a 0 25%, #bdbdbd 0 50%) 0 0 / 16px 16px);
-}

@@ -5751,6 +5751,18 @@ progress.job-progress {
   }
 }
 
+/* A figure's canvas: block-level, so it leaves no inline baseline gap under it. */
+.gh-fig-canvas {
+  display: block;
+}
+
+/* A transparent background, shown over the preview backdrop: the element's own CSS background,
+   behind the bitmap, so a written file never contains it. The color arrives as
+   `--gh-fig-backdrop`, inherited from the canvas's scroller; without it, the checkerboard. */
+.gh-fig-canvas.is-transparent-figure {
+  background: var(--gh-fig-backdrop, repeating-conic-gradient(#8a8a8a 0 25%, #bdbdbd 0 50%) 0 0 / 16px 16px);
+}
+
 /* --- The view toolbars: Single chart, the table views, and All charts' zoom --- */
 
 /* Figure (or a label), zoom and export groups on one line, the export group at the end; wraps only

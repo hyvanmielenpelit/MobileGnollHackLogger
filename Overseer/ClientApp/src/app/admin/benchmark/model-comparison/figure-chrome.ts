@@ -11,7 +11,7 @@ import { parseServerUtcDate } from '../../../utils/date.util';
 export type FigureBadgeTone = 'neutral' | 'pricing';
 
 /** Which badge a figure's badge is, so the style can hide it by kind. */
-export type FigureBadgeKind = 'direction' | 'models' | 'runs' | 'questions' | 'pricing';
+export type FigureBadgeKind = 'direction' | 'models' | 'runs' | 'questions' | 'pricing' | 'model' | 'dates';
 
 export interface FigureBadge {
   readonly text: string;

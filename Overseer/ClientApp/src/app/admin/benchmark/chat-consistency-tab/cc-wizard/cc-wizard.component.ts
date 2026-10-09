@@ -255,14 +255,6 @@ export class CcWizardComponent {
     return setUnitKind(this.compareSet?.key);
   }
 
-  /** The charts' subject: `Claude 5.5 Haiku (xhigh) · Two initial suites (revision 1)`, the model alone without a set. */
-  get subjectLabel(): string {
-    const axis = this.axis;
-    if (!axis) return '';
-    const set = this.compareSet;
-    return set ? `${axis.displayName} · ${set.label}` : axis.displayName;
-  }
-
   /** The UTC days of the first and last unit in the analysis; null with none. */
   get analysisSpan(): { first: string; last: string } | null {
     return this.scopeState().span;

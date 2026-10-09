@@ -136,10 +136,21 @@
   }
 }
 
-// The vertical scrollbar's gutter is always reserved, so a scrollbar that a zoom brings or takes
-// away never changes the width the charts are fitted to.
+// No reserved scrollbar gutter: a chart that fits shows none, and the fits leave room for a scrollbar
+// only where one will show (`ccFitWidthWithScrollbar`).
 .cc-tl-viewport {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
+}
+
+// The figure style panel, then this workspace's own Number format, in the Charts tab.
+.cc-tl-style-panel {
+  > app-figure-style-panel {
+    display: block;
+  }
+
+  > .cc-tl-decimals {
+    margin-top: 16px;
+  }
 }
 
 .cc-tl-tiles {

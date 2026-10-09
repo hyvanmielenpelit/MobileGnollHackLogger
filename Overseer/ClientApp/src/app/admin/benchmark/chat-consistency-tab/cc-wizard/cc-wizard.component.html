@@ -98,7 +98,7 @@
                                    [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeText"
                                    [unitKind]="unitKind" [setKey]="compareSet?.key ?? null"
                                    [batteryRows]="setBatteryRows" [notAnalyzedUnits]="notAnalyzedUnits"
-                                   [subjectLabel]="subjectLabel"
+                                   [setLabel]="compareSet?.label ?? ''" [setKind]="compareSet?.kind ?? null"
                                    (annotationsChanged)="annotationsChanged.emit()"
                                    (exportingChange)="onExportingChange()"></app-cc-timeline-workspace>
       </section>

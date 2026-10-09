@@ -1,7 +1,7 @@
 /**
  * The admin-adjustable style of the comparison figures: one set for the three bar panels, one for
- * the three trade-off scatters and one for the profile. The chart builders read it, so the page,
- * the preview and every export draw from the same values.
+ * the three trade-off scatters and one for the profile; and one for Chat Consistency's timelines.
+ * The chart builders read it, so the page, the preview and every export draw from the same values.
  *
  * Pure TypeScript with no Chart.js, Angular or DOM dependency.
  */
@@ -153,11 +153,43 @@ export interface ProfileFigureStyle extends FigureChromeStyle {
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
-/** Three families: the bar panels, the trade-off scatters and the profile, and the number formats they share. */
+/** Chat Consistency's timeline charts: one or more lines of runs over time, with Overseer change markers. */
+export interface TimelineFigureStyle extends FigureChromeStyle {
+  /** Tick labels. */
+  readonly axisTextSizePx: number;
+  readonly axisTitleSizePx: number;
+  readonly axisTitleWeight: FigureFontWeight;
+  readonly gridlines: boolean;
+  /** A hairline box around the plot area. */
+  readonly plotFrame: boolean;
+  /** The values written at the points. */
+  readonly valueLabels: boolean;
+  readonly valueLabelSizePx: number;
+  readonly legendTextSizePx: number;
+  /** The change markers' tags, such as `E1`. */
+  readonly markerTagSizePx: number;
+  readonly lineWidthPx: number;
+  readonly pointRadiusPx: number;
+  /** A wash under the line while the chart has a single line. */
+  readonly areaWash: boolean;
+  /** Caption note naming what the change markers stand for. */
+  readonly markerNote: boolean;
+  /** Caption note on the runs not in the analysis, drawn as gray crosses. */
+  readonly notAnalyzedNote: boolean;
+  readonly hiddenBadges: readonly FigureBadgeKind[];
+  /** Under the logo where it fits without growing the heading, or always under the logo. */
+  readonly betterBadgePlacement: BetterBadgePlacement;
+}
+
+/**
+ * Four families: the bar panels, the trade-off scatters, the profile and Chat Consistency's
+ * timelines, and the number formats the first three share.
+ */
 export interface FigureStyle {
   readonly bar: BarFigureStyle;
   readonly scatter: ScatterFigureStyle;
   readonly profile: ProfileFigureStyle;
+  readonly timeline: TimelineFigureStyle;
   /** Decimal places per measure, in every family that shows the measure. */
   readonly numbers: NumberFormatStyle;
   /** Theme, background, fonts and border of every chart and the table image. */
@@ -200,6 +232,27 @@ const DEFAULT_CHROME_STYLE: FigureChromeStyle = {
   badgeTextSizePx: 11,
   footerTextSizePx: 12,
   footer: true,
+};
+
+/** Model Comparison's caption, axis and label sizes, with every timeline element shown. */
+export const DEFAULT_TIMELINE_STYLE: TimelineFigureStyle = {
+  ...DEFAULT_CHROME_STYLE,
+  axisTextSizePx: 11,
+  axisTitleSizePx: 12,
+  axisTitleWeight: 400,
+  gridlines: true,
+  plotFrame: false,
+  valueLabels: true,
+  valueLabelSizePx: 11,
+  legendTextSizePx: 12,
+  markerTagSizePx: 10,
+  lineWidthPx: 2,
+  pointRadiusPx: 4,
+  areaWash: true,
+  markerNote: true,
+  notAnalyzedNote: true,
+  hiddenBadges: [],
+  betterBadgePlacement: 'fit',
 };
 
 /**
@@ -254,6 +307,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     ...DEFAULT_CHROME_STYLE,
     hiddenBadges: [],
   },
+  timeline: DEFAULT_TIMELINE_STYLE,
   numbers: DEFAULT_MEASURE_DECIMALS,
   appearance: DEFAULT_APPEARANCE_STYLE,
   table: DEFAULT_TABLE_IMAGE_STYLE,
@@ -272,6 +326,8 @@ export type NumericBarStyleKey = 'gapPercent' | 'maxBarWidthPx' | 'cornerRadiusP
 export type NumericScatterStyleKey = 'markRadiusPx' | 'frontierWidthPx' | 'labelTextSizePx' | 'axisTextSizePx'
   | 'axisTitleSizePx';
 export type NumericChromeStyleKey = 'titleSizePx' | 'badgeTextSizePx' | 'footerTextSizePx';
+export type NumericTimelineStyleKey = 'lineWidthPx' | 'pointRadiusPx' | 'valueLabelSizePx' | 'axisTextSizePx'
+  | 'axisTitleSizePx' | 'markerTagSizePx' | 'legendTextSizePx';
 
 /** One range control: its label, bounds and unit, which the style panel's template loops over. */
 export interface RangeControl<TKey extends string> {
@@ -320,6 +376,16 @@ export const CHROME_RANGE_CONTROLS: readonly RangeControl<NumericChromeStyleKey>
   textSizeControl('footerTextSizePx', 'Footer text size'),
 ];
 
+export const TIMELINE_RANGE_CONTROLS: readonly RangeControl<NumericTimelineStyleKey>[] = [
+  { key: 'lineWidthPx', label: 'Line width', min: 1, max: 6, step: 1, unit: 'px' },
+  { key: 'pointRadiusPx', label: 'Point size', min: 2, max: 10, step: 1, unit: 'px' },
+  textSizeControl('valueLabelSizePx', 'Value labels'),
+  textSizeControl('axisTextSizePx', 'Axis values'),
+  textSizeControl('axisTitleSizePx', 'Axis titles'),
+  { key: 'markerTagSizePx', label: 'Marker tags', min: 8, max: 24, step: 1, unit: 'px' },
+  textSizeControl('legendTextSizePx', 'Legend'),
+];
+
 export type NumericAppearanceStyleKey = 'borderWidthPx' | 'borderRadiusPx' | 'logoHeightPx';
 
 export const APPEARANCE_RANGE_CONTROLS: readonly RangeControl<NumericAppearanceStyleKey>[] = [
@@ -355,27 +421,44 @@ export interface BadgeControl {
   readonly hint?: string;
 }
 
-/** Every badge kind, the Better badge first: it heads the list. */
+/** Every badge kind, the Better badge first: it heads the list. The last two are the timeline's own. */
 export const BADGE_CONTROLS: readonly BadgeControl[] = [
   { kind: 'direction', label: 'Better badge' },
   { kind: 'models', label: 'Number of models' },
   { kind: 'runs', label: 'Runs behind each model' },
   { kind: 'questions', label: 'Number of questions' },
   { kind: 'pricing', label: 'Pricing basis', hint: 'Only on figures with a cost axis.' },
+  { kind: 'model', label: 'Model' },
+  { kind: 'dates', label: 'Dates' },
 ];
+
+/** The badges a Model Comparison figure carries, in {@link BADGE_CONTROLS} order. */
+const COMPARISON_BADGE_KINDS: readonly FigureBadgeKind[] = ['direction', 'models', 'runs', 'questions', 'pricing'];
 
 const DIRECTION_BADGE_HINTS = {
   bar: 'An arrow toward the better end of the value axis. While shown, the axis title leaves out "higher is better".',
   scatter: 'An arrow toward the better corner of the chart.',
+  timeline: 'An arrow toward the better end of the value axis.',
 } as const;
 
-/** The badge checkboxes one family offers; the profile has no better direction, so no Better badge. */
-export function badgeControlsFor(family: 'bar' | 'scatter' | 'profile'): readonly BadgeControl[] {
+function badgeControl(kind: FigureBadgeKind): BadgeControl {
+  return BADGE_CONTROLS.find((control) => control.kind === kind)!;
+}
+
+/**
+ * The badge checkboxes one family offers; the profile has no better direction, so no Better badge.
+ * A timeline offers the Better badge, its model, its number of runs and its dates.
+ */
+export function badgeControlsFor(family: 'bar' | 'scatter' | 'profile' | 'timeline'): readonly BadgeControl[] {
+  const comparison = BADGE_CONTROLS.filter((control) => COMPARISON_BADGE_KINDS.includes(control.kind));
   if (family === 'profile') {
-    return BADGE_CONTROLS.filter((control) => control.kind !== 'direction');
+    return comparison.filter((control) => control.kind !== 'direction');
   }
-  return BADGE_CONTROLS.map((control) =>
-    control.kind === 'direction' ? { ...control, hint: DIRECTION_BADGE_HINTS[family] } : control);
+  const direction: BadgeControl = { ...badgeControl('direction'), hint: DIRECTION_BADGE_HINTS[family] };
+  if (family === 'timeline') {
+    return [direction, badgeControl('model'), { ...badgeControl('runs'), label: 'Number of runs' }, badgeControl('dates')];
+  }
+  return comparison.map((control) => control.kind === 'direction' ? direction : control);
 }
 
 /** The descriptor for one key, which every numeric field has. */
@@ -389,6 +472,10 @@ export function scatterRangeControl(key: NumericScatterStyleKey): RangeControl<N
 
 export function chromeRangeControl(key: NumericChromeStyleKey): RangeControl<NumericChromeStyleKey> {
   return CHROME_RANGE_CONTROLS.find((control) => control.key === key)!;
+}
+
+export function timelineRangeControl(key: NumericTimelineStyleKey): RangeControl<NumericTimelineStyleKey> {
+  return TIMELINE_RANGE_CONTROLS.find((control) => control.key === key)!;
 }
 
 /** A number rounded to the control's step and clamped into its range, or the fallback. */
@@ -558,6 +645,32 @@ function normalizeProfile(value: unknown): ProfileFigureStyle {
   return { ...normalizeChrome(v), hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']) };
 }
 
+function normalizeTimeline(value: unknown): TimelineFigureStyle {
+  const d = DEFAULT_TIMELINE_STYLE;
+  const v = isRecord(value) ? value : {};
+  const numeric = (key: NumericTimelineStyleKey): number =>
+    clampToControl(v[key], timelineRangeControl(key), d[key]);
+  return {
+    ...normalizeChrome(v),
+    axisTextSizePx: numeric('axisTextSizePx'),
+    axisTitleSizePx: numeric('axisTitleSizePx'),
+    axisTitleWeight: fontWeightOr(v['axisTitleWeight'], d.axisTitleWeight),
+    gridlines: booleanOr(v['gridlines'], d.gridlines),
+    plotFrame: booleanOr(v['plotFrame'], d.plotFrame),
+    valueLabels: booleanOr(v['valueLabels'], d.valueLabels),
+    valueLabelSizePx: numeric('valueLabelSizePx'),
+    legendTextSizePx: numeric('legendTextSizePx'),
+    markerTagSizePx: numeric('markerTagSizePx'),
+    lineWidthPx: numeric('lineWidthPx'),
+    pointRadiusPx: numeric('pointRadiusPx'),
+    areaWash: booleanOr(v['areaWash'], d.areaWash),
+    markerNote: booleanOr(v['markerNote'], d.markerNote),
+    notAnalyzedNote: booleanOr(v['notAnalyzedNote'], d.notAnalyzedNote),
+    hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
+    betterBadgePlacement: oneOf(v['betterBadgePlacement'], BETTER_BADGE_PLACEMENTS, d.betterBadgePlacement),
+  };
+}
+
 /** Every known measure, each on its own: a missing or invalid one takes its default. */
 function normalizeNumbers(value: unknown): NumberFormatStyle {
   const v = isRecord(value) ? value : {};
@@ -579,6 +692,7 @@ export function normalizeFigureStyle(value: unknown): FigureStyle {
     bar: normalizeBar(v['bar']),
     scatter: normalizeScatter(v['scatter']),
     profile: normalizeProfile(v['profile']),
+    timeline: normalizeTimeline(v['timeline']),
     numbers: normalizeNumbers(v['numbers']),
     appearance: normalizeAppearance(v['appearance']),
     table: normalizeTableImageStyle(v['table']),

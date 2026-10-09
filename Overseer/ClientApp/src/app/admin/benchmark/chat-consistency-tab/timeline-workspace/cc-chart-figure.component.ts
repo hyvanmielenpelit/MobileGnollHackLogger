@@ -2,6 +2,7 @@ import {
   AfterViewChecked,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   EventEmitter,
   Input,
   OnChanges,
@@ -152,12 +153,28 @@ export function ccDataCards(table: CcFigureTable, idPrefix: string): CcDataCard[
   }));
 }
 
+/** A chart composed as its download (`cc-figure-compose.ts`), shown as a bitmap in a box of whole CSS px. */
+export interface CcComposedFigure {
+  /** The composed bitmap; null while the first composition is pending, and for a refused size. */
+  readonly canvas: HTMLCanvasElement | null;
+  readonly cssWidth: number;
+  readonly cssHeight: number;
+  /** The badges, the Better direction and the notes, read after the alt text. */
+  readonly summary: string;
+  /** Why the chart size is refused, shown in the image's place; empty otherwise. */
+  readonly refusal: string;
+  /** The ground is transparent, so the page shows the preview backdrop behind the bitmap. */
+  readonly transparent: boolean;
+}
+
 /**
- * One Chat Consistency chart as a `<figure>`: the title as its caption, the chart (a canvas named by
- * the takeaway and described by a visually hidden list of its markers) in a box of the size the host
- * chooses, the takeaway sentence under it, a footer row with a one-line summary of the markers and
- * the actions the host projects (`[ccFigureActions]`), and a *Show data* disclosure holding the same
- * numbers as a list of data rows.
+ * One Chat Consistency chart as a `<figure>`: the title as its caption, the chart in a box of the size
+ * the host chooses, the takeaway sentence under it, a footer row with the actions the host projects
+ * (`[ccFigureActions]`), and a *Show data* disclosure holding the same numbers as a list of data rows.
+ *
+ * The chart is a live Chart.js canvas named by the takeaway, described by a visually hidden list of its
+ * markers and summarized on the footer row; or, given `composed`, the composed bitmap of its download,
+ * whose image carries the heading and the marker key, and which reacts to no pointer.
  */
 @Component({
   selector: 'app-cc-chart-figure',
@@ -183,11 +200,17 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
   @Input() titleInChart = false;
   /** The data cards' heading level, one under the host's section heading. */
   @Input() dataHeadingLevel: 5 | 6 = 6;
+  /** The composed bitmap in place of the live chart; null draws the live chart. */
+  @Input() composed: CcComposedFigure | null = null;
 
   /** Asks the host to show the event list; the button is shown only while a host listens. */
   @Output() readonly showEvents = new EventEmitter<void>();
 
   @ViewChild(BaseChartDirective) private chartDirective?: BaseChartDirective;
+  @ViewChild('bitmap') private imageRef?: ElementRef<HTMLCanvasElement>;
+
+  /** The bitmap last drawn, and the canvas it was drawn into. */
+  private painted: { source: HTMLCanvasElement; target: HTMLCanvasElement } | null = null;
 
   // The figure's line configuration, erased to the directive's default chart typing.
   chartType: ChartType = 'line';
@@ -221,13 +244,40 @@ export class CcChartFigureComponent implements OnChanges, AfterViewChecked {
   }
 
   ngAfterViewChecked(): void {
+    this.paintComposed();
     if (!this.ratioChanged) return;
     this.ratioChanged = false;
     this.chartDirective?.chart?.resize();
   }
 
+  /** Copies the composed bitmap into the image canvas at its own pixel size; the CSS box scales it. */
+  private paintComposed(): void {
+    const source = this.composed?.canvas ?? null;
+    const target = this.imageRef?.nativeElement ?? null;
+    if (!source || !target) {
+      this.painted = null;
+      return;
+    }
+    if (this.painted?.source === source && this.painted.target === target) return;
+    target.width = source.width;
+    target.height = source.height;
+    target.getContext('2d')?.drawImage(source, 0, 0);
+    this.painted = { source, target };
+  }
+
   get markersId(): string {
     return `${this.figureId}-markers`;
+  }
+
+  /** The figure's content width: the composed image's, else the live chart box's; null fills the container. */
+  get figureWidth(): number | null {
+    return this.composed ? this.composed.cssWidth : this.boxWidth;
+  }
+
+  /** The composed image's accessible name: the alt text, then the badges and notes the image carries. */
+  get composedLabel(): string {
+    const summary = this.composed?.summary ?? '';
+    return summary ? `${this.figure.altText} ${summary}` : this.figure.altText;
   }
 
   /** `run` or `battery run`: what a data card is, from the table's first column. */

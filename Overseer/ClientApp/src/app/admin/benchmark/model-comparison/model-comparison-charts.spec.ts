@@ -2049,6 +2049,7 @@ describe('model-comparison-charts', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter },
       profile: { ...DEFAULT_FIGURE_STYLE.profile, ...profile },
+      timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
       table: DEFAULT_FIGURE_STYLE.table,
