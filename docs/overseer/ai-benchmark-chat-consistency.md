@@ -185,9 +185,9 @@ form), `ToolIterationCapsJson`, `TotalModelCallCapsJson`, `QuestionTimeoutSecond
 An analysis takes the events between its first baseline and last comparison run, from the target series
 and every control series, one per kind and change.
 
-**For display, the tab groups them.** The timeline, the Results step and the *Before vs after an
-Overseer change* preset show **composite events** (`groupOverseerEvents`, client-side): every Overseer
-event of one UTC day under one harness version is one composite, and a harness change starts a new
+**For display, the tab groups them.** The timeline, the Results step, the Analyze step's period
+cards and preview, and the *Before vs after an Overseer change* Split rule show **composite events**
+(`groupOverseerEvents`, client-side): every Overseer event of one UTC day under one harness version is one composite, and a harness change starts a new
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
 takes the events one per kind and change, as above. Report charts are drawn the same way, and
@@ -666,39 +666,95 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Close*
    battery run of the set (*Plot by: Member runs* shows the runs).
 3. **Analyze** — splits the runs chosen in step 1 into a baseline and a comparison, and analyzes them.
    **Step 1 is the only place that chooses runs**: the analysis uses the step-1 units and no others.
-   Top to bottom:
-   - the subject (*Model*, *Runs*, *Compared*) and an optional **Name**;
-   - **Periods** — a preset (below) or **Custom**, the preset's note, and the span note: **the presets
-     span the units in the analysis**, from the first to the last of them (*Presets use the runs chosen
-     in step 1: #21 (2026-09-20) to #93 (2026-10-05), 15 runs.*, or *Presets use every run in the
-     dates: …* while step 1 chooses nothing; with a battery compared, *Presets use the battery runs
-     chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.*). Then two rows,
-     **Baseline** and **Comparison**, each with a **First run** and a **Last run** select listing the
-     step-1 units by start, then id (*#12 · 2026-10-08 14:05 UTC*; *Battery run* in a battery set). **A
-     period is a run range**: every unit from its first run to its last, inclusive, in that order.
-     Units between the baseline's last run and the comparison's first are not used, and an ineligible
-     unit inside a range is never analyzed. Any two units with different start times can be split,
-     also on the same day. Choosing a run by hand switches the preset to *Custom*. A changed step-1
-     selection re-applies the chosen preset; *Custom* choices stay while their units remain in step 1,
-     and a choice whose unit leaves is cleared;
-   - **Runs in the periods** (*Battery runs in the periods* with a battery compared) — a read-only
-     table of every step-1 unit, by start: *Run* (*Battery run*), *Started (UTC)*, *Suite* (*Suites*),
-     *Period* (*Baseline*, *Comparison*, *Not used* or *Not eligible*) and *Matched controls*. Under it,
-     one sample line per period against Protocol V1's minimum (§ 9): *Baseline: 1 battery run on 1 day
-     (2026-10-08). P1, P4 and P5 need at least 2 on 2 days to be Established.*, or *… meets the minimum
-     sample for P1, P4 and P5*. *Mark as anchor* is in step 1's *More actions*;
-   - **Control runs** — other models' runs under the same Overseer build, used only to attribute a
-     change to a side, never for the verdicts (§ 6). The matched controls of the eligible units in both
-     periods are listed as checkboxes, all checked again whenever the periods change; with none
-     matched, the analysis looks for controls among other models' runs itself;
-   - the common-grader **re-grade** of the runs in the periods (estimate dialog first; nothing spends
-     until *Re-grade* is pressed) and *Pool across measurement segment boundaries*;
-   - **Protocol V1: margins and minimum sample**, a disclosure closed by default holding the endpoint
-     table and *Override the protocol* for the margins and α;
-   - a preview of the common strata, the composite Overseer events in the span, the missing controls
-     and *Left out in step 1: #45, #51* for left-out runs inside either period.
+   The step is a workspace like the Timeline's: a **settings sidebar** — resizable, and collapsible
+   from the view bar with *Analysis settings* — beside two views, **Periods** and **Preview**, each
+   scrolling on its own. **A period is a run range**: every unit from its first run to its last,
+   inclusive, in start order (then id). Units between the baseline's last run and the comparison's
+   first are not used, and an ineligible unit inside a range is never analyzed. Any two units with
+   different start times can be split, also on the same day. The sidebar has three tabs:
+   - **Setup** — the subject, an optional **Name**, the **Split rule** with its note, and the span
+     note. The subject is a small card: the **model** with its thinking, provider and service-tier
+     badges (the same badges as the launcher's *Current model* card) and its model id under the name,
+     and **Compared** — a tag, *Battery*, *Suite* or *All suites*, then the set and what the units are:
+     *Two initial suites (revision 1)* with *2 battery runs from step 1 · each analyzed as one unit,
+     its member runs together*; a suite's name with *6 single-suite runs from step 1*; with no set,
+     *Runs analyzed one by one* with *6 runs from step 1*. The counts are the step-1 units, the units
+     the periods can use, not every run of the model. The **Split rule** (below) proposes the periods,
+     and an *i* button explains its five options. Its note says which rule applied or why it cannot
+     apply, and the span note what it spans: **the rules span the units in the analysis**, from the
+     first to the last of them (*Presets use the runs chosen in step 1: #21 (2026-09-20) to #93
+     (2026-10-05), 15 runs.*, or *Presets use every run in the dates: …* while step 1 chooses nothing;
+     with a battery compared, *Presets use the battery runs chosen in step 1: #11 (2026-10-08) to #12
+     (2026-10-08), 2 battery runs.*).
+   - **Controls** — **Control runs**: other models' runs under the same Overseer build, used only to
+     attribute a change to a side, never for the verdicts (§ 6). The matched controls of the eligible
+     units in both periods are listed as checkboxes, all checked again whenever the periods change;
+     with none matched, the analysis looks for controls among other models' runs itself. Then the
+     common-grader **re-grade** of the runs in the periods (estimate dialog first; nothing spends until
+     *Re-grade* is pressed) and *Pool across measurement segment boundaries*.
+   - **Protocol** — Protocol V1's five primary endpoints with their margins (*P1 Quality — ±3 index
+     points*), α and the minimum samples (§ 9), then *Override the protocol* for the margins and α.
 
-   The presets work on the eligible units:
+   The **Periods** view shows, top to bottom:
+   - **The summary strip**, which stays at the top while the cards scroll (on a narrow screen it
+     stacks and scrolls with them). One card per period, *Baseline* and *Comparison*, each in its own
+     color and always named by the word: the range as two links (*#11 → #12*, each moving to that run's
+     card; *Not set* for a bound not chosen), the count (*3 runs on 2 days · 2026-10-01 to
+     2026-10-03*), the window the request will carry (*The period windows*, below), and the sample
+     against Protocol V1's minimum: *Meets the minimum sample*, or *Below the minimum sample* with
+     *P1, P4 and P5 need at least 2 on 2 days to be Established.* Under the two cards, *Not used: 2
+     runs outside the periods* (when any), and *Preview: 3 notes* or *Preview: ready*, which opens the
+     Preview. A refusal of the periods (below) shows here.
+   - **The units** (*Runs*, or *Battery runs* with a battery compared) as cards, oldest first — the
+     order of the periods. There is no filter and no paging: step 1 already chose the units, and
+     hiding one here would hide part of a period. Each card has a bar in its period's color down its
+     side, and its kicker names the period as a word — *Baseline*, *Comparison*, *Not used* or *Not
+     eligible* — after the id, status, harness, *Legacy* / *Recorded*, *Anchor* and battery-member
+     tags; then the suite or battery name, the start time and the served model (*2 of 2 suites ·
+     revision 1* for a battery run). **The period bounds** are on the card: two rows, **Baseline** and
+     **Comparison**, each with a **First** and a **Last** toggle (*Make battery run #12 the baseline's
+     first run*). Pressing one moves that bound to this unit; pressing a pressed one clears it. It
+     never moves another bound: a bound set out of order is refused with its reason. Setting a bound
+     on a card switches the Split rule to **Manual** and says so (*Baseline first run: battery run #11.
+     Split rule set to Manual.*). Then *Open run report* (*Open battery run report*); the metrics —
+     *Intelligence*, *First answer*, *Streaming*, *Work*, *Cost / question* and *Answers*, `—` where
+     the unit has no value; the eligibility per axis with its reasons; and, while **Show run details**
+     is on (it is by default, remembered in this browser), the segment, telemetry, re-grade coverage,
+     matched controls and time strata of a run, or a battery run's member runs, each with its run
+     report.
+   - **Markers** between the cards: each composite Overseer change (*E2 · 2026-10-08 · Harness 53 →
+     54 · …*, numbered as on the Timeline) and each tagged annotation (*A1*) before the first unit
+     started at or after it, with **Split here**, which sets the Split rule to *Before vs after an
+     Overseer change* (or *an annotation*) at that marker and applies it (*Split at Overseer change
+     E2: 3 runs before, 2 from it.*). Markers before the first unit or after the last are not listed.
+
+   The **Preview** view (*What the analysis will see*, checked in the browser before anything is
+   spent; the analysis applies the protocol itself) has three parts, and its tab counts the notes:
+   - **Input** — *Model*, *Compared*, *Name* (or *Automatic*), *Split rule* (with its annotation or
+     change), *Baseline* and *Comparison* (range, units, days, window), *Not used*, *Left out in step
+     1* (*#45, #51*, left-out runs inside either window, when any), *Control runs* (*3 of 3 matched
+     controls checked*, or none matched), *Grading* (*Native grades* or *Re-graded by …: 4 of 6
+     runs*), *Pooling* and *Protocol* (*V1*, or *V1 with overrides: …*).
+   - **Endpoint readiness** — one row per primary endpoint, P1 to P5, with its margin, a status and
+     one fact: *Meets the minimum sample* (*Baseline 3 runs on 2 days · Comparison 2 runs on 2 days*),
+     *Cannot be Established* (which period is short of the minimum sample, or for P2 and P3 *No common
+     stratum has 3 runs in each period* with the runs per stratum), or *Not computed* (no unit of a
+     period eligible on the endpoint's axis, or no time stratum shared). P2 is read on the legacy
+     proxy when a period has no run with call telemetry, as the analysis does (*Measured as model time
+     (legacy proxy).*). **The readiness never predicts a verdict or a grade**: the most it says is that
+     an endpoint cannot be Established.
+   - **Notes**, each marked *Warning* or *Note*: the composite Overseer changes between the windows
+     (*A change inside a period mixes measurements; split at it, or check that it does not affect what
+     you compare.*); a measurement segment change across the periods, refused unless *Pool across
+     measurement segment boundaries* is on; the runs without a matched control, in one line; units
+     left out in step 1 inside the windows; and ineligible units inside a period (*Battery run #13 is
+     inside the comparison but not eligible and is not analyzed.*). With none, *No notes. The periods
+     are ready to analyze.*
+
+   The sidebar's tab, the view, the sidebar's width and collapsed state, and *Show run details* are
+   remembered in this browser.
+
+   The **Split rule** options work on the eligible units:
    - **Earliest vs latest** (the default) — when the units span 28 or more UTC days, the units of the
      first 14 days against those of the last 14; otherwise, on two or more distinct UTC days, the
      earlier days against the later, split at the day boundary that balances the counts best (a tie
@@ -712,20 +768,25 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Close*
      annotation (2026-10-08).*).
    - **Confirm on later data** — the last saved analysis of the same model and the same compared set:
      the units started inside its baseline window against the units started after it was saved (§ 18).
+   - **Manual (set on the cards)** — keeps the bounds set on the period cards. Setting a bound on a
+     card selects it; choosing another rule again re-applies that rule.
 
-   The periods are refused, with the reason under them and on the footer, when step 1 has fewer than
-   two units (*Choose at least two runs in step 1, one for each period.*), a run choice is missing, a
-   period's last run comes before its first, the comparison does not start after the baseline's last
-   run, two units on either side of the split started at the same moment (*Run #40 and run #41 started
-   at the same moment and cannot be split.*), or a period has no eligible unit. An invalid protocol
-   override is refused the same way.
+   A changed step-1 selection re-applies the chosen rule; *Manual* bounds stay while their units remain
+   in step 1, and a bound whose unit leaves is cleared.
+
+   The periods are refused, with the reason in the summary strip and on the footer, when step 1 has
+   fewer than two units (*Choose at least two runs in step 1, one for each period.*), a bound is not
+   set, a period's last run comes before its first, the comparison does not start after the
+   baseline's last run, two units on either side of the split started at the same moment (*Run #40
+   and run #41 started at the same moment and cannot be split.*), or a period has no eligible unit.
+   An invalid protocol override is refused the same way.
 
    **The period windows.** The request still carries a UTC window per period, derived from the run
    ranges and never typed. The baseline starts at the start of its first unit's UTC day and the
    comparison ends at the end of its last unit's UTC day. When the baseline's last unit and the
    comparison's first started on different UTC days, the baseline ends at the end of its day and the
    comparison starts at the start of its own; on the same day the two meet at a split instant — the
-   preset's annotation or Overseer change when it falls after the baseline's last unit and no later
+   Split rule's annotation or Overseer change when it falls after the baseline's last unit and no later
    than the comparison's first, else the comparison's first start — and the baseline ends 1 ms before
    it. The windows never overlap. The server uses them to find candidate controls when none are given
    and assign each control to a period (§ 6), to classify the unanalyzed runs (§ 18), and for the
@@ -751,9 +812,9 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Close*
 
 Step 1 is always open; steps 2 and 3 need a model, and step 4 a result, analyzed or opened from the
 saved analyses. A step that cannot be opened stays in the tab row, marked unavailable, with its reason.
-A saved analysis opens on Results, and step 3 shows its runs under *Custom*: each period from the
-earliest to the latest of its runs still among the step-1 units; when none is, the run choices stay
-empty and step 3 says why, while Results shows the saved result as it was. Each step is kept once
+A saved analysis opens on Results, and step 3 shows its runs under the *Manual* Split rule: each
+period from the earliest to the latest of its runs still among the step-1 units; when none is, the
+bounds stay unset and step 3 says why, while Results shows the saved result as it was. Each step is kept once
 shown, so closing and reopening the wizard, or changing step, keeps a table's sort and page, the chart
 zoom and an analysis in progress. **Escape
 and the close buttons are refused while a chart export runs or while the Reports section of Results
@@ -951,9 +1012,9 @@ in its status line; the report stays open.
 ## 18. Detection and Confirmation
 
 Choosing the periods after looking at the timeline is detection: the analysis that found a change was
-pointed at it. The **Confirm on later data** preset re-tests it on data that did not exist then — the
-step-1 units that started inside the last saved analysis's baseline window, against those started
-after the moment that analysis was saved — and only a change that holds there is confirmed. The preset
+pointed at it. The **Confirm on later data** Split rule re-tests it on data that did not exist then —
+the step-1 units that started inside the last saved analysis's baseline window, against those started
+after the moment that analysis was saved — and only a change that holds there is confirmed. The rule
 says when it cannot apply: *The last analysis's baseline runs are not in the step-1 selection.*, or
 *No run was made after the last analysis was saved (…).*
 
@@ -1118,7 +1179,7 @@ And of the implementation:
 
 - Change-point detection (`ChatConsistencyStatistics.Pelt`) is implemented but not yet wired into the
   analysis or the timeline; detection is the operator's choice of periods, and confirmation is the
-  *Confirm on later data* preset (§ 18).
+  *Confirm on later data* Split rule (§ 18).
 - The analysis passes no rescored-run set to the comparability layer, so a scoring-profile or speed
   calibration change between the periods always segments.
 - Calibrations, and so the common-grader re-grade, write no call telemetry.

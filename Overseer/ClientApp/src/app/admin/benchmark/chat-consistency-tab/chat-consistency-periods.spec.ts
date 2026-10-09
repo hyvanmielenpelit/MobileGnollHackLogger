@@ -1,5 +1,6 @@
 import {
   CC_NO_PERIOD_IDS,
+  CC_PERIOD_BOUND_LABELS,
   CcPeriodIds,
   ccBeforeAfter,
   ccConfirmOnLaterData,
@@ -10,7 +11,8 @@ import {
   ccPeriodUnits,
   ccPeriodWindows,
   ccPeriodsRefusal,
-  ccPruneIds
+  ccPruneIds,
+  ccToggleBound
 } from './chat-consistency-periods';
 import { CcRunRow } from './chat-consistency.models';
 import { ccBatteryRunRow, ccBatteryRunRows, ccRunRow, ccRunRows } from './chat-consistency-tab.testing';
@@ -299,6 +301,35 @@ describe('chat consistency periods', () => {
       expect(ccPruneIds(units, ids(101, 103, 104, 999))).toEqual(ids(101, 103, 104, null));
       const kept = ids(101, 103, 104, 106);
       expect(ccPruneIds(units, kept)).toBe(kept);
+    });
+  });
+
+  describe('ccToggleBound', () => {
+    it('sets an unset bound on the unit', () => {
+      expect(ccToggleBound(ids(101, 103, null, 106), 'comparisonFirstId', 104)).toEqual(ids(101, 103, 104, 106));
+    });
+
+    it('moves a bound from the unit that held it, leaving the other three untouched', () => {
+      const before = ids(101, 103, 104, 106);
+      expect(ccToggleBound(before, 'baselineLastId', 102)).toEqual(ids(101, 102, 104, 106));
+      // Out of order is allowed; the refusal reports it.
+      expect(ccToggleBound(before, 'comparisonFirstId', 101)).toEqual(ids(101, 103, 101, 106));
+      expect(before).toEqual(ids(101, 103, 104, 106));
+    });
+
+    it('clears the bound when the unit already holds it', () => {
+      expect(ccToggleBound(ids(101, 103, 104, 106), 'baselineFirstId', 101)).toEqual(ids(null, 103, 104, 106));
+      // A unit may hold two bounds; pressing one leaves the other.
+      expect(ccToggleBound(ids(11, 11, 12, 12), 'baselineLastId', 11)).toEqual(ids(11, null, 12, 12));
+    });
+
+    it('names each bound for a sentence', () => {
+      expect(CC_PERIOD_BOUND_LABELS).toEqual({
+        baselineFirstId: 'the baseline\'s first run',
+        baselineLastId: 'the baseline\'s last run',
+        comparisonFirstId: 'the comparison\'s first run',
+        comparisonLastId: 'the comparison\'s last run'
+      });
     });
   });
 });

@@ -1,0 +1,5 @@
+<span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ thinkingText }}</span>
+<app-provider-badge [provider]="model.provider" />
+@if (model.serviceTier) {
+  <span class="config-badge"><span class="visually-hidden">service tier </span>{{ tierText }}</span>
+}

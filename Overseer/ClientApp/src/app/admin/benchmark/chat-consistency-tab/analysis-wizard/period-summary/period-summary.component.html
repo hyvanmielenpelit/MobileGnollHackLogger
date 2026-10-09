@@ -1,0 +1,68 @@
+<!--
+  The periods side by side, baseline then comparison, each named by its heading. The range's bounds
+  are links to the units' cards; the sample and the window show only while the periods can be analyzed.
+-->
+<div class="cc-ps-strip">
+  <div class="cc-ps-periods">
+    @for (view of periods; track view.period; let isFirst = $first) {
+      @if (!isFirst) {
+        <span class="cc-ps-arrow" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </span>
+      }
+      <section class="cc-ps-period" [attr.data-period]="view.period" [attr.aria-labelledby]="'cc-ps-' + view.period + '-title'">
+        <h6 class="cc-ps-title" [id]="'cc-ps-' + view.period + '-title'">
+          <span class="cc-ps-swatch" aria-hidden="true"></span>
+          {{ view.name }}
+        </h6>
+        <p class="cc-ps-range">
+          @for (bound of view.bounds; track bound.key; let isFirstBound = $first) {
+            @if (!isFirstBound) {
+              <span class="cc-ps-range-to" aria-hidden="true">→</span>
+            }
+            @if (bound.id !== null) {
+              <button type="button" class="btn-link cc-ps-bound" [attr.data-bound]="bound.key"
+                      [attr.aria-label]="bound.label" (click)="goTo(bound)">#{{ bound.id }}</button>
+            } @else {
+              <span class="cc-ps-unset" [attr.data-bound]="bound.key">Not set</span>
+            }
+          }
+        </p>
+        @if (!refusal) {
+          <p class="cc-ps-count">{{ view.countText }}</p>
+          @if (view.windowText) {
+            <p class="cc-ps-window">{{ view.windowText }}</p>
+          }
+          @if (view.sample.meetsMinimum) {
+            <p class="cc-ps-sample is-met">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              <span class="cc-ps-sample-text">Meets the minimum sample</span>
+            </p>
+          } @else {
+            <p class="cc-ps-sample is-short">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <span class="cc-ps-sample-text">
+                Below the minimum sample
+                <span class="cc-ps-sample-need">{{ needText }}</span>
+              </span>
+            </p>
+          }
+        }
+      </section>
+    }
+  </div>
+
+  <p class="cc-ps-foot">
+    @if (notUsedText) {
+      <span class="cc-ps-not-used">{{ notUsedText }}</span>
+    }
+    <button type="button" class="btn-link cc-ps-preview-link" (click)="openPreview.emit()">{{ previewText }}</button>
+  </p>
+
+  @if (refusal) {
+    <p class="gh-field-error cc-wiz-periods-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ refusal }}</span>
+    </p>
+  }
+</div>

@@ -7,6 +7,14 @@
   line-height: var(--leading-body);
 }
 
+// While Analyze shows, the host fills the edge-to-edge step (`.gh-fig-host`), so the workspace's
+// sidebar and panels scroll and the step does not.
+:host(.is-workspace) {
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
 .cc-wiz-step {
   display: flex;
   flex-direction: column;
@@ -19,51 +27,48 @@
   }
 }
 
-.cc-wiz-sub {
-  margin: 0.5rem 0 0;
-  font-size: var(--text-body);
-  font-weight: 700;
+// --- The Analyze workspace --------------------------------------------------------------------
+// The frame is the global `gh-fig-*` rules in `styles.scss`; what follows is this step's own.
+
+.cc-an {
+  flex: 1;
+  min-height: 0;
+  gap: 0;
 }
 
-.cc-wiz-subject,
-.cc-wiz-protocol-facts,
-.cc-wiz-preview {
-  display: grid;
-  gap: 0.25rem;
-  margin: 0;
-
-  > div {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0 0.75rem;
-  }
-
-  dt {
-    min-width: 12rem;
-    color: var(--nav-color);
-  }
-
-  dd {
+// The sidebar's own labels; the re-grade panel styles its own.
+.cc-an-sidebar {
+  .checkbox-label {
     margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
-
-    ul {
-      margin: 0;
-      padding-inline-start: 1.1rem;
-    }
   }
 }
 
-.cc-wiz-field {
+.cc-an-side-panel {
+  gap: 0.875rem;
+  padding-top: 0.75rem;
+}
+
+.cc-an-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cc-an-legend-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.cc-an-field {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
-  max-width: 32rem;
 
   label {
     font-weight: 600;
+    font-size: var(--text-secondary);
   }
 }
 
@@ -73,143 +78,232 @@
   font-size: var(--text-secondary);
 }
 
-.cc-wiz-preset-pick {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin-inline-start: 28px;
-  max-width: 32rem;
+// The before-and-after rules' anchor, under the rule it belongs to.
+.cc-an-anchor-pick {
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid var(--border-glass);
 }
 
 .cc-wiz-preset-note,
-.cc-wiz-analyze-status {
+.cc-wiz-span-note {
   margin: 0;
+  font-size: var(--text-secondary);
 
   &:empty {
     display: none;
   }
 }
 
-.cc-wiz-periods {
+// A checkbox and its (i): the label keeps its own click target.
+.cc-an-check-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-
-  > legend {
-    padding: 0;
-    margin-bottom: 0.25rem;
-    font-weight: 600;
-  }
+  align-items: flex-start;
+  gap: 0.375rem;
 }
 
-// One period per row: its name, then the first and last run selects.
-.cc-wiz-period {
+// --- Subject ---
+
+.cc-an-subject {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(224, 186, 109, 0.04);
+}
+
+.cc-an-subject-title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8b8b90;
+}
+
+.cc-an-model {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
+  gap: 0.25rem 0.5rem;
 }
 
-.cc-wiz-period-name {
-  min-width: 6.5rem;
-  font-weight: 600;
+.cc-an-model-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
 }
 
-// Wide enough for `#1234 · 2026-10-08 14:05 UTC`, and never wider than the row.
-.cc-wiz-run-select {
-  width: auto;
-  min-width: 14rem;
-  max-width: 100%;
-  font-variant-numeric: tabular-nums;
+.cc-an-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
 }
 
-// Wide tables scroll inside their own container, never the page.
-.cc-wiz-table-scroll {
-  max-inline-size: 100%;
-  overflow-x: auto;
+.cc-an-model-id {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--nav-color);
+  overflow-wrap: anywhere;
 }
 
-.cc-wiz-caption {
-  caption-side: top;
-  padding-bottom: 0.25rem;
-  text-align: start;
-  font-weight: 600;
-  color: var(--font-color);
-}
+.cc-an-compared {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 
-.cc-wiz-units {
-  font-size: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+  dt {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #8b8b90;
+  }
 
-  // A unit outside both periods reads quieter than the ones the analysis uses.
-  tr[data-period="notUsed"] .cc-wiz-unit-period,
-  tr[data-period="notEligible"] .cc-wiz-unit-period {
-    color: var(--nav-color);
+  dd {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin: 0;
+    min-width: 0;
   }
 }
 
-.cc-wiz-samples {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.cc-wiz-sample {
-  margin: 0;
-}
-
-// The hint takes its own line above the control checkboxes.
-.cc-wiz-controls-hint,
-.cc-wiz-controls-empty {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.cc-nowrap {
-  white-space: nowrap;
-}
-
-.cc-wiz-protocol > .gh-disclosure-body {
+.cc-an-compared-set {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+.cc-an-compared-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cc-an-compared-units {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.cc-an-none {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+// --- Protocol ---
+
+// One endpoint per row: its id and name, then its margin at the end.
+.cc-an-endpoints {
+  display: grid;
+  gap: 0;
+  margin: 0;
+
+  > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.375rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  dt {
+    min-width: 0;
+  }
+
+  dd {
+    margin: 0;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: #d4d4d8;
+  }
+}
+
+.cc-an-endpoint-id {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.cc-wiz-protocol-facts {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+
+  dt {
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+  }
 }
 
 .cc-wiz-override-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
   gap: 0.75rem;
 }
 
-// One composite event per line: its tag pill, then day, title and changes.
-.cc-wiz-preview .cc-wiz-event-groups {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0;
-  list-style: none;
+// --- View bar and panels ---
 
-  li {
-    display: grid;
-    grid-template-columns: 3.25rem minmax(0, 1fr);
-    align-items: baseline;
-  }
+.cc-an-tab-count {
+  min-inline-size: 1.5em;
+  margin-inline-start: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--score-mid-bg);
+  color: var(--score-mid-ink);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 
-  .cc-marker-tag {
-    justify-self: start;
-  }
+// The polite note and the analyze status, each a line of its own between the bar and the views.
+// Collapsed but rendered while empty, so the live region exists before its first message.
+.cc-an-note {
+  margin: 0.5rem 1.5rem 0;
+  font-size: var(--text-secondary);
+  color: #c3c2b7;
 
-  time {
-    font-variant-numeric: tabular-nums;
+  &:empty {
+    margin: 0;
   }
 }
 
-.cc-wiz-event-changes {
+.cc-an-state {
+  margin: 0.5rem 1.5rem 0;
+}
+
+// The global panel clips; these views scroll themselves. The summary strip sticks to the top of
+// the Periods view's own scroll, flush, so the view has no top padding of its own.
+.cc-an-panel {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 0.75rem;
+}
+
+.cc-an-periods {
+  padding-top: 0;
+  overflow-anchor: none;
+}
+
+.cc-an-empty {
+  margin: 0.75rem 0 0;
   color: var(--nav-color);
 }
+
+// --- Results ---
 
 // The Reports section under the results, headed as the results' own sections are.
 .cc-wiz-reports {

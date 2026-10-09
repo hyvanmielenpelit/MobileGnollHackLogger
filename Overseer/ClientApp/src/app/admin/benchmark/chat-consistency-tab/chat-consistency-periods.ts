@@ -60,6 +60,17 @@ export const CC_NO_PERIOD_IDS: CcPeriodIds = Object.freeze({
   comparisonLastId: null
 });
 
+/** One of the four period bounds. */
+export type CcPeriodBound = keyof CcPeriodIds;
+
+/** Each bound as a sentence names it: `the baseline's first run`. */
+export const CC_PERIOD_BOUND_LABELS: Readonly<Record<CcPeriodBound, string>> = Object.freeze({
+  baselineFirstId: 'the baseline\'s first run',
+  baselineLastId: 'the baseline\'s last run',
+  comparisonFirstId: 'the comparison\'s first run',
+  comparisonLastId: 'the comparison\'s last run'
+});
+
 /** The period bounds the analysis request carries, as ISO instants. */
 export interface CcPeriodWindows {
   baselineStartUtc: string;
@@ -400,6 +411,15 @@ export function ccPruneIds(units: readonly CcPeriodUnit[], ids: CcPeriodIds): Cc
     comparisonLastId: keep(ids.comparisonLastId)
   };
   return sameIds(next, ids) ? ids : next;
+}
+
+/**
+ * A bound pressed on a unit: an unset bound or one held by another unit moves to `unitId`, and the
+ * bound already on `unitId` is cleared. The other three bounds never move; an order the move breaks
+ * is for {@link ccPeriodsRefusal} to report.
+ */
+export function ccToggleBound(ids: CcPeriodIds, key: CcPeriodBound, unitId: number): CcPeriodIds {
+  return { ...ids, [key]: ids[key] === unitId ? null : unitId };
 }
 
 export function sameIds(a: CcPeriodIds, b: CcPeriodIds): boolean {

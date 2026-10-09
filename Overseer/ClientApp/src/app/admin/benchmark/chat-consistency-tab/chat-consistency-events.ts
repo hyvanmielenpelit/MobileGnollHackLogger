@@ -225,6 +225,17 @@ export function eventGroupLabel(group: CcEventGroup): string {
 }
 
 /**
+ * A composite event's kinds as one line, `System prompt, Knowledge base ×2`: a kind more than one run
+ * detected carries the count, and the harness is left out when the title names it.
+ */
+export function eventGroupChangesText(group: CcEventGroup): string {
+  return group.changes
+    .filter(change => !(group.harnessChange && change.kind === CC_HARNESS_EVENT_KIND))
+    .map(change => change.count > 1 ? `${change.label} ×${change.count}` : change.label)
+    .join(', ');
+}
+
+/**
  * Every kind present in the groups, in kind order, each with the number of composite events that
  * contain it.
  */

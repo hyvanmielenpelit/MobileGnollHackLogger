@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 
+import { CcPeriodBound } from '../chat-consistency-periods';
 import { CC_EMPTY_BATTERY_SCOPE, CcRunScope } from '../chat-consistency-scope';
 import { CcAnalysisResult, CcBatteryRunRow, CcComparisonSet, CcRunRow } from '../chat-consistency.models';
 import {
@@ -21,9 +22,18 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
-import { CcAnalysisStep, CcAnalysisWizardComponent } from './analysis-wizard.component';
+import {
+  CC_ANALYZE_STORAGE_KEY,
+  CC_DEFAULT_ANALYZE_LAYOUT,
+  CcAnalysisStep,
+  CcAnalysisWizardComponent,
+  readStoredAnalyzeLayout
+} from './analysis-wizard.component';
 
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
+
+/** The four bounds in request order. */
+const BOUNDS: readonly CcPeriodBound[] = ['baselineFirstId', 'baselineLastId', 'comparisonFirstId', 'comparisonLastId'];
 
 /** The run table of the composite-event fixture: runs 201–206. */
 function eventRows(): CcRunRow[] {
@@ -47,6 +57,7 @@ describe('CcAnalysisWizardComponent', () => {
   let el: HTMLElement;
 
   beforeEach(async () => {
+    localStorage.removeItem(CC_ANALYZE_STORAGE_KEY);
     await TestBed.configureTestingModule({
       imports: [CcAnalysisWizardComponent],
       providers: chatConsistencyTestProviders()
@@ -71,6 +82,7 @@ describe('CcAnalysisWizardComponent', () => {
     http.verify();
     fixture.destroy();
     el.remove();
+    localStorage.removeItem(CC_ANALYZE_STORAGE_KEY);
   });
 
   function setStep(step: CcAnalysisStep): void {
@@ -86,35 +98,51 @@ describe('CcAnalysisWizardComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Chooses a run in one of the four selects, as the user does. */
-  function pick(id: string, value: string): void {
-    const select = el.querySelector<HTMLSelectElement>(`#${id}`)!;
+  /** A unit's toggle for one bound, on its period card. */
+  const toggle = (unitId: number, bound: CcPeriodBound): HTMLButtonElement =>
+    el.querySelector<HTMLButtonElement>(`article.cc-pu-card[data-unit-id="${unitId}"] .cc-pu-bound[data-bound="${bound}"]`)!;
+
+  /** Presses a bound's toggle on a card, as the user does. */
+  function press(unitId: number, bound: CcPeriodBound): void {
+    toggle(unitId, bound).click();
+    fixture.detectChanges();
+  }
+
+  /** Puts a bound on a unit, pressing only when it is not there yet. */
+  function setBound(unitId: number, bound: CcPeriodBound): void {
+    if (toggle(unitId, bound).getAttribute('aria-pressed') !== 'true') press(unitId, bound);
+  }
+
+  /** Chooses a Split rule in the sidebar's select. */
+  function chooseRule(value: string): void {
+    const select = el.querySelector<HTMLSelectElement>('#cc-an-rule')!;
     select.value = value;
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
   }
 
-  function clickPreset(value: string): void {
-    el.querySelector<HTMLInputElement>(`input[name="cc-wiz-preset"][value="${value}"]`)!.click();
-    fixture.detectChanges();
-  }
-
+  const ruleValue = (): string => el.querySelector<HTMLSelectElement>('#cc-an-rule')!.value;
   const body = (step: CcAnalysisStep): HTMLElement | null => el.querySelector<HTMLElement>(`.cc-wiz-step[data-step="${step}"]`);
   const shownSteps = (): (string | null)[] =>
     Array.from(el.querySelectorAll<HTMLElement>('.cc-wiz-step')).filter(step => !step.hidden).map(step => step.getAttribute('data-step'));
-  /** The four run choices, as the selects show them: baseline first and last, comparison first and last. */
-  const choices = (): string[] =>
-    ['cc-wiz-bf', 'cc-wiz-bl', 'cc-wiz-cf', 'cc-wiz-cl'].map(id => el.querySelector<HTMLSelectElement>(`#${id}`)!.value);
-  /** Each unit row of the table as `[id, period]`. */
+  /** The four bounds as the cards show them: the unit whose toggle is pressed, or '' for none. */
+  const bounds = (): string[] => BOUNDS.map(bound =>
+    el.querySelector(`.cc-pu-bound[data-bound="${bound}"][aria-pressed="true"]`)?.closest('article')?.getAttribute('data-unit-id') ?? '');
+  /** Each card as `[id, period word]`. */
   const unitPeriods = (): [string | null, string][] =>
-    Array.from(el.querySelectorAll<HTMLTableRowElement>('table.cc-wiz-units tbody tr'))
-      .map(row => [row.getAttribute('data-unit-id'), textOf(row.querySelector('.cc-wiz-unit-period'))]);
+    Array.from(el.querySelectorAll<HTMLElement>('article.cc-pu-card'))
+      .map(card => [card.getAttribute('data-unit-id'), textOf(card.querySelector('.cc-pu-period-tag'))]);
   const controlLabels = (): string[] =>
     Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check')).map(box => textOf(box.closest('label')));
   const checkedControls = (): string[] =>
     Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check')).filter(box => box.checked).map(box => textOf(box.closest('label')));
-  const presetChecked = (value: string): boolean =>
-    el.querySelector<HTMLInputElement>(`input[name="cc-wiz-preset"][value="${value}"]`)!.checked;
+  const note = (): string => textOf(el.querySelector('#cc-an-note'));
+  const strip = (period: string, part: string): string => textOf(el.querySelector(`.cc-ps-period[data-period="${period}"] ${part}`));
+  /** The preview's Input value of a fact, by key. */
+  const fact = (key: string): string | null => {
+    const row = el.querySelector(`.cc-ap-facts [data-fact="${key}"] dd`);
+    return row ? textOf(row) : null;
+  };
 
   describe('steps', () => {
     it('renders only the body of the step it is given, without navigation of its own', () => {
@@ -128,9 +156,11 @@ describe('CcAnalysisWizardComponent', () => {
     it('keeps a visited step\'s body mounted and hidden while another step shows', () => {
       const regradePanel = el.querySelector('app-cc-regrade-panel');
       expect(regradePanel).not.toBeNull();
+      expect(el.classList).toContain('is-workspace');
       setStep('results');
       expect(shownSteps()).toEqual(['results']);
       expect(body('analyze')!.hidden).toBe(true);
+      expect(el.classList).not.toContain('is-workspace');
 
       setStep('analyze');
       expect(shownSteps()).toEqual(['analyze']);
@@ -149,65 +179,239 @@ describe('CcAnalysisWizardComponent', () => {
     });
   });
 
+  describe('workspace', () => {
+    const sideTab = (id: string): HTMLButtonElement => el.querySelector<HTMLButtonElement>(`#cc-an-side-tab-${id}`)!;
+    const sidePanel = (id: string): HTMLElement => el.querySelector<HTMLElement>(`#cc-an-side-panel-${id}`)!;
+    const viewTab = (id: string): HTMLButtonElement => el.querySelector<HTMLButtonElement>(`#cc-an-view-tab-${id}`)!;
+    const viewPanel = (id: string): HTMLElement => el.querySelector<HTMLElement>(`#cc-an-view-panel-${id}`)!;
+    const stored = (): Record<string, unknown> => JSON.parse(localStorage.getItem(CC_ANALYZE_STORAGE_KEY) ?? 'null');
+
+    it('is a settings sidebar beside the Periods and Preview views', () => {
+      const sidebar = el.querySelector<HTMLElement>('aside#cc-an-sidebar.gh-fig-sidebar')!;
+      expect(sidebar.getAttribute('aria-label')).toBe('Analysis settings');
+      const tabs = sidebar.querySelector('[role="tablist"]')!;
+      expect(tabs.getAttribute('aria-label')).toBe('Settings sections');
+      expect(tabs.classList).toContain('gh-tabs-wrap');
+      expect(Array.from(tabs.querySelectorAll('[role="tab"]')).map(tab => textOf(tab))).toEqual(['Setup', 'Controls', 'Protocol']);
+      expect(sideTab('setup').getAttribute('aria-selected')).toBe('true');
+      expect(sideTab('setup').getAttribute('tabindex')).toBe('0');
+      expect(sideTab('controls').getAttribute('tabindex')).toBe('-1');
+      expect(sidePanel('setup').hidden).toBe(false);
+      expect(sidePanel('controls').hidden).toBe(true);
+      expect(sidePanel('protocol').hidden).toBe(true);
+
+      const views = el.querySelector('.gh-fig-bar [role="tablist"]')!;
+      expect(views.getAttribute('aria-label')).toBe('Analysis views');
+      expect(textOf(viewTab('periods'))).toBe('Periods');
+      expect(viewTab('periods').getAttribute('aria-selected')).toBe('true');
+      expect(viewPanel('periods').hidden).toBe(false);
+      expect(viewPanel('preview').hidden).toBe(true);
+      expect(el.querySelector('app-pane-resizer.gh-fig-resizer')!.getAttribute('aria-controls')).toBe('cc-an-sidebar');
+    });
+
+    it('moves between the sidebar tabs with the arrow keys, focus following, and remembers the tab', () => {
+      sideTab('setup').focus();
+      sideTab('setup').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(sideTab('controls').getAttribute('aria-selected')).toBe('true');
+      expect(document.activeElement).toBe(sideTab('controls'));
+      expect(sidePanel('controls').hidden).toBe(false);
+      expect(stored()).toEqual({ version: 1, ...CC_DEFAULT_ANALYZE_LAYOUT, sidebarTab: 'controls' });
+
+      sideTab('controls').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(sideTab('protocol'));
+      sideTab('protocol').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(sideTab('setup'));
+    });
+
+    it('collapses the sidebar from its toggle in the view bar, and remembers it', () => {
+      const button = el.querySelector<HTMLButtonElement>('.cc-an-sidebar-toggle')!;
+      expect(button.getAttribute('aria-label')).toBe('Analysis settings');
+      expect(button.getAttribute('aria-expanded')).toBe('true');
+      expect(textOf(el.querySelector('#cc-an-tip-sidebar'))).toBe('Hide settings');
+      button.click();
+      fixture.detectChanges();
+      expect(el.querySelector<HTMLElement>('#cc-an-sidebar')!.hidden).toBe(true);
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+      expect(el.querySelector('app-pane-resizer')).toBeNull();
+      expect(textOf(el.querySelector('#cc-an-tip-sidebar'))).toBe('Show settings');
+      expect(stored()['sidebarCollapsed']).toBe(true);
+    });
+
+    it('reads a damaged layout field by field, every unknown value taking its default', () => {
+      localStorage.setItem(CC_ANALYZE_STORAGE_KEY, JSON.stringify({
+        version: 1, sidebarTab: 'nowhere', view: 'preview', sidebarCollapsed: 'yes', sidebarWidth: 9999, details: false
+      }));
+      expect(readStoredAnalyzeLayout()).toEqual({
+        sidebarTab: 'setup', view: 'preview', sidebarCollapsed: false, sidebarWidth: 640, details: false
+      });
+      localStorage.setItem(CC_ANALYZE_STORAGE_KEY, '{');
+      expect(readStoredAnalyzeLayout()).toEqual(CC_DEFAULT_ANALYZE_LAYOUT);
+      localStorage.setItem(CC_ANALYZE_STORAGE_KEY, '[1]');
+      expect(readStoredAnalyzeLayout()).toEqual(CC_DEFAULT_ANALYZE_LAYOUT);
+    });
+
+    it('counts the preview\'s notes on the Preview tab, and opens it from the strip\'s readiness link', () => {
+      // The Overseer change E1 in the span and the runs without a matched control.
+      expect(component.noteCount).toBe(2);
+      expect(textOf(viewTab('preview').querySelector('.cc-an-tab-count'))).toBe('2 notes');
+      const link = el.querySelector<HTMLButtonElement>('.cc-ps-preview-link')!;
+      expect(textOf(link)).toBe('Preview: 2 notes');
+
+      link.click();
+      fixture.detectChanges();
+      expect(viewTab('preview').getAttribute('aria-selected')).toBe('true');
+      expect(viewPanel('preview').hidden).toBe(false);
+      expect(viewPanel('periods').hidden).toBe(true);
+      expect(document.activeElement).toBe(viewPanel('preview'));
+      expect(stored()['view']).toBe('preview');
+    });
+
+    it('remembers Show run details', () => {
+      const details = el.querySelector<HTMLButtonElement>('.cc-pu-details-toggle')!;
+      expect(details.getAttribute('aria-pressed')).toBe('true');
+      details.click();
+      fixture.detectChanges();
+      expect(details.getAttribute('aria-pressed')).toBe('false');
+      expect(component.details).toBe(false);
+      expect(stored()['details']).toBe(false);
+    });
+  });
+
+  describe('subject', () => {
+    const subject = (): HTMLElement => el.querySelector<HTMLElement>('section.cc-an-subject')!;
+
+    it('names the model with its badges and id, and what is compared, without a Runs line', () => {
+      expect(textOf(subject().querySelector('#cc-an-subject-title'))).toBe('Subject');
+      expect(textOf(subject().querySelector('.cc-an-model-name'))).toBe('GPT-5 high');
+      expect(textOf(subject().querySelector('.thinking-badge'))).toBe('thinking level High');
+      expect(textOf(subject().querySelector('.provider-badge'))).toBe('OpenAI');
+      expect(textOf(subject().querySelector('.cc-an-model-id'))).toBe('gpt-5');
+      expect(Array.from(subject().querySelectorAll('dt')).map(dt => textOf(dt))).toEqual(['Compared']);
+      const tag = subject().querySelector('.cc-kind-tag')!;
+      expect(tag.getAttribute('data-kind')).toBe('all');
+      expect(textOf(tag)).toBe('All suites');
+      expect(textOf(subject().querySelector('.cc-an-compared-label'))).toBe('Runs analyzed one by one');
+      expect(textOf(subject().querySelector('.cc-an-compared-units'))).toBe('6 runs from step 1');
+      expect(textOf(subject())).not.toContain('Runs 6');
+    });
+
+    it('counts a suite set\'s single-suite runs', () => {
+      fixture.componentRef.setInput('compareSet', ccComparisonSets().sets[1]);
+      fixture.detectChanges();
+      expect(textOf(subject().querySelector('.cc-kind-tag'))).toBe('Suite');
+      expect(textOf(subject().querySelector('.cc-an-compared-label'))).toBe('Board Suite');
+      expect(textOf(subject().querySelector('.cc-an-compared-units'))).toBe('6 single-suite runs from step 1');
+    });
+
+    it('asks for a model in step 1 when there is none', () => {
+      fixture.componentRef.setInput('axis', null);
+      fixture.detectChanges();
+      expect(component.analyzeBlocked).toBe('Choose a model in step 1 first.');
+      expect(component.reachable('analyze')).toBe(false);
+      expect(textOf(subject())).toContain('None chosen');
+      expect(el.querySelector<HTMLSelectElement>('#cc-an-rule')!.disabled).toBe(true);
+      expect(ruleValue()).toBe('custom');
+      expect(el.querySelector('app-cc-period-units')).toBeNull();
+    });
+  });
+
   describe('periods', () => {
-    it('starts from Earliest vs latest and shows the run choices, the note and the sample lines', () => {
-      expect(presetChecked('earliest')).toBe(true);
-      expect(textOf(el.querySelector('.cc-wiz-periods > legend'))).toBe('Periods');
-      expect(choices()).toEqual(['101', '103', '104', '106']);
+    it('starts from Earliest vs latest and shows the bounds on the cards, the note and the summary strip', () => {
+      expect(ruleValue()).toBe('earliest');
+      expect(bounds()).toEqual(['101', '103', '104', '106']);
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
         .toBe('The runs span 31 days: the first 14 days against the last 14 days, 3 runs each.');
       expect(el.querySelector('.cc-wiz-periods-error')).toBeNull();
       expect(component.periodsError).toBe('');
-      expect(Array.from(el.querySelectorAll('.cc-wiz-sample')).map(line => textOf(line))).toEqual([
-        'Baseline: 3 runs on 3 days (2026-09-01 to 2026-09-12), which meets the minimum sample for P1, P4 and P5.',
-        'Comparison: 3 runs on 3 days (2026-09-20 to 2026-10-01), which meets the minimum sample for P1, P4 and P5.'
-      ]);
+      expect(strip('baseline', '.cc-ps-count')).toBe('3 runs on 3 days · 2026-09-01 to 2026-09-12');
+      expect(strip('comparison', '.cc-ps-window')).toBe('Window 2026-09-20 00:00 to 2026-10-01 23:59 UTC');
+      expect(strip('baseline', '.cc-ps-sample')).toContain('Meets the minimum sample');
+      expect(component.sampleLine('baseline'))
+        .toBe('Baseline: 3 runs on 3 days (2026-09-01 to 2026-09-12), which meets the minimum sample for P1, P4 and P5.');
       expect(component.windows).toEqual({
         baselineStartUtc: '2026-09-01T00:00:00.000Z',
         baselineEndUtc: '2026-09-12T23:59:59.999Z',
         comparisonStartUtc: '2026-09-20T00:00:00.000Z',
         comparisonEndUtc: '2026-10-01T23:59:59.999Z'
       });
-    });
-
-    it('offers every unit in native selects with visually hidden labels', () => {
-      const select = el.querySelector<HTMLSelectElement>('#cc-wiz-bf')!;
-      expect(select.classList).toContain('gh-input');
-      const label = el.querySelector<HTMLLabelElement>('label[for="cc-wiz-bf"]')!;
-      expect(label.classList).toContain('visually-hidden');
-      expect(textOf(label)).toBe('Baseline first run');
-      expect(['cc-wiz-bl', 'cc-wiz-cf', 'cc-wiz-cl'].map(id => textOf(el.querySelector(`label[for="${id}"]`))))
-        .toEqual(['Baseline last run', 'Comparison first run', 'Comparison last run']);
-      const options = Array.from(select.options);
-      expect(options.map(option => textOf(option))).toEqual([
-        'Choose a run', '#101 · 2026-09-01 08:00 UTC', '#102 · 2026-09-05 08:00 UTC', '#103 · 2026-09-12 08:00 UTC',
-        '#104 · 2026-09-20 08:00 UTC', '#105 · 2026-09-26 08:00 UTC', '#106 · 2026-10-01 08:00 UTC'
+      expect(unitPeriods()).toEqual([
+        ['101', 'Baseline'], ['102', 'Baseline'], ['103', 'Baseline'], ['104', 'Comparison'], ['105', 'Comparison'], ['106', 'Comparison']
       ]);
-      // A run reads its own text.
-      expect(options[1].getAttribute('aria-label')).toBeNull();
     });
 
-    it('switches to Custom when a run is chosen by hand, and refuses an overlap where the date error was', () => {
-      pick('cc-wiz-cf', '103');
-      expect(presetChecked('custom')).toBe(true);
+    it('offers the five Split rules in one select with an info tip', () => {
+      const options = Array.from(el.querySelectorAll<HTMLOptionElement>('#cc-an-rule option'));
+      expect(options.map(option => [option.value, textOf(option)])).toEqual([
+        ['earliest', 'Earliest vs latest'],
+        ['annotation', 'Before vs after an annotation'],
+        ['event', 'Before vs after an Overseer change'],
+        ['later', 'Confirm on later data'],
+        ['custom', 'Manual (set on the cards)']
+      ]);
+      expect(textOf(el.querySelector('label[for="cc-an-rule"]'))).toBe('Split rule');
+      expect(el.querySelector('#cc-an-rule')!.getAttribute('aria-describedby')).toBe('cc-an-rule-tip');
+      expect(el.querySelector('app-info-tip[tipId="cc-an-rule-tip"], app-info-tip[tipid="cc-an-rule-tip"]')).not.toBeNull();
+    });
+
+    it('switches to Manual when a bound is pressed on a card, says so, keeps focus and refuses an overlap', () => {
+      const button = toggle(103, 'comparisonFirstId');
+      button.focus();
+      press(103, 'comparisonFirstId');
+      expect(ruleValue()).toBe('custom');
       expect(component.preset).toBe('custom');
+      expect(note()).toBe('Comparison first run: run #103. Split rule set to Manual.');
       expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('');
+      // The card was not re-created: the same button holds focus.
+      expect(toggle(103, 'comparisonFirstId')).toBe(button);
+      expect(document.activeElement).toBe(button);
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      expect(toggle(104, 'comparisonFirstId').getAttribute('aria-pressed')).toBe('false');
       expect(textOf(el.querySelector('.cc-wiz-periods-error'))).toBe('The comparison must start after the baseline\'s last run.');
-      expect(component.periodsError).toBe('The comparison must start after the baseline\'s last run.');
       expect(component.analyzeBlocked).toBe('The comparison must start after the baseline\'s last run.');
       expect(component.windows).toBeNull();
-      expect(el.querySelector('.cc-wiz-sample')).toBeNull();
-      // Analyze stays reachable: the refusal is shown there.
+      expect(el.querySelector('.cc-ps-sample')).toBeNull();
       expect(component.reachable('analyze')).toBe(true);
+
+      // Pressed again, the bound clears; the rule is already Manual.
+      press(103, 'comparisonFirstId');
+      expect(note()).toBe('Comparison first run cleared.');
+      expect(component.periodsError).toBe('Choose the first and last run of both periods.');
     });
 
-    it('refuses a period whose last run comes before its first, and an unset choice', () => {
-      pick('cc-wiz-bl', '101');
-      pick('cc-wiz-bf', '102');
+    it('applies a rule chosen again after Manual', () => {
+      press(102, 'baselineLastId');
+      expect(bounds()).toEqual(['101', '102', '104', '106']);
+      chooseRule('earliest');
+      expect(bounds()).toEqual(['101', '103', '104', '106']);
+      expect(note()).toBe('');
+    });
+
+    it('refuses a period whose last run comes before its first', () => {
+      press(101, 'baselineLastId');
+      press(102, 'baselineFirstId');
+      expect(bounds()).toEqual(['102', '101', '104', '106']);
       expect(component.periodsError).toBe('The baseline\'s last run comes before its first.');
-      pick('cc-wiz-cl', '');
-      pick('cc-wiz-bf', '101');
-      expect(textOf(el.querySelector('.cc-wiz-periods-error'))).toBe('Choose the first and last run of both periods.');
+    });
+
+    it('sends the same request for bounds set on the cards as for the bounds a rule sets', () => {
+      const byRule = component.buildRequest();
+      chooseRule('custom');
+      // Cleared, then set again on the same run.
+      press(101, 'baselineFirstId');
+      expect(component.buildRequest()).toBeNull();
+      press(101, 'baselineFirstId');
+      expect(component.buildRequest()).toEqual(byRule);
+
+      setBound(102, 'baselineLastId');
+      setBound(105, 'comparisonFirstId');
+      const request = component.buildRequest()!;
+      expect(request.baselineRunIds).toEqual([101, 102]);
+      expect(request.comparisonRunIds).toEqual([105, 106]);
+      expect(request.baselineEndUtc).toBe('2026-09-05T23:59:59.999Z');
+      expect(request.comparisonStartUtc).toBe('2026-09-26T00:00:00.000Z');
     });
 
     it('blocks Analyze while an override is invalid', () => {
@@ -228,18 +432,19 @@ describe('CcAnalysisWizardComponent', () => {
       expect(textOf(el.querySelector('.cc-wiz-overrides-error'))).toBe('α must lie strictly between 0 and 0.5.');
     });
 
-    it('keeps Protocol V1 and its overrides in one closed disclosure', () => {
-      const protocol = el.querySelector<HTMLDetailsElement>('details.gh-disclosure.cc-wiz-protocol')!;
-      expect(protocol.open).toBe(false);
-      expect(textOf(protocol.querySelector(':scope > summary'))).toBe('Protocol V1: margins and minimum sample');
-      const rows = Array.from(protocol.querySelectorAll<HTMLTableRowElement>('.cc-protocol-table tbody tr'))
-        .map(row => Array.from(row.cells).map(cell => textOf(cell)));
+    it('shows Protocol V1 open in its tab, its endpoints as a list, and the overrides in a disclosure', () => {
+      const panel = el.querySelector<HTMLElement>('#cc-an-side-panel-protocol')!;
+      expect(panel.querySelector('table')).toBeNull();
+      const rows = Array.from(panel.querySelectorAll('dl.cc-an-endpoints > div'))
+        .map(row => [textOf(row.querySelector('dt')), textOf(row.querySelector('dd'))]);
       expect(rows).toEqual([
         ['P1 Quality', '±3 index points'], ['P2 Time to first answer text', '±15 %'], ['P3 Answer streaming rate', '±10 %'],
         ['P4 Work per turn', '±15 %'], ['P5 Cost per question', '±10 %']
       ]);
-      expect(textOf(protocol.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P5');
-      expect(protocol.querySelector('details.cc-wiz-overrides #cc-wiz-alpha')).not.toBeNull();
+      expect(textOf(panel.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P5');
+      const overrides = panel.querySelector<HTMLDetailsElement>('details.gh-disclosure.cc-wiz-overrides')!;
+      expect(overrides.open).toBe(false);
+      expect(overrides.querySelector('#cc-wiz-alpha')).not.toBeNull();
     });
 
     it('splits before and after a composite Overseer event, with every run on each side', () => {
@@ -247,7 +452,7 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.componentRef.setInput('rows', eventRows());
       fixture.componentRef.setInput('axis', ccAxis({ firstRunAtUtc: '2026-09-01T08:00:00Z', lastRunAtUtc: '2026-09-10T08:00:00Z' }));
       fixture.detectChanges();
-      clickPreset('event');
+      chooseRule('event');
 
       const options = Array.from(el.querySelectorAll<HTMLOptionElement>('#cc-wiz-event option'));
       expect(options.map(option => textOf(option))).toEqual([
@@ -259,7 +464,7 @@ describe('CcAnalysisWizardComponent', () => {
       expect(options.map(option => option.value)).toEqual(['2026-09-03|27', '2026-09-05|28', '2026-09-09|29', '2026-09-10|29']);
       // The first composite is taken; run 202 started at its time and so is in the comparison.
       expect(component.presetEventGroupKey).toBe('2026-09-03|27');
-      expect(choices()).toEqual(['201', '201', '202', '206']);
+      expect(bounds()).toEqual(['201', '201', '202', '206']);
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
         .toBe('The runs before the Overseer change E1 (2026-09-03 08:00 UTC) against those from it: 1 run against 5.');
 
@@ -269,26 +474,61 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
       expect(component.presetEventGroupKey).toBe('2026-09-05|28');
       expect(el.querySelector<HTMLSelectElement>('#cc-wiz-event')!.value).toBe('2026-09-05|28');
-      expect(choices()).toEqual(['201', '203', '204', '206']);
-      expect(presetChecked('event')).toBe(true);
+      expect(bounds()).toEqual(['201', '203', '204', '206']);
+      expect(ruleValue()).toBe('event');
       expect(unitPeriods()).toEqual([
         ['201', 'Baseline'], ['202', 'Baseline'], ['203', 'Baseline'], ['204', 'Comparison'], ['205', 'Comparison'], ['206', 'Comparison']
       ]);
     });
 
+    it('splits at an Overseer change from Split here on the cards\' marker', () => {
+      fixture.componentRef.setInput('timeline', ccEventTimeline());
+      fixture.componentRef.setInput('rows', eventRows());
+      fixture.detectChanges();
+      press(203, 'baselineLastId');
+      expect(ruleValue()).toBe('custom');
+
+      const split = el.querySelector<HTMLButtonElement>('.cc-pu-split[aria-label="Split the periods at Overseer change E2"]')!;
+      split.focus();
+      split.click();
+      fixture.detectChanges();
+      expect(ruleValue()).toBe('event');
+      expect(component.presetEventGroupKey).toBe('2026-09-05|28');
+      expect(el.querySelector<HTMLSelectElement>('#cc-wiz-event')!.value).toBe('2026-09-05|28');
+      expect(bounds()).toEqual(['201', '203', '204', '206']);
+      expect(note()).toBe('Split at Overseer change E2. '
+        + 'The runs before the Overseer change E2 (2026-09-05 08:00 UTC) against those from it: 3 runs each.');
+      // The marker was not re-created.
+      expect(document.activeElement).toBe(split);
+    });
+
+    it('splits at an annotation from Split here', () => {
+      fixture.componentRef.setInput('timeline', ccEventTimeline());
+      fixture.componentRef.setInput('rows', eventRows());
+      fixture.detectChanges();
+      el.querySelector<HTMLButtonElement>('.cc-pu-split[aria-label="Split the periods at annotation A1"]')!.click();
+      fixture.detectChanges();
+      expect(ruleValue()).toBe('annotation');
+      expect(component.presetAnnotationId).toBe(11);
+      expect(el.querySelector<HTMLSelectElement>('#cc-wiz-annotation')!.value).toBe('11');
+      expect(bounds()).toEqual(['201', '201', '202', '206']);
+      expect(note()).toContain('Split at annotation A1.');
+    });
+
     it('says when there is no Overseer change to split at', () => {
       fixture.componentRef.setInput('timeline', ccTimeline({ events: [] }));
       fixture.detectChanges();
-      clickPreset('event');
+      chooseRule('event');
       expect(el.querySelector('#cc-wiz-event')).toBeNull();
       expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('No Overseer change was detected in the timeline range.');
-      expect(choices()).toEqual(['', '', '', '']);
+      expect(bounds()).toEqual(['', '', '', '']);
       expect(component.periodsError).toBe('Choose the first and last run of both periods.');
     });
 
     it('splits at an annotation, and says when one side of it has no run', () => {
-      clickPreset('annotation');
-      expect(choices()).toEqual(['101', '104', '105', '106']);
+      chooseRule('annotation');
+      expect(bounds()).toEqual(['101', '104', '105', '106']);
+      expect(textOf(el.querySelector('#cc-wiz-annotation option'))).toBe('A1 · 2026-09-20: New snapshot announced');
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
         .toBe('The runs before the annotation (2026-09-20 12:00 UTC) against those from it: 4 runs against 2.');
       expect(component.presetAnchorUtc).toBe('2026-09-20T12:00:00Z');
@@ -296,82 +536,86 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.componentRef.setInput('timeline', ccTimeline({ annotations: [ccAnnotation(2, { atUtc: '2026-10-08T00:00:00Z' })] }));
       fixture.detectChanges();
       expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('No run on one side of the annotation (2026-10-08).');
-      expect(choices()).toEqual(['', '', '', '']);
+      expect(bounds()).toEqual(['', '', '', '']);
     });
 
     it('confirms on later data: the last baseline against the runs after the analysis was saved', () => {
       fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7), ccAnalysisSummary(9, { createdAtUtc: '2026-09-01T00:00:00Z' })]);
       fixture.detectChanges();
-      clickPreset('later');
+      chooseRule('later');
       // Analysis 7 was saved on 2026-10-02 09:00, after the last run.
       expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('No run was made after the last analysis was saved (2026-10-02 09:00 UTC).');
 
       fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7, { createdAtUtc: '2026-09-20T07:00:00Z' })]);
       fixture.detectChanges();
-      // A checked radio fires no change when clicked again, so the preset is chosen afresh.
-      clickPreset('custom');
-      clickPreset('later');
-      expect(choices()).toEqual(['101', '103', '104', '106']);
+      // The same option fires no change when chosen again, so the rule is chosen afresh.
+      chooseRule('custom');
+      chooseRule('later');
+      expect(bounds()).toEqual(['101', '103', '104', '106']);
       expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('Compares the runs after the last analysis, saved 2026-09-20 07:00 UTC, with its baseline.');
-    });
-
-    it('asks for a model in step 1 when there is none', () => {
-      fixture.componentRef.setInput('axis', null);
-      fixture.detectChanges();
-      expect(component.analyzeBlocked).toBe('Choose a model in step 1 first.');
-      expect(component.reachable('analyze')).toBe(false);
-      expect(textOf(el.querySelector('.cc-wiz-subject'))).toContain('None chosen');
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="earliest"]')!.disabled).toBe(true);
-      expect(presetChecked('custom')).toBe(true);
     });
   });
 
-  describe('runs in the periods', () => {
-    it('lists every step-1 run read-only with its period, and no checkbox or anchor button', () => {
-      const table = el.querySelector<HTMLTableElement>('table.gh-table.cc-wiz-units')!;
-      expect(textOf(table.querySelector('caption'))).toBe('Runs in the periods');
-      expect(Array.from(table.querySelectorAll('thead th')).map(th => textOf(th)))
-        .toEqual(['Run', 'Started (UTC)', 'Suite', 'Period', 'Matched controls']);
-      const row = table.querySelector<HTMLTableRowElement>('tr[data-unit-id="101"]')!;
-      expect(Array.from(row.cells).map(cell => textOf(cell))).toEqual(['#101', '2026-09-01 08:00 UTC', 'Board Suite', 'Baseline', '#201']);
-      expect(textOf(table.querySelector('tr[data-unit-id="104"] td:last-child'))).toBe('None');
-      expect(table.querySelector('input')).toBeNull();
-      expect(el.querySelector('.cc-wiz-anchor-btn')).toBeNull();
+  describe('period cards', () => {
+    it('lists every step-1 run oldest first, with the four bound toggles named for the run', () => {
+      expect(textOf(el.querySelector('#cc-an-units-title'))).toBe('Runs');
+      expect(Array.from(el.querySelectorAll('article.cc-pu-card')).map(card => card.getAttribute('data-unit-id')))
+        .toEqual(['101', '102', '103', '104', '105', '106']);
+      expect(toggle(102, 'comparisonLastId').getAttribute('aria-label')).toBe('Make run #102 the comparison\'s last run');
+      expect(el.querySelector('table')).toBeNull();
+      expect(el.querySelector('select.cc-wiz-run-select')).toBeNull();
 
-      pick('cc-wiz-bl', '102');
-      pick('cc-wiz-cf', '105');
+      press(102, 'baselineLastId');
+      press(105, 'comparisonFirstId');
       expect(unitPeriods()).toEqual([
         ['101', 'Baseline'], ['102', 'Baseline'], ['103', 'Not used'], ['104', 'Not used'], ['105', 'Comparison'], ['106', 'Comparison']
       ]);
+      expect(textOf(el.querySelector('.cc-ps-not-used'))).toContain('2 runs');
     });
 
     it('marks an ineligible run inside a period Not eligible and never sends it', () => {
       fixture.componentRef.setInput('rows', rowsWithIneligible102());
       fixture.detectChanges();
-      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(bounds()).toEqual(['101', '103', '104', '106']);
       expect(unitPeriods()[1]).toEqual(['102', 'Not eligible']);
-      expect(textOf(el.querySelector('#cc-wiz-bf option[value="102"]'))).toBe('#102 · 2026-09-05 08:00 UTC · not eligible');
-      expect(textOf(el.querySelector('.cc-wiz-sample[data-period="baseline"]')))
-        .toBe('Baseline: 2 runs on 2 days (2026-09-01 to 2026-09-12), which meets the minimum sample for P1, P4 and P5.');
+      expect(strip('baseline', '.cc-ps-count')).toBe('2 runs on 2 days · 2026-09-01 to 2026-09-12');
       const request = component.buildRequest()!;
       expect(request.baselineRunIds).toEqual([101, 103]);
       expect(request.comparisonRunIds).toEqual([104, 105, 106]);
       // Its matched control is no candidate either.
       expect(controlLabels()).toEqual(['Control run #201', 'Control run #205', 'Control run #206']);
+      expect(component.previewNotes.map(entry => entry.text))
+        .toContain('Run #102 is inside the baseline but not eligible and is not analyzed.');
     });
 
-    it('says when a period is short of the minimum sample', () => {
-      pick('cc-wiz-bl', '101');
-      expect(textOf(el.querySelector('.cc-wiz-sample[data-period="baseline"]')))
+    it('says in the strip when a period is short of the minimum sample', () => {
+      press(101, 'baselineLastId');
+      expect(strip('baseline', '.cc-ps-sample')).toContain('Below the minimum sample');
+      expect(strip('baseline', '.cc-ps-sample')).toContain('P1, P4 and P5 need at least 2 on 2 days to be Established.');
+      expect(component.sampleLine('baseline'))
         .toBe('Baseline: 1 run on 1 day (2026-09-01). P1, P4 and P5 need at least 2 on 2 days to be Established.');
+    });
+
+    it('goes to a bound\'s card from the summary strip, focusing its title', () => {
+      el.querySelector<HTMLButtonElement>('.cc-ps-period[data-period="comparison"] .cc-ps-bound[data-bound="comparisonFirstId"]')!.click();
+      fixture.detectChanges();
+      expect(document.activeElement?.id).toBe('cc-pu-104-title');
+    });
+
+    it('forwards the run report of a card', () => {
+      const reports: number[] = [];
+      component.openRunReport.subscribe(id => reports.push(id));
+      el.querySelector<HTMLButtonElement>('article.cc-pu-card[data-unit-id="104"] .cc-pu-report')!.click();
+      expect(reports).toEqual([104]);
     });
   });
 
   describe('control runs', () => {
-    it('offers the matched controls of the runs in both periods, all checked, under a hint that says what they are for', () => {
+    it('offers the matched controls of the runs in both periods, all checked, with the hint in an info tip', () => {
       const fieldset = el.querySelector<HTMLFieldSetElement>('fieldset.cc-wiz-controls')!;
-      expect(textOf(fieldset.querySelector('legend'))).toBe('Control runs');
-      expect(textOf(fieldset.querySelector('.cc-wiz-controls-hint')))
+      expect(textOf(fieldset.querySelector('legend'))).toContain('Control runs');
+      expect(fieldset.getAttribute('aria-describedby')).toBe('cc-wiz-controls-hint');
+      expect(textOf(el.querySelector('#cc-wiz-controls-hint')))
         .toBe('Other models\' runs under the same Overseer build. Used only to attribute a change to a side, never for the verdicts.');
       expect(controlLabels()).toEqual(['Control run #201', 'Control run #202', 'Control run #205', 'Control run #206']);
       expect(checkedControls()).toEqual(controlLabels());
@@ -387,7 +631,7 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
       expect(checkedControls()).toEqual(['Control run #202', 'Control run #205', 'Control run #206']);
 
-      pick('cc-wiz-bf', '102');
+      press(102, 'baselineFirstId');
       expect(controlLabels()).toEqual(['Control run #202', 'Control run #205', 'Control run #206']);
       expect(checkedControls()).toEqual(controlLabels());
     });
@@ -399,47 +643,87 @@ describe('CcAnalysisWizardComponent', () => {
         .toBe('No matched control run; the analysis looks for controls among other models\' runs itself.');
       expect(component.buildRequest()!.controlRunIds).toBeUndefined();
     });
+
+    it('keeps the pooling hint in an info tip that still describes the checkbox', () => {
+      expect(textOf(el.querySelector('.cc-wiz-relaxed'))).toBe('Pool across measurement segment boundaries');
+      expect(el.querySelector('#cc-wiz-relaxed')!.getAttribute('aria-describedby')).toBe('cc-wiz-relaxed-hint');
+      expect(textOf(el.querySelector('#cc-wiz-relaxed-hint'))).toContain('caps grades at Indicated');
+    });
   });
 
   describe('preview', () => {
-    it('previews the strata, the composite Overseer events in the span and the missing controls', () => {
-      expect(textOf(el.querySelector('.cc-wiz-strata'))).toBe('weekday 08–12 UTC');
-      expect(Array.from(el.querySelectorAll('.cc-wiz-missing li')).map(item => textOf(item)))
-        .toEqual(['Run #103 (Board Suite) has no matched control run.', 'Run #104 (Board Suite) has no matched control run.']);
-      const groups = Array.from(el.querySelectorAll<HTMLElement>('.cc-wiz-event-groups > li'));
-      expect(groups.map(group => group.getAttribute('data-group-key'))).toEqual(['2026-09-15|30']);
-      expect(textOf(groups[0].querySelector('.cc-marker-tag.is-event'))).toBe('E1');
-      expect(textOf(groups[0].querySelector('.cc-wiz-event-text'))).toBe('2026-09-15 · Changes under harness 30 · Tool guides');
-      expect(textOf(el.querySelector('.cc-wiz-relaxed'))).toContain('caps grades at Indicated');
+    const endpointRows = (): string[][] => Array.from(el.querySelectorAll<HTMLElement>('li.cc-ap-endpoint'))
+      .map(row => [row.getAttribute('data-endpoint') ?? '', row.getAttribute('data-status') ?? '']);
+    const groupKeys = (): (string | null)[] =>
+      Array.from(el.querySelectorAll<HTMLElement>('.cc-ap-event-groups > li')).map(line => line.getAttribute('data-group-key'));
+
+    it('lists the input, the endpoint readiness and the notes', () => {
+      expect(textOf(el.querySelector('#cc-ap-title'))).toBe('What the analysis will see');
+      expect(fact('name')).toBe('Automatic');
+      expect(fact('rule')).toBe('Earliest vs latest');
+      expect(fact('baseline')).toContain('#101 → #103 · 3 runs on 3 days');
+      expect(fact('baseline')).toContain('Window 2026-09-01 00:00 to 2026-09-12 23:59 UTC');
+      expect(fact('notUsed')).toBe('None');
+      expect(fact('leftOut')).toBeNull();
+      expect(fact('controls')).toBe('4 of 4 matched controls checked');
+      expect(fact('grading')).toBe('Native grades');
+      expect(fact('pooling')).toBe('Off');
+      expect(fact('protocol')).toBe('V1');
+
+      // Run 103 has no call telemetry, so P2 and P3 have two baseline runs in the common stratum.
+      expect(endpointRows()).toEqual([
+        ['P1', 'meets'], ['P2', 'belowMinimum'], ['P3', 'belowMinimum'], ['P4', 'meets'], ['P5', 'meets']
+      ]);
+      expect(Array.from(el.querySelectorAll<HTMLElement>('li.cc-ap-note')).map(item => item.getAttribute('data-kind')))
+        .toEqual(['events', 'controls']);
+      expect(groupKeys()).toEqual(['2026-09-15|30']);
+      expect(textOf(el.querySelector('li.cc-ap-note[data-kind="controls"]')))
+        .toContain('2 of 6 runs have no matched control run (#103, #104)');
+    });
+
+    it('names the overrides, the anchor and pooling in the input', () => {
+      const p2 = el.querySelector<HTMLInputElement>('#cc-wiz-margin-P2')!;
+      p2.value = '20';
+      p2.dispatchEvent(new Event('input'));
+      const alpha = el.querySelector<HTMLInputElement>('#cc-wiz-alpha')!;
+      alpha.value = '0.1';
+      alpha.dispatchEvent(new Event('input'));
+      el.querySelector<HTMLInputElement>('#cc-wiz-relaxed')!.click();
+      chooseRule('annotation');
+      expect(fact('protocol')).toBe('V1 with overrides: P2 margin 20 %, α 0.1');
+      expect(fact('pooling')).toBe('On — grades capped at Indicated');
+      expect(fact('rule')).toBe('Before vs after an annotation · A1 (2026-09-20)');
     });
 
     it('lists the composite events between the baseline\'s first day and the comparison\'s last', () => {
       fixture.componentRef.setInput('timeline', ccEventTimeline());
       fixture.componentRef.setInput('rows', eventRows());
       fixture.detectChanges();
-      clickPreset('custom');
-      pick('cc-wiz-bf', '204');
-      pick('cc-wiz-bl', '204');
-      pick('cc-wiz-cf', '205');
-      pick('cc-wiz-cl', '205');
+      chooseRule('custom');
+      setBound(204, 'baselineFirstId');
+      setBound(204, 'baselineLastId');
+      setBound(205, 'comparisonFirstId');
+      setBound(205, 'comparisonLastId');
+      expect(bounds()).toEqual(['204', '204', '205', '205']);
+      expect(groupKeys()).toEqual(['2026-09-05|28']);
 
-      const lines = () => Array.from(el.querySelectorAll<HTMLElement>('.cc-wiz-event-groups > li'));
-      expect(lines().map(line => line.getAttribute('data-group-key'))).toEqual(['2026-09-05|28']);
-      expect(textOf(lines()[0].querySelector('.cc-wiz-event-text'))).toBe('2026-09-05 · Harness 27 → 28 · Tool guides');
-      expect(lines()[0].querySelector('time')!.getAttribute('datetime')).toBe('2026-09-05');
-
-      pick('cc-wiz-bf', '201');
-      pick('cc-wiz-cl', '206');
-      expect(lines().map(line => line.getAttribute('data-group-key')))
-        .toEqual(['2026-09-03|27', '2026-09-05|28', '2026-09-09|29', '2026-09-10|29']);
-      expect(textOf(lines()[0].querySelector('.cc-wiz-event-text'))).toBe('2026-09-03 · Changes under harness 27 · System prompt, Knowledge base ×2');
+      setBound(201, 'baselineFirstId');
+      setBound(206, 'comparisonLastId');
+      expect(groupKeys()).toEqual(['2026-09-03|27', '2026-09-05|28', '2026-09-09|29', '2026-09-10|29']);
     });
 
-    it('says when no Overseer change falls in the span', () => {
+    it('has no Overseer change note when none falls in the span', () => {
       fixture.componentRef.setInput('timeline', ccTimeline({ events: [] }));
       fixture.detectChanges();
-      expect(textOf(el.querySelector('.cc-wiz-events'))).toBe('None detected.');
-      expect(el.querySelector('.cc-wiz-event-groups')).toBeNull();
+      expect(el.querySelector('li.cc-ap-note[data-kind="events"]')).toBeNull();
+      expect(el.querySelector('.cc-ap-event-groups')).toBeNull();
+      expect(component.noteCount).toBe(1);
+    });
+
+    it('waits for valid periods before endpoint readiness', () => {
+      press(103, 'comparisonFirstId');
+      expect(el.querySelector('li.cc-ap-endpoint')).toBeNull();
+      expect(textOf(el.querySelector('.cc-ap-waiting'))).toContain('The comparison must start after the baseline\'s last run.');
     });
   });
 
@@ -447,7 +731,7 @@ describe('CcAnalysisWizardComponent', () => {
     it('emits stateChange whenever the state the outer wizard reads may have changed', () => {
       let changes = 0;
       component.stateChange.subscribe(() => changes++);
-      clickPreset('custom');
+      chooseRule('custom');
       expect(changes).toBe(1);
 
       const alpha = el.querySelector<HTMLInputElement>('#cc-wiz-alpha')!;
@@ -460,7 +744,7 @@ describe('CcAnalysisWizardComponent', () => {
       component.preselectRuns();
       expect(changes).toBe(2);
 
-      pick('cc-wiz-bl', '102');
+      press(102, 'baselineLastId');
       expect(changes).toBe(3);
     });
 
@@ -523,7 +807,7 @@ describe('CcAnalysisWizardComponent', () => {
     });
 
     it('sends nothing while Analyze is blocked', () => {
-      pick('cc-wiz-cf', '103');
+      press(103, 'comparisonFirstId');
       expect(component.buildRequest()).toBeNull();
       component.analyze();
       http.expectNone(`${CC_API}/analyses`);
@@ -571,27 +855,28 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
     }
 
-    it('says which runs the presets span: every run in the dates, then the runs chosen in step 1', () => {
+    it('says which runs the rules span: every run in the dates, then the runs chosen in step 1', () => {
       expect(textOf(el.querySelector('.cc-wiz-span-note'))).toBe('Presets use every run in the dates: #101 (2026-09-01) to #106 (2026-10-01), 6 runs.');
       narrow();
       expect(textOf(el.querySelector('.cc-wiz-span-note'))).toBe('Presets use the runs chosen in step 1: #102 (2026-09-05) to #105 (2026-09-26), 3 runs.');
+      expect(textOf(el.querySelector('.cc-an-compared-units'))).toBe('3 runs from step 1');
     });
 
-    it('applies the chosen preset again when the selection changes', () => {
+    it('applies the chosen rule again when the selection changes', () => {
       narrow();
-      expect(presetChecked('earliest')).toBe(true);
-      expect(choices()).toEqual(['102', '103', '105', '105']);
+      expect(ruleValue()).toBe('earliest');
+      expect(bounds()).toEqual(['102', '103', '105', '105']);
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
         .toBe('The runs span 22 days: the earlier days against the later days, split at 2026-09-26, 2 runs against 1.');
       expect(unitPeriods().map(([id]) => id)).toEqual(['102', '103', '105']);
     });
 
-    it('keeps Custom choices while their runs stay, and clears a choice whose run left', () => {
-      pick('cc-wiz-bf', '102');
-      expect(choices()).toEqual(['102', '103', '104', '106']);
+    it('keeps Manual bounds while their runs stay, and clears a bound whose run left', () => {
+      press(102, 'baselineFirstId');
+      expect(bounds()).toEqual(['102', '103', '104', '106']);
       narrow();
       expect(component.preset).toBe('custom');
-      expect(choices()).toEqual(['102', '103', '', '']);
+      expect(bounds()).toEqual(['102', '103', '', '']);
       expect(component.periodsError).toBe('Choose the first and last run of both periods.');
     });
 
@@ -602,14 +887,14 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.componentRef.setInput('scope', { firstRunId: null, lastRunId: null, leftOut: new Set([103]) });
       fixture.componentRef.setInput('scopeKey', '||103');
       fixture.detectChanges();
-      const leftOut = () => Array.from(el.querySelectorAll('.cc-wiz-preview > div'))
-        .find(row => textOf(row.querySelector('dt')) === 'Left out in step 1');
       // Earliest vs latest ends the baseline with run 102 on 2026-09-05, before run 103.
-      expect(leftOut()).toBeUndefined();
+      expect(fact('leftOut')).toBeNull();
 
-      pick('cc-wiz-bl', '104');
-      pick('cc-wiz-cf', '105');
-      expect(textOf(leftOut()!.querySelector('dd'))).toBe('#103');
+      press(104, 'baselineLastId');
+      press(105, 'comparisonFirstId');
+      expect(fact('leftOut')).toBe('#103');
+      expect(textOf(el.querySelector('li.cc-ap-note[data-kind="leftOut"]')))
+        .toContain('Run left out in step 1 inside the windows: #103. It is not analyzed.');
     });
 
     it('records the selection in the request', () => {
@@ -640,7 +925,7 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
     }
 
-    it('says which battery runs the presets span, and names the compared set', () => {
+    it('says which battery runs the rules span, and names the compared battery and its units', () => {
       withBatteries();
       expect(textOf(el.querySelector('.cc-wiz-span-note')))
         .toBe('Presets use every battery run in the dates: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.');
@@ -648,41 +933,47 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
       expect(textOf(el.querySelector('.cc-wiz-span-note')))
         .toBe('Presets use the battery runs chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.');
-      const compared = el.querySelector('.cc-wiz-subject .cc-wiz-compared')!;
-      expect(textOf(compared.querySelector('dd'))).toBe('Two initial suites (revision 1)');
+      const tag = el.querySelector('.cc-an-subject .cc-kind-tag')!;
+      expect(tag.getAttribute('data-kind')).toBe('battery');
+      expect(textOf(tag)).toBe('Battery');
+      expect(textOf(el.querySelector('.cc-an-compared-label'))).toBe('Two initial suites (revision 1)');
+      expect(textOf(el.querySelector('.cc-an-compared-units')))
+        .toBe('2 battery runs from step 1 · each analyzed as one unit, its member runs together');
     });
 
     it('splits battery runs #11 and #12 of the same day into a baseline of #11 and a comparison of #12', () => {
       withBatteries();
-      expect(presetChecked('earliest')).toBe(true);
-      expect(choices()).toEqual(['11', '11', '12', '12']);
+      expect(ruleValue()).toBe('earliest');
+      expect(bounds()).toEqual(['11', '11', '12', '12']);
       expect(el.querySelector('.cc-wiz-periods-error')).toBeNull();
       expect(component.periodsError).toBe('');
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
         .toBe('The runs span 1 day: the earlier half against the later half, 1 battery run each.');
 
-      const option = el.querySelector<HTMLOptionElement>('#cc-wiz-cf option[value="12"]')!;
-      expect(textOf(option)).toBe('#12 · 2026-10-08 10:00 UTC');
-      expect(option.getAttribute('aria-label')).toBe('Battery run #12 · 2026-10-08 10:00 UTC');
-      expect(textOf(el.querySelector('#cc-wiz-cf option[value=""]'))).toBe('Choose a battery run');
-
-      const table = el.querySelector<HTMLTableElement>('table.cc-wiz-units')!;
-      expect(textOf(table.querySelector('caption'))).toBe('Battery runs in the periods');
-      expect(Array.from(table.querySelectorAll('thead th')).map(th => textOf(th)))
-        .toEqual(['Battery run', 'Started (UTC)', 'Suites', 'Period', 'Matched controls']);
-      const row = table.querySelector<HTMLTableRowElement>('tr[data-unit-id="12"]')!;
-      expect(Array.from(row.cells).map(cell => textOf(cell)))
-        .toEqual(['#12', '2026-10-08 10:00 UTC', 'Board Suite, Wiki Suite', 'Comparison', '#404']);
+      expect(textOf(el.querySelector('#cc-an-units-title'))).toBe('Battery runs');
+      expect(toggle(12, 'comparisonFirstId').getAttribute('aria-label')).toBe('Make battery run #12 the comparison\'s first run');
       expect(unitPeriods()).toEqual([['11', 'Baseline'], ['12', 'Comparison']]);
+      expect(strip('baseline', '.cc-ps-count')).toBe('1 battery run on 1 day · 2026-10-08');
+      expect(strip('baseline', '.cc-ps-sample')).toContain('Below the minimum sample');
+      expect(strip('comparison', '.cc-ps-window')).toBe('Window 2026-10-08 10:00 to 2026-10-08 23:59 UTC');
 
-      expect(Array.from(el.querySelectorAll('.cc-wiz-sample')).map(line => textOf(line))).toEqual([
-        'Baseline: 1 battery run on 1 day (2026-10-08). P1, P4 and P5 need at least 2 on 2 days to be Established.',
-        'Comparison: 1 battery run on 1 day (2026-10-08). P1, P4 and P5 need at least 2 on 2 days to be Established.'
-      ]);
       // The controls stay per run: the matched controls of the members.
       expect(controlLabels()).toEqual(['Control run #404']);
       expect(component.regradeRunIds).toEqual([301, 302, 303, 304, 404]);
-      expect(component.missingControls.map(member => member.runId)).toEqual([301, 302, 303]);
+      expect(textOf(el.querySelector('li.cc-ap-note[data-kind="controls"]')))
+        .toContain('3 of 4 runs have no matched control run (#301, #302, #303)');
+    });
+
+    it('opens a battery run\'s report and its members\' from the card', () => {
+      withBatteries();
+      const batteries: number[] = [];
+      const runs: number[] = [];
+      component.openBatteryRunReport.subscribe(id => batteries.push(id));
+      component.openRunReport.subscribe(id => runs.push(id));
+      el.querySelector<HTMLButtonElement>('article.cc-pu-card[data-unit-id="12"] .cc-pu-report')!.click();
+      el.querySelector<HTMLButtonElement>('article.cc-pu-card[data-unit-id="12"] .cc-battery-member[data-run-id="304"] button')!.click();
+      expect(batteries).toEqual([12]);
+      expect(runs).toEqual([304]);
     });
 
     it('posts the battery runs, the same-day windows, the set and the battery selection, and no run ids', () => {
@@ -720,8 +1011,8 @@ describe('CcAnalysisWizardComponent', () => {
       withBatteries();
       fixture.componentRef.setInput('timeline', ccTimeline({ annotations: [ccAnnotation(5, { atUtc: '2026-10-08T08:00:00Z' })] }));
       fixture.detectChanges();
-      clickPreset('annotation');
-      expect(choices()).toEqual(['11', '11', '12', '12']);
+      chooseRule('annotation');
+      expect(bounds()).toEqual(['11', '11', '12', '12']);
       const request = component.buildRequest()!;
       expect(request.baselineEndUtc).toBe('2026-10-08T07:59:59.999Z');
       expect(request.comparisonStartUtc).toBe('2026-10-08T08:00:00.000Z');
@@ -738,7 +1029,7 @@ describe('CcAnalysisWizardComponent', () => {
 
       fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7)]);
       fixture.detectChanges();
-      clickPreset('later');
+      chooseRule('later');
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
         .toBe('This model has no saved analysis of Two initial suites (revision 1) yet; there is no earlier look to confirm.');
     });
@@ -765,7 +1056,7 @@ describe('CcAnalysisWizardComponent', () => {
       }));
       fixture.detectChanges();
       expect(component.ids).toEqual({ baselineFirstId: 11, baselineLastId: 11, comparisonFirstId: 12, comparisonLastId: 12 });
-      expect(presetChecked('custom')).toBe(true);
+      expect(ruleValue()).toBe('custom');
     });
   });
 
@@ -773,7 +1064,7 @@ describe('CcAnalysisWizardComponent', () => {
     it('loads a saved analysis without moving the step, for the outer wizard to show on Results', () => {
       let changes = 0;
       component.stateChange.subscribe(() => changes++);
-      pick('cc-wiz-bl', '102');
+      press(102, 'baselineLastId');
       changes = 0;
       component.showResult(ccAnalysisResult());
       fixture.detectChanges();
@@ -781,8 +1072,9 @@ describe('CcAnalysisWizardComponent', () => {
       expect(changes).toBe(1);
       expect(component.step).toBe('analyze');
       expect(shownSteps()).toEqual(['analyze']);
-      expect(choices()).toEqual(['101', '103', '104', '106']);
-      expect(presetChecked('custom')).toBe(true);
+      expect(bounds()).toEqual(['101', '103', '104', '106']);
+      expect(ruleValue()).toBe('custom');
+      expect(note()).toBe('');
       expect(component.reachable('results')).toBe(true);
 
       goToResults();
@@ -803,28 +1095,28 @@ describe('CcAnalysisWizardComponent', () => {
       expect(component.reportsStep).toBeDefined();
     });
 
-    it('names the run choices once the saved analysis\'s runs arrive, keeping its controls', () => {
+    it('names the bounds once the saved analysis\'s runs arrive, keeping its controls', () => {
       fixture.componentRef.setInput('rows', []);
       fixture.detectChanges();
       component.showResult(ccAnalysisResult({ controls: { matches: [], effects: [], missingControls: [], controlRunIds: [205] } }));
       fixture.detectChanges();
-      expect(choices()).toEqual(['', '', '', '']);
+      expect(component.ids).toEqual({ baselineFirstId: null, baselineLastId: null, comparisonFirstId: null, comparisonLastId: null });
       expect(component.periodsError).toBe('Choose at least two runs in step 1, one for each period.');
 
       fixture.componentRef.setInput('rows', ccRunRows());
       fixture.detectChanges();
-      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(bounds()).toEqual(['101', '103', '104', '106']);
       expect(component.preset).toBe('custom');
       expect(checkedControls()).toEqual(['Control run #205']);
     });
 
-    it('leaves the choices unset when the saved analysis\'s runs are not in step 1, and still shows the result', () => {
+    it('leaves the bounds unset when the saved analysis\'s runs are not in step 1, and still shows the result', () => {
       component.showResult(ccAnalysisResult({
         baseline: { ...ccAnalysisResult().baseline, runIds: [1, 2] },
         comparison: { ...ccAnalysisResult().comparison, runIds: [3] }
       }));
       fixture.detectChanges();
-      expect(choices()).toEqual(['', '', '', '']);
+      expect(bounds()).toEqual(['', '', '', '']);
       expect(component.periodsError).toBe('Choose the first and last run of both periods.');
       expect(component.reachable('results')).toBe(true);
     });

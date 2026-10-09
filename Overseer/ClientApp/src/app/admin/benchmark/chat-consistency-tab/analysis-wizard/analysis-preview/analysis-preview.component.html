@@ -1,0 +1,109 @@
+<!--
+  Input, Endpoint readiness and Notes, each a section named by its heading. &ngsp; keeps the spaces
+  between inline parts that grid and flex layouts separate only visually.
+-->
+<h5 id="cc-ap-title" class="gh-section-title">What the analysis will see</h5>
+<p class="cc-ap-lead">Checked in the browser before anything is spent; the analysis applies the protocol itself.</p>
+
+<section class="cc-ap-section cc-ap-input" aria-labelledby="cc-ap-input-title">
+  <h6 id="cc-ap-input-title" class="cc-ap-heading">Input</h6>
+  <dl class="bm-summary-facts cc-ap-facts">
+    <div data-fact="model">
+      <dt>Model</dt>
+      @if (axis) {
+        <dd class="cc-ap-model">
+          <span class="cc-ap-model-name">{{ axis.displayName }}</span>&ngsp;<app-cc-model-badges [model]="axis" />
+        </dd>
+      } @else {
+        <dd>None chosen</dd>
+      }
+    </div>
+    <div data-fact="compared">
+      <dt>Compared</dt>
+      <dd class="cc-ap-compared">
+        <span class="gh-tag cc-kind-tag" [attr.data-kind]="compareKind.kind">{{ compareKind.text }}</span>&ngsp;<span class="cc-ap-compared-label">{{ compareLabel }}</span>
+      </dd>
+    </div>
+    @for (fact of facts; track fact.key) {
+      <div [attr.data-fact]="fact.key">
+        <dt>{{ fact.term }}</dt>
+        <dd>
+          {{ fact.value }}
+          @if (fact.note) {
+            <span class="bm-summary-facts-note">{{ fact.note }}</span>
+          }
+        </dd>
+      </div>
+    }
+  </dl>
+</section>
+
+<section class="cc-ap-section cc-ap-readiness" aria-labelledby="cc-ap-readiness-title">
+  <h6 id="cc-ap-readiness-title" class="cc-ap-heading">Endpoint readiness</h6>
+  @if (refusal) {
+    <p class="cc-ap-waiting">Endpoint readiness needs valid periods: {{ refusal }}</p>
+  } @else {
+    <ul class="cc-ap-endpoints" role="list">
+      @for (endpoint of endpoints; track endpoint.id) {
+        <li class="cc-ap-endpoint" [attr.data-endpoint]="endpoint.id" [attr.data-status]="endpoint.status">
+          <span class="cc-ap-endpoint-label"><span class="cc-ap-endpoint-id">{{ endpoint.id }}</span>&ngsp;<span class="cc-ap-endpoint-name">{{ endpoint.name }}</span></span>&ngsp;<span class="cc-ap-margin">{{ endpoint.marginText }}</span>&ngsp;<span class="cc-ap-status">
+            @switch (endpoint.status) {
+              @case ('meets') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              }
+              @case ('belowMinimum') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              }
+              @default {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              }
+            }
+            <span class="cc-ap-status-word">{{ statusText(endpoint.status) }}</span>
+          </span>
+          <p class="cc-ap-fact">{{ endpoint.fact }}</p>
+        </li>
+      }
+    </ul>
+  }
+</section>
+
+<section class="cc-ap-section cc-ap-notes-section" aria-labelledby="cc-ap-notes-title">
+  <h6 id="cc-ap-notes-title" class="cc-ap-heading">Notes</h6>
+  @if (notes.length > 0) {
+    <ul class="cc-ap-notes" role="list">
+      @for (note of notes; track $index) {
+        <li class="cc-ap-note" [attr.data-kind]="note.kind" [attr.data-severity]="note.severity">
+          @if (note.severity === 'warning') {
+            <svg class="cc-ap-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          } @else {
+            <svg class="cc-ap-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          }
+          <div class="cc-ap-note-body">
+            <span class="cc-ap-note-word">{{ note.severity === 'warning' ? 'Warning' : 'Note' }}</span>&ngsp;
+            @if (note.kind === 'events') {
+              <span class="cc-ap-note-title">Overseer changes in the span</span>
+              <ul class="cc-ap-event-groups" role="list">
+                @for (group of note.eventGroups; track group.key) {
+                  <li [attr.data-group-key]="group.key">
+                    <span class="cc-marker-tag is-event">{{ group.tag }}</span>&ngsp;<span class="cc-ap-event-text">
+                      <time [attr.datetime]="group.day">{{ group.day }}</time> · {{ group.title }}
+                      @if (changesText(group); as changes) {
+                        <span class="cc-ap-event-changes">· {{ changes }}</span>
+                      }
+                    </span>
+                  </li>
+                }
+              </ul>
+            }
+            <span class="cc-ap-note-text">{{ note.text }}</span>
+          </div>
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="cc-ap-ready">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      <span>No notes. The periods are ready to analyze.</span>
+    </p>
+  }
+</section>

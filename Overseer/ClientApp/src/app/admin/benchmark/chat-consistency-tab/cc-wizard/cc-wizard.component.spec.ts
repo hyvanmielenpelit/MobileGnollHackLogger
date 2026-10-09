@@ -401,10 +401,8 @@ describe('CcWizardComponent', () => {
     expect(next().getAttribute('aria-disabled')).toBe('false');
     expect(el.querySelector('#cc-next-blocked')).toBeNull();
 
-    // The comparison's first run before the baseline's last.
-    const comparisonFirst = el.querySelector<HTMLSelectElement>('#cc-wiz-cf')!;
-    comparisonFirst.selectedIndex = Array.from(comparisonFirst.options).findIndex(option => option.text.includes('#101'));
-    comparisonFirst.dispatchEvent(new Event('change'));
+    // The comparison's first run before the baseline's last, pressed on run #101's card.
+    el.querySelector<HTMLButtonElement>('article.cc-pu-card[data-unit-id="101"] .cc-pu-bound[data-bound="comparisonFirstId"]')!.click();
     await settle();
 
     const refusal = wizard.analysis!.periodsError;
@@ -434,11 +432,14 @@ describe('CcWizardComponent', () => {
     expect(analysis).toBeDefined();
     expect(analysis!.step).toBe('analyze');
     expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-3');
+    // Step 3 is a figure workspace, edge to edge; step 4 scrolls as one.
+    expect(panel('cc-step-panel-analysis')!.classList).toContain('gh-fig-host');
     wizard.showResult(ccAnalysisResult());
     await settle();
     expect(wizard.analysis).toBe(analysis);
     expect(analysis!.step).toBe('results');
     expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-4');
+    expect(panel('cc-step-panel-analysis')!.classList).not.toContain('gh-fig-host');
 
     tab(1).click();
     fixture.detectChanges();

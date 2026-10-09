@@ -1,9 +1,8 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 
-import { ProviderBadgeComponent } from '../../../../shared/provider-badge/provider-badge.component';
-import { formatServiceTier, formatThinkingLevel } from '../../../../utils/model-badge-format.util';
 import { NO_VALUE, formatInteger, formatUtcDate, plural } from '../chat-consistency-format';
 import { CcAnalysisSummary, CcModelAxis, CcUnitKind } from '../chat-consistency.models';
+import { CcModelBadgesComponent } from '../model-badges/model-badges.component';
 
 /**
  * The launcher's *Current model* card: the model chosen in the wizard, its runs and dates, and its
@@ -13,7 +12,7 @@ import { CcAnalysisSummary, CcModelAxis, CcUnitKind } from '../chat-consistency.
 @Component({
   selector: 'app-cc-current-model-card',
   standalone: true,
-  imports: [ProviderBadgeComponent],
+  imports: [CcModelBadgesComponent],
   templateUrl: './current-model-card.component.html',
   styleUrls: ['./current-model-card.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -38,14 +37,6 @@ export class CcCurrentModelCardComponent {
   @Output() readonly openRunReport = new EventEmitter<number>();
   /** A saved analysis in the wizard, by id. */
   @Output() readonly openAnalysis = new EventEmitter<number>();
-
-  get thinkingText(): string {
-    return formatThinkingLevel(this.axis.thinkingLevel);
-  }
-
-  get tierText(): string {
-    return formatServiceTier(this.axis.serviceTier);
-  }
 
   /** `6 runs · 4 with call telemetry`. */
   get runsText(): string {

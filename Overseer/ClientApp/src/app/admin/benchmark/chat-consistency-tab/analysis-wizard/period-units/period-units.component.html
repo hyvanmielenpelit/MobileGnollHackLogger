@@ -1,0 +1,180 @@
+<!--
+  Step 3's units, oldest first, each card with its period bounds; the composite Overseer changes and the
+  annotations are dividers between the units they fall between. Items are tracked by key, so a pressed
+  bound re-renders its card in place and keeps focus on the button.
+-->
+<div class="cc-pu-head">
+  <h5 id="cc-an-units-title" class="gh-section-title">{{ batteryMode ? 'Battery runs' : 'Runs' }}</h5>
+  <button type="button" class="gh-filter-toggle cc-pu-details-toggle"
+          [attr.aria-pressed]="details ? 'true' : 'false'"
+          (click)="detailsChange.emit(!details)">Show run details</button>
+</div>
+
+<ul class="cc-pu-list" role="list" aria-labelledby="cc-an-units-title">
+  @for (item of items; track item.key) {
+    @if (item.kind === 'marker') {
+      @let marker = item.marker;
+      <li class="cc-pu-marker" [attr.data-marker-kind]="marker.kind">
+        <div class="cc-pu-marker-body">
+          <span class="cc-marker-tag" [class.is-event]="marker.kind === 'event'" [class.is-annotation]="marker.kind === 'annotation'">{{ marker.tag }}</span>
+          <time class="cc-pu-marker-day" [attr.datetime]="marker.day">{{ marker.day }}</time>
+          <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+          <span class="cc-pu-marker-title">{{ marker.title }}</span>
+          @if (marker.kinds) {
+            <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+            <span class="cc-pu-marker-kinds">{{ marker.kinds }}</span>
+          }
+        </div>
+        <button type="button" class="btn-ghost cc-pu-split" [attr.aria-label]="marker.splitLabel"
+                (click)="onSplit(marker)">Split here</button>
+      </li>
+    } @else if (item.kind === 'unit') {
+      @let card = cardOf(item.unit);
+      @let period = periodOf(card.id);
+      <li class="cc-pu-item">
+        <article class="cc-pu-card" [attr.data-unit-id]="card.id" [attr.data-period]="period"
+                 [attr.aria-labelledby]="'cc-pu-' + card.id + '-title'">
+          <!-- The period's color down the inline start; the kicker names the period in words. -->
+          <div class="cc-pu-rail" aria-hidden="true"></div>
+
+          <header class="cc-pu-head-block">
+            <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+            <div class="cc-run-kicker">
+              <span class="cc-run-id">#{{ card.id }}</span>
+              <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <span class="cc-run-status">{{ card.status }}</span>
+              <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <span class="cc-run-harness">{{ card.harness }}</span>
+              @if (!card.battery) {
+                <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                @if (card.isLegacy) {
+                  <span class="gh-tag cc-legacy-tag">Legacy</span>
+                } @else {
+                  <span class="gh-tag cc-recorded-tag">Recorded</span>
+                }
+                @if (card.isAnchor) {
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="gh-tag cc-anchor-tag">Anchor</span>
+                }
+                @if (card.memberTag) {
+                  <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="gh-tag cc-member-tag">{{ card.memberTag }}</span>
+                }
+              }
+              <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <span class="gh-tag cc-pu-period-tag" [attr.data-period]="period">{{ periodText(period) }}</span>
+            </div>
+            <!-- Focused by focusUnit(). -->
+            <h6 class="cc-run-title" [id]="'cc-pu-' + card.id + '-title'" tabindex="-1">{{ card.title }}</h6>
+            <div class="cc-run-meta">
+              <span><time class="cc-run-time" [attr.datetime]="card.startedAtUtc">{{ card.started }}</time></span>
+              <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <span [class]="card.battery ? 'cc-battery-suites' : 'cc-served'">{{ card.meta }}</span>
+            </div>
+          </header>
+
+          <div class="cc-pu-controls">
+            <!-- Each toggle stays enabled on an ineligible unit: the host's refusal explains a choice it cannot use. -->
+            <div class="cc-pu-bounds" role="group" [attr.aria-label]="card.boundsLabel">
+              @for (row of boundRows; track row.period) {
+                <span class="cc-pu-bound-label" [attr.data-period]="row.period"><span class="cc-pu-swatch" aria-hidden="true"></span>{{ row.label }}</span>
+                @for (bound of row.bounds; track bound.key) {
+                  @let pressed = ids[bound.key] === card.id;
+                  <button type="button" class="btn-ghost cc-pu-bound"
+                          [attr.data-bound]="bound.key" [attr.data-period]="row.period"
+                          [attr.aria-pressed]="pressed ? 'true' : 'false'"
+                          [attr.aria-label]="card.boundLabels[bound.key]"
+                          (click)="onBound(bound.key, card.id)">
+                    @if (pressed) {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    }
+                    {{ bound.word }}
+                  </button>
+                }
+              }
+            </div>
+            <button type="button" class="action-btn cc-pu-report"
+                    [attr.aria-label]="card.reportLabel"
+                    [attr.interestfor]="'cc-pu-' + card.id + '-report-tip'"
+                    [attr.style]="'anchor-name: --cc-pu-' + card.id + '-report-tip'"
+                    (click)="onReport(card)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'cc-pu-' + card.id + '-report-tip'"
+                 [attr.style]="'position-anchor: --cc-pu-' + card.id + '-report-tip'">{{ card.reportTip }}</div>
+          </div>
+
+          <dl class="cc-pu-metrics">
+            @for (metric of card.metrics; track metric.key) {
+              <div class="cc-pu-metric" [attr.data-metric]="metric.key">
+                <dt>{{ metric.label }}</dt>
+                <dd>
+                  <span class="cc-pu-metric-value">{{ metric.value }}</span>
+                  @if (metric.note) {
+                    <span class="cc-pu-metric-note">{{ metric.note }}</span>
+                  }
+                </dd>
+              </div>
+            }
+          </dl>
+
+          <div class="cc-pu-elig">
+            <ul class="cc-elig-list" role="list" [attr.aria-label]="card.eligibilityLabel">
+              @for (entry of card.eligibility; track entry.axis) {
+                <li class="cc-elig" [class.is-eligible]="entry.eligible" [class.is-excluded]="!entry.eligible" [attr.data-axis]="entry.axis">
+                  @if (entry.eligible) {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  }
+                  <span class="cc-elig-axis">{{ entry.label }}</span>
+                  <span class="visually-hidden">{{ entry.eligible ? ': eligible' : ': not eligible' }}</span>
+                </li>
+              }
+            </ul>
+            @for (excluded of card.reasons; track excluded.axis) {
+              <span class="cc-elig-reason">{{ excluded.axis }}: {{ excluded.reason }}</span>
+            }
+          </div>
+
+          @if (details) {
+            <div class="cc-pu-details">
+              @if (card.battery) {
+                <!-- The usable members, in suite order: what the battery run analyzes. -->
+                <ul class="cc-battery-members" role="list" [attr.aria-label]="card.membersLabel">
+                  @for (member of card.members; track member.runId) {
+                    <li class="cc-battery-member" [attr.data-run-id]="member.runId">
+                      <span class="cc-battery-member-text">{{ member.text }}</span>
+                      <button type="button" class="action-btn cc-pu-member-report"
+                              [attr.aria-label]="'Open the run report of run #' + member.runId"
+                              [attr.interestfor]="'cc-pu-member-' + member.runId + '-report-tip'"
+                              [attr.style]="'anchor-name: --cc-pu-member-' + member.runId + '-report-tip'"
+                              (click)="openRunReport.emit(member.runId)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="'cc-pu-member-' + member.runId + '-report-tip'"
+                           [attr.style]="'position-anchor: --cc-pu-member-' + member.runId + '-report-tip'">Open run report</div>
+                    </li>
+                  } @empty {
+                    <li class="cc-battery-member cc-muted">No usable member run.</li>
+                  }
+                </ul>
+                <dl class="cc-run-facts">
+                  <div class="cc-run-fact" data-fact="controls"><dt>Matched controls</dt><dd>{{ card.controls }}</dd></div>
+                </dl>
+              } @else {
+                <dl class="cc-run-facts">
+                  <div class="cc-run-fact" data-fact="segment"><dt>Segment</dt><dd>{{ card.segment }}</dd></div>
+                  <div class="cc-run-fact" data-fact="telemetry"><dt>Telemetry</dt><dd>{{ card.telemetry }}</dd></div>
+                  <div class="cc-run-fact" data-fact="regrade"><dt>Re-grade</dt><dd>{{ card.regrade }}</dd></div>
+                  <div class="cc-run-fact" data-fact="controls"><dt>Matched controls</dt><dd>{{ card.controls }}</dd></div>
+                  <div class="cc-run-fact" data-fact="strata"><dt>Time strata</dt><dd>{{ card.strata }}</dd></div>
+                </dl>
+              }
+            </div>
+          }
+        </article>
+      </li>
+    }
+  }
+</ul>

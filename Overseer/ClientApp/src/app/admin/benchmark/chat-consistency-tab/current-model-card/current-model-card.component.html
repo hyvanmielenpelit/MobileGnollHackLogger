@@ -9,11 +9,7 @@
       <h4 class="bm-summary-card-title cc-current-title">
         <span id="cc-current-name" class="cc-current-name">{{ axis.displayName }}</span>
         <span class="cc-current-badges">
-          <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ thinkingText }}</span>
-          <app-provider-badge [provider]="axis.provider" />
-          @if (axis.serviceTier) {
-            <span class="config-badge"><span class="visually-hidden">service tier </span>{{ tierText }}</span>
-          }
+          <app-cc-model-badges [model]="axis" />
         </span>
       </h4>
       <p class="bm-summary-card-meta">Chosen in the wizard · remembered in this browser</p>

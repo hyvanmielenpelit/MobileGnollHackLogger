@@ -480,6 +480,16 @@ chooses each period's first and last run with four native `select.gh-input` cont
 button (that action stays in step 1's *More actions*); and Protocol V1 is in a `details.gh-disclosure`,
 closed by default. No glyph changed.*
 
+*Changed 2026-10-09 (Chat Consistency step 3 workspace): step 3, *Analyze*, is a settings sidebar
+(*Setup*, *Controls*, *Protocol*) beside a *Periods* / *Preview* workspace, and supersedes the layout
+of the entry above: the four period selects and the read-only units table were replaced by the
+period cards of §8h, and Protocol V1 is open in its own sidebar tab. No glyph is new. Each card's
+bound toggles **First** / **Last** reuse* check *as the pressed state, as step 1's First run / Last
+run do; *Open run report* / *Open battery run report* is the icon-only* eye*; the view bar's
+sidebar toggle reuses the Timeline's glyph and markup. **Split here** and **Show run details** are
+text-only. The preview's endpoint status chips carry* check*,* alert-triangle *and* minus *as status
+icons beside a word, not as buttons.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -1251,8 +1261,9 @@ keyboard model below is unchanged and stays **linear** — Left/Right step throu
 and wrap from the last tab to the first, whatever line each sits on; Up and Down are not taken. Use it
 for a row whose tabs are each a destination a user must be able to see at once, where a hidden,
 scrolled-off tab would go unnoticed — the GnollBench sub-tab row (`benchmark.component.html`, with
-`.gh-tabs-secondary`) and the two figure-workspace sidebars, Model Comparison's and the Chat
-Consistency Timeline's (`.gh-fig-sidebar-tabs`, whose wrapped lines sit flush with `row-gap: 0` over
+`.gh-tabs-secondary`) and the three figure-workspace sidebars, Model Comparison's, the Chat
+Consistency Timeline's and the Chat Consistency Analyze step's (*Settings sections*: *Setup*,
+*Controls*, *Protocol*) (`.gh-fig-sidebar-tabs`, whose wrapped lines sit flush with `row-gap: 0` over
 one rule). Keep the scrolling row for long or open-ended sets, where a
 wrapped block of tabs would push the panel down by several lines. Render the row from one `@for` over
 the component's tab array, so the wrapped order is always the array's order.
@@ -1688,7 +1699,8 @@ never receive it.
 The Download Center's documents (`app-download-center-panel`) are the first card list; **Run
 History** (`history-tab/`, `#bm-panel-history`) is the second; the **Multi-Suite** tab's battery
 definitions (`app-benchmark-batteries`) are the third; the **Chat Consistency wizard's step 1 runs**
-(`app-cc-model-step`, 2026-10-07) are the fourth. Use one **when every row is a
+(`app-cc-model-step`, 2026-10-07) are the fourth; the **Chat Consistency wizard's step 3 period
+cards** (`app-cc-period-units`, 2026-10-09) are the fifth. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1759,12 +1771,14 @@ active while its string is non-blank. `setSort(column, direction)` serves a Sort
 `filterRowsExcept(rows, column)` applies every active filter but one column's — what a facet counts its
 options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
 
-**`CardListState` — the state every card list shares** (`shared/data-table/card-list-state.ts`). All
-four card lists build on it: the Download Center behind a private `list` getter (built on first use,
+**`CardListState` — the state every filtered card list shares** (`shared/data-table/card-list-state.ts`).
+The first four card lists build on it: the Download Center behind a private `list` getter (built on first use,
 because its `idPrefix` is an input), Run History as `historyList`, the batteries tab as `list`
 (`idPrefix: 'bb'`, `overseer.benchmark.batteries.view`), and the Chat Consistency runs as `list`
 (`idPrefix: 'cc-runs'`, `overseer.benchmark.chatConsistency.runs.view`) and its battery runs as a second
-`CardListState` (`idPrefix: 'cc-bruns'`, `overseer.benchmark.chatConsistency.batteryRuns.view`). **A further card list uses it too, rather than
+`CardListState` (`idPrefix: 'cc-bruns'`, `overseer.benchmark.chatConsistency.batteryRuns.view`). The
+fifth, step 3's period cards, has no filter bar, sort or batching, so the class has nothing to hold
+there and is not used (below). **A further card list that filters uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
@@ -1937,6 +1951,51 @@ under a §8i selection band. It shows how a card list carries **a selection that
   run*; sorts *Newest first*, *Oldest first*, *Harness*; facets *Harness*, *In the analysis* (with
   *Incomplete*) and *Eligibility*; view stored in `overseer.benchmark.chatConsistency.batteryRuns.view`.
   Changing the compared set clears the selection and announces it.
+
+**The Chat Consistency wizard's step 3 period cards** are the fifth list (2026-10-09), in the
+*Periods* view of the Analyze step's workspace under its sticky summary strip
+(`analysis-wizard/period-units/`). They replaced four native period selects and a read-only units
+table, and show how a card list carries **a choice spread over several rows**, each period being a
+contiguous range of cards:
+
+- **One flat list, oldest first** — the order of the periods — with **no filter bar and no batching**.
+  Step 1 already filtered and narrowed the units, and hiding a unit here would hide part of a
+  contiguous period, so a period's range could no longer be read off the list. `CardListState` and the
+  filter-bar rules above do not apply: there is nothing to filter, sort or batch.
+  `ul.cc-pu-list[role=list]` is labelled by the view's `h5#cc-an-units-title` (*Runs* / *Battery
+  runs*).
+- **The `@for` runs over a memoized item list tracked by key** — `{ kind: 'unit' | 'marker', key }` —
+  so pressing a bound never re-creates a card and focus stays on the pressed button.
+- **The bounds** are a `div.cc-pu-bounds[role=group]` named *Period bounds for battery run #12*: a
+  2 × 2 grid of visible row labels **Baseline** and **Comparison** (each with its color swatch), and
+  in each row the compact `.btn-ghost` toggles **First** and **Last** (`.cc-pu-bound`) with
+  `aria-pressed`, named *Make battery run #12 the baseline's first run* so the name contains the
+  visible word (WCAG 2.5.3). Pressed is shown by a leading check glyph, the period's color as the
+  border and a tint together — never by color alone. Pressing a pressed toggle clears its bound; a
+  bound out of order is refused in the strip, never corrected by moving another bound.
+- **Then the icon-only report button**: *Open run report* / *Open battery run report* (*eye*, an
+  `interestfor` hint tooltip), as in step 1.
+- **Markers between the cards** are `li.cc-pu-marker` rows, not cards: a composite Overseer change
+  (`E2`) or a tagged annotation (`A1`) with its `.cc-marker-tag`, day, title and kinds, and a
+  text-only `.btn-ghost` **Split here** (`.cc-pu-split`) named *Split the periods at Overseer change
+  E2* / *… at annotation A1*.
+- **The kicker carries the period as a word** — *Baseline*, *Comparison*, *Not used* or *Not
+  eligible*, as a tag after the step-1 parts (`#id` · status · harness · *Legacy* / *Recorded* ·
+  *Anchor* · battery-member tag), with the same separator markup; the title is
+  `h6#cc-pu-{id}-title[tabindex=-1]`, which the strip's range links focus.
+- **A rail**: a 4 px inline-start bar in the period's color (`--cc-period-baseline` /
+  `--cc-period-comparison`), repeating the kicker's word, never replacing it.
+- **Card states by `data-period`** (and `:has()`): a card in a period takes that period's border and
+  a faint tint; *Not used* is the plain dashed hairline; *Not eligible* is dashed with its title
+  muted. Hover only brightens the border.
+- **Grid** in the `cc-pu` inline-size container: `"rail head bounds" / "rail metrics metrics" /
+  "rail elig elig" / "rail details details"`; the bounds go under the head below 52 rem of the list,
+  and below 30 rem everything is one column with the rail as a top bar. The metrics are a `dl` in
+  fixed 7.5 rem columns that line up down the list, as Run History's do.
+- **Show run details** is a `gh-filter-toggle` with `aria-pressed` in the list head
+  (`.cc-pu-details-toggle`), on by default: a **view setting stored per browser**
+  (`details` in `overseer.benchmark.chatConsistency.analyze`), not a filter — it shows or hides each
+  card's facts or member list, never a card.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with
