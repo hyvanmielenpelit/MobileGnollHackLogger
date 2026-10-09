@@ -5,7 +5,6 @@ import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
-import { ChatConsistencyTabComponent } from './chat-consistency-tab/chat-consistency-tab.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import {
   AdminBenchmarkSpecContext, RUN_SETTINGS_KEY, benchmarkSpecHandles, buildBenchmarkConfig, buildRepeatableRun, clearStoredState,
@@ -1690,18 +1689,6 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-chatconsistency');
       expect(panel.querySelector('app-chat-consistency-tab h3')?.textContent?.trim()).toBe('Chat Consistency');
       expect(last.getAttribute('aria-selected')).toBe('true');
-    });
-
-    it('should open the Download Center on an analysis\'s documents when the Chat Consistency tab asks', () => {
-      tabs()[tabs().length - 1].click();
-      fixture.detectChanges();
-      const open = vi.spyOn(component.runDownloadCenter!, 'open').mockReturnValue(undefined);
-      const tab = fixture.debugElement.query(By.directive(ChatConsistencyTabComponent)).componentInstance as ChatConsistencyTabComponent;
-
-      tab.openDocuments.emit({ analysisId: 12 });
-
-      expect(open).toHaveBeenCalledTimes(1);
-      expect(open).toHaveBeenCalledWith({ kind: 'chatConsistency', analysisId: 12 });
     });
 
     it('should give every tab an icon', () => {

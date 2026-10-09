@@ -349,7 +349,8 @@ export function batteryUnitCard(
  * four period-bound toggles, its figures, its eligibility and optionally its details, with the
  * composite Overseer changes and the tagged annotations as dividers between the units they fall
  * between. Presentational: the host owns the bounds, the periods and the details toggle, and decides
- * what a pressed bound does.
+ * what a pressed bound does. Read-only, it shows a stored analysis's units without the bounds or
+ * Split here, under ids of its own so it can share the document with step 3's list.
  */
 @Component({
   selector: 'app-cc-period-units',
@@ -379,6 +380,8 @@ export class CcPeriodUnitsComponent implements OnInit {
   @Input() annotations: readonly CcTaggedAnnotation[] = [];
   /** Show run details. */
   @Input() details = true;
+  /** No bounds and no Split here: the periods are given, and only the reports and details remain. */
+  @Input() readonly = false;
 
   @Output() readonly boundChange = new EventEmitter<{ key: CcPeriodBound; unitId: number }>();
   /** An event's group key, or an annotation's id as a string. */
@@ -407,6 +410,22 @@ export class CcPeriodUnitsComponent implements OnInit {
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+  }
+
+  /** The prefix of the cards' ids and anchor names: `cc-pu`, or `cc-res-pu` while read-only. */
+  get idBase(): string {
+    return this.readonly ? 'cc-res-pu' : 'cc-pu';
+  }
+
+  /** The heading's id, which the list is labeled by. */
+  get headingId(): string {
+    return this.readonly ? 'cc-res-units-title' : 'cc-an-units-title';
+  }
+
+  /** `Runs`, or `Runs in the periods` while read-only; battery runs in a battery list. */
+  get headingText(): string {
+    const noun = this.batteryMode ? 'Battery runs' : 'Runs';
+    return this.readonly ? `${noun} in the periods` : noun;
   }
 
   get items(): readonly CcPeriodUnitsItem[] {
@@ -453,10 +472,12 @@ export class CcPeriodUnitsComponent implements OnInit {
   }
 
   onBound(key: CcPeriodBound, unitId: number): void {
+    if (this.readonly) return;
     this.boundChange.emit({ key, unitId });
   }
 
   onSplit(marker: CcPeriodMarker): void {
+    if (this.readonly) return;
     this.splitAt.emit({ kind: marker.kind, key: marker.splitKey });
   }
 
@@ -467,7 +488,7 @@ export class CcPeriodUnitsComponent implements OnInit {
 
   /** Scrolls the unit's card into view (block 'nearest'; smooth only without prefers-reduced-motion) and focuses its title. */
   focusUnit(id: number): void {
-    const title = this.host.nativeElement.querySelector<HTMLElement>(`#cc-pu-${id}-title`);
+    const title = this.host.nativeElement.querySelector<HTMLElement>(`#${this.idBase}-${id}-title`);
     if (!title) return;
     const card = title.closest<HTMLElement>('.cc-pu-card') ?? title;
     card.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });

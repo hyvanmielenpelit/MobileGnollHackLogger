@@ -568,7 +568,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   /** What to list; a new context loads afresh. The dialog wrapper calls `load()` instead. */
   @Input() context: DownloadCenterContext | null = null;
-  /** Bumped by the host to list a library context's documents again, keeping the choices made. */
+  /** Bumped by the host to list a library or chat consistency context's documents again, keeping the choices made. */
   @Input() reloadToken = 0;
   /** The prefix of every element id. */
   @Input() idPrefix = `dcp${++nextInstanceId}`;
@@ -893,11 +893,13 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.cdr.markForCheck();
   }
 
-  /** Lists a library context's documents again, keeping every choice made on a row still listed. */
+  /** Lists a library or chat consistency context's documents again, keeping every choice made on a row still listed. */
   refresh(): void {
     const context = this.loaded;
     if (context?.kind === 'library') {
       this.loadLibrary(context, this.generation, true);
+    } else if (context?.kind === 'chatConsistency') {
+      this.loadChatConsistencyDocuments(context.analysisId, this.generation, true);
     }
   }
 
@@ -1708,10 +1710,16 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   // Delete
   // -------------------------------------------------------------------------------------------
 
-  /** Only a Report Pack document can be deleted here; a run's own documents are the run report's. */
+  /**
+   * Only a Report Pack document or a chat consistency document can be deleted here; a run's or a
+   * battery run's own documents are its report's.
+   */
   canDelete(row: DownloadRow): boolean {
-    return row.kind === 'pack' && row.doc !== null
-      && (row.doc.origin ?? BenchmarkReportDocumentOrigin.ReportPack) === BenchmarkReportDocumentOrigin.ReportPack;
+    if (row.kind !== 'pack' || row.doc === null) {
+      return false;
+    }
+    const origin = row.doc.origin ?? BenchmarkReportDocumentOrigin.ReportPack;
+    return origin === BenchmarkReportDocumentOrigin.ReportPack || origin === BenchmarkReportDocumentOrigin.ChatConsistencyReport;
   }
 
   requestDelete(row: DownloadRow, button: HTMLElement): void {
@@ -2200,8 +2208,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   }
 
   /** The analysis's chat consistency documents (`chat-consistency:<id>`), newest first. */
-  private loadChatConsistencyDocuments(analysisId: number, generation: number): void {
+  private loadChatConsistencyDocuments(analysisId: number, generation: number, keepChoices = false): void {
     this.loadingDocuments = true;
+    this.listSub?.unsubscribe();
     this.listSub = this.benchmarkService.listReportDocuments({
       subject: chatConsistencySubjectKey(analysisId),
       origin: 'chatConsistencyReport'
@@ -2210,7 +2219,13 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         if (generation !== this.generation) {
           return;
         }
-        this.addRows(sortDocuments(documents ?? []).map(packRow));
+        const rows = sortDocuments(documents ?? []).map(packRow);
+        if (keepChoices) {
+          this.replaceRows(rows, 'all');
+          this.notices = [];
+        } else {
+          this.addRows(rows);
+        }
         this.loadingDocuments = false;
         this.cdr.markForCheck();
       },

@@ -24,7 +24,7 @@ const STORAGE_KEYS = [
   'overseer.benchmark.chatConsistency.launcher'
 ];
 
-const STEP_LABELS = ['1. Model', '2. Timeline', '3. Analyze', '4. Results'];
+const STEP_LABELS = ['1. Model', '2. Timeline', '3. Analyze', '4. Results', '5. Reports', '6. Documents'];
 
 function clearStorage(): void {
   for (const key of STORAGE_KEYS) {
@@ -38,7 +38,8 @@ function clearStorage(): void {
 
 /**
  * The wizard shell. The steps it mounts make requests of their own (the re-grade job on step 3, the
- * report job and documents on step 4); they are left unanswered, so `verify()` is not called here.
+ * report job and documents on step 5, the document list on step 6); they are left unanswered, so
+ * `verify()` is not called here.
  */
 describe('CcWizardComponent', () => {
   let fixture: ComponentFixture<CcWizardComponent>;
@@ -101,28 +102,30 @@ describe('CcWizardComponent', () => {
 
   // --- Step tabs ---
 
-  it('renders four step tabs; without a model only Model opens, and every other tab is described by its reason', () => {
+  it('renders six step tabs; without a model only Model opens, and every other tab is described by its reason', () => {
     expect(textOf(el.querySelector('#cc-wizard-title'))).toBe('Chat consistency');
     expect(textOf(el.querySelector('.cc-wizard-subtitle'))).toBe('Choose a model, then follow the steps');
 
     expect(tabs().map(entry => textOf(entry))).toEqual(STEP_LABELS);
-    expect(tabs().map(entry => entry.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
-    expect(tabs().map(entry => entry.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
-    expect(tabs().map(entry => entry.getAttribute('aria-disabled'))).toEqual(['false', 'true', 'true', 'true']);
+    expect(tabs().map(entry => entry.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false', 'false']);
+    expect(tabs().map(entry => entry.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
+    expect(tabs().map(entry => entry.getAttribute('aria-disabled'))).toEqual(['false', 'true', 'true', 'true', 'true', 'true']);
     expect(tab(1).hasAttribute('aria-describedby')).toBe(false);
     expect(el.querySelector('#cc-step-blocked-1')).toBeNull();
-    for (const step of [2, 3, 4]) {
+    for (const step of [2, 3, 4, 5, 6]) {
       expect(tab(step).getAttribute('aria-describedby')).toBe(`cc-step-blocked-${step}`);
       expect(el.querySelector(`#cc-step-blocked-${step}`)!.classList).toContain('visually-hidden');
     }
-    expect([2, 3, 4].map(step => textOf(el.querySelector(`#cc-step-blocked-${step}`)))).toEqual([
+    expect([2, 3, 4, 5, 6].map(step => textOf(el.querySelector(`#cc-step-blocked-${step}`)))).toEqual([
       'Choose a model first.',
       'Choose a model first.',
+      'Analyze first, or open a saved analysis.',
+      'Analyze first, or open a saved analysis.',
       'Analyze first, or open a saved analysis.'
     ]);
     expect(tab(1).getAttribute('aria-controls')).toBe('cc-step-panel-1');
     expect(tab(2).getAttribute('aria-controls')).toBe('cc-step-panel-2');
-    expect([3, 4].map(step => tab(step).getAttribute('aria-controls'))).toEqual(Array(2).fill('cc-step-panel-analysis'));
+    expect([3, 4, 5, 6].map(step => tab(step).getAttribute('aria-controls'))).toEqual(Array(4).fill('cc-step-panel-analysis'));
 
     // A blocked tab does not open.
     tab(2).click();
@@ -134,14 +137,21 @@ describe('CcWizardComponent', () => {
     expect(next().getAttribute('aria-describedby')).toBe('cc-next-blocked');
     expect(textOf(el.querySelector('#cc-next-blocked'))).toBe('Choose a model first.');
     expect(previous().disabled).toBe(true);
-    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 1 of 4 — Model');
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 1 of 6 — Model');
   });
 
-  it('with a model, opens Timeline and Analyze, waits for a result before Results, and names the model', () => {
+  it('with a model, opens Timeline and Analyze, waits for a result before Results, Reports and Documents, and names the model', () => {
     chooseModel();
 
-    expect(tabs().map(entry => entry.getAttribute('aria-disabled'))).toEqual(['false', 'false', 'false', 'true']);
-    expect(textOf(el.querySelector('#cc-step-blocked-4'))).toBe('Analyze first, or open a saved analysis.');
+    expect(tabs().map(entry => entry.getAttribute('aria-disabled'))).toEqual(['false', 'false', 'false', 'true', 'true', 'true']);
+    for (const step of [4, 5, 6]) {
+      expect(textOf(el.querySelector(`#cc-step-blocked-${step}`))).toBe('Analyze first, or open a saved analysis.');
+    }
+    // A blocked step does not open.
+    tab(5).click();
+    tab(6).click();
+    fixture.detectChanges();
+    expect(wizard.step).toBe(1);
     expect(el.querySelector('#cc-step-blocked-2')).toBeNull();
     expect(next().getAttribute('aria-disabled')).toBe('false');
     expect(el.querySelector('#cc-next-blocked')).toBeNull();
@@ -265,16 +275,20 @@ describe('CcWizardComponent', () => {
 
     // Focus reaches a step that refuses to open, so its reason is read; the step stays.
     press(tab(1), 'ArrowLeft');
-    expect(document.activeElement).toBe(tab(4));
+    expect(document.activeElement).toBe(tab(6));
     expect(wizard.step).toBe(1);
     expect(tab(1).getAttribute('aria-selected')).toBe('true');
 
-    press(tab(4), 'Home');
+    press(tab(6), 'Home');
     expect(document.activeElement).toBe(tab(1));
     press(tab(1), 'End');
-    expect(document.activeElement).toBe(tab(4));
+    expect(document.activeElement).toBe(tab(6));
     expect(wizard.step).toBe(1);
-    press(tab(4), 'ArrowRight');
+    press(tab(6), 'ArrowLeft');
+    expect(document.activeElement).toBe(tab(5));
+    expect(wizard.step).toBe(1);
+    press(tab(5), 'ArrowRight');
+    press(tab(6), 'ArrowRight');
     expect(document.activeElement).toBe(tab(1));
 
     const other = press(tab(1), 'Enter');
@@ -306,8 +320,10 @@ describe('CcWizardComponent', () => {
 
   // --- Footer ---
 
-  it('labels Next for each step, Analyze on step 3 and Close on step 4', async () => {
+  it('labels Next for each step, Analyze on step 3 and Close on step 6, which closes', async () => {
     chooseModel();
+    let closes = 0;
+    wizard.closeRequested.subscribe(() => closes++);
     expect(textOf(next())).toBe('Next: Timeline');
 
     next().click();
@@ -319,19 +335,63 @@ describe('CcWizardComponent', () => {
     await settle();
     expect(wizard.step).toBe(3);
     expect(textOf(next())).toBe('Analyze');
-    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 3 of 4 — Analyze');
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 3 of 6 — Analyze');
 
     wizard.showResult(ccAnalysisResult());
     await settle();
     expect(wizard.step).toBe(4);
-    expect(textOf(next())).toBe('Close');
+    expect(textOf(next())).toBe('Next: Reports');
     expect(next().getAttribute('aria-disabled')).toBe('false');
     expect(previous().disabled).toBe(false);
-    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 4 of 4 — Results');
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 4 of 6 — Results');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(5);
+    expect(textOf(next())).toBe('Next: Documents');
+    expect(next().getAttribute('aria-disabled')).toBe('false');
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 5 of 6 — Reports');
+    expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Reports');
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(6);
+    expect(textOf(next())).toBe('Close');
+    expect(next().getAttribute('aria-disabled')).toBe('false');
+    expect(el.querySelector('#cc-next-blocked')).toBeNull();
+    expect(textOf(el.querySelector('.gh-wizard-position'))).toContain('Step 6 of 6 — Documents');
+    expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Documents');
+    expect(closes).toBe(0);
+
+    next().click();
+    expect(closes).toBe(1);
+    expect(wizard.step).toBe(6);
 
     previous().click();
     await settle();
+    expect(wizard.step).toBe(5);
+    previous().click();
+    await settle();
+    expect(wizard.step).toBe(4);
+    previous().click();
+    await settle();
     expect(wizard.step).toBe(3);
+  });
+
+  it('shows step 6 and focuses its tab when the Reports step asks for the documents', async () => {
+    chooseModel();
+    wizard.showResult(ccAnalysisResult());
+    await settle();
+    tab(5).click();
+    await settle();
+    expect(wizard.step).toBe(5);
+
+    wizard.analysis!.stepRequested.emit('documents');
+    await settle();
+    expect(wizard.step).toBe(6);
+    expect(tab(6).getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tab(6));
+    expect(wizard.analysis!.step).toBe('documents');
   });
 
   it('runs Analyze, abandons it with Stop Analysis, and moves to Results once an analysis is saved', async () => {
@@ -441,6 +501,22 @@ describe('CcWizardComponent', () => {
     expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-4');
     expect(panel('cc-step-panel-analysis')!.classList).not.toContain('gh-fig-host');
 
+    // Steps 5 and 6 are the same component; step 6 alone is edge to edge.
+    tab(5).click();
+    await settle();
+    expect(wizard.analysis).toBe(analysis);
+    expect(analysis!.step).toBe('reports');
+    expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-5');
+    expect(panel('cc-step-panel-analysis')!.classList).not.toContain('cc-wizard-step-documents');
+    tab(6).click();
+    await settle();
+    expect(wizard.analysis).toBe(analysis);
+    expect(analysis!.step).toBe('documents');
+    expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-6');
+    expect(panel('cc-step-panel-analysis')!.classList).toContain('cc-wizard-step-documents');
+    expect(panel('cc-step-panel-analysis')!.classList).not.toContain('gh-fig-host');
+    expect(el.querySelectorAll('app-cc-analysis-wizard').length).toBe(1);
+
     tab(1).click();
     fixture.detectChanges();
     expect(panel('cc-step-panel-1')!.hidden).toBe(false);
@@ -543,14 +619,18 @@ describe('CcWizardComponent', () => {
     expect(closes).toBe(1);
   });
 
-  it('disables the close button and the footer Close while the Results step\'s Reports section attaches charts', async () => {
+  it('disables the close button, and the footer Close on step 6, while the Reports step attaches charts', async () => {
     chooseModel();
     let closes = 0;
     wizard.closeRequested.subscribe(() => closes++);
     wizard.showResult(ccAnalysisResult());
     await settle();
     expect(wizard.step).toBe(4);
-    expect(textOf(next())).toBe('Close');
+    // The Reports step is created on its first visit.
+    expect(wizard.analysis!.reportsStep).toBeUndefined();
+    tab(5).click();
+    await settle();
+    expect(wizard.step).toBe(5);
 
     const reports = wizard.analysis!.reportsStep!;
     expect(reports).toBeDefined();
@@ -561,6 +641,14 @@ describe('CcWizardComponent', () => {
     expect(wizard.analysis!.chartsAttaching).toBe(true);
     expect(wizard.closeBlocked).toBe(true);
     expect(closeButton().disabled).toBe(true);
+    // Before step 6 Next only moves on.
+    expect(textOf(next())).toBe('Next: Documents');
+    expect(next().disabled).toBe(false);
+
+    next().click();
+    await settle();
+    expect(wizard.step).toBe(6);
+    expect(textOf(next())).toBe('Close');
     expect(next().disabled).toBe(true);
     wizard.nextStep();
     wizard.onCloseClick();
@@ -599,6 +687,8 @@ describe('CcWizardComponent', () => {
     expect(lockReason()).toBeNull();
 
     wizard.showResult(ccAnalysisResult());
+    await settle();
+    tab(5).click();
     await settle();
     const reports = wizard.analysis!.reportsStep!;
     reports.chartState = 'attaching';

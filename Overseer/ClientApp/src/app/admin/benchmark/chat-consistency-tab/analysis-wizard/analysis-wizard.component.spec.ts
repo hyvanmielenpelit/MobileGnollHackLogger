@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, TestRequest } from '@angular/common/http/testing';
+import { By } from '@angular/platform-browser';
 
 import { CcPeriodBound } from '../chat-consistency-periods';
 import { CC_EMPTY_BATTERY_SCOPE, CcRunScope } from '../chat-consistency-scope';
@@ -22,6 +23,7 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
+import { DownloadCenterPanelComponent } from '../../download-center/download-center-panel.component';
 import {
   CC_ANALYZE_STORAGE_KEY,
   CC_DEFAULT_ANALYZE_LAYOUT,
@@ -90,11 +92,30 @@ describe('CcAnalysisWizardComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Shows Results with a result: its Reports section asks for the report job and the documents. */
+  /** Shows Results with a result; it asks the server for nothing. */
   function goToResults(): void {
     setStep('results');
+  }
+
+  /** Shows Reports with a saved result: on its first visit it asks for the report job and the documents. */
+  function goToReports(): void {
+    setStep('reports');
     http.expectOne(`${CC_API}/analyses/7/report-documents/job`).flush(null, { status: 204, statusText: 'No Content' });
-    http.expectOne(r => r.url === DOCUMENTS_URL).flush([]);
+    const documents = http.expectOne(r => r.url === DOCUMENTS_URL);
+    expect(documents.request.params.has('origin')).toBe(false);
+    documents.flush([]);
+    fixture.detectChanges();
+  }
+
+  /** The Download Center panel's list request: the analysis's chat consistency documents. */
+  function expectPanelList(): TestRequest {
+    return http.expectOne(r => r.url === DOCUMENTS_URL && r.params.get('origin') === 'chatConsistencyReport');
+  }
+
+  /** Shows Documents with a saved result: on its first visit the Download Center panel lists the documents. */
+  function goToDocuments(): void {
+    setStep('documents');
+    expectPanelList().flush([]);
     fixture.detectChanges();
   }
 
@@ -169,13 +190,32 @@ describe('CcAnalysisWizardComponent', () => {
       expect(el.querySelector('app-cc-regrade-panel')).toBe(regradePanel);
     });
 
-    it('reaches Analyze with a model and Results only with a result', () => {
+    it('reaches Analyze with a model and Results, Reports and Documents only with a result', () => {
       expect(component.reachable('analyze')).toBe(true);
       expect(component.reachable('results')).toBe(false);
+      expect(component.reachable('reports')).toBe(false);
+      expect(component.reachable('documents')).toBe(false);
       setStep('results');
       expect(shownSteps()).toEqual(['results']);
       expect(el.querySelector('app-cc-results-view')).toBeNull();
       expect(el.querySelector('app-cc-reports-step')).toBeNull();
+      setStep('reports');
+      expect(shownSteps()).toEqual(['reports']);
+      expect(el.querySelector('app-cc-reports-step')).toBeNull();
+      setStep('documents');
+      expect(shownSteps()).toEqual(['documents']);
+      expect(el.querySelector('app-download-center-panel')).toBeNull();
+    });
+
+    it('reaches Reports and Documents with a saved result, and not with one that has no id', () => {
+      component.showResult(ccAnalysisResult({ analysisId: null }));
+      expect(component.reachable('results')).toBe(true);
+      expect(component.reachable('reports')).toBe(false);
+      expect(component.reachable('documents')).toBe(false);
+
+      component.showResult(ccAnalysisResult());
+      expect(component.reachable('reports')).toBe(true);
+      expect(component.reachable('documents')).toBe(true);
     });
   });
 
@@ -803,7 +843,8 @@ describe('CcAnalysisWizardComponent', () => {
       expect(component.reachable('results')).toBe(true);
 
       goToResults();
-      expect(textOf(el.querySelector('app-cc-results-view .cc-headline-text'))).toContain('Overseer chat with GPT-5 high');
+      expect(textOf(el.querySelector('app-cc-results-view details[data-section="about"] dd.cc-res-headline')))
+        .toContain('Overseer chat with GPT-5 high');
     });
 
     it('sends nothing while Analyze is blocked', () => {
@@ -1079,20 +1120,165 @@ describe('CcAnalysisWizardComponent', () => {
 
       goToResults();
       expect(el.querySelector('app-cc-results-view')).not.toBeNull();
-      expect(textOf(el.querySelector('.cc-headline-text'))).toContain('Overseer chat with GPT-5 high');
+      expect(textOf(el.querySelector('dd.cc-res-headline'))).toContain('Overseer chat with GPT-5 high');
     });
 
-    it('shows the Reports section after the results, under its own heading', () => {
+    it('shows the results without the reports, handing them every loaded run and the tagged annotations', () => {
+      const all = ccRunRows();
+      fixture.componentRef.setInput('allRows', all);
+      fixture.componentRef.setInput('allBatteryRows', ccBatteryRunRows());
+      fixture.detectChanges();
       component.showResult(ccAnalysisResult());
       goToResults();
-      const results = el.querySelector('app-cc-results-view')!;
-      const heading = el.querySelector<HTMLElement>('h5#cc-res-reports-title')!;
-      const reports = el.querySelector('app-cc-reports-step')!;
-      expect(textOf(heading)).toBe('Reports');
-      expect(heading.classList).toContain('cc-res-heading');
-      expect(results.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(heading.compareDocumentPosition(reports) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      const results = fixture.debugElement.query(By.css('app-cc-results-view')).componentInstance as {
+        rows: unknown; batteryRows: unknown; annotations: unknown; result: CcAnalysisResult;
+      };
+      expect(results.result.analysisId).toBe(7);
+      expect(results.rows).toBe(all);
+      expect(results.batteryRows).toBe(component.allBatteryRows);
+      expect(results.annotations).toBe(component.taggedAnnotations);
+      expect(el.querySelector('.cc-wiz-reports')).toBeNull();
+      expect(el.querySelector('app-cc-reports-step')).toBeNull();
+      expect(component.reportsStep).toBeUndefined();
+    });
+
+    it('forwards the results\' run report requests', () => {
+      const runs: number[] = [];
+      const batteryRuns: number[] = [];
+      component.openRunReport.subscribe(id => runs.push(id));
+      component.openBatteryRunReport.subscribe(id => batteryRuns.push(id));
+      component.showResult(ccAnalysisResult());
+      goToResults();
+
+      const results = fixture.debugElement.query(By.css('app-cc-results-view')).componentInstance as {
+        openRunReport: { emit(id: number): void }; openBatteryRunReport: { emit(id: number): void };
+      };
+      results.openRunReport.emit(104);
+      results.openBatteryRunReport.emit(12);
+      expect(runs).toEqual([104]);
+      expect(batteryRuns).toEqual([12]);
+    });
+
+    it('renders the Reports step on its first visit and keeps it mounted and hidden afterwards', () => {
+      component.showResult(ccAnalysisResult());
+      goToReports();
+      expect(shownSteps()).toEqual(['reports']);
+      const reports = el.querySelector('.cc-wiz-step[data-step="reports"] > app-cc-reports-step')!;
+      expect(reports).not.toBeNull();
+      expect(body('reports')!.classList).toContain('cc-wiz-step-fill');
+      expect(el.classList).toContain('is-fill');
       expect(component.reportsStep).toBeDefined();
+
+      goToResults();
+      expect(body('reports')!.hidden).toBe(true);
+      expect(el.classList).not.toContain('is-fill');
+      setStep('reports');
+      // The same step is kept, so it asks for nothing again.
+      expect(el.querySelector('app-cc-reports-step')).toBe(reports);
+    });
+
+    it('asks the outer wizard for the Documents step on the Reports step\'s See the documents', () => {
+      const requested: string[] = [];
+      component.stepRequested.subscribe(step => requested.push(step));
+      component.showResult(ccAnalysisResult());
+      goToReports();
+
+      component.reportsStep!.documentsRequested.emit();
+      expect(requested).toEqual(['documents']);
+    });
+
+    it('emits stateChange when the Reports step\'s job or chart state changes', () => {
+      component.showResult(ccAnalysisResult());
+      goToReports();
+      let changes = 0;
+      component.stateChange.subscribe(() => changes++);
+
+      component.reportsStep!.stateChange.emit();
+      expect(changes).toBe(1);
+    });
+
+    it('renders the Documents step as the Download Center panel on the analysis\'s documents', () => {
+      component.showResult(ccAnalysisResult());
+      goToDocuments();
+      expect(shownSteps()).toEqual(['documents']);
+
+      const step = body('documents')!;
+      expect(step.classList).toContain('cc-wiz-step-fill');
+      expect(textOf(step.querySelector('p.form-hint.cc-documents-note')))
+        .toBe('The documents of analysis #7 — September check. View them here, or select them to download.');
+      const panel = fixture.debugElement.query(By.directive(DownloadCenterPanelComponent)).componentInstance as DownloadCenterPanelComponent;
+      expect(panel.idPrefix).toBe('cc-dc');
+      expect(panel.context).toEqual({ kind: 'chatConsistency', analysisId: 7 });
+      expect(panel.chartActions).toBeNull();
+    });
+
+    it('keeps one Download Center context per saved analysis', () => {
+      component.showResult(ccAnalysisResult());
+      const context = component.documentsContext;
+      expect(context).toEqual({ kind: 'chatConsistency', analysisId: 7 });
+      expect(component.documentsContext, 'one object per analysis id').toBe(context);
+
+      component.showResult(ccAnalysisResult({ name: 'Renamed' }));
+      expect(component.documentsContext).toBe(context);
+
+      component.showResult(ccAnalysisResult({ analysisId: 8 }));
+      expect(component.documentsContext).toEqual({ kind: 'chatConsistency', analysisId: 8 });
+      expect(component.documentsContext).not.toBe(context);
+
+      component.showResult(ccAnalysisResult({ analysisId: null }));
+      expect(component.documentsContext).toBeNull();
+    });
+
+    it('lists the documents again on every entry to the Documents step', () => {
+      component.showResult(ccAnalysisResult());
+      goToDocuments();
+      const token = component.documentsReloadToken;
+
+      goToResults();
+      expect(component.documentsReloadToken).toBe(token);
+      setStep('documents');
+      expect(component.documentsReloadToken).toBe(token + 1);
+      expectPanelList().flush([]);
+      fixture.detectChanges();
+    });
+
+    it('lists the Documents step again when the Reports step\'s documents change', () => {
+      component.showResult(ccAnalysisResult());
+      goToReports();
+      goToDocuments();
+      const token = component.documentsReloadToken;
+
+      component.reportsStep!.documentsChanged.emit();
+      fixture.detectChanges();
+      expect(component.documentsReloadToken).toBe(token + 1);
+      expectPanelList().flush([]);
+      fixture.detectChanges();
+    });
+
+    it('lists the Reports step\'s documents again after a change in the Documents step', () => {
+      component.showResult(ccAnalysisResult());
+      goToReports();
+      goToDocuments();
+      const reload = vi.spyOn(component.reportsStep!, 'reloadDocuments');
+
+      const panel = fixture.debugElement.query(By.directive(DownloadCenterPanelComponent)).componentInstance as DownloadCenterPanelComponent;
+      panel.documentsChanged.emit();
+      expect(reload).toHaveBeenCalledTimes(1);
+      const documents = http.expectOne(r => r.url === DOCUMENTS_URL && !r.params.has('origin'));
+      expect(documents.request.params.get('subject')).toBe('chat-consistency:7');
+      documents.flush([]);
+      fixture.detectChanges();
+    });
+
+    it('lists nothing again from the Documents step before the Reports step was visited', () => {
+      component.showResult(ccAnalysisResult());
+      goToDocuments();
+      expect(component.reportsStep).toBeUndefined();
+
+      const panel = fixture.debugElement.query(By.directive(DownloadCenterPanelComponent)).componentInstance as DownloadCenterPanelComponent;
+      panel.documentsChanged.emit();
+      http.expectNone(r => r.url === DOCUMENTS_URL);
     });
 
     it('names the bounds once the saved analysis\'s runs arrive, keeping its controls', () => {
@@ -1121,10 +1307,10 @@ describe('CcAnalysisWizardComponent', () => {
       expect(component.reachable('results')).toBe(true);
     });
 
-    it('reports chartsAttaching while the Reports section attaches charts', () => {
+    it('reports chartsAttaching while the Reports step attaches charts', () => {
       expect(component.chartsAttaching).toBe(false);
       component.showResult(ccAnalysisResult());
-      goToResults();
+      goToReports();
 
       const reports = component.reportsStep!;
       expect(reports).toBeDefined();

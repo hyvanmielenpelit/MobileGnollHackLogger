@@ -1,0 +1,50 @@
+<!--
+  The stored periods, baseline then comparison, each a card named by its heading, with the period's
+  color as a rail down its inline start. Below them step 3's unit cards, read-only.
+-->
+<div class="cc-rp-periods">
+  @for (card of periods; track card.period) {
+    <section class="cc-rp-period" [attr.data-period]="card.period" [attr.aria-labelledby]="card.titleId">
+      <div class="cc-rp-rail" aria-hidden="true"></div>
+      <div class="cc-rp-body">
+        <h6 class="cc-rp-title" [id]="card.titleId">{{ card.name }}</h6>
+        <p class="cc-rp-dates">
+          <time [attr.datetime]="card.startDay">{{ card.startDay }}</time>
+          @if (card.endDay) {
+            <span class="cc-rp-dates-to"> to </span><time [attr.datetime]="card.endDay">{{ card.endDay }}</time>
+          }
+        </p>
+        <p class="cc-rp-range">
+          @for (bound of card.bounds; track bound.text) {
+            <button type="button" class="btn-link cc-rp-bound" [attr.aria-label]="bound.label"
+                    (click)="openUnit(bound.id)">{{ bound.text }}</button>
+          } @empty {
+            <span class="cc-rp-unset">Not among the loaded {{ noun }}s</span>
+          }
+        </p>
+        <dl class="bm-summary-facts cc-rp-facts">
+          @for (fact of card.facts; track fact.key) {
+            <div [attr.data-fact]="fact.key">
+              <dt>{{ fact.term }}</dt>
+              <dd>{{ fact.value }}</dd>
+            </div>
+          }
+        </dl>
+      </div>
+    </section>
+  }
+</div>
+
+@if (missingText) {
+  <p class="form-hint cc-rp-missing">{{ missingText }}</p>
+}
+
+@if (unitView.units.length > 0) {
+  <app-cc-period-units [readonly]="true" [batteryMode]="batteryAnalysis"
+                       [units]="unitView.units" [ids]="unitView.ids" [assignment]="unitView.assignment"
+                       [points]="points" [batteryPoints]="batteryPoints"
+                       [eventGroups]="eventGroups" [annotations]="annotations" [details]="details"
+                       (detailsChange)="onDetailsChange($event)"
+                       (openRunReport)="openRunReport.emit($event)"
+                       (openBatteryRunReport)="openBatteryRunReport.emit($event)"></app-cc-period-units>
+}

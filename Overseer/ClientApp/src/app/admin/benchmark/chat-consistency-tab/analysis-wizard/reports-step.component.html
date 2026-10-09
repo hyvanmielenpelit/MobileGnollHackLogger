@@ -1,106 +1,335 @@
-<!-- The analysis's AI-written documents: choose them and the writer, estimate, write, follow, open. -->
-<fieldset class="gh-choice cc-rep-audiences">
-  <legend>Documents</legend>
-  @for (entry of audiences; track entry.audience) {
-    <div class="cc-rep-audience">
-      <label class="checkbox-label" [class.is-disabled]="isDisabled(entry.audience)">
-        <input type="checkbox" [id]="'cc-rep-audience-' + entry.audience" [attr.data-audience]="entry.audience"
-               [checked]="isChecked(entry.audience)" [disabled]="isDisabled(entry.audience)"
-               [attr.aria-describedby]="entry.audience === providerAudience && providerReason ? 'cc-rep-provider-reason' : null"
-               (change)="toggleAudience(entry.audience, $event)">
-        {{ entry.label }}
-      </label>
-      @if (entry.audience === providerAudience && providerReason) {
-        <p id="cc-rep-provider-reason" class="form-hint cc-rep-provider-reason">{{ providerReason }}</p>
+<!--
+  STEP 5 OF THE CHAT CONSISTENCY WIZARD: REPORTS
+
+  A resizable sidebar that writes the analysis's documents (each one written once: a written one with
+  View and Delete, an unwritten one with its Write checkbox), with the writer and the estimate; and a
+  main area with the job's progress, one row per document, and its log and diagnostics. The
+  same-provider confirmation, the delete confirmation and the PDF viewer are nested in the wizard's
+  dialog and stop their own close and cancel events.
+-->
+<app-run-report-frame layout="sidebar" sidebarLabel="New reports" mainLabel="Report progress"
+                      [sidebarWidth]="sidebarWidth" (sidebarWidthChange)="onSidebarWidthChange($event)">
+  <div runReportHeader class="rp-identity">
+    <h4 class="gh-section-title rp-heading" id="cc-rep-heading" tabindex="-1">Reports</h4>
+    <p class="rp-subtitle">{{ subtitle }}</p>
+    <p class="form-hint rp-lead">Write AI reports about this analysis. Each document is written once.</p>
+  </div>
+
+  <!-- ===================================================================================
+       SIDEBAR: NEW REPORTS
+       =================================================================================== -->
+  <div runReportSidebar class="rp-new">
+    <h5 class="rp-subsection-title rp-new-heading" id="cc-rep-new-heading" tabindex="-1">New reports</h5>
+
+    <fieldset class="gh-fieldset cc-rep-audiences">
+      <legend>Documents</legend>
+      <p class="visually-hidden" role="status" aria-live="polite">{{ documentsLiveText }}</p>
+      @if (allWritten) {
+        <p class="form-hint cc-rep-all-written">{{ allWrittenText }}</p>
+      }
+      <ul class="cds-list" role="list">
+        @for (entry of audiences; track entry.audience) {
+          @let doc = writtenDoc(entry.audience);
+          <li class="cds-row cc-rep-audience" [attr.data-audience]="entry.audience"
+              [attr.data-document-id]="doc?.id ?? null">
+            <div class="cds-row-head">
+              <span class="cds-doc-name">{{ entry.label }}</span>
+              @if (doc) {
+                <span class="gh-tag cds-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ docStatusText(doc) }}</span>
+              } @else {
+                <span class="gh-tag cds-status is-missing">Not written</span>
+              }
+            </div>
+            @if (doc) {
+              <p class="cds-meta">{{ docMeta(doc) }}</p>
+              <div class="cds-row-foot">
+                <div class="cds-actions" role="group" [attr.aria-label]="'Actions for ' + rowName(entry.audience)">
+                  <button #viewButton type="button" class="action-btn cc-rep-view-btn" [id]="'cc-rep-doc-' + entry.audience + '-view'"
+                          [attr.aria-label]="'View ' + rowName(entry.audience)"
+                          [attr.interestfor]="'cc-rep-doc-' + entry.audience + '-view-tip'"
+                          [attr.style]="'anchor-name: --cc-rep-doc-' + entry.audience + '-view-tip'"
+                          (click)="viewDocument(entry.audience, viewButton)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'cc-rep-doc-' + entry.audience + '-view-tip'"
+                       [attr.style]="'position-anchor: --cc-rep-doc-' + entry.audience + '-view-tip'">View</div>
+                  <button #deleteButton type="button" class="action-btn action-btn-danger cc-rep-delete-btn" [id]="'cc-rep-doc-' + entry.audience + '-delete'"
+                          [attr.aria-label]="'Delete ' + rowName(entry.audience)"
+                          [disabled]="deleteBusy"
+                          [attr.aria-describedby]="deleteBusy ? 'cc-rep-delete-busy' : null"
+                          [attr.interestfor]="'cc-rep-doc-' + entry.audience + '-delete-tip'"
+                          [attr.style]="'anchor-name: --cc-rep-doc-' + entry.audience + '-delete-tip'"
+                          (click)="requestDelete(entry.audience, deleteButton)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'cc-rep-doc-' + entry.audience + '-delete-tip'"
+                       [attr.style]="'position-anchor: --cc-rep-doc-' + entry.audience + '-delete-tip'">Delete</div>
+                </div>
+              </div>
+            } @else if (!allWritten) {
+              <div class="cds-row-foot">
+                <label class="checkbox-label cds-check" [class.is-disabled]="isDisabled(entry.audience)">
+                  <input type="checkbox" [id]="'cc-rep-audience-' + entry.audience" [attr.data-audience]="entry.audience"
+                         [checked]="isChecked(entry.audience)" [disabled]="isDisabled(entry.audience)"
+                         [attr.aria-describedby]="entry.audience === providerAudience && providerReason ? 'cc-rep-provider-reason' : null"
+                         (change)="toggleAudience(entry.audience, $event)">
+                  <span>Write<span class="visually-hidden">: {{ rowName(entry.audience) }}</span></span>
+                </label>
+              </div>
+            }
+            @if (!doc && entry.audience === providerAudience && providerReason) {
+              <p id="cc-rep-provider-reason" class="form-hint cc-rep-provider-reason">{{ providerReason }}</p>
+            }
+          </li>
+        }
+      </ul>
+      @if (deleteBusy && documents.length > 0) {
+        <p id="cc-rep-delete-busy" class="rp-note cc-rep-delete-busy">{{ deleteBusyReason }}</p>
+      }
+    </fieldset>
+
+    <div class="form-group rp-field cc-rep-writer">
+      <label id="cc-rep-writer-label">Report writer</label>
+      <div class="gh-field-row">
+        <app-model-picker class="cc-report-writer-model-selector" labelledBy="cc-rep-writer-label"
+                          [describedBy]="writerDescribedBy"
+                          placeholder="Select a model" [emptyHint]="pickerEmptyHint" [showPrice]="true"
+                          [options]="writerOptions" [selectedKey]="writerId"
+                          (selectionChange)="selectWriter($event.model)"></app-model-picker>
+        <app-info-tip trigger="dialog" tipId="cc-rep-writer-tip" subject="Report writer"
+                      dialogTitle="Choosing a report writer">
+          <p class="cc-rep-writer-advice-lead">{{ writerAdviceLead }}</p>
+          <dl>
+            @for (entry of writerAdvice; track entry.term) {
+              <div>
+                <dt><span class="gh-info-term">{{ entry.term }}</span>@if (entry.badge) { <span class="gh-info-badge">{{ entry.badge }}</span>}</dt>
+                <dd>{{ entry.text }}</dd>
+              </div>
+            }
+          </dl>
+        </app-info-tip>
+      </div>
+    </div>
+
+    <!-- Visible text, not tips: a refusal holds Write Reports back; a warning makes it ask first. -->
+    @if (writeRefusal) {
+      <p id="cc-rep-writer-refusal" class="gh-field-error cc-rep-refusal">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ writeRefusal }}</span>
+      </p>
+    } @else if (writerWarning) {
+      <div class="alert alert-warning cc-rep-warning" role="note">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <div class="alert-content"><div class="alert-body" id="cc-rep-writer-warning">{{ writerWarning }}</div></div>
+      </div>
+    }
+
+    <!-- Always rendered, so the live region is in place before an estimate arrives. -->
+    <div id="cc-rep-estimate" class="gh-estimate-panel cc-rep-estimate" role="status"
+         [class.is-empty]="!estimateText" [class.is-muted]="estimating || estimateFailed">
+      @if (estimateText) {
+        <p class="gh-estimate-note">{{ estimateText }}</p>
       }
     </div>
-  }
-</fieldset>
 
-<div class="cc-rep-writer">
-  <label id="cc-rep-writer-label">Report writer</label>
-  <div class="cc-rep-write-row">
-    <app-model-picker class="cc-report-writer-model-selector" labelledBy="cc-rep-writer-label"
-                      [describedBy]="writeRefusal ? 'cc-rep-writer-refusal' : (writerWarning ? 'cc-rep-writer-warning' : null)"
-                      placeholder="Select a model" [emptyHint]="pickerEmptyHint" [showPrice]="true"
-                      [options]="writerOptions" [selectedKey]="writerId"
-                      (selectionChange)="selectWriter($event.model)"></app-model-picker>
-    <button #writeButton type="button" class="btn-gh cc-rep-write-btn"
-            [disabled]="writeDisabled" aria-describedby="cc-rep-estimate"
-            [attr.aria-busy]="writeSubmitting ? 'true' : null"
-            (click)="requestWrite()">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-      {{ writeLabel }}
-    </button>
-  </div>
-</div>
-
-@if (writeRefusal) {
-  <p id="cc-rep-writer-refusal" class="gh-field-error cc-rep-refusal">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-    <span>{{ writeRefusal }}</span>
-  </p>
-}
-
-@if (writerWarning) {
-  <div class="alert alert-warning cc-rep-warning" role="note">
-    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-    <div class="alert-content"><div class="alert-body" id="cc-rep-writer-warning">{{ writerWarning }}</div></div>
-  </div>
-}
-
-<!-- Always rendered, so the live region is in place before an estimate arrives. -->
-<div id="cc-rep-estimate" class="gh-estimate-panel cc-rep-estimate" role="status"
-     [class.is-empty]="!estimateText" [class.is-muted]="estimating || estimateFailed">
-  @if (estimateText) {
-    <p class="gh-estimate-note">{{ estimateText }}</p>
-  }
-</div>
-
-@if (writeError) {
-  <p class="gh-field-error cc-rep-write-error" role="alert">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-    <span>{{ writeError }}</span>
-  </p>
-}
-
-<div class="cc-rep-progress">
-  <p class="cc-rep-status" role="status">
-    {{ statusText }}
-    @if (job && job.writerDisplayName && jobInProgress) {
-      <span> · {{ job.writerDisplayName }}</span>
+    <div class="rp-actions-row">
+      <button #writeButton type="button" class="btn-gh rp-generate cc-rep-write-btn"
+              [disabled]="writeDisabled"
+              [attr.aria-disabled]="writeAriaDisabled ? 'true' : null"
+              [attr.aria-describedby]="writeDescribedBy"
+              [attr.aria-busy]="writeSubmitting ? 'true' : null"
+              (click)="requestWrite()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        {{ writeLabel }}
+      </button>
+    </div>
+    @if (writeBlockedReason !== null) {
+      <p class="rp-note cc-rep-write-blocked" id="cc-rep-write-blocked">{{ writeBlockedReason }}</p>
     }
-    @if (job?.jobsAhead) {
-      <span> · {{ job?.jobsAhead }} ahead in the queue</span>
-    }
-  </p>
-  @if (jobInProgress) {
-    <button type="button" class="btn-ghost btn-ghost-danger cc-rep-cancel-btn"
-            [attr.aria-disabled]="canceling ? 'true' : null" (click)="cancelJob()">Cancel writing</button>
-  }
-  @if (cancelError) {
-    <p class="gh-field-error" role="alert">
-      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      <span>{{ cancelError }}</span>
-    </p>
-  }
-  @if (chartMessage) {
-    <p class="cc-rep-charts" [class.gh-field-error]="chartState === 'failed'">{{ chartMessage }}</p>
-  }
-</div>
 
-<div class="cc-rep-open">
-  <button type="button" class="btn-ghost cc-rep-open-btn"
-          [attr.aria-disabled]="documentCount === 0 ? 'true' : null"
-          aria-describedby="cc-rep-open-hint"
-          (click)="requestOpenDocuments()">
-    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-    Open in Download Center
-  </button>
-  <span id="cc-rep-open-hint" class="form-hint">
-    {{ documentCount === 0 ? 'No document of this analysis is written yet.' : documentCount + (documentCount === 1 ? ' document' : ' documents') + ' of this analysis.' }}
-  </span>
-</div>
+    @if (writeError) {
+      <p class="gh-field-error cc-rep-write-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ writeError }}</span>
+      </p>
+    }
+  </div>
+
+  <!-- ===================================================================================
+       MAIN: THE JOB
+       =================================================================================== -->
+  <div runReportMain class="rp-main">
+    <h5 class="rp-subsection-title rp-progress-heading" id="cc-rep-progress-heading" tabindex="-1">Report progress</h5>
+
+    <!-- One polite live line, in place before a job exists; it changes with the job's phase only. -->
+    <p class="rp-job-status cc-rep-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
+
+    @if (!showJob) {
+      <p class="form-hint rp-idle-note">No report is being written. Choose the documents and a writer, then Write Reports.</p>
+    } @else {
+      <section class="rp-job" [class.is-finished]="jobFinished" aria-labelledby="cc-rep-job-heading">
+        <h6 id="cc-rep-job-heading" class="rp-job-title">{{ jobFinished ? 'Last reports' : 'Reports in progress' }}</h6>
+        @if (jobFinished) {
+          <div class="rp-job-summary-row">
+            <p class="rp-job-summary">{{ jobSummary }}</p>
+            <div class="rp-job-summary-actions">
+              <button type="button" class="btn-ghost rp-see-documents" (click)="requestDocuments()">See the documents</button>
+              <button type="button" class="btn-ghost rp-dismiss-job" (click)="dismissJob()">Dismiss</button>
+            </div>
+          </div>
+        } @else if (job) {
+          <ol class="run-stage-rail rp-job-rail" aria-label="Report writing stages">
+            @for (stage of jobStages; track stage.key; let i = $index) {
+              <li class="run-stage" [attr.data-stage]="stage.key"
+                  [class.is-done]="stage.state === 'done'"
+                  [class.is-current]="stage.state === 'current'"
+                  [attr.aria-current]="stage.state === 'current' ? 'step' : null">
+                <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+                <span class="run-stage-name">{{ stage.name }}</span>
+                @if (stage.state !== 'pending') {
+                  <span class="visually-hidden">({{ stage.state === 'current' ? 'current' : 'done' }})</span>
+                }
+              </li>
+            }
+          </ol>
+        }
+
+        @if (jobStats; as stats) {
+          <dl class="run-stat-strip rp-job-stats">
+            <div class="run-stat">
+              <dt>Elapsed</dt>
+              <dd class="rp-job-elapsed">{{ stats.elapsed }}</dd>
+            </div>
+            <div class="run-stat">
+              <dt>Writer</dt>
+              <dd class="rp-job-writer">
+                <span class="cc-rep-writer-name">{{ job?.writerDisplayName || '—' }}</span>
+                @if (writerBadges; as badges) {
+                  <span class="cc-rep-writer-badges"><app-cc-model-badges [model]="badges" /></span>
+                }
+              </dd>
+            </div>
+            <div class="run-stat">
+              <dt>Model calls</dt>
+              <dd class="rp-job-calls">{{ stats.modelCalls }}</dd>
+            </div>
+            <div class="run-stat">
+              <dt>Tokens</dt>
+              <dd class="rp-job-tokens">{{ stats.tokens }}</dd>
+            </div>
+            <div class="run-stat">
+              <dt class="rp-job-cost-label">{{ stats.costLabel }}</dt>
+              <dd class="rp-job-cost">{{ stats.cost }}</dd>
+            </div>
+            @if (jobEstimate) {
+              <div class="run-stat">
+                <dt>Estimate</dt>
+                <dd class="rp-job-estimate">{{ jobEstimate }}</dd>
+              </div>
+            }
+          </dl>
+        }
+
+        @if (jobRows.length > 0) {
+          <!-- The header row is for sight only: every cell of a row names its value itself. -->
+          <div class="rp-doc-progress-grid">
+            <div class="rp-doc-progress-head" aria-hidden="true">
+              <span>Document</span>
+              <span>Status</span>
+              <span>Duration</span>
+              <span class="rp-num">Model calls</span>
+              <span>Charts</span>
+            </div>
+            <ol class="rp-doc-progress" aria-label="Progress of each document">
+              @for (row of jobRows; track row.key) {
+                <li class="rp-job-row" [attr.data-audience]="row.audience">
+                  <span class="rp-doc-name">{{ row.name }}</span>
+                  <span class="rp-doc-status">
+                    <span class="visually-hidden">Status: </span>
+                    <span [class]="row.chipClass">{{ row.statusWord }}</span>
+                    @if (row.errorMessage) {
+                      <span class="rp-job-row-error">{{ row.errorMessage }}</span>
+                    }
+                  </span>
+                  <span class="rp-doc-duration"><span class="visually-hidden">Duration: </span>{{ row.duration }}</span>
+                  <span class="rp-doc-calls rp-num"><span class="visually-hidden">Model calls: </span>{{ row.modelCalls }}</span>
+                  <span class="rp-doc-charts">{{ chartsText(row) }}</span>
+                </li>
+              }
+            </ol>
+          </div>
+        }
+
+        @if (chartMessage) {
+          <p class="rp-note cc-rep-charts" [class.gh-field-error]="chartState === 'failed'">{{ chartMessage }}</p>
+        }
+
+        @if (job) {
+          <details class="gh-disclosure rp-job-log">
+            <summary>Log and diagnostics</summary>
+            <div class="gh-disclosure-body">
+              <div class="rp-diagnostics-toolbar">
+                <button type="button" class="action-btn rp-copy-diagnostics"
+                        aria-label="Copy the report writing diagnostics of this analysis"
+                        [attr.interestfor]="'cc-rep-copy-diagnostics-tip'"
+                        [attr.style]="'anchor-name: --cc-rep-copy-diagnostics-tip'"
+                        (click)="copyDiagnostics()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="cc-rep-copy-diagnostics-tip"
+                     [attr.style]="'position-anchor: --cc-rep-copy-diagnostics-tip'">Copy diagnostics</div>
+                <button type="button" class="action-btn rp-download-diagnostics"
+                        aria-label="Download the report writing diagnostics of this analysis"
+                        [attr.interestfor]="'cc-rep-download-diagnostics-tip'"
+                        [attr.style]="'anchor-name: --cc-rep-download-diagnostics-tip'"
+                        (click)="downloadDiagnostics()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="cc-rep-download-diagnostics-tip"
+                     [attr.style]="'position-anchor: --cc-rep-download-diagnostics-tip'">Download diagnostics</div>
+                <p class="rp-copy-status" role="status" aria-live="polite">{{ copyStatus }}</p>
+              </div>
+              @if (copyError) {
+                <p class="gh-field-error rp-copy-error">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                  <span>{{ copyError }}</span>
+                </p>
+              }
+
+              @if (job.job.log.length > 0) {
+                <ol class="rp-log-list">
+                  @for (entry of job.job.log; track $index) {
+                    <li [class.rp-log-warning]="entry.severity !== 'Info'">
+                      <span class="rp-log-time">{{ logTime(entry.timestampUtc) }}</span>
+                      <span class="rp-log-severity">{{ entry.severity }}</span>
+                      {{ entry.message }}
+                    </li>
+                  }
+                </ol>
+              } @else {
+                <p class="rp-note">No log entries yet.</p>
+              }
+            </div>
+          </details>
+        }
+
+        @if (cancelError) {
+          <p class="gh-field-error cc-rep-cancel-error" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ cancelError }}</span>
+          </p>
+        }
+        @if (jobInProgress) {
+          <button type="button" class="btn-gh btn-gh-delete rp-cancel-job cc-rep-cancel-btn"
+                  [disabled]="canceling" (click)="cancelJob()">Cancel Writing</button>
+        }
+      </section>
+    }
+  </div>
+</app-run-report-frame>
 
 <!-- SAME-PROVIDER CONFIRMATION: asked on every write with such a writer, never remembered. -->
 <dialog #sameProviderDialog class="gh-dialog cc-rep-confirm-dialog" aria-labelledby="cc-rep-same-provider-title"
@@ -126,3 +355,41 @@
     </div>
   </div>
 </dialog>
+
+<!-- DELETE CONFIRMATION -->
+<dialog #deleteDialog class="gh-dialog cc-rep-confirm-dialog cc-rep-delete-dialog" aria-labelledby="cc-rep-delete-title"
+        (cancel)="onDeleteDialogEvent($event)" (close)="onDeleteDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="cc-rep-delete-title">Delete Document</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      @if (deleteTarget; as target) {
+        <p class="cc-rep-delete-text">
+          Delete <strong>{{ target.doc.title || target.label }}</strong>, written {{ docByline(target.doc) }}?
+          This cannot be undone; the document can be written again afterwards. The analysis and its runs are not affected.
+        </p>
+      }
+      @if (deleteError) {
+        <p class="gh-field-error cc-rep-delete-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ deleteError }}</span>
+        </p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cc-rep-delete-cancel" (click)="cancelDelete()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete cc-rep-delete-confirm" [disabled]="deleting" (click)="confirmDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Delete Document
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- The PDF viewer's own dialog: its events stop at this wrapper. -->
+<div class="cc-rep-nested" (cancel)="stopNested($event)" (close)="stopNested($event)">
+  <app-pdf-viewer-dialog (closed)="onViewerClosed()"></app-pdf-viewer-dialog>
+</div>

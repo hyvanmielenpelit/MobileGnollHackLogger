@@ -22,6 +22,10 @@ import { ModelPickerOption } from '../../../../shared/model-picker/model-picker.
 import { PaneResizerComponent } from '../../../../shared/pane-resizer/pane-resizer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../../utils/polyfills.util';
 import {
+  DownloadCenterChatConsistencyContext,
+  DownloadCenterPanelComponent
+} from '../../download-center/download-center-panel.component';
+import {
   formatUtcDate,
   formatUtcDateTime,
   plural,
@@ -80,7 +84,6 @@ import {
   CcBatteryTimelinePoint,
   CcComparisonSet,
   CcModelAxis,
-  CcOpenDocumentsRequest,
   CcProtocolOverrides,
   CcRunRow,
   CcRunSelection,
@@ -98,7 +101,7 @@ import { CcResultsViewComponent } from './results-view.component';
 export { CC_PROTOCOL_V1, CC_PROTOCOL_V1_ENDPOINTS } from '../chat-consistency-readiness';
 
 /** The analysis steps the outer wizard shows through this component, in order. */
-export type CcAnalysisStep = 'analyze' | 'results';
+export type CcAnalysisStep = 'analyze' | 'results' | 'reports' | 'documents';
 
 /** The Split rule's id: a preset that computes the four bounds, or `custom` (*Manual*) that keeps them. */
 export type CcPreset = 'earliest' | 'annotation' | 'event' | 'later' | 'custom';
@@ -225,9 +228,9 @@ interface PeriodState {
  * Controls: the control runs, the common-grader re-grade and pooling; Protocol: Protocol V1 and its
  * overrides) beside the *Periods* view — a summary strip over the step-1 units as cards, on which the
  * four period bounds are set — and the *Preview* view of what the analysis will see. *Results* shows
- * the saved result and its reports. A step's body is mounted on its first visit and afterwards kept,
- * hidden while another step shows, so a re-grade, a chart attachment, the charts and the scroll
- * survive a step change.
+ * the saved result, *Reports* writes its AI reports, and *Documents* lists them in the Download Center
+ * panel. A step's body is mounted on its first visit and afterwards kept, hidden while another step
+ * shows, so a re-grade, a report job, a chart attachment and the scroll survive a step change.
  */
 @Component({
   selector: 'app-cc-analysis-wizard',
@@ -240,6 +243,7 @@ interface PeriodState {
     CcRegradePanelComponent,
     CcReportsStepComponent,
     CcResultsViewComponent,
+    DownloadCenterPanelComponent,
     InfoTipComponent,
     PaneResizerComponent
   ],
@@ -247,7 +251,8 @@ interface PeriodState {
   styleUrls: ['./analysis-wizard.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '[class.is-workspace]': 'step === \'analyze\''
+    '[class.is-workspace]': 'step === \'analyze\'',
+    '[class.is-fill]': 'step === \'reports\' || step === \'documents\''
   }
 })
 export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
@@ -286,7 +291,8 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   @Output() readonly analysisSaved = new EventEmitter<CcAnalysisResult>();
   @Output() readonly runsChanged = new EventEmitter<void>();
   @Output() readonly repeatSetup = new EventEmitter<number>();
-  @Output() readonly openDocuments = new EventEmitter<CcOpenDocumentsRequest>();
+  /** A step asks the outer wizard to show another: the Reports step's *See the documents*. */
+  @Output() readonly stepRequested = new EventEmitter<'documents'>();
   /** A period card's run report, by run id. */
   @Output() readonly openRunReport = new EventEmitter<number>();
   /** A period card's battery run report, by battery run id. */
@@ -347,6 +353,9 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   analyzeError: string | null = null;
   result: CcAnalysisResult | null = null;
 
+  /** Bumped to list the Documents step's documents again: on entering it, and on a Reports step change. */
+  documentsReloadToken = 0;
+
   private analyzeSub: Subscription | null = null;
   /** The steps whose bodies have been shown, and so stay mounted. */
   private readonly visitedSteps = new Set<CcAnalysisStep>();
@@ -361,7 +370,10 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['step']) this.visitedSteps.add(this.step);
+    if (changes['step']) {
+      this.visitedSteps.add(this.step);
+      if (this.step === 'documents' && changes['step'].previousValue !== 'documents') this.documentsReloadToken++;
+    }
     const axisChange = changes['axis'];
     let reset = false;
     if (axisChange && axisChange.previousValue?.key !== this.axis?.key) {
@@ -409,9 +421,45 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     return step === this.step || this.visitedSteps.has(step);
   }
 
-  /** The Reports section is drawing and uploading report charts; closing the wizard would strand them. */
+  /** The Reports step is drawing and uploading report charts; closing the wizard would strand them. */
   get chartsAttaching(): boolean {
     return this.reportsStep?.chartState === 'attaching';
+  }
+
+  /** The Documents step's Download Center context: one object per saved analysis; null without one. */
+  get documentsContext(): DownloadCenterChatConsistencyContext | null {
+    const analysisId = this.result?.analysisId ?? null;
+    return this.memo('documentsContext', [analysisId], (): DownloadCenterChatConsistencyContext | null =>
+      analysisId === null ? null : { kind: 'chatConsistency', analysisId });
+  }
+
+  /** `The documents of analysis #7 — Weekly check. View them here, or select them to download.` */
+  get documentsNote(): string {
+    const result = this.result;
+    if (!result || result.analysisId === null) return '';
+    const name = result.name?.trim();
+    return `The documents of analysis #${result.analysisId}${name ? ` — ${name}` : ''}. View them here, or select them to download.`;
+  }
+
+  /** The Reports step's documents changed: the Documents step lists them again. */
+  onReportsDocumentsChanged(): void {
+    this.documentsReloadToken++;
+    this.cdr.markForCheck();
+  }
+
+  /** The Reports step's *See the documents*: the outer wizard shows the Documents step. */
+  onDocumentsRequested(): void {
+    this.stepRequested.emit('documents');
+  }
+
+  /** A document was deleted, or its charts changed, in the Documents step: the Reports step lists its documents again. */
+  onDocumentsChanged(): void {
+    this.reportsStep?.reloadDocuments();
+  }
+
+  /** Whether a report job runs or charts are attached changed: the outer wizard's close guard reads it. */
+  onReportsStateChange(): void {
+    this.changed();
   }
 
   get periodsError(): string {
@@ -433,8 +481,16 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     return '';
   }
 
+  /** Analyze needs a model, Results a result, and Reports and Documents a saved one. */
   reachable(step: CcAnalysisStep): boolean {
-    return step === 'analyze' ? !!this.axis : this.result !== null;
+    switch (step) {
+      case 'analyze':
+        return !!this.axis;
+      case 'results':
+        return this.result !== null;
+      default:
+        return this.result !== null && this.result.analysisId !== null;
+    }
   }
 
   /**

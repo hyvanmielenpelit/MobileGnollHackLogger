@@ -490,6 +490,20 @@ sidebar toggle reuses the Timeline's glyph and markup. **Split here** and **Show
 text-only. The preview's endpoint status chips carry* check*,* alert-triangle *and* minus *as status
 icons beside a word, not as buttons.*
 
+*Changed 2026-10-09 (Chat Consistency Results, Reports and Documents): the wizard has six steps, *1.
+Model · 2. Timeline · 3. Analyze · 4. Results · 5. Reports · 6. Documents*, superseding the run-periods
+entry above on Reports: they are a step of their own again, in the layout of Model Comparison's step
+3, and the Download Center panel is step 6, with no *Open in Download Center* button. No glyph is
+new. Results' section tabs (*Verdicts · Periods · Attribution · Next runs · Details*, a
+`.gh-tabs-wrap` row) are text-only. The verdict banner's endpoint chips are buttons, each with a
+status icon —* check*,* alert-triangle *or* minus *— and its word, never the icon alone; Scope and
+Protocol take the dialog-mode `app-info-tip`. **Set up from run #N** on a next-run card is a
+text-only `.btn-ghost`, as are *See the next runs* (a `.btn-link`), *See the documents* and *Dismiss*.
+On step 5 a written document's icon-only **View** reuses* eye *and **Delete** reuses* trash *on an
+`.action-btn-danger`, disabled while a job writes or charts are attached; **Write Reports** and the
+same-provider **Write Anyway** keep* zap*, and the log's icon-only **Copy diagnostics** and **Download
+diagnostics** take* copy *and* file-with-arrow*, as on Model Comparison's step 3.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -1996,6 +2010,11 @@ contiguous range of cards:
   (`.cc-pu-details-toggle`), on by default: a **view setting stored per browser**
   (`details` in `overseer.benchmark.chatConsistency.analyze`), not a filter — it shows or hides each
   card's facts or member list, never a card.
+- **Read-only on Results** (`[readonly]="true"`, 2026-10-09): the Results step's *Periods* tab shows
+  a saved analysis's units with the same list, without the bounds group or *Split here*, under
+  `h5#cc-res-units-title` (*Runs in the periods*), every id and anchor name starting `cc-res-pu`
+  instead of `cc-pu` so the two lists can share the document. There *Show run details* starts off on
+  every visit and is not stored.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

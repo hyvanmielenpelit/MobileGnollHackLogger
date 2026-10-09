@@ -796,13 +796,18 @@ describe('DownloadCenterPanelComponent', () => {
       expect(document.activeElement).toBe(button);
     });
 
-    it('offers Delete only on Report Pack documents', () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport, { origin: BenchmarkReportDocumentOrigin.RunCompletion })]);
+    it('offers Delete on Report Pack and chat consistency documents, never on a run\'s own', () => {
+      render([
+        doc(11, ExecutiveSummary),
+        doc(12, TechnicalReport, { origin: BenchmarkReportDocumentOrigin.RunCompletion }),
+        doc(14, InternalBrief, { origin: BenchmarkReportDocumentOrigin.ChatConsistencyReport, subjectKey: 'chat-consistency:12' })
+      ]);
 
       expect(byId('mc-dc-doc-11-delete')).not.toBeNull();
       expect(byId('mc-dc-doc-11-delete')!.classList).toContain('action-btn-danger');
       expect(byId('mc-dc-doc-12-delete')).toBeNull();
       expect(byId('mc-dc-doc-12-view')).not.toBeNull();
+      expect(byId('mc-dc-doc-14-delete')).not.toBeNull();
     });
 
     it('deletes after the confirmation, moves focus to the next row and says so', async () => {
@@ -1922,6 +1927,46 @@ describe('DownloadCenterPanelComponent', () => {
       expect(rowKeys()).toEqual(['doc:32', 'doc:31']);
       expect(panel().rows.every(r => r.kind === 'pack')).toBe(true);
       http.expectNone(r => r.url.includes('/runs/') || r.url.includes('/batteries/'));
+    });
+
+    it('deletes an analysis\'s document after the confirmation', async () => {
+      render([ccDoc(31, ExecutiveSummary), ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
+
+      const button = byId<HTMLButtonElement>('mc-dc-doc-31-delete')!;
+      expect(button).not.toBeNull();
+      expect(button.classList).toContain('action-btn-danger');
+      expect(byId('mc-dc-doc-32-delete')).not.toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+      const confirm = q<HTMLDialogElement>('dialog.dc-delete-dialog')!;
+      expect(confirm.open).toBe(true);
+      const closed = new Promise<void>(resolve => confirm.addEventListener('close', () => resolve(), { once: true }));
+      q<HTMLButtonElement>('.dc-delete-confirm')!.click();
+      const request = http.expectOne(r => r.method === 'DELETE');
+      expect(request.request.url).toBe(`${DOCUMENTS_URL}/31`);
+      request.flush(null);
+      await closed;
+      fixture.detectChanges();
+
+      expect(rowKeys()).toEqual(['doc:32']);
+      expect(hostComponent.changes).toBe(1);
+    });
+
+    it('lists the analysis\'s documents again on the reload token, keeping the choices made on the rows still listed', () => {
+      render([ccDoc(31, ExecutiveSummary), ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
+      check('doc:31');
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:31')!)).toBe(false);
+
+      hostComponent.reloadToken++;
+      fixture.detectChanges();
+      const request = expectList('chatConsistencyReport');
+      expect(request.request.params.get('subject')).toBe('chat-consistency:12');
+      request.flush([ccDoc(31, ExecutiveSummary), ccDoc(33, InternalBrief)]);
+      fixture.detectChanges();
+
+      expect(panel().rows.map(r => r.key).sort()).toEqual(['doc:31', 'doc:33']);
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:31')!)).toBe(false);
     });
 
     it('says when the analysis has no documents yet', () => {

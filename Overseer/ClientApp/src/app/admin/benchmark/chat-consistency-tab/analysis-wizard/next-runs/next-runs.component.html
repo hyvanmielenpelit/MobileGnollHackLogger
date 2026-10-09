@@ -1,0 +1,85 @@
+<!--
+  The head, then one section per kind present, each a grid of cards, one per period. &ngsp; keeps the
+  spaces between inline parts that flex layouts separate only visually.
+-->
+<div class="cc-nr-head">
+  <h5 id="cc-nr-title" class="gh-section-title">Next runs</h5>
+  @if (sections.length > 0) {
+    <p class="cc-nr-lead">{{ leadText }}</p>
+  } @else {
+    <p class="cc-nr-empty">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      <span>No run is needed: no verdict is waiting on more data.</span>
+    </p>
+  }
+</div>
+
+@for (section of sections; track section.kind) {
+  <section class="cc-nr-group" [attr.data-kind]="section.kind" [attr.aria-labelledby]="section.headingId">
+    <h6 class="cc-nr-group-title" [id]="section.headingId">{{ section.heading }}</h6>
+    @if (section.lead) {
+      <p class="cc-nr-group-lead">{{ section.lead }}</p>
+    }
+    <ul class="cc-nr-grid" role="list" [attr.aria-labelledby]="section.headingId">
+      @for (card of section.cards; track card.key) {
+        <li class="cc-nr-item">
+          <article class="cc-nr-card" [attr.data-kind]="card.kind" [attr.data-period]="card.period"
+                   [attr.aria-labelledby]="card.titleId">
+            <div class="cc-nr-tags">
+              <span class="gh-tag cc-nr-period" [attr.data-period]="card.period">{{ card.periodText }}</span>
+              @for (endpointId of card.endpointIds; track endpointId) {
+                &ngsp;<span class="gh-tag cc-nr-endpoint">{{ endpointId }}</span>
+              }
+            </div>
+            <h6 class="cc-nr-title" [id]="card.titleId">{{ card.title }}</h6>
+
+            @if (card.kind === 'control') {
+              <dl class="bm-summary-facts cc-nr-facts">
+                <div data-fact="suite"><dt>Suite</dt><dd>{{ card.suitesText }}</dd></div>
+                <div data-fact="build"><dt>Same build as</dt><dd>{{ card.buildText }}</dd></div>
+                <div data-fact="provider"><dt>Provider</dt><dd>not {{ provider }}</dd></div>
+              </dl>
+              @if (card.suggestions.length > 0) {
+                <!-- The server's suggestion carries the instrument fingerprint. -->
+                <details class="gh-disclosure cc-nr-details">
+                  <summary>Details<span class="visually-hidden">: {{ card.title }}, {{ card.periodText }}</span></summary>
+                  <div class="gh-disclosure-body">
+                    @for (suggestion of card.suggestions; track $index) {
+                      <p class="cc-nr-suggestion cc-nr-instrument">{{ suggestion }}</p>
+                    }
+                  </div>
+                </details>
+              }
+            } @else {
+              @for (suggestion of card.suggestions; track $index) {
+                <p class="cc-nr-suggestion">{{ suggestion }}</p>
+              }
+            }
+
+            @for (reason of card.reasons; track $index) {
+              <p class="cc-nr-reason">{{ reason }}</p>
+            }
+
+            @if (card.kind === 'regrade') {
+              <p class="cc-nr-hint">Re-grade from step 3: Controls → Re-grade.</p>
+            } @else if (card.targets.length > 0 || card.kind === 'control') {
+              <div class="cc-nr-actions">
+                @if (card.targets.length > 0) {
+                  <div class="cc-nr-buttons" role="group" [attr.aria-label]="'Actions for ' + card.title + ', ' + card.periodText">
+                    @for (target of card.targets; track target.runId) {
+                      <button type="button" class="btn-ghost cc-nr-repeat" [attr.data-run-id]="target.runId"
+                              [attr.aria-label]="target.label" (click)="repeatSetup.emit(target.runId)">{{ target.text }}</button>
+                    }
+                  </div>
+                }
+                @if (card.kind === 'control') {
+                  <p class="cc-nr-hint">Then choose a model from a provider other than {{ provider }}.</p>
+                }
+              </div>
+            }
+          </article>
+        </li>
+      }
+    </ul>
+  </section>
+}

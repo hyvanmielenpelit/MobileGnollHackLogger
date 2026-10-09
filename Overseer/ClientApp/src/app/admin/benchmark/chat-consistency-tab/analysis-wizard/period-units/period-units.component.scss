@@ -376,6 +376,23 @@
   }
 }
 
+// Read-only, the bounds area holds only the report button, which stays at the end of the head row
+// down to 30 rem.
+@container cc-pu (width > 30rem) and (width <= 52rem) {
+  .cc-pu-list.is-readonly .cc-pu-card {
+    grid-template-columns: 4px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "rail head    bounds"
+      "rail metrics metrics"
+      "rail elig    elig"
+      "rail details details";
+  }
+
+  .cc-pu-list.is-readonly .cc-pu-controls {
+    justify-content: flex-end;
+  }
+}
+
 // One column below 30 rem, the rail a bar along the top.
 @container cc-pu (max-width: 30rem) {
   .cc-pu-card {

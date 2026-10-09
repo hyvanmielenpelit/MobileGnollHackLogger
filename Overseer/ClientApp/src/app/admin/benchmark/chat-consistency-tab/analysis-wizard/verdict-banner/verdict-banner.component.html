@@ -1,0 +1,141 @@
+<!--
+  The outcome, the model, one chip per endpoint, the scope and the protocol, then the reliability lines.
+  &ngsp; keeps the spaces between inline parts that flex layouts separate only visually.
+-->
+<section class="cc-vb" [attr.data-outcome]="outcome.kind" aria-labelledby="cc-vb-title">
+  <p class="cc-vb-eyebrow">Verdict on the Overseer chat</p>
+  <h5 class="cc-vb-title" id="cc-vb-title">
+    @switch (outcome.kind) {
+      @case ('noChange') {
+        <svg class="cc-vb-title-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      }
+      @case ('changed') {
+        <svg class="cc-vb-title-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      }
+      @default {
+        <svg class="cc-vb-title-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      }
+    }
+    <span class="cc-vb-title-text">{{ outcome.title }}</span>
+  </h5>
+  <p class="cc-vb-detail">{{ outcome.detail }}</p>
+
+  <div class="cc-vb-subject">
+    <span class="cc-vb-model">{{ modelName }}</span>&ngsp;<app-cc-model-badges [model]="result.subject" />&ngsp;<span class="cc-vb-model-id">{{ result.subject.modelId }}</span>
+    @if (result.comparisonSet; as compared) {
+      &ngsp;<span class="cc-vb-compared"><span class="gh-tag cc-kind-tag" [attr.data-kind]="compared.kind">{{ compareKindText }}</span>&ngsp;<span class="cc-vb-compared-label">{{ compared.label }}</span></span>
+    }
+  </div>
+
+  <ul class="cc-vb-endpoints" role="list" aria-label="Endpoints">
+    @for (chip of chips; track chip.id) {
+      <li>
+        <button type="button" class="cc-vb-endpoint" [attr.data-endpoint]="chip.id" [attr.data-status]="chip.status"
+                [attr.aria-label]="chip.label" (click)="select(chip)">
+          <span class="cc-vb-endpoint-label"><span class="cc-vb-endpoint-id">{{ chip.id }}</span>&ngsp;<span class="cc-vb-endpoint-name">{{ chip.name }}</span></span>&ngsp;<span class="cc-vb-endpoint-status">
+            @switch (chip.status) {
+              @case ('within') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              }
+              @case ('improved') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              }
+              @case ('changed') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              }
+              @default {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              }
+            }
+            <span class="cc-vb-endpoint-word">{{ chip.text }}</span>
+          </span>
+        </button>
+      </li>
+    }
+  </ul>
+
+  <dl class="cc-vb-meta">
+    <div class="cc-vb-meta-item" data-meta="scope">
+      <dt>Scope</dt>
+      <dd>
+        <span class="cc-vb-meta-value">{{ scopeValue }}</span>
+        <app-info-tip trigger="dialog" tipId="cc-vb-scope-tip" subject="Scope" dialogTitle="About the scope">
+          <p>
+            Runs sample the chat only at the hours they ran, so every verdict holds only within the time-of-week
+            blocks both periods sampled: 4-hour UTC blocks, weekday or weekend.
+          </p>
+          <dl>
+            @for (fact of scopeFacts; track fact.key) {
+              <div [attr.data-fact]="fact.key">
+                <dt>{{ fact.term }}</dt>
+                <dd>
+                  {{ fact.value }}
+                  @if (fact.note) {
+                    <span class="cc-vb-tip-note">{{ fact.note }}</span>
+                  }
+                </dd>
+              </div>
+            }
+          </dl>
+          @if (noCommonBlock) {
+            <p class="cc-vb-tip-closing">Speed (P2, P3) needs runs at the same hours in both periods.</p>
+          }
+        </app-info-tip>
+      </dd>
+    </div>
+    <div class="cc-vb-meta-item" data-meta="protocol">
+      <dt>Protocol</dt>
+      <dd>
+        <span class="cc-vb-meta-value">{{ result.protocolLabel }}</span>
+        <app-info-tip trigger="dialog" tipId="cc-vb-protocol-tip" subject="Protocol" [dialogTitle]="protocolTitle">
+          <p>The endpoints, margins and tests were fixed before the data was seen.</p>
+          <dl>
+            @for (fact of protocolFacts; track fact.key) {
+              <div [attr.data-fact]="fact.key">
+                <dt>{{ fact.term }}</dt>
+                <dd>
+                  {{ fact.value }}
+                  @if (fact.note) {
+                    <span class="cc-vb-tip-note">{{ fact.note }}</span>
+                  }
+                </dd>
+              </div>
+            }
+          </dl>
+          <h4 class="cc-vb-tip-heading">Verdicts</h4>
+          <dl class="cc-vb-tip-definitions" data-definitions="verdicts">
+            @for (definition of verdictDefinitions; track definition.term) {
+              <div>
+                <dt>{{ definition.term }}</dt>
+                <dd>{{ definition.text }}</dd>
+              </div>
+            }
+          </dl>
+          <h4 class="cc-vb-tip-heading">Grades</h4>
+          <dl class="cc-vb-tip-definitions" data-definitions="grades">
+            @for (definition of gradeDefinitions; track definition.term) {
+              <div>
+                <dt>{{ definition.term }}</dt>
+                <dd>{{ definition.text }}</dd>
+              </div>
+            }
+          </dl>
+        </app-info-tip>
+      </dd>
+    </div>
+  </dl>
+
+  @if (result.headlineReliabilityIncreases.length > 0) {
+    <div class="alert alert-warning cc-vb-reliability" role="note" aria-labelledby="cc-vb-reliability-title">
+      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <div class="alert-content">
+        <p class="alert-heading" id="cc-vb-reliability-title">Reliability</p>
+        <ul class="alert-body cc-vb-reliability-list">
+          @for (line of result.headlineReliabilityIncreases; track $index) {
+            <li>{{ line }}</li>
+          }
+        </ul>
+      </div>
+    </div>
+  }
+</section>

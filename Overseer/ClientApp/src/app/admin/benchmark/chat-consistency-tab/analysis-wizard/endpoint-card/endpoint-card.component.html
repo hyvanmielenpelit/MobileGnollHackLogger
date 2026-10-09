@@ -1,0 +1,124 @@
+<!--
+  Head, figure, facts and notes. The interval bar is one image to assistive technology, named by its
+  reading; its parts and end captions are drawn for the eye only. &ngsp; keeps the spaces between
+  inline parts that flex layouts separate only visually.
+-->
+<article class="cc-ep-card" [id]="cardId" tabindex="-1" [attr.data-endpoint]="endpoint.id" [attr.data-status]="status"
+         [attr.aria-labelledby]="cardId + '-name'">
+  <header class="cc-ep-head">
+    <span class="gh-tag cc-ep-id">{{ endpoint.id }}</span>&ngsp;<h6 class="cc-ep-name" [id]="cardId + '-name'">{{ endpoint.name }}</h6>&ngsp;<span class="cc-ep-margin">Margin {{ endpoint.marginText }}</span>
+    <span class="cc-ep-pills">
+      <span class="cc-ep-status" [attr.data-status]="status">
+        @switch (status) {
+          @case ('within') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          }
+          @case ('improved') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          }
+          @case ('changed') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          }
+          @default {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          }
+        }
+        <span class="cc-ep-status-word">{{ statusText }}</span>
+      </span>
+      @if (gradeShown) {
+        &ngsp;<span class="cc-ep-grade" [attr.data-grade]="endpoint.grade"><span class="visually-hidden">Grade:&ngsp;</span>{{ gradeWord }}</span>
+      }
+    </span>
+  </header>
+
+  <div class="cc-ep-figure">
+    <p class="cc-ep-estimate">{{ parts.estimate }}</p>
+    @if (parts.interval) {
+      <p class="cc-ep-ci interval">95 % interval {{ parts.interval }}</p>
+    }
+    @if (geometry; as bar) {
+      <div class="cc-ep-chart">
+        <div class="cc-ep-interval" role="img" [attr.aria-label]="bar.label"
+             [class.is-within]="bar.withinMargin" [class.is-crossing]="bar.crossesMargin">
+          <span class="cc-ep-band" [style.left.%]="bar.marginStart" [style.width.%]="bar.marginEnd - bar.marginStart"></span>
+          <span class="cc-ep-zero" [style.left.%]="bar.zero"></span>
+          <span class="cc-ep-line" [style.left.%]="bar.lower" [style.width.%]="bar.upper - bar.lower"></span>
+          <span class="cc-ep-dot" [style.left.%]="bar.estimate"></span>
+        </div>
+        @if (ends.start || ends.end) {
+          <div class="cc-ep-ends" aria-hidden="true">
+            <span class="cc-ep-end-start">{{ ends.start }}</span>
+            <span class="cc-ep-end-end">{{ ends.end }}</span>
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <dl class="cc-ep-facts">
+    @for (fact of facts; track fact.key) {
+      <div [attr.data-fact]="fact.key">
+        <dt>{{ fact.term }}</dt>
+        <dd>{{ fact.value }}</dd>
+      </div>
+    }
+  </dl>
+
+  @if (visibleNotes.length > 0) {
+    <ul class="cc-ep-notes" role="list">
+      @for (note of visibleNotes; track $index) {
+        <li class="cc-ep-note" [class.is-shortfall]="note.shortfall">
+          @if (note.shortfall) {
+            <svg class="cc-ep-note-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          } @else {
+            <svg class="cc-ep-note-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          }
+          <span class="cc-ep-note-text">{{ note.text }}</span>
+        </li>
+      }
+    </ul>
+  }
+
+  @if (moreCount > 0) {
+    <details class="gh-disclosure cc-ep-more">
+      <summary>More about {{ endpoint.id }} ({{ moreCount }})</summary>
+      <div class="gh-disclosure-body">
+        @if (moreNotes.length > 0) {
+          <ul class="cc-ep-more-notes" role="list">
+            @for (note of moreNotes; track $index) {
+              <li>{{ note.text }}</li>
+            }
+          </ul>
+        }
+        @if (checks.length > 0) {
+          <p class="cc-ep-checks-title">Robustness checks</p>
+          <ul class="cc-ep-checks" role="list">
+            @for (check of checks; track $index) {
+              <li class="cc-ep-check" [attr.data-status]="check.status">
+                <span class="cc-ep-check-head">
+                  <span class="cc-ep-check-name">{{ check.name }}</span>&ngsp;<span class="cc-ep-check-status">
+                    @switch (check.status) {
+                      @case ('passed') {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                      }
+                      @case ('failed') {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      }
+                      @default {
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      }
+                    }
+                    <span class="cc-ep-check-word">{{ checkStatusText(check.status) }}</span>
+                  </span>
+                </span>
+                @if (check.detail) {
+                  <span class="cc-ep-check-detail">{{ check.detail }}</span>
+                }
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </details>
+  }
+</article>

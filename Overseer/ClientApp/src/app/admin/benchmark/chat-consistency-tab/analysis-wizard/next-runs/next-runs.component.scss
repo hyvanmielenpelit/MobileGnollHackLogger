@@ -1,0 +1,195 @@
+// The control card's facts are the global `bm-summary-facts`, its Details the global `gh-disclosure`.
+// The grids follow the component's own width, and each card its own.
+:host {
+  display: block;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.cc-nr-head {
+  margin-bottom: 1rem;
+
+  > .gh-section-title {
+    margin-bottom: 0.5rem;
+  }
+}
+
+.cc-nr-lead {
+  margin: 0;
+  color: var(--font-color);
+}
+
+.cc-nr-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--score-high-ink);
+
+  > svg {
+    flex: none;
+    margin-top: 0.2em;
+  }
+}
+
+// --- Sections ---------------------------------------------------------------------------------
+
+.cc-nr-group {
+  & + & {
+    margin-top: 1.25rem;
+  }
+}
+
+.cc-nr-group-title {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--font-color);
+}
+
+.cc-nr-group-lead {
+  margin: -0.25rem 0 0.625rem;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.cc-nr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-nr-item {
+  display: flex;
+  min-inline-size: 0;
+  container: cc-nr-card / inline-size;
+}
+
+// --- Cards ------------------------------------------------------------------------------------
+
+// Tags, title, body, reason, then the actions at the foot, so the actions of a row line up. A card in a
+// period carries the period's color down the inline start; its word is in the period tag.
+.cc-nr-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+
+  &[data-period="baseline"] {
+    border-inline-start: 3px solid var(--cc-period-baseline);
+  }
+
+  &[data-period="comparison"] {
+    border-inline-start: 3px solid var(--cc-period-comparison);
+  }
+}
+
+.cc-nr-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.cc-nr-period {
+  border-color: var(--border-glass);
+  color: var(--nav-color);
+
+  &[data-period="baseline"] {
+    border-color: var(--cc-period-baseline);
+    color: var(--cc-period-baseline);
+    background: var(--cc-period-baseline-bg);
+  }
+
+  &[data-period="comparison"] {
+    border-color: var(--cc-period-comparison);
+    color: var(--cc-period-comparison);
+    background: var(--cc-period-comparison-bg);
+  }
+}
+
+.cc-nr-endpoint {
+  border-color: var(--border-glass);
+  color: var(--primary-color);
+}
+
+.cc-nr-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--font-color);
+}
+
+.cc-nr-suggestion {
+  margin: 0;
+  overflow-wrap: break-word;
+  color: var(--font-color);
+}
+
+// The instrument fingerprint is one unbroken token.
+.cc-nr-instrument {
+  overflow-wrap: anywhere;
+}
+
+.cc-nr-facts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 0.5rem 1rem;
+
+  dd {
+    overflow-wrap: break-word;
+  }
+}
+
+.cc-nr-details > summary {
+  padding-block: 6px;
+  font-size: var(--text-secondary);
+}
+
+.cc-nr-reason {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.cc-nr-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.cc-nr-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cc-nr-hint {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+
+  // A re-grade's hint stands where the buttons would.
+  .cc-nr-card > & {
+    margin-top: auto;
+    padding-top: 0.25rem;
+  }
+}
+
+// A narrow card gives each button the full width.
+@container cc-nr-card (max-width: 18rem) {
+  .cc-nr-buttons > .btn-ghost {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}

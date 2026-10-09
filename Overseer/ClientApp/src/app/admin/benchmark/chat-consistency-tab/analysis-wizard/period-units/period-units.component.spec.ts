@@ -309,6 +309,76 @@ describe('CcPeriodUnitsComponent', () => {
     });
   });
 
+  describe('read-only', () => {
+    it('renders no bounds and no Split here, under its own ids, and emits neither', () => {
+      const timeline = ccEventTimeline();
+      setInputs({
+        readonly: true,
+        units: ccPeriodUnits(eventRows(), [], false),
+        points: timeline.points,
+        eventGroups: groupOverseerEvents(timeline.events, timeline.points),
+        annotations: taggedAnnotations(timeline.annotations),
+        ids: { baselineFirstId: 201, baselineLastId: 203, comparisonFirstId: 204, comparisonLastId: 206 }
+      });
+
+      expect(el.querySelectorAll('.cc-pu-card').length).toBe(6);
+      expect(el.querySelectorAll('.cc-pu-marker').length).toBe(6);
+      expect(el.querySelector('.cc-pu-bounds')).toBeNull();
+      expect(el.querySelector('.cc-pu-bound')).toBeNull();
+      expect(el.querySelector('.cc-pu-split')).toBeNull();
+      expect(el.querySelector('.cc-pu-list')!.classList.contains('is-readonly')).toBe(true);
+
+      expect(el.querySelector('#cc-an-units-title')).toBeNull();
+      expect(textOf(el.querySelector('#cc-res-units-title'))).toBe('Runs in the periods');
+      expect(el.querySelector('.cc-pu-list')!.getAttribute('aria-labelledby')).toBe('cc-res-units-title');
+      expect(card(201).getAttribute('aria-labelledby')).toBe('cc-res-pu-201-title');
+      expect(el.querySelector('#cc-pu-201-title')).toBeNull();
+
+      const bounds: unknown[] = [];
+      const splits: unknown[] = [];
+      component.boundChange.subscribe(change => bounds.push(change));
+      component.splitAt.subscribe(split => splits.push(split));
+      component.onBound('baselineFirstId', 202);
+      const first = component.items.find(item => item.kind === 'marker');
+      expect(first?.kind).toBe('marker');
+      if (first?.kind === 'marker') component.onSplit(first.marker);
+      expect(bounds).toEqual([]);
+      expect(splits).toEqual([]);
+
+      component.focusUnit(203);
+      expect(document.activeElement).toBe(el.querySelector('#cc-res-pu-203-title'));
+    });
+
+    it('keeps the eye buttons, which still emit, with their own tooltip ids', () => {
+      setInputs({ readonly: true });
+      const opened: number[] = [];
+      component.openRunReport.subscribe(id => opened.push(id));
+      const button = card(101).querySelector<HTMLButtonElement>('.cc-pu-report')!;
+      expect(button.getAttribute('aria-label')).toBe('Open the run report of run #101');
+      expect(button.getAttribute('interestfor')).toBe('cc-res-pu-101-report-tip');
+      expect(button.getAttribute('style')).toContain('anchor-name: --cc-res-pu-101-report-tip');
+      expect(textOf(el.querySelector('#cc-res-pu-101-report-tip'))).toBe('Open run report');
+      button.click();
+      expect(opened).toEqual([101]);
+
+      setInputs({
+        batteryMode: true,
+        units: ccPeriodUnits([], ccBatteryRunRows(), true),
+        points: [],
+        batteryPoints: [ccBatteryPoint(11, '2026-10-08T06:00:00Z'), ccBatteryPoint(12, '2026-10-08T10:00:00Z')]
+      });
+      const batteries: number[] = [];
+      component.openBatteryRunReport.subscribe(id => batteries.push(id));
+      expect(textOf(el.querySelector('#cc-res-units-title'))).toBe('Battery runs in the periods');
+      card(12).querySelector<HTMLButtonElement>('.cc-pu-report')!.click();
+      const member = card(12).querySelector<HTMLButtonElement>('.cc-battery-member[data-run-id="304"] button')!;
+      expect(member.getAttribute('interestfor')).toBe('cc-res-pu-member-304-report-tip');
+      member.click();
+      expect(batteries).toEqual([12]);
+      expect(opened).toEqual([101, 304]);
+    });
+  });
+
   describe('battery mode', () => {
     beforeEach(() => {
       setInputs({

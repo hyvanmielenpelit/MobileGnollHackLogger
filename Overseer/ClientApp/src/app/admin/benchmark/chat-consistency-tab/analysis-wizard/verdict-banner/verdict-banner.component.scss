@@ -1,0 +1,267 @@
+// The badges are the global `thinking-badge`, `provider-badge` and `config-badge`, the compared set's
+// tag the global `cc-kind-tag`, the reliability box the global `alert alert-warning`.
+:host {
+  display: block;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+// The outcome's color is the start border and the title icon; its word is the title.
+.cc-vb {
+  --cc-vb-accent: var(--primary-color);
+
+  padding: 1rem 1.25rem 1.125rem;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 4px solid var(--cc-vb-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cc-vb-accent) 5%, var(--bg-glass));
+
+  &[data-outcome="changed"] {
+    --cc-vb-accent: var(--color-warning);
+  }
+
+  &[data-outcome="noChange"] {
+    --cc-vb-accent: var(--score-high-ink);
+  }
+
+  &[data-outcome="noneComputed"] {
+    --cc-vb-accent: color-mix(in srgb, var(--nav-color) 60%, transparent);
+  }
+}
+
+.cc-vb-eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--nav-color);
+}
+
+.cc-vb-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--font-color);
+  text-wrap: balance;
+}
+
+.cc-vb-title-icon {
+  flex: none;
+  color: var(--cc-vb-accent);
+}
+
+.cc-vb-detail {
+  margin: 0.25rem 0 0;
+  color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
+}
+
+// The model, its badges and id, and the compared set wrap as one row.
+.cc-vb-subject {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+  margin-top: 0.875rem;
+}
+
+.cc-vb-model {
+  font-weight: 700;
+  color: var(--font-color);
+  overflow-wrap: anywhere;
+}
+
+.cc-vb-model-id {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+  overflow-wrap: anywhere;
+}
+
+.cc-vb-compared {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.cc-vb-compared-label {
+  overflow-wrap: anywhere;
+}
+
+// --- Endpoint chips ---
+
+.cc-vb-endpoints {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-vb-endpoint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  inline-size: 100%;
+  block-size: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--nav-color) 30%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--nav-color) 4%, transparent);
+  color: var(--font-color);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--nav-color) 60%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  // The status is a word, an icon and the tier's colors; Not computable is neutral with a dashed border.
+  &[data-status="within"],
+  &[data-status="improved"] {
+    border-color: var(--score-high-border);
+    background: var(--score-high-bg);
+
+    .cc-vb-endpoint-status {
+      color: var(--score-high-ink);
+    }
+  }
+
+  &[data-status="changed"] {
+    border-color: var(--score-mid-border);
+    background: var(--score-mid-bg);
+
+    .cc-vb-endpoint-status {
+      color: var(--score-mid-ink);
+    }
+  }
+
+  &[data-status="notComputable"] {
+    border-style: dashed;
+  }
+}
+
+.cc-vb-endpoint-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cc-vb-endpoint-id {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.cc-vb-endpoint-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--nav-color);
+
+  > svg {
+    flex: none;
+  }
+}
+
+// --- Scope and protocol ---
+
+.cc-vb-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2rem;
+  margin: 0.875rem 0 0;
+}
+
+.cc-vb-meta-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 0.5rem;
+  min-width: 0;
+
+  // Child combinators only: the dialogs' lists sit inside these items.
+  > dt {
+    color: var(--nav-color);
+  }
+
+  > dd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    margin: 0;
+    color: var(--font-color);
+  }
+}
+
+.cc-vb-meta-value {
+  overflow-wrap: anywhere;
+}
+
+// The dialogs' projected content; the dialog styles its lists.
+.cc-vb-tip-note {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: var(--text-secondary);
+}
+
+.cc-vb-tip-heading {
+  margin: 1.25rem 0 0.5rem;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+// --- Reliability ---
+
+.cc-vb-reliability {
+  margin: 0.875rem 0 0;
+}
+
+.cc-vb-reliability-list {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-vb-endpoint {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .cc-vb {
+    border-color: CanvasText;
+  }
+
+  .cc-vb-title-icon {
+    color: CanvasText;
+  }
+
+  .cc-vb-endpoint,
+  .cc-vb-endpoint[data-status] {
+    border-color: ButtonText;
+  }
+
+  .cc-vb-endpoint:focus-visible {
+    outline-color: Highlight;
+  }
+}

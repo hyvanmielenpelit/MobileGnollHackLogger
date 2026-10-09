@@ -24,3 +24,11 @@
     min-height: 0;
   }
 }
+
+// Step 6: the Download Center panel fills the step edge to edge; it scrolls its own body and pins its
+// footer.
+.cc-wizard-step-documents {
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}

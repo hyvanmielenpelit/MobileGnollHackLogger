@@ -185,8 +185,8 @@ form), `ToolIterationCapsJson`, `TotalModelCallCapsJson`, `QuestionTimeoutSecond
 An analysis takes the events between its first baseline and last comparison run, from the target series
 and every control series, one per kind and change.
 
-**For display, the tab groups them.** The timeline, the Results step, the Analyze step's period
-cards and preview, and the *Before vs after an Overseer change* Split rule show **composite events**
+**For display, the tab groups them.** The timeline, the Results step's period cards and event list,
+the Analyze step's period cards and preview, and the *Before vs after an Overseer change* Split rule show **composite events**
 (`groupOverseerEvents`, client-side): every Overseer event of one UTC day under one harness version is one composite, and a harness change starts a new
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
@@ -197,8 +197,8 @@ or the battery-run points, the validated palette and the GnollBench logo of vers
 documents already written keep their charts. An `E` number in an older report therefore need not match
 the one the tab shows today.
 
-Results and newly drawn report charts take each composite's `E` number from the timeline loaded in
-step 1, so a change keeps its number across the steps. A composite the timeline lacks (a control-series
+The Results step's event list and period cards, and newly drawn report charts, take each composite's
+`E` number from the timeline loaded in step 1, so a change keeps its number across the steps. A composite the timeline lacks (a control-series
 change, or a span outside the step-1 dates) is numbered after the timeline's last, so it can carry a
 higher number than a later composite.
 
@@ -552,12 +552,12 @@ An analysis cannot be deleted while report documents written from it exist.
 ## 17. The Chat Consistency Tab
 
 Admin → GnollBench → **Chat Consistency** is a launcher page; the work is done in the **Chat
-Consistency wizard**, four steps in a full-screen dialog.
+Consistency wizard**, six steps in a full-screen dialog.
 
 ### 17.1 The launcher
 
 - **Open Chat Consistency Wizard** opens the wizard where it was left, on step 1 the first time.
-- **How chat consistency works**, a disclosure listing the four steps under the wizard's own titles,
+- **How chat consistency works**, a disclosure listing the six steps under the wizard's own titles,
   open on the first visit and afterwards as the operator left it.
 - **The *Current model* card** (`chat-consistency-tab/current-model-card/`), while a model is chosen: a
   full-width summary card between the hero and the saved analyses, on the shared `.bm-summary-card`
@@ -594,7 +594,8 @@ A header names the model, the compared set with its unit count, and the dates (*
 model's run count, *GPT-6.1 Sol (medium) · 19 runs · Last 30 days*), with *· 15 in the analysis* while
 step 1 narrows the units, with *Reload runs* on steps 1 and 2
 and a close button. Under it, the step tabs; at the bottom, *Previous*, the step position with the
-reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Close* on step 4.
+reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Next: Reports* on step 4,
+*Next: Documents* on step 5, *Close* on step 6.
 
 1. **Model** — the model (*Models with at least one usable benchmark run*), the dates, then the runs as
    cards with the **run selection** the analysis uses:
@@ -794,31 +795,141 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Close*
 
    *Analyze* runs and saves the analysis, with the eligible units of each period, the compared set and
    the step-1 selection (§ 19), and moves to Results; *Stop Analysis* stops it.
-4. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
-   effects, the attribution grouped by side after the total changes, the next runs (each with *Repeat
-   this run's setup*), the charts, the events in the analyzed span as an event list (§ 17.3), the **Run
-   selection**, the limitations and data-quality notes, and the identity (analysis id, `InputSha256`,
-   analysis code version). The *Run selection* section lists *Dates* (the step-1 label with its UTC
-   bounds, *Last 30 days · 2026-09-07 09:00 UTC to the last run*), *First run*, *Last run* and *Left out
-   in step 1* (a run id or *none*), then *Not analyzed*: one line per reason with its runs and period
-   (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not assigned to a period: #60
-   (comparison)*), or *Every usable run of the model in the periods was analyzed.* An analysis saved
-   under code version 1 has no such section. A version-4 analysis adds a *Compared* line under the
-   headline; in a battery analysis the marks and the unanalyzed entries name battery runs (*battery run
-   #11*; *#305 (comparison, battery run #13)*), and runs of another battery or suite are listed as
-   *Outside the compared set*. After *Data quality* comes the **Reports** section, which writes the
-   Chat Consistency Report documents (§ 20); its estimate, job status and document list load when
-   Results first shows, and nothing spends until *Write* is pressed.
+4. **Results** — the stored result, read as it was saved: a verdict banner and key figures, then five
+   tabs. **It draws no charts**: step 2 has them.
+   - **The verdict banner**, *Verdict on the Overseer chat*. Its title is derived from the server's
+     verdicts alone and never names a cause: *The chat changed* (a decisive change on any endpoint,
+     each named with its verdict and grade), *No meaningful change* (every endpoint within its margin),
+     *No change on the computed endpoints* (the same while any endpoint is not computable: *3 of 5
+     endpoints within their margins · 2 not computable*), *Not enough evidence yet* (computed endpoints,
+     not all decisive: *4 of 5 endpoints computed: 2 within their margins, 2 inconclusive*) or *Nothing
+     could be computed*. Then the model's name without the thinking level its display name ends in,
+     with its thinking, provider and service-tier badges and its model id, and, for a version-4
+     analysis, the compared set as a *Battery* or *Suite* tag and its label. Then one chip per endpoint,
+     P1 to P5, each a button with the endpoint's id and name, a status icon and word — *Changed*,
+     *Improved*, *Within margin*, *Inconclusive* or *Not computable*; P4 reads *More work* or *Less
+     work* — that opens *Verdicts* on that endpoint's card. Then **Scope** and **Protocol**, each with an
+     *i* button that opens a dialog: *About the scope* (the 4-hour UTC time-of-week blocks, weekday or
+     weekend, that both periods sampled, the share of answers outside them, and whether US business
+     hours and the hours outside them were sampled), and *About Protocol V1* (each endpoint's margin, α
+     with Holm's correction, the minimum sample, and what each verdict and grade means). The headline's
+     reliability lines follow as a warning.
+   - **The key figures**, cards in a row: *Endpoints decided* (*2 of 5*, with *3 computed · 2 not
+     computable*), *Baseline* and *Comparison* (*3 runs*, *2 days* and the dates; in a battery analysis
+     *2 battery runs* over *4 runs · 2 days*), *Paired items* while P1, P4 or P5 is computed (*Items
+     answered in both periods*), and *Next runs*: the runs and re-grades the next-run cards ask for, with
+     the count of each kind, or *None* (*No verdict waits on more data*).
+   - **The tabs** *Verdicts · Periods · Attribution · Next runs · Details*, *Next runs* counting its
+     cards. The tab is remembered in this browser
+     (`localStorage['overseer.benchmark.chatConsistency.results']`, `{ version: 1, tab }`) and is not
+     reset when another analysis is opened.
+     - **Verdicts** — a card per **computed** endpoint, changes first, then improvements, endpoints
+       within their margins and inconclusive ones: the id, name and margin, the status word with its
+       icon and the grade (left out where it is *Not established*); the estimate and its 95 % interval
+       as text; the **interval bar**, which draws the estimate, the 95 % interval, the margin band and
+       the zero line on an axis symmetric around zero, its ends labeled *worse* and *better* (*less work*
+       and *more work* for P4), and is read by assistive technology as one sentence (*Estimate +1.2 index
+       points, 95 % interval −1.0 to +3.4 index points, margin ±3 index points. The interval reaches
+       beyond the margin.*); then
+       *What it means*, *Smallest change this sample can detect* (an inconclusive endpoint only) and
+       *Compared* (*3 runs vs 3 runs · 60 paired items*, member runs in a battery analysis); two notes,
+       a minimum-sample shortfall first with a warning icon, and *More about P1 (N)*, a disclosure with
+       the other notes and the robustness checks (*Passed*, *Failed*, *Not assessable*). A log-ratio
+       endpoint's bar uses the percent interval the server computed, and its margin band runs from
+       `(exp(−m) − 1) × 100` to `(exp(m) − 1) × 100`. The **not-computable** endpoints share one card,
+       *Not computable (2)*, one line per reason with the endpoints that share it (*P2 Time to first
+       answer text · P3 Answer streaming rate*), and *See the next runs*.
+     - **Periods** — the periods the verdicts were computed over, from the stored result and never
+       from step 3's current bounds: a card per period, in its color, with its UTC dates, its first and
+       last unit as links that open that unit's run report or battery run report (*First: run #96*,
+       *Last: run #102*, or *First and last* for one unit), and its *Runs*, *Days*, *Answers*, *Items*
+       and *Suites* (with *Battery runs* first in a battery analysis, and *Runs without telemetry* when
+       any). Below them step 3's unit cards, **read-only**, under *Runs in the periods* (*Battery runs in
+       the periods*): no period bounds and no *Split here*, the run reports, the markers and *Show run
+       details* (off on every visit) kept. The units are found among every unit step 1 loaded in its
+       dates; those that are not say so (*2 runs of this analysis are not among the runs step 1 loaded.
+       Widen step 1's dates to show them.*), and the verdicts do not depend on it.
+     - **Attribution** — *Changes to attribute* (the decisive changes as chips with their verdicts),
+       then the attributions grouped *Our changes*, *Provider*, *Infrastructure* and *Undetermined*,
+       each a card with its label, grade, endpoints, evidence and event tags (*E2*), then one line for
+       the sides without one (*Nothing is attributed to infrastructure.*). With no decisive change and
+       nothing attributed beyond *Undetermined*: *Nothing to attribute: no endpoint shows a decisive
+       change.*, with the undetermined evidence.
+     - **Next runs** — *6 runs would resolve the open questions.*, or *No run is needed: no verdict is
+       waiting on more data.* The server's next runs are grouped by kind and period, so a battery
+       analysis's per-suite advice reads once: one section per kind present — *More runs of <model>*,
+       *Runs at another time of day*, *Control runs* and *Re-grades* — each a grid of cards, one per
+       period. A card has its period and endpoint tags, an action title (*Run the model again on another
+       day*, *Run at another time of day*, *Run another provider's model*, *Re-grade with one common
+       grader*), the suggestions and reasons, and a **Set up from run #N** button per run whose setup it
+       repeats (§ 17.4). A control card lists *Suite*, *Same build as* and *Provider* (*not
+       Anthropic*), keeps the server's suggestion with its instrument fingerprint behind *Details*, and
+       ends *Then choose a model from a provider other than Anthropic.*; a re-grade card has no button
+       (*Re-grade from step 3: Controls → Re-grade.*).
+     - **Details** — background that does not change the verdicts, each part a closed disclosure that
+       is not remembered: the **Run selection**, *Events in the analyzed span (N)* as an event list
+       (§ 17.3), *Limitations (N)*, *Data quality (N)* and *About this analysis* (the analysis id and
+       name, the server's **Headline** — the sentence the saved analyses and the launcher show — the
+       saved time, `InputSha256` and the analysis code version). The *Run selection* lists *Dates* (the
+       step-1 label with its UTC bounds, *Last 30 days · 2026-09-07 09:00 UTC to the last run*), *First
+       run*, *Last run* and *Left out in step 1* (a run id or *none*), then *Not analyzed*: one line per
+       reason with its runs and period (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not
+       assigned to a period: #60 (comparison)*), or *Every usable run of the model in the periods was
+       analyzed.* An analysis saved under code version 1 has no such section. In a battery analysis the
+       marks and the unanalyzed entries name battery runs (*battery run #11*; *#305 (comparison, battery
+       run #13)*), and runs of another battery or suite are listed as *Outside the compared set*.
+5. **Reports** — writes the Chat Consistency Report documents (§ 20), in the layout of Model
+   Comparison's step 3: *Reports*, *Analysis #7 · Chat consistency: <model>* and *Write AI reports
+   about this analysis. Each document is written once.*, then a resizable **New reports** sidebar
+   beside **Report progress**, each scrolling on its own; the sidebar's width is remembered in this
+   browser (`localStorage['overseer.benchmark.chatConsistency.reports']`, `{ version: 1, sidebarWidth }`).
+   - **Documents** — the four documents. A written one shows *Written* (or *Written with warnings*),
+     its writer, date, duration and cost, and icon-only **View** (the PDF viewer at the fullest
+     disclosure it allows, the others offered as versions) and **Delete** (*Delete Document*, a
+     confirmation: it cannot be undone, the document can be written again afterwards, and the analysis
+     and its runs are not affected); it has **no checkbox**, since the server writes a document once
+     and refuses to write it again. An unwritten one reads *Not written* with a *Write* checkbox,
+     checked by default; the Provider Issue Report is checked only by hand, and only once the estimate
+     says it is available, its reason under it otherwise. The checkboxes are set again every time the
+     document list loads. Delete is disabled while a job writes or charts are attached (*Wait for the
+     reports and their charts to finish.*). With nothing left to write the list says *Every document of
+     this analysis is written.*, and *Write Reports* stays focusable with the reason *Every document of
+     this analysis is written. Delete one to write it again.*
+   - **Report writer** — the model picker with *Choosing a report writer* behind an *i* button, a
+     refusal or the same-provider warning under it, the estimate (*Estimated cost: about $0.04*, asked
+     0.3 s after the last change) and **Write Reports** (*Write Report* for one), with the reason it is
+     unavailable. A writer of the analyzed model's provider asks *Same-Provider Report Writer* on every
+     write; *Write Anyway* goes on.
+   - **Report progress** — one polite status line, then, while a job runs, *Reports in progress*: the
+     stage rail (*Queued*, *Preparing*, one stage per document, *Done*), the stat strip (*Elapsed*, the
+     writer with its badges, *Model calls*, *Tokens*, *Cost so far*, and *Estimate* when the job was
+     started here), one row per document (status, duration, model calls, charts), *Log and
+     diagnostics* (icon-only *Copy diagnostics* and *Download diagnostics*,
+     `chat-consistency-reports_<id>_diagnostics_<yyyyMMdd-HHmmss>.txt`, and the job log) and *Cancel
+     Writing*. A finished job is summarized as *Last reports* (*3 documents written · $0.04 · 1 min
+     12 s*) with **See the documents**, which opens step 6, and *Dismiss*. When a job ends, the
+     documents without charts get the analysis's report charts, drawn off-screen
+     (`chat-consistency-report-charts.ts`) and uploaded.
 
-Step 1 is always open; steps 2 and 3 need a model, and step 4 a result, analyzed or opened from the
-saved analyses. A step that cannot be opened stays in the tab row, marked unavailable, with its reason.
+   The job status and the document list load when step 5 first shows, and a job already running for the
+   analysis is found again; nothing spends until *Write Reports* is pressed. Polling goes on while
+   another step shows.
+6. **Documents** — *The documents of analysis #7 — Weekly check. View them here, or select them to
+   download.*, then the Download Center panel, edge to edge, on the analysis's documents (context
+   `{ kind: 'chatConsistency', analysisId }`): view, download in packages and **delete**, each delete
+   behind a confirmation. The list is read again on entering the step and whenever step 5's documents
+   change, and a delete here lists step 5's documents again.
+
+Step 1 is always open; steps 2 and 3 need a model, step 4 a result, analyzed or opened from the
+saved analyses, and steps 5 and 6 a saved analysis (an `analysisId`). A step that cannot be opened
+stays in the tab row, marked unavailable, with its reason.
 A saved analysis opens on Results, and step 3 shows its runs under the *Manual* Split rule: each
 period from the earliest to the latest of its runs still among the step-1 units; when none is, the
 bounds stay unset and step 3 says why, while Results shows the saved result as it was. Each step is kept once
 shown, so closing and reopening the wizard, or changing step, keeps a table's sort and page, the chart
-zoom and an analysis in progress. **Escape
-and the close buttons are refused while a chart export runs or while the Reports section of Results
-attaches report charts**, since closing would strand a half-written batch. For the same duration the model and the dates
+zoom, an analysis in progress and a report job. **Escape
+and the close buttons, *Close* on step 6 included, are refused while a chart export runs or while the
+Reports step attaches report charts**, since closing would strand a half-written batch. For the same duration the model and the dates
 in step 1 are locked — the *Dates* select keeps its value, the date fields are read-only and their
 calendar buttons open nothing, all still focusable — with the reason shown under them, and a repeated
 Escape cannot close the wizard either. The run selection, the step and the analysis live as long as the
@@ -907,7 +1018,8 @@ print their own captions.
 shows the default cursor. The values are on the points and the dates on the time axis, and *Show data*
 has the rest: each data card's heading names the unit, then its start, every series' value at the
 chart's decimal places and, while runs not in the analysis are marked, *In the analysis* with the
-reason. The Results step (step 4) keeps live charts with their tooltips.
+reason. No chart in the wizard has a tooltip: the Results step (step 4) draws no charts, and the
+report charts are drawn off-screen for the documents.
 
 **Show data** opens the chart's numbers as one bordered list of **data cards**, one row per run or
 battery run, separated by hairlines and spanning the figure's width with nothing scrolling sideways;
@@ -955,8 +1067,8 @@ The sidebar has six tabs:
   **Decimal places** per chart — *Automatic* (the precision above, named in the choice, such as
   *Automatic (2–4)* for cost) or 0–3, cost 0–4 — for the values at the points, the takeaways and *Show
   data* on the Timeline and in its downloads, while the axis ticks keep the decimals their step needs
-  and times under a second stay whole milliseconds (the Results step and the report charts keep the
-  automatic precision), with *All automatic* to reset them.
+  and times under a second stay whole milliseconds (the report charts keep the automatic precision),
+  with *All automatic* to reset them.
 - **Download** — *Chart size* and *Image format*, settings only: each chart downloads from its tile or
   from Single chart, all of them from All charts.
 
@@ -1000,8 +1112,8 @@ hidden logo stays hidden).
 
 ### 17.4 Repeat this run's setup
 
-**"Repeat this run's setup"** — in a run card's *More actions*, on the next-run suggestions and in the
-run report —
+**"Repeat this run's setup"** — in a run card's *More actions*, as *Set up from run #N* on the
+Results step's next-run cards and in the run report —
 opens Run Benchmark with the run's suite, scoring profile, models and prompt options filled in, and
 notes anything that no longer exists. **It never starts a run**: the operator checks the settings and
 presses Start. From the wizard it switches sub-tab, so it closes the wizard first. While Chat
@@ -1147,6 +1259,9 @@ The **Provider Issue Report** is available only when at least one attribution is
 graded Established or Indicated**; otherwise it is refused with the reason *"No provider-side finding
 graded Established or Indicated in this analysis."* It never names a control model — controls are
 lettered peers — and carries at most 10 candidate-call request ids from the comparison period.
+
+Each document is written once: the server refuses one that is already written (409) until it is
+deleted, which the wizard's Reports and Documents steps both offer (§ 17.2).
 
 The validator's chat consistency rules **C1–C7** (report-pack rules 22–28) hold the prose to the
 method: a change claim needs the fact that shows it, an intent or mechanism claim needs a

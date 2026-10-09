@@ -10,6 +10,12 @@ import { provideCharts } from 'ng2-charts';
 
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { SystemAiConfigDto } from '../../../services/admin.service';
+import {
+  BenchmarkReportAudience,
+  BenchmarkReportPackJobDto,
+  BenchmarkRunReportDocumentsStatus,
+  BenchmarkRunReportJobDto
+} from '../../../services/admin-benchmark.service';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
@@ -30,8 +36,10 @@ import {
   CcReportEstimate,
   CcRunRow,
   CcRunSelectionView,
+  CcSubject,
   CcTimeline,
-  CcTimelinePoint
+  CcTimelinePoint,
+  CcUnitView
 } from './chat-consistency.models';
 
 /** The API prefix, spelled out so a spec fails if the service moves it. */
@@ -617,6 +625,93 @@ export function ccReportEstimate(overrides: Partial<CcReportEstimate> = {}): CcR
     sameProviderWarning: null,
     providerIssueReportAvailable: false,
     providerIssueReportReason: 'No change attributed to the provider is established or indicated.',
+    ...overrides
+  };
+}
+
+/** {@link ccTimeline}'s subject with the display name as the server builds it: the thinking level in parentheses. */
+export function ccSubjectWithLevel(overrides: Partial<CcSubject> = {}): CcSubject {
+  return { ...ccTimeline().subject, displayName: 'GPT-5 (high)', ...overrides };
+}
+
+/** One analyzed unit of a stored result: a run unit standing for itself unless `overrides` says otherwise. */
+export function ccUnitView(unitId: number, period: string, overrides: Partial<CcUnitView> = {}): CcUnitView {
+  return {
+    unitId,
+    kind: 'run',
+    period,
+    startedAtUtc: '2026-09-01T08:00:00Z',
+    memberRunIds: [unitId],
+    ...overrides
+  };
+}
+
+/**
+ * The report-writing job of analysis 7 with the writer *Claude writer* (configuration 30), writing: the
+ * Executive Summary written (document 501), the Report for AI Researchers and Developers being written
+ * and the Internal Brief pending, with a two-line log. `jobOverrides` apply to the wrapped pack job.
+ */
+export function ccReportJob(
+  overrides: Partial<BenchmarkRunReportJobDto> = {},
+  jobOverrides: Partial<BenchmarkReportPackJobDto> = {}
+): BenchmarkRunReportJobDto {
+  const job: BenchmarkReportPackJobDto = {
+    id: 'cc-job-1',
+    packId: 'cc-pack-1',
+    subjectKey: 'chat-consistency:7',
+    subjectLabel: 'September check',
+    suiteId: null,
+    suiteName: '',
+    writerConfigId: 30,
+    writerDisplayName: 'Claude writer',
+    startedByUserId: null,
+    startedAtUtc: '2026-10-02T10:00:05Z',
+    completedAtUtc: null,
+    status: 'Running',
+    totalModelCalls: 3,
+    inputTokens: 42_000,
+    outputTokens: 9_000,
+    costUsd: 0.21,
+    documents: [
+      {
+        audience: BenchmarkReportAudience.ExecutiveSummary, status: 'Completed', documentId: 501, errorMessage: null, modelCalls: 2,
+        startedAtUtc: '2026-10-02T10:00:05Z', completedAtUtc: '2026-10-02T10:01:05Z', inputTokens: 30_000, outputTokens: 6_000, costUsd: 0.15
+      },
+      {
+        audience: BenchmarkReportAudience.TechnicalReport, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1,
+        startedAtUtc: '2026-10-02T10:01:05Z', completedAtUtc: null, inputTokens: 12_000, outputTokens: 3_000, costUsd: 0.06
+      },
+      {
+        audience: BenchmarkReportAudience.InternalBrief, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0,
+        startedAtUtc: null, completedAtUtc: null, inputTokens: 0, outputTokens: 0, costUsd: null
+      }
+    ],
+    log: [
+      { timestampUtc: '2026-10-02T10:00:05Z', message: 'Writing Executive Summary.', severity: 'Info' },
+      { timestampUtc: '2026-10-02T10:01:05Z', message: 'Executive Summary written.', severity: 'Info' }
+    ],
+    serverTimeUtc: '2026-10-02T10:01:30Z',
+    ...jobOverrides
+  };
+  return {
+    runId: 7,
+    status: BenchmarkRunReportDocumentsStatus.Writing,
+    message: null,
+    phase: 'Writing',
+    queuedAtUtc: '2026-10-02T10:00:00Z',
+    slotAcquiredAtUtc: '2026-10-02T10:00:05Z',
+    finishedAtUtc: null,
+    cancelRequestedAtUtc: null,
+    jobsAhead: null,
+    blockingJobLabel: null,
+    audiences: [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief],
+    writerConfigId: 30,
+    writerDisplayName: 'Claude writer',
+    writerProvider: 'Anthropic',
+    writerModelId: 'claude-30',
+    writerThinkingLevel: null,
+    job,
+    serverTimeUtc: '2026-10-02T10:01:30Z',
     ...overrides
   };
 }

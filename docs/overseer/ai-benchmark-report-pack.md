@@ -1199,7 +1199,8 @@ the first new card. A new filter, search or sort shows the first 10 again. Card 
   disclosure it allows, the others offered as disclosure tabs with the per-document disclosure guide,
   and, when it has peers, a second *Peer names* row (*Named*, *Anonymized*) opening at *Named*; a run
   report as its PDF.
-- **Delete** (Report Pack documents only; a run's own documents are deleted from its run report) asks a
+- **Delete** (Report Pack and Chat Consistency Report documents only; a run's or a battery run's own
+  documents are deleted from its report) asks a
   nested confirmation, then moves focus to the next row, else the previous, else the *Documents* heading.
 - **More actions**, in the wizard only, holds *Update charts* and *Remove charts* (§ 13).
 
@@ -2888,9 +2889,12 @@ endpoints (§ 9), listed with `subject=chat-consistency:<id>&origin=chatConsiste
 
 ### The client
 
-The Reports section of the Chat Consistency wizard's Results step writes and polls the documents and
-opens the Download Center through the shell with the context `{ kind: 'chatConsistency', analysisId }` (title *Chat consistency
-documents*). The Download Center has a **Provider Issue Report** row (category `providerIssueReport`):
+The Reports step (step 5) of the Chat Consistency wizard writes and polls the documents, in the layout
+of Model Comparison's step 3, and views and deletes each written one; its Documents step (step 6)
+shows them in the Download Center panel with the context `{ kind: 'chatConsistency', analysisId }`,
+where they can be viewed, downloaded and deleted too, and which lists them again when the host bumps
+its `reloadToken`. The Download Center dialog still titles that context *Chat consistency documents*,
+though the shell no longer opens it. The Download Center has a **Provider Issue Report** row (category `providerIssueReport`):
 the External preset selects it with the Executive Summary and the Report for AI Researchers and
 Developers, Internal selects every row. Its stored settings are **version 4**
 (`STORED_SETTINGS_VERSION`); versions 2 and 3 are read and migrated by giving every package the Provider

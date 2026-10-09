@@ -1,27 +1,53 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
-
-import { CcFigure, CcFigureInput, analysisBands, analysisChartPoints, buildCcFigure, prefersReducedMotion } from '../chat-consistency-charts';
-import { CcEventDay, CcEventGroup, buildEventDays, groupOverseerEvents, servedModelChanges } from '../chat-consistency-events';
 import {
-  endpointEstimateText,
-  endpointMdeText,
-  formatUtcDate,
-  formatUtcDateTime,
-  gradeText,
-  verdictText
-} from '../chat-consistency-format';
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  Output,
+  SimpleChanges,
+  inject
+} from '@angular/core';
+
+import { refreshAnchorPositioning } from '../../../../utils/polyfills.util';
+import { analysisChartPoints, prefersReducedMotion } from '../chat-consistency-charts';
+import {
+  CcEventDay,
+  CcEventGroup,
+  CcTaggedAnnotation,
+  buildEventDays,
+  groupOverseerEvents,
+  servedModelChanges
+} from '../chat-consistency-events';
+import { formatUtcDateTime, gradeText, verdictText } from '../chat-consistency-format';
+import {
+  CcEndpointStatus,
+  CcNotComputableGroup,
+  CcResultKeyFigure,
+  ccEndpointStatus,
+  ccNextRunGroups,
+  ccNotComputableGroups,
+  ccResultKeyFigures
+} from '../chat-consistency-results';
 import {
   CcAnalysisResult,
   CcAttributionResult,
+  CcBatteryRunRow,
   CcBatteryTimelinePoint,
   CcEndpointResult,
-  CcNextRun,
+  CcRunRow,
   CcRunSelectionView,
   CcTimelinePoint,
-  CcUnanalyzedReason
+  CcUnanalyzedReason,
+  CcVerdict
 } from '../chat-consistency.models';
 import { CcEventListComponent } from '../event-list/cc-event-list.component';
-import { CcChartFigureComponent } from '../timeline-workspace/cc-chart-figure.component';
+import { CcEndpointCardComponent } from './endpoint-card/endpoint-card.component';
+import { CcNextRunsComponent } from './next-runs/next-runs.component';
+import { CcResultPeriodsComponent } from './result-periods/result-periods.component';
+import { CcVerdictBannerComponent } from './verdict-banner/verdict-banner.component';
 
 /** The attribution groups, in the order the results show them. */
 export const CC_ATTRIBUTION_GROUPS: readonly { readonly side: string; readonly title: string }[] = [
@@ -41,108 +67,277 @@ export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReas
   { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
 ];
 
-/** The figures the results draw over the analysis's units. */
-const RESULT_FIGURES = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'timeline'] as const;
+export type CcResultsTab = 'verdicts' | 'periods' | 'attribution' | 'nextRuns' | 'details';
 
-/** The notes of one verdict table row: legacy data and proxy, common grader, pooling, sample. */
-export function endpointNotes(endpoint: CcEndpointResult): string[] {
-  const notes: string[] = [];
-  if (!endpoint.computed && endpoint.notComputedReason) notes.push(endpoint.notComputedReason);
-  if (endpoint.legacyProxy) notes.push('Measured with the legacy proxy (model time per answer), not telemetry.');
-  else if (endpoint.usesLegacyData) notes.push('Some compared runs have no call telemetry.');
-  if (endpoint.commonGrader) notes.push('Graded by a common grader.');
-  else if (endpoint.id === 'P1' && endpoint.computed) notes.push('Native grades; no common grader covers every run.');
-  if (endpoint.relaxedPooling) notes.push('Pooled across a measurement segment boundary.');
-  if (!endpoint.minimumSampleMet && endpoint.minimumSampleDetail) notes.push(`Below the minimum sample: ${endpoint.minimumSampleDetail}`);
-  if (endpoint.minimumDetectableEffectNote) notes.push(endpoint.minimumDetectableEffectNote);
-  for (const reason of endpoint.gradeReasons) notes.push(reason);
-  return notes;
+/** The Results step's tabs, in order. */
+export const CC_RESULTS_TABS: readonly { readonly id: CcResultsTab; readonly label: string }[] = [
+  { id: 'verdicts', label: 'Verdicts' },
+  { id: 'periods', label: 'Periods' },
+  { id: 'attribution', label: 'Attribution' },
+  { id: 'nextRuns', label: 'Next runs' },
+  { id: 'details', label: 'Details' }
+];
+
+/** The Results step's selected tab, per browser. Read and written in `try/catch`. */
+export const CC_RESULTS_STORAGE_KEY = 'overseer.benchmark.chatConsistency.results';
+
+/** The stored tab; a missing, unknown or damaged value is *Verdicts*. */
+export function readStoredResultsTab(): CcResultsTab {
+  try {
+    const raw = localStorage.getItem(CC_RESULTS_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const tab = (parsed as Record<string, unknown>)['tab'];
+      const known = CC_RESULTS_TABS.find(entry => entry.id === tab);
+      if (known) return known.id;
+    }
+  } catch {
+    // Private mode, blocked storage or a damaged value: the default.
+  }
+  return 'verdicts';
+}
+
+function writeStoredResultsTab(tab: CcResultsTab): void {
+  try {
+    localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab }));
+  } catch {
+    // Private mode or blocked storage: the tab still applies for this session.
+  }
+}
+
+/** The order of the computed endpoint cards: changes first, inconclusive last. */
+const STATUS_ORDER: Readonly<Record<CcEndpointStatus, number>> = {
+  changed: 0,
+  improved: 1,
+  within: 2,
+  inconclusive: 3,
+  notComputable: 4
+};
+
+const DECISIVE_VERDICTS: readonly CcVerdict[] = ['changedDegraded', 'changedImproved'];
+
+/** The sides an attribution names, as the line about the sides without one reads them. */
+const ATTRIBUTED_SIDE_NAMES: readonly { readonly side: string; readonly name: string }[] = [
+  { side: 'ours', name: 'our changes' },
+  { side: 'provider', name: 'the provider' },
+  { side: 'infrastructure', name: 'infrastructure' }
+];
+
+/** A decisive change the attribution explains. */
+export interface CcDecisiveChange {
+  id: string;
+  name: string;
+  verdict: CcVerdict;
+  verdictText: string;
+}
+
+/** The attributions of one side. */
+export interface CcAttributionGroupView {
+  side: string;
+  title: string;
+  attributions: CcAttributionResult[];
+}
+
+/** `a`, `a or b`, `a, b or c`. */
+function orList(items: readonly string[]): string {
+  if (items.length <= 1) return items.join('');
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
 }
 
 /**
- * The Results step of the analysis: the verdict on the chat first, then the verdict table, the
- * attribution cards by side, the next runs that would resolve what is open, the charts over the
- * analysis's runs in one column, the events in the analyzed span, the limitations and data quality,
- * and the analysis's identity.
+ * The Results step of the analysis: the verdict banner and the key figures, then the tabs *Verdicts*
+ * (a card per computed endpoint, the not-computable endpoints in one card), *Periods* (the stored
+ * periods and their units), *Attribution*, *Next runs* and *Details* (the run selection, the events
+ * in the analyzed span, the limitations, the data quality and the analysis's identity, each behind a
+ * closed disclosure). Every panel is rendered once and hidden while another tab shows.
  */
 @Component({
   selector: 'app-cc-results-view',
   standalone: true,
-  imports: [CcChartFigureComponent, CcEventListComponent],
+  imports: [
+    CcEndpointCardComponent,
+    CcEventListComponent,
+    CcNextRunsComponent,
+    CcResultPeriodsComponent,
+    CcVerdictBannerComponent
+  ],
   templateUrl: './results-view.component.html',
   styleUrls: ['./results-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CcResultsViewComponent implements OnChanges {
+  private readonly cdr = inject(ChangeDetectorRef);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+
   @Input({ required: true }) result!: CcAnalysisResult;
-  /** The subject's timeline points; the charts keep the analysis's runs. */
+  /** The subject's timeline points; the event list keeps the analysis's runs. */
   @Input() points: readonly CcTimelinePoint[] = [];
-  /** The timeline's battery points; a battery analysis's charts keep its battery runs. */
+  /** The timeline's battery points; a battery analysis's event list keeps its battery runs. */
   @Input() batteryPoints: readonly CcBatteryTimelinePoint[] = [];
   /** The timeline's composite events, whose E numbers the results reuse. */
   @Input() eventNumbering: readonly CcEventGroup[] = [];
+  /** The step-1 runs, for the period cards and the next runs' suite names. */
+  @Input() rows: readonly CcRunRow[] = [];
+  /** The step-1 battery runs, for a battery analysis's period cards. */
+  @Input() batteryRows: readonly CcBatteryRunRow[] = [];
+  /** The timeline's annotations, tagged `A1`…, for the period cards' markers. */
+  @Input() annotations: readonly CcTaggedAnnotation[] = [];
 
   @Output() readonly repeatSetup = new EventEmitter<number>();
+  @Output() readonly openRunReport = new EventEmitter<number>();
+  @Output() readonly openBatteryRunReport = new EventEmitter<number>();
 
-  readonly groups = CC_ATTRIBUTION_GROUPS;
-  /** The CSS height of each chart box. */
-  readonly figureBoxHeight = 352;
-  figures: CcFigure[] = [];
-  /** The composite events, annotations and served-model changes of the analysis, by day, tagged as on the charts. */
+  readonly tabs = CC_RESULTS_TABS;
+  tab: CcResultsTab = readStoredResultsTab();
+
+  keyFigures: CcResultKeyFigure[] = [];
+  /** The computed endpoints: changed, improved, within margin, inconclusive, then by id. */
+  computedEndpoints: CcEndpointResult[] = [];
+  notComputableGroups: CcNotComputableGroup[] = [];
+  notComputableCount = 0;
+  /** The next-run cards the *Next runs* tab shows. */
+  nextRunCardCount = 0;
+  decisiveChanges: CcDecisiveChange[] = [];
+  /** The sides with attributions, in {@link CC_ATTRIBUTION_GROUPS} order. */
+  attributionGroups: CcAttributionGroupView[] = [];
+  /** Nothing decisive and nothing attributed beyond *Undetermined*. */
+  attributionEmpty = false;
+  /** `Nothing is attributed to infrastructure.`; empty when every side has an attribution. */
+  unattributedText = '';
+  /** The composite events, annotations and served-model changes of the analysis, by day. */
   eventDays: CcEventDay[] = [];
+  eventCount = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['result'] || changes['rows']) {
+      this.buildVerdicts();
+      this.buildAttribution();
+      this.keyFigures = ccResultKeyFigures(this.result);
+      this.nextRunCardCount = ccNextRunGroups(this.result, this.rows).length;
+    }
     if (changes['result'] || changes['points'] || changes['batteryPoints'] || changes['eventNumbering']) {
-      const { points, unitKind } = analysisChartPoints(this.result, this.points, this.batteryPoints);
-      // The analyzed units are drawn; every timeline point serves the events' harness lookup.
-      const input: CcFigureInput = {
-        points,
-        unitKind,
-        events: this.result.events,
-        annotations: this.result.annotations,
-        bands: analysisBands(this.result.baseline, this.result.comparison),
-        harnessPoints: this.points,
-        eventNumbering: this.eventNumbering
-      };
-      const options = { reducedMotion: prefersReducedMotion() };
-      this.figures = RESULT_FIGURES.map(key => buildCcFigure(key, input, options));
+      // The served-model changes of the analyzed units; every timeline point serves the events' harness lookup.
+      const { points } = analysisChartPoints(this.result, this.points, this.batteryPoints);
       this.eventDays = buildEventDays(
         groupOverseerEvents(this.result.events, this.points, this.eventNumbering),
         this.result.annotations, servedModelChanges(points));
+      this.eventCount = this.eventDays.reduce((sum, day) => sum + day.items.length, 0);
     }
+  }
+
+  private buildVerdicts(): void {
+    const endpoints = this.result.endpoints;
+    this.computedEndpoints = endpoints
+      .filter(endpoint => endpoint.computed)
+      .map(endpoint => ({ endpoint, rank: STATUS_ORDER[ccEndpointStatus(endpoint)] }))
+      .sort((a, b) => a.rank - b.rank || a.endpoint.id.localeCompare(b.endpoint.id, undefined, { numeric: true }))
+      .map(entry => entry.endpoint);
+    this.notComputableGroups = ccNotComputableGroups(endpoints);
+    this.notComputableCount = endpoints.filter(endpoint => !endpoint.computed).length;
+  }
+
+  private buildAttribution(): void {
+    const byId = new Map(this.result.endpoints.map(endpoint => [endpoint.id, endpoint] as const));
+    const decisive: CcDecisiveChange[] = [];
+    for (const change of this.result.attribution.totalChanges) {
+      const endpoint = byId.get(change.endpointId);
+      if (!endpoint?.verdict || !DECISIVE_VERDICTS.includes(endpoint.verdict)) continue;
+      if (decisive.some(entry => entry.id === endpoint.id)) continue;
+      decisive.push({
+        id: endpoint.id,
+        name: change.name || endpoint.name,
+        verdict: endpoint.verdict,
+        verdictText: verdictText(endpoint.verdict, endpoint.verdictLabel)
+      });
+    }
+    this.decisiveChanges = decisive;
+    this.attributionGroups = CC_ATTRIBUTION_GROUPS
+      .map(group => ({ side: group.side, title: group.title, attributions: this.attributionsOf(group.side) }))
+      .filter(group => group.attributions.length > 0);
+    const attributed = this.result.attribution.attributions.some(attribution => attribution.side !== 'undetermined');
+    this.attributionEmpty = decisive.length === 0 && !attributed;
+    const missing = ATTRIBUTED_SIDE_NAMES
+      .filter(entry => !this.attributionGroups.some(group => group.side === entry.side))
+      .map(entry => entry.name);
+    this.unattributedText = missing.length > 0 ? `Nothing is attributed to ${orList(missing)}.` : '';
   }
 
   attributionsOf(side: string): CcAttributionResult[] {
     return this.result.attribution.attributions.filter(attribution => attribution.side === side);
   }
 
-  estimate(endpoint: CcEndpointResult): string {
-    return endpointEstimateText(endpoint);
+  /** The undetermined attributions, whose evidence the empty state shows. */
+  get undeterminedAttributions(): CcAttributionResult[] {
+    return this.attributionsOf('undetermined');
   }
 
-  mde(endpoint: CcEndpointResult): string {
-    return endpointMdeText(endpoint);
-  }
-
-  verdict(endpoint: CcEndpointResult): string {
-    return endpoint.computed ? verdictText(endpoint.verdict, endpoint.verdictLabel) : 'Not computable';
+  /** `P2 Time to first answer text · P3 Answer streaming rate`. */
+  groupNames(group: CcNotComputableGroup): string {
+    return group.endpoints.map(endpoint => `${endpoint.id} ${endpoint.name}`).join(' · ');
   }
 
   grade(value: string): string {
     return gradeText(value);
   }
 
-  notes(endpoint: CcEndpointResult): string[] {
-    return endpointNotes(endpoint);
-  }
-
-  day(value: string): string {
-    return formatUtcDate(value);
-  }
-
   dateTime(value: string | null): string {
     return formatUtcDateTime(value);
   }
+
+  // --- Tabs ---
+
+  selectTab(tab: CcResultsTab): void {
+    if (tab === this.tab) return;
+    this.tab = tab;
+    writeStoredResultsTab(tab);
+    this.cdr.detectChanges();
+    refreshAnchorPositioning();
+  }
+
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  onTabKeydown(event: KeyboardEvent, index: number): void {
+    const next = this.rovingTabIndex(event, index, this.tabs.length);
+    if (next === null) return;
+    const tab = this.tabs[next].id;
+    this.selectTab(tab);
+    document.getElementById(`cc-res-tab-${tab}`)?.focus();
+  }
+
+  /** *See the next runs*: the Next runs tab, focus on its panel. */
+  openNextRuns(): void {
+    this.selectTab('nextRuns');
+    document.getElementById('cc-res-panel-nextRuns')?.focus({ preventScroll: true });
+  }
+
+  /**
+   * An endpoint chosen on the banner: the Verdicts tab, its card (or the not-computable card) scrolled
+   * into view (block 'nearest'; smooth only without prefers-reduced-motion) and focused.
+   */
+  onEndpointSelected(id: string): void {
+    this.selectTab('verdicts');
+    const hasCard = this.computedEndpoints.some(endpoint => endpoint.id === id);
+    const target = this.host.nativeElement.querySelector<HTMLElement>(
+      hasCard ? `[id="cc-ep-${id}"]` : '#cc-ep-uncomputed');
+    if (!target) return;
+    target.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    target.focus({ preventScroll: true });
+  }
+
+  /** The §5 tab keyboard model's target index, or null for a key it does not handle. */
+  private rovingTabIndex(event: KeyboardEvent, index: number, count: number): number | null {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: count - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) return null;
+    event.preventDefault();
+    return (requested + count) % count;
+  }
+
+  // --- Run selection ---
 
   /** The recorded run selection; null for an analysis saved before it was recorded, with nothing to show. */
   get runSelection(): CcRunSelectionView | null {
@@ -206,16 +401,5 @@ export class CcResultsViewComponent implements OnChanges {
           .join(', ')
       }))
       .filter(group => group.runs !== '');
-  }
-
-  nextRunTitle(next: CcNextRun): string {
-    const kinds: Record<string, string> = {
-      checkpoint: 'Another run of the model', control: 'A control run', stratum: 'A run at another time of day', regrade: 'A re-grade'
-    };
-    return kinds[next.kind] ?? next.kind;
-  }
-
-  figureId(figure: CcFigure): string {
-    return `cc-res-fig-${figure.key}`;
   }
 }

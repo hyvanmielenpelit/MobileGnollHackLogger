@@ -2,7 +2,7 @@ import { BenchmarkReportAudience } from '../../../services/admin-benchmark.servi
 
 /*
  * The advice behind the *Choosing a report writer* info tips: the run report's and the battery run
- * report's AI Reports tabs and the Report Pack dialog. It follows docs/overseer/ai-benchmark-report-pack.md § 4, The Writer Model.
+ * report's AI Reports tabs, the Report Pack dialog and the Chat Consistency wizard's Reports step. It follows docs/overseer/ai-benchmark-report-pack.md § 4, The Writer Model.
  */
 
 /** One entry of the advice: a document, or what every document shares. */
@@ -80,6 +80,15 @@ export const REPORT_WRITER_ADVICE_PACK_SHARED: ReportWriterAdviceEntry = {
     + 'document a pack generates: to use another writer for one document, generate it on its own.'
 };
 
+/** What every document of a chat consistency analysis shares; each one is written once. */
+export const REPORT_WRITER_ADVICE_CHAT_CONSISTENCY_SHARED: ReportWriterAdviceEntry = {
+  term: 'Every document',
+  badge: null,
+  text: 'Prefer a writer from another provider than the analyzed model’s; a writer from the same provider is allowed '
+    + 'after a confirmation. Avoid economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT Astra). Each '
+    + 'document of an analysis is written once: to write it again, delete it first.'
+};
+
 /** The run report's AI Reports tab: its three documents, then what they share. */
 export const RUN_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
@@ -102,4 +111,13 @@ export const REPORT_PACK_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
   REPORT_WRITER_ADVICE_PACK_SHARED
+];
+
+/** The Chat Consistency wizard's Reports step: its four documents, then what they share. */
+export const CHAT_CONSISTENCY_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ProviderIssueReport],
+  REPORT_WRITER_ADVICE_CHAT_CONSISTENCY_SHARED
 ];

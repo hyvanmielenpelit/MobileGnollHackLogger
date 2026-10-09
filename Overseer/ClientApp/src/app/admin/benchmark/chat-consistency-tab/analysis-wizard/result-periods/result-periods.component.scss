@@ -1,0 +1,116 @@
+// The facts list is the global `bm-summary-facts`; the unit cards style themselves.
+:host {
+  display: block;
+  min-width: 0;
+  container: cc-rp / inline-size;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+// Stacked, then side by side from 44 rem.
+.cc-rp-periods {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@container cc-rp (width >= 44rem) {
+  .cc-rp-periods {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+// Each period in its own color: the rail, a tinted hairline and the 8 % tint. The heading's word names
+// the period, so the color only reinforces it.
+.cc-rp-period {
+  --cc-rp-color: var(--cc-period-baseline);
+  --cc-rp-bg: var(--cc-period-baseline-bg);
+
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr);
+  column-gap: 1.25rem;
+  min-inline-size: 0;
+  border: 1px solid color-mix(in srgb, var(--cc-rp-color) 45%, transparent);
+  border-radius: 10px;
+  background: var(--cc-rp-bg);
+
+  &[data-period="comparison"] {
+    --cc-rp-color: var(--cc-period-comparison);
+    --cc-rp-bg: var(--cc-period-comparison-bg);
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.cc-rp-rail {
+  border-start-start-radius: 9px;
+  border-end-start-radius: 9px;
+  background: var(--cc-rp-color);
+}
+
+.cc-rp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding-block: 0.875rem;
+  padding-inline: 0 1.25rem;
+}
+
+.cc-rp-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--cc-rp-color);
+}
+
+.cc-rp-dates {
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-rp-dates-to {
+  color: var(--nav-color);
+}
+
+.cc-rp-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+}
+
+.cc-rp-bound {
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.cc-rp-unset {
+  font-style: italic;
+  color: var(--nav-color);
+}
+
+// Narrower columns than the launcher's, so the six facts fit two or three to a row.
+.cc-rp-facts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr));
+  gap: 0.5rem 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-glass);
+
+  dd {
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+}
+
+.cc-rp-missing {
+  margin: 0 0 1rem;
+}

@@ -847,7 +847,7 @@ export interface CcAnnotationRequest {
 
 // --- Reports ---
 
-/** The four documents a chat consistency analysis is written as, with their labels, in the Reports section's order. */
+/** The four documents a chat consistency analysis is written as, with their labels, in the Reports step's order. */
 export const CC_REPORT_AUDIENCES: readonly { readonly audience: BenchmarkReportAudience; readonly label: string }[] = [
   { audience: BenchmarkReportAudience.ExecutiveSummary, label: 'Executive Summary' },
   { audience: BenchmarkReportAudience.TechnicalReport, label: 'Report for AI Researchers and Developers' },
@@ -874,8 +874,3 @@ export interface CcReportEstimate extends BenchmarkRunReportEstimateDto {
 /** The chat consistency report figures uploaded with every written document, in document order. */
 export const CC_REPORT_FIGURE_KEYS = ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline'] as const;
 export type CcReportFigureKey = typeof CC_REPORT_FIGURE_KEYS[number];
-
-/** The Download Center request the Reports section emits once documents exist. */
-export interface CcOpenDocumentsRequest {
-  analysisId: number;
-}

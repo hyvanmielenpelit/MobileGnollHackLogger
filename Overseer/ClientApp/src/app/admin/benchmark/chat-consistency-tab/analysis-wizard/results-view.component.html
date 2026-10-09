@@ -1,210 +1,246 @@
-<!-- The verdict on the chat comes first; everything after it is the evidence for it. -->
-<div class="cc-headline" role="status">
-  <p class="cc-headline-label">Verdict on the Overseer chat</p>
-  <p class="cc-headline-text">{{ result.headline }}</p>
-  @if (result.headlineReliabilityIncreases.length > 0) {
-    <ul class="cc-headline-reliability">
-      @for (line of result.headlineReliabilityIncreases; track $index) {
-        <li>{{ line }}</li>
+<!-- The verdict on the chat comes first; the tabs below hold the evidence for it. -->
+<app-cc-verdict-banner [result]="result" (endpointSelected)="onEndpointSelected($event)"></app-cc-verdict-banner>
+
+<h5 class="visually-hidden" id="cc-res-figures-title">Key figures</h5>
+<div class="rr-figures cc-res-figures" role="group" aria-labelledby="cc-res-figures-title">
+  @for (figure of keyFigures; track figure.key) {
+    <div class="score-card" [attr.data-figure]="figure.key">
+      <span class="score-label">{{ figure.label }}</span>
+      <span class="score-value">{{ figure.value }}</span>
+      @if (figure.sub) {
+        <span class="score-subvalue">{{ figure.sub }}</span>
       }
-    </ul>
+      @if (figure.note) {
+        <span class="score-note">{{ figure.note }}</span>
+      }
+    </div>
   }
 </div>
 
-<!-- The battery or suite compared within leads the facts, right under the headline; an analysis
-     saved before comparison sets has none. -->
-<dl class="cc-res-facts">
-  @if (result.comparisonSet; as compared) {
-    <div class="cc-res-compared"><dt>Compared</dt><dd>{{ compared.label }}</dd></div>
-  }
-  <div><dt>Model</dt><dd>{{ result.subject.displayName }} ({{ result.subject.provider }}, {{ result.subject.modelId }})</dd></div>
-  <div><dt>Baseline</dt><dd>{{ day(result.baseline.startUtc) }} to {{ day(result.baseline.endUtc) }}{{ batteryAnalysis ? ' · ' + periodUnitsText('baseline') : '' }} · {{ result.baseline.runCount }} {{ result.baseline.runCount === 1 ? 'run' : 'runs' }}</dd></div>
-  <div><dt>Comparison</dt><dd>{{ day(result.comparison.startUtc) }} to {{ day(result.comparison.endUtc) }}{{ batteryAnalysis ? ' · ' + periodUnitsText('comparison') : '' }} · {{ result.comparison.runCount }} {{ result.comparison.runCount === 1 ? 'run' : 'runs' }}</dd></div>
-  <div><dt>Scope</dt><dd>{{ result.scope.text || 'No common time stratum' }}</dd></div>
-  <div><dt>Protocol</dt><dd>{{ result.protocolLabel }}</dd></div>
-  @if (result.commonGrader; as grader) {
-    <div><dt>Common grader</dt><dd>{{ grader.display }}</dd></div>
-  }
-</dl>
-
-<h5 class="cc-res-heading" id="cc-res-verdicts-title">Verdicts</h5>
-<div class="cc-res-table-scroll">
-  <table class="gh-table cc-verdict-table" aria-labelledby="cc-res-verdicts-title">
-    <thead>
-      <tr>
-        <th scope="col">Endpoint</th>
-        <th scope="col">Estimate (95 % CI)</th>
-        <th scope="col">Verdict</th>
-        <th scope="col">Grade</th>
-        <th scope="col">Detectable effect</th>
-        <th scope="col">Notes</th>
-      </tr>
-    </thead>
-    <tbody>
-      @for (endpoint of result.endpoints; track endpoint.id) {
-        <tr [attr.data-endpoint]="endpoint.id">
-          <th scope="row">
-            <span class="cc-endpoint-id">{{ endpoint.id }}</span> {{ endpoint.name }}
-            <span class="cc-endpoint-margin">Margin {{ endpoint.marginText }}</span>
-          </th>
-          <td class="cc-num">{{ estimate(endpoint) }}</td>
-          <td><span class="cc-verdict" [attr.data-verdict]="endpoint.verdict ?? 'none'">{{ verdict(endpoint) }}</span></td>
-          <td><span class="cc-grade" [attr.data-grade]="endpoint.grade">{{ grade(endpoint.grade) }}</span></td>
-          <td class="cc-num">{{ mde(endpoint) }}</td>
-          <td>
-            @if (notes(endpoint).length > 0) {
-              <ul class="cc-notes">
-                @for (note of notes(endpoint); track $index) {
-                  <li>{{ note }}</li>
-                }
-              </ul>
-            } @else {
-              <span class="cc-muted">—</span>
-            }
-          </td>
-        </tr>
+<div class="gh-tabs gh-tabs-secondary gh-tabs-wrap cc-res-tabs" role="tablist" aria-label="Result sections">
+  @for (entry of tabs; track entry.id; let i = $index) {
+    <button type="button" role="tab" class="gh-tab"
+            [id]="'cc-res-tab-' + entry.id"
+            [attr.aria-controls]="'cc-res-panel-' + entry.id"
+            [attr.aria-selected]="tab === entry.id"
+            [attr.tabindex]="tab === entry.id ? 0 : -1"
+            (keydown)="onTabKeydown($event, i)"
+            (click)="selectTab(entry.id)">
+      {{ entry.label }}
+      @if (entry.id === 'nextRuns' && nextRunCardCount > 0) {
+        <span class="cc-res-tab-count">{{ nextRunCardCount }}<span class="visually-hidden"> {{ nextRunCardCount === 1 ? 'card' : 'cards' }}</span></span>
       }
-    </tbody>
-  </table>
+    </button>
+  }
 </div>
 
-<h5 class="cc-res-heading">Attribution</h5>
-@if (result.attribution.totalChanges.length > 0) {
-  <p class="cc-res-total">
-    Total change before attribution:
-    @for (change of result.attribution.totalChanges; track change.endpointId; let last = $last) {
-      {{ change.name }} {{ change.verdictLabel }} ({{ grade(change.grade) }}){{ last ? '.' : ';' }}
-    }
-  </p>
-}
-<div class="cc-attribution-groups">
-  @for (group of groups; track group.side) {
-    <section class="cc-attribution-group" [attr.data-side]="group.side" [attr.aria-labelledby]="'cc-attr-' + group.side">
-      <h6 class="cc-attribution-title" [id]="'cc-attr-' + group.side">{{ group.title }}</h6>
-      @for (attribution of attributionsOf(group.side); track $index) {
-        <article class="cc-attribution-card">
-          <p class="cc-attribution-label">{{ attribution.label }}</p>
-          <p class="cc-attribution-meta">
-            <span class="cc-grade" [attr.data-grade]="attribution.grade">{{ grade(attribution.grade) }}</span>
-            @if (attribution.endpoints.length > 0) {
-              <span>{{ ' · ' + attribution.endpoints.join(', ') }}</span>
-            }
-          </p>
-          <p class="cc-attribution-evidence">{{ attribution.evidence }}</p>
-          @if (attribution.eventRefs.length > 0) {
-            <p class="cc-attribution-refs">Events: {{ attribution.eventRefs.join('; ') }}</p>
-          }
-        </article>
-      } @empty {
-        <p class="cc-attribution-none">None.</p>
+<!-- Verdicts: a card per computed endpoint, then the not-computable endpoints in one card. -->
+<div class="cc-res-panel" role="tabpanel" id="cc-res-panel-verdicts" aria-labelledby="cc-res-tab-verdicts"
+     tabindex="0" [hidden]="tab !== 'verdicts'">
+  <h5 class="gh-section-title">Verdicts</h5>
+  <p class="cc-res-lead">Each endpoint compares the comparison period with the baseline against a margin fixed in advance.</p>
+  @if (computedEndpoints.length > 0) {
+    <div class="cc-res-endpoints">
+      @for (endpoint of computedEndpoints; track endpoint.id) {
+        <app-cc-endpoint-card [endpoint]="endpoint" [batteryAnalysis]="batteryAnalysis"></app-cc-endpoint-card>
+      }
+    </div>
+  }
+  @if (notComputableGroups.length > 0) {
+    <!-- Focused when the banner names an endpoint without a card of its own. -->
+    <section class="cc-ep-uncomputed" id="cc-ep-uncomputed" tabindex="-1" aria-labelledby="cc-ep-uncomputed-title">
+      <h6 class="cc-ep-uncomputed-title" id="cc-ep-uncomputed-title">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+        Not computable ({{ notComputableCount }})
+      </h6>
+      <ul class="cc-ep-uncomputed-list" role="list">
+        @for (group of notComputableGroups; track group.reason) {
+          <li class="cc-ep-uncomputed-row">
+            <p class="cc-ep-uncomputed-names">{{ groupNames(group) }}</p>
+            <p class="cc-ep-uncomputed-reason">{{ group.reason }}</p>
+          </li>
+        }
+      </ul>
+      @if (nextRunCardCount > 0) {
+        <button type="button" class="btn-link cc-ep-uncomputed-next" (click)="openNextRuns()">See the next runs</button>
       }
     </section>
   }
 </div>
 
-<h5 class="cc-res-heading">Next runs that would resolve open questions</h5>
-@if (result.nextRuns.length === 0) {
-  <p class="cc-muted">None: no verdict is waiting on more data.</p>
-} @else {
-  <ul class="cc-next-runs" role="list">
-    @for (next of result.nextRuns; track $index) {
-      <li class="cc-next-run" [attr.data-kind]="next.kind">
-        <p class="cc-next-run-title">
-          {{ nextRunTitle(next) }}
-          @if (next.endpointId) {
-            <span>{{ ' for ' + next.endpointId }}</span>
-          }
-          <span class="cc-muted">{{ ' · ' + next.period }}</span>
-        </p>
-        <p class="cc-next-run-reason">{{ next.reason }}</p>
-        <p class="cc-next-run-suggestion">{{ next.suggestion }}</p>
-        @if (next.repeatRunId !== null) {
-          <button type="button" class="btn-ghost cc-next-run-repeat"
-                  [attr.aria-label]="'Repeat this run\'s setup: run #' + next.repeatRunId + ', ' + nextRunTitle(next)"
-                  (click)="repeatSetup.emit(next.repeatRunId!)">Repeat this run's setup</button>
-        }
-      </li>
-    }
-  </ul>
-}
+<!-- Periods: the stored periods and their units, read-only. -->
+<div class="cc-res-panel" role="tabpanel" id="cc-res-panel-periods" aria-labelledby="cc-res-tab-periods"
+     tabindex="0" [hidden]="tab !== 'periods'">
+  <h5 class="gh-section-title">Periods</h5>
+  <p class="cc-res-lead">The baseline and comparison periods this analysis was computed over.</p>
+  <app-cc-result-periods [result]="result" [rows]="rows" [batteryRows]="batteryRows" [points]="points"
+                         [batteryPoints]="batteryPoints" [eventGroups]="eventNumbering" [annotations]="annotations"
+                         (openRunReport)="openRunReport.emit($event)"
+                         (openBatteryRunReport)="openBatteryRunReport.emit($event)"></app-cc-result-periods>
+</div>
 
-<h5 class="cc-res-heading">Charts</h5>
-<div class="cc-res-figures">
-  @for (figure of figures; track figure.key) {
-    <app-cc-chart-figure [figure]="figure" [figureId]="figureId(figure)" [boxHeight]="figureBoxHeight"></app-cc-chart-figure>
+<!-- Attribution: the decisive changes, then the attributions by side. -->
+<div class="cc-res-panel" role="tabpanel" id="cc-res-panel-attribution" aria-labelledby="cc-res-tab-attribution"
+     tabindex="0" [hidden]="tab !== 'attribution'">
+  <h5 class="gh-section-title">Attribution</h5>
+  @if (attributionEmpty) {
+    <p class="cc-res-empty">Nothing to attribute: no endpoint shows a decisive change.</p>
+    @for (attribution of undeterminedAttributions; track $index) {
+      <p class="cc-muted cc-attr-empty-evidence">{{ attribution.evidence }}</p>
+    }
+  } @else {
+    @if (decisiveChanges.length > 0) {
+      <div class="cc-attr-changes">
+        <p class="cc-attr-changes-label" id="cc-attr-changes-label">Changes to attribute</p>
+        <ul class="cc-attr-chips" role="list" aria-labelledby="cc-attr-changes-label">
+          @for (change of decisiveChanges; track change.id) {
+            <li class="cc-attr-chip" [attr.data-verdict]="change.verdict">
+              <span class="cc-attr-chip-name">{{ change.name }}</span>{{ ' ' }}<span class="cc-attr-chip-verdict">{{ change.verdictText }}</span>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+    <div class="cc-attribution-groups">
+      @for (group of attributionGroups; track group.side) {
+        <section class="cc-attribution-group" [attr.data-side]="group.side" [attr.aria-labelledby]="'cc-attr-' + group.side">
+          <h6 class="cc-attribution-title" [id]="'cc-attr-' + group.side">{{ group.title }}</h6>
+          @for (attribution of group.attributions; track $index) {
+            <article class="cc-attribution-card">
+              <p class="cc-attribution-head">
+                <span class="cc-attribution-label">{{ attribution.label }}</span>
+                <span class="cc-grade-pill" [attr.data-grade]="attribution.grade">{{ grade(attribution.grade) }}</span>
+              </p>
+              @if (attribution.endpoints.length > 0) {
+                <ul class="cc-attribution-endpoints" role="list" aria-label="Endpoints">
+                  @for (endpointId of attribution.endpoints; track endpointId) {
+                    <li class="gh-tag cc-attribution-endpoint">{{ endpointId }}</li>
+                  }
+                </ul>
+              }
+              <p class="cc-attribution-evidence">{{ attribution.evidence }}</p>
+              @if (attribution.eventRefs.length > 0) {
+                <ul class="cc-attribution-refs" role="list" aria-label="Events">
+                  @for (ref of attribution.eventRefs; track $index) {
+                    <li class="cc-marker-tag is-event">{{ ref }}</li>
+                  }
+                </ul>
+              }
+            </article>
+          }
+        </section>
+      }
+    </div>
+    @if (unattributedText) {
+      <p class="cc-muted cc-attr-unattributed">{{ unattributedText }}</p>
+    }
   }
 </div>
 
-<h5 class="cc-res-heading">Events in the analyzed span</h5>
-<app-cc-event-list [days]="eventDays" idPrefix="cc-res-ev" [dayHeadingLevel]="6"></app-cc-event-list>
+<!-- Next runs: the grouped next-run cards. -->
+<div class="cc-res-panel" role="tabpanel" id="cc-res-panel-nextRuns" aria-labelledby="cc-res-tab-nextRuns"
+     tabindex="0" [hidden]="tab !== 'nextRuns'">
+  <app-cc-next-runs [result]="result" [rows]="rows" (repeatSetup)="repeatSetup.emit($event)"></app-cc-next-runs>
+</div>
 
-@if (runSelection; as selection) {
-  <section class="cc-res-selection" aria-labelledby="cc-res-selection-title">
-    <h5 class="cc-res-heading" id="cc-res-selection-title">Run selection</h5>
-    @if (selection.recorded) {
-      <dl class="cc-res-selection-facts">
-        <div>
-          <dt>Dates</dt>
-          <dd>
-            {{ selection.rangeLabel || 'All dates' }}
-            @if (rangeBoundsText(selection); as bounds) {
-              <span class="cc-muted">{{ ' · ' + bounds }}</span>
-            }
-          </dd>
-        </div>
-        <div><dt>First run</dt><dd>{{ firstMark(selection) }}</dd></div>
-        <div><dt>Last run</dt><dd>{{ lastMark(selection) }}</dd></div>
-        <div><dt>Left out in step 1</dt><dd>{{ leftOutText(selection) }}</dd></div>
-      </dl>
-    }
-    <p class="cc-res-selection-label">Not analyzed</p>
-    @if (unanalyzedGroups(selection); as groups) {
-      @if (groups.length > 0) {
-        <ul class="cc-res-list cc-res-unanalyzed">
-          @for (group of groups; track group.reason) {
-            <li [attr.data-reason]="group.reason">{{ group.label }}: {{ group.runs }}</li>
+<!-- Details: background for reading the verdicts, each part behind a closed disclosure. -->
+<div class="cc-res-panel" role="tabpanel" id="cc-res-panel-details" aria-labelledby="cc-res-tab-details"
+     tabindex="0" [hidden]="tab !== 'details'">
+  <h5 class="gh-section-title">Details</h5>
+  <p class="cc-res-lead">Background for reading the verdicts. Nothing here changes them.</p>
+  <div class="cc-res-details">
+    @if (runSelection; as selection) {
+      <details class="gh-disclosure cc-res-disclosure" data-section="selection">
+        <summary>Run selection</summary>
+        <div class="gh-disclosure-body cc-res-selection">
+          @if (selection.recorded) {
+            <dl class="cc-res-selection-facts">
+              <div>
+                <dt>Dates</dt>
+                <dd>
+                  {{ selection.rangeLabel || 'All dates' }}
+                  @if (rangeBoundsText(selection); as bounds) {
+                    <span class="cc-muted">{{ ' · ' + bounds }}</span>
+                  }
+                </dd>
+              </div>
+              <div><dt>First run</dt><dd>{{ firstMark(selection) }}</dd></div>
+              <div><dt>Last run</dt><dd>{{ lastMark(selection) }}</dd></div>
+              <div><dt>Left out in step 1</dt><dd>{{ leftOutText(selection) }}</dd></div>
+            </dl>
           }
-        </ul>
-      } @else {
-        <p class="cc-muted cc-res-all-analyzed">Every usable run of the model in the periods was analyzed.</p>
-      }
+          <p class="cc-res-selection-label">Not analyzed</p>
+          @if (unanalyzedGroups(selection); as groups) {
+            @if (groups.length > 0) {
+              <ul class="cc-res-list cc-res-unanalyzed">
+                @for (group of groups; track group.reason) {
+                  <li [attr.data-reason]="group.reason">{{ group.label }}: {{ group.runs }}</li>
+                }
+              </ul>
+            } @else {
+              <p class="cc-muted cc-res-all-analyzed">Every usable run of the model in the periods was analyzed.</p>
+            }
+          }
+        </div>
+      </details>
     }
-  </section>
-}
 
-<h5 class="cc-res-heading">Limitations</h5>
-@if (result.limitations.length > 0) {
-  <ul class="cc-res-list">
-    @for (limitation of result.limitations; track $index) {
-      <li>{{ limitation }}</li>
-    }
-  </ul>
-} @else {
-  <p class="cc-muted">None recorded.</p>
-}
+    <details class="gh-disclosure cc-res-disclosure" data-section="events">
+      <summary>Events in the analyzed span ({{ eventCount }})</summary>
+      <div class="gh-disclosure-body">
+        <app-cc-event-list [days]="eventDays" idPrefix="cc-res-ev" [dayHeadingLevel]="6"></app-cc-event-list>
+      </div>
+    </details>
 
-<h5 class="cc-res-heading">Data quality</h5>
-@if (result.dataQuality.length > 0) {
-  <ul class="cc-res-list">
-    @for (note of result.dataQuality; track $index) {
-      <li>{{ note.text }}</li>
-    }
-  </ul>
-} @else {
-  <p class="cc-muted">No data-quality notes.</p>
-}
+    <details class="gh-disclosure cc-res-disclosure" data-section="limitations">
+      <summary>Limitations ({{ result.limitations.length }})</summary>
+      <div class="gh-disclosure-body">
+        @if (result.limitations.length > 0) {
+          <ul class="cc-res-list">
+            @for (limitation of result.limitations; track $index) {
+              <li>{{ limitation }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="cc-muted">None recorded.</p>
+        }
+      </div>
+    </details>
 
-<dl class="cc-res-identity">
-  <div>
-    <dt>Analysis</dt>
-    <dd>
-      #{{ result.analysisId ?? '—' }}
-      @if (result.name) {
-        <span> · {{ result.name }}</span>
-      }
-    </dd>
+    <details class="gh-disclosure cc-res-disclosure" data-section="dataQuality">
+      <summary>Data quality ({{ result.dataQuality.length }})</summary>
+      <div class="gh-disclosure-body">
+        @if (result.dataQuality.length > 0) {
+          <ul class="cc-res-list">
+            @for (note of result.dataQuality; track $index) {
+              <li [attr.data-kind]="note.kind">{{ note.text }}</li>
+            }
+          </ul>
+        } @else {
+          <p class="cc-muted">No data-quality notes.</p>
+        }
+      </div>
+    </details>
+
+    <details class="gh-disclosure cc-res-disclosure" data-section="about">
+      <summary>About this analysis</summary>
+      <div class="gh-disclosure-body">
+        <dl class="cc-res-identity">
+          <div>
+            <dt>Analysis</dt>
+            <dd>
+              #{{ result.analysisId ?? '—' }}
+              @if (result.name) {
+                <span> · {{ result.name }}</span>
+              }
+            </dd>
+          </div>
+          <div><dt>Headline</dt><dd class="cc-res-headline">{{ result.headline }}</dd></div>
+          <div><dt>Saved</dt><dd>{{ dateTime(result.createdAtUtc) }}</dd></div>
+          <div><dt>Input SHA-256</dt><dd><code class="cc-sha">{{ result.inputSha256 }}</code></dd></div>
+          <div><dt>Analysis code</dt><dd>version {{ result.analysisCodeVersion }}</dd></div>
+        </dl>
+      </div>
+    </details>
   </div>
-  <div><dt>Saved</dt><dd>{{ dateTime(result.createdAtUtc) }}</dd></div>
-  <div><dt>InputSha256</dt><dd><code class="cc-sha">{{ result.inputSha256 }}</code></dd></div>
-  <div><dt>Analysis code</dt><dd>version {{ result.analysisCodeVersion }}</dd></div>
-</dl>
+</div>

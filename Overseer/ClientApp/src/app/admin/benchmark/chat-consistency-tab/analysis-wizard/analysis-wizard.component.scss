@@ -15,6 +15,12 @@
   gap: 0;
 }
 
+// While Reports or Documents shows, the host fills the step panel, so the step's own panel can.
+:host(.is-fill) {
+  flex: 1;
+  min-height: 0;
+}
+
 .cc-wiz-step {
   display: flex;
   flex-direction: column;
@@ -303,18 +309,25 @@
   color: var(--nav-color);
 }
 
-// --- Results ---
+// --- Reports and Documents ---
 
-// The Reports section under the results, headed as the results' own sections are.
-.cc-wiz-reports {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  min-width: 0;
+// The step fills the panel, so the panel inside it has a definite height and scrolls its own parts.
+.cc-wiz-step-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+
+  > app-cc-reports-step,
+  > app-download-center-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 }
 
-.cc-res-heading {
-  margin: 0.75rem 0 0;
-  color: var(--primary-color);
-  font-size: 1rem;
+// Edge to edge, as the wizard panel around it while Documents shows.
+.cc-wiz-documents {
+  gap: 0;
+}
+
+.cc-documents-note {
+  margin: 0.75rem 1.5rem 0;
 }

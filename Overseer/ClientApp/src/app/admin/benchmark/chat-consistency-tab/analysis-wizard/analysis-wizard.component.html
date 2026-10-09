@@ -1,7 +1,7 @@
 <!--
-  The analysis steps: Analyze · Results. The outer wizard chooses the step and draws the step bar,
-  headings and footer. A step's body is mounted on its first visit and then kept, hidden while another
-  step shows.
+  The analysis steps: Analyze · Results · Reports · Documents. The outer wizard chooses the step and
+  draws the step bar, headings and footer. A step's body is mounted on its first visit and then kept,
+  hidden while another step shows.
 -->
 @if (isMounted('analyze')) {
   <div class="cc-wiz-step cc-an" data-step="analyze" [hidden]="step !== 'analyze'">
@@ -286,16 +286,38 @@
 @if (isMounted('results')) {
   <div class="cc-wiz-step" data-step="results" [hidden]="step !== 'results'">
     @if (result) {
-      <app-cc-results-view [result]="result" [points]="timeline?.points ?? []"
-                           [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
-                           (repeatSetup)="repeatSetup.emit($event)"></app-cc-results-view>
-      <section class="cc-wiz-reports" aria-labelledby="cc-res-reports-title">
-        <h5 class="cc-res-heading" id="cc-res-reports-title">Reports</h5>
-        <app-cc-reports-step [result]="result" [writerOptions]="pickerOptions" [writerConfigs]="pickerConfigs"
-                             [pickerEmptyHint]="pickerEmptyHint" [points]="timeline?.points ?? []"
-                             [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
-                             (openDocuments)="openDocuments.emit($event)"></app-cc-reports-step>
-      </section>
+      <!-- A saved analysis can name runs outside step 1's selection: the results get every loaded run. -->
+      <app-cc-results-view [result]="result" [points]="points" [batteryPoints]="batteryPoints"
+                           [eventNumbering]="eventGroups" [rows]="allRows" [batteryRows]="allBatteryRows"
+                           [annotations]="taggedAnnotations"
+                           (repeatSetup)="repeatSetup.emit($event)"
+                           (openRunReport)="openRunReport.emit($event)"
+                           (openBatteryRunReport)="openBatteryRunReport.emit($event)"></app-cc-results-view>
+    }
+  </div>
+}
+
+<!-- Reports fills the panel, so its sidebar and main area scroll on their own. -->
+@if (isMounted('reports')) {
+  <div class="cc-wiz-step cc-wiz-step-fill" data-step="reports" [hidden]="step !== 'reports'">
+    @if (result) {
+      <app-cc-reports-step [result]="result" [writerOptions]="pickerOptions" [writerConfigs]="pickerConfigs"
+                           [pickerEmptyHint]="pickerEmptyHint" [points]="points"
+                           [batteryPoints]="batteryPoints" [eventNumbering]="eventGroups"
+                           (documentsRequested)="onDocumentsRequested()"
+                           (documentsChanged)="onReportsDocumentsChanged()"
+                           (stateChange)="onReportsStateChange()"></app-cc-reports-step>
+    }
+  </div>
+}
+
+<!-- Documents: the Download Center panel, edge to edge; it scrolls its own body and pins its footer. -->
+@if (isMounted('documents')) {
+  <div class="cc-wiz-step cc-wiz-step-fill cc-wiz-documents" data-step="documents" [hidden]="step !== 'documents'">
+    @if (documentsContext; as context) {
+      <p class="form-hint cc-documents-note">{{ documentsNote }}</p>
+      <app-download-center-panel idPrefix="cc-dc" [context]="context" [reloadToken]="documentsReloadToken"
+                                 (documentsChanged)="onDocumentsChanged()"></app-download-center-panel>
     }
   </div>
 }

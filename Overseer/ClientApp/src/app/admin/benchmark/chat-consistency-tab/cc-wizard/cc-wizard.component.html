@@ -104,13 +104,15 @@
       </section>
     }
 
-    <!-- Steps 3 and 4 are one analysis component, its state shared between them; the panel is labeled
+    <!-- Steps 3 to 6 are one analysis component, its state shared between them; the panel is labeled
          by the tab of the step it shows. Step 3 is a figure workspace, edge to edge, whose sidebar and
-         views scroll; step 4 scrolls as one. -->
+         views scroll; step 4 scrolls as one; step 5's sidebar and main area scroll on their own; step 6
+         is the Download Center panel, edge to edge. -->
     @if (analysisMounted) {
       <section class="gh-wizard-step cc-wizard-step cc-wizard-step-analysis" role="tabpanel" tabindex="0"
                id="cc-step-panel-analysis" [attr.aria-labelledby]="'cc-step-tab-' + analysisWizardStep"
-               [class.gh-fig-host]="step === 3" [hidden]="step < 3">
+               [class.gh-fig-host]="step === 3" [class.cc-wizard-step-documents]="step === 6"
+               [hidden]="step < 3">
         <h4 class="visually-hidden" id="cc-step-heading-analysis">{{ stepTitles[analysisWizardStep] }}</h4>
         <!-- rows is the scoped list of runs (in a battery set, the members of the scoped battery runs),
              allRows every run of the set in the dates; batteryRows and allBatteryRows the same over
@@ -124,7 +126,7 @@
                                 [step]="analysisStep"
                                 (analysisSaved)="onAnalysisSaved($event)" (runsChanged)="runsChanged.emit()"
                                 (repeatSetup)="repeatSetup.emit($event)"
-                                (openDocuments)="openDocuments.emit($event)"
+                                (stepRequested)="onStepRequested()"
                                 (openRunReport)="openRunReport.emit($event)"
                                 (openBatteryRunReport)="openBatteryRunReport.emit($event)"
                                 (stateChange)="onAnalysisStateChange()"></app-cc-analysis-wizard>
@@ -144,7 +146,7 @@
     </p>
 
     <!-- aria-disabled rather than disabled, so the reason stays reachable. Genuinely disabled while a
-         chart export runs, and on step 4, where it is Close, while report charts are attached. -->
+         chart export runs, and on step 6, where it is Close, while report charts are attached. -->
     <div class="gh-wizard-nav-actions">
       @if (analyzing) {
         <button type="button" class="btn-gh btn-gh-cancel cc-wizard-stop" (click)="stopAnalyze()">Stop Analysis</button>
@@ -152,7 +154,7 @@
       <button type="button" class="btn-gh cc-wizard-next"
               [attr.aria-disabled]="!canGoNext"
               [attr.aria-busy]="step === 3 && analyzing ? 'true' : null"
-              [disabled]="workspaceExporting || (step === 4 && closeBlocked)"
+              [disabled]="workspaceExporting || (step === 6 && closeBlocked)"
               aria-describedby="cc-next-blocked"
               (click)="nextStep()">
         @if (step === 3 && analyzing) {

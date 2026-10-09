@@ -3,10 +3,8 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
-  EventEmitter,
   OnDestroy,
   OnInit,
-  Output,
   ViewChild,
   inject
 } from '@angular/core';
@@ -47,7 +45,6 @@ import {
   CcComparisonSetRef,
   CcComparisonSets,
   CcModelAxis,
-  CcOpenDocumentsRequest,
   CcRunRow,
   CcTimeline,
   CcUnitKind
@@ -88,7 +85,7 @@ export const CC_LEAVE_REFUSAL =
 /**
  * The Chat Consistency sub-tab: whether the Overseer chat with one model stayed the same over time.
  * A launcher page — what the view does, the current model, how it works and the saved analyses —
- * opens the four-step wizard in a full-screen dialog.
+ * opens the six-step wizard in a full-screen dialog.
  *
  * It owns the subject, the date range and their data, and performs the run actions the wizard asks
  * for: anchors through the API, *Repeat this run's setup* and *Open run report* through the shell.
@@ -106,9 +103,6 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   private readonly bridge = inject(BenchmarkShellBridge);
   private readonly cdr = inject(ChangeDetectorRef);
   readonly workspace = inject(BenchmarkWorkspaceStore);
-
-  /** The Download Center on an analysis's documents. */
-  @Output() readonly openDocuments = new EventEmitter<CcOpenDocumentsRequest>();
 
   @ViewChild('wizardDialog') wizardDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild(CcWizardComponent) wizard?: CcWizardComponent;
@@ -422,7 +416,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   /**
    * Nothing is torn down: the mounted content is what reopening preserves. The saved analyses are read
-   * again, since the Results step's Reports section may have written documents from one of them. A close that gets
+   * again, since the Reports step may have written documents from one of them. A close that gets
    * through while the wizard is blocked (a repeated Escape, or a browser without `closedby`) reopens
    * the dialog instead.
    */

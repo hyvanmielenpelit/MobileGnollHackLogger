@@ -1,0 +1,367 @@
+// The disclosure is the global `gh-disclosure`. The card follows its own width: from 40 rem the figure
+// and the facts sit side by side, below they stack.
+:host {
+  display: block;
+  min-width: 0;
+  container: cc-ep / inline-size;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.cc-ep-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "head"
+    "figure"
+    "facts"
+    "notes"
+    "more";
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--nav-color) 22%, transparent);
+  border-radius: 10px;
+  background: var(--bg-glass);
+  scroll-margin-block: 1rem;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+@container cc-ep (min-width: 40rem) {
+  .cc-ep-card {
+    grid-template-columns: minmax(16rem, 2fr) minmax(0, 3fr);
+    grid-template-areas:
+      "head   head"
+      "figure facts"
+      "figure notes"
+      "more   more";
+    column-gap: 2rem;
+  }
+}
+
+// --- Head ---
+
+.cc-ep-head {
+  grid-area: head;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  min-width: 0;
+}
+
+.cc-ep-id {
+  border-color: var(--border-glass);
+  color: var(--primary-color);
+}
+
+.cc-ep-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--font-color);
+  overflow-wrap: anywhere;
+}
+
+.cc-ep-margin {
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+  white-space: nowrap;
+}
+
+.cc-ep-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline-start: auto;
+}
+
+// The status is a word, an icon and the tier's colors; Inconclusive is neutral.
+.cc-ep-status,
+.cc-ep-grade {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.0625rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--nav-color) 40%, transparent);
+  border-radius: 999px;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--nav-color);
+  white-space: nowrap;
+
+  > svg {
+    flex: none;
+  }
+}
+
+.cc-ep-status {
+  &[data-status="within"],
+  &[data-status="improved"] {
+    border-color: var(--score-high-border);
+    background: var(--score-high-bg);
+    color: var(--score-high-ink);
+  }
+
+  &[data-status="changed"] {
+    border-color: var(--score-mid-border);
+    background: var(--score-mid-bg);
+    color: var(--score-mid-ink);
+  }
+
+  &[data-status="notComputable"] {
+    border-style: dashed;
+  }
+}
+
+// Established is a solid gold ring, Indicated a dashed one; the word says which.
+.cc-ep-grade {
+  border-color: var(--border-glass);
+  color: var(--primary-color);
+
+  &[data-grade="indicated"] {
+    border-style: dashed;
+  }
+}
+
+// --- Figure ---
+
+.cc-ep-figure {
+  grid-area: figure;
+  min-width: 0;
+}
+
+.cc-ep-estimate {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--font-color);
+}
+
+.cc-ep-ci {
+  margin: 0.125rem 0 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-ep-chart {
+  margin-top: 0.75rem;
+}
+
+// The interval bar: the margin band as a wash with an edge, the zero line as a hairline, the 95 %
+// interval as a rounded bar and the estimate as a dot ringed in the surface color.
+.cc-ep-interval {
+  position: relative;
+  block-size: 1.5rem;
+
+  > span {
+    position: absolute;
+  }
+}
+
+.cc-ep-band {
+  inset-block: 0;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--nav-color) 45%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--nav-color) 12%, transparent);
+}
+
+.cc-ep-zero {
+  inset-block: -0.125rem;
+  inline-size: 1px;
+  margin-inline-start: -0.5px;
+  background: color-mix(in srgb, var(--nav-color) 70%, transparent);
+}
+
+.cc-ep-line {
+  inset-block-start: 50%;
+  block-size: 0.25rem;
+  margin-block-start: -0.125rem;
+  border-radius: 2px;
+  background: var(--primary-color);
+}
+
+.cc-ep-dot {
+  inset-block-start: 50%;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border-radius: 50%;
+  background: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--bg-input);
+  transform: translate(-50%, -50%);
+}
+
+.cc-ep-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.25rem;
+  font-size: var(--text-xs);
+  color: var(--nav-color);
+}
+
+// --- Facts and notes ---
+
+.cc-ep-facts {
+  grid-area: facts;
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+
+  dt {
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+    color: var(--font-color);
+    overflow-wrap: anywhere;
+  }
+}
+
+.cc-ep-notes {
+  grid-area: notes;
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-ep-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.5rem;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.cc-ep-note-icon {
+  margin-top: 0.2em;
+
+  .is-shortfall > & {
+    color: var(--score-mid-ink);
+  }
+}
+
+.cc-ep-note.is-shortfall .cc-ep-note-text {
+  color: var(--font-color);
+}
+
+.cc-ep-more {
+  grid-area: more;
+}
+
+.cc-ep-more-notes {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+
+  li + li {
+    margin-top: 0.25rem;
+  }
+}
+
+.cc-ep-checks-title {
+  margin: 0.75rem 0 0.375rem;
+  font-weight: 700;
+  color: var(--font-color);
+
+  &:first-child {
+    margin-top: 0;
+  }
+}
+
+.cc-ep-checks {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-ep-check {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.cc-ep-check-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+.cc-ep-check-name {
+  color: var(--font-color);
+}
+
+.cc-ep-check-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--nav-color);
+
+  [data-status="passed"] & {
+    color: var(--score-high-ink);
+  }
+
+  [data-status="failed"] & {
+    color: var(--score-mid-ink);
+  }
+}
+
+.cc-ep-check-detail {
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+// Forced colors drop backgrounds, so every part of the bar takes a system color, and the band keeps a
+// visible edge.
+@media (forced-colors: active) {
+  .cc-ep-card {
+    border-color: CanvasText;
+  }
+
+  .cc-ep-interval {
+    forced-color-adjust: none;
+  }
+
+  .cc-ep-band {
+    border: 1px dashed CanvasText;
+    background: transparent;
+  }
+
+  .cc-ep-zero {
+    background: CanvasText;
+  }
+
+  .cc-ep-line,
+  .cc-ep-dot {
+    background: Highlight;
+  }
+
+  .cc-ep-dot {
+    box-shadow: 0 0 0 2px Canvas;
+  }
+
+  .cc-ep-status,
+  .cc-ep-grade {
+    border-color: CanvasText;
+  }
+}

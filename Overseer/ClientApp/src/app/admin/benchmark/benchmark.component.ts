@@ -3445,12 +3445,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.runDownloadCenter?.open({ kind: 'battery', batteryRunId, label, memberDiagnosticsText: this.memberDiagnosticsText });
   }
 
-  /** The Chat Consistency tab's request: the Download Center on a saved analysis's documents. */
-  openChatConsistencyDownloads(analysisId: number): void {
-    this.runDownloadsOpener = null;
-    this.runDownloadCenter?.open({ kind: 'chatConsistency', analysisId });
-  }
-
   /**
    * Focus lost when the Download Center closed over the run report goes back to the button that
    * opened it while that button is still shown, else to the header's Downloads.
