@@ -446,9 +446,9 @@ export class CcWizardComponent {
 
   // --- Steps ---
 
-  /** Shows a reachable step and focuses its heading. */
+  /** Shows a reachable step and focuses its panel. */
   goToStep(step: CcWizardStep): void {
-    if (this.selectStep(step)) this.focusStepHeading();
+    if (this.selectStep(step)) this.focusStepPanel();
   }
 
   /**
@@ -537,8 +537,7 @@ export class CcWizardComponent {
     this.cdr.detectChanges();
   }
 
-  private focusStepHeading(): void {
-    const id = this.step >= 3 ? 'cc-step-heading-analysis' : `cc-step-heading-${this.step}`;
-    this.host.nativeElement.querySelector<HTMLElement>(`#${id}`)?.focus();
+  private focusStepPanel(): void {
+    this.host.nativeElement.querySelector<HTMLElement>(`#${this.panelId(this.step)}`)?.focus();
   }
 }

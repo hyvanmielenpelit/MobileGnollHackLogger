@@ -113,8 +113,6 @@ describe('CcTimelineWorkspaceComponent', () => {
     // A logo the canvas can draw, without loading the asset.
     resetFigureLogoCache();
     vi.spyOn(figureLogoIo, 'loadImage').mockResolvedValue(document.createElement('canvas'));
-    // The off-screen export renders with `new Chart`, which the on-screen directive registers for lazily.
-    Chart.register(...APP_CHART_REGISTRABLES);
     await TestBed.configureTestingModule({
       imports: [TimelineWorkspaceHostComponent],
       providers: chatConsistencyTestProviders()
@@ -737,6 +735,14 @@ describe('CcTimelineWorkspaceComponent', () => {
     await settle();
     await untilComposed('timeline');
     expect(last.querySelector('canvas.cc-chart-image')).not.toBeNull();
+  }, 30_000);
+
+  it('composes its charts on a page where nothing has registered chart.js', async () => {
+    Chart.unregister(...APP_CHART_REGISTRABLES);
+    await create();
+    await untilComposed('quality');
+    expect(q('.cc-tl-tile[data-figure="quality"] canvas.cc-chart-image')).not.toBeNull();
+    expect(q('.cc-tl-tile[data-figure="quality"] .cc-figure-refusal')).toBeNull();
   }, 30_000);
 
   it('reshapes the images on a chart size change, re-fitting a fit view and keeping a numeric zoom', async () => {

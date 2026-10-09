@@ -624,7 +624,7 @@ describe('ChatConsistencyTabComponent', () => {
     chooseModelInWizard();
     setExporting(true);
 
-    const focused = dialog().querySelector<HTMLElement>('#cc-step-heading-2')!;
+    const focused = dialog().querySelector<HTMLElement>('#cc-step-panel-2')!;
     focused.focus();
     const refused = new Event('cancel', { cancelable: true });
     dialog().dispatchEvent(refused);

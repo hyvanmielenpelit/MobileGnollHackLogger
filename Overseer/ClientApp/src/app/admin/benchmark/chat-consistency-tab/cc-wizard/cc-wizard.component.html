@@ -72,7 +72,7 @@
       <section class="gh-wizard-step cc-wizard-step" role="tabpanel" tabindex="0"
                id="cc-step-panel-1" aria-labelledby="cc-step-tab-1" [hidden]="step !== 1"
                [attr.aria-busy]="loading || axesLoading ? 'true' : null">
-        <h4 class="gh-section-title cc-wizard-heading" id="cc-step-heading-1" tabindex="-1">{{ stepTitles[1] }}</h4>
+        <h4 class="visually-hidden" id="cc-step-heading-1">{{ stepTitles[1] }}</h4>
         <app-cc-model-step [axes]="axes" [axesLoading]="axesLoading" [axesError]="axesError"
                            [selectedKey]="selectedKey" [range]="range" [scope]="scope"
                            [comparisonSets]="comparisonSets" [compareKey]="compareKey" [batteryRows]="batteryRows"
@@ -93,7 +93,7 @@
     @if (isVisited(2)) {
       <section class="gh-wizard-step gh-fig-host cc-wizard-step-timeline" role="tabpanel" tabindex="0"
                id="cc-step-panel-2" aria-labelledby="cc-step-tab-2" [hidden]="step !== 2">
-        <h4 class="gh-section-title cc-wizard-heading cc-wizard-fig-heading" id="cc-step-heading-2" tabindex="-1">{{ stepTitles[2] }}</h4>
+        <h4 class="visually-hidden" id="cc-step-heading-2">{{ stepTitles[2] }}</h4>
         <app-cc-timeline-workspace [axis]="axis" [timeline]="timeline" [loading]="loading" [error]="timelineError"
                                    [notAnalyzed]="notAnalyzed" [rangeLabel]="rangeText"
                                    [unitKind]="unitKind" [setKey]="compareSet?.key ?? null"
@@ -110,7 +110,7 @@
       <section class="gh-wizard-step cc-wizard-step cc-wizard-step-analysis" role="tabpanel" tabindex="0"
                id="cc-step-panel-analysis" [attr.aria-labelledby]="'cc-step-tab-' + analysisWizardStep"
                [hidden]="step < 3">
-        <h4 class="gh-section-title cc-wizard-heading" id="cc-step-heading-analysis" tabindex="-1">{{ stepTitles[analysisWizardStep] }}</h4>
+        <h4 class="visually-hidden" id="cc-step-heading-analysis">{{ stepTitles[analysisWizardStep] }}</h4>
         <!-- rows is the scoped list of runs (in a battery set, the members of the scoped battery runs),
              allRows every run of the set in the dates; batteryRows and allBatteryRows the same over
              battery runs. -->

@@ -16,22 +16,8 @@
   gap: 8px;
 }
 
-// A step's heading sits close to the content it names; the frame's gap separates larger blocks.
-.cc-wizard-step {
-  gap: 12px;
-}
-
-.cc-wizard-heading {
-  flex-shrink: 0;
-}
-
-// The Timeline step has no padding of its own, so its heading carries the step's inset, and the
-// workspace takes the rest of the height.
+// The workspace takes the Timeline step's whole height.
 .cc-wizard-step-timeline {
-  > .cc-wizard-fig-heading {
-    margin: 12px 24px 10px;
-  }
-
   > app-cc-timeline-workspace {
     flex: 1;
     min-width: 0;

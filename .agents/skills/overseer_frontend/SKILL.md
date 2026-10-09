@@ -1734,8 +1734,10 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **Every chart view shows bitmaps composed by the export pipeline** — `resolveFigureLayout`,
     `renderPlotOffscreen` from each card's Chart.js configuration, then the chrome — the same code
     that writes the downloaded file, so what is on the page is what is downloaded. No
-    `BaseChartDirective` renders on step 2 and nothing reads a live chart canvas; the component
-    registers the `provideCharts` registerables itself for that reason. *All charts* shows every
+    `BaseChartDirective` renders on step 2 and nothing reads a live chart canvas;
+    `renderPlotOffscreen` registers the application's registrables itself (`registerAppCharts` in
+    `chart-registrables.ts`), which is what lets a view plot only off-screen, and the component's
+    own `ngOnInit` registration is left in place. *All charts* shows every
     chart as a focusable tile (`<canvas role="img">` named by its title and subtitle; Enter or a
     click opens it in *Single chart*) in a natively scrolling grid with a zoom group and **Fit
     height**; tiles are composed at display resolution, debounced, only near the viewport, with a

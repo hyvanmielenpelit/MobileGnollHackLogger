@@ -28,6 +28,8 @@
 import { Chart } from 'chart.js';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
+import { registerAppCharts } from '../../../chart-registrables';
+
 import type {
   FigureBadge,
   FigureBadgeTone,
@@ -785,8 +787,8 @@ export interface OffscreenPlotConfig {
  * The returned canvas is a copy: `destroy` clears the chart's own canvas. Failure returns null, and
  * the caller reports the figure as not composed.
  *
- * Chart.js controllers, elements and scales are registered globally by `provideCharts`, so no
- * further registration happens here.
+ * Registers the application's chart.js registrables first (`registerAppCharts`), because a view
+ * that plots only off-screen renders no `BaseChartDirective` to register them.
  */
 export async function renderPlotOffscreen(
   config: OffscreenPlotConfig,
@@ -816,6 +818,7 @@ export async function renderPlotOffscreen(
 
   let chart: Chart | null = null;
   try {
+    registerAppCharts();
     // Shallow copy: the figures carry scriptable callbacks in their options, which a deep clone
     // would drop.
     const options = {

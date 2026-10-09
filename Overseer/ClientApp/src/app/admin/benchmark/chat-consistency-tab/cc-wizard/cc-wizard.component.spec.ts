@@ -286,24 +286,27 @@ describe('CcWizardComponent', () => {
     expect(other.defaultPrevented).toBe(false);
   });
 
-  it('focuses the step heading on a tab click, Next and Previous', async () => {
+  it('focuses the step panel on a tab click, Next and Previous', async () => {
     chooseModel();
 
     tab(2).click();
     fixture.detectChanges();
-    expect(document.activeElement?.id).toBe('cc-step-heading-2');
+    expect(document.activeElement?.id).toBe('cc-step-panel-2');
     expect(textOf(el.querySelector('#cc-step-heading-2'))).toBe('Timeline');
+    const heading = el.querySelector('#cc-step-heading-2')!;
+    expect(heading.classList).toContain('visually-hidden');
+    expect(heading.hasAttribute('tabindex')).toBe(false);
 
     next().click();
     await settle();
     expect(wizard.step).toBe(3);
-    expect(document.activeElement?.id).toBe('cc-step-heading-analysis');
+    expect(document.activeElement?.id).toBe('cc-step-panel-analysis');
     expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Periods');
 
     previous().click();
     await settle();
     expect(wizard.step).toBe(2);
-    expect(document.activeElement?.id).toBe('cc-step-heading-2');
+    expect(document.activeElement?.id).toBe('cc-step-panel-2');
   });
 
   // --- Footer ---
@@ -390,7 +393,7 @@ describe('CcWizardComponent', () => {
     expect(saved.map(result => result.analysisId)).toEqual([7]);
     expect(wizard.step).toBe(5);
     expect(tab(5).getAttribute('aria-selected')).toBe('true');
-    expect(document.activeElement?.id).toBe('cc-step-heading-analysis');
+    expect(document.activeElement?.id).toBe('cc-step-panel-analysis');
     expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Results');
   });
 
@@ -482,7 +485,7 @@ describe('CcWizardComponent', () => {
     // Results is reached without passing the Timeline step.
     expect(panel('cc-step-panel-2')).toBeNull();
     expect(panel('cc-step-panel-analysis')!.getAttribute('aria-labelledby')).toBe('cc-step-tab-5');
-    expect(document.activeElement?.id).toBe('cc-step-heading-analysis');
+    expect(document.activeElement?.id).toBe('cc-step-panel-analysis');
     expect(textOf(el.querySelector('#cc-step-heading-analysis'))).toBe('Results');
   });
 

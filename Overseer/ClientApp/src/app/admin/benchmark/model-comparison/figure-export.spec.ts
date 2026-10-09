@@ -1186,12 +1186,6 @@ describe('figure-export', () => {
   });
 
   describe('renderPlotOffscreen', () => {
-    // No `provideCharts` here: this spec builds a chart without a TestBed, so the controllers,
-    // elements and scales the application registers have to be registered by hand.
-    beforeAll(() => {
-      Chart.register(...APP_CHART_REGISTRABLES);
-    });
-
     it('renders the plot box at the layout’s own density', async () => {
       const layout: FigureExportLayout = {
         layoutWidth: 960,
@@ -1218,6 +1212,31 @@ describe('figure-export', () => {
       expect(plot!.height).toBe(760);
       expect(plot!.style.width).toBe('920px');
       expect(plot!.style.height).toBe('380px');
+    });
+
+    it('plots on a page where nothing has registered chart.js', async () => {
+      Chart.unregister(...APP_CHART_REGISTRABLES);
+      const layout: FigureExportLayout = {
+        layoutWidth: 960,
+        layoutHeight: 540,
+        plotWidth: 920,
+        plotHeight: 380,
+        density: 2,
+        pixelWidth: 1920,
+        pixelHeight: 1080
+      };
+
+      const plot = await renderPlotOffscreen(
+        {
+          type: 'bar',
+          data: { labels: ['A', 'B'], datasets: [{ data: [1, 2] }] }
+        },
+        layout
+      );
+
+      expect(plot).not.toBeNull();
+      expect(plot!.width).toBe(1840);
+      expect(plot!.height).toBe(760);
     });
 
     it('breaks a total-cost panel\'s value-axis title by its own layout length, never by the density, and leaves the spec alone', async () => {
