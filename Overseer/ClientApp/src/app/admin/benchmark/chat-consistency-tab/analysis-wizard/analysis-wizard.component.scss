@@ -94,27 +94,38 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 
-  legend {
+  > legend {
     padding: 0;
     margin-bottom: 0.25rem;
     font-weight: 600;
   }
 }
 
+// One period per row: its name, then the first and last run selects.
 .cc-wiz-period {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .cc-wiz-period-name {
   min-width: 6.5rem;
   font-weight: 600;
+}
+
+// Wide enough for `#1234 · 2026-10-08 14:05 UTC`, and never wider than the row.
+.cc-wiz-run-select {
+  width: auto;
+  min-width: 14rem;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
 }
 
 // Wide tables scroll inside their own container, never the page.
@@ -131,18 +142,41 @@
   color: var(--font-color);
 }
 
-.cc-wiz-runs {
+.cc-wiz-units {
   font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 
-  input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--primary-color);
+  // A unit outside both periods reads quieter than the ones the analysis uses.
+  tr[data-period="notUsed"] .cc-wiz-unit-period,
+  tr[data-period="notEligible"] .cc-wiz-unit-period {
+    color: var(--nav-color);
   }
+}
+
+.cc-wiz-samples {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.cc-wiz-sample {
+  margin: 0;
+}
+
+// The hint takes its own line above the control checkboxes.
+.cc-wiz-controls-hint,
+.cc-wiz-controls-empty {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .cc-nowrap {
   white-space: nowrap;
+}
+
+.cc-wiz-protocol > .gh-disclosure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .cc-wiz-override-grid {
@@ -175,4 +209,18 @@
 
 .cc-wiz-event-changes {
   color: var(--nav-color);
+}
+
+// The Reports section under the results, headed as the results' own sections are.
+.cc-wiz-reports {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.cc-res-heading {
+  margin: 0.75rem 0 0;
+  color: var(--primary-color);
+  font-size: 1rem;
 }

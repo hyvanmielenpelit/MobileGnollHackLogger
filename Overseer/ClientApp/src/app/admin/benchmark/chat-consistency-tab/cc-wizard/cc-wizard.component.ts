@@ -29,7 +29,6 @@ import {
   scopeIsDefault,
   scopeKey,
   scopeRuns,
-  scopeSpanDays,
   scopedMemberRuns,
   setUnitKind,
   suiteSetRuns
@@ -50,7 +49,7 @@ import { CcModelStepComponent } from '../model-step/model-step.component';
 import { CcTimelineWorkspaceComponent } from '../timeline-workspace/timeline-workspace.component';
 
 /** The steps of the Chat Consistency wizard. */
-export type CcWizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type CcWizardStep = 1 | 2 | 3 | 4;
 
 /**
  * Every wizard step with its title and a one-line summary of what it is for.
@@ -58,31 +57,25 @@ export type CcWizardStep = 1 | 2 | 3 | 4 | 5 | 6;
  * Exported so the launcher lists the same steps under the same names as the wizard's own step tabs.
  */
 export const CC_WIZARD_STEPS = [
-  { step: 1, title: 'Model', summary: 'Choose the model and the dates, and review its runs.' },
+  { step: 1, title: 'Model', summary: 'Choose the model, the dates and the runs the analysis uses.' },
   { step: 2, title: 'Timeline', summary: 'Every measure over the dates, with the Overseer changes, annotations and served-model changes.' },
-  { step: 3, title: 'Periods', summary: 'Choose the baseline and comparison periods, from a preset or by hand, under Protocol V1.' },
-  { step: 4, title: 'Runs and controls', summary: 'Choose the runs and control runs, re-grade if needed, and analyze.' },
-  { step: 5, title: 'Results', summary: 'The verdicts, their attribution and the next runs that would settle open questions.' },
-  { step: 6, title: 'Reports', summary: 'Write the Chat Consistency Report documents.' }
+  { step: 3, title: 'Analyze', summary: 'Split the chosen runs into a baseline and a comparison, review the controls and the protocol, and analyze.' },
+  { step: 4, title: 'Results', summary: 'The verdicts, their attribution, the next runs, and the Chat Consistency Report documents.' }
 ] as const;
 
 /** The steps the shared analysis component shows. */
-type CcAnalysisWizardStep = 3 | 4 | 5 | 6;
+type CcAnalysisWizardStep = 3 | 4;
 
 const ANALYSIS_STEP_OF: Readonly<Record<CcAnalysisWizardStep, CcAnalysisStep>> = {
-  3: 'periods',
-  4: 'runs',
-  5: 'results',
-  6: 'reports'
+  3: 'analyze',
+  4: 'results'
 };
 
 const NEXT_LABELS: Readonly<Record<CcWizardStep, string>> = {
   1: 'Next: Timeline',
-  2: 'Next: Periods',
-  3: 'Next: Runs and controls',
-  4: 'Analyze',
-  5: 'Next: Reports',
-  6: 'Close'
+  2: 'Next: Analyze',
+  3: 'Analyze',
+  4: 'Close'
 };
 
 const NO_MODEL_REASON = 'Choose a model first.';
@@ -92,7 +85,7 @@ const NO_RESULT_REASON = 'Analyze first, or open a saved analysis.';
 /**
  * The Chat Consistency wizard: the whole content of the full-screen dialog the tab declares — header,
  * step tabs, step panels and footer. Step 1 chooses the model and the dates, step 2 is the chart
- * workspace, and steps 3–6 are one shared analysis component shown one step at a time.
+ * workspace, and steps 3 and 4 are one shared analysis component shown one step at a time.
  *
  * Every step is mounted on its first visit and afterwards kept, hidden while another step shows, so
  * a table's sort and page, the chart zoom and the scroll positions survive a step change. The tab
@@ -137,7 +130,7 @@ export class CcWizardComponent {
   /** A one-off confirmation for the run table's status line. */
   @Input() announcement = '';
 
-  // --- Steps 3–6 ---
+  // --- Steps 3 and 4 ---
   @Input() analyses: readonly CcAnalysisSummary[] = [];
   @Input() pickerOptions: readonly ModelPickerOption<SystemAiConfigDto>[] = [];
   @Input() pickerConfigs: readonly SystemAiConfigDto[] = [];
@@ -171,7 +164,7 @@ export class CcWizardComponent {
   step: CcWizardStep = 1;
   /** Steps 1 and 2 once shown; their panels stay mounted afterwards. */
   private readonly visitedSteps = new Set<CcWizardStep>([1]);
-  /** The shared analysis component exists: steps 3–6 have been entered, or a saved analysis opened. */
+  /** The shared analysis component exists: step 3 or 4 has been entered, or a saved analysis opened. */
   analysisMounted = false;
   /** The step the analysis component shows; kept while steps 1–2 show. */
   analysisWizardStep: CcAnalysisWizardStep = 3;
@@ -255,11 +248,6 @@ export class CcWizardComponent {
     return setUnitKind(this.compareSet?.key);
   }
 
-  /** The UTC days of the first and last unit in the analysis; null with none. */
-  get analysisSpan(): { first: string; last: string } | null {
-    return this.scopeState().span;
-  }
-
   get scopeKeyValue(): string {
     return this.scopeState().key;
   }
@@ -278,7 +266,6 @@ export class CcWizardComponent {
     setRows: readonly CcRunRow[];
     notAnalyzed: ReadonlyMap<number, CcRunInclusion>;
     notAnalyzedUnits: ReadonlyMap<number, CcRunInclusion>;
-    span: { first: string; last: string } | null;
     key: string;
   } | null = null;
 
@@ -305,7 +292,6 @@ export class CcWizardComponent {
       setRows: suiteSetRuns(this.rows, setKey),
       notAnalyzed: notAnalyzedSetRuns(this.rows, this.batteryRows, setKey, this.scope),
       notAnalyzedUnits: notAnalyzedUnits(this.batteryRows, setKey, this.scope),
-      span: scopeSpanDays(scoped),
       key: scopeKey(this.scope, setKey)
     };
     return this.scopeMemo;
@@ -326,7 +312,8 @@ export class CcWizardComponent {
 
   /**
    * The wizard's close controls, and Escape through the tab, refuse while a chart export runs or the
-   * Reports step draws and uploads report charts: closing would strand a half-written batch.
+   * Results step's Reports section draws and uploads report charts: closing would strand a half-written
+   * batch.
    */
   get closeBlocked(): boolean {
     return this.workspaceExporting || (this.analysis?.chartsAttaching ?? false);
@@ -343,14 +330,14 @@ export class CcWizardComponent {
     return this.visitedSteps.has(step);
   }
 
-  /** The panel a step tab controls: steps 3–6 share the analysis panel. */
+  /** The panel a step tab controls: steps 3 and 4 share the analysis panel. */
   panelId(step: CcWizardStep): string {
     return step >= 3 ? 'cc-step-panel-analysis' : `cc-step-panel-${step}`;
   }
 
   /**
-   * Step 1 is always open; steps 2 and 3 need a model; step 4 valid periods and overrides; steps 5
-   * and 6 a result, analyzed or opened from the saved analyses.
+   * Step 1 is always open; steps 2 and 3 need a model; step 4 a result, analyzed or opened from the
+   * saved analyses.
    *
    * An unreachable step is `aria-disabled`, not `disabled`, so it stays in the focus order and its
    * reason is read with it.
@@ -362,20 +349,15 @@ export class CcWizardComponent {
       case 2:
       case 3:
         return this.axis !== null;
-      case 4:
-        return this.axis !== null && !!this.analysis && this.analysis.reachable('runs');
       default:
-        return !!this.analysis && this.analysis.reachable(step === 5 ? 'results' : 'reports');
+        return !!this.analysis && this.analysis.reachable('results');
     }
   }
 
   /** Why a step cannot be opened, for its tab's description; empty where it can. */
   stepBlockedReason(step: CcWizardStep): string {
     if (this.isStepReachable(step)) return '';
-    if (step <= 4 && this.axis === null) return NO_MODEL_REASON;
-    if (step === 4) {
-      return (this.analysis ? this.analysis.periodsError || this.analysis.overridesError : '') || NO_PERIODS_REASON;
-    }
+    if (step <= 3) return NO_MODEL_REASON;
     return NO_RESULT_REASON;
   }
 
@@ -389,13 +371,13 @@ export class CcWizardComponent {
     return NEXT_LABELS[this.step];
   }
 
-  /** Why Next (Analyze on step 4) is unavailable, named beside it; empty while it is available or busy. */
+  /** Why Next (Analyze on step 3) is unavailable, named beside it; empty while it is available or busy. */
   get nextBlockedReason(): string {
     switch (this.step) {
-      case 4:
+      case 3:
         if (this.analyzing) return '';
         return this.analysis ? this.analysis.analyzeBlocked : NO_PERIODS_REASON;
-      case 6:
+      case 4:
         return '';
       default:
         return this.stepBlockedReason((this.step + 1) as CcWizardStep);
@@ -417,14 +399,14 @@ export class CcWizardComponent {
     }
   }
 
-  /** The next step; Analyze on step 4, which moves on when the analysis is saved; Close on step 6. */
+  /** The next step; Analyze on step 3, which moves on when the analysis is saved; Close on step 4. */
   nextStep(): void {
-    if (this.step === 6) {
+    if (this.step === 4) {
       if (!this.closeBlocked) this.closeRequested.emit();
       return;
     }
     if (!this.canGoNext) return;
-    if (this.step === 4) {
+    if (this.step === 3) {
       this.analysis?.analyze();
       return;
     }
@@ -479,21 +461,23 @@ export class CcWizardComponent {
 
   /**
    * Opens a saved analysis on Results: mounts the analysis component, hands it the result and selects
-   * step 5 — the one path to Results that does not pass step 3.
+   * step 4 — the one path to Results that does not pass step 3.
    */
   showResult(result: CcAnalysisResult): void {
+    // Mounted on Results, so the Analyze body (and its re-grade panel) is not created unseen.
+    this.analysisWizardStep = 4;
     this.mountAnalysis();
     this.analysis?.showResult(result);
-    this.goToStep(5);
+    this.goToStep(4);
   }
 
   /**
    * The analysis was saved: the tab hears of it, and the wizard moves to Results if it is still on
-   * Runs and controls. From any other step Results only becomes reachable.
+   * Analyze. From any other step Results only becomes reachable.
    */
   onAnalysisSaved(result: CcAnalysisResult): void {
     this.analysisSaved.emit(result);
-    if (this.step === 4) this.goToStep(5);
+    if (this.step === 3) this.goToStep(4);
     else this.cdr.markForCheck();
   }
 
@@ -517,7 +501,7 @@ export class CcWizardComponent {
     if (step >= 3) {
       this.analysisWizardStep = step as CcAnalysisWizardStep;
       this.mountAnalysis();
-      if (step === 4 && this.step !== 4) this.analysis?.preselectRuns();
+      if (step === 3 && this.step !== 3) this.analysis?.preselectRuns();
     } else {
       this.visitedSteps.add(step);
     }

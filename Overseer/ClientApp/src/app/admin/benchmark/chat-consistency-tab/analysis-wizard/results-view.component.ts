@@ -37,7 +37,7 @@ export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReas
   { reason: 'outsideDateRange', label: 'Outside the step-1 dates' },
   { reason: 'beforeFirstRun', label: 'Before the first run' },
   { reason: 'afterLastRun', label: 'After the last run' },
-  { reason: 'notSelected', label: 'Not selected in step 4' },
+  { reason: 'notSelected', label: 'Not assigned to a period' },
   { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
 ];
 

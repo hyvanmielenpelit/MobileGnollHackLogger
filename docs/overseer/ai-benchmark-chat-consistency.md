@@ -552,12 +552,12 @@ An analysis cannot be deleted while report documents written from it exist.
 ## 17. The Chat Consistency Tab
 
 Admin → GnollBench → **Chat Consistency** is a launcher page; the work is done in the **Chat
-Consistency wizard**, six steps in a full-screen dialog.
+Consistency wizard**, four steps in a full-screen dialog.
 
 ### 17.1 The launcher
 
 - **Open Chat Consistency Wizard** opens the wizard where it was left, on step 1 the first time.
-- **How chat consistency works**, a disclosure listing the six steps under the wizard's own titles,
+- **How chat consistency works**, a disclosure listing the four steps under the wizard's own titles,
   open on the first visit and afterwards as the operator left it.
 - **The *Current model* card** (`chat-consistency-tab/current-model-card/`), while a model is chosen: a
   full-width summary card between the hero and the saved analyses, on the shared `.bm-summary-card`
@@ -594,7 +594,7 @@ A header names the model, the compared set with its unit count, and the dates (*
 model's run count, *GPT-6.1 Sol (medium) · 19 runs · Last 30 days*), with *· 15 in the analysis* while
 step 1 narrows the units, with *Reload runs* on steps 1 and 2
 and a close button. Under it, the step tabs; at the bottom, *Previous*, the step position with the
-reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close* on step 6.
+reason the next step is unavailable, and *Next* — *Analyze* on step 3, *Close* on step 4.
 
 1. **Model** — the model (*Models with at least one usable benchmark run*), the dates, then the runs as
    cards with the **run selection** the analysis uses:
@@ -664,46 +664,100 @@ reason the next step is unavailable, and *Next* — *Analyze* on step 4, *Close*
 2. **Timeline** — the chart workspace (§ 17.3). It draws every run in the dates, not only the runs in
    the analysis, so the composite events keep their numbers; with a battery compared, one point per
    battery run of the set (*Plot by: Member runs* shows the runs).
-3. **Periods** — the periods from a preset (*Launch vs last 14 days*, *Before vs after an annotation*,
-   *Before vs after an Overseer change*, which offers the composite events of § 5.2, *Confirm on later
-   data*, *Custom dates*) or by hand, as inclusive UTC dates in the same date fields as step 1; Protocol
-   V1 with its margins, and *Override the protocol* for the margins and α. **The presets span the units
-   in the analysis**, from the first to the last of them, as the note under the presets says: *Presets
-   use the runs chosen in step 1: #21 (2026-09-20) to #93 (2026-10-05), 15 runs.*, or *Presets use
-   every run in the dates: …* while step 1 chooses nothing; with a battery compared, *Presets use the
-   battery runs chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.* A changed
-   selection re-applies the chosen preset; dates typed by hand stay. *Confirm on later data* takes the
-   last saved analysis of the same model and the same compared set.
-4. **Runs and controls** — the baseline and comparison runs from the runs in the analysis (eligible
-   runs preselected, again whenever the step-1 selection changes), the matched control runs, the
-   common-grader **re-grade** (estimate dialog first; nothing spends until *Re-grade* is pressed), *Pool
-   across measurement segment boundaries*, and a preview of the common strata, the composite Overseer
-   events in the span, the missing controls and *Left out in step 1: #45, #51* for left-out runs inside
-   either period. With a battery compared, each period lists battery runs (*Use*, *Battery run*,
-   *Started (UTC)*, *Suites*, *Eligible*, *Matched controls*), eligible complete ones preselected; the
-   controls stay per run. *Analyze* runs and saves the analysis, with the compared set and the step-1
-   selection (§ 19), and moves to Results; *Stop Analysis* stops it.
-5. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
+3. **Analyze** — splits the runs chosen in step 1 into a baseline and a comparison, and analyzes them.
+   **Step 1 is the only place that chooses runs**: the analysis uses the step-1 units and no others.
+   Top to bottom:
+   - the subject (*Model*, *Runs*, *Compared*) and an optional **Name**;
+   - **Periods** — a preset (below) or **Custom**, the preset's note, and the span note: **the presets
+     span the units in the analysis**, from the first to the last of them (*Presets use the runs chosen
+     in step 1: #21 (2026-09-20) to #93 (2026-10-05), 15 runs.*, or *Presets use every run in the
+     dates: …* while step 1 chooses nothing; with a battery compared, *Presets use the battery runs
+     chosen in step 1: #11 (2026-10-08) to #12 (2026-10-08), 2 battery runs.*). Then two rows,
+     **Baseline** and **Comparison**, each with a **First run** and a **Last run** select listing the
+     step-1 units by start, then id (*#12 · 2026-10-08 14:05 UTC*; *Battery run* in a battery set). **A
+     period is a run range**: every unit from its first run to its last, inclusive, in that order.
+     Units between the baseline's last run and the comparison's first are not used, and an ineligible
+     unit inside a range is never analyzed. Any two units with different start times can be split,
+     also on the same day. Choosing a run by hand switches the preset to *Custom*. A changed step-1
+     selection re-applies the chosen preset; *Custom* choices stay while their units remain in step 1,
+     and a choice whose unit leaves is cleared;
+   - **Runs in the periods** (*Battery runs in the periods* with a battery compared) — a read-only
+     table of every step-1 unit, by start: *Run* (*Battery run*), *Started (UTC)*, *Suite* (*Suites*),
+     *Period* (*Baseline*, *Comparison*, *Not used* or *Not eligible*) and *Matched controls*. Under it,
+     one sample line per period against Protocol V1's minimum (§ 9): *Baseline: 1 battery run on 1 day
+     (2026-10-08). P1, P4 and P5 need at least 2 on 2 days to be Established.*, or *… meets the minimum
+     sample for P1, P4 and P5*. *Mark as anchor* is in step 1's *More actions*;
+   - **Control runs** — other models' runs under the same Overseer build, used only to attribute a
+     change to a side, never for the verdicts (§ 6). The matched controls of the eligible units in both
+     periods are listed as checkboxes, all checked again whenever the periods change; with none
+     matched, the analysis looks for controls among other models' runs itself;
+   - the common-grader **re-grade** of the runs in the periods (estimate dialog first; nothing spends
+     until *Re-grade* is pressed) and *Pool across measurement segment boundaries*;
+   - **Protocol V1: margins and minimum sample**, a disclosure closed by default holding the endpoint
+     table and *Override the protocol* for the margins and α;
+   - a preview of the common strata, the composite Overseer events in the span, the missing controls
+     and *Left out in step 1: #45, #51* for left-out runs inside either period.
+
+   The presets work on the eligible units:
+   - **Earliest vs latest** (the default) — when the units span 28 or more UTC days, the units of the
+     first 14 days against those of the last 14; otherwise, on two or more distinct UTC days, the
+     earlier days against the later, split at the day boundary that balances the counts best (a tie
+     puts more in the baseline); on one day, the earlier half against the later half by count (an odd
+     unit goes to the baseline). The note names the rule: *The runs span 1 day: the earlier half
+     against the later half, 1 battery run each.*
+   - **Before vs after an annotation** and **Before vs after an Overseer change**, which offers the
+     composite events of § 5.2 — every unit started before the annotation's or event's time against
+     every unit started at or after it. There is no window around it: step 1's *First run* and *Last
+     run* bound the scope. With no unit on one side, the note says so (*No run on one side of the
+     annotation (2026-10-08).*).
+   - **Confirm on later data** — the last saved analysis of the same model and the same compared set:
+     the units started inside its baseline window against the units started after it was saved (§ 18).
+
+   The periods are refused, with the reason under them and on the footer, when step 1 has fewer than
+   two units (*Choose at least two runs in step 1, one for each period.*), a run choice is missing, a
+   period's last run comes before its first, the comparison does not start after the baseline's last
+   run, two units on either side of the split started at the same moment (*Run #40 and run #41 started
+   at the same moment and cannot be split.*), or a period has no eligible unit. An invalid protocol
+   override is refused the same way.
+
+   **The period windows.** The request still carries a UTC window per period, derived from the run
+   ranges and never typed. The baseline starts at the start of its first unit's UTC day and the
+   comparison ends at the end of its last unit's UTC day. When the baseline's last unit and the
+   comparison's first started on different UTC days, the baseline ends at the end of its day and the
+   comparison starts at the start of its own; on the same day the two meet at a split instant — the
+   preset's annotation or Overseer change when it falls after the baseline's last unit and no later
+   than the comparison's first, else the comparison's first start — and the baseline ends 1 ms before
+   it. The windows never overlap. The server uses them to find candidate controls when none are given
+   and assign each control to a period (§ 6), to classify the unanalyzed runs (§ 18), and for the
+   result's annotations and period labels.
+
+   *Analyze* runs and saves the analysis, with the eligible units of each period, the compared set and
+   the step-1 selection (§ 19), and moves to Results; *Stop Analysis* stops it.
+4. **Results** — the headline, the verdict table with estimates, intervals, grades and detectable
    effects, the attribution grouped by side after the total changes, the next runs (each with *Repeat
    this run's setup*), the charts, the events in the analyzed span as an event list (§ 17.3), the **Run
    selection**, the limitations and data-quality notes, and the identity (analysis id, `InputSha256`,
    analysis code version). The *Run selection* section lists *Dates* (the step-1 label with its UTC
    bounds, *Last 30 days · 2026-09-07 09:00 UTC to the last run*), *First run*, *Last run* and *Left out
    in step 1* (a run id or *none*), then *Not analyzed*: one line per reason with its runs and period
-   (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not selected in step 4: #60
+   (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not assigned to a period: #60
    (comparison)*), or *Every usable run of the model in the periods was analyzed.* An analysis saved
    under code version 1 has no such section. A version-4 analysis adds a *Compared* line under the
    headline; in a battery analysis the marks and the unanalyzed entries name battery runs (*battery run
    #11*; *#305 (comparison, battery run #13)*), and runs of another battery or suite are listed as
-   *Outside the compared set*.
-6. **Reports** — the Chat Consistency Report documents (§ 20).
+   *Outside the compared set*. After *Data quality* comes the **Reports** section, which writes the
+   Chat Consistency Report documents (§ 20); its estimate, job status and document list load when
+   Results first shows, and nothing spends until *Write* is pressed.
 
-Step 1 is always open; steps 2 and 3 need a model, step 4 valid periods and overrides, and steps 5 and 6
-a result, analyzed or opened from the saved analyses. A step that cannot be opened stays in the tab row,
-marked unavailable, with its reason. Each step is kept once shown, so closing and reopening the wizard,
-or changing step, keeps a table's sort and page, the chart zoom and an analysis in progress. **Escape
-and the close buttons are refused while a chart export runs or while the Reports step attaches report
-charts**, since closing would strand a half-written batch. For the same duration the model and the dates
+Step 1 is always open; steps 2 and 3 need a model, and step 4 a result, analyzed or opened from the
+saved analyses. A step that cannot be opened stays in the tab row, marked unavailable, with its reason.
+A saved analysis opens on Results, and step 3 shows its runs under *Custom*: each period from the
+earliest to the latest of its runs still among the step-1 units; when none is, the run choices stay
+empty and step 3 says why, while Results shows the saved result as it was. Each step is kept once
+shown, so closing and reopening the wizard, or changing step, keeps a table's sort and page, the chart
+zoom and an analysis in progress. **Escape
+and the close buttons are refused while a chart export runs or while the Reports section of Results
+attaches report charts**, since closing would strand a half-written batch. For the same duration the model and the dates
 in step 1 are locked — the *Dates* select keeps its value, the date fields are read-only and their
 calendar buttons open nothing, all still focusable — with the reason shown under them, and a repeated
 Escape cannot close the wizard either. The run selection, the step and the analysis live as long as the
@@ -792,7 +846,7 @@ print their own captions.
 shows the default cursor. The values are on the points and the dates on the time axis, and *Show data*
 has the rest: each data card's heading names the unit, then its start, every series' value at the
 chart's decimal places and, while runs not in the analysis are marked, *In the analysis* with the
-reason. The Results step (step 5) keeps live charts with their tooltips.
+reason. The Results step (step 4) keeps live charts with their tooltips.
 
 **Show data** opens the chart's numbers as one bordered list of **data cards**, one row per run or
 battery run, separated by hairlines and spanning the figure's width with nothing scrolling sideways;
@@ -898,8 +952,10 @@ in its status line; the report stays open.
 
 Choosing the periods after looking at the timeline is detection: the analysis that found a change was
 pointed at it. The **Confirm on later data** preset re-tests it on data that did not exist then — the
-last saved analysis's baseline against the subject's runs from the day after that analysis was saved —
-and only a change that holds there is confirmed.
+step-1 units that started inside the last saved analysis's baseline window, against those started
+after the moment that analysis was saved — and only a change that holds there is confirmed. The preset
+says when it cannot apply: *The last analysis's baseline runs are not in the step-1 selection.*, or
+*No run was made after the last analysis was saved (…).*
 
 **Leaving runs out after looking is detection too.** Step 1's first and last run and its *Include in the
 analysis* checkboxes let the operator drop runs, and nothing stops dropping one *because* the timeline
@@ -907,12 +963,14 @@ shows it as an outlier. The analysis therefore records the choice instead of pre
 analysis saved since code version 2 keeps its **run selection** (the step-1 dates, the marks and the
 left-out runs) and every usable run of the subject inside the periods that it did not analyze, with the
 first reason that applies, in this order — *left out in step 1*, *outside the step-1 dates*, *before
-the first run*, *after the last run* (by start, then run id) or *not selected in step 4*. A run left out
-and also outside the marks is recorded as left out. When any run is unanalyzed, the result carries:
+the first run*, *after the last run* (by start, then run id) or *not assigned to a period* (none of the
+others: a run inside the periods that the request names for neither period). A run left out and also
+outside the marks is recorded as left out. When any run is unanalyzed, the result carries:
 
 - a data-quality note of kind `runSelection`: *"3 usable runs of the model inside the periods were not
-  analyzed — left out in step 1: #45 (baseline), #51 (comparison); not selected in step 4: #60
-  (comparison)."*, naming at most 20 runs and then *"and N more"*;
+  analyzed — left out in step 1: #45 (baseline), #51 (comparison); not assigned to a period: #60
+  (comparison)."*, naming at most 20 runs and then *"and N more"*; an older analysis keeps the note
+  text it was saved with;
 - the limitation *"The operator chose the runs: N usable runs of the model inside the periods were not
   analyzed (see the run selection). The verdicts hold for the analyzed runs; leaving runs out after
   looking at the timeline can bias them."*
@@ -984,8 +1042,8 @@ The result's `runSelection` carries `recorded` (false for an analysis saved befo
 whose JSON has none), the same fields with the left-out ids distinct and ascending, and
 `unanalyzedRuns`: `{ runId, period, startedAtUtc, reason }`, ordered by start, then id, with `period`
 `baseline` or `comparison` and `reason` one of `leftOut`, `outsideDateRange`, `beforeFirstRun`,
-`afterLastRun`, `notSelected` and `outsideComparisonSet` (`ChatConsistencyUnanalyzedReasons`, § 18),
-plus `batteryRunId` in a battery comparison.
+`afterLastRun`, `notSelected` (written *not assigned to a period*) and `outsideComparisonSet`
+(`ChatConsistencyUnanalyzedReasons`, § 18), plus `batteryRunId` in a battery comparison.
 
 **The compared set.** The request's optional `comparisonSet` (`{ kind, key }`, kind `battery` with key
 `battery:<definition SHA-256>` or kind `suite` with key `suite:<suite identity>`) names the battery or

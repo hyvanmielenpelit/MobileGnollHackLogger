@@ -473,6 +473,13 @@ locked, the Dates select is `aria-disabled` and writes its stored value back on 
 fields are `readonly` with their calendar buttons `aria-disabled`, all focusable and described by the
 reason.*
 
+*Changed 2026-10-09 (Chat Consistency run periods): the wizard has four steps, *1. Model · 2. Timeline
+· 3. Analyze · 4. Results*, and the former Reports step is the *Reports* section of Results. Step 3
+chooses each period's first and last run with four native `select.gh-input` controls instead of four
+`app-date-field`s; its runs table is read-only, with no *Use* checkboxes and no *Mark as anchor*
+button (that action stays in step 1's *More actions*); and Protocol V1 is in a `details.gh-disclosure`,
+closed by default. No glyph changed.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -1124,9 +1131,10 @@ A calendar date is entered with `app-date-field` from `app/shared/date-field/`: 
 field with an icon-only calendar button at its end that opens a **glass calendar** popover. It
 implements the WAI-ARIA APG *Date Picker Dialog*, non-modal because the calendar is a light-dismiss
 popover that usually sits inside a modal `<dialog>`. **Never a bare `<input type="date">` in new
-UI.** The Chat Consistency wizard's step 1 (*From (UTC)* / *To (UTC)*) and step 3 (the four period
-dates) are the first users; other screens' native date inputs (AI Telemetry, Config Analytics, the AI
-model form, the annotation's date-time) predate it and move over when next touched.
+UI.** The Chat Consistency wizard's step 1 (*From (UTC)* / *To (UTC)*) is the first user; its step 3
+chooses the periods as runs, with native selects, so it holds no date field. Other screens' native date
+inputs (AI Telemetry, Config Analytics, the AI model form, the annotation's date-time) predate it and
+move over when next touched.
 
 ```html
 <label for="cc-tl-from" class="cc-model-label">From (UTC)</label>

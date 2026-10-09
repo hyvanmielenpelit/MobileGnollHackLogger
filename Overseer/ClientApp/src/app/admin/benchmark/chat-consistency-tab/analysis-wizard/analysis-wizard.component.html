@@ -1,10 +1,10 @@
 <!--
-  The analysis steps: Periods · Runs and controls · Results · Reports. The outer wizard chooses the
-  step and draws the step bar, headings and footer. A step's body is mounted on its first visit and
-  then kept, hidden while another step shows.
+  The analysis steps: Analyze · Results. The outer wizard chooses the step and draws the step bar,
+  headings and footer. A step's body is mounted on its first visit and then kept, hidden while another
+  step shows.
 -->
-@if (isMounted('periods')) {
-  <div class="cc-wiz-step" data-step="periods" [hidden]="step !== 'periods'">
+@if (isMounted('analyze')) {
+  <div class="cc-wiz-step" data-step="analyze" [hidden]="step !== 'analyze'">
     <dl class="cc-wiz-subject">
       <div><dt>Model</dt><dd>{{ axis ? axis.displayName + ' (' + axis.provider + ', ' + axis.modelId + ')' : 'None chosen' }}</dd></div>
       @if (axis) {
@@ -20,80 +20,79 @@
       <input id="cc-wiz-name" type="text" class="gh-input" maxlength="200" [value]="name" (input)="onNameInput($event)">
     </div>
 
-    <fieldset class="gh-choice cc-wiz-presets">
-      <legend>Periods from a preset</legend>
-      <label class="gh-radio">
-        <input type="radio" name="cc-wiz-preset" value="launch" [checked]="preset === 'launch'" [disabled]="!axis"
-               (change)="choosePreset('launch')">
-        Launch vs last 14 days
-      </label>
-      <label class="gh-radio">
-        <input type="radio" name="cc-wiz-preset" value="annotation" [checked]="preset === 'annotation'" [disabled]="!axis"
-               (change)="choosePreset('annotation')">
-        Before vs after an annotation
-      </label>
-      @if (preset === 'annotation' && annotations.length > 0) {
-        <div class="cc-wiz-preset-pick">
-          <label for="cc-wiz-annotation">Annotation</label>
-          <select id="cc-wiz-annotation" class="gh-input" (change)="onAnnotationPick($event)">
-            @for (annotation of annotations; track annotation.id) {
-              <option [value]="annotation.id" [selected]="annotation.id === presetAnnotationId">{{ annotationLabel(annotation) }}</option>
-            }
-          </select>
-        </div>
-      }
-      <label class="gh-radio">
-        <input type="radio" name="cc-wiz-preset" value="event" [checked]="preset === 'event'" [disabled]="!axis"
-               (change)="choosePreset('event')">
-        Before vs after an Overseer change
-      </label>
-      @if (preset === 'event' && eventGroups.length > 0) {
-        <div class="cc-wiz-preset-pick">
-          <label for="cc-wiz-event">Detected change</label>
-          <select id="cc-wiz-event" class="gh-input" (change)="onEventPick($event)">
-            @for (group of eventGroups; track group.key) {
-              <option [value]="group.key" [selected]="group.key === presetEventGroupKey">{{ eventGroupOption(group) }}</option>
-            }
-          </select>
-        </div>
-      }
-      <label class="gh-radio">
-        <input type="radio" name="cc-wiz-preset" value="later" [checked]="preset === 'later'" [disabled]="!axis"
-               (change)="choosePreset('later')">
-        Confirm on later data
-      </label>
-      <label class="gh-radio">
-        <input type="radio" name="cc-wiz-preset" value="custom" [checked]="preset === 'custom'" (change)="choosePreset('custom')">
-        Custom dates
-      </label>
-    </fieldset>
-    <p class="form-hint cc-wiz-preset-note" role="status">{{ presetNote }}</p>
-    @if (spanNote) {
-      <p class="form-hint cc-wiz-span-note">{{ spanNote }}</p>
-    }
-
     <fieldset class="cc-wiz-periods">
-      <legend>Periods (UTC dates, inclusive)</legend>
-      <div class="cc-wiz-period">
-        <span class="cc-wiz-period-name" id="cc-wiz-baseline-label">Baseline</span>
-        <label for="cc-wiz-bs" class="visually-hidden">Baseline start</label>
-        <app-date-field inputId="cc-wiz-bs" label="Baseline start" [value]="days.baselineStart"
-                        (valueChange)="onDayInput('baselineStart', $event)"></app-date-field>
-        <span aria-hidden="true">to</span>
-        <label for="cc-wiz-be" class="visually-hidden">Baseline end</label>
-        <app-date-field inputId="cc-wiz-be" label="Baseline end" [value]="days.baselineEnd"
-                        (valueChange)="onDayInput('baselineEnd', $event)"></app-date-field>
-      </div>
-      <div class="cc-wiz-period">
-        <span class="cc-wiz-period-name">Comparison</span>
-        <label for="cc-wiz-cs" class="visually-hidden">Comparison start</label>
-        <app-date-field inputId="cc-wiz-cs" label="Comparison start" [value]="days.comparisonStart"
-                        (valueChange)="onDayInput('comparisonStart', $event)"></app-date-field>
-        <span aria-hidden="true">to</span>
-        <label for="cc-wiz-ce" class="visually-hidden">Comparison end</label>
-        <app-date-field inputId="cc-wiz-ce" label="Comparison end" [value]="days.comparisonEnd"
-                        (valueChange)="onDayInput('comparisonEnd', $event)"></app-date-field>
-      </div>
+      <legend>Periods</legend>
+      <fieldset class="gh-choice cc-wiz-presets">
+        <legend>Preset</legend>
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="earliest" [checked]="preset === 'earliest'" [disabled]="!axis"
+                 (change)="choosePreset('earliest')">
+          Earliest vs latest
+        </label>
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="annotation" [checked]="preset === 'annotation'" [disabled]="!axis"
+                 (change)="choosePreset('annotation')">
+          Before vs after an annotation
+        </label>
+        @if (preset === 'annotation' && annotations.length > 0) {
+          <div class="cc-wiz-preset-pick">
+            <label for="cc-wiz-annotation">Annotation</label>
+            <select id="cc-wiz-annotation" class="gh-input" (change)="onAnnotationPick($event)">
+              @for (annotation of annotations; track annotation.id) {
+                <option [value]="annotation.id" [selected]="annotation.id === presetAnnotationId">{{ annotationLabel(annotation) }}</option>
+              }
+            </select>
+          </div>
+        }
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="event" [checked]="preset === 'event'" [disabled]="!axis"
+                 (change)="choosePreset('event')">
+          Before vs after an Overseer change
+        </label>
+        @if (preset === 'event' && eventGroups.length > 0) {
+          <div class="cc-wiz-preset-pick">
+            <label for="cc-wiz-event">Detected change</label>
+            <select id="cc-wiz-event" class="gh-input" (change)="onEventPick($event)">
+              @for (group of eventGroups; track group.key) {
+                <option [value]="group.key" [selected]="group.key === presetEventGroupKey">{{ eventGroupOption(group) }}</option>
+              }
+            </select>
+          </div>
+        }
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="later" [checked]="preset === 'later'" [disabled]="!axis"
+                 (change)="choosePreset('later')">
+          Confirm on later data
+        </label>
+        <label class="gh-radio">
+          <input type="radio" name="cc-wiz-preset" value="custom" [checked]="preset === 'custom'" (change)="choosePreset('custom')">
+          Custom
+        </label>
+      </fieldset>
+      <p class="form-hint cc-wiz-preset-note" role="status">{{ presetNote }}</p>
+      @if (spanNote) {
+        <p class="form-hint cc-wiz-span-note">{{ spanNote }}</p>
+      }
+
+      <!-- Native selects over the step-1 units; the option text names the unit and its start. -->
+      @for (row of choiceRows; track row.period) {
+        <div class="cc-wiz-period" [attr.data-period]="row.period">
+          <span class="cc-wiz-period-name">{{ row.name }}</span>
+          @for (choice of row.choices; track choice.id; let isFirst = $first) {
+            @if (!isFirst) {
+              <span aria-hidden="true">to</span>
+            }
+            <label [for]="choice.id" class="visually-hidden">{{ choice.label }}</label>
+            <select [id]="choice.id" class="gh-input cc-wiz-run-select" (change)="onRunPick(choice.key, $event)">
+              <option value="" [selected]="ids[choice.key] === null">Choose a {{ noun }}</option>
+              @for (unit of units; track unit.id) {
+                <option [value]="unit.id" [selected]="ids[choice.key] === unit.id"
+                        [attr.aria-label]="optionLabel(unit)">{{ optionText(unit) }}</option>
+              }
+            </select>
+          }
+        </div>
+      }
       @if (periodsError) {
         <p class="gh-field-error cc-wiz-periods-error">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -102,158 +101,52 @@
       }
     </fieldset>
 
-    <h5 class="cc-wiz-sub" id="cc-wiz-protocol-title">Protocol V1</h5>
-    <div class="cc-wiz-table-scroll">
-      <table class="gh-table cc-protocol-table" aria-labelledby="cc-wiz-protocol-title">
-        <thead>
-          <tr><th scope="col">Endpoint</th><th scope="col">Equivalence margin</th></tr>
-        </thead>
-        <tbody>
-          @for (endpoint of protocolEndpoints; track endpoint.id) {
+    <!-- Read-only: step 1 chooses the units; the run choices above split them. -->
+    @if (units.length > 0) {
+      <div class="cc-wiz-table-scroll">
+        <table class="gh-table cc-wiz-units">
+          <caption class="cc-wiz-caption">{{ batteryMode ? 'Battery runs in the periods' : 'Runs in the periods' }}</caption>
+          <thead>
             <tr>
-              <th scope="row">{{ endpoint.id }} {{ endpoint.name }}</th>
-              <td>±{{ endpoint.margin }} {{ endpoint.unit }}</td>
+              <th scope="col">{{ batteryMode ? 'Battery run' : 'Run' }}</th>
+              <th scope="col">Started (UTC)</th>
+              <th scope="col">{{ batteryMode ? 'Suites' : 'Suite' }}</th>
+              <th scope="col">Period</th>
+              <th scope="col">Matched controls</th>
             </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-    <dl class="cc-wiz-protocol-facts">
-      <div><dt>α</dt><dd>{{ protocol.alpha }}, Holm-adjusted across P1–P5</dd></div>
-      <div><dt>Minimum sample (P1, P4, P5)</dt><dd>{{ protocol.minimumRunsPerPeriod }} runs on {{ protocol.minimumDaysPerPeriod }} days per period, {{ protocol.minimumPairedItems }} paired items</dd></div>
-      <div><dt>Minimum sample (P2, P3)</dt><dd>{{ protocol.minimumSpeedRunsPerStratum }} runs per period in a common time stratum</dd></div>
-    </dl>
-
-    <details class="gh-disclosure cc-wiz-overrides">
-      <summary>Override the protocol</summary>
-      <div class="gh-disclosure-body">
-        <p class="form-hint">Every override is recorded and labels the result as <em>V1 with overrides</em>. Leave a field empty to keep the published value.</p>
-        <div class="cc-wiz-override-grid">
-          @for (endpoint of protocolEndpoints; track endpoint.id) {
-            <div class="cc-wiz-field">
-              <label [for]="'cc-wiz-margin-' + endpoint.id">{{ endpoint.id }} margin ({{ endpoint.unit }})</label>
-              <input [id]="'cc-wiz-margin-' + endpoint.id" type="number" min="0" step="any" class="gh-input"
-                     [attr.placeholder]="endpoint.margin" [value]="marginValue(endpoint.id)"
-                     (input)="onMarginInput(endpoint.id, $event)">
-            </div>
-          }
-          <div class="cc-wiz-field">
-            <label for="cc-wiz-alpha">α</label>
-            <input id="cc-wiz-alpha" type="number" min="0" max="0.5" step="any" class="gh-input"
-                   [attr.placeholder]="protocol.alpha" [value]="alphaOverride" (input)="onAlphaInput($event)">
-          </div>
-        </div>
-        @if (overridesError) {
-          <p class="gh-field-error cc-wiz-overrides-error">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            <span>{{ overridesError }}</span>
-          </p>
+          </thead>
+          <tbody>
+            @for (unit of units; track unit.id) {
+              <tr [attr.data-unit-id]="unit.id" [attr.data-period]="unitPeriod(unit)">
+                <th scope="row">#{{ unit.id }}</th>
+                <td class="cc-nowrap">{{ started(unit) }}</td>
+                <td>{{ unitSuites(unit) }}</td>
+                <td class="cc-wiz-unit-period">{{ unitPeriodText(unit) }}</td>
+                <td>{{ unitControls(unit) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+    @if (!periodsError) {
+      <div class="cc-wiz-samples">
+        @for (period of periods; track period) {
+          <p class="form-hint cc-wiz-sample" [attr.data-period]="period">{{ sampleLine(period) }}</p>
         }
       </div>
-    </details>
-  </div>
-}
-
-@if (isMounted('runs')) {
-  <div class="cc-wiz-step" data-step="runs" [hidden]="step !== 'runs'">
-    @if (batteryMode) {
-      <!-- A battery set analyzes battery runs: one row per battery run, its members together. The
-           controls below stay per run: the matched controls of the members. -->
-      @for (period of periods; track period) {
-        <div class="cc-wiz-table-scroll">
-          <table class="gh-table cc-wiz-runs cc-wiz-battery-runs" [attr.data-period]="period">
-            <caption class="cc-wiz-caption">
-              {{ period === 'baseline' ? 'Baseline' : 'Comparison' }} battery runs,
-              {{ period === 'baseline' ? days.baselineStart + ' to ' + days.baselineEnd : days.comparisonStart + ' to ' + days.comparisonEnd }}
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Use</th>
-                <th scope="col">Battery run</th>
-                <th scope="col">Started (UTC)</th>
-                <th scope="col">Suites</th>
-                <th scope="col">Eligible</th>
-                <th scope="col">Matched controls</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of periodBatteryRows(period); track row.batteryRunId) {
-                <tr [attr.data-battery-run-id]="row.batteryRunId">
-                  <td>
-                    <input type="checkbox" class="cc-wiz-run-check" [checked]="selection(period).has(row.batteryRunId)"
-                           [attr.aria-label]="'Include battery run #' + row.batteryRunId + ' in the ' + period"
-                           (change)="toggleRun(period, row.batteryRunId, $event)">
-                  </td>
-                  <th scope="row">#{{ row.batteryRunId }}</th>
-                  <td class="cc-nowrap">{{ started(row) }}</td>
-                  <td>{{ batterySuites(row) }}</td>
-                  <td>{{ eligible(row) ? 'Yes' : 'No' }}</td>
-                  <td>{{ batteryControls(row) }}</td>
-                </tr>
-              } @empty {
-                <tr><td colspan="6">No battery run of this battery in this period.</td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      }
-    } @else {
-      @for (period of periods; track period) {
-        <div class="cc-wiz-table-scroll">
-          <table class="gh-table cc-wiz-runs" [attr.data-period]="period">
-            <caption class="cc-wiz-caption">
-              {{ period === 'baseline' ? 'Baseline' : 'Comparison' }} runs,
-              {{ period === 'baseline' ? days.baselineStart + ' to ' + days.baselineEnd : days.comparisonStart + ' to ' + days.comparisonEnd }}
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Use</th>
-                <th scope="col">Run</th>
-                <th scope="col">Started (UTC)</th>
-                <th scope="col">Suite</th>
-                <th scope="col">Eligible</th>
-                <th scope="col">Matched controls</th>
-                <th scope="col">Anchor</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of periodRows(period); track row.runId) {
-                <tr [attr.data-run-id]="row.runId">
-                  <td>
-                    <input type="checkbox" class="cc-wiz-run-check" [checked]="selection(period).has(row.runId)"
-                           [attr.aria-label]="'Include run #' + row.runId + ' in the ' + period"
-                           (change)="toggleRun(period, row.runId, $event)">
-                  </td>
-                  <th scope="row">#{{ row.runId }}</th>
-                  <td class="cc-nowrap">{{ started(row) }}</td>
-                  <td>{{ row.suiteName }}</td>
-                  <td>{{ eligible(row) ? 'Yes' : 'No' }}</td>
-                  <td>{{ controls(row) }}</td>
-                  <td>
-                    <button type="button" class="btn-ghost cc-wiz-anchor-btn"
-                            [attr.aria-label]="(row.isAnchor ? 'Unmark anchor: run #' : 'Mark as anchor: run #') + row.runId"
-                            [attr.aria-disabled]="anchorBusy.has(row.runId) ? 'true' : null"
-                            (click)="anchorBusy.has(row.runId) || anchorToggle.emit(row)">{{ row.isAnchor ? 'Unmark anchor' : 'Mark as anchor' }}</button>
-                  </td>
-                </tr>
-              } @empty {
-                <tr><td colspan="7">No run of this model in this period.</td></tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      }
     }
 
-    <fieldset class="gh-choice cc-wiz-controls">
-      <legend>Matched control runs</legend>
+    <fieldset class="gh-choice cc-wiz-controls" aria-describedby="cc-wiz-controls-hint">
+      <legend>Control runs</legend>
+      <p class="form-hint cc-wiz-controls-hint" id="cc-wiz-controls-hint">Other models' runs under the same Overseer build. Used only to attribute a change to a side, never for the verdicts.</p>
       @for (id of controlCandidates; track id) {
         <label class="checkbox-label">
           <input type="checkbox" class="cc-wiz-control-check" [checked]="controlSelected.has(id)" (change)="toggleControl(id, $event)">
           Control run #{{ id }}
         </label>
       } @empty {
-        <p class="form-hint">No matched control run; the analysis looks for controls among other models' runs itself.</p>
+        <p class="form-hint cc-wiz-controls-empty">No matched control run; the analysis looks for controls among other models' runs itself.</p>
       }
     </fieldset>
 
@@ -267,6 +160,60 @@
         <span id="cc-wiz-relaxed-hint" class="form-hint">Instead of refusing a change of measurement inside the span, the runs are pooled; this caps grades at Indicated.</span>
       </span>
     </label>
+
+    <details class="gh-disclosure cc-wiz-protocol">
+      <summary>Protocol V1: margins and minimum sample</summary>
+      <div class="gh-disclosure-body">
+        <div class="cc-wiz-table-scroll">
+          <table class="gh-table cc-protocol-table" aria-label="Protocol V1 equivalence margins">
+            <thead>
+              <tr><th scope="col">Endpoint</th><th scope="col">Equivalence margin</th></tr>
+            </thead>
+            <tbody>
+              @for (endpoint of protocolEndpoints; track endpoint.id) {
+                <tr>
+                  <th scope="row">{{ endpoint.id }} {{ endpoint.name }}</th>
+                  <td>±{{ endpoint.margin }} {{ endpoint.unit }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <dl class="cc-wiz-protocol-facts">
+          <div><dt>α</dt><dd>{{ protocol.alpha }}, Holm-adjusted across P1–P5</dd></div>
+          <div><dt>Minimum sample (P1, P4, P5)</dt><dd>{{ protocol.minimumRunsPerPeriod }} runs on {{ protocol.minimumDaysPerPeriod }} days per period, {{ protocol.minimumPairedItems }} paired items</dd></div>
+          <div><dt>Minimum sample (P2, P3)</dt><dd>{{ protocol.minimumSpeedRunsPerStratum }} runs per period in a common time stratum</dd></div>
+        </dl>
+
+        <details class="gh-disclosure cc-wiz-overrides">
+          <summary>Override the protocol</summary>
+          <div class="gh-disclosure-body">
+            <p class="form-hint">Every override is recorded and labels the result as <em>V1 with overrides</em>. Leave a field empty to keep the published value.</p>
+            <div class="cc-wiz-override-grid">
+              @for (endpoint of protocolEndpoints; track endpoint.id) {
+                <div class="cc-wiz-field">
+                  <label [for]="'cc-wiz-margin-' + endpoint.id">{{ endpoint.id }} margin ({{ endpoint.unit }})</label>
+                  <input [id]="'cc-wiz-margin-' + endpoint.id" type="number" min="0" step="any" class="gh-input"
+                         [attr.placeholder]="endpoint.margin" [value]="marginValue(endpoint.id)"
+                         (input)="onMarginInput(endpoint.id, $event)">
+                </div>
+              }
+              <div class="cc-wiz-field">
+                <label for="cc-wiz-alpha">α</label>
+                <input id="cc-wiz-alpha" type="number" min="0" max="0.5" step="any" class="gh-input"
+                       [attr.placeholder]="protocol.alpha" [value]="alphaOverride" (input)="onAlphaInput($event)">
+              </div>
+            </div>
+            @if (overridesError) {
+              <p class="gh-field-error cc-wiz-overrides-error">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ overridesError }}</span>
+              </p>
+            }
+          </div>
+        </details>
+      </div>
+    </details>
 
     <h5 class="cc-wiz-sub">Preview</h5>
     <dl class="cc-wiz-preview">
@@ -334,17 +281,13 @@
       <app-cc-results-view [result]="result" [points]="timeline?.points ?? []"
                            [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
                            (repeatSetup)="repeatSetup.emit($event)"></app-cc-results-view>
-    }
-  </div>
-}
-
-@if (isMounted('reports')) {
-  <div class="cc-wiz-step" data-step="reports" [hidden]="step !== 'reports'">
-    @if (result) {
-      <app-cc-reports-step [result]="result" [writerOptions]="pickerOptions" [writerConfigs]="pickerConfigs"
-                           [pickerEmptyHint]="pickerEmptyHint" [points]="timeline?.points ?? []"
-                           [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
-                           (openDocuments)="openDocuments.emit($event)"></app-cc-reports-step>
+      <section class="cc-wiz-reports" aria-labelledby="cc-res-reports-title">
+        <h5 class="cc-res-heading" id="cc-res-reports-title">Reports</h5>
+        <app-cc-reports-step [result]="result" [writerOptions]="pickerOptions" [writerConfigs]="pickerConfigs"
+                             [pickerEmptyHint]="pickerEmptyHint" [points]="timeline?.points ?? []"
+                             [batteryPoints]="timeline?.batteryPoints ?? []" [eventNumbering]="eventGroups"
+                             (openDocuments)="openDocuments.emit($event)"></app-cc-reports-step>
+      </section>
     }
   </div>
 }

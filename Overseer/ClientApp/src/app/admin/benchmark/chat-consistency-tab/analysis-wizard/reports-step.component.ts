@@ -66,7 +66,7 @@ interface EstimateRequest {
 }
 
 /**
- * Step 4 of the analysis: the documents to write, the report writer, its estimate, the same-provider
+ * The Reports section of the Results step: the documents to write, the report writer, its estimate, the same-provider
  * confirmation, the job's progress with Cancel, the charts attached to the written documents, and
  * *Open in Download Center*.
  */

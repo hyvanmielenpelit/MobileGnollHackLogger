@@ -262,7 +262,7 @@ describe('CcResultsViewComponent', () => {
         ['Left out in step 1', '#104']
       ]);
       expect(Array.from(section()!.querySelectorAll('.cc-res-unanalyzed li')).map(item => textOf(item)))
-        .toEqual(['Left out in step 1: #104 (comparison)', 'Not selected in step 4: #105 (comparison)']);
+        .toEqual(['Left out in step 1: #104 (comparison)', 'Not assigned to a period: #105 (comparison)']);
       const headings = Array.from(el.querySelectorAll('.cc-res-heading')).map(heading => textOf(heading));
       expect(headings.indexOf('Run selection')).toBe(headings.indexOf('Limitations') - 1);
     });
@@ -282,7 +282,7 @@ describe('CcResultsViewComponent', () => {
       }));
       fixture.detectChanges();
       expect(section()!.querySelector('.cc-res-selection-facts')).toBeNull();
-      expect(textOf(section()!.querySelector('.cc-res-unanalyzed'))).toBe('Not selected in step 4: #105 (comparison)');
+      expect(textOf(section()!.querySelector('.cc-res-unanalyzed'))).toBe('Not assigned to a period: #105 (comparison)');
     });
 
     it('names battery runs in a battery analysis, and lists the runs outside the compared set last', () => {

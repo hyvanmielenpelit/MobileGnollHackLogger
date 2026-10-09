@@ -154,6 +154,13 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Answers the two requests of the Reports section, which mounts with Results for analysis 7. */
+  function flushReportsSection(): void {
+    http.expectOne(`${CC_API}/analyses/7/report-documents/job`).flush(null, { status: 204, statusText: 'No Content' });
+    http.expectOne(r => r.url === '/api/admin/benchmark/report-documents').flush([]);
+    fixture.detectChanges();
+  }
+
   /** The Current model card's facts, as `[term, value]` pairs. */
   function currentFacts(): string[][] {
     return Array.from(el.querySelectorAll('.cc-current-card dl.bm-summary-facts > div'))
@@ -190,7 +197,7 @@ describe('ChatConsistencyTabComponent', () => {
     expect(howTo().open).toBe(true);
     expect(textOf(howTo().querySelector('summary'))).toBe('How chat consistency works');
     expect(Array.from(howTo().querySelectorAll('.bm-launcher-steps strong')).map(step => textOf(step)))
-      .toEqual(['Model', 'Timeline', 'Periods', 'Runs and controls', 'Results', 'Reports']);
+      .toEqual(['Model', 'Timeline', 'Analyze', 'Results']);
     expect(textOf(howTo().querySelector('.alert-info')))
       .toContain('A verdict is only as current as the last run someone made: GnollBench is run by hand and is not a monitoring service.');
     expect(JSON.parse(localStorage.getItem(CC_LAUNCHER_STORAGE_KEY)!)).toEqual({ version: 1, howItWorksOpen: false });
@@ -458,6 +465,7 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
     http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
     fixture.detectChanges();
+    flushReportsSection();
     expect(tab.scope.leftOut.size).toBe(0);
     expect(tab.announcement).toBe('The run selection in step 1 was cleared to show the saved analysis.');
 
@@ -525,7 +533,7 @@ describe('ChatConsistencyTabComponent', () => {
     const runs = http.expectOne(r => r.url === `${CC_API}/runs`);
 
     expect(dialog().open).toBe(true);
-    expect(dialog().querySelector('#cc-step-tab-5')!.getAttribute('aria-selected')).toBe('true');
+    expect(dialog().querySelector('#cc-step-tab-4')!.getAttribute('aria-selected')).toBe('true');
     expect(dialog().querySelectorAll('app-cc-analysis-wizard').length).toBe(1);
     expect(textOf(dialog().querySelector('#cc-step-heading-analysis'))).toBe('Results');
 
@@ -534,8 +542,9 @@ describe('ChatConsistencyTabComponent', () => {
     http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(ccNoComparisonSets());
     http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush([]);
     fixture.detectChanges();
+    flushReportsSection();
     const wizard = fixture.componentInstance.wizard!;
-    expect(wizard.step).toBe(5);
+    expect(wizard.step).toBe(4);
     expect(wizard.analysis!.result?.analysisId).toBe(7);
     expect(textOf(el.querySelector('.cc-current-card #cc-current-name'))).toBe('GPT-5 high');
   });
@@ -741,8 +750,9 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
     http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
     fixture.detectChanges();
+    flushReportsSection();
     expect(dialog().open).toBe(true);
-    expect(fixture.componentInstance.wizard!.step).toBe(5);
+    expect(fixture.componentInstance.wizard!.step).toBe(4);
   });
 
   // --- Saved analyses ---

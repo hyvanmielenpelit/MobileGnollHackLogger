@@ -8,9 +8,9 @@ import {
   CC_BATTERY_SET_KEY,
   ccAnalysisResult,
   ccAnalysisSummary,
+  ccAnnotation,
   ccAxis,
   ccBatteryMemberRows,
-  ccBatteryRunRow,
   ccBatteryRunRows,
   ccComparisonSets,
   ccEventPoints,
@@ -21,13 +21,23 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
-import { CcAnalysisStep, CcAnalysisWizardComponent, launchPreset, periodsRefusal } from './analysis-wizard.component';
+import { CcAnalysisStep, CcAnalysisWizardComponent } from './analysis-wizard.component';
 
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
 
 /** The run table of the composite-event fixture: runs 201–206. */
 function eventRows(): CcRunRow[] {
   return ccEventPoints().map(point => ccRunRow(point.runId, point.startedAtUtc));
+}
+
+/** {@link ccRunRows} with run 102 usable on no axis. */
+function rowsWithIneligible102(): CcRunRow[] {
+  return ccRunRows().map(row => row.runId === 102
+    ? ccRunRow(102, row.startedAtUtc, {
+      matchedControlRunIds: [202],
+      eligibility: [{ axis: 'quality', eligible: false, segment: null, reason: 'No grades' }]
+    })
+    : row);
 }
 
 describe('CcAnalysisWizardComponent', () => {
@@ -50,7 +60,10 @@ describe('CcAnalysisWizardComponent', () => {
     fixture.componentRef.setInput('rows', ccRunRows());
     fixture.componentRef.setInput('axis', ccAxis());
     // The outer wizard always binds the step.
-    fixture.componentRef.setInput('step', 'periods');
+    fixture.componentRef.setInput('step', 'analyze');
+    fixture.detectChanges();
+    // The Analyze body starts the re-grade panel, which asks whether a re-grade is already running.
+    http.expectOne(`${CC_API}/regrade/job`).flush(null, { status: 204, statusText: 'No Content' });
     fixture.detectChanges();
   });
 
@@ -65,100 +78,146 @@ describe('CcAnalysisWizardComponent', () => {
     fixture.detectChanges();
   }
 
-  /** The Runs and controls body starts the re-grade panel, which asks whether a re-grade is already running. */
-  function goToRuns(): void {
-    setStep('runs');
-    http.expectOne(`${CC_API}/regrade/job`).flush(null, { status: 204, statusText: 'No Content' });
+  /** Shows Results with a result: its Reports section asks for the report job and the documents. */
+  function goToResults(): void {
+    setStep('results');
+    http.expectOne(`${CC_API}/analyses/7/report-documents/job`).flush(null, { status: 204, statusText: 'No Content' });
+    http.expectOne(r => r.url === DOCUMENTS_URL).flush([]);
     fixture.detectChanges();
   }
 
-  function setDay(id: string, value: string): void {
-    const input = el.querySelector<HTMLInputElement>(`#${id}`)!;
-    input.value = value;
-    input.dispatchEvent(new Event('change'));
+  /** Chooses a run in one of the four selects, as the user does. */
+  function pick(id: string, value: string): void {
+    const select = el.querySelector<HTMLSelectElement>(`#${id}`)!;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  }
+
+  function clickPreset(value: string): void {
+    el.querySelector<HTMLInputElement>(`input[name="cc-wiz-preset"][value="${value}"]`)!.click();
     fixture.detectChanges();
   }
 
   const body = (step: CcAnalysisStep): HTMLElement | null => el.querySelector<HTMLElement>(`.cc-wiz-step[data-step="${step}"]`);
   const shownSteps = (): (string | null)[] =>
     Array.from(el.querySelectorAll<HTMLElement>('.cc-wiz-step')).filter(step => !step.hidden).map(step => step.getAttribute('data-step'));
-  const checked = (period: string): (string | null)[] =>
-    Array.from(el.querySelectorAll<HTMLInputElement>(`table[data-period="${period}"] .cc-wiz-run-check`))
-      .filter(box => box.checked).map(box => box.closest('tr')!.getAttribute('data-run-id'));
-  const checkedBatteries = (period: string): (string | null)[] =>
-    Array.from(el.querySelectorAll<HTMLInputElement>(`table[data-period="${period}"] .cc-wiz-run-check`))
-      .filter(box => box.checked).map(box => box.closest('tr')!.getAttribute('data-battery-run-id'));
+  /** The four run choices, as the selects show them: baseline first and last, comparison first and last. */
+  const choices = (): string[] =>
+    ['cc-wiz-bf', 'cc-wiz-bl', 'cc-wiz-cf', 'cc-wiz-cl'].map(id => el.querySelector<HTMLSelectElement>(`#${id}`)!.value);
+  /** Each unit row of the table as `[id, period]`. */
+  const unitPeriods = (): [string | null, string][] =>
+    Array.from(el.querySelectorAll<HTMLTableRowElement>('table.cc-wiz-units tbody tr'))
+      .map(row => [row.getAttribute('data-unit-id'), textOf(row.querySelector('.cc-wiz-unit-period'))]);
+  const controlLabels = (): string[] =>
+    Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check')).map(box => textOf(box.closest('label')));
+  const checkedControls = (): string[] =>
+    Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check')).filter(box => box.checked).map(box => textOf(box.closest('label')));
+  const presetChecked = (value: string): boolean =>
+    el.querySelector<HTMLInputElement>(`input[name="cc-wiz-preset"][value="${value}"]`)!.checked;
 
   describe('steps', () => {
     it('renders only the body of the step it is given, without navigation of its own', () => {
-      expect(shownSteps()).toEqual(['periods']);
-      expect(body('runs')).toBeNull();
+      expect(shownSteps()).toEqual(['analyze']);
       expect(body('results')).toBeNull();
-      expect(body('reports')).toBeNull();
       for (const selector of ['.gh-steps', '.cc-wiz-nav', '.cc-wiz-next', '.cc-wiz-back', '.cc-wiz-analyze', '#cc-wiz-step-title']) {
         expect(el.querySelector(selector), selector).toBeNull();
       }
     });
 
     it('keeps a visited step\'s body mounted and hidden while another step shows', () => {
-      goToRuns();
-      expect(shownSteps()).toEqual(['runs']);
-      expect(body('periods')!.hidden).toBe(true);
       const regradePanel = el.querySelector('app-cc-regrade-panel');
       expect(regradePanel).not.toBeNull();
+      setStep('results');
+      expect(shownSteps()).toEqual(['results']);
+      expect(body('analyze')!.hidden).toBe(true);
 
-      setStep('periods');
-      expect(shownSteps()).toEqual(['periods']);
-      expect(body('runs')!.hidden).toBe(true);
+      setStep('analyze');
+      expect(shownSteps()).toEqual(['analyze']);
+      expect(body('results')!.hidden).toBe(true);
       // The same panel is kept, so it does not ask for the re-grade job again.
       expect(el.querySelector('app-cc-regrade-panel')).toBe(regradePanel);
-      expect(body('results')).toBeNull();
-      expect(body('reports')).toBeNull();
     });
 
-    it('shows an empty Results body until there is a result', () => {
+    it('reaches Analyze with a model and Results only with a result', () => {
+      expect(component.reachable('analyze')).toBe(true);
+      expect(component.reachable('results')).toBe(false);
       setStep('results');
       expect(shownSteps()).toEqual(['results']);
       expect(el.querySelector('app-cc-results-view')).toBeNull();
-      expect(component.reachable('results')).toBe(false);
-      expect(component.reachable('reports')).toBe(false);
+      expect(el.querySelector('app-cc-reports-step')).toBeNull();
     });
   });
 
   describe('periods', () => {
-    it('starts from Launch vs last 14 days and shows Protocol V1 read-only', () => {
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="launch"]')!.checked).toBe(true);
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-bs')!.value).toBe('2026-09-01');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-be')!.value).toBe('2026-09-14');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-cs')!.value).toBe('2026-09-18');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-ce')!.value).toBe('2026-10-01');
-      const rows = Array.from(el.querySelectorAll<HTMLTableRowElement>('.cc-protocol-table tbody tr'))
-        .map(row => Array.from(row.cells).map(cell => textOf(cell)));
-      expect(rows).toEqual([
-        ['P1 Quality', '±3 index points'], ['P2 Time to first answer text', '±15 %'], ['P3 Answer streaming rate', '±10 %'],
-        ['P4 Work per turn', '±15 %'], ['P5 Cost per question', '±10 %']
+    it('starts from Earliest vs latest and shows the run choices, the note and the sample lines', () => {
+      expect(presetChecked('earliest')).toBe(true);
+      expect(textOf(el.querySelector('.cc-wiz-periods > legend'))).toBe('Periods');
+      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(textOf(el.querySelector('.cc-wiz-preset-note')))
+        .toBe('The runs span 31 days: the first 14 days against the last 14 days, 3 runs each.');
+      expect(el.querySelector('.cc-wiz-periods-error')).toBeNull();
+      expect(component.periodsError).toBe('');
+      expect(Array.from(el.querySelectorAll('.cc-wiz-sample')).map(line => textOf(line))).toEqual([
+        'Baseline: 3 runs on 3 days (2026-09-01 to 2026-09-12), which meets the minimum sample for P1, P4 and P5.',
+        'Comparison: 3 runs on 3 days (2026-09-20 to 2026-10-01), which meets the minimum sample for P1, P4 and P5.'
       ]);
-      expect(textOf(el.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P5');
-      expect(component.reachable('runs')).toBe(true);
+      expect(component.windows).toEqual({
+        baselineStartUtc: '2026-09-01T00:00:00.000Z',
+        baselineEndUtc: '2026-09-12T23:59:59.999Z',
+        comparisonStartUtc: '2026-09-20T00:00:00.000Z',
+        comparisonEndUtc: '2026-10-01T23:59:59.999Z'
+      });
     });
 
-    it('refuses Runs and controls while the periods overlap, and says why', () => {
-      setDay('cc-wiz-cs', '2026-09-10');
-      expect(textOf(el.querySelector('.cc-wiz-periods-error'))).toBe('The comparison must start after the baseline ends.');
-      expect(component.periodsError).toBe('The comparison must start after the baseline ends.');
-      expect(component.reachable('runs')).toBe(false);
-      expect(component.analyzeBlocked).toBe('The comparison must start after the baseline ends.');
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="custom"]')!.checked).toBe(true);
+    it('offers every unit in native selects with visually hidden labels', () => {
+      const select = el.querySelector<HTMLSelectElement>('#cc-wiz-bf')!;
+      expect(select.classList).toContain('gh-input');
+      const label = el.querySelector<HTMLLabelElement>('label[for="cc-wiz-bf"]')!;
+      expect(label.classList).toContain('visually-hidden');
+      expect(textOf(label)).toBe('Baseline first run');
+      expect(['cc-wiz-bl', 'cc-wiz-cf', 'cc-wiz-cl'].map(id => textOf(el.querySelector(`label[for="${id}"]`))))
+        .toEqual(['Baseline last run', 'Comparison first run', 'Comparison last run']);
+      const options = Array.from(select.options);
+      expect(options.map(option => textOf(option))).toEqual([
+        'Choose a run', '#101 · 2026-09-01 08:00 UTC', '#102 · 2026-09-05 08:00 UTC', '#103 · 2026-09-12 08:00 UTC',
+        '#104 · 2026-09-20 08:00 UTC', '#105 · 2026-09-26 08:00 UTC', '#106 · 2026-10-01 08:00 UTC'
+      ]);
+      // A run reads its own text.
+      expect(options[1].getAttribute('aria-label')).toBeNull();
     });
 
-    it('refuses Runs and controls while an override is invalid', () => {
+    it('switches to Custom when a run is chosen by hand, and refuses an overlap where the date error was', () => {
+      pick('cc-wiz-cf', '103');
+      expect(presetChecked('custom')).toBe(true);
+      expect(component.preset).toBe('custom');
+      expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('');
+      expect(textOf(el.querySelector('.cc-wiz-periods-error'))).toBe('The comparison must start after the baseline\'s last run.');
+      expect(component.periodsError).toBe('The comparison must start after the baseline\'s last run.');
+      expect(component.analyzeBlocked).toBe('The comparison must start after the baseline\'s last run.');
+      expect(component.windows).toBeNull();
+      expect(el.querySelector('.cc-wiz-sample')).toBeNull();
+      // Analyze stays reachable: the refusal is shown there.
+      expect(component.reachable('analyze')).toBe(true);
+    });
+
+    it('refuses a period whose last run comes before its first, and an unset choice', () => {
+      pick('cc-wiz-bl', '101');
+      pick('cc-wiz-bf', '102');
+      expect(component.periodsError).toBe('The baseline\'s last run comes before its first.');
+      pick('cc-wiz-cl', '');
+      pick('cc-wiz-bf', '101');
+      expect(textOf(el.querySelector('.cc-wiz-periods-error'))).toBe('Choose the first and last run of both periods.');
+    });
+
+    it('blocks Analyze while an override is invalid', () => {
       const p1 = el.querySelector<HTMLInputElement>('#cc-wiz-margin-P1')!;
       p1.value = '-1';
       p1.dispatchEvent(new Event('input'));
       fixture.detectChanges();
       expect(component.overridesError).toBe('The margin of P1 must be a positive number.');
       expect(textOf(el.querySelector('.cc-wiz-overrides-error'))).toBe('The margin of P1 must be a positive number.');
-      expect(component.reachable('runs')).toBe(false);
+      expect(component.analyzeBlocked).toBe('The margin of P1 must be a positive number.');
 
       p1.value = '';
       p1.dispatchEvent(new Event('input'));
@@ -169,13 +228,26 @@ describe('CcAnalysisWizardComponent', () => {
       expect(textOf(el.querySelector('.cc-wiz-overrides-error'))).toBe('α must lie strictly between 0 and 0.5.');
     });
 
-    it('lists the composite Overseer events for Before vs after an Overseer change, keyed by group', () => {
+    it('keeps Protocol V1 and its overrides in one closed disclosure', () => {
+      const protocol = el.querySelector<HTMLDetailsElement>('details.gh-disclosure.cc-wiz-protocol')!;
+      expect(protocol.open).toBe(false);
+      expect(textOf(protocol.querySelector(':scope > summary'))).toBe('Protocol V1: margins and minimum sample');
+      const rows = Array.from(protocol.querySelectorAll<HTMLTableRowElement>('.cc-protocol-table tbody tr'))
+        .map(row => Array.from(row.cells).map(cell => textOf(cell)));
+      expect(rows).toEqual([
+        ['P1 Quality', '±3 index points'], ['P2 Time to first answer text', '±15 %'], ['P3 Answer streaming rate', '±10 %'],
+        ['P4 Work per turn', '±15 %'], ['P5 Cost per question', '±10 %']
+      ]);
+      expect(textOf(protocol.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P5');
+      expect(protocol.querySelector('details.cc-wiz-overrides #cc-wiz-alpha')).not.toBeNull();
+    });
+
+    it('splits before and after a composite Overseer event, with every run on each side', () => {
       fixture.componentRef.setInput('timeline', ccEventTimeline());
       fixture.componentRef.setInput('rows', eventRows());
       fixture.componentRef.setInput('axis', ccAxis({ firstRunAtUtc: '2026-09-01T08:00:00Z', lastRunAtUtc: '2026-09-10T08:00:00Z' }));
       fixture.detectChanges();
-      el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="event"]')!.click();
-      fixture.detectChanges();
+      clickPreset('event');
 
       const options = Array.from(el.querySelectorAll<HTMLOptionElement>('#cc-wiz-event option'));
       expect(options.map(option => textOf(option))).toEqual([
@@ -185,13 +257,11 @@ describe('CcAnalysisWizardComponent', () => {
         'E4 · 2026-09-10 · Changes under harness 29 (2 changes)'
       ]);
       expect(options.map(option => option.value)).toEqual(['2026-09-03|27', '2026-09-05|28', '2026-09-09|29', '2026-09-10|29']);
-      // The first composite is taken: the baseline runs up to its day, the comparison from it.
+      // The first composite is taken; run 202 started at its time and so is in the comparison.
       expect(component.presetEventGroupKey).toBe('2026-09-03|27');
-      expect(el.querySelector<HTMLSelectElement>('#cc-wiz-event')!.value).toBe('2026-09-03|27');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-bs')!.value).toBe('2026-09-01');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-be')!.value).toBe('2026-09-02');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-cs')!.value).toBe('2026-09-03');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-ce')!.value).toBe('2026-09-10');
+      expect(choices()).toEqual(['201', '201', '202', '206']);
+      expect(textOf(el.querySelector('.cc-wiz-preset-note')))
+        .toBe('The runs before the Overseer change E1 (2026-09-03 08:00 UTC) against those from it: 1 run against 5.');
 
       const select = el.querySelector<HTMLSelectElement>('#cc-wiz-event')!;
       select.value = '2026-09-05|28';
@@ -199,97 +269,140 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
       expect(component.presetEventGroupKey).toBe('2026-09-05|28');
       expect(el.querySelector<HTMLSelectElement>('#cc-wiz-event')!.value).toBe('2026-09-05|28');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-be')!.value).toBe('2026-09-04');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-cs')!.value).toBe('2026-09-05');
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="event"]')!.checked).toBe(true);
+      expect(choices()).toEqual(['201', '203', '204', '206']);
+      expect(presetChecked('event')).toBe(true);
+      expect(unitPeriods()).toEqual([
+        ['201', 'Baseline'], ['202', 'Baseline'], ['203', 'Baseline'], ['204', 'Comparison'], ['205', 'Comparison'], ['206', 'Comparison']
+      ]);
     });
 
-    it('says when there is no Overseer change to be around', () => {
+    it('says when there is no Overseer change to split at', () => {
       fixture.componentRef.setInput('timeline', ccTimeline({ events: [] }));
       fixture.detectChanges();
-      el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="event"]')!.click();
-      fixture.detectChanges();
+      clickPreset('event');
       expect(el.querySelector('#cc-wiz-event')).toBeNull();
       expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('No Overseer change was detected in the timeline range.');
+      expect(choices()).toEqual(['', '', '', '']);
+      expect(component.periodsError).toBe('Choose the first and last run of both periods.');
     });
 
-    it('confirms on later data from the day after the last analysis of the subject', () => {
-      fixture.componentRef.setInput('axis', ccAxis({ lastRunAtUtc: '2026-10-20T08:00:00Z' }));
+    it('splits at an annotation, and says when one side of it has no run', () => {
+      clickPreset('annotation');
+      expect(choices()).toEqual(['101', '104', '105', '106']);
+      expect(textOf(el.querySelector('.cc-wiz-preset-note')))
+        .toBe('The runs before the annotation (2026-09-20 12:00 UTC) against those from it: 4 runs against 2.');
+      expect(component.presetAnchorUtc).toBe('2026-09-20T12:00:00Z');
+
+      fixture.componentRef.setInput('timeline', ccTimeline({ annotations: [ccAnnotation(2, { atUtc: '2026-10-08T00:00:00Z' })] }));
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('No run on one side of the annotation (2026-10-08).');
+      expect(choices()).toEqual(['', '', '', '']);
+    });
+
+    it('confirms on later data: the last baseline against the runs after the analysis was saved', () => {
       fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7), ccAnalysisSummary(9, { createdAtUtc: '2026-09-01T00:00:00Z' })]);
       fixture.detectChanges();
-      el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="later"]')!.click();
+      clickPreset('later');
+      // Analysis 7 was saved on 2026-10-02 09:00, after the last run.
+      expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('No run was made after the last analysis was saved (2026-10-02 09:00 UTC).');
+
+      fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7, { createdAtUtc: '2026-09-20T07:00:00Z' })]);
       fixture.detectChanges();
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-bs')!.value).toBe('2026-09-01');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-be')!.value).toBe('2026-09-14');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-cs')!.value).toBe('2026-10-03');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-ce')!.value).toBe('2026-10-20');
-      expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toContain('saved 2026-10-02 09:00 UTC');
+      // A checked radio fires no change when clicked again, so the preset is chosen afresh.
+      clickPreset('custom');
+      clickPreset('later');
+      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(textOf(el.querySelector('.cc-wiz-preset-note'))).toBe('Compares the runs after the last analysis, saved 2026-09-20 07:00 UTC, with its baseline.');
     });
 
     it('asks for a model in step 1 when there is none', () => {
       fixture.componentRef.setInput('axis', null);
       fixture.detectChanges();
       expect(component.analyzeBlocked).toBe('Choose a model in step 1 first.');
-      expect(component.reachable('runs')).toBe(false);
+      expect(component.reachable('analyze')).toBe(false);
       expect(textOf(el.querySelector('.cc-wiz-subject'))).toContain('None chosen');
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="launch"]')!.disabled).toBe(true);
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="custom"]')!.checked).toBe(true);
+      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="earliest"]')!.disabled).toBe(true);
+      expect(presetChecked('custom')).toBe(true);
     });
   });
 
-  describe('runs and controls', () => {
-    it('selects nothing until the outer wizard preselects, then the eligible runs and every matched control', () => {
-      goToRuns();
-      expect(checked('baseline')).toEqual([]);
-      expect(checked('comparison')).toEqual([]);
-      expect(component.analyzeBlocked).toBe('Select at least one baseline run.');
+  describe('runs in the periods', () => {
+    it('lists every step-1 run read-only with its period, and no checkbox or anchor button', () => {
+      const table = el.querySelector<HTMLTableElement>('table.gh-table.cc-wiz-units')!;
+      expect(textOf(table.querySelector('caption'))).toBe('Runs in the periods');
+      expect(Array.from(table.querySelectorAll('thead th')).map(th => textOf(th)))
+        .toEqual(['Run', 'Started (UTC)', 'Suite', 'Period', 'Matched controls']);
+      const row = table.querySelector<HTMLTableRowElement>('tr[data-unit-id="101"]')!;
+      expect(Array.from(row.cells).map(cell => textOf(cell))).toEqual(['#101', '2026-09-01 08:00 UTC', 'Board Suite', 'Baseline', '#201']);
+      expect(textOf(table.querySelector('tr[data-unit-id="104"] td:last-child'))).toBe('None');
+      expect(table.querySelector('input')).toBeNull();
+      expect(el.querySelector('.cc-wiz-anchor-btn')).toBeNull();
 
-      component.preselectRuns();
-      fixture.detectChanges();
-      expect(checked('baseline')).toEqual(['101', '102', '103']);
-      expect(checked('comparison')).toEqual(['104', '105', '106']);
-      const controls = Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check'));
-      expect(controls.map(box => textOf(box.closest('label')))).toEqual(['Control run #201', 'Control run #202', 'Control run #205', 'Control run #206']);
-      expect(controls.every(box => box.checked)).toBe(true);
-      expect(component.analyzeBlocked).toBe('');
+      pick('cc-wiz-bl', '102');
+      pick('cc-wiz-cf', '105');
+      expect(unitPeriods()).toEqual([
+        ['101', 'Baseline'], ['102', 'Baseline'], ['103', 'Not used'], ['104', 'Not used'], ['105', 'Comparison'], ['106', 'Comparison']
+      ]);
     });
 
-    it('preselects the runs when they arrive after Runs and controls was entered', () => {
-      const rows = ccRunRows();
-      fixture.componentRef.setInput('rows', []);
-      goToRuns();
-      component.preselectRuns();
+    it('marks an ineligible run inside a period Not eligible and never sends it', () => {
+      fixture.componentRef.setInput('rows', rowsWithIneligible102());
       fixture.detectChanges();
-      expect(checked('baseline')).toEqual([]);
-
-      fixture.componentRef.setInput('rows', rows);
-      fixture.detectChanges();
-      expect(checked('baseline')).toEqual(['101', '102', '103']);
-      expect(checked('comparison')).toEqual(['104', '105', '106']);
+      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(unitPeriods()[1]).toEqual(['102', 'Not eligible']);
+      expect(textOf(el.querySelector('#cc-wiz-bf option[value="102"]'))).toBe('#102 · 2026-09-05 08:00 UTC · not eligible');
+      expect(textOf(el.querySelector('.cc-wiz-sample[data-period="baseline"]')))
+        .toBe('Baseline: 2 runs on 2 days (2026-09-01 to 2026-09-12), which meets the minimum sample for P1, P4 and P5.');
+      const request = component.buildRequest()!;
+      expect(request.baselineRunIds).toEqual([101, 103]);
+      expect(request.comparisonRunIds).toEqual([104, 105, 106]);
+      // Its matched control is no candidate either.
+      expect(controlLabels()).toEqual(['Control run #201', 'Control run #205', 'Control run #206']);
     });
 
-    it('keeps a hand-made selection when preselected again for the same periods, and starts over for new ones', () => {
-      goToRuns();
-      component.preselectRuns();
-      fixture.detectChanges();
-      el.querySelector<HTMLInputElement>('table[data-period="baseline"] tr[data-run-id="103"] .cc-wiz-run-check')!.click();
-      fixture.detectChanges();
-      expect(checked('baseline')).toEqual(['101', '102']);
+    it('says when a period is short of the minimum sample', () => {
+      pick('cc-wiz-bl', '101');
+      expect(textOf(el.querySelector('.cc-wiz-sample[data-period="baseline"]')))
+        .toBe('Baseline: 1 run on 1 day (2026-09-01). P1, P4 and P5 need at least 2 on 2 days to be Established.');
+    });
+  });
 
-      component.preselectRuns();
-      fixture.detectChanges();
-      expect(checked('baseline')).toEqual(['101', '102']);
-
-      setDay('cc-wiz-be', '2026-09-13');
-      component.preselectRuns();
-      fixture.detectChanges();
-      expect(checked('baseline')).toEqual(['101', '102', '103']);
+  describe('control runs', () => {
+    it('offers the matched controls of the runs in both periods, all checked, under a hint that says what they are for', () => {
+      const fieldset = el.querySelector<HTMLFieldSetElement>('fieldset.cc-wiz-controls')!;
+      expect(textOf(fieldset.querySelector('legend'))).toBe('Control runs');
+      expect(textOf(fieldset.querySelector('.cc-wiz-controls-hint')))
+        .toBe('Other models\' runs under the same Overseer build. Used only to attribute a change to a side, never for the verdicts.');
+      expect(controlLabels()).toEqual(['Control run #201', 'Control run #202', 'Control run #205', 'Control run #206']);
+      expect(checkedControls()).toEqual(controlLabels());
+      expect(component.regradeRunIds).toEqual([101, 102, 103, 104, 105, 106, 201, 202, 205, 206]);
     });
 
+    it('keeps the checks for the same periods, and checks every candidate again when the periods change', () => {
+      el.querySelector<HTMLInputElement>('.cc-wiz-control-check')!.click();
+      fixture.detectChanges();
+      expect(checkedControls()).toEqual(['Control run #202', 'Control run #205', 'Control run #206']);
+
+      component.preselectRuns();
+      fixture.detectChanges();
+      expect(checkedControls()).toEqual(['Control run #202', 'Control run #205', 'Control run #206']);
+
+      pick('cc-wiz-bf', '102');
+      expect(controlLabels()).toEqual(['Control run #202', 'Control run #205', 'Control run #206']);
+      expect(checkedControls()).toEqual(controlLabels());
+    });
+
+    it('says when no run in the periods has a matched control', () => {
+      fixture.componentRef.setInput('rows', ccRunRows().map(row => ({ ...row, matchedControlRunIds: [] })));
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-wiz-controls-empty')))
+        .toBe('No matched control run; the analysis looks for controls among other models\' runs itself.');
+      expect(component.buildRequest()!.controlRunIds).toBeUndefined();
+    });
+  });
+
+  describe('preview', () => {
     it('previews the strata, the composite Overseer events in the span and the missing controls', () => {
-      goToRuns();
-      component.preselectRuns();
-      fixture.detectChanges();
       expect(textOf(el.querySelector('.cc-wiz-strata'))).toBe('weekday 08–12 UTC');
       expect(Array.from(el.querySelectorAll('.cc-wiz-missing li')).map(item => textOf(item)))
         .toEqual(['Run #103 (Board Suite) has no matched control run.', 'Run #104 (Board Suite) has no matched control run.']);
@@ -300,37 +413,31 @@ describe('CcAnalysisWizardComponent', () => {
       expect(textOf(el.querySelector('.cc-wiz-relaxed'))).toContain('caps grades at Indicated');
     });
 
-    it('lists one line per composite event whose time falls in the span', () => {
+    it('lists the composite events between the baseline\'s first day and the comparison\'s last', () => {
       fixture.componentRef.setInput('timeline', ccEventTimeline());
       fixture.componentRef.setInput('rows', eventRows());
       fixture.detectChanges();
-      setDay('cc-wiz-bs', '2026-09-04');
-      setDay('cc-wiz-be', '2026-09-06');
-      setDay('cc-wiz-cs', '2026-09-07');
-      setDay('cc-wiz-ce', '2026-09-09');
-      goToRuns();
-      component.preselectRuns();
-      fixture.detectChanges();
+      clickPreset('custom');
+      pick('cc-wiz-bf', '204');
+      pick('cc-wiz-bl', '204');
+      pick('cc-wiz-cf', '205');
+      pick('cc-wiz-cl', '205');
 
       const lines = () => Array.from(el.querySelectorAll<HTMLElement>('.cc-wiz-event-groups > li'));
-      expect(lines().map(line => line.getAttribute('data-group-key'))).toEqual(['2026-09-05|28', '2026-09-09|29']);
-      expect(lines().map(line => textOf(line.querySelector('.cc-marker-tag')))).toEqual(['E2', 'E3']);
-      // A harness change names the harness in its title, so its chips leave it out.
-      expect(lines().map(line => textOf(line.querySelector('.cc-wiz-event-text')))).toEqual([
-        '2026-09-05 · Harness 27 → 28 · Tool guides',
-        '2026-09-09 · Harness 28 → 29 (re-run 30) · Wiki'
-      ]);
+      expect(lines().map(line => line.getAttribute('data-group-key'))).toEqual(['2026-09-05|28']);
+      expect(textOf(lines()[0].querySelector('.cc-wiz-event-text'))).toBe('2026-09-05 · Harness 27 → 28 · Tool guides');
       expect(lines()[0].querySelector('time')!.getAttribute('datetime')).toBe('2026-09-05');
 
-      setDay('cc-wiz-bs', '2026-09-01');
-      expect(lines().map(line => line.getAttribute('data-group-key'))).toEqual(['2026-09-03|27', '2026-09-05|28', '2026-09-09|29']);
+      pick('cc-wiz-bf', '201');
+      pick('cc-wiz-cl', '206');
+      expect(lines().map(line => line.getAttribute('data-group-key')))
+        .toEqual(['2026-09-03|27', '2026-09-05|28', '2026-09-09|29', '2026-09-10|29']);
       expect(textOf(lines()[0].querySelector('.cc-wiz-event-text'))).toBe('2026-09-03 · Changes under harness 27 · System prompt, Knowledge base ×2');
     });
 
     it('says when no Overseer change falls in the span', () => {
       fixture.componentRef.setInput('timeline', ccTimeline({ events: [] }));
       fixture.detectChanges();
-      goToRuns();
       expect(textOf(el.querySelector('.cc-wiz-events'))).toBe('None detected.');
       expect(el.querySelector('.cc-wiz-event-groups')).toBeNull();
     });
@@ -340,8 +447,7 @@ describe('CcAnalysisWizardComponent', () => {
     it('emits stateChange whenever the state the outer wizard reads may have changed', () => {
       let changes = 0;
       component.stateChange.subscribe(() => changes++);
-      el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="custom"]')!.click();
-      fixture.detectChanges();
+      clickPreset('custom');
       expect(changes).toBe(1);
 
       const alpha = el.querySelector<HTMLInputElement>('#cc-wiz-alpha')!;
@@ -350,10 +456,11 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
       expect(changes).toBe(2);
 
+      // The controls already follow these periods.
       component.preselectRuns();
-      expect(changes).toBe(3);
-      // Nothing to do for the same periods.
-      component.preselectRuns();
+      expect(changes).toBe(2);
+
+      pick('cc-wiz-bl', '102');
       expect(changes).toBe(3);
     });
 
@@ -364,13 +471,7 @@ describe('CcAnalysisWizardComponent', () => {
       const p2 = el.querySelector<HTMLInputElement>('#cc-wiz-margin-P2')!;
       p2.value = '20';
       p2.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
-      goToRuns();
-      component.preselectRuns();
-      fixture.detectChanges();
-
-      // A run and a control are left out by hand.
-      el.querySelector<HTMLInputElement>('table[data-period="baseline"] tr[data-run-id="103"] .cc-wiz-run-check')!.click();
+      // A control is left out by hand.
       el.querySelector<HTMLInputElement>('.cc-wiz-control-check')!.click();
       fixture.detectChanges();
 
@@ -385,10 +486,10 @@ describe('CcAnalysisWizardComponent', () => {
       expect(post.request.body).toEqual({
         subjectModelKey: 'openai/gpt-5|high',
         baselineStartUtc: '2026-09-01T00:00:00.000Z',
-        baselineEndUtc: '2026-09-14T23:59:59.999Z',
-        comparisonStartUtc: '2026-09-18T00:00:00.000Z',
+        baselineEndUtc: '2026-09-12T23:59:59.999Z',
+        comparisonStartUtc: '2026-09-20T00:00:00.000Z',
         comparisonEndUtc: '2026-10-01T23:59:59.999Z',
-        baselineRunIds: [101, 102],
+        baselineRunIds: [101, 102, 103],
         comparisonRunIds: [104, 105, 106],
         relaxedPooling: false,
         controlRunIds: [202, 205, 206],
@@ -411,20 +512,18 @@ describe('CcAnalysisWizardComponent', () => {
       expect(component.analyzing).toBe(false);
       expect(component.result?.analysisId).toBe(7);
       expect(changes).toBe(2);
-      expect(component.step).toBe('runs');
-      expect(shownSteps()).toEqual(['runs']);
+      expect(component.step).toBe('analyze');
+      expect(shownSteps()).toEqual(['analyze']);
       expect(body('results')).toBeNull();
       expect(textOf(el.querySelector('.cc-wiz-analyze-status'))).toBe('');
       expect(component.reachable('results')).toBe(true);
-      expect(component.reachable('reports')).toBe(true);
 
-      setStep('results');
+      goToResults();
       expect(textOf(el.querySelector('app-cc-results-view .cc-headline-text'))).toContain('Overseer chat with GPT-5 high');
     });
 
     it('sends nothing while Analyze is blocked', () => {
-      goToRuns();
-      expect(component.analyzeBlocked).toBe('Select at least one baseline run.');
+      pick('cc-wiz-cf', '103');
       expect(component.buildRequest()).toBeNull();
       component.analyze();
       http.expectNone(`${CC_API}/analyses`);
@@ -434,8 +533,6 @@ describe('CcAnalysisWizardComponent', () => {
     it('shows the refusal of a request the server turns down', async () => {
       const saved: CcAnalysisResult[] = [];
       component.analysisSaved.subscribe(result => saved.push(result));
-      goToRuns();
-      component.preselectRuns();
       component.analyze();
       http.expectOne(`${CC_API}/analyses`).flush({ error: 'The baseline has no usable run.' }, { status: 400, statusText: 'Bad Request' });
       await fixture.whenStable();
@@ -447,12 +544,10 @@ describe('CcAnalysisWizardComponent', () => {
       expect(component.analyzing).toBe(false);
       expect(component.result).toBeNull();
       expect(saved).toEqual([]);
-      expect(component.step).toBe('runs');
+      expect(component.step).toBe('analyze');
     });
 
     it('abandons the request in flight on Stop', () => {
-      goToRuns();
-      component.preselectRuns();
       component.analyze();
       const post = http.expectOne(`${CC_API}/analyses`);
       component.stopAnalyze();
@@ -464,7 +559,7 @@ describe('CcAnalysisWizardComponent', () => {
   });
 
   describe('the step-1 selection', () => {
-    /** Runs 102–105 in the analysis, 104 left out; the host passes the scoped rows and every row. */
+    /** Runs 102, 103 and 105 in the analysis, 104 left out; the host passes the scoped rows and every row. */
     function narrow(): void {
       const all = ccRunRows();
       const scope = { firstRunId: 102, lastRunId: 105, leftOut: new Set([104]) };
@@ -472,7 +567,6 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.componentRef.setInput('rows', all.filter(row => [102, 103, 105].includes(row.runId)));
       fixture.componentRef.setInput('scope', scope);
       fixture.componentRef.setInput('range', { preset: '30d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T12:00:00.000Z' });
-      fixture.componentRef.setInput('span', { first: '2026-09-05', last: '2026-09-26' });
       fixture.componentRef.setInput('scopeKey', '102|105|104');
       fixture.detectChanges();
     }
@@ -483,37 +577,43 @@ describe('CcAnalysisWizardComponent', () => {
       expect(textOf(el.querySelector('.cc-wiz-span-note'))).toBe('Presets use the runs chosen in step 1: #102 (2026-09-05) to #105 (2026-09-26), 3 runs.');
     });
 
-    it('re-applies the preset over the span, and keeps dates typed by hand', () => {
+    it('applies the chosen preset again when the selection changes', () => {
       narrow();
-      expect(component.days).toEqual({
-        baselineStart: '2026-09-05', baselineEnd: '2026-09-12', comparisonStart: '2026-09-13', comparisonEnd: '2026-09-26'
-      });
-      expect(launchPreset(ccAxis(), { first: '2026-09-05', last: '2026-09-26' })).toEqual(component.days);
-
-      setDay('cc-wiz-ce', '2026-09-30');
-      fixture.componentRef.setInput('span', { first: '2026-09-01', last: '2026-10-01' });
-      fixture.detectChanges();
-      expect(component.preset).toBe('custom');
-      expect(component.days.comparisonEnd).toBe('2026-09-30');
+      expect(presetChecked('earliest')).toBe(true);
+      expect(choices()).toEqual(['102', '103', '105', '105']);
+      expect(textOf(el.querySelector('.cc-wiz-preset-note')))
+        .toBe('The runs span 22 days: the earlier days against the later days, split at 2026-09-26, 2 runs against 1.');
+      expect(unitPeriods().map(([id]) => id)).toEqual(['102', '103', '105']);
     });
 
-    it('preselects again when the selection changes, and names the left-out runs in the periods', () => {
-      goToRuns();
-      component.preselectRuns();
-      fixture.detectChanges();
-      expect(checked('comparison')).toEqual(['104', '105', '106']);
-
+    it('keeps Custom choices while their runs stay, and clears a choice whose run left', () => {
+      pick('cc-wiz-bf', '102');
+      expect(choices()).toEqual(['102', '103', '104', '106']);
       narrow();
-      expect(checked('baseline')).toEqual(['102', '103']);
-      expect(checked('comparison')).toEqual(['105']);
-      const preview = Array.from(el.querySelectorAll('.cc-wiz-preview > div')).find(row => textOf(row.querySelector('dt')) === 'Left out in step 1');
-      expect(textOf(preview!.querySelector('dd'))).toBe('#104');
+      expect(component.preset).toBe('custom');
+      expect(choices()).toEqual(['102', '103', '', '']);
+      expect(component.periodsError).toBe('Choose the first and last run of both periods.');
+    });
+
+    it('names the left-out runs inside the windows', () => {
+      const all = ccRunRows();
+      fixture.componentRef.setInput('allRows', all);
+      fixture.componentRef.setInput('rows', all.filter(row => row.runId !== 103));
+      fixture.componentRef.setInput('scope', { firstRunId: null, lastRunId: null, leftOut: new Set([103]) });
+      fixture.componentRef.setInput('scopeKey', '||103');
+      fixture.detectChanges();
+      const leftOut = () => Array.from(el.querySelectorAll('.cc-wiz-preview > div'))
+        .find(row => textOf(row.querySelector('dt')) === 'Left out in step 1');
+      // Earliest vs latest ends the baseline with run 102 on 2026-09-05, before run 103.
+      expect(leftOut()).toBeUndefined();
+
+      pick('cc-wiz-bl', '104');
+      pick('cc-wiz-cf', '105');
+      expect(textOf(leftOut()!.querySelector('dd'))).toBe('#103');
     });
 
     it('records the selection in the request', () => {
       narrow();
-      goToRuns();
-      component.preselectRuns();
       expect(component.buildRequest()!.runSelection).toEqual({
         rangeLabel: 'Last 30 days',
         rangeFromUtc: '2026-09-07T12:00:00.000Z',
@@ -522,14 +622,6 @@ describe('CcAnalysisWizardComponent', () => {
         lastRunId: 105,
         leftOutRunIds: [104]
       });
-    });
-
-    it('takes the period dates from the shared date fields', () => {
-      const field = el.querySelector('app-date-field #cc-wiz-bs');
-      expect(field).not.toBeNull();
-      setDay('cc-wiz-bs', '2026-9-3');
-      expect(component.days.baselineStart).toBe('2026-09-03');
-      expect(component.preset).toBe('custom');
     });
   });
 
@@ -544,22 +636,8 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.componentRef.setInput('rows', batteries.flatMap(row => row.members));
       fixture.componentRef.setInput('allRows', ccBatteryMemberRows());
       fixture.componentRef.setInput('scope', scope);
-      fixture.componentRef.setInput('span', { first: '2026-10-08', last: '2026-10-08' });
-      fixture.componentRef.setInput('scopeKey', `${CC_BATTERY_SET_KEY}#||`);
+      fixture.componentRef.setInput('scopeKey', `${CC_BATTERY_SET_KEY}#${scope.firstRunId ?? ''}||`);
       fixture.detectChanges();
-    }
-
-    /** Battery run #11 a day earlier, on 2026-10-07, so the two fall in separate periods; #12 as before. */
-    function splitBatteries(): CcBatteryRunRow[] {
-      return [ccBatteryRunRow(11, '2026-10-07T06:00:00Z', [301, 302]), ccBatteryRunRows()[0]];
-    }
-
-    /** The baseline is 2026-10-07, holding battery run #11 of {@link splitBatteries}; the comparison 2026-10-08, holding #12. */
-    function batteryPeriods(): void {
-      setDay('cc-wiz-bs', '2026-10-07');
-      setDay('cc-wiz-be', '2026-10-07');
-      setDay('cc-wiz-cs', '2026-10-08');
-      setDay('cc-wiz-ce', '2026-10-08');
     }
 
     it('says which battery runs the presets span, and names the compared set', () => {
@@ -574,56 +652,50 @@ describe('CcAnalysisWizardComponent', () => {
       expect(textOf(compared.querySelector('dd'))).toBe('Two initial suites (revision 1)');
     });
 
-    it('confirms on later data from the last analysis of the same subject and set', () => {
+    it('splits battery runs #11 and #12 of the same day into a baseline of #11 and a comparison of #12', () => {
       withBatteries();
-      fixture.componentRef.setInput('analyses', [
-        ccAnalysisSummary(7, { createdAtUtc: '2026-10-05T09:00:00Z' }),
-        ccAnalysisSummary(9, { createdAtUtc: '2026-10-01T00:00:00Z', comparisonSetKey: CC_BATTERY_SET_KEY })
-      ]);
-      fixture.detectChanges();
-      expect(component.lastAnalysis?.id).toBe(9);
-
-      fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7)]);
-      fixture.detectChanges();
-      el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="later"]')!.click();
-      fixture.detectChanges();
+      expect(presetChecked('earliest')).toBe(true);
+      expect(choices()).toEqual(['11', '11', '12', '12']);
+      expect(el.querySelector('.cc-wiz-periods-error')).toBeNull();
+      expect(component.periodsError).toBe('');
       expect(textOf(el.querySelector('.cc-wiz-preset-note')))
-        .toBe('This model has no saved analysis of Two initial suites (revision 1) yet; there is no earlier look to confirm.');
-    });
+        .toBe('The runs span 1 day: the earlier half against the later half, 1 battery run each.');
 
-    it('lists one row per battery run in each period and preselects the eligible complete ones', () => {
-      withBatteries(CC_EMPTY_BATTERY_SCOPE, splitBatteries());
-      batteryPeriods();
-      goToRuns();
-      component.preselectRuns();
-      fixture.detectChanges();
+      const option = el.querySelector<HTMLOptionElement>('#cc-wiz-cf option[value="12"]')!;
+      expect(textOf(option)).toBe('#12 · 2026-10-08 10:00 UTC');
+      expect(option.getAttribute('aria-label')).toBe('Battery run #12 · 2026-10-08 10:00 UTC');
+      expect(textOf(el.querySelector('#cc-wiz-cf option[value=""]'))).toBe('Choose a battery run');
 
-      const table = el.querySelector<HTMLTableElement>('table.cc-wiz-battery-runs[data-period="comparison"]')!;
+      const table = el.querySelector<HTMLTableElement>('table.cc-wiz-units')!;
+      expect(textOf(table.querySelector('caption'))).toBe('Battery runs in the periods');
       expect(Array.from(table.querySelectorAll('thead th')).map(th => textOf(th)))
-        .toEqual(['Use', 'Battery run', 'Started (UTC)', 'Suites', 'Eligible', 'Matched controls']);
-      const row = table.querySelector<HTMLTableRowElement>('tr[data-battery-run-id="12"]')!;
-      expect(Array.from(row.cells).slice(1).map(cell => textOf(cell)))
-        .toEqual(['#12', '2026-10-08 10:00 UTC', 'Board Suite, Wiki Suite', 'Yes', '#404']);
-      expect(row.querySelector('.cc-wiz-run-check')!.getAttribute('aria-label')).toBe('Include battery run #12 in the comparison');
-      expect(checkedBatteries('baseline')).toEqual(['11']);
-      expect(checkedBatteries('comparison')).toEqual(['12']);
+        .toEqual(['Battery run', 'Started (UTC)', 'Suites', 'Period', 'Matched controls']);
+      const row = table.querySelector<HTMLTableRowElement>('tr[data-unit-id="12"]')!;
+      expect(Array.from(row.cells).map(cell => textOf(cell)))
+        .toEqual(['#12', '2026-10-08 10:00 UTC', 'Board Suite, Wiki Suite', 'Comparison', '#404']);
+      expect(unitPeriods()).toEqual([['11', 'Baseline'], ['12', 'Comparison']]);
+
+      expect(Array.from(el.querySelectorAll('.cc-wiz-sample')).map(line => textOf(line))).toEqual([
+        'Baseline: 1 battery run on 1 day (2026-10-08). P1, P4 and P5 need at least 2 on 2 days to be Established.',
+        'Comparison: 1 battery run on 1 day (2026-10-08). P1, P4 and P5 need at least 2 on 2 days to be Established.'
+      ]);
       // The controls stay per run: the matched controls of the members.
-      expect(Array.from(el.querySelectorAll<HTMLInputElement>('.cc-wiz-control-check')).map(box => textOf(box.closest('label'))))
-        .toEqual(['Control run #404']);
+      expect(controlLabels()).toEqual(['Control run #404']);
       expect(component.regradeRunIds).toEqual([301, 302, 303, 304, 404]);
       expect(component.missingControls.map(member => member.runId)).toEqual([301, 302, 303]);
     });
 
-    it('posts the battery runs, the set and the battery selection, and no run ids', () => {
-      withBatteries({ ...CC_EMPTY_BATTERY_SCOPE, firstRunId: 11, leftOut: new Set([13]) }, splitBatteries());
+    it('posts the battery runs, the same-day windows, the set and the battery selection, and no run ids', () => {
+      withBatteries({ ...CC_EMPTY_BATTERY_SCOPE, firstRunId: 11, leftOut: new Set([13]) });
       fixture.componentRef.setInput('range', { preset: '30d', fromDay: '', toDay: '', anchorUtc: '2026-10-08T12:00:00.000Z' });
       fixture.detectChanges();
-      batteryPeriods();
-      goToRuns();
-      component.preselectRuns();
       component.analyze();
       const post = http.expectOne(`${CC_API}/analyses`);
       const body = post.request.body;
+      expect(body.baselineStartUtc).toBe('2026-10-08T00:00:00.000Z');
+      expect(body.baselineEndUtc).toBe('2026-10-08T09:59:59.999Z');
+      expect(body.comparisonStartUtc).toBe('2026-10-08T10:00:00.000Z');
+      expect(body.comparisonEndUtc).toBe('2026-10-08T23:59:59.999Z');
       expect(body.comparisonSet).toEqual({ kind: 'battery', key: CC_BATTERY_SET_KEY });
       expect(body.baselineBatteryRunIds).toEqual([11]);
       expect(body.comparisonBatteryRunIds).toEqual([12]);
@@ -644,11 +716,36 @@ describe('CcAnalysisWizardComponent', () => {
       post.flush(ccAnalysisResult());
     });
 
+    it('splits the same day at an annotation between the two battery runs', () => {
+      withBatteries();
+      fixture.componentRef.setInput('timeline', ccTimeline({ annotations: [ccAnnotation(5, { atUtc: '2026-10-08T08:00:00Z' })] }));
+      fixture.detectChanges();
+      clickPreset('annotation');
+      expect(choices()).toEqual(['11', '11', '12', '12']);
+      const request = component.buildRequest()!;
+      expect(request.baselineEndUtc).toBe('2026-10-08T07:59:59.999Z');
+      expect(request.comparisonStartUtc).toBe('2026-10-08T08:00:00.000Z');
+    });
+
+    it('confirms on later data from the last analysis of the same subject and set', () => {
+      withBatteries();
+      fixture.componentRef.setInput('analyses', [
+        ccAnalysisSummary(7, { createdAtUtc: '2026-10-05T09:00:00Z' }),
+        ccAnalysisSummary(9, { createdAtUtc: '2026-10-01T00:00:00Z', comparisonSetKey: CC_BATTERY_SET_KEY })
+      ]);
+      fixture.detectChanges();
+      expect(component.lastAnalysis?.id).toBe(9);
+
+      fixture.componentRef.setInput('analyses', [ccAnalysisSummary(7)]);
+      fixture.detectChanges();
+      clickPreset('later');
+      expect(textOf(el.querySelector('.cc-wiz-preset-note')))
+        .toBe('This model has no saved analysis of Two initial suites (revision 1) yet; there is no earlier look to confirm.');
+    });
+
     it('posts a suite set with the run ids, as before', () => {
       fixture.componentRef.setInput('compareSet', ccComparisonSets().sets[1]);
       fixture.detectChanges();
-      goToRuns();
-      component.preselectRuns();
       const request = component.buildRequest()!;
       expect(request.comparisonSet).toEqual({ kind: 'suite', key: 'suite:id:5' });
       expect(request.baselineRunIds).toEqual([101, 102, 103]);
@@ -656,7 +753,7 @@ describe('CcAnalysisWizardComponent', () => {
       expect(request.runSelection!.firstBatteryRunId).toBeUndefined();
     });
 
-    it('selects the battery runs of a saved battery analysis from its units', () => {
+    it('chooses the battery runs of a saved battery analysis from its units', () => {
       withBatteries();
       component.showResult(ccAnalysisResult({
         unitKind: 'batteryRun',
@@ -666,8 +763,9 @@ describe('CcAnalysisWizardComponent', () => {
           { unitId: 12, kind: 'batteryRun', period: 'comparison', startedAtUtc: '2026-10-08T10:00:00Z', memberRunIds: [303, 304] }
         ]
       }));
-      expect([...component.baselineSelected]).toEqual([11]);
-      expect([...component.comparisonSelected]).toEqual([12]);
+      fixture.detectChanges();
+      expect(component.ids).toEqual({ baselineFirstId: 11, baselineLastId: 11, comparisonFirstId: 12, comparisonLastId: 12 });
+      expect(presetChecked('custom')).toBe(true);
     });
   });
 
@@ -675,31 +773,66 @@ describe('CcAnalysisWizardComponent', () => {
     it('loads a saved analysis without moving the step, for the outer wizard to show on Results', () => {
       let changes = 0;
       component.stateChange.subscribe(() => changes++);
+      pick('cc-wiz-bl', '102');
+      changes = 0;
       component.showResult(ccAnalysisResult());
       fixture.detectChanges();
 
       expect(changes).toBe(1);
-      expect(component.step).toBe('periods');
-      expect(shownSteps()).toEqual(['periods']);
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-bs')!.value).toBe('2026-09-01');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-be')!.value).toBe('2026-09-14');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-cs')!.value).toBe('2026-09-15');
-      expect(el.querySelector<HTMLInputElement>('#cc-wiz-ce')!.value).toBe('2026-10-01');
-      expect(el.querySelector<HTMLInputElement>('input[name="cc-wiz-preset"][value="custom"]')!.checked).toBe(true);
+      expect(component.step).toBe('analyze');
+      expect(shownSteps()).toEqual(['analyze']);
+      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(presetChecked('custom')).toBe(true);
       expect(component.reachable('results')).toBe(true);
 
-      setStep('results');
+      goToResults();
       expect(el.querySelector('app-cc-results-view')).not.toBeNull();
       expect(textOf(el.querySelector('.cc-headline-text'))).toContain('Overseer chat with GPT-5 high');
     });
 
-    it('reports chartsAttaching while the Reports step attaches charts', () => {
+    it('shows the Reports section after the results, under its own heading', () => {
+      component.showResult(ccAnalysisResult());
+      goToResults();
+      const results = el.querySelector('app-cc-results-view')!;
+      const heading = el.querySelector<HTMLElement>('h5#cc-res-reports-title')!;
+      const reports = el.querySelector('app-cc-reports-step')!;
+      expect(textOf(heading)).toBe('Reports');
+      expect(heading.classList).toContain('cc-res-heading');
+      expect(results.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(heading.compareDocumentPosition(reports) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(component.reportsStep).toBeDefined();
+    });
+
+    it('names the run choices once the saved analysis\'s runs arrive, keeping its controls', () => {
+      fixture.componentRef.setInput('rows', []);
+      fixture.detectChanges();
+      component.showResult(ccAnalysisResult({ controls: { matches: [], effects: [], missingControls: [], controlRunIds: [205] } }));
+      fixture.detectChanges();
+      expect(choices()).toEqual(['', '', '', '']);
+      expect(component.periodsError).toBe('Choose at least two runs in step 1, one for each period.');
+
+      fixture.componentRef.setInput('rows', ccRunRows());
+      fixture.detectChanges();
+      expect(choices()).toEqual(['101', '103', '104', '106']);
+      expect(component.preset).toBe('custom');
+      expect(checkedControls()).toEqual(['Control run #205']);
+    });
+
+    it('leaves the choices unset when the saved analysis\'s runs are not in step 1, and still shows the result', () => {
+      component.showResult(ccAnalysisResult({
+        baseline: { ...ccAnalysisResult().baseline, runIds: [1, 2] },
+        comparison: { ...ccAnalysisResult().comparison, runIds: [3] }
+      }));
+      fixture.detectChanges();
+      expect(choices()).toEqual(['', '', '', '']);
+      expect(component.periodsError).toBe('Choose the first and last run of both periods.');
+      expect(component.reachable('results')).toBe(true);
+    });
+
+    it('reports chartsAttaching while the Reports section attaches charts', () => {
       expect(component.chartsAttaching).toBe(false);
       component.showResult(ccAnalysisResult());
-      setStep('reports');
-      http.expectOne(`${CC_API}/analyses/7/report-documents/job`).flush(null, { status: 204, statusText: 'No Content' });
-      http.expectOne(r => r.url === DOCUMENTS_URL).flush([]);
-      fixture.detectChanges();
+      goToResults();
 
       const reports = component.reportsStep!;
       expect(reports).toBeDefined();
@@ -711,18 +844,5 @@ describe('CcAnalysisWizardComponent', () => {
       reports.chartState = 'failed';
       expect(component.chartsAttaching).toBe(false);
     });
-  });
-});
-
-describe('analysis wizard periods', () => {
-  it('never lets the launch preset overlap on a short series', () => {
-    const days = launchPreset(ccAxis({ firstRunAtUtc: '2026-09-01T00:00:00Z', lastRunAtUtc: '2026-09-10T00:00:00Z' }));
-    expect(days).toEqual({ baselineStart: '2026-09-01', baselineEnd: '2026-08-31', comparisonStart: '2026-09-01', comparisonEnd: '2026-09-10' });
-    expect(periodsRefusal(days)).toBe('The baseline must not end before it starts.');
-  });
-
-  it('accepts adjacent, ordered periods', () => {
-    expect(periodsRefusal({ baselineStart: '2026-09-01', baselineEnd: '2026-09-14', comparisonStart: '2026-09-15', comparisonEnd: '2026-09-30' })).toBe('');
-    expect(periodsRefusal({ baselineStart: '', baselineEnd: '2026-09-14', comparisonStart: '2026-09-15', comparisonEnd: '2026-09-30' })).toBe('Enter all four dates.');
   });
 });

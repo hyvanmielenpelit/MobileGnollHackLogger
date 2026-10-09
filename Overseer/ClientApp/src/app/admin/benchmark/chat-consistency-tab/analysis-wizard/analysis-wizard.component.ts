@@ -15,22 +15,34 @@ import { Subscription } from 'rxjs';
 
 import { SystemAiConfigDto } from '../../../../services/admin.service';
 import { AdminChatConsistencyService, ccErrorText } from '../../../../services/admin-chat-consistency.service';
-import { DateFieldComponent } from '../../../../shared/date-field/date-field.component';
 import { ModelPickerOption } from '../../../../shared/model-picker/model-picker.component';
 import {
-  addUtcDays,
   controlRunsText,
-  endOfUtcDay,
   formatUtcDate,
   formatUtcDateTime,
-  isRunEligible,
-  isUtcDateInput,
   plural,
-  startOfUtcDay,
-  utcMillis,
-  withinUtcDays
+  utcMillis
 } from '../chat-consistency-format';
 import { CC_HARNESS_EVENT_KIND, CcEventGroup, groupOverseerEvents } from '../chat-consistency-events';
+import {
+  CC_NO_PERIOD_IDS,
+  CcPeriod,
+  CcPeriodIds,
+  CcPeriodUnit,
+  CcPeriodWindows,
+  CcPresetOutcome,
+  CcUnitPeriod,
+  ccBeforeAfter,
+  ccConfirmOnLaterData,
+  ccEarliestVsLatest,
+  ccIdsFromUnits,
+  ccPeriodAssignment,
+  ccPeriodUnits,
+  ccPeriodWindows,
+  ccPeriodsRefusal,
+  ccPruneIds,
+  sameIds
+} from '../chat-consistency-periods';
 import { CC_ALL_DATES, CcDateRange, ccDateRangeText, ccRangeBounds } from '../chat-consistency-range';
 import { CC_EMPTY_SCOPE, CcRunScope, scopeIsDefault } from '../chat-consistency-scope';
 import {
@@ -53,7 +65,7 @@ import { CcReportsStepComponent } from './reports-step.component';
 import { CcResultsViewComponent } from './results-view.component';
 
 /** The analysis steps the outer wizard shows through this component, in order. */
-export type CcAnalysisStep = 'periods' | 'runs' | 'results' | 'reports';
+export type CcAnalysisStep = 'analyze' | 'results';
 
 /** Protocol V1's primary endpoints as the server publishes them (`ChatConsistencyProtocol.V1`). */
 export const CC_PROTOCOL_V1_ENDPOINTS: readonly {
@@ -75,101 +87,52 @@ export const CC_PROTOCOL_V1 = Object.freeze({
   minimumSpeedRunsPerStratum: 3
 });
 
-export type CcPreset = 'launch' | 'annotation' | 'event' | 'later' | 'custom';
+export type CcPreset = 'earliest' | 'annotation' | 'event' | 'later' | 'custom';
 
-/** The days on either side of an annotation or an event that the before-and-after presets take. */
-export const CC_PRESET_WINDOW_DAYS = 28;
+/** One of the four run choices. */
+export type CcRunChoice = keyof CcPeriodIds;
 
-export interface CcPeriodDays {
-  baselineStart: string;
-  baselineEnd: string;
-  comparisonStart: string;
-  comparisonEnd: string;
+const UNIT_PERIOD_TEXT: Readonly<Record<CcUnitPeriod, string>> = {
+  baseline: 'Baseline',
+  comparison: 'Comparison',
+  notUsed: 'Not used',
+  notEligible: 'Not eligible'
+};
+
+/** A saved analysis's units, which name the run choices once they are among the step-1 units. */
+interface ResultUnits {
+  battery: boolean;
+  baseline: readonly number[];
+  comparison: readonly number[];
 }
 
-/** The UTC days of the first and last run the analysis may use. */
-export interface CcRunSpan {
-  first: string;
-  last: string;
-}
-
-/** The span of the runs chosen in step 1 when given, else the subject's first and last run day. */
-export function seriesDays(axis: CcModelAxis, span: CcRunSpan | null = null): CcRunSpan {
-  return span ?? { first: formatUtcDate(axis.firstRunAtUtc), last: formatUtcDate(axis.lastRunAtUtc) };
-}
-
-function sameSpan(a: CcRunSpan | null | undefined, b: CcRunSpan | null | undefined): boolean {
-  return (a ?? null) === (b ?? null) || (!!a && !!b && a.first === b.first && a.last === b.last);
-}
-
-function maxDay(a: string, b: string): string {
-  return a > b ? a : b;
-}
-
-function minDay(a: string, b: string): string {
-  return a < b ? a : b;
-}
-
-/** *Launch vs last 14 days*: the first 14 days of the series against its last 14, never overlapping. */
-export function launchPreset(axis: CcModelAxis, span: CcRunSpan | null = null): CcPeriodDays {
-  const { first, last } = seriesDays(axis, span);
-  const comparisonStart = maxDay(addUtcDays(last, -13), first);
-  return {
-    baselineStart: first,
-    baselineEnd: minDay(addUtcDays(first, 13), addUtcDays(comparisonStart, -1)),
-    comparisonStart,
-    comparisonEnd: last
-  };
-}
-
-/** *Before vs after*: up to {@link CC_PRESET_WINDOW_DAYS} days before the day of `atUtc` against that day and the days after. */
-export function aroundPreset(axis: CcModelAxis, atUtc: string, span: CcRunSpan | null = null): CcPeriodDays {
-  const { first, last } = seriesDays(axis, span);
-  const day = formatUtcDate(atUtc);
-  return {
-    baselineStart: maxDay(first, addUtcDays(day, -CC_PRESET_WINDOW_DAYS)),
-    baselineEnd: addUtcDays(day, -1),
-    comparisonStart: day,
-    comparisonEnd: minDay(last, addUtcDays(day, CC_PRESET_WINDOW_DAYS - 1))
-  };
-}
-
-/**
- * *Confirm on later data*: the last analysis's baseline again, against the runs after its last look —
- * from the day after it was saved to the series' last run.
- */
-export function laterDataPreset(axis: CcModelAxis, last: CcAnalysisSummary, span: CcRunSpan | null = null): CcPeriodDays {
-  return {
-    baselineStart: formatUtcDate(last.baselineStartUtc),
-    baselineEnd: formatUtcDate(last.baselineEndUtc),
-    comparisonStart: addUtcDays(formatUtcDate(last.createdAtUtc), 1),
-    comparisonEnd: seriesDays(axis, span).last
-  };
-}
-
-/** Why the periods cannot be analyzed, or '' when they can. */
-export function periodsRefusal(days: CcPeriodDays): string {
-  const all = [days.baselineStart, days.baselineEnd, days.comparisonStart, days.comparisonEnd];
-  if (all.some(day => !isUtcDateInput(day))) return 'Enter all four dates.';
-  if (days.baselineStart > days.baselineEnd) return 'The baseline must not end before it starts.';
-  if (days.comparisonStart > days.comparisonEnd) return 'The comparison must not end before it starts.';
-  if (days.comparisonStart <= days.baselineEnd) return 'The comparison must start after the baseline ends.';
-  return '';
+/** What the run choices derive, kept until the units, the choices or the anchor change. */
+interface PeriodState {
+  units: readonly CcPeriodUnit[];
+  ids: CcPeriodIds;
+  anchorUtc: string | null;
+  battery: boolean;
+  refusal: string;
+  assignment: ReadonlyMap<number, CcUnitPeriod>;
+  /** The eligible units of each period; empty while the choices are refused. */
+  baseline: readonly CcPeriodUnit[];
+  comparison: readonly CcPeriodUnit[];
+  windows: CcPeriodWindows | null;
 }
 
 /**
  * The analysis steps of the Chat Consistency wizard over one subject, without navigation of their
  * own: the outer wizard chooses the step through `step` and draws the step bar, headings and footer.
- * *Periods* sets the periods, from a preset or by hand, and shows Protocol V1 with its overrides;
- * *Runs and controls* chooses the runs and the controls, offers the common-grader re-grade and
- * previews what the analysis will see; *Results* shows the saved result; *Reports* writes its
- * reports. A step's body is mounted on its first visit and afterwards kept, hidden while another
- * step shows, so a re-grade, a chart attachment, the charts and the scroll survive a step change.
+ * *Analyze* splits the step-1 units into a baseline and a comparison by four run choices, from a
+ * preset or by hand, chooses the controls, offers the common-grader re-grade, shows Protocol V1 with
+ * its overrides and previews what the analysis will see; *Results* shows the saved result and its
+ * reports. A step's body is mounted on its first visit and afterwards kept, hidden while another step
+ * shows, so a re-grade, a chart attachment, the charts and the scroll survive a step change.
  */
 @Component({
   selector: 'app-cc-analysis-wizard',
   standalone: true,
-  imports: [DateFieldComponent, CcRegradePanelComponent, CcResultsViewComponent, CcReportsStepComponent],
+  imports: [CcRegradePanelComponent, CcResultsViewComponent, CcReportsStepComponent],
   templateUrl: './analysis-wizard.component.html',
   styleUrls: ['./analysis-wizard.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -197,22 +160,18 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   @Input() scope: CcRunScope = CC_EMPTY_SCOPE;
   /** The step-1 dates, recorded with the analysis. */
   @Input() range: CcDateRange = CC_ALL_DATES;
-  /** The days of the first and last unit in the analysis, which the presets span; null with none. */
-  @Input() span: CcRunSpan | null = null;
-  /** Changes with the step-1 selection, so a new selection preselects the runs again. */
+  /** Changes with the step-1 selection, so a new selection chooses the controls again. */
   @Input() scopeKey = '';
   @Input() analyses: readonly CcAnalysisSummary[] = [];
   /** The benchmark-capable configurations the launcher offers: the re-grade's assessors and the report writers. */
   @Input() pickerOptions: readonly ModelPickerOption<SystemAiConfigDto>[] = [];
   @Input() pickerConfigs: readonly SystemAiConfigDto[] = [];
   @Input() pickerEmptyHint: string | null = null;
-  @Input() anchorBusy: ReadonlySet<number> = new Set<number>();
   /** The step whose body shows. */
-  @Input() step: CcAnalysisStep = 'periods';
+  @Input() step: CcAnalysisStep = 'analyze';
 
   @Output() readonly analysisSaved = new EventEmitter<CcAnalysisResult>();
   @Output() readonly runsChanged = new EventEmitter<void>();
-  @Output() readonly anchorToggle = new EventEmitter<CcRunRow>();
   @Output() readonly repeatSetup = new EventEmitter<number>();
   @Output() readonly openDocuments = new EventEmitter<CcOpenDocumentsRequest>();
   /** The state the outer wizard reads (errors, blocked reason, analyzing, result) may have changed. */
@@ -222,26 +181,50 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
 
   readonly protocolEndpoints = CC_PROTOCOL_V1_ENDPOINTS;
   readonly protocol = CC_PROTOCOL_V1;
-  readonly periods = ['baseline', 'comparison'] as const;
+  readonly periods: readonly CcPeriod[] = ['baseline', 'comparison'];
+  /** The two rows of run choices: each period's first and last run select. */
+  readonly choiceRows: readonly {
+    readonly period: CcPeriod;
+    readonly name: string;
+    readonly choices: readonly { readonly key: CcRunChoice; readonly id: string; readonly label: string }[];
+  }[] = [
+    {
+      period: 'baseline', name: 'Baseline',
+      choices: [
+        { key: 'baselineFirstId', id: 'cc-wiz-bf', label: 'Baseline first run' },
+        { key: 'baselineLastId', id: 'cc-wiz-bl', label: 'Baseline last run' }
+      ]
+    },
+    {
+      period: 'comparison', name: 'Comparison',
+      choices: [
+        { key: 'comparisonFirstId', id: 'cc-wiz-cf', label: 'Comparison first run' },
+        { key: 'comparisonLastId', id: 'cc-wiz-cl', label: 'Comparison last run' }
+      ]
+    }
+  ];
 
   name = '';
-  days: CcPeriodDays = { baselineStart: '', baselineEnd: '', comparisonStart: '', comparisonEnd: '' };
+  /** The first and last unit of each period, by id. */
+  ids: CcPeriodIds = CC_NO_PERIOD_IDS;
   preset: CcPreset = 'custom';
   presetAnnotationId: number | null = null;
   /** The key of the composite event the *Before vs after an Overseer change* preset is around. */
   presetEventGroupKey: string | null = null;
+  /** The instant the applied before-and-after preset splits at; null for any other preset. */
+  presetAnchorUtc: string | null = null;
   presetNote = '';
 
   /** The margin overrides as typed, by endpoint id: index points for P1, percent for the others. */
   marginOverrides: Record<string, string> = {};
   alphaOverride = '';
 
-  /** The selected units of each period: run ids, or battery run ids in a battery set. */
-  readonly baselineSelected = new Set<number>();
-  readonly comparisonSelected = new Set<number>();
+  /** The checked control runs; only those among {@link controlCandidates} are used. */
   readonly controlSelected = new Set<number>();
   relaxedPooling = false;
   private selectionKey: string | null = null;
+  /** A saved analysis's units, until they name the run choices or another choice replaces them. */
+  private resultUnits: ResultUnits | null = null;
 
   analyzing = false;
   analyzeError: string | null = null;
@@ -251,6 +234,10 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   /** The steps whose bodies have been shown, and so stay mounted. */
   private readonly visitedSteps = new Set<CcAnalysisStep>();
   private groupsCache: { timeline: CcTimeline | null; groups: CcEventGroup[] } | null = null;
+  private unitsCache: {
+    rows: readonly CcRunRow[]; batteryRows: readonly CcBatteryRunRow[]; battery: boolean; units: CcPeriodUnit[];
+  } | null = null;
+  private stateCache: PeriodState | null = null;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['step']) this.visitedSteps.add(this.step);
@@ -263,17 +250,22 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
         reset = true;
       }
     }
-    // A preset follows the runs in the analysis; dates typed by hand stay.
-    const spanChange = changes['span'];
-    if (spanChange && !reset && !sameSpan(spanChange.previousValue, this.span) && this.preset !== 'custom') {
+    if (reset) return;
+    if (changes['rows'] || changes['batteryRows'] || changes['compareSet'] || changes['scopeKey']) {
+      this.followUnits();
+    } else if (changes['timeline'] && (this.preset === 'annotation' || this.preset === 'event')) {
       this.choosePreset(this.preset);
     }
-    if ((changes['rows'] || changes['batteryRows'] || changes['scopeKey']) && this.step === 'runs') this.preselectRuns();
   }
 
   /** A battery set is compared: the units are battery runs. */
   get batteryMode(): boolean {
     return this.compareSet?.kind === 'battery';
+  }
+
+  /** `run`, or `battery run` in a battery set. */
+  get noun(): string {
+    return this.batteryMode ? 'battery run' : 'run';
   }
 
   ngOnDestroy(): void {
@@ -287,13 +279,13 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return step === this.step || this.visitedSteps.has(step);
   }
 
-  /** The Reports step is drawing and uploading report charts; closing the wizard would strand them. */
+  /** The Reports section is drawing and uploading report charts; closing the wizard would strand them. */
   get chartsAttaching(): boolean {
     return this.reportsStep?.chartState === 'attaching';
   }
 
   get periodsError(): string {
-    return periodsRefusal(this.days);
+    return this.periodState.refusal;
   }
 
   get overridesError(): string {
@@ -312,37 +304,30 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   }
 
   reachable(step: CcAnalysisStep): boolean {
-    switch (step) {
-      case 'periods': return true;
-      case 'runs': return !!this.axis && !this.periodsError && !this.overridesError;
-      default: return this.result !== null;
-    }
+    return step === 'analyze' ? !!this.axis : this.result !== null;
   }
 
-  /** Loads a saved analysis, for the outer wizard to show on its results. */
+  /**
+   * Loads a saved analysis, for the outer wizard to show on its results. Its units name the run
+   * choices, under *Custom*, as soon as they are among the step-1 units.
+   */
   showResult(result: CcAnalysisResult): void {
     this.analyzeSub?.unsubscribe();
     this.analyzing = false;
     this.analyzeError = null;
     this.result = result;
     this.name = result.name ?? '';
-    this.days = {
-      baselineStart: formatUtcDate(result.baseline.startUtc),
-      baselineEnd: formatUtcDate(result.baseline.endUtc),
-      comparisonStart: formatUtcDate(result.comparison.startUtc),
-      comparisonEnd: formatUtcDate(result.comparison.endUtc)
-    };
     this.preset = 'custom';
     this.presetNote = '';
+    this.presetAnchorUtc = null;
     this.relaxedPooling = result.endpoints.some(endpoint => endpoint.relaxedPooling);
     if (result.unitKind === 'batteryRun' && result.units) {
       const unitsOf = (period: string) => result.units!.filter(unit => unit.period === period).map(unit => unit.unitId);
-      this.replaceSelection(this.baselineSelected, unitsOf('baseline'));
-      this.replaceSelection(this.comparisonSelected, unitsOf('comparison'));
+      this.resultUnits = { battery: true, baseline: unitsOf('baseline'), comparison: unitsOf('comparison') };
     } else {
-      this.replaceSelection(this.baselineSelected, result.baseline.runIds);
-      this.replaceSelection(this.comparisonSelected, result.comparison.runIds);
+      this.resultUnits = { battery: false, baseline: result.baseline.runIds, comparison: result.comparison.runIds };
     }
+    this.ids = this.idsFromResult(this.resultUnits);
     this.replaceSelection(this.controlSelected, result.controls.controlRunIds);
     this.selectionKey = this.periodKey;
     this.changed();
@@ -354,7 +339,124 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.stateChange.emit();
   }
 
-  // --- Periods ---
+  // --- Units and periods ---
+
+  /** The step-1 units, ordered by start then id: battery runs in a battery set (complete ones only), else runs. */
+  get units(): readonly CcPeriodUnit[] {
+    const battery = this.batteryMode;
+    const cache = this.unitsCache;
+    if (cache && cache.rows === this.rows && cache.batteryRows === this.batteryRows && cache.battery === battery) {
+      return cache.units;
+    }
+    const units = ccPeriodUnits(this.rows, this.batteryRows, battery);
+    this.unitsCache = { rows: this.rows, batteryRows: this.batteryRows, battery, units };
+    return units;
+  }
+
+  private get periodState(): PeriodState {
+    const units = this.units;
+    const battery = this.batteryMode;
+    const cache = this.stateCache;
+    if (cache && cache.units === units && cache.ids === this.ids && cache.anchorUtc === this.presetAnchorUtc
+      && cache.battery === battery) {
+      return cache;
+    }
+    const refusal = ccPeriodsRefusal(units, this.ids, battery);
+    const assignment = ccPeriodAssignment(units, this.ids);
+    const state: PeriodState = {
+      units,
+      ids: this.ids,
+      anchorUtc: this.presetAnchorUtc,
+      battery,
+      refusal,
+      assignment,
+      baseline: refusal ? [] : units.filter(unit => assignment.get(unit.id) === 'baseline'),
+      comparison: refusal ? [] : units.filter(unit => assignment.get(unit.id) === 'comparison'),
+      windows: refusal ? null : ccPeriodWindows(units, this.ids, this.presetAnchorUtc)
+    };
+    this.stateCache = state;
+    return state;
+  }
+
+  /** The windows the request carries; null while the run choices are refused. */
+  get windows(): CcPeriodWindows | null {
+    return this.periodState.windows;
+  }
+
+  /** The eligible units of a period; empty while the run choices are refused. */
+  periodUnits(period: CcPeriod): readonly CcPeriodUnit[] {
+    return period === 'baseline' ? this.periodState.baseline : this.periodState.comparison;
+  }
+
+  /** `Baseline`, `Comparison`, `Not used` or `Not eligible`. */
+  unitPeriodText(unit: CcPeriodUnit): string {
+    return UNIT_PERIOD_TEXT[this.unitPeriod(unit)];
+  }
+
+  unitPeriod(unit: CcPeriodUnit): CcUnitPeriod {
+    return this.periodState.assignment.get(unit.id) ?? 'notUsed';
+  }
+
+  /** A run select's option text: `#12 · 2026-10-08 14:05 UTC`, with ` · not eligible` for an ineligible unit. */
+  optionText(unit: CcPeriodUnit): string {
+    return `#${unit.id} · ${formatUtcDateTime(unit.startedAtUtc)}${unit.eligible ? '' : ' · not eligible'}`;
+  }
+
+  /** A run select's accessible option text in a battery set: `Battery run #12 · …`; null for a run, which reads its text. */
+  optionLabel(unit: CcPeriodUnit): string | null {
+    return this.batteryMode ? `Battery run ${this.optionText(unit)}` : null;
+  }
+
+  /**
+   * The sample line of a period: `Baseline: 1 battery run on 1 day (2026-10-08). P1, P4 and P5 need at
+   * least 2 on 2 days to be Established.`, or `…, which meets the minimum sample for P1, P4 and P5.`
+   */
+  sampleLine(period: CcPeriod): string {
+    const units = this.periodUnits(period);
+    const days = [...new Set(units.map(unit => unit.day))].sort();
+    const dayText = days.length === 1 ? days[0] : `${days[0]} to ${days[days.length - 1]}`;
+    const facts = `${period === 'baseline' ? 'Baseline' : 'Comparison'}: ${plural(units.length, this.noun)} on ${plural(days.length, 'day')} (${dayText})`;
+    const p = CC_PROTOCOL_V1;
+    return units.length >= p.minimumRunsPerPeriod && days.length >= p.minimumDaysPerPeriod
+      ? `${facts}, which meets the minimum sample for P1, P4 and P5.`
+      : `${facts}. P1, P4 and P5 need at least ${p.minimumRunsPerPeriod} on ${p.minimumDaysPerPeriod} days to be Established.`;
+  }
+
+  /** The run choices of a saved analysis's units among the current units; unset where none is. */
+  private idsFromResult(units: ResultUnits): CcPeriodIds {
+    if (units.battery !== this.batteryMode) return CC_NO_PERIOD_IDS;
+    return ccIdsFromUnits(this.units, units.baseline, units.comparison);
+  }
+
+  /**
+   * The step-1 units changed: a preset is applied again; *Custom* choices stay while their units do,
+   * and a saved analysis's units name them once they arrive.
+   */
+  private followUnits(): void {
+    if (this.preset !== 'custom') {
+      this.choosePreset(this.preset);
+      return;
+    }
+    if (this.resultUnits) {
+      const ids = this.idsFromResult(this.resultUnits);
+      if (!sameIds(ids, this.ids)) {
+        this.ids = ids;
+        // The saved analysis's controls stay checked.
+        this.selectionKey = this.periodKey;
+      }
+    } else {
+      this.ids = ccPruneIds(this.units, this.ids);
+    }
+    this.periodsChanged();
+  }
+
+  /** The run choices or the units may have changed: the controls follow, and the outer wizard hears of it. */
+  private periodsChanged(): void {
+    this.syncControls();
+    this.changed();
+  }
+
+  // --- Presets ---
 
   /** The annotations the *Before vs after an annotation* preset lists. */
   get annotations(): readonly CcAnnotation[] {
@@ -385,50 +487,64 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
       .sort((a, b) => utcMillis(b.createdAtUtc) - utcMillis(a.createdAtUtc))[0] ?? null;
   }
 
+  /** Applies a preset to the step-1 units; *Custom* keeps the current choices. */
   choosePreset(preset: CcPreset): void {
     this.preset = preset;
     this.presetNote = '';
-    const axis = this.axis;
-    if (!axis) return;
-    switch (preset) {
-      case 'launch':
-        this.days = launchPreset(axis, this.span);
-        break;
-      case 'annotation': {
-        const annotation = this.annotations.find(a => a.id === this.presetAnnotationId) ?? this.annotations[0];
-        if (!annotation) {
-          this.presetNote = 'This model has no annotation in the timeline range.';
+    this.presetAnchorUtc = null;
+    this.resultUnits = null;
+    const units = this.units;
+    const battery = this.batteryMode;
+    if (this.axis) {
+      switch (preset) {
+        case 'earliest':
+          this.applyPreset(ccEarliestVsLatest(units, battery));
+          break;
+        case 'annotation': {
+          const annotation = this.annotations.find(a => a.id === this.presetAnnotationId) ?? this.annotations[0];
+          if (!annotation) {
+            this.applyPreset({ ids: CC_NO_PERIOD_IDS, note: 'This model has no annotation in the timeline range.', anchorUtc: null });
+            break;
+          }
+          this.presetAnnotationId = annotation.id;
+          this.applyPreset(ccBeforeAfter(units, annotation.atUtc, battery, 'the annotation'));
           break;
         }
-        this.presetAnnotationId = annotation.id;
-        this.days = aroundPreset(axis, annotation.atUtc, this.span);
-        break;
-      }
-      case 'event': {
-        const groups = this.eventGroups;
-        const group = groups.find(g => g.key === this.presetEventGroupKey) ?? groups[0];
-        if (!group) {
-          this.presetNote = 'No Overseer change was detected in the timeline range.';
+        case 'event': {
+          const groups = this.eventGroups;
+          const group = groups.find(g => g.key === this.presetEventGroupKey) ?? groups[0];
+          if (!group) {
+            this.applyPreset({ ids: CC_NO_PERIOD_IDS, note: 'No Overseer change was detected in the timeline range.', anchorUtc: null });
+            break;
+          }
+          this.presetEventGroupKey = group.key;
+          this.applyPreset(ccBeforeAfter(units, group.atUtc, battery, `the Overseer change ${group.tag}`));
           break;
         }
-        this.presetEventGroupKey = group.key;
-        this.days = aroundPreset(axis, group.atUtc, this.span);
-        break;
-      }
-      case 'later': {
-        const last = this.lastAnalysis;
-        if (!last) {
-          this.presetNote = this.compareSet
-            ? `This model has no saved analysis of ${this.compareSet.label} yet; there is no earlier look to confirm.`
-            : 'This model has no saved analysis yet; there is no earlier look to confirm.';
+        case 'later': {
+          const last = this.lastAnalysis;
+          if (!last) {
+            const note = this.compareSet
+              ? `This model has no saved analysis of ${this.compareSet.label} yet; there is no earlier look to confirm.`
+              : 'This model has no saved analysis yet; there is no earlier look to confirm.';
+            this.applyPreset({ ids: CC_NO_PERIOD_IDS, note, anchorUtc: null });
+            break;
+          }
+          this.applyPreset(ccConfirmOnLaterData(units, last, battery));
           break;
         }
-        this.days = laterDataPreset(axis, last, this.span);
-        this.presetNote = `Compares the runs after the last analysis, saved ${formatUtcDateTime(last.createdAtUtc)}, with its baseline.`;
-        break;
+        case 'custom':
+          this.ids = ccPruneIds(units, this.ids);
+          break;
       }
     }
-    this.changed();
+    this.periodsChanged();
+  }
+
+  private applyPreset(outcome: CcPresetOutcome): void {
+    this.ids = sameIds(outcome.ids, this.ids) ? this.ids : outcome.ids;
+    this.presetNote = outcome.note;
+    this.presetAnchorUtc = outcome.anchorUtc;
   }
 
   onAnnotationPick(event: Event): void {
@@ -439,6 +555,17 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
   onEventPick(event: Event): void {
     this.presetEventGroupKey = (event.target as HTMLSelectElement).value;
     this.choosePreset('event');
+  }
+
+  /** A run choice made by hand: the preset becomes *Custom*. */
+  onRunPick(choice: CcRunChoice, event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.ids = { ...this.ids, [choice]: value === '' ? null : Number(value) };
+    this.preset = 'custom';
+    this.presetNote = '';
+    this.presetAnchorUtc = null;
+    this.resultUnits = null;
+    this.periodsChanged();
   }
 
   /**
@@ -464,13 +591,6 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return scopeIsDefault(this.scope) && !incomplete
       ? `Presets use every ${noun} in the dates: ${runs}.`
       : `Presets use the ${noun}s chosen in step 1: ${runs}.`;
-  }
-
-  onDayInput(field: keyof CcPeriodDays, value: string): void {
-    this.days = { ...this.days, [field]: value };
-    this.preset = 'custom';
-    this.presetNote = '';
-    this.changed();
   }
 
   onNameInput(event: Event): void {
@@ -512,24 +632,45 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
       .join(', ');
   }
 
-  // --- Runs and controls ---
+  // --- Controls and preview ---
 
   private get periodKey(): string {
-    const d = this.days;
-    return `${this.axis?.key}|${d.baselineStart}|${d.baselineEnd}|${d.comparisonStart}|${d.comparisonEnd}|${this.scopeKey}`;
+    const ids = this.ids;
+    return `${this.axis?.key}|${ids.baselineFirstId}|${ids.baselineLastId}|${ids.comparisonFirstId}|${ids.comparisonLastId}|${this.scopeKey}`;
   }
 
-  /** The units left out in step 1 that fall inside either period, ascending: battery run ids in a battery set. */
+  /** Checks every control candidate when the run choices or the step-1 selection changed; true when it did. */
+  private syncControls(): boolean {
+    const key = this.periodKey;
+    if (key === this.selectionKey) return false;
+    this.selectionKey = key;
+    this.replaceSelection(this.controlSelected, this.controlCandidates);
+    return true;
+  }
+
+  /**
+   * Checks every matched control the first time these run choices reach *Analyze*; the outer wizard
+   * calls it on entering that step. A change of the choices does the same by itself.
+   */
+  preselectRuns(): void {
+    if (this.syncControls()) this.changed();
+  }
+
+  /** The units left out in step 1 that started inside either window, ascending: battery run ids in a battery set. */
   get leftOutInPeriods(): number[] {
-    if (this.scope.leftOut.size === 0) return [];
-    const d = this.days;
+    const windows = this.windows;
+    if (this.scope.leftOut.size === 0 || !windows) return [];
     const units = this.batteryMode
       ? this.allBatteryRows.map(row => ({ id: row.batteryRunId, startedAtUtc: row.startedAtUtc }))
       : this.allRows.map(row => ({ id: row.runId, startedAtUtc: row.startedAtUtc }));
+    const inside = (at: number, start: string, end: string) => at >= utcMillis(start) && at <= utcMillis(end);
     return units
-      .filter(unit => this.scope.leftOut.has(unit.id)
-        && (withinUtcDays(unit.startedAtUtc, d.baselineStart, d.baselineEnd)
-          || withinUtcDays(unit.startedAtUtc, d.comparisonStart, d.comparisonEnd)))
+      .filter(unit => {
+        if (!this.scope.leftOut.has(unit.id)) return false;
+        const at = utcMillis(unit.startedAtUtc);
+        return inside(at, windows.baselineStartUtc, windows.baselineEndUtc)
+          || inside(at, windows.comparisonStartUtc, windows.comparisonEndUtc);
+      })
       .map(unit => unit.id)
       .sort((a, b) => a - b);
   }
@@ -539,73 +680,14 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return ids.map(id => `#${id}`).join(', ');
   }
 
-  private periodBounds(period: 'baseline' | 'comparison'): [string, string] {
-    return period === 'baseline'
-      ? [this.days.baselineStart, this.days.baselineEnd]
-      : [this.days.comparisonStart, this.days.comparisonEnd];
-  }
-
-  /** The runs in the analysis that started in the period; in a battery set, the members of its battery runs. */
-  periodRows(period: 'baseline' | 'comparison'): CcRunRow[] {
-    if (this.batteryMode) return this.periodBatteryRows(period).flatMap(row => row.members);
-    const [start, end] = this.periodBounds(period);
-    return [...this.rows]
-      .filter(row => withinUtcDays(row.startedAtUtc, start, end))
-      .sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc));
-  }
-
-  /** In a battery set, the battery runs in the analysis that started in the period, oldest first. */
-  periodBatteryRows(period: 'baseline' | 'comparison'): CcBatteryRunRow[] {
-    const [start, end] = this.periodBounds(period);
-    return [...this.batteryRows]
-      .filter(row => withinUtcDays(row.startedAtUtc, start, end))
-      .sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc) || a.batteryRunId - b.batteryRunId);
-  }
-
-  /** The member runs of the selected battery runs of both periods. */
-  private selectedMemberRows(): CcRunRow[] {
-    const selected = new Set([...this.baselineSelected, ...this.comparisonSelected]);
-    return [...this.periodBatteryRows('baseline'), ...this.periodBatteryRows('comparison')]
-      .filter(row => selected.has(row.batteryRunId))
-      .flatMap(row => row.members);
-  }
-
-  /**
-   * Selects the eligible units of each period and every matched control, the first time these periods
-   * reach *Runs and controls*; the outer wizard calls it on entering that step. In a battery set the
-   * units are the eligible complete battery runs.
-   */
-  preselectRuns(): void {
-    const key = this.periodKey;
-    if (key === this.selectionKey) return;
-    // Units still loading: chosen when they arrive (ngOnChanges).
-    if (this.batteryMode ? this.batteryRows.length === 0 : this.rows.length === 0) return;
-    this.selectionKey = key;
-    if (this.batteryMode) {
-      const eligible = (row: CcBatteryRunRow) => row.complete && isRunEligible(row);
-      this.replaceSelection(this.baselineSelected, this.periodBatteryRows('baseline').filter(eligible).map(row => row.batteryRunId));
-      this.replaceSelection(this.comparisonSelected, this.periodBatteryRows('comparison').filter(eligible).map(row => row.batteryRunId));
-    } else {
-      this.replaceSelection(this.baselineSelected, this.periodRows('baseline').filter(isRunEligible).map(row => row.runId));
-      this.replaceSelection(this.comparisonSelected, this.periodRows('comparison').filter(isRunEligible).map(row => row.runId));
-    }
-    this.replaceSelection(this.controlSelected, this.controlCandidates);
-    this.changed();
+  /** The runs of a period's eligible units: the members of its battery runs in a battery set. */
+  periodRows(period: CcPeriod): CcRunRow[] {
+    return this.periodUnits(period).flatMap(unit => unit.runs);
   }
 
   private replaceSelection(set: Set<number>, ids: readonly number[]): void {
     set.clear();
     for (const id of ids) set.add(id);
-  }
-
-  selection(period: 'baseline' | 'comparison'): Set<number> {
-    return period === 'baseline' ? this.baselineSelected : this.comparisonSelected;
-  }
-
-  toggleRun(period: 'baseline' | 'comparison', runId: number, event: Event): void {
-    const set = this.selection(period);
-    if ((event.target as HTMLInputElement).checked) set.add(runId); else set.delete(runId);
-    this.changed();
   }
 
   toggleControl(runId: number, event: Event): void {
@@ -618,7 +700,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.changed();
   }
 
-  /** The control runs matched to any run of either period, ascending. */
+  /** The control runs matched to any run of the eligible units in either period, ascending. */
   get controlCandidates(): number[] {
     const ids = new Set<number>();
     for (const row of [...this.periodRows('baseline'), ...this.periodRows('comparison')]) {
@@ -627,92 +709,82 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     return [...ids].sort((a, b) => a - b);
   }
 
-  /** The runs a re-grade covers: the selected target runs (the members of selected battery runs) and the selected controls. */
-  get regradeRunIds(): number[] {
-    const targets = this.batteryMode
-      ? this.selectedMemberRows().map(row => row.runId)
-      : [...this.baselineSelected, ...this.comparisonSelected];
-    return [...new Set([...targets, ...this.controlSelected])].sort((a, b) => a - b);
+  /** The checked control candidates, ascending. */
+  get selectedControls(): number[] {
+    return this.controlCandidates.filter(id => this.controlSelected.has(id));
   }
 
-  /** The selected runs of a period: the members of its selected battery runs in a battery set. */
-  private selectedRunIds(period: 'baseline' | 'comparison'): ReadonlySet<number> {
-    const selected = this.selection(period);
-    if (!this.batteryMode) return selected;
-    return new Set(this.periodBatteryRows(period).filter(row => selected.has(row.batteryRunId))
-      .flatMap(row => row.members.map(member => member.runId)));
+  /** The runs a re-grade covers: the runs of both periods (the members of their battery runs) and the checked controls. */
+  get regradeRunIds(): number[] {
+    const targets = [...this.periodRows('baseline'), ...this.periodRows('comparison')].map(row => row.runId);
+    return [...new Set([...targets, ...this.selectedControls])].sort((a, b) => a - b);
   }
 
   private pointsOf(ids: ReadonlySet<number>): CcTimelinePoint[] {
     return (this.timeline?.points ?? []).filter(point => ids.has(point.runId));
   }
 
-  /** The time strata both periods' selected runs sampled. */
+  /** The time strata both periods' runs sampled. */
   get commonStrata(): string[] {
-    const strataOf = (ids: ReadonlySet<number>) => new Set(this.pointsOf(ids).flatMap(point => point.strata));
-    const baseline = strataOf(this.selectedRunIds('baseline'));
-    const comparison = strataOf(this.selectedRunIds('comparison'));
+    const strataOf = (period: CcPeriod) =>
+      new Set(this.pointsOf(new Set(this.periodRows(period).map(row => row.runId))).flatMap(point => point.strata));
+    const baseline = strataOf('baseline');
+    const comparison = strataOf('comparison');
     return [...baseline].filter(stratum => comparison.has(stratum)).sort();
   }
 
   /** The composite Overseer events between the baseline's start and the comparison's end. */
   get eventGroupsInSpan(): CcEventGroup[] {
-    return this.eventGroups.filter(group => withinUtcDays(group.atUtc, this.days.baselineStart, this.days.comparisonEnd));
+    const windows = this.windows;
+    if (!windows) return [];
+    const start = utcMillis(windows.baselineStartUtc);
+    const end = utcMillis(windows.comparisonEndUtc);
+    return this.eventGroups.filter(group => {
+      const at = utcMillis(group.atUtc);
+      return at >= start && at <= end;
+    });
   }
 
-  /** Selected target runs without a matched control run; the members of selected battery runs in a battery set. */
+  /** The runs of both periods without a matched control run; the members of their battery runs in a battery set. */
   get missingControls(): CcRunRow[] {
-    if (this.batteryMode) return this.selectedMemberRows().filter(row => row.matchedControlRunIds.length === 0);
-    const selected = new Set([...this.baselineSelected, ...this.comparisonSelected]);
     return [...this.periodRows('baseline'), ...this.periodRows('comparison')]
-      .filter(row => selected.has(row.runId) && row.matchedControlRunIds.length === 0);
+      .filter(row => row.matchedControlRunIds.length === 0);
   }
 
   get analyzeBlocked(): string {
     if (!this.axis) return 'Choose a model in step 1 first.';
     if (this.periodsError) return this.periodsError;
     if (this.overridesError) return this.overridesError;
-    const noun = this.batteryMode ? 'battery run' : 'run';
-    if (this.baselineSelected.size === 0) return `Select at least one baseline ${noun}.`;
-    if (this.comparisonSelected.size === 0) return `Select at least one comparison ${noun}.`;
     return '';
   }
 
-  started(row: CcRunRow | CcBatteryRunRow): string {
-    return formatUtcDateTime(row.startedAtUtc);
+  started(unit: CcPeriodUnit): string {
+    return formatUtcDateTime(unit.startedAtUtc);
   }
 
-  controls(row: CcRunRow): string {
-    return controlRunsText(row);
+  /** A unit's suite, or `Board Suite, Wiki Suite` for a battery run's members, in suite order. */
+  unitSuites(unit: CcPeriodUnit): string {
+    return [...new Set(unit.runs.map(run => run.suiteName))].join(', ') || '—';
   }
 
-  eligible(row: CcRunRow | CcBatteryRunRow): boolean {
-    return isRunEligible(row);
-  }
-
-  /** `Board Suite, Wiki Suite`: a battery run's members' suites, in suite order. */
-  batterySuites(row: CcBatteryRunRow): string {
-    return [...new Set(row.members.map(member => member.suiteName))].join(', ') || '—';
-  }
-
-  /** The matched control runs of a battery run's members. */
-  batteryControls(row: CcBatteryRunRow): string {
-    const ids = [...new Set(row.members.flatMap(member => member.matchedControlRunIds))].sort((a, b) => a - b);
+  /** The matched control runs of a unit: of a battery run's members in a battery set. */
+  unitControls(unit: CcPeriodUnit): string {
+    if (!unit.battery) return controlRunsText(unit.runs[0]);
+    const ids = [...new Set(unit.runs.flatMap(member => member.matchedControlRunIds))].sort((a, b) => a - b);
     return ids.length === 0 ? 'None' : ids.map(id => `#${id}`).join(', ');
   }
 
   /** The request Analyze sends. */
   buildRequest(): CcAnalysisRequest | null {
     const axis = this.axis;
-    if (!axis || this.analyzeBlocked) return null;
-    const baseline = [...this.baselineSelected].sort((a, b) => a - b);
-    const comparison = [...this.comparisonSelected].sort((a, b) => a - b);
+    const windows = this.windows;
+    if (!axis || !windows || this.analyzeBlocked) return null;
+    const idsOf = (period: CcPeriod) => this.periodUnits(period).map(unit => unit.id).sort((a, b) => a - b);
+    const baseline = idsOf('baseline');
+    const comparison = idsOf('comparison');
     const request: CcAnalysisRequest = {
       subjectModelKey: axis.key,
-      baselineStartUtc: startOfUtcDay(this.days.baselineStart)!,
-      baselineEndUtc: endOfUtcDay(this.days.baselineEnd)!,
-      comparisonStartUtc: startOfUtcDay(this.days.comparisonStart)!,
-      comparisonEndUtc: endOfUtcDay(this.days.comparisonEnd)!,
+      ...windows,
       relaxedPooling: this.relaxedPooling,
       runSelection: this.runSelection()
     };
@@ -728,7 +800,7 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     const name = this.name.trim();
     if (name) request.name = name;
     // Without matched candidates the server chooses the controls itself.
-    if (this.controlCandidates.length > 0) request.controlRunIds = [...this.controlSelected].sort((a, b) => a - b);
+    if (this.controlCandidates.length > 0) request.controlRunIds = this.selectedControls;
     const overrides = this.protocolOverrides();
     if (overrides) request.protocolOverrides = overrides;
     return request;
@@ -819,17 +891,10 @@ export class CcAnalysisWizardComponent implements OnChanges, OnDestroy {
     this.marginOverrides = {};
     this.alphaOverride = '';
     this.relaxedPooling = false;
-    this.baselineSelected.clear();
-    this.comparisonSelected.clear();
     this.controlSelected.clear();
     this.selectionKey = null;
-    this.days = { baselineStart: '', baselineEnd: '', comparisonStart: '', comparisonEnd: '' };
-    if (this.axis) {
-      this.choosePreset('launch');
-    } else {
-      this.preset = 'custom';
-      this.presetNote = '';
-      this.changed();
-    }
+    this.resultUnits = null;
+    this.ids = CC_NO_PERIOD_IDS;
+    this.choosePreset(this.axis ? 'earliest' : 'custom');
   }
 }

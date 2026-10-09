@@ -673,7 +673,7 @@ public static class ChatConsistencyUnanalyzedReasons
     /// <summary>It comes after the step-1 last run, by start, then id.</summary>
     public const string AfterLastRun = "afterLastRun";
 
-    /// <summary>None of the above: unticked or not preselected in step 4.</summary>
+    /// <summary>None of the above: not assigned to a period in step 3.</summary>
     public const string NotSelected = "notSelected";
 
     /// <summary>It is not part of the compared battery or suite.</summary>

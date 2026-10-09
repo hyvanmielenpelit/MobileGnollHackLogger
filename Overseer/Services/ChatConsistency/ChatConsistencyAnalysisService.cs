@@ -3110,7 +3110,7 @@ public class ChatConsistencyAnalysisService
         ChatConsistencyUnanalyzedReasons.OutsideDateRange => "outside the step-1 dates",
         ChatConsistencyUnanalyzedReasons.BeforeFirstRun => "before the first run",
         ChatConsistencyUnanalyzedReasons.AfterLastRun => "after the last run",
-        ChatConsistencyUnanalyzedReasons.NotSelected => "not selected in step 4",
+        ChatConsistencyUnanalyzedReasons.NotSelected => "not assigned to a period",
         _ => reason
     };
 

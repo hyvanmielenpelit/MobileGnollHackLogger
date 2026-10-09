@@ -2888,8 +2888,8 @@ endpoints (§ 9), listed with `subject=chat-consistency:<id>&origin=chatConsiste
 
 ### The client
 
-The Chat Consistency tab's Reports step writes and polls the documents and opens the Download Center
-through the shell with the context `{ kind: 'chatConsistency', analysisId }` (title *Chat consistency
+The Reports section of the Chat Consistency wizard's Results step writes and polls the documents and
+opens the Download Center through the shell with the context `{ kind: 'chatConsistency', analysisId }` (title *Chat consistency
 documents*). The Download Center has a **Provider Issue Report** row (category `providerIssueReport`):
 the External preset selects it with the Executive Summary and the Report for AI Researchers and
 Developers, Internal selects every row. Its stored settings are **version 4**

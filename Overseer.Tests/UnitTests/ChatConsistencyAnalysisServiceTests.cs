@@ -517,7 +517,7 @@ public class ChatConsistencyAnalysisServiceTests
         Assert.Equal(
             "6 usable runs of the model inside the periods were not analyzed — left out in step 1: #5 (baseline), #10 (comparison); "
             + "outside the step-1 dates: #6 (baseline); before the first run: #7 (baseline); after the last run: #8 (comparison); "
-            + "not selected in step 4: #9 (comparison).",
+            + "not assigned to a period: #9 (comparison).",
             note.Text);
 
         string limitation = Assert.Single(result.Limitations, l => l.StartsWith(RunSelectionLimitationStart, StringComparison.Ordinal));
@@ -548,7 +548,7 @@ public class ChatConsistencyAnalysisServiceTests
 
         var note = Assert.Single(result.DataQuality, n => n.Kind == "runSelection");
         Assert.Equal(
-            "6 usable runs of the model inside the periods were not analyzed — not selected in step 4: #6 (baseline), #7 (baseline), "
+            "6 usable runs of the model inside the periods were not analyzed — not assigned to a period: #6 (baseline), #7 (baseline), "
             + "#5 (baseline), #9 (comparison), #10 (comparison), #8 (comparison).",
             note.Text);
         Assert.Single(result.Limitations, l => l.StartsWith(RunSelectionLimitationStart, StringComparison.Ordinal));

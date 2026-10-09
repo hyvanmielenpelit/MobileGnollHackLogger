@@ -135,7 +135,7 @@ Harness-neutral, and the floor for any Overseer frontend work.
     (`chat-consistency-tab/current-model-card/`).
   - **`.cc-marker-tag`** (`.is-event`, `.is-annotation`, `.is-served`, which differ by border style as
     well as color) — the Chat Consistency marker pill, shared by the chart figure, the event list and the
-    Runs and controls preview.
+    Analyze step's preview.
   - **`.gh-date-field*` and `.gh-calendar*`** — the shared date field `app-date-field`
     (`shared/date-field/`): `.gh-date-field` (the positioned wrapper), `.gh-date-field-input` (end
     padding for the button, tabular figures), `.gh-date-field-btn` (the 30 px calendar button's
@@ -371,7 +371,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     drop is announced. Choosing another model clears the selection silently; opening a saved analysis
     clears it and, when one was set, announces *The run selection in step 1 was cleared to show the
     saved analysis.* It is a **launcher page**
-    (`section.bm-launcher.cc-launcher`) plus a **six-step wizard in a full-screen dialog**
+    (`section.bm-launcher.cc-launcher`) plus a **four-step wizard in a full-screen dialog**
     (`dialog.gh-dialog.gh-dialog-fullscreen.cc-wizard-dialog`, `showModal()`, no `closedby="any"`),
     modeled on the Model Comparison wizard. The state lives as long as the tab component, so a GnollBench
     sub-tab switch loses the run selection, the step and an analysis in progress (`ngOnDestroy` closes an
@@ -383,7 +383,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     runs removed. Step 1's **Compare** select (`GET comparison-sets`, groups *Batteries* and *Suites*)
     picks the battery or suite the analysis compares within; the server's `defaultKey` applies unless the
     stored key is still offered, and a change clears the selection with an announcement. In a battery set
-    the cards, the selection band, step 3's span and step 4's rows are **battery runs**
+    the cards, the selection band and step 3's span, run selects and units table are **battery runs**
     (`GET battery-runs`, `CcBatteryRunRow`, view stored in
     `overseer.benchmark.chatConsistency.batteryRuns.view`); `chat-consistency-scope.ts` keys the scope by
     unit id and unit kind, and `scopeKey` includes the set key. With no set the runs are not filtered and
@@ -403,19 +403,21 @@ To find specific popups, look in the corresponding component's `.html` template:
       list with *Open* and *Delete*; a delete the server refuses with 409 (report documents exist) shows
       its reason inside the dialog. **Open** fetches the analysis, switches the subject to its model,
       opens the wizard and calls `CcWizardComponent.showResult`, which mounts the analysis component
-      before handing it the result and selects step 5.
+      before handing it the result and selects step 4.
     - `cc-wizard/` (`app-cc-wizard`): the whole dialog content in the global `gh-wizard*` frame —
       header (`#cc-wizard-title`, a subtitle *model · N runs · dates*, plus *· N in the analysis* while
       the step-1 selection narrows the runs, the icon-only **Reload runs**
       `.action-btn` with *rotate* on steps 1–2, `aria-disabled` while loading or without a model, and the
-      close `.btn-icon-action`), the step tabs *1. Model · 2. Timeline · 3. Periods · 4. Runs and controls
-      · 5. Results · 6. Reports* (`frontend_ui_controls` §5, a tab that cannot be opened is `aria-disabled`
-      and described by its reason), the step panels, and the footer (*Previous*, *Step N of 6 — title*
-      with the reason Next is blocked, *Next* / **Analyze** on step 4 / *Close* on step 6, and *Stop
-      Analysis* while analyzing). Reachability: step 1 always; 2 and 3 a model; 4 valid periods and
-      overrides; 5 and 6 a result. Every step is mounted on its first visit and then kept, hidden;
-      `wizardMounted` on the tab is never reset, so reopening keeps everything. `closeBlocked` — a chart
-      export running or the Reports step's `chartsAttaching` — disables the close button and Close and
+      close `.btn-icon-action`), the step tabs *1. Model · 2. Timeline · 3. Analyze · 4. Results*
+      (`CC_WIZARD_STEPS`; `frontend_ui_controls` §5, a tab that cannot be opened is `aria-disabled`
+      and described by its reason), the step panels, and the footer (*Previous*, *Step N of 4 — title*
+      with the reason Next is blocked, *Next: Timeline* / *Next: Analyze* / **Analyze** on step 3 /
+      *Close* on step 4, and *Stop Analysis* while analyzing; `analyzeBlocked` names `periodsError` or
+      `overridesError` as the reason). Reachability: step 1 always; 2 and 3 a model; 4 a result.
+      Entering step 3 calls `preselectRuns()`, and a saved analysis moves to step 4. Every step is
+      mounted on its first visit and then kept, hidden; `wizardMounted` on the tab is never reset, so
+      reopening keeps everything. `closeBlocked` — a chart export running or `chartsAttaching` of the
+      Results step's Reports section — disables the close button and Close and
       makes the tab refuse Escape (`onWizardCancel`). It also locks step 1 (`subjectLockedReason` →
       `lockedReason`: the picker's `disabled`, an `aria-disabled` *Dates* select whose `change` writes
       the stored preset back, `readonly` date fields whose calendar buttons are `aria-disabled` and open
@@ -478,8 +480,8 @@ To find specific popups, look in the corresponding component's `.html` template:
       clears it, with a note; the run holding the mark clears it), `toggleLeftOut`, `pruneScope`,
       `scopeSpanDays`, `scopeKey`, `scopeIsDefault`, `scopeChangeCount`, `CC_INCLUSION_TEXT`. Order is by
       `startedAtUtc`, then run id, never the card sort; every change returns a new object, and components
-      compare scopes by identity. `cc-wizard` memoizes `scopedRows`, `notAnalyzed`, `analysisSpan` and
-      `scopeKeyValue` on the rows and scope objects. Pure.
+      compare scopes by identity. `cc-wizard` memoizes `scopedRows`, `scopedBatteryRows`, `notAnalyzed`
+      and `scopeKeyValue` on the rows, the set and the scope object. Pure.
     - `timeline-workspace/` (`app-cc-timeline-workspace`, step 2, in a `.gh-fig-host` step): the global
       `gh-fig-*` workspace — a sidebar (`#cc-tl-sidebar`, 18–40 rem, at most half the workspace, 26 rem
       by default, `app-pane-resizer`, width as `--gh-fig-sidebar-width`; collapsed by the view bar's
@@ -576,42 +578,89 @@ To find specific popups, look in the corresponding component's `.html` template:
       30 days · change in step 1* and the charts' *dates* badge.
     - `chat-consistency-events.ts`: `groupOverseerEvents` groups the timeline's Overseer events into
       **composite events** — one per UTC day and harness version, tagged `E1`… in time order — for the
-      chart markers, the event list, the Runs and controls preview and the *Before vs after an Overseer
+      chart markers, the event list, the Analyze step's preview and the *Before vs after an Overseer
       change* preset; presentation only, the server's analysis is unchanged. It also builds the
       served-model changes (`S1`…), the tagged annotations (`A1`…) and the day list `buildEventDays`; a
       filter drops items, never renumbers them. `event-list/` (`app-cc-event-list`) renders that list,
       sticky day headings, chips per kind and a *Details* disclosure per composite; it is in the
       Timeline's Events tab and on Results.
-    - `analysis-wizard/` (`app-cc-analysis-wizard`, steps 3–6): one component shared by the four
-      steps, its `step` input chosen by the wizard, which draws the step bar, headings and footer. Step 3
-      offers the presets *Launch vs last 14 days*, *Before vs after an annotation*, *Before vs after an
-      Overseer change* (a select of composite events), *Confirm on later data* and *Custom dates*, shows
-      Protocol V1 and a *Override the protocol* disclosure; its four dates are `app-date-field`s
-      (`cc-wiz-bs`, `cc-wiz-be`, `cc-wiz-cs`, `cc-wiz-ce`) emitting into `onDayInput(field, value)`. Its
-      inputs: `rows` is the **scoped** list (the runs in the analysis), `allRows` every run in the dates,
-      `scope`, `range`, `span` (`scopeSpanDays` of the scoped rows) and `scopeKey`. The presets span
-      `seriesDays(axis, span)` — the span when given, else the subject's first and last run — and the note
-      `.cc-wiz-span-note` says so (*Presets use the runs chosen in step 1: #21 (2026-09-20) to #93
-      (2026-10-05), 15 runs.* / *Presets use every run in the dates: …*); a span change re-applies a
-      preset other than *Custom dates*, and `periodKey` carries `scopeKey`, so a new selection preselects
-      the runs again. Step 4 chooses runs and controls, holds
-      `regrade-panel.component.*` (estimate dialog first, `confirmed: true` only from its Re-grade
-      button) and the relaxed-pooling checkbox, previews strata, composite events, missing controls and
-      *Left out in step 1: #45, #51* (left-out runs of `allRows` inside either period), and posts the
-      analysis from the footer's Analyze with `runSelection` (`rangeLabel` = `ccDateRangeText`, the
-      `ccRangeBounds`, the marks and the left-out ids ascending), always sent, the default selection
-      included; step 5 is `results-view.component.*` (one column of charts, then *Events in the analyzed
+    - `analysis-wizard/` (`app-cc-analysis-wizard`, steps 3 and 4): one component shared by the two
+      steps (`CcAnalysisStep` `'analyze' | 'results'`), its `step` input chosen by the wizard, which
+      draws the step bar, headings and footer. Its inputs: `rows` is the **scoped** list (the runs in the
+      analysis), `allRows` every run of the set in the dates, `batteryRows` / `allBatteryRows` the same
+      for battery runs, `scope`, `range` and `scopeKey`. **Step 1 is the only place that chooses runs**;
+      step 3, *Analyze*, splits the step-1 units into periods. The pure logic is in
+      `chat-consistency-periods.ts` (tests in `chat-consistency-periods.spec.ts`): `ccPeriodUnits` (the
+      units — the complete scoped battery runs in a battery set, else the scoped runs — by
+      `startedAtUtc`, then id; eligible by `isRunEligible`, and `complete` for a battery run),
+      `ccPeriodAssignment` (each unit's period: *Baseline*, *Comparison*, *Not used* or *Not eligible*),
+      `ccPeriodsRefusal`, `ccPeriodWindows` and one function per preset returning the four ids and a
+      note. Step 3, top to bottom:
+      - the subject `dl` (*Model*, *Runs*, *Compared*) and the optional **Name**;
+      - the **Periods** `fieldset`: the preset radio group — *Earliest vs latest* (the default: the
+        first 14 against the last 14 UTC days when the units span 28 days or more, else the earlier days
+        against the later split at the best-balanced day boundary, else on one day the earlier half
+        against the later half), *Before vs after an annotation* and *Before vs after an Overseer
+        change* (selects of annotations and composite events; every eligible unit before the anchor
+        against every one at or after it, with no window around it), *Confirm on later data* (the units
+        inside the last saved analysis's baseline window against those started after its
+        `createdAtUtc`) and *Custom* — the preset note `.cc-wiz-preset-note` (`role="status"`, naming the
+        rule that applied or why the preset cannot apply), the span note `.cc-wiz-span-note` (*Presets
+        use the runs chosen in step 1: #21 (2026-09-20) to #93 (2026-10-05), 15 runs.* / *Presets use
+        every run in the dates: …*), then the rows **Baseline** and **Comparison**, each with a *First
+        run* and a *Last run* native `select.gh-input` (`cc-wiz-bf`, `cc-wiz-bl`, `cc-wiz-cf`,
+        `cc-wiz-cl`; visually-hidden labels *Baseline first run* …; options *#12 · 2026-10-08 14:05 UTC*
+        from `formatUtcDateTime`, with *Battery run* in the accessible option text in a battery set),
+        and the refusal `.cc-wiz-periods-error` (`periodsError`). State is `baselineFirstId`,
+        `baselineLastId`, `comparisonFirstId` and `comparisonLastId`; a period is the contiguous range
+        between its first and last, and units between the two ranges are *Not used*. Editing a select
+        switches to *Custom*; a changed step-1 selection re-applies the chosen preset, *Custom* choices
+        stay while their units remain, and a unit that leaves clears the choice naming it;
+      - **Runs in the periods**: one read-only `table.gh-table.cc-wiz-units` (caption *Runs in the
+        periods* / *Battery runs in the periods*), a row per step-1 unit with *Run* (*Battery run*),
+        *Started (UTC)*, *Suite* (*Suites*), *Period* and *Matched controls*; no checkboxes and no anchor
+        button (*Mark as anchor* is in step 1's *More actions*). Under it one sample line per period
+        from `CC_PROTOCOL_V1` (*Baseline: 1 battery run on 1 day (2026-10-08). P1, P4 and P5 need at
+        least 2 on 2 days to be Established.*, or *… meets the minimum sample for P1, P4 and P5*);
+      - the **Control runs** `fieldset` (hint *Other models' runs under the same Overseer build. Used
+        only to attribute a change to a side, never for the verdicts.*): checkboxes for the matched
+        controls of the eligible units in the two periods, all checked again whenever the assignment
+        changes (`selectionKey` on the four ids and `scopeKey`); with none matched, the server looks
+        for controls itself;
+      - `regrade-panel.component.*` (`app-cc-regrade-panel`, `regradeRunIds` from the assigned units;
+        estimate dialog first, `confirmed: true` only from its Re-grade button), the relaxed-pooling
+        checkbox, and the `details.gh-disclosure` *Protocol V1: margins and minimum sample*, closed by
+        default, holding the endpoint table and *Override the protocol* (`overridesError` still blocks
+        Analyze);
+      - the preview: common strata, composite events between `baselineStartUtc` and
+        `comparisonEndUtc`, missing controls and *Left out in step 1: #45, #51* (left-out runs of
+        `allRows` inside either window).
+
+      `buildRequest()` sends each period's eligible unit ids, the compared set, the controls, the
+      overrides, `runSelection` (`rangeLabel` = `ccDateRangeText`, the `ccRangeBounds`, the marks and
+      the left-out ids ascending; always sent, the default selection included) and the four windows
+      `ccPeriodWindows` **derives** from the ranges: the baseline from the start of its first unit's
+      UTC day, the comparison to the end of its last unit's; between them the day boundary when the
+      baseline's last unit and the comparison's first started on different UTC days, else the split
+      instant `S` (the preset's anchor when `B.last < anchor ≤ C.first`, otherwise the comparison's
+      first start), with `baselineEndUtc = S − 1 ms` and `comparisonStartUtc = S`. Step 4, *Results*,
+      is `results-view.component.*` (one column of charts, then *Events in the analyzed
       span* as an `app-cc-event-list`, then the **Run selection** section before *Limitations* while
       `runSelection.recorded` or it lists unanalyzed runs: a `dl` of *Dates* (the label and its UTC
       bounds, an open one read as *the first run* / *the last run*), *First run*, *Last run* and *Left out
-      in step 1* (*none* when empty), then *Not analyzed* by reason in `CC_UNANALYZED_REASONS` order, or
-      *Every usable run of the model in the periods was analyzed.*; absent for a code-version-1
-      analysis); step 6 is
-      `reports-step.component.*` (the four Chat Consistency Report audiences, the Provider Issue Report
-      enabled only when the estimate says it is available, a same-provider dialog asked on every write,
-      then the charts drawn by `chat-consistency-report-charts.ts` and uploaded;
-      `CC_REPORT_CHART_VERSION` 2 marks charts drawn with composite events).
-    The Reports step opens the Download Center through the shell (`openDocuments` →
+      in step 1* (*none* when empty), then *Not analyzed* by reason in `CC_UNANALYZED_REASONS` order —
+      `notSelected` reads *Not assigned to a period* — or *Every usable run of the model in the periods
+      was analyzed.*; absent for a code-version-1 analysis), then, after *Data quality*,
+      `h5.cc-res-heading#cc-res-reports-title` *Reports* and
+      `reports-step.component.*` (`app-cc-reports-step`, kept as the `@ViewChild`: the four Chat
+      Consistency Report audiences, the Provider Issue Report enabled only when the estimate says it is
+      available, a same-provider dialog asked on every write, then the charts drawn by
+      `chat-consistency-report-charts.ts` and uploaded, versioned by `CC_REPORT_CHART_VERSION`; its
+      estimate, job status and document list load when Results first shows). `showResult(result)` sets
+      the four ids from the result's units or run ids — the earliest and latest of each period still
+      among the current units, preset *Custom*; with none present they stay null and the refusal says
+      why, while the stored result still shows.
+    The Reports section opens the Download Center through the shell (`openDocuments` →
     `openChatConsistencyDownloads`) with the `chatConsistency` context.
   - **"Repeat this run's setup"** fills Run Benchmark from a stored run and **never starts anything**.
     It appears in the run report header (`#rr-repeat-setup-btn`), in a Chat Consistency run card's *More

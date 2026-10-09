@@ -106,16 +106,36 @@ when the operator confirms.
 ## 8. Detection and Confirmation
 
 Choosing periods after looking at the timeline is **detection**. Confirm a change on data that did not
-exist when it was found: the wizard's **Confirm on later data** preset takes the last saved analysis's
-baseline against the runs after it was saved. Change-point detection (`ChatConsistencyStatistics.Pelt`)
-exists but is not wired into the analysis or the timeline.
+exist when it was found: the wizard's **Confirm on later data** preset takes the step-1 units that
+started inside the last saved analysis's baseline window against those started after the moment it was
+saved (`createdAtUtc`, an instant, not the next whole day). Change-point detection
+(`ChatConsistencyStatistics.Pelt`) exists but is not wired into the analysis or the timeline.
+
+**The periods are run ranges, not dates.** Step 1 alone chooses the runs (or battery runs) the analysis
+uses; step 3, *Analyze*, splits them: each period is every step-1 unit from a chosen first run to a
+chosen last run, by start, then id, and only its eligible units are sent. Units between the two
+ranges are not used. Any two units with different start times can be split, on the same day too. The
+request still carries `baselineStartUtc`, `baselineEndUtc`, `comparisonStartUtc` and
+`comparisonEndUtc`, which the server uses to find candidate controls, assign controls to a period,
+classify unanalyzed runs and label the result; the client **derives** them from the ranges. The
+baseline starts at the start of its first unit's UTC day and the comparison ends at the end of its last
+unit's UTC day. When the baseline's last unit and the comparison's first started on different UTC days,
+the split is the day boundary between them; on the same day it is an instant `S` — the preset's
+annotation or Overseer-change time when it falls after the baseline's last unit and no later than the
+comparison's first, else the comparison's first start — with `baselineEndUtc = S − 1 ms` and
+`comparisonStartUtc = S`. The windows never overlap, so the server's validation is unchanged. The
+**before/after presets** (*Before vs after an annotation*, *Before vs after an Overseer change*) take
+every eligible step-1 unit before the anchor against every one at or after it, with no window around
+the anchor: step 1's *First run* and *Last run* bound the scope. **Control runs** are other models' runs
+under the same build and serve attribution only, never the P1–P5 verdicts.
 
 **Leaving runs out after looking at the timeline is detection too.** Step 1 of the wizard lets the
 operator mark a first and a last run and leave runs out; nothing stops dropping a run *because* it is an
 outlier. So every analysis saved since `AnalysisCodeVersion` 2 records its **run selection** (the step-1
 dates, the marks, the left-out runs) and every usable run of the model inside the periods that was not
 analyzed, with why: *left out in step 1*, *outside the step-1 dates*, *before the first run*, *after the
-last run* or *not selected in step 4*. When any run is unanalyzed, the result carries a `runSelection`
+last run* or *not assigned to a period* (wire value `notSelected`; an older analysis keeps the note
+text it was saved with). When any run is unanalyzed, the result carries a `runSelection`
 data-quality note naming them and a limitation (*"The operator chose the runs: … leaving runs out after
 looking at the timeline can bias them."*), and the report documents state both. **A reader citing a
 verdict must not drop that note or limitation**: a verdict on a hand-picked subset holds for the
