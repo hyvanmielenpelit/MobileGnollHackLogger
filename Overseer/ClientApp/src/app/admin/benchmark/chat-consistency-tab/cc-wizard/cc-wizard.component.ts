@@ -57,10 +57,10 @@ export type CcWizardStep = 1 | 2 | 3 | 4 | 5 | 6;
  */
 export const CC_WIZARD_STEPS = [
   { step: 1, title: 'Model', summary: 'Choose the model, the dates and the runs the analysis uses.' },
-  { step: 2, title: 'Timeline', summary: 'Every measure over the dates, with the Overseer changes, annotations and served-model changes.' },
+  { step: 2, title: 'Charts', summary: 'Every measure over the dates as a chart, with the Overseer changes, annotations and served-model changes.' },
   { step: 3, title: 'Analyze', summary: 'Split the chosen runs into a baseline and a comparison, review the controls and the protocol, and analyze.' },
-  { step: 4, title: 'Results', summary: 'The verdicts, the periods, their attribution and the next runs.' },
-  { step: 5, title: 'Reports', summary: 'Write AI reports about the analysis.' },
+  { step: 4, title: 'Results', summary: 'The verdict on the chat and its key figures, then the verdicts, the periods, their attribution and the next runs.' },
+  { step: 5, title: 'Write', summary: 'Write AI reports about the analysis.' },
   { step: 6, title: 'Documents', summary: 'View, download and delete the report documents of the analysis.' }
 ] as const;
 
@@ -75,10 +75,10 @@ const ANALYSIS_STEP_OF: Readonly<Record<CcAnalysisWizardStep, CcAnalysisStep>> =
 };
 
 const NEXT_LABELS: Readonly<Record<CcWizardStep, string>> = {
-  1: 'Next: Timeline',
+  1: 'Next: Charts',
   2: 'Next: Analyze',
   3: 'Analyze',
-  4: 'Next: Reports',
+  4: 'Next: Write',
   5: 'Next: Documents',
   6: 'Close'
 };
@@ -316,7 +316,7 @@ export class CcWizardComponent {
 
   /**
    * The wizard's close controls, and Escape through the tab, refuse while a chart export runs or the
-   * Reports step draws and uploads report charts: closing would strand a half-written batch.
+   * Write step draws and uploads report charts: closing would strand a half-written batch.
    */
   get closeBlocked(): boolean {
     return this.workspaceExporting || (this.analysis?.chartsAttaching ?? false);
@@ -498,7 +498,7 @@ export class CcWizardComponent {
     this.cdr.markForCheck();
   }
 
-  /** The Reports step's *See the documents*: step 6, focus on its tab. */
+  /** The Write step's *See the documents*: step 6, focus on its tab. */
   onStepRequested(): void {
     this.goToStep(6);
     this.host.nativeElement.querySelector<HTMLElement>('#cc-step-tab-6')?.focus();

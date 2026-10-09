@@ -2,7 +2,7 @@ import { BenchmarkReportAudience } from '../../../services/admin-benchmark.servi
 
 /*
  * The advice behind the *Choosing a report writer* info tips: the run report's and the battery run
- * report's AI Reports tabs, the Report Pack dialog and the Chat Consistency wizard's Reports step. It follows docs/overseer/ai-benchmark-report-pack.md § 4, The Writer Model.
+ * report's AI Reports tabs, the Report Pack dialog and the Chat Consistency wizard's Write step. It follows docs/overseer/ai-benchmark-report-pack.md § 4, The Writer Model.
  */
 
 /** One entry of the advice: a document, or what every document shares. */
@@ -113,7 +113,7 @@ export const REPORT_PACK_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_PACK_SHARED
 ];
 
-/** The Chat Consistency wizard's Reports step: its four documents, then what they share. */
+/** The Chat Consistency wizard's Write step: its four documents, then what they share. */
 export const CHAT_CONSISTENCY_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],

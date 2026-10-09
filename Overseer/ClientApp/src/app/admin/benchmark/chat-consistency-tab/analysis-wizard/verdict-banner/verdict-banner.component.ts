@@ -59,7 +59,7 @@ export const CC_GRADE_DEFINITIONS: readonly { readonly term: string; readonly te
 ];
 
 /**
- * The head of the Results step: the analysis's outcome over the server's verdicts, the model with its
+ * The head of the Results step's Summary tab: the analysis's outcome over the server's verdicts, the model with its
  * badges, one chip per endpoint that asks the host to show its verdict, the scope and the protocol with
  * their explanations in dialogs, and the reliability lines of the headline.
  */

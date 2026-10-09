@@ -1160,7 +1160,7 @@ describe('CcAnalysisWizardComponent', () => {
       expect(batteryRuns).toEqual([12]);
     });
 
-    it('renders the Reports step on its first visit and keeps it mounted and hidden afterwards', () => {
+    it('renders the Write step on its first visit and keeps it mounted and hidden afterwards', () => {
       component.showResult(ccAnalysisResult());
       goToReports();
       expect(shownSteps()).toEqual(['reports']);
@@ -1178,7 +1178,7 @@ describe('CcAnalysisWizardComponent', () => {
       expect(el.querySelector('app-cc-reports-step')).toBe(reports);
     });
 
-    it('asks the outer wizard for the Documents step on the Reports step\'s See the documents', () => {
+    it('asks the outer wizard for the Documents step on the Write step\'s See the documents', () => {
       const requested: string[] = [];
       component.stepRequested.subscribe(step => requested.push(step));
       component.showResult(ccAnalysisResult());
@@ -1188,7 +1188,7 @@ describe('CcAnalysisWizardComponent', () => {
       expect(requested).toEqual(['documents']);
     });
 
-    it('emits stateChange when the Reports step\'s job or chart state changes', () => {
+    it('emits stateChange when the Write step\'s job or chart state changes', () => {
       component.showResult(ccAnalysisResult());
       goToReports();
       let changes = 0;
@@ -1243,7 +1243,7 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
     });
 
-    it('lists the Documents step again when the Reports step\'s documents change', () => {
+    it('lists the Documents step again when the Write step\'s documents change', () => {
       component.showResult(ccAnalysisResult());
       goToReports();
       goToDocuments();
@@ -1256,7 +1256,7 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
     });
 
-    it('lists the Reports step\'s documents again after a change in the Documents step', () => {
+    it('lists the Write step\'s documents again after a change in the Documents step', () => {
       component.showResult(ccAnalysisResult());
       goToReports();
       goToDocuments();
@@ -1271,7 +1271,7 @@ describe('CcAnalysisWizardComponent', () => {
       fixture.detectChanges();
     });
 
-    it('lists nothing again from the Documents step before the Reports step was visited', () => {
+    it('lists nothing again from the Documents step before the Write step was visited', () => {
       component.showResult(ccAnalysisResult());
       goToDocuments();
       expect(component.reportsStep).toBeUndefined();
@@ -1307,7 +1307,7 @@ describe('CcAnalysisWizardComponent', () => {
       expect(component.reachable('results')).toBe(true);
     });
 
-    it('reports chartsAttaching while the Reports step attaches charts', () => {
+    it('reports chartsAttaching while the Write step attaches charts', () => {
       expect(component.chartsAttaching).toBe(false);
       component.showResult(ccAnalysisResult());
       goToReports();

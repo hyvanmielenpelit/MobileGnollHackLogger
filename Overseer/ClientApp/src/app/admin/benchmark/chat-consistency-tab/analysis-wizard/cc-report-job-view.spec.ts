@@ -41,7 +41,7 @@ function context(overrides: Partial<CcReportDiagnosticsContext> = {}): CcReportD
 }
 
 describe('cc-report-job-view', () => {
-  it('names a document as the Reports step does', () => {
+  it('names a document as the Write step does', () => {
     expect(ccReportAudienceLabel(BenchmarkReportAudience.InternalBrief)).toBe('Internal Brief');
     expect(ccReportAudienceLabel(BenchmarkReportAudience.ProviderIssueReport)).toBe('Provider Issue Report');
   });

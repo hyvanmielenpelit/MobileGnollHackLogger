@@ -121,7 +121,7 @@ Harness-neutral, and the floor for any Overseer frontend work.
     with `.gh-fig-canvas.is-transparent-figure`, the preview backdrop behind a transparent figure as the
     canvas's own CSS background, never in a written file: the color is `--gh-fig-backdrop`, inherited
     from the scroller (each wizard's `figureBackdropStyle`), the checkerboard without it;
-    shared by Model Comparison step 2 and the Chat Consistency Timeline step; the Chat Consistency
+    shared by Model Comparison step 2 and the Chat Consistency Charts step; the Chat Consistency
     Analyze step uses the workspace, sidebar, bar and panels without tiles or canvas. Model Comparison
     keeps its `mc-` classes beside them, which its specs query.
   - **`bm-launcher*`** — the launcher page of a benchmark sub-tab whose task is a full-screen wizard
@@ -436,11 +436,11 @@ To find specific popups, look in the corresponding component's `.html` template:
       header (`#cc-wizard-title`, a subtitle *model · N runs · dates*, plus *· N in the analysis* while
       the step-1 selection narrows the runs, the icon-only **Reload runs**
       `.action-btn` with *rotate* on steps 1–2, `aria-disabled` while loading or without a model, and the
-      close `.btn-icon-action`), the step tabs *1. Model · 2. Timeline · 3. Analyze · 4. Results ·
-      5. Reports · 6. Documents* (`CC_WIZARD_STEPS`; `frontend_ui_controls` §5, a tab that cannot be
+      close `.btn-icon-action`), the step tabs *1. Model · 2. Charts · 3. Analyze · 4. Results ·
+      5. Write · 6. Documents* (`CC_WIZARD_STEPS`; `frontend_ui_controls` §5, a tab that cannot be
       opened is `aria-disabled` and described by its reason), the step panels, and the footer
-      (*Previous*, *Step N of 6 — title* with the reason Next is blocked, *Next: Timeline* / *Next:
-      Analyze* / **Analyze** on step 3 / *Next: Reports* / *Next: Documents* / *Close* on step 6, and
+      (*Previous*, *Step N of 6 — title* with the reason Next is blocked, *Next: Charts* / *Next:
+      Analyze* / **Analyze** on step 3 / *Next: Write* / *Next: Documents* / *Close* on step 6, and
       *Stop Analysis* while analyzing; `analyzeBlocked` names `periodsError` or `overridesError` as the
       reason). Reachability: step 1 always; 2 and 3 a model; 4 a result; 5 and 6 a saved one (the
       analysis component's `reachable()`: `result.analysisId !== null`), each blocked one described by
@@ -448,7 +448,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       analysis moves to step 4, and step 5's *See the documents* (`stepRequested`) moves to step 6 and
       focuses its tab. Every step is mounted on its first visit and then kept, hidden; `wizardMounted`
       on the tab is never reset, so reopening keeps everything. `closeBlocked` — a chart export running
-      or `chartsAttaching` of the Reports step (its `chartState === 'attaching'`, surfaced through its
+      or `chartsAttaching` of the Write step (its `chartState === 'attaching'`, surfaced through its
       `stateChange` output) — disables the close button and Close on step 6 and
       makes the tab refuse Escape (`onWizardCancel`). It also locks step 1 (`subjectLockedReason` →
       `lockedReason`: the picker's `disabled`, an `aria-disabled` *Dates* select whose `change` writes
@@ -504,7 +504,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       `CC_RANGE_PRESETS`, `CC_ALL_DATES`, `ccRangeBounds` (a rolling preset is the anchor minus N × 24 h,
       `1y` one calendar year, with an open end; `custom` inclusive UTC days), `ccAnchorRange`,
       `ccDateRangeText` (*All dates*, *Last 7 days*, *2026-09-01 to 2026-10-05*, *From …*, *Until …*: the
-      one text the launcher, the subtitle, the Timeline read-out and the recorded `rangeLabel` share) and
+      one text the launcher, the subtitle, the Charts step's read-out and the recorded `rangeLabel` share) and
       `ccPresetToCustom`. Pure.
     - `chat-consistency-scope.ts`: `CcRunScope` (`firstRunId`, `lastRunId`, `leftOut`), `CC_EMPTY_SCOPE`,
       `runInclusion` (`included`, `leftOut`, `beforeSpan`, `afterSpan`; the span is tested first),
@@ -607,7 +607,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       keeps each series' own symbol in the legend, adds the caption sentence *N runs not in the analysis
       are drawn as gray crosses.* (runs with a value in any of the figure's series; a composed image
       repeats it as a note while `notAnalyzedNote` is on), the tooltip line *Not in the analysis: reason* (only a theme with a tooltip box draws
-      it, so never the Timeline, whose data cards carry the reason) and the table column *In the
+      it, so never the Charts step, whose data cards carry the reason) and the table column *In the
       analysis*. The report charts pass no map. Its `rangeLabel` input gives the read-out *model · Last
       30 days · change in step 1* and the charts' *dates* badge.
     - `chat-consistency-events.ts`: `groupOverseerEvents` groups the timeline's Overseer events into
@@ -619,7 +619,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       served-model changes (`S1`…), the tagged annotations (`A1`…) and the day list `buildEventDays`; a
       filter drops items, never renumbers them. `event-list/` (`app-cc-event-list`) renders that list,
       sticky day headings, chips per kind and a *Details* disclosure per composite; it is in the
-      Timeline's Events tab and in the Results step's *Details* tab.
+      Charts step's Events tab and in the Results step's *Details* tab.
     - `analysis-wizard/` (`app-cc-analysis-wizard`, steps 3 to 6): one component shared by the four
       steps (`CcAnalysisStep` `'analyze' | 'results' | 'reports' | 'documents'`), its `step` input
       chosen by the wizard, which draws the step bar, headings and footer. Its inputs: `rows` is the **scoped** list (the runs in the
@@ -670,7 +670,7 @@ To find specific popups, look in the corresponding component's `.html` template:
         points* …), α and the minimum samples, then the `details.gh-disclosure` *Override the protocol*
         (`#cc-wiz-margin-P1` …, `#cc-wiz-alpha`; `overridesError` still blocks Analyze). Sidebar groups
         are `.gh-fieldset`s; the control-run and pooling hints are click-mode `app-info-tip`s.
-      - **The view bar** `.gh-fig-bar`: the sidebar toggle (the Timeline's `cc-tl-sidebar-toggle`
+      - **The view bar** `.gh-fig-bar`: the sidebar toggle (the Charts step's `cc-tl-sidebar-toggle`
         markup and glyph, named *Analysis settings*, `aria-expanded`, hint *Show settings* / *Hide
         settings*), then the `.gh-tabs` row *Analysis views*: **Periods** and **Preview**, the latter
         with a `.gh-tab-count` badge (hidden *notes*) while the preview has notes.
@@ -759,25 +759,28 @@ To find specific popups, look in the corresponding component's `.html` template:
       ` (<level>)` from the server's `displayName` when it is the subject's thinking level). The wizard
       binds `rows` to `allRows`, `batteryRows` to `allBatteryRows` and `annotations` to
       `taggedAnnotations`, since a saved analysis can name runs outside step 1's selection. Top to bottom:
-      - `verdict-banner/` (`app-cc-verdict-banner`, `section.cc-vb[data-outcome]`): the eyebrow, the
-        outcome title `h5#cc-vb-title` with its icon and the detail line, the model name,
-        `app-cc-model-badges` and the model id, the compared set's `.cc-kind-tag`, one
-        `button.cc-vb-endpoint[data-status]` per endpoint (status icon and word, named *P1 Quality: Not
-        computable. Show its verdict.*, emitting `endpointSelected`), then **Scope** and **Protocol** in
-        `dl.cc-vb-meta`, each with a `trigger="dialog"` `app-info-tip` (`cc-vb-scope-tip`,
-        `cc-vb-protocol-tip`, the latter holding `CC_VERDICT_DEFINITIONS` and `CC_GRADE_DEFINITIONS`),
-        and the headline's reliability lines as an `.alert-warning`.
-      - The key figures, `.rr-figures.cc-res-figures` of `.score-card`s (`data-figure` `decided`,
-        `baseline`, `comparison`, `pairedItems`, `nextRuns`).
-      - The tab row `.gh-tabs.gh-tabs-secondary.gh-tabs-wrap.cc-res-tabs` *Result sections*
-        (`CC_RESULTS_TABS`: `verdicts`, `periods`, `attribution`, `nextRuns`, `details`; tabs
-        `#cc-res-tab-<id>`, panels `#cc-res-panel-<id>`, each rendered once and `hidden`; the analysis
-        wizard's `rovingTabIndex` copied; *Next runs* with a component-local `.cc-res-tab-count` of its
-        cards). The tab is stored in `overseer.benchmark.chatConsistency.results`
-        (`CC_RESULTS_STORAGE_KEY`, `{ version: 1, tab }`, read by `readStoredResultsTab`, which falls
-        back to *Verdicts*, every access in `try/catch`) and is not reset by another analysis. A banner
-        chip selects *Verdicts*, scrolls to and focuses `article#cc-ep-<id>` or, without a card,
-        `#cc-ep-uncomputed`.
+      - The tab row `.gh-tabs.gh-tabs-secondary.gh-tabs-wrap.cc-res-tabs` *Result sections*, the
+        component's first child (`CC_RESULTS_TABS`: `summary`, `verdicts`, `periods`, `attribution`,
+        `nextRuns`, `details`; tabs `#cc-res-tab-<id>`, panels `#cc-res-panel-<id>`, each rendered once
+        and `hidden`; the analysis wizard's `rovingTabIndex` copied; *Next runs* with a component-local
+        `.cc-res-tab-count` of its cards). The tab is stored in
+        `overseer.benchmark.chatConsistency.results` (`CC_RESULTS_STORAGE_KEY`, `{ version: 2, tab }`,
+        read by `readStoredResultsTab`, which ignores a version-1 record and falls back to *Summary*,
+        every access in `try/catch`) and is not reset by another analysis. A banner chip selects
+        *Verdicts*, scrolls to and focuses `article#cc-ep-<id>` or, without a card, `#cc-ep-uncomputed`.
+      - *Summary* (`#cc-res-panel-summary`, the default, with **no visible section title**: the
+        banner's eyebrow and title head it, and the panel is named by its tab; it reuses `.cc-res-panel`,
+        whose gap equals `:host`'s):
+        - `verdict-banner/` (`app-cc-verdict-banner`, `section.cc-vb[data-outcome]`): the eyebrow, the
+          outcome title `h5#cc-vb-title` with its icon and the detail line, the model name,
+          `app-cc-model-badges` and the model id, the compared set's `.cc-kind-tag`, one
+          `button.cc-vb-endpoint[data-status]` per endpoint (status icon and word, named *P1 Quality: Not
+          computable. Show its verdict.*, emitting `endpointSelected`), then **Scope** and **Protocol**
+          in `dl.cc-vb-meta`, each with a `trigger="dialog"` `app-info-tip` (`cc-vb-scope-tip`,
+          `cc-vb-protocol-tip`, the latter holding `CC_VERDICT_DEFINITIONS` and
+          `CC_GRADE_DEFINITIONS`), and the headline's reliability lines as an `.alert-warning`.
+        - The key figures, `.rr-figures.cc-res-figures` of `.score-card`s (`data-figure` `decided`,
+          `baseline`, `comparison`, `pairedItems`, `nextRuns`).
       - *Verdicts*: `endpoint-card/` (`app-cc-endpoint-card`, `[endpoint]`, `[batteryAnalysis]`;
         `article.cc-ep-card#cc-ep-<id>[tabindex=-1][data-status]`) per computed endpoint, changed,
         improved, within, inconclusive, then by id: the head (the id as a `.gh-tag`, the `h6` name, the
@@ -814,8 +817,8 @@ To find specific popups, look in the corresponding component's `.html` template:
         analysis), `events` (`app-cc-event-list`, `idPrefix="cc-res-ev"`), `limitations`,
         `dataQuality` and `about`, whose `dd.cc-res-headline` holds the server's `headline`.
 
-      **Step 5, *Reports*,** is `reports-step.component.*` (`app-cc-reports-step`, kept as the
-      `@ViewChild`), in Model Comparison step 3's layout: `app-run-report-frame layout="sidebar"` with
+      **Step 5, *Write*,** is `reports-step.component.*` (`app-cc-reports-step`, kept as the
+      `@ViewChild`, headed `h4#cc-rep-heading` *Write reports*), in Model Comparison step 3's layout: `app-run-report-frame layout="sidebar"` with
       the same section order and classes, not `app-report-pack-panel`, whose context, sidebar and calls
       are comparison-specific. The `rp-*` rules both screens use are **global**, in the `styles.scss`
       block *Report steps (Model Comparison step 3, Chat Consistency step 5)*; the document rows take
@@ -847,11 +850,11 @@ To find specific popups, look in the corresponding component's `.html` template:
 
       **Step 6, *Documents*,** is `app-download-center-panel` (`idPrefix="cc-dc"`, context
       `documentsContext` = `{ kind: 'chatConsistency', analysisId }`, memoized per analysis) under the
-      hint `documentsNote`. `documentsReloadToken` is bumped on entering the step and on the Reports
+      hint `documentsNote`. `documentsReloadToken` is bumped on entering the step and on the Write
       step's `documentsChanged`; the panel's `refresh()` then lists a chat consistency context again,
       keeping the choices made, and its `canDelete` admits `ChatConsistencyReport` documents beside
       Report Pack ones. Its own `documentsChanged` (a delete, or charts updated or removed) calls the
-      Reports step's `reloadDocuments()`. There is no *Open in Download Center* button: the
+      Write step's `reloadDocuments()`. There is no *Open in Download Center* button: the
       `openDocuments` output chain, the shell's `openChatConsistencyDownloads` and
       `CcOpenDocumentsRequest` are gone.
   - **"Repeat this run's setup"** fills Run Benchmark from a stored run and **never starts anything**.
@@ -1185,7 +1188,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     with a dialog-mode info tip (*Choosing a report writer*) of per-document advice, **Write Report** /
     **Write Reports** (*zap*) vertically centered beside the picker, a live cost estimate (debounced,
     from the estimate endpoint) shown as the `#rrWriteEstimate` *Estimated cost* panel — a quiet
-    `.gh-estimate-panel` block (global, in `styles.scss`, shared with the Model Comparison wizard's Reports step) with a gold start border, the total, a per-document `dl` breakdown when two
+    `.gh-estimate-panel` block (global, in `styles.scss`, shared with the Model Comparison wizard's Write step) with a gold start border, the total, a per-document `dl` breakdown when two
     documents are checked, and a note; `role="status"`, always rendered so the live region exists, and
     named by the Write button's `aria-describedby` — a refusal as a red `.gh-field-error` line that disables the button, a same-provider
     writer as an amber `alert-warning` that leaves it enabled and opens a nested *Same-Provider Report
@@ -1603,7 +1606,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     only where that source actually differs.
 
 - **Model Comparison (`model-comparison.component.html`, Admin → GnollBench → Run History →
-  Cross-model comparison)** — four steps: *1. Sources · 2. Charts & table · 3. Reports · 4.
+  Cross-model comparison)** — four steps: *1. Sources · 2. Charts & table · 3. Write · 4.
   Documents* (`COMPARISON_WIZARD_STEPS`; step 3's summary *Write AI reports that compare the models of
   this comparison.*, step 4's *View, chart, download and delete this comparison's
   documents.*). Steps 2 and
@@ -1670,9 +1673,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     measures, each with a summary, an *Instead: …* line and a *Why* disclosure). The dialog body
     renders only while it is open, and it stops propagation of its own close and cancel events so
     they never reach, and close, the wizard's own dialog.
-  - **Step 3, Reports** is `app-report-pack-panel` (`report-pack/report-pack-panel.component.*`, the
+  - **Step 3, Write** is `app-report-pack-panel` (`report-pack/report-pack-panel.component.*`, the
     former Report Pack dialog's body; step 2's **Reports** button and the dialog are gone), headed by
-    `h4.gh-section-title` *Reports*, in `app-run-report-frame`'s `layout="sidebar"`: a resizable
+    `h4.gh-section-title` *Write reports*, in `app-run-report-frame`'s `layout="sidebar"`: a resizable
     sidebar (20–32rem, at most 40 % of the body, width kept as `sidebarWidth` in
     `localStorage['overseer.benchmark.reportPack']`; stacked below 60rem) holds the form, in order:
     - **Document scope**: a `.gh-tabs-segmented` pair (`role="tablist"` *Document scope*, arrow keys wrap,
@@ -1918,12 +1921,12 @@ To find specific popups, look in the corresponding component's `.html` template:
       `app-figure-style-panel`.
     - `app-figure-style-panel` (kinds `bar`, `scatter`, `profile`, `timeline` and `appearance`) has
       **two hosts**: these Theme and Charts tabs, with the default `idPrefix="mc-style"` and the
-      default `openStorageKey`, `overseer.figureStylePanel.open`; and the Chat Consistency Timeline's
+      default `openStorageKey`, `overseer.figureStylePanel.open`; and the Chat Consistency Charts step's
       Theme (`kind="appearance"`) and Charts (`kind="timeline"`) tabs, with `idPrefix="cc-style"` and
       `overseer.benchmark.chatConsistency.figureStylePanel.open`, on a figure style of their own
       (`overseer.benchmark.chatConsistency.figureStyle`). Control ids derive from `idPrefix`, so both
       can be in one document, and a section opened in one host stays closed in the other. The
-      `timeline` kind has no *Number format* section; the Timeline adds its own per-chart decimals.
+      `timeline` kind has no *Number format* section; the Charts step adds its own per-chart decimals.
     - **Table**: `app-table-settings-panel` — *Columns* (an `app-reorderable-list` of the 28
       display columns, checkable, *Model* locked, reordered by drag or with the handle's Move menu;
       *Default columns*, *Only columns with values*, *All columns*) and **Row style** (*Shade
@@ -1938,7 +1941,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       `mc-table-image`, the *Fit the table* size shown as information in custom mode), the same
       *Image format* and a scope line. `app-export-size-section` and `app-export-format-section`
       (`model-comparison/`) have three hosts: this tab, the key-figures chooser of the run report
-      dialogs, and the Chat Consistency Timeline's *Download* tab (id prefixes `cc-export` and
+      dialogs, and the Chat Consistency Charts step's *Download* tab (id prefixes `cc-export` and
       `cc-image-format`), which keeps its own storage keys —
       `overseer.benchmark.chatConsistency.chartSize` for the chart size, beside
       `overseer.benchmark.chatConsistency.timeline` for the workspace layout and the format,

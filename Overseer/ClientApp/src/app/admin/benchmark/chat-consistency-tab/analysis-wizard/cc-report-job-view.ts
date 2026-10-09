@@ -14,7 +14,7 @@ import {
 import { CC_REPORT_AUDIENCES } from '../chat-consistency.models';
 
 /*
- * The Reports step's view of a chat consistency report-writing job (`BenchmarkRunReportJobDto`): the
+ * The Write step's view of a chat consistency report-writing job (`BenchmarkRunReportJobDto`): the
  * stage rail, the stat strip, one row per document, the one-line summary of a finished job, and the
  * plain-text diagnostics. Pure: every time is measured against the `nowUtc` the caller passes, which
  * is the server's clock run on since its last response.
@@ -85,7 +85,7 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-/** A document type as the Reports step names it (*Internal Brief*); the stored name for any other. */
+/** A document type as the Write step names it (*Internal Brief*); the stored name for any other. */
 export function ccReportAudienceLabel(audience: BenchmarkReportAudience): string {
   return CC_REPORT_AUDIENCES.find(entry => entry.audience === audience)?.label ?? audienceLabel(audience);
 }

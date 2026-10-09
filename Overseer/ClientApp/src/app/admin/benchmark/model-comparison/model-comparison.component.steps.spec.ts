@@ -123,13 +123,13 @@ describe('ModelComparisonComponent', () => {
       });
     });
 
-    it('has four steps: Sources, Charts & table, Reports, Documents', () => {
+    it('has four steps: Sources, Charts & table, Write, Documents', () => {
       render(buildDto(comparableSet(3)));
 
       expect(component.steps).toEqual([1, 2, 3, 4]);
       const tabs = fixture.debugElement.queryAll(By.css('.mc-wizard-steps .gh-tab'))
         .map(tab => (tab.nativeElement as HTMLElement).textContent?.trim());
-      expect(tabs).toEqual(['1. Sources', '2. Charts & table', '3. Reports', '4. Documents']);
+      expect(tabs).toEqual(['1. Sources', '2. Charts & table', '3. Write', '4. Documents']);
       expect(textOf('.mc-wizard-position')).toContain('Step 2 of 4 — Charts & table');
     });
 
@@ -181,6 +181,7 @@ describe('ModelComparisonComponent', () => {
       fixture.detectChanges();
       expect(component.step).toBe(3);
       expect(component.nextLabel).toBe('Next');
+      expect(textOf('.mc-wizard-position')).toContain('Step 3 of 4 — Write');
       component.nextStep();
       fixture.detectChanges();
       expect(component.step).toBe(4);

@@ -139,7 +139,7 @@ export class ReportDocumentsLauncherComponent implements OnInit, OnChanges, OnDe
       return this.loadError;
     }
     if (this.documents.length === 0) {
-      return 'No reports yet. Reports written on the comparison wizard’s Reports step appear here.';
+      return 'No reports yet. Reports written on the comparison wizard’s Write step appear here.';
     }
     const latest = this.documents.map(doc => doc.createdAtUtc ?? '').sort().pop() ?? '';
     return `${plural(this.documents.length, 'report document', 'report documents')} from `

@@ -355,7 +355,7 @@ describe('ReportPackPanelComponent', () => {
     }
 
     const heading = q('h4.gh-section-title#rp-heading')!;
-    expect(heading.textContent!.trim()).toBe('Reports');
+    expect(heading.textContent!.trim()).toBe('Write reports');
     expect(component.headingId).toBe('rp-heading');
     expect(text('.rp-subtitle')).toBe('Board Suite · 4 models · 1 Excluded');
     expect(text('.rp-lead')).toBe(

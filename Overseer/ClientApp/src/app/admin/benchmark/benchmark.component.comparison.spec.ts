@@ -449,7 +449,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(ctx.comparison.lastComparison).toEqual(stored);
       expect(summaryCard()!.querySelector('#mc-last-title')!.textContent!.trim()).toBe('Comparison #12 · Model 1 vs Model 2');
 
-      // The wizard's Reports step may have written documents, so closing it counts them again.
+      // The wizard's Write step may have written documents, so closing it counts them again.
       benchmarkServiceMock.listComparisons.mockClear();
       benchmarkServiceMock.listComparisons.mockReturnValue(of([{
         id: 12, name: 'Model 1 vs Model 2', customName: null, defaultName: 'Model 1 vs Model 2', entryCount: 2,
@@ -514,7 +514,7 @@ describe('AdminBenchmarkComponent', () => {
       const items = Array.from(
         fixture.nativeElement.querySelectorAll('.mc-launcher-hero .mc-launcher-howto ol.mc-launcher-steps > li')) as HTMLElement[];
       expect(items.length).toBe(4);
-      expect(COMPARISON_WIZARD_STEPS.map(step => step.title)).toEqual(['Sources', 'Charts & table', 'Reports', 'Documents']);
+      expect(COMPARISON_WIZARD_STEPS.map(step => step.title)).toEqual(['Sources', 'Charts & table', 'Write', 'Documents']);
       expect(items.map(item => item.querySelector('strong')?.textContent?.trim()))
         .toEqual(COMPARISON_WIZARD_STEPS.map(step => step.title));
     });

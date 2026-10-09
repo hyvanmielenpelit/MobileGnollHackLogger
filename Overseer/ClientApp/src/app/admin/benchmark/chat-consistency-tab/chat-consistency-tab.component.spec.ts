@@ -190,7 +190,7 @@ describe('ChatConsistencyTabComponent', () => {
     expect(howTo().open).toBe(true);
     expect(textOf(howTo().querySelector('summary'))).toBe('How chat consistency works');
     expect(Array.from(howTo().querySelectorAll('.bm-launcher-steps strong')).map(step => textOf(step)))
-      .toEqual(['Model', 'Timeline', 'Analyze', 'Results', 'Reports', 'Documents']);
+      .toEqual(['Model', 'Charts', 'Analyze', 'Results', 'Write', 'Documents']);
     expect(textOf(howTo().querySelector('.alert-info')))
       .toContain('A verdict is only as current as the last run someone made: GnollBench is run by hand and is not a monitoring service.');
     expect(JSON.parse(localStorage.getItem(CC_LAUNCHER_STORAGE_KEY)!)).toEqual({ version: 1, howItWorksOpen: false });
@@ -278,7 +278,7 @@ describe('ChatConsistencyTabComponent', () => {
       version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null }, compare: null
     });
 
-    // The Timeline step draws the loaded timeline without a request of its own.
+    // The Charts step draws the loaded timeline without a request of its own.
     dialog().querySelector<HTMLButtonElement>('#cc-step-tab-2')!.click();
     fixture.detectChanges();
     const figures = Array.from(dialog().querySelectorAll('app-cc-timeline-workspace figure.cc-figure'));

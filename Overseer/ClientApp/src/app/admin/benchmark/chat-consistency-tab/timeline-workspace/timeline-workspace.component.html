@@ -5,7 +5,7 @@
        THE SETTINGS SIDEBAR: Data · Events · Annotations · Theme · Charts · Download. Collapsed by its toggle in the
        view bar, which stays rendered outside it; resized by the handle on its right edge.
        =========================================================================================== -->
-  <aside id="cc-tl-sidebar" class="gh-fig-sidebar cc-tl-sidebar" aria-label="Timeline settings" [hidden]="sidebarCollapsed">
+  <aside id="cc-tl-sidebar" class="gh-fig-sidebar cc-tl-sidebar" aria-label="Chart settings" [hidden]="sidebarCollapsed">
     <div #sideTabs class="gh-tabs gh-tabs-secondary gh-tabs-wrap gh-fig-sidebar-tabs" role="tablist" aria-label="Settings sections">
       @for (tab of sidebarTabs; track tab.id; let i = $index) {
         <button type="button" role="tab" class="gh-tab"
@@ -228,7 +228,7 @@
   <div class="gh-fig-main">
     <div class="gh-fig-bar">
       <!-- A disclosure: the name stays constant and aria-expanded carries the state. -->
-      <button type="button" class="action-btn cc-tl-sidebar-toggle" aria-label="Timeline settings"
+      <button type="button" class="action-btn cc-tl-sidebar-toggle" aria-label="Chart settings"
               [attr.aria-expanded]="!sidebarCollapsed" aria-controls="cc-tl-sidebar"
               interestfor="cc-tl-tip-sidebar" style="anchor-name: --cc-tl-tip-sidebar"
               (click)="toggleSidebar()">
@@ -240,7 +240,7 @@
       <div popover="hint" class="gh-tooltip" id="cc-tl-tip-sidebar"
            style="position-anchor: --cc-tl-tip-sidebar">{{ sidebarCollapsed ? 'Show settings' : 'Hide settings' }}</div>
 
-      <div class="gh-tabs gh-tabs-secondary gh-fig-tabs" role="tablist" aria-label="Timeline views">
+      <div class="gh-tabs gh-tabs-secondary gh-fig-tabs" role="tablist" aria-label="Chart views">
         @for (tab of viewTabs; track tab.id; let i = $index) {
           <button type="button" role="tab" class="gh-tab"
                   [id]="'cc-tl-view-tab-' + tab.id"

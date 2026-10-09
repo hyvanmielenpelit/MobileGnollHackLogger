@@ -313,7 +313,7 @@ export const COMPARISON_WIZARD_STEPS: readonly {
 }[] = [
   { step: 1, title: 'Sources', summary: 'Choose the single runs or groups to compare, or the battery results, which are compared only with each other.' },
   { step: 2, title: 'Charts & table', summary: 'Choose the models to show, view the charts and the table, and export them.' },
-  { step: 3, title: 'Reports', summary: 'Write AI reports that compare the models of this comparison.' },
+  { step: 3, title: 'Write', summary: 'Write AI reports that compare the models of this comparison.' },
   { step: 4, title: 'Documents', summary: 'View, chart, download and delete this comparison’s documents.' }
 ];
 

@@ -59,7 +59,7 @@ Implementation:
 
 ## 1. Purpose and the Three Documents
 
-Step 3 of the Model Comparison wizard, **Reports**, starts a report pack (§ 12). Under *Whole
+Step 3 of the Model Comparison wizard, **Write**, starts a report pack (§ 12). Under *Whole
 comparison*, the default, it writes the comparison-wide documents of § 15. Under *One model at a time*
 the admin picks one or more comparison entries as **subjects** — each a run, an analysis group or a
 battery result (§ 14) — and each subject gets its own per-model documents, the subject of this section.
@@ -395,7 +395,7 @@ then the evidence."*
 4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
    row is stored. A headline whose only fault is rule 12 is kept.
 
-The wizard's Reports step marks such a document *Completed with warnings*, and the notes are stored with
+The wizard's Write step marks such a document *Completed with warnings*, and the notes are stored with
 it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped item is never silent.
 
 **Writer rules added in format 8** (the R numbers of § 7), in the system prompt of every audience:
@@ -464,7 +464,7 @@ at **medium** thinking or reasoning effort. Use **high** only if its documents o
 or lose items to validation; never **low**, because the writer must follow a strict schema and token
 rules. Not an economy tier (Flash, Flash-Lite): the documents go to people outside the team, and one call
 per document keeps the cost small. The same recommendation is in `ai-benchmark.md` § 3 *Choosing grader
-models and effort*, the *How the graders work* guide, the Reports step's writer info tip and the
+models and effort*, the *How the graders work* guide, the Write step's writer info tip and the
 report-writer info tip of the run report's **AI Reports** tab.
 
 **Per document.** The documents ask different things of the writer, and each can be written by a
@@ -1903,9 +1903,9 @@ wrote the deleted document, so a rewrite starts from a deliberate choice.
 
 ---
 
-## 12. The Comparison Wizard's Reports and Documents Steps, and the Comparison Reports Launcher
+## 12. The Comparison Wizard's Write and Documents Steps, and the Comparison Reports Launcher
 
-The Model Comparison wizard has four steps: *1. Sources*, *2. Charts & table*, *3. Reports* (*"Write AI
+The Model Comparison wizard has four steps: *1. Sources*, *2. Charts & table*, *3. Write* (*"Write AI
 reports that compare the models of this comparison."*) and *4. Documents* (*"View, chart,
 download and delete this comparison's documents"*). Steps 3 and 4 are reachable once a comparison
 exists; step 3 also needs **two** entries that are not Excluded (`hasComparisonPeers`), because a
@@ -1932,8 +1932,8 @@ on step 4 and view again (§ 13). While charts are being drawn and uploaded, the
 are disabled and Escape is refused, as during an export, even a repeated Escape, which the browser would
 otherwise let through.
 
-**Step 3, Reports** (`app-report-pack-panel`, `report-pack/report-pack-panel.component.*`), headed
-*Reports*, uses `app-run-report-frame` in its **sidebar** layout: a resizable sidebar with the form, then
+**Step 3, Write** (`app-report-pack-panel`, `report-pack/report-pack-panel.component.*`), headed
+*Write reports*, uses `app-run-report-frame` in its **sidebar** layout: a resizable sidebar with the form, then
 the main area with the job, in reading and tab order. From 60rem of body width the sidebar is 20–32rem
 wide, at most 40 % of the body, 24rem by default, set by the `app-pane-resizer` between the two (drag, or
 Left and Right on it); the width is kept under `sidebarWidth` in
@@ -2089,7 +2089,7 @@ there is no card; the next Compare brings it back. The server keeps nothing for 
 every Report Pack document in one line — *"5 report documents from 2 comparisons · the latest written
 …"*, comparisons counted by their number (a document without one by the number another document of its
 comparison key carries, else by that key), or *"No reports yet. Reports written on the comparison
-wizard's Reports step appear here."* — with an
+wizard's Write step appear here."* — with an
 *N changed since written* tag when a subject's or a peer's run changed, and a click-mode info tip. Its one
 `.btn-ghost` **Open Download Center** (*file-with-arrow*) is `aria-disabled` while there is nothing to
 open, the summary line saying why, and opens the Download Center dialog on every Report Pack document
@@ -2302,7 +2302,7 @@ read once, when the singleton `BenchmarkReportChartStore` is created, so a chang
 is no fallback. Empty, whitespace or a relative path means *not configured*: uploads are refused with
 *"Chart storage is not configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder."*,
 renders draw no charts, and `ConfigHealthService` raises the warning alert
-`report-charts-location-missing`, which the wizard's Reports step reads. The folder is created on the
+`report-charts-location-missing`, which the wizard's Write step reads. The folder is created on the
 first write, never at startup.
 
 **Layout.** One folder per document, `<ChartsDataLocation>/<documentId>/`, holding `manifest.json` and one
@@ -2889,7 +2889,7 @@ endpoints (§ 9), listed with `subject=chat-consistency:<id>&origin=chatConsiste
 
 ### The client
 
-The Reports step (step 5) of the Chat Consistency wizard writes and polls the documents, in the layout
+The Write step (step 5) of the Chat Consistency wizard writes and polls the documents, in the layout
 of Model Comparison's step 3, and views and deletes each written one; its Documents step (step 6)
 shows them in the Download Center panel with the context `{ kind: 'chatConsistency', analysisId }`,
 where they can be viewed, downloaded and deleted too, and which lists them again when the host bumps

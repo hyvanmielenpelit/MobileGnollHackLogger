@@ -67,7 +67,7 @@ function clearStorage(): void {
   }
 }
 
-/** The wizard's Timeline step: a sized `.gh-fig-host` the workspace fills. */
+/** The wizard's Charts step: a sized `.gh-fig-host` the workspace fills. */
 @Component({
   standalone: true,
   imports: [CcTimelineWorkspaceComponent],
@@ -323,7 +323,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false', 'false']);
     expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
     expect(q('#cc-tl-side-panel-data')!.getAttribute('aria-labelledby')).toBe('cc-tl-side-tab-data');
-    expect(q('#cc-tl-sidebar')!.getAttribute('aria-label')).toBe('Timeline settings');
+    expect(q('#cc-tl-sidebar')!.getAttribute('aria-label')).toBe('Chart settings');
 
     openSideTab('events');
     expect(q('#cc-tl-side-panel-events')).not.toBeNull();
@@ -377,7 +377,7 @@ describe('CcTimelineWorkspaceComponent', () => {
   it('collapses and reopens the sidebar from its toggle, and resizes it with the separator', async () => {
     await create();
     const toggle = q<HTMLButtonElement>('.cc-tl-sidebar-toggle')!;
-    expect(toggle.getAttribute('aria-label')).toBe('Timeline settings');
+    expect(toggle.getAttribute('aria-label')).toBe('Chart settings');
     expect(toggle.getAttribute('aria-controls')).toBe('cc-tl-sidebar');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(textOf(q('#cc-tl-tip-sidebar'))).toBe('Hide settings');
@@ -863,6 +863,7 @@ describe('CcTimelineWorkspaceComponent', () => {
     const all = q('#cc-tl-view-tab-all')!;
     const single = q('#cc-tl-view-tab-single')!;
     expect(all.getAttribute('aria-controls')).toBe('cc-tl-view-panel-all');
+    expect(all.closest('[role="tablist"]')!.getAttribute('aria-label')).toBe('Chart views');
 
     press(all, 'ArrowRight');
     expect(single.getAttribute('aria-selected')).toBe('true');

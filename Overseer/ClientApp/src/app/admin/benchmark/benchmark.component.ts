@@ -845,7 +845,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /**
    * Nothing is torn down here: the mounted content is what reopening is supposed to preserve. The
-   * Comparison reports card counts again, since the wizard's Reports step may have written documents.
+   * Comparison reports card counts again, since the wizard's Write step may have written documents.
    * A close that gets through while an export or a chart upload runs (a repeated Escape, or a browser
    * without `closedby`) reopens the dialog instead.
    */

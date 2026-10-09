@@ -1,22 +1,3 @@
-<!-- The verdict on the chat comes first; the tabs below hold the evidence for it. -->
-<app-cc-verdict-banner [result]="result" (endpointSelected)="onEndpointSelected($event)"></app-cc-verdict-banner>
-
-<h5 class="visually-hidden" id="cc-res-figures-title">Key figures</h5>
-<div class="rr-figures cc-res-figures" role="group" aria-labelledby="cc-res-figures-title">
-  @for (figure of keyFigures; track figure.key) {
-    <div class="score-card" [attr.data-figure]="figure.key">
-      <span class="score-label">{{ figure.label }}</span>
-      <span class="score-value">{{ figure.value }}</span>
-      @if (figure.sub) {
-        <span class="score-subvalue">{{ figure.sub }}</span>
-      }
-      @if (figure.note) {
-        <span class="score-note">{{ figure.note }}</span>
-      }
-    </div>
-  }
-</div>
-
 <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap cc-res-tabs" role="tablist" aria-label="Result sections">
   @for (entry of tabs; track entry.id; let i = $index) {
     <button type="button" role="tab" class="gh-tab"
@@ -32,6 +13,28 @@
       }
     </button>
   }
+</div>
+
+<!-- Summary: the verdict on the chat, then the key figures. -->
+<div class="cc-res-panel" role="tabpanel" id="cc-res-panel-summary" aria-labelledby="cc-res-tab-summary"
+     tabindex="0" [hidden]="tab !== 'summary'">
+  <app-cc-verdict-banner [result]="result" (endpointSelected)="onEndpointSelected($event)"></app-cc-verdict-banner>
+
+  <h5 class="visually-hidden" id="cc-res-figures-title">Key figures</h5>
+  <div class="rr-figures cc-res-figures" role="group" aria-labelledby="cc-res-figures-title">
+    @for (figure of keyFigures; track figure.key) {
+      <div class="score-card" [attr.data-figure]="figure.key">
+        <span class="score-label">{{ figure.label }}</span>
+        <span class="score-value">{{ figure.value }}</span>
+        @if (figure.sub) {
+          <span class="score-subvalue">{{ figure.sub }}</span>
+        }
+        @if (figure.note) {
+          <span class="score-note">{{ figure.note }}</span>
+        }
+      </div>
+    }
+  </div>
 </div>
 
 <!-- Verdicts: a card per computed endpoint, then the not-computable endpoints in one card. -->

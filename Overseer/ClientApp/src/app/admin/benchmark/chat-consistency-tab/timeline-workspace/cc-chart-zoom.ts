@@ -1,5 +1,5 @@
 /**
- * Zoom arithmetic for the Timeline step's composed charts, on Model Comparison's preview model
+ * Zoom arithmetic for the Charts step's composed charts, on Model Comparison's preview model
  * (`preview-view.ts`): a zoom is **device pixels per file pixel**, so 1 (100 %) shows one pixel of
  * the downloaded file on one pixel of the display. The views show the download itself, rasterized
  * for the screen (`previewLayoutFor`), never a different composition.

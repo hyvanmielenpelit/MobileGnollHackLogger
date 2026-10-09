@@ -138,6 +138,7 @@ describe('ReportDocumentsLauncherComponent', () => {
     const open = vi.spyOn(launcher().downloadCenter!, 'open').mockReturnValue(undefined);
 
     expect(text('.rdl-launcher-summary')).toContain('No reports yet.');
+    expect(text('.rdl-launcher-summary')).toContain('the comparison wizard’s Write step');
     expect(el.querySelector('.rdl-launcher-changed')).toBeNull();
     const button = openButton();
     expect(button.classList).toContain('btn-ghost');

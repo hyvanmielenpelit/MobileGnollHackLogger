@@ -847,7 +847,7 @@ export interface CcAnnotationRequest {
 
 // --- Reports ---
 
-/** The four documents a chat consistency analysis is written as, with their labels, in the Reports step's order. */
+/** The four documents a chat consistency analysis is written as, with their labels, in the Write step's order. */
 export const CC_REPORT_AUDIENCES: readonly { readonly audience: BenchmarkReportAudience; readonly label: string }[] = [
   { audience: BenchmarkReportAudience.ExecutiveSummary, label: 'Executive Summary' },
   { audience: BenchmarkReportAudience.TechnicalReport, label: 'Report for AI Researchers and Developers' },

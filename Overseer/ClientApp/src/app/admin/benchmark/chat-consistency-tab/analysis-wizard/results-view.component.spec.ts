@@ -84,17 +84,28 @@ describe('CcResultsViewComponent', () => {
   });
 
   describe('the shell', () => {
-    it('leads with the verdict banner over the stored result', () => {
-      expect(el.firstElementChild?.tagName).toBe('APP-CC-VERDICT-BANNER');
-      const banner = fixture.debugElement.query(By.directive(CcVerdictBannerComponent)).componentInstance as CcVerdictBannerComponent;
-      expect(banner.result).toBe(fixture.componentInstance.result);
+    it('leads with the tab row', () => {
+      expect(el.firstElementChild?.classList).toContain('cc-res-tabs');
+    });
+  });
+
+  describe('the Summary panel', () => {
+    it('leads with the verdict banner over the stored result, under no section title of its own', () => {
+      const summary = panel('summary');
+      expect(summary.firstElementChild?.tagName).toBe('APP-CC-VERDICT-BANNER');
+      expect(summary.querySelector('.gh-section-title')).toBeNull();
+      const banner = fixture.debugElement.query(By.directive(CcVerdictBannerComponent));
+      expect(summary.contains(banner.nativeElement as HTMLElement)).toBe(true);
+      expect((banner.componentInstance as CcVerdictBannerComponent).result).toBe(fixture.componentInstance.result);
     });
 
-    it('shows the key figures as score cards, in a group named Key figures', () => {
-      const heading = el.querySelector<HTMLElement>('h5#cc-res-figures-title')!;
+    it('shows the key figures as score cards, in a group named Key figures, after the banner', () => {
+      const heading = panel('summary').querySelector<HTMLElement>('h5#cc-res-figures-title')!;
       expect(heading.classList).toContain('visually-hidden');
       expect(textOf(heading)).toBe('Key figures');
-      const group = el.querySelector<HTMLElement>('div.rr-figures.cc-res-figures')!;
+      const group = panel('summary').querySelector<HTMLElement>(':scope > div.rr-figures.cc-res-figures')!;
+      const banner = panel('summary').querySelector('app-cc-verdict-banner')!;
+      expect(banner.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(group.getAttribute('role')).toBe('group');
       expect(group.getAttribute('aria-labelledby')).toBe('cc-res-figures-title');
 
@@ -121,7 +132,7 @@ describe('CcResultsViewComponent', () => {
   });
 
   describe('the tabs', () => {
-    it('are a text-only tab row Result sections: Verdicts, Periods, Attribution, Next runs and Details', () => {
+    it('are a text-only tab row Result sections: Summary, Verdicts, Periods, Attribution, Next runs and Details', () => {
       const list = el.querySelector<HTMLElement>(':scope > .cc-res-tabs')!;
       expect(list.getAttribute('role')).toBe('tablist');
       expect(list.classList).toContain('gh-tabs');
@@ -130,9 +141,10 @@ describe('CcResultsViewComponent', () => {
       expect(list.getAttribute('aria-label')).toBe('Result sections');
       const tabs = tabButtons();
       expect(tabs.map(tab => tab.id)).toEqual([
-        'cc-res-tab-verdicts', 'cc-res-tab-periods', 'cc-res-tab-attribution', 'cc-res-tab-nextRuns', 'cc-res-tab-details'
+        'cc-res-tab-summary', 'cc-res-tab-verdicts', 'cc-res-tab-periods', 'cc-res-tab-attribution', 'cc-res-tab-nextRuns',
+        'cc-res-tab-details'
       ]);
-      expect(tabs.map(tab => textOf(tab))).toEqual(['Verdicts', 'Periods', 'Attribution', 'Next runs 2 cards', 'Details']);
+      expect(tabs.map(tab => textOf(tab))).toEqual(['Summary', 'Verdicts', 'Periods', 'Attribution', 'Next runs 2 cards', 'Details']);
       for (const tab of tabs) {
         expect(tab.getAttribute('type')).toBe('button');
         expect(tab.classList).toContain('gh-tab');
@@ -156,79 +168,84 @@ describe('CcResultsViewComponent', () => {
     it('render every panel once, each a tabpanel labeled by its tab, all but the selected one hidden', () => {
       const panels = Array.from(el.querySelectorAll<HTMLElement>(':scope > [role="tabpanel"]'));
       expect(panels.map(p => p.id)).toEqual([
-        'cc-res-panel-verdicts', 'cc-res-panel-periods', 'cc-res-panel-attribution', 'cc-res-panel-nextRuns', 'cc-res-panel-details'
+        'cc-res-panel-summary', 'cc-res-panel-verdicts', 'cc-res-panel-periods', 'cc-res-panel-attribution',
+        'cc-res-panel-nextRuns', 'cc-res-panel-details'
       ]);
       for (const p of panels) {
         expect(p.getAttribute('aria-labelledby')).toBe(p.id.replace('cc-res-panel-', 'cc-res-tab-'));
         expect(p.getAttribute('tabindex')).toBe('0');
       }
-      expect(panels.map(p => p.hidden)).toEqual([false, true, true, true, true]);
-      expect(selectedTab()).toBe('cc-res-tab-verdicts');
-      expect(tabButtons().map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1']);
+      expect(panels.map(p => p.hidden)).toEqual([false, true, true, true, true, true]);
+      expect(selectedTab()).toBe('cc-res-tab-summary');
+      expect(tabButtons().map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1', '-1']);
 
       tabButton('attribution').click();
       fixture.detectChanges();
-      expect(panels.map(p => p.hidden)).toEqual([true, true, false, true, true]);
+      expect(panels.map(p => p.hidden)).toEqual([true, true, true, false, true, true]);
       expect(selectedTab()).toBe('cc-res-tab-attribution');
-      expect(tabButtons().map(tab => tab.getAttribute('tabindex'))).toEqual(['-1', '-1', '0', '-1', '-1']);
+      expect(tabButtons().map(tab => tab.getAttribute('tabindex'))).toEqual(['-1', '-1', '-1', '0', '-1', '-1']);
     });
 
     it('move with Left and Right, wrapping, and jump with Home and End; focus follows selection', () => {
-      const verdicts = tabButton('verdicts');
-      verdicts.focus();
+      const summary = tabButton('summary');
+      summary.focus();
 
-      expect(keydown(verdicts, 'ArrowRight').defaultPrevented).toBe(true);
-      expect(selectedTab()).toBe('cc-res-tab-periods');
-      expect(document.activeElement).toBe(tabButton('periods'));
-      expect(panel('periods').hidden).toBe(false);
+      expect(keydown(summary, 'ArrowRight').defaultPrevented).toBe(true);
+      expect(selectedTab()).toBe('cc-res-tab-verdicts');
+      expect(document.activeElement).toBe(tabButton('verdicts'));
+      expect(panel('verdicts').hidden).toBe(false);
+      expect(panel('summary').hidden).toBe(true);
 
-      keydown(tabButton('periods'), 'ArrowLeft');
       keydown(tabButton('verdicts'), 'ArrowLeft');
+      keydown(tabButton('summary'), 'ArrowLeft');
       expect(selectedTab()).toBe('cc-res-tab-details');
       expect(document.activeElement).toBe(tabButton('details'));
 
       keydown(tabButton('details'), 'ArrowRight');
-      expect(selectedTab()).toBe('cc-res-tab-verdicts');
+      expect(selectedTab()).toBe('cc-res-tab-summary');
 
-      keydown(tabButton('verdicts'), 'End');
+      keydown(tabButton('summary'), 'End');
       expect(selectedTab()).toBe('cc-res-tab-details');
       keydown(tabButton('details'), 'Home');
-      expect(selectedTab()).toBe('cc-res-tab-verdicts');
-      expect(document.activeElement).toBe(tabButton('verdicts'));
+      expect(selectedTab()).toBe('cc-res-tab-summary');
+      expect(document.activeElement).toBe(tabButton('summary'));
     });
 
     it('leave other keys alone', () => {
-      const verdicts = tabButton('verdicts');
-      expect(keydown(verdicts, 'ArrowDown').defaultPrevented).toBe(false);
-      expect(keydown(verdicts, 'a').defaultPrevented).toBe(false);
-      expect(selectedTab()).toBe('cc-res-tab-verdicts');
+      const summary = tabButton('summary');
+      expect(keydown(summary, 'ArrowDown').defaultPrevented).toBe(false);
+      expect(keydown(summary, 'a').defaultPrevented).toBe(false);
+      expect(selectedTab()).toBe('cc-res-tab-summary');
     });
 
-    it('remember the selected tab in this browser as { version: 1, tab }', () => {
+    it('remember the selected tab in this browser as { version: 2, tab }', () => {
       expect(localStorage.getItem(CC_RESULTS_STORAGE_KEY)).toBeNull();
       tabButton('nextRuns').click();
-      expect(stored()).toEqual({ version: 1, tab: 'nextRuns' });
+      expect(stored()).toEqual({ version: 2, tab: 'nextRuns' });
 
       create();
       expect(selectedTab()).toBe('cc-res-tab-nextRuns');
       expect(panel('nextRuns').hidden).toBe(false);
-      expect(panel('verdicts').hidden).toBe(true);
+      expect(panel('summary').hidden).toBe(true);
     });
 
-    it('fall back to Verdicts for a missing, unknown or damaged stored tab', () => {
-      expect(readStoredResultsTab()).toBe('verdicts');
-      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab: 'periods' }));
+    it('fall back to Summary for a missing, version-1, unknown or damaged stored tab', () => {
+      expect(readStoredResultsTab()).toBe('summary');
+      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 2, tab: 'periods' }));
       expect(readStoredResultsTab()).toBe('periods');
-      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab: 'charts' }));
-      expect(readStoredResultsTab()).toBe('verdicts');
+      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab: 'periods' }));
+      expect(readStoredResultsTab()).toBe('summary');
+      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 2, tab: 'charts' }));
+      expect(readStoredResultsTab()).toBe('summary');
       localStorage.setItem(CC_RESULTS_STORAGE_KEY, '{');
-      expect(readStoredResultsTab()).toBe('verdicts');
+      expect(readStoredResultsTab()).toBe('summary');
       localStorage.setItem(CC_RESULTS_STORAGE_KEY, '["details"]');
-      expect(readStoredResultsTab()).toBe('verdicts');
+      expect(readStoredResultsTab()).toBe('summary');
 
-      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab: 'charts' }));
+      localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab: 'verdicts' }));
       create();
-      expect(selectedTab()).toBe('cc-res-tab-verdicts');
+      expect(selectedTab()).toBe('cc-res-tab-summary');
+      expect(panel('summary').hidden).toBe(false);
     });
   });
 
@@ -302,7 +319,7 @@ describe('CcResultsViewComponent', () => {
       expect(selectedTab()).toBe('cc-res-tab-nextRuns');
       expect(panel('nextRuns').hidden).toBe(false);
       expect(document.activeElement).toBe(panel('nextRuns'));
-      expect(stored()).toEqual({ version: 1, tab: 'nextRuns' });
+      expect(stored()).toEqual({ version: 2, tab: 'nextRuns' });
 
       show({ ...notComputable(), nextRuns: [] });
       expect(el.querySelector('#cc-ep-uncomputed')).not.toBeNull();
@@ -310,19 +327,19 @@ describe('CcResultsViewComponent', () => {
     });
 
     it('selects Verdicts and focuses the card of the endpoint the banner names', () => {
-      tabButton('details').click();
+      expect(panel('summary').hidden).toBe(false);
       expect(panel('verdicts').hidden).toBe(true);
       const banner = fixture.debugElement.query(By.directive(CcVerdictBannerComponent)).componentInstance as CcVerdictBannerComponent;
       banner.endpointSelected.emit('P2');
       expect(selectedTab()).toBe('cc-res-tab-verdicts');
       expect(panel('verdicts').hidden).toBe(false);
+      expect(panel('summary').hidden).toBe(true);
       expect(document.activeElement).toBe(el.querySelector('#cc-ep-P2'));
-      expect(stored()).toEqual({ version: 1, tab: 'verdicts' });
+      expect(stored()).toEqual({ version: 2, tab: 'verdicts' });
     });
 
     it('focuses the not-computable card for an endpoint without a card of its own', () => {
       show(notComputable());
-      tabButton('attribution').click();
       const banner = fixture.debugElement.query(By.directive(CcVerdictBannerComponent)).componentInstance as CcVerdictBannerComponent;
       banner.endpointSelected.emit('P3');
       expect(selectedTab()).toBe('cc-res-tab-verdicts');

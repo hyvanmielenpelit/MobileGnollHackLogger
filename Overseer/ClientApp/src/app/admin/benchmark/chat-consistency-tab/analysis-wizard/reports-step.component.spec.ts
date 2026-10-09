@@ -182,7 +182,7 @@ describe('CcReportsStepComponent', () => {
   });
 
   it('heads the step with the analysis and the model without its thinking level, in the sidebar layout', () => {
-    expect(textOf(el.querySelector('h4#cc-rep-heading'))).toBe('Reports');
+    expect(textOf(el.querySelector('h4#cc-rep-heading'))).toBe('Write reports');
     expect(el.querySelector('h4#cc-rep-heading')!.classList).toContain('gh-section-title');
     expect(textOf(el.querySelector('.rp-subtitle'))).toBe('Analysis #7 · Chat consistency: GPT-5 high');
     expect(el.querySelector('app-run-report-frame aside.rrf-sidebar')!.getAttribute('aria-label')).toBe('New reports');

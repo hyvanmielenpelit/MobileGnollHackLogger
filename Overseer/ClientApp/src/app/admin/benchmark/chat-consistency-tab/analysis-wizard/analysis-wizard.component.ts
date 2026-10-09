@@ -132,7 +132,7 @@ export const CC_ANALYZE_VIEWS: readonly { readonly id: CcAnalyzeView; readonly l
 /** The Analyze step's workspace layout, per browser. Read and written in `try/catch`. */
 export const CC_ANALYZE_STORAGE_KEY = 'overseer.benchmark.chatConsistency.analyze';
 
-/** The settings sidebar's width, in CSS px, as the Timeline step's: 26 rem by default, 18 rem to 40 rem or half the workspace. */
+/** The settings sidebar's width, in CSS px, as the Charts step's: 26 rem by default, 18 rem to 40 rem or half the workspace. */
 export const CC_ANALYZE_SIDEBAR_WIDTH_DEFAULT = 416;
 export const CC_ANALYZE_SIDEBAR_WIDTH_MIN = 288;
 export const CC_ANALYZE_SIDEBAR_WIDTH_MAX = 640;
@@ -291,7 +291,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   @Output() readonly analysisSaved = new EventEmitter<CcAnalysisResult>();
   @Output() readonly runsChanged = new EventEmitter<void>();
   @Output() readonly repeatSetup = new EventEmitter<number>();
-  /** A step asks the outer wizard to show another: the Reports step's *See the documents*. */
+  /** A step asks the outer wizard to show another: the Write step's *See the documents*. */
   @Output() readonly stepRequested = new EventEmitter<'documents'>();
   /** A period card's run report, by run id. */
   @Output() readonly openRunReport = new EventEmitter<number>();
@@ -353,7 +353,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   analyzeError: string | null = null;
   result: CcAnalysisResult | null = null;
 
-  /** Bumped to list the Documents step's documents again: on entering it, and on a Reports step change. */
+  /** Bumped to list the Documents step's documents again: on entering it, and on a Write step change. */
   documentsReloadToken = 0;
 
   private analyzeSub: Subscription | null = null;
@@ -421,7 +421,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     return step === this.step || this.visitedSteps.has(step);
   }
 
-  /** The Reports step is drawing and uploading report charts; closing the wizard would strand them. */
+  /** The Write step is drawing and uploading report charts; closing the wizard would strand them. */
   get chartsAttaching(): boolean {
     return this.reportsStep?.chartState === 'attaching';
   }
@@ -441,18 +441,18 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     return `The documents of analysis #${result.analysisId}${name ? ` — ${name}` : ''}. View them here, or select them to download.`;
   }
 
-  /** The Reports step's documents changed: the Documents step lists them again. */
+  /** The Write step's documents changed: the Documents step lists them again. */
   onReportsDocumentsChanged(): void {
     this.documentsReloadToken++;
     this.cdr.markForCheck();
   }
 
-  /** The Reports step's *See the documents*: the outer wizard shows the Documents step. */
+  /** The Write step's *See the documents*: the outer wizard shows the Documents step. */
   onDocumentsRequested(): void {
     this.stepRequested.emit('documents');
   }
 
-  /** A document was deleted, or its charts changed, in the Documents step: the Reports step lists its documents again. */
+  /** A document was deleted, or its charts changed, in the Documents step: the Write step lists its documents again. */
   onDocumentsChanged(): void {
     this.reportsStep?.reloadDocuments();
   }

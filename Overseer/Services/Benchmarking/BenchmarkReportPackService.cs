@@ -1403,7 +1403,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
     private enum ChatJobPhase { Queued, Preparing, Writing, Finished }
 
-    /// <summary>One analysis's job, as the Reports step shows it. Mutable fields change under the registry's lock.</summary>
+    /// <summary>One analysis's job, as the Write step shows it. Mutable fields change under the registry's lock.</summary>
     private sealed class ChatConsistencyJobState
     {
         public required int AnalysisId { get; init; }

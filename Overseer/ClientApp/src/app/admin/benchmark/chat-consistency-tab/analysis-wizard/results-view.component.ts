@@ -67,10 +67,11 @@ export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReas
   { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
 ];
 
-export type CcResultsTab = 'verdicts' | 'periods' | 'attribution' | 'nextRuns' | 'details';
+export type CcResultsTab = 'summary' | 'verdicts' | 'periods' | 'attribution' | 'nextRuns' | 'details';
 
 /** The Results step's tabs, in order. */
 export const CC_RESULTS_TABS: readonly { readonly id: CcResultsTab; readonly label: string }[] = [
+  { id: 'summary', label: 'Summary' },
   { id: 'verdicts', label: 'Verdicts' },
   { id: 'periods', label: 'Periods' },
   { id: 'attribution', label: 'Attribution' },
@@ -81,25 +82,28 @@ export const CC_RESULTS_TABS: readonly { readonly id: CcResultsTab; readonly lab
 /** The Results step's selected tab, per browser. Read and written in `try/catch`. */
 export const CC_RESULTS_STORAGE_KEY = 'overseer.benchmark.chatConsistency.results';
 
-/** The stored tab; a missing, unknown or damaged value is *Verdicts*. */
+/** The version of the stored record; a record of any other version is ignored. */
+const CC_RESULTS_STORAGE_VERSION = 2;
+
+/** The stored tab; a missing, unknown, damaged or version-1 value is *Summary*. */
 export function readStoredResultsTab(): CcResultsTab {
   try {
     const raw = localStorage.getItem(CC_RESULTS_STORAGE_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const tab = (parsed as Record<string, unknown>)['tab'];
-      const known = CC_RESULTS_TABS.find(entry => entry.id === tab);
-      if (known) return known.id;
+      const record = parsed as Record<string, unknown>;
+      const known = CC_RESULTS_TABS.find(entry => entry.id === record['tab']);
+      if (record['version'] === CC_RESULTS_STORAGE_VERSION && known) return known.id;
     }
   } catch {
     // Private mode, blocked storage or a damaged value: the default.
   }
-  return 'verdicts';
+  return 'summary';
 }
 
 function writeStoredResultsTab(tab: CcResultsTab): void {
   try {
-    localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, tab }));
+    localStorage.setItem(CC_RESULTS_STORAGE_KEY, JSON.stringify({ version: CC_RESULTS_STORAGE_VERSION, tab }));
   } catch {
     // Private mode or blocked storage: the tab still applies for this session.
   }
@@ -145,8 +149,8 @@ function orList(items: readonly string[]): string {
 }
 
 /**
- * The Results step of the analysis: the verdict banner and the key figures, then the tabs *Verdicts*
- * (a card per computed endpoint, the not-computable endpoints in one card), *Periods* (the stored
+ * The Results step of the analysis, in the tabs *Summary* (the verdict banner and the key figures),
+ * *Verdicts* (a card per computed endpoint, the not-computable endpoints in one card), *Periods* (the stored
  * periods and their units), *Attribution*, *Next runs* and *Details* (the run selection, the events
  * in the analyzed span, the limitations, the data quality and the analysis's identity, each behind a
  * closed disclosure). Every panel is rendered once and hidden while another tab shows.

@@ -1,5 +1,5 @@
 <!--
-  STEP 5 OF THE CHAT CONSISTENCY WIZARD: REPORTS
+  STEP 5 OF THE CHAT CONSISTENCY WIZARD: WRITE
 
   A resizable sidebar that writes the analysis's documents (each one written once: a written one with
   View and Delete, an unwritten one with its Write checkbox), with the writer and the estimate; and a
@@ -10,7 +10,7 @@
 <app-run-report-frame layout="sidebar" sidebarLabel="New reports" mainLabel="Report progress"
                       [sidebarWidth]="sidebarWidth" (sidebarWidthChange)="onSidebarWidthChange($event)">
   <div runReportHeader class="rp-identity">
-    <h4 class="gh-section-title rp-heading" id="cc-rep-heading" tabindex="-1">Reports</h4>
+    <h4 class="gh-section-title rp-heading" id="cc-rep-heading" tabindex="-1">Write reports</h4>
     <p class="rp-subtitle">{{ subtitle }}</p>
     <p class="form-hint rp-lead">Write AI reports about this analysis. Each document is written once.</p>
   </div>

@@ -416,7 +416,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   /**
    * Nothing is torn down: the mounted content is what reopening preserves. The saved analyses are read
-   * again, since the Reports step may have written documents from one of them. A close that gets
+   * again, since the Write step may have written documents from one of them. A close that gets
    * through while the wizard is blocked (a repeated Escape, or a browser without `closedby`) reopens
    * the dialog instead.
    */

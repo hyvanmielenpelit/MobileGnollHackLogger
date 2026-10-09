@@ -430,7 +430,7 @@ const COMPOSE_DEBOUNCE_MS = 150;
 const REFUSED_BOX = { cssWidth: 480, cssHeight: 270 } as const;
 
 /**
- * The Timeline step of the Chat Consistency wizard: a resizable, collapsible settings sidebar (Data,
+ * The Charts step of the Chat Consistency wizard: a resizable, collapsible settings sidebar (Data,
  * Events, Annotations, Theme, Charts, Download) beside the *All charts* and *Single chart* views, with
  * zoom, Copy, Download and Download all. Each view shows the download itself: every chart is composed
  * by `cc-figure-compose.ts` at the chart size and rasterized for the screen, so at 100 % zoom one pixel

@@ -79,7 +79,7 @@ import {
 } from './report-document-format';
 import { buildReportPackDiagnostics, reportPackDiagnosticsFileName, reportPackIo } from './report-pack-diagnostics';
 
-/** What the Reports step works on: the comparison request, its entries and its suite. */
+/** What the Write step works on: the comparison request, its entries and its suite. */
 export interface ReportPackContext {
   readonly runIds: readonly number[];
   readonly groupIds: readonly number[];
