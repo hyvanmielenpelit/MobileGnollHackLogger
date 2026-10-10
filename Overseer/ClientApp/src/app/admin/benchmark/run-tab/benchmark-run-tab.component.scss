@@ -15,6 +15,16 @@
 
 @include shared.shared-4;
 
+// The New Benchmark Run card: a glass card over the admin page's glass container.
+.benchmark-card.setup-card {
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04), transparent 6rem),
+    rgba(17, 17, 17, 0.72);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
 .card-header-with-actions {
   display: flex;
   justify-content: space-between;
@@ -23,16 +33,17 @@
   flex-wrap: wrap;
 }
 
-// Launcher: the model under test, in a gold-accented panel above the fieldsets.
+// Launcher: the models under test, in a glass panel with a gold start edge above the fieldsets.
 .form-group.setup-primary-field {
   margin-block-end: 1.25rem;
-  padding: 14px 16px;
+  padding: 0.875rem 1rem 1rem;
   border: 1px solid var(--border-glass);
-  border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
   border-inline-start: 3px solid var(--primary-color);
-  border-radius: 8px;
-  background: rgba(212, 160, 23, 0.05);
-  background: color-mix(in srgb, var(--primary-color) 6%, transparent);
+  border-radius: 10px;
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035), transparent 4rem),
+    rgba(0, 0, 0, 0.22);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
   > label {
     font-family: "Cinzel", serif;

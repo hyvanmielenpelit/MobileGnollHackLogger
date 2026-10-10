@@ -99,7 +99,7 @@ Harness-neutral, and the floor for any Overseer frontend work.
   (`chipStyle="card"`), global in `styles.scss`'s *Multi-select picker* block with the chip parts
   `.gh-multi-picker-chip-main`, `-chip-badges` and `-chip-note` (`.is-warning`) and the count read-out
   `.gh-multi-picker-count`: each chosen item is a frosted-glass card with a provider-colored start
-  edge, in a grid spanning the host. The model batch launcher's *Models Under Test* is the first user.
+  edge, in a wrapping row, each card as wide as its name or badge row. The model batch launcher's *Models Under Test* is the first user.
   Global; never copied into a component. Contract:
   [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4e-2 and § 4e-3.
 - Shared since 2026-09-29, and not to be copied back into a component: **`.run-stage-rail`** (the
@@ -1761,7 +1761,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     progress**).
   - **The run tab's model batch mode** (`run-tab/`, state in `BenchmarkLauncherState`, *Model batches*
     block): the **Models** radios (`fieldset.gh-choice.run-mode-choice`, *One model* / *Model batch*,
-    `setRunMode`, which clears the report writer and the reuse) inside `.setup-primary-field`; in batch
+    `setRunMode`, which clears the report writer and the reuse) inside `.setup-primary-field` (a glass
+    panel inside the glass New Benchmark Run card, `.benchmark-card.setup-card`: both have the glass
+    hairline, a translucent dark surface, a top highlight and a depth shadow, the panel a gold start
+    edge, and neither has a `backdrop-filter`, which would make a stacking context around the model
+    pickers; the shared `.benchmark-card` rule stays opaque for the Manage Suites suite cards); in batch
     mode **Models Under Test** (`app-model-multi-picker.batch-models-picker`, `showPrice` and
     `showParallel`, `max` from `runLimits.maxModelsPerBatch`, `maxChips` 12, options from
     `batchPickerOptions` with `disabledReason` *Grades this batch* / *Writes its reports* and warning

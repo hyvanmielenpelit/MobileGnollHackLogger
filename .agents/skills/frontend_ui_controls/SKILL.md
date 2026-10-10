@@ -1004,7 +1004,7 @@ the input of a Generate, an export or a job. Never use one for the other's job.
 | `dropsUp` | Opens the popup upward |
 | `optionTemplate` | `TemplateRef<{ $implicit: MultiPickerOption; selected: boolean }>`: **the extension point**, rendered in place of the default tag, label and detail. It must render **text only** — never a button, link or input — because options live inside a listbox |
 | `chipTemplate` | The same context type (`selected` is always `true`): rendered in place of a chip's default tag, label and detail. **Non-interactive content only** — the remove button is the picker's own |
-| `chipStyle` | `'pill'` (default) or `'card'`. Card mode sets `.gh-multi-picker--cards` on the host: the field keeps a 44 rem trigger, All / None and a muted count read-out (*2 selected · max 12*, *2 selected* without `max`; ordinary visible text, rendered only with `showAllNone`) sit beside it, and each chip is a glass card in an `auto-fill` grid spanning the host |
+| `chipStyle` | `'pill'` (default) or `'card'`. Card mode sets `.gh-multi-picker--cards` on the host: the field keeps a 44 rem trigger, All / None and a muted count read-out (*2 selected · max 12*, *2 selected* without `max`; ordinary visible text, rendered only with `showAllNone`) sit beside it, and each chip is a glass card as wide as its name or badge row plus its remove button (at least 15 rem, at most the host's width), in a row that wraps; a narrower host moves cards to the next line rather than narrowing them |
 
 `selectionChange` emits `{ keys }`, the chosen keys in option order, **once per toggle, All, None or
 chip removal**.
@@ -1040,7 +1040,11 @@ chip removal**.
   `.model-option-tag` and adding only the check column, the chip row and forced-colors rules, and
   `.gh-multi-picker--cards` for card mode (the glass card: `--border-glass`, a `backdrop-filter` blur
   with a near-opaque `@supports` fallback, a 3 px inline-start edge in the provider's hue chosen by
-  `:has(.provider-badge--…)`, decorative only); the component SCSS is `:host { display: block }`. The
+  `:has(.provider-badge--…)`, decorative only). The card is a grid whose remove button spans the name
+  and badge rows, so the badges follow the name directly; the note carries `contain: inline-size`, so
+  it wraps within the card instead of widening it. The cards are **never** an `auto-fill` grid, whose
+  tracks resize with the row and ignore their content (the sawtooth fixed on 2026-10-10). The
+  component SCSS is `:host { display: block }`. The
   open `.selector-dropdown` stays above the cards by its `z-index: 100`; never put a container query or
   another stacking context around the picker. Polyfills: `ensureOverlayPolyfills()` for the tooltips.
   No `title` attribute anywhere (§4.2).
@@ -1079,8 +1083,8 @@ Test*, `.batch-models-picker`).
   batch*, *Writes its reports*: a blocker made unselectable at the source, §4i), and `detail` for a short
   note on a chosen model's chip that a warning names (*Same provider as the assessor*, with
   `detailTone="warning"`). Its `max` is the server's `maxModelsPerBatch` and its `maxChips` that maximum,
-  so every chosen model stays visible, and it uses `chipStyle="card"`: the chosen models are glass cards
-  filling the panel's width beside and under a trigger of the usual 44 rem.
+  so every chosen model stays visible, and it uses `chipStyle="card"`: the chosen models are glass cards,
+  each as wide as its content, wrapping under a trigger of the usual 44 rem.
 - **Keys stay the host's units.** Step 3 keys each option by comparison entry (`run:` / `group:` /
   `battery:`), so two entries of one model are two options; where two options would look identical,
   each carries its source as `detail` (*Battery run #10*), and only then.

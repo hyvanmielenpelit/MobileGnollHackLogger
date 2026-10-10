@@ -416,7 +416,7 @@ default) or *Model batch*. *Model batch* replaces *Model Under Test* with **Mode
 multi-model picker (`app-model-multi-picker`, with price and parallel badges, at most `MaxModels`, 12
 models): a model that is currently a scoring grader or the report writer is an unavailable option (*Grades
 this batch*, *Writes its reports*, MB-B03 and MB-B04 derived in the browser from the same configuration
-ids). Each chosen model is a glass card under the trigger, in a grid that fills the panel's width: its
+ids). Each chosen model is a glass card under the trigger, as wide as its name and badges, in a row that wraps: its
 name, a remove button in the corner, the same badges the list shows (thinking level, reasoning mode,
 provider, price, parallel mode) and a start edge in the provider's color. A chosen model a warning names
 carries an amber note on its card, led by a warning glyph (*Same provider as the assessor*, *Same

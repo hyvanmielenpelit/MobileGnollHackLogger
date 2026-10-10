@@ -20,6 +20,12 @@ const OPTIONS: ModelPickerOption<TestModel>[] = [
   { key: 'run:2', model: BETA }
 ];
 
+const CARD_OPTIONS: ModelPickerOption<TestModel>[] = [
+  { key: 'card:short', model: ALPHA, detail: 'Run #1' },
+  { key: 'card:long', model: ALPHA, detail: 'Same provider as the report writer, and its settings differ from the others' },
+  { key: 'card:beta', model: BETA }
+];
+
 /** Both pickers over the same models, each feeding its selection back. */
 @Component({
   standalone: true,
@@ -34,6 +40,8 @@ const OPTIONS: ModelPickerOption<TestModel>[] = [
                               [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
       <app-model-multi-picker class="multi-warning" label="Warned models" [options]="options" [selectedKeys]="selected"
                               detailTone="warning"></app-model-multi-picker>
+      <app-model-multi-picker class="multi-cards" label="Card models" [options]="cardOptions" [selectedKeys]="cardSelected"
+                              chipStyle="card" detailTone="warning" [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
     </div>
   `
 })
@@ -43,6 +51,8 @@ class HostComponent {
   options: ModelPickerOption<TestModel>[] = OPTIONS;
   selected: ModelPickerKey[] = [];
   pricedSelected: ModelPickerKey[] = [];
+  cardOptions: ModelPickerOption<TestModel>[] = CARD_OPTIONS;
+  cardSelected: ModelPickerKey[] = [];
   changes: ModelMultiPickerSelection<TestModel>[] = [];
   outerKeys: string[] = [];
 
@@ -59,6 +69,11 @@ class HostComponent {
 
   selectPriced(keys: ModelPickerKey[]): void {
     this.pricedSelected = keys;
+    this.cdr.markForCheck();
+  }
+
+  selectCards(keys: ModelPickerKey[]): void {
+    this.cardSelected = keys;
     this.cdr.markForCheck();
   }
 }
@@ -220,5 +235,83 @@ describe('ModelMultiPickerComponent', () => {
     expect(listbox(multi)).toBeNull();
     expect(host.outerKeys).not.toContain('Escape');
     expect(document.activeElement).toBe(trigger(multi));
+  });
+
+  describe('card mode layout', () => {
+    const REM = 16;
+    let picker: HTMLElement;
+
+    beforeEach(() => {
+      host.selectCards(['card:short', 'card:long', 'card:beta']);
+      fixture.detectChanges();
+      picker = part('.multi-cards');
+    });
+
+    const cards = () => Array.from(picker.querySelectorAll<HTMLElement>('.gh-multi-picker-chip'));
+    const card = (index: number) => cards()[index];
+    const box = (e: Element) => e.getBoundingClientRect();
+    const sized = (rem: number) => { picker.style.inlineSize = `${rem}rem`; };
+
+    it('keeps each card at its width when the picker widens', () => {
+      sized(40);
+      const narrow = cards().map(c => box(c).width);
+      sized(46);
+      const wide = cards().map(c => box(c).width);
+      expect(narrow.length).toBe(3);
+      wide.forEach((width, i) => expect(Math.abs(width - narrow[i])).toBeLessThanOrEqual(0.5));
+    });
+
+    it('starts the badges right under the name', () => {
+      sized(46);
+      for (const c of cards()) {
+        const name = box(c.querySelector('.gh-multi-picker-chip-main')!);
+        const badges = box(c.querySelector('.gh-multi-picker-chip-badges')!);
+        expect(badges.top - name.bottom).toBeLessThanOrEqual(0.375 * REM + 1);
+      }
+    });
+
+    it('keeps the badges on one line when there is room', () => {
+      sized(60);
+      for (const c of cards()) {
+        const middles = Array.from(c.querySelectorAll('.thinking-badge, .provider-badge, .price-badge, .parallel-badge'))
+          .map(b => (box(b).top + box(b).bottom) / 2);
+        expect(middles.length).toBeGreaterThan(1);
+        middles.forEach(middle => expect(Math.abs(middle - middles[0])).toBeLessThanOrEqual(1));
+      }
+    });
+
+    it('puts the remove button beside the badges, in the card\'s top end corner', () => {
+      sized(46);
+      for (const c of cards()) {
+        const cardBox = box(c);
+        const badges = box(c.querySelector('.gh-multi-picker-chip-badges')!);
+        const remove = box(c.querySelector(':scope > .action-btn')!);
+        const paddingTop = parseFloat(getComputedStyle(c).paddingBlockStart) + parseFloat(getComputedStyle(c).borderBlockStartWidth);
+        expect(remove.left).toBeGreaterThanOrEqual(badges.right);
+        expect(remove.right).toBeLessThanOrEqual(cardBox.right);
+        expect(remove.top - cardBox.top).toBeLessThanOrEqual(paddingTop + 0.5);
+      }
+    });
+
+    it('wraps a long note without widening its card', () => {
+      sized(60);
+      const short = card(0);
+      const long = card(1);
+      expect(Math.abs(box(long).width - box(short).width)).toBeLessThanOrEqual(1);
+      const shortNote = box(short.querySelector('.gh-multi-picker-chip-note')!);
+      const longNote = box(long.querySelector('.gh-multi-picker-chip-note')!);
+      expect(longNote.height).toBeGreaterThan(shortNote.height * 1.5);
+    });
+
+    it('fits a card into a narrow picker and wraps its badges', () => {
+      sized(14);
+      const hostRight = box(picker).right;
+      for (const c of cards()) {
+        expect(box(c).right).toBeLessThanOrEqual(hostRight + 0.5);
+        expect(c.scrollWidth).toBeLessThanOrEqual(c.clientWidth + 1);
+      }
+      const badges = card(0).querySelector('.gh-multi-picker-chip-badges')!;
+      expect(box(badges).height).toBeGreaterThan(box(badges.querySelector('.provider-badge')!).height * 1.5);
+    });
   });
 });
