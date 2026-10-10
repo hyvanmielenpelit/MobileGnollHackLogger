@@ -376,6 +376,32 @@ describe('chat consistency results', () => {
       expect(ccNextRunActionCount(groups)).toBe(5);
     });
 
+    it('gives a new baseline that suggests a control the model batch it sets up, and no other card one', () => {
+      const newCheckpoint = (overrides: Partial<CcNextRun>): CcNextRun => ({
+        kind: 'newCheckpoint', period: 'comparison', endpointId: null, reason: 'The build changed.',
+        suggestion: 'Make 3 runs under the current build.', repeatRunId: null, unitNoun: 'run', count: 3, days: 3,
+        targetKind: 'suite', suiteId: 6, batteryId: null, subjectModelKey: 'openai|gpt-5|high', controlSuggested: true,
+        subjectModelConfigurationId: 12, ...overrides
+      });
+      const groups = ccNextRunGroups(ccAnalysisResult({
+        nextRuns: [newCheckpoint({}), control('P1', 96)]
+      }), ccRunRows());
+
+      expect(groups[0].kind).toBe('newCheckpoint');
+      expect(groups[0].modelBatch).toEqual({ targetKind: 'suite', suiteId: 6, batteryId: null, modelConfigurationId: 12 });
+      expect(groups[1].modelBatch).toBeUndefined();
+
+      const battery = ccNextRunGroups(ccAnalysisResult({
+        nextRuns: [newCheckpoint({ targetKind: 'battery', suiteId: null, batteryId: 4, subjectModelConfigurationId: null })]
+      }), []);
+      expect(battery[0].modelBatch).toEqual({ targetKind: 'battery', suiteId: null, batteryId: 4, modelConfigurationId: null });
+
+      expect(ccNextRunGroups(ccAnalysisResult({ nextRuns: [newCheckpoint({ controlSuggested: false })] }), [])[0].modelBatch)
+        .toBeUndefined();
+      expect(ccNextRunGroups(ccAnalysisResult({ nextRuns: [newCheckpoint({ suiteId: null })] }), [])[0].modelBatch)
+        .toBeUndefined();
+    });
+
     it('is empty without next runs', () => {
       const groups = ccNextRunGroups(ccAnalysisResult({ nextRuns: [] }), ccRunRows());
       expect(groups).toEqual([]);

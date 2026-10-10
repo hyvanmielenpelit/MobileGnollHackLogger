@@ -36,6 +36,11 @@
   margin: 0;
 }
 
+/* The evidence notice above the rows; the fieldset's gap spaces it. */
+.cc-rep-evidence .alert-actions {
+  margin-top: 4px;
+}
+
 .checkbox-label.is-disabled {
   color: var(--nav-color);
   cursor: not-allowed;

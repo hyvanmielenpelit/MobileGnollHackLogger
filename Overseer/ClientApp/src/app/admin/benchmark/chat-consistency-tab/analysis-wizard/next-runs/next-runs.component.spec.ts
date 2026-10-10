@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { CcAnalysisResult, CcNextRun, CcRunRow } from '../../chat-consistency.models';
 import { ccAnalysisResult, ccRunRow, ccSubjectWithLevel, textOf } from '../../chat-consistency-tab.testing';
 import { CcNextRunsComponent, ccNextRunSections, ccNextRunsLeadText } from './next-runs.component';
+import { BenchmarkShellBridge } from '../../../state/benchmark-shell-bridge.service';
 
 /** Runs 205 (Board Suite) and 206 (Wiki Suite), the targets of the control fixtures. */
 function targetRows(): CcRunRow[] {
@@ -213,5 +214,67 @@ describe('CcNextRunsComponent', () => {
       expect(textOf(card.querySelector('.cc-nr-period'))).toBe('Both periods');
       expect(textOf(card.querySelector('.cc-nr-suggestion'))).toBe('Re-grade every compared run with one assessor (a common grader).');
     });
+  });
+});
+
+describe('CcNextRunsComponent: Set up as model batch', () => {
+  let fixture: ComponentFixture<CcNextRunsComponent>;
+  let el: HTMLElement;
+  let bridge: { leaveRefusal: ReturnType<typeof vi.fn>; prefillModelBatch: ReturnType<typeof vi.fn> };
+
+  const newCheckpoint = (overrides: Partial<CcNextRun> = {}): CcNextRun => nextRun({
+    kind: 'newCheckpoint', period: 'comparison', endpointId: null, reason: 'The build changed.',
+    suggestion: 'Make 3 runs under the current build.', repeatRunId: null, targetKind: 'suite', suiteId: 6, batteryId: null,
+    controlSuggested: true, subjectModelConfigurationId: 12, ...overrides
+  });
+
+  beforeEach(async () => {
+    bridge = { leaveRefusal: vi.fn(() => null), prefillModelBatch: vi.fn() };
+    await TestBed.configureTestingModule({
+      imports: [CcNextRunsComponent],
+      providers: [{ provide: BenchmarkShellBridge, useValue: bridge }]
+    }).compileComponents();
+    fixture = TestBed.createComponent(CcNextRunsComponent);
+    el = fixture.nativeElement as HTMLElement;
+  });
+
+  function render(nextRuns: CcNextRun[]): void {
+    fixture.componentRef.setInput('result', ccAnalysisResult({ subject: ccSubjectWithLevel(), nextRuns }));
+    fixture.componentRef.setInput('rows', targetRows());
+    fixture.detectChanges();
+  }
+
+  const batchButton = (): HTMLButtonElement | null => el.querySelector<HTMLButtonElement>('.cc-nr-model-batch');
+
+  it('offers Set up as model batch on a new baseline that suggests a control, and fills Run Benchmark with it', () => {
+    render([newCheckpoint()]);
+
+    const button = batchButton()!;
+    expect(textOf(button)).toBe('Set up as model batch');
+    expect(button.classList).toContain('btn-ghost');
+    expect(button.getAttribute('aria-label')).toContain('fills Run Benchmark, starts nothing');
+
+    button.click();
+    expect(bridge.prefillModelBatch).toHaveBeenCalledWith({
+      targetKind: 'suite', suiteId: 6, batteryId: null, modelConfigurationId: 12, controlSuggested: true
+    });
+  });
+
+  it('offers nothing without a suggested control', () => {
+    render([newCheckpoint({ controlSuggested: false })]);
+    expect(batchButton()).toBeNull();
+  });
+
+  it('says why it cannot leave the tab now, and fills nothing', () => {
+    bridge.leaveRefusal.mockReturnValue('Wait for the chart export or the report charts to finish.');
+    render([newCheckpoint()]);
+
+    batchButton()!.click();
+    fixture.detectChanges();
+
+    expect(bridge.prefillModelBatch).not.toHaveBeenCalled();
+    const refusal = el.querySelector('.cc-nr-batch-refusal')!;
+    expect(textOf(refusal)).toBe('Wait for the chart export or the report charts to finish.');
+    expect(batchButton()!.getAttribute('aria-describedby')).toBe(refusal.id);
   });
 });

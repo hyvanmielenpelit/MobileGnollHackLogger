@@ -283,6 +283,68 @@ describe('BatteryProgressDialogComponent', () => {
     expect(service.resumeBatteryRun).toHaveBeenCalledWith(7, 'Continue');
   });
 
+  describe('a member of a model batch', () => {
+    const owned = (): BenchmarkBatteryRunDto => batteryRun({
+      status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'A member run failed.', resumable: true, isDriving: false,
+      runsPerSuite: 1, requestedMemberCount: 2, slots: [slot(0, 1, member()), slot(1, 1, null)], members: [member()],
+      modelBatchRunId: 21
+    });
+
+    let getModelBatch: Mock;
+
+    beforeEach(() => {
+      getModelBatch = vi.fn(() => of({ id: 21, status: 'Stopped' }));
+      (service as unknown as { getModelBatch: Mock }).getModelBatch = getModelBatch;
+    });
+
+    it('says the batch owns it and keeps Continue and Cancel Battery waiting with the reason', () => {
+      open(owned());
+
+      expect(getModelBatch).toHaveBeenCalledWith(21);
+      expect(text('.bp-batch-notice')).toBe('Part of model batch #21. Open model batch #21');
+      expect(text('#bpBatchOwnedReason')).toBe('Use the model batch\'s progress dialog.');
+      for (const selector of ['.bp-continue', '.bp-cancel-battery']) {
+        expect(button(selector)!.getAttribute('aria-disabled')).toBe('true');
+        expect(button(selector)!.getAttribute('aria-describedby')).toBe('bpBatchOwnedReason');
+      }
+
+      button('.bp-continue')!.click();
+      button('.bp-cancel-battery')!.click();
+      expect(service.resumeBatteryRun).not.toHaveBeenCalled();
+      expect(service.cancelBatteryRun).not.toHaveBeenCalled();
+      expect(monitor.armCompletionSignalsFromGesture).not.toHaveBeenCalled();
+    });
+
+    it('opens the batch from the notice, closing first', () => {
+      open(owned());
+      const closed = vi.fn();
+      const openBatch = vi.fn();
+      component.closed.subscribe(closed);
+      component.openModelBatch.subscribe(openBatch);
+
+      button('.bp-open-batch')!.click();
+
+      expect(closed).toHaveBeenCalledTimes(1);
+      expect(openBatch).toHaveBeenCalledWith(21);
+    });
+
+    it('lifts the gate when the batch is final', () => {
+      getModelBatch.mockReturnValue(of({ id: 21, status: 'Cancelled' }));
+      open(owned());
+
+      expect(el().querySelector('.bp-batch-notice')).toBeNull();
+      expect(button('.bp-continue')!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('reads Back to Batch when opened from the batch\'s dialog', () => {
+      fixture.componentRef.setInput('returnsToModelBatch', true);
+      open(batteryRun());
+
+      expect(text('.bp-back-to-batch')).toBe('Back to Batch');
+      expect(el().querySelector('.dialog-footer')?.textContent).not.toContain('Run in Background');
+    });
+  });
+
   it('offers the re-run after Continue is refused with 409 for a moved instrument', () => {
     const run = batteryRun({
       status: 'Stopped', stopReason: 'MemberFailed', resumable: true,

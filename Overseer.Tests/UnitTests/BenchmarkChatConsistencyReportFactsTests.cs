@@ -653,7 +653,7 @@ public class BenchmarkChatConsistencyReportFactsTests
         var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(OverseerEventKinds.Wiki, Fact(sheet, "events.2.kind").Value!.GetValue<string>());
-        Assert.Equal("Wiki revision", Fact(sheet, "events.2.kind").Display);
+        Assert.Equal("wiki revision", Fact(sheet, "events.2.kind").Display);
         Assert.Equal("harness 53 → 54", Fact(sheet, "events.1.change").Display);
         Assert.Equal("wiki revision a8fa85a → 4bb80dc", Fact(sheet, "events.2.change").Display);
         Assert.Equal("game snapshot: off → on", Fact(sheet, "events.3.change").Display);
@@ -749,8 +749,19 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("2 days per period", Fact(sheet, "sample.minimumDays").Display);
         Assert.Equal("20 paired items", Fact(sheet, "sample.minimumPairedItems").Display);
         Assert.False(Fact(sheet, "sample.met").Value!.GetValue<bool>());
-        Assert.Equal("1 battery run per period on 1 day; the minimum is 2 battery runs on 2 days per period and 20 paired items",
+        Assert.Equal("1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per period; paired items 20, at the minimum of 20",
             Fact(sheet, "sample.shortfall").Display);
+
+        // A part that meets its minimum says so; periods that differ are stated one by one.
+        var paired = battery with
+        {
+            Endpoints = battery.Endpoints.Select(e => e.Id == "P1" ? e with { ItemCount = 32 } : e).ToList(),
+            Comparison = battery.Comparison with { Days = new[] { "2026-09-15", "2026-09-16" } },
+            Units = new[] { Unit(101, "baseline", 10, 11), Unit(102, "comparison", 20), Unit(103, "comparison", 21) }
+        };
+        Assert.Equal("baseline 1 battery run on 1 day, comparison 2 battery runs on 2 days, below the minimum of 2 battery runs on 2 days per period; "
+            + "paired items 32, above the minimum of 20",
+            Fact(BenchmarkChatConsistencyReportFacts.Build(paired, BenchmarkReportAudience.ExecutiveSummary), "sample.shortfall").Display);
 
         // Two runs per period on two days meet the minimum, and the shortfall is then unavailable.
         var runs = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
@@ -955,6 +966,150 @@ public class BenchmarkChatConsistencyReportFactsTests
         var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal("the served model IDs are the same in both periods", Fact(sheet, "identity.changed").Display);
+    }
+
+    /// <summary>A battery comparison of one battery run per period, each with a battery Overall Index.</summary>
+    private static ChatConsistencyAnalysisResult BatteryResult() => Result() with
+    {
+        ComparisonSet = new ChatConsistencyComparedSet { Kind = ChatConsistencyComparisonSetKinds.Battery, Key = "battery:abc", Label = "Two initial suites (revision 1)" },
+        UnitKind = ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+        Units = new[] { Unit(11, "baseline", 10, 11), Unit(12, "comparison", 20, 21) },
+        PeriodLevels = new[]
+        {
+            new ChatConsistencyPeriodLevels { Period = "baseline", AnswerCount = 40, NativeMeanQuality = 82.6, OverallIndex = 82.0, FailedAnswerCount = 0 },
+            new ChatConsistencyPeriodLevels { Period = "comparison", AnswerCount = 40, NativeMeanQuality = 82.0, OverallIndex = 81.7, FailedAnswerCount = 0 }
+        }
+    };
+
+    [Fact]
+    public void InABatteryComparison_TheMeanAnswerScore_IsKeptFromTheWriter_SoQualityHasOneFigure()
+    {
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(BatteryResult(), BenchmarkReportAudience.ExecutiveSummary);
+
+        // Both stay on the sheet for the rendered blocks, labeled as what they are.
+        Assert.Equal("mean score 82.6 points", Fact(sheet, "level.baseline.quality").Display);
+        Assert.Equal("Baseline period level: mean answer score", BenchmarkReportFactLabels.Label("level.baseline.quality"));
+        Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden(sheet, "level.baseline.quality"));
+        Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden(sheet, "level.comparison.quality"));
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden(sheet, "level.comparison.overallIndex"));
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden("level.baseline.quality"));
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
+        Assert.DoesNotContain("level.baseline.quality", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("level.comparison.quality", message, StringComparison.Ordinal);
+        Assert.Contains("level.baseline.overallIndex = 82.0\n", message);
+
+        // Without an Overall Index for both periods, and in a comparison of runs, the mean score stays with the writer.
+        var oneIndex = BatteryResult() with
+        {
+            PeriodLevels = BatteryResult().PeriodLevels!.Select(l => l.Period == "comparison" ? l with { OverallIndex = null } : l).ToList()
+        };
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden(BenchmarkChatConsistencyReportFacts.Build(oneIndex, BenchmarkReportAudience.ExecutiveSummary), "level.baseline.quality"));
+        var runs = Result() with { PeriodLevels = BatteryResult().PeriodLevels };
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden(BenchmarkChatConsistencyReportFacts.Build(runs, BenchmarkReportAudience.ExecutiveSummary), "level.baseline.quality"));
+    }
+
+    [Fact]
+    public void InABatteryComparison_AnEventsRun_ReadsAsItsBatteryRun()
+    {
+        var result = BatteryResult() with
+        {
+            Events = new[]
+            {
+                new ChatConsistencyEventView { AtUtc = Day1.AddDays(10), Kind = OverseerEventKinds.HarnessVersion, From = "53", To = "54", RunId = 20, PreviousRunId = 11, SubjectKey = "s", InTargetSeries = true },
+                new ChatConsistencyEventView { AtUtc = Day1.AddDays(10), Kind = OverseerEventKinds.Wiki, From = "a", To = "b", RunId = 21, PreviousRunId = 10, SubjectKey = "s", InTargetSeries = true },
+                new ChatConsistencyEventView { AtUtc = Day1.AddDays(11), Kind = OverseerEventKinds.CorpusIndex, From = "{}", To = "{}", RunId = 31, PreviousRunId = 30, SubjectKey = ControlKey }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal("battery run #12 (run #20)", Fact(sheet, "events.1.run").Display);
+        Assert.Equal("battery run #11 (run #11)", Fact(sheet, "events.1.previousRun").Display);
+        Assert.Equal("battery run #12 (runs #20 and #21)", Fact(sheet, "eventGroups.1.run").Display);
+        Assert.Equal("run #31", Fact(sheet, "eventGroups.2.run").Display);
+
+        // A comparison of runs keeps the run.
+        Assert.Equal("run #20", Fact(BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport), "events.1.run").Display);
+    }
+
+    [Theory]
+    [InlineData(OverseerEventKinds.CorpusIndex, "corpus re-index")]
+    [InlineData(OverseerEventKinds.HarnessVersion, "harness version")]
+    [InlineData(OverseerEventKinds.SourceCode, "source code revision")]
+    [InlineData(OverseerEventKinds.Wiki, "wiki revision")]
+    public void AnEventKind_ReadsAsTheEventTableWordsIt_NeverAsAFieldName(string kind, string expected)
+    {
+        Assert.Equal(expected, BenchmarkChatConsistencyReportFacts.EventKindText(kind));
+    }
+
+    [Fact]
+    public void EqualValuesOfBothPeriods_AreOneFact_AndThePairIsKeptFromTheWriter()
+    {
+        var result = Result() with
+        {
+            ServedModels = new ChatConsistencyServedModels
+            {
+                Baseline = new[] { new ChatConsistencyServedModelCount("claude-haiku-5-5", 203) },
+                Comparison = new[] { new ChatConsistencyServedModelCount("claude-haiku-5-5", 210) },
+                BaselineCalls = 203,
+                ComparisonCalls = 210,
+                BaselineServedSpeeds = new[] { "standard" },
+                ComparisonServedSpeeds = new[] { "standard" }
+            },
+            OwnWaits = new[]
+            {
+                new ChatConsistencyOwnWaits { Period = "baseline", OwnWaitShare = 0.0, RetryAttemptCount = 0, AnswersWithTelemetry = 40 },
+                new ChatConsistencyOwnWaits { Period = "comparison", OwnWaitShare = 0.0001, RetryAttemptCount = 0, AnswersWithTelemetry = 40 }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.InternalBrief);
+
+        Assert.Equal("claude-haiku-5-5 in both periods (203 and 210 calls)", Fact(sheet, "identity.servedModels").Display);
+        Assert.Equal("standard in both periods", Fact(sheet, "serving.speeds").Display);
+        Assert.Equal("0 retry attempts in both periods", Fact(sheet, "ownWaits.retries").Display);
+        Assert.Equal("0.0 % in both periods", Fact(sheet, "ownWaits.share").Display);
+        foreach (var (combined, baseline, comparison) in BenchmarkChatConsistencyReportFacts.CombinedPairs)
+        {
+            Assert.True(BenchmarkReportFactLabels.TryLabel(combined, out _), combined + " needs a label.");
+            Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden(sheet, baseline), baseline);
+            Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden(sheet, comparison), comparison);
+            Assert.True(Fact(sheet, baseline).Available);
+        }
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
+        Assert.Contains("identity.servedModels = claude-haiku-5-5 in both periods (203 and 210 calls)\n", message);
+        Assert.DoesNotContain("identity.baseline.servedModels", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ownWaits.comparison.retries", message, StringComparison.Ordinal);
+
+        // Values that differ keep their pair, and no combined fact is stated.
+        var differing = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.InternalBrief);
+        Assert.DoesNotContain(differing.Facts, f => f.Key is "ownWaits.retries" or "ownWaits.share" or "serving.speeds");
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden(differing, "ownWaits.comparison.retries"));
+    }
+
+    [Fact]
+    public void ASameDaySplit_PrintsTheBaselineUntilTheComparisonsStart_AndTheComparisonFromTo()
+    {
+        var day = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc);
+        var split = day.AddHours(14).AddMinutes(49);
+        var result = Result() with
+        {
+            Baseline = Result().Baseline with { StartUtc = day, EndUtc = split.AddMilliseconds(-1) },
+            Comparison = Result().Comparison with { StartUtc = split, EndUtc = day.AddDays(1).AddMilliseconds(-1) }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ProviderIssueReport, RequestIds());
+
+        Assert.Equal("2026-10-08 00:00 UTC until 14:49 UTC", Fact(sheet, "period.baseline.window").Display);
+        Assert.Equal("from 2026-10-08 14:49 UTC to 2026-10-08 23:59 UTC", Fact(sheet, "period.comparison.window").Display);
+        Assert.Equal("2026-10-08 00:00 UTC until 14:49 UTC", BenchmarkChatConsistencyReportFacts.WindowText(sheet.Facts, "baseline"));
+
+        // A split at a day boundary keeps the date; periods apart print their own end.
+        Assert.Equal("2026-10-01 00:00 UTC until 2026-10-08 00:00 UTC",
+            BenchmarkChatConsistencyReportFacts.WindowText("baseline", day.AddDays(-7), day.AddMilliseconds(-1), day));
+        Assert.Equal("2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC", Fact(BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary), "period.baseline.window").Display);
     }
 
     /// <summary>The event-group fixture the client's report-chart spec reads too, from the repository root.</summary>

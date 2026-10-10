@@ -2124,7 +2124,7 @@
           }
         </p>
       </div>
-      <button type="button" class="btn-icon-action" [attr.aria-label]="monitor.returnToSeriesOnClose ? 'Return to series progress' : runProgressReturnsToBattery ? 'Return to battery progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
+      <button type="button" class="btn-icon-action" [attr.aria-label]="runProgressCloseAriaLabel" (click)="closeRunProgressDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -2514,10 +2514,10 @@
     </div>
     <div class="dialog-footer">
       @if (!runIsTerminal) {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : runProgressReturnsToBattery ? 'Back to Battery' : 'Run in Background' }}</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ runProgressCloseLabel('Run in Background') }}</button>
         <button type="button" class="btn-gh btn-gh-delete" (click)="cancelDialogRun()">Cancel Run</button>
       } @else {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : runProgressReturnsToBattery ? 'Back to Battery' : 'Close' }}</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ runProgressCloseLabel('Close') }}</button>
         <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>
         @let progressRerunGate = progressRerunFailedGate;
         @if (progressRerunGate.visible) {
@@ -2544,18 +2544,34 @@
   (closed)="monitor.onMultiRunDialogClosed()"
   (openRunProgress)="onOpenRunProgressFromSeries($event)"
   (openGroupAnalysis)="onOpenGroupAnalysisFromSeries($event)"
-  (seriesResumed)="onSeriesResumedFromDialog($event)"></app-multi-run-progress-dialog>
+  (seriesResumed)="onSeriesResumedFromDialog($event)"
+  (openModelBatch)="onOpenModelBatchFromMember($event)"></app-multi-run-progress-dialog>
 
 <!-- BATTERY PROGRESS DIALOG -->
 <app-battery-progress-dialog
   [batteryRunId]="dialogBatteryRunId"
   [visible]="monitor.batteryDialogVisible"
+  [returnsToModelBatch]="monitor.returnToModelBatchId != null"
   (closed)="monitor.onBatteryDialogClosed()"
   (openRunProgress)="onOpenRunProgressFromBattery($event)"
   (openAnalysis)="onOpenBatteryAnalysis($event)"
   (batteryResumed)="onBatteryResumedFromDialog($event)"
   (batteryCanceled)="onBatteryCanceledFromDialog($event)"
-  (memberAttached)="onBatteryMemberAttachedFromDialog($event)"></app-battery-progress-dialog>
+  (memberAttached)="onBatteryMemberAttachedFromDialog($event)"
+  (openModelBatch)="onOpenModelBatchFromMember($event)"></app-battery-progress-dialog>
+
+<!-- MODEL BATCH PROGRESS DIALOG: a member's run or battery progress dialog replaces it, and Back to Batch returns. -->
+<app-model-batch-progress-dialog
+  [modelBatchRunId]="monitor.modelBatchDialogId"
+  [visible]="monitor.modelBatchDialogVisible"
+  (closed)="monitor.onModelBatchDialogClosed()"
+  (openRunProgress)="onOpenRunProgressFromModelBatch($event)"
+  (openBatteryProgress)="onOpenBatteryProgressFromModelBatch($event)"
+  (openRunReport)="viewRunDetail($event)"
+  (openBatteryRunReport)="openBatteryRunReport($event)"
+  (openComparison)="onOpenComparisonFromModelBatch($event)"
+  (batchCanceled)="monitor.onModelBatchCanceled($event)"
+  (batchResumed)="monitor.onModelBatchResumed($event)"></app-model-batch-progress-dialog>
 
 <!-- BATTERY RUN REPORT: opened from Run History, the leaderboard and the battery progress dialog. -->
 <app-battery-run-report-dialog #batteryRunReport

@@ -1,5 +1,44 @@
 [
   {
+    "version": "1.2.1",
+    "date": "2026-10-10T18:34:13Z",
+    "summary": "This release helps administrators keep the Overseer chat at its best: GnollBench can now check whether the chat with a given model stays as good, fast and affordable over time, and can compare several models in one batch under identical conditions, with built-in checks that keep the comparison fair.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added support for Claude 5.5 Haiku."
+      },
+      {
+        "type": "feature",
+        "text": "Added GnollBench Chat Consistency: a step-by-step wizard that compares a model's benchmark runs from two periods and tells whether the chat's answer quality, speed and cost have changed, whether an Overseer update or the AI provider is the likely cause, and which runs to make next, with timeline charts and AI-written reports."
+      },
+      {
+        "type": "feature",
+        "text": "Added model batches: several AI models can now be benchmarked one after another under exactly the same graders and settings, on a question suite or a battery, followed in one progress window with options to continue, skip a model, re-run or cancel, and opened together in Model Comparison when they finish."
+      },
+      {
+        "type": "feature",
+        "text": "Before a model batch starts, a Batch Readiness check lists anything that would make the comparison unfair or unreliable, such as a model grading itself, mixed providers under a single grader, or a batch too large for the daily run limit, and asks you to confirm each warning."
+      },
+      {
+        "type": "improvement",
+        "text": "A benchmark run, series, battery or model batch that fails, stops or finishes with errors now plays a distinct alert sound and says so in its desktop notification, and a new Test failure sound button lets you hear it in advance."
+      },
+      {
+        "type": "improvement",
+        "text": "Chat Consistency now suggests a fresh baseline when the Overseer has been updated since the compared runs, warns before an analysis or a report when the evidence cannot support a firm conclusion, and offers to write only the Executive Summary in that case."
+      },
+      {
+        "type": "improvement",
+        "text": "Chat Consistency reports state each period's exact time window, avoid repeating the same value twice in one sentence, and keep section labels together with the tables they introduce in PDF downloads; their charts keep both ends of each period readable."
+      },
+      {
+        "type": "fix",
+        "text": "Leaving an administration page while its data is still loading no longer records a server error."
+      }
+    ]
+  },
+  {
     "version": "1.2.0",
     "date": "2026-10-06T16:41:08Z",
     "summary": "A major release that sharpens the Overseer's game advice and makes API keys safer to manage: keys are now verified before they are saved, administrators can share default keys and are warned by email when a key fails, and confidential chats behave exactly as their settings say. The AI Intelligence Benchmark grows into a full evaluation suite with multi-suite batteries, statistical model comparisons, exportable charts and AI-written PDF and Word reports.",

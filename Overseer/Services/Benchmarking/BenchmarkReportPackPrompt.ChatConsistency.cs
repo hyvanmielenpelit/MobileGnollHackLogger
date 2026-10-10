@@ -66,7 +66,8 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "REMINDERS");
         Line(sb, "- Figures, dates, hours and run ids appear only as {{key}} with a key from FACTS exactly as written; the model as {{subject}}; a control model only as {{peer:X}} with its letter from PEERS. No other {{...}} tokens, no digits in prose and no question references.");
         Line(sb, "- Report the total change first, then the attribution. Where {{scope.hours}} is available, cite it at least once; where it is unavailable, say once in plain words that the periods ran at different hours, citing {{period.baseline.hours}} and {{period.comparison.hours}}.");
-        Line(sb, "- A sentence-valued fact (limitation.*, a reason, a suggestion, a robustness detail) appears at most once and never inside parentheses.");
+        Line(sb, "- A sentence-valued fact (limitation.*, a reason, a suggestion, a robustness detail) appears at most once and never inside parentheses. It is a sentence of its own: never continue a sentence after it with and.");
+        Line(sb, "- Never write \"X and X, respectively\": a value or verdict the two periods or endpoints share is named once.");
         Line(sb, "- A change word needs, in the same sentence, a token CLAIM SUPPORT lists as showing a change. A causal connective needs an attribution token in the same sentence.");
         Line(sb, "- Never claim intent. A mechanism needs a provider-confirmed cause in the same sentence. Established, confirmed and the other public-claim words need an Established grade token in the same sentence.");
         Line(sb, "- An inconclusive endpoint you cite needs its {{endpoint.<P>.mde}} token once in the document. All-hours words need a true {{serving.timeOfDayAssessable}} in the same sentence.");
@@ -88,6 +89,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Grading is how the answers were scored by the graders; write grading, never scoring method.");
         Line(sb, "- The unit of the analysis is {{period.baseline.unitNoun}}. Where the analysis compares battery runs, count in battery runs ({{period.baseline.units}}, {{period.comparison.units}}), never in the member runs inside them.");
         Line(sb, "- Where the minimum sample is not met ({{sample.met}}), the result rests on fewer runs than the protocol asks for; say so with {{sample.shortfall}} where the slot asks for it.");
+        Line(sb, "- Name an Overseer update by what changed, in the words of its events.<n>.change, eventGroups.<n>.changes or events.<n>.kind fact, never by a field name.");
         Line(sb, "- GnollBench runs are made by hand, on the development computer, when someone decides to make them. Never write that the chat is monitored or watched, or that a check runs by itself; say which runs to make.");
         Line(sb, "- The document prints code-built blocks before the slots and above some of them, as each slot's description says: the overall verdict, the verdict table and others. Interpret them; never restate them, and never repeat their figures one by one.");
         if (spec.Audience == BenchmarkReportAudience.ExecutiveSummary)
@@ -151,7 +153,7 @@ public static partial class BenchmarkReportPackPrompt
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.AsGoodAsBefore) =>
             $"At most {ChatCap(audience, slot)} words: the document's answer to its title. Lead with {{{{verdict.short}}}}, then the total change on each computed endpoint, with its verdict token, within {{{{scope.hours}}}} where it is available; then, in a sentence of its own, what the attribution says about where the change came from.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.PlayerImpact) =>
-            $"At most {ChatCap(audience, slot)} words: what the result means for a player who asks the Overseer chat during play and waits for each answer: the quality of the answers, the time to first answer text and failed answers, each with its token. Where an endpoint is inconclusive, say so and give its minimum detectable effect.",
+            $"At most {ChatCap(audience, slot)} words: what the result means for a player who asks the Overseer chat during play and waits for each answer: the quality of the answers, the time to first answer text and failed answers, each with its token. Where an endpoint is inconclusive, say so and give its minimum detectable effect. Quality is the battery Overall Index when one is given; a mean answer score is never called quality.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.OurChanges) =>
             $"At most {ChatCap(audience, slot)} words: what the Overseer's own updates in the period mean for the result, and what the attribution says about their effect. Name the update that matters in plain words, such as a new harness version or a re-indexed wiki, without its dates, runs or values. Where no attribution to our side is graded Established or Indicated, say that their effect is not established.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.ProviderChanges) =>
@@ -194,7 +196,7 @@ public static partial class BenchmarkReportPackPrompt
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.AffectedModel) =>
             $"At most {ChatCap(audience, slot)} words: the model and configuration: {{{{subject.label}}}}, {{{{subject.modelId}}}}, the thinking level and service tier, and the served model ids of each period.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Timeline) =>
-            $"At most {ChatCap(audience, slot)} words: the baseline and comparison periods with their dates and run days, and the dates of any annotations, as the facts give them.",
+            $"At most {ChatCap(audience, slot)} words: the baseline and comparison periods with their windows ({{{{period.baseline.window}}}}, {{{{period.comparison.window}}}}) and run days, and the dates of any annotations, as the facts give them.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Measurements) =>
             $"At most {ChatCap(audience, slot)} words: each endpoint's estimate with its interval, verdict and grade, and the control models' own change. Measurements only, never an interpretation of the provider's systems.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.HoursObserved) =>
@@ -232,12 +234,18 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    /// <summary>The rules against repeating the same fact, and the shorter slots of an analysis without enough evidence.</summary>
+    /// <summary>
+    /// The rules against repeating the same fact or one value, against splicing a sentence-valued fact into a
+    /// sentence and citing a bare interval, and the shorter slots of an analysis without enough evidence.
+    /// </summary>
     private static void AppendChatConsistencyRepetitionRules(StringBuilder sb)
     {
         Line(sb, "REPETITION AND LENGTH:");
         Line(sb, "- A fact whose value is a sentence (limitation.*, limitation.dataQuality.*, robustness.<n>.detail, controls.missing.<n>.suggestion, nextRuns.<n>.reason and .suggestion, and any fact whose key ends in reason) appears at most once in the whole document, and never inside parentheses. After its one citation, refer to it in a few plain words.");
         Line(sb, "- Endpoints that share a status or a value get one sentence together, not one sentence each: for example, two endpoints that are not computable for the same reason.");
+        Line(sb, "- Never write \"X and X, respectively\". When the two periods share a value, or two endpoints share a verdict, name it once, as in \"inconclusive for both\"; where FACTS states one value for both periods (identity.servedModels, serving.speeds, ownWaits.share, ownWaits.retries), cite that fact instead of the two.");
+        Line(sb, "- A fact whose value is a sentence is written as a sentence of its own, or quoted inside yours without its final full stop; never continue a sentence after it with and.");
+        Line(sb, "- Cite an interval (a ci95, ci90 or controlChangeCi95 fact) only in a sentence that also cites its estimate and names its measure.");
         Line(sb, "- State an inconclusive endpoint's minimum detectable effect once in the document, where you first discuss that endpoint.");
         Line(sb, "- For the robustness checks, prefer robustness.<check>.summary, which states every endpoint of one check in one sentence, to the robustness.<n>.* facts one by one.");
         Line(sb, "- When {{verdict.short}} reads Not enough evidence yet, write at most two sentences per slot. Do not restate which endpoints are not computable: the overall verdict already says so. Spend the words on what the runs do show and on which runs would give an answer.");
@@ -346,8 +354,9 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
 
         Line(sb, "FACTS (write {{key}} to place a figure; key = value as printed)");
+        var hidden = BenchmarkChatConsistencyReportFacts.WriterHiddenKeys(sheet.Facts);
         var facts = sheet.Facts
-            .Where(f => !BenchmarkChatConsistencyReportFacts.WriterHidden(f.Key))
+            .Where(f => !BenchmarkChatConsistencyReportFacts.WriterHidden(f.Key) && !hidden.Contains(f.Key))
             .OrderBy(f => f.Key, StringComparer.Ordinal)
             .ToList();
         if (facts.Count == 0)

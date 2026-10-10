@@ -11,19 +11,37 @@ import {
   BenchmarkBatteryDto,
   BenchmarkBatteryAttachDto,
   BenchmarkBatteryReusePreviewDto,
-  StartBenchmarkBatteryRunRequest
+  StartBenchmarkBatteryRunRequest,
+  BenchmarkModelBatchFindingDto,
+  BenchmarkModelBatchPreflightResponse,
+  BenchmarkModelBatchProjectionDto,
+  StartBenchmarkModelBatchRequest
 } from '../../../services/admin-benchmark.service';
-import { Subscription } from 'rxjs';
-import { BenchmarkRunSettings } from '../benchmark.models';
+import { Observable, Subject, Subscription, catchError, debounceTime, map, of, switchMap } from 'rxjs';
+import { BenchmarkLauncherRunMode, BenchmarkModelBatchOrderChoice, BenchmarkRunSettings } from '../benchmark.models';
 import { parsePromptOptions, refusalText } from '../benchmark-run-format';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
+import type { ModelBatchPrefill } from './benchmark-shell-bridge.service';
 
 /** A run whose setup the launcher took over, and each recorded setting it could not take over. */
 export interface BenchmarkRunPrefillResult {
   runId: number;
   notes: string[];
 }
+
+/** How long the launcher waits for the batch settings to settle before it asks the server to check them. */
+export const MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS = 300;
+
+/** The first retry delay after a failed batch check; each further failure doubles it, up to the cap. */
+const MODEL_BATCH_PREFLIGHT_RETRY_MS = 2000;
+const MODEL_BATCH_PREFLIGHT_RETRY_MAX_MS = 30000;
+
+/** What one batch check came back with. */
+type ModelBatchPreflightOutcome =
+  | { kind: 'none' }
+  | { kind: 'ok'; response: BenchmarkModelBatchPreflightResponse }
+  | { kind: 'error'; message: string };
 
 /** The Run Benchmark launcher's form, the remembered run settings and the run request it builds. Survives a switch to another sub-tab. */
 @Injectable()
@@ -44,7 +62,13 @@ export class BenchmarkLauncherState implements OnDestroy {
       if (this.reuseEarlierRuns) {
         this.refreshReusePreview();
       }
+      this.requestPreflight();
     });
+    // One check in flight: a newer settled change cancels the one before it.
+    this.preflightSubscription = this.preflightRequested$.pipe(
+      debounceTime(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS),
+      switchMap(() => this.runPreflight())
+    ).subscribe(outcome => this.applyPreflightOutcome(outcome));
   }
 
   /** A remembered suite wins over the first one, but only if it still exists. */
@@ -112,6 +136,7 @@ export class BenchmarkLauncherState implements OnDestroy {
     this.clampRunCountToTarget();
     this.refreshReusePreview();
     this.applyPendingPrefill();
+    this.requestPreflight();
   }
 
   selectedSuiteId: number | null = null;
@@ -316,6 +341,12 @@ export class BenchmarkLauncherState implements OnDestroy {
             ? remembered.reportWriterConfigId
             : null;
         }
+        // A batch model that no longer qualifies is dropped; the rest keep their choice and order.
+        if (remembered.batchModelIds != null) {
+          this.batchModelKeys = BenchmarkLauncherState.distinct(remembered.batchModelIds.filter(qualifies));
+          this.batchOrderKeys = BenchmarkLauncherState.mergeOrder(
+            (remembered.batchOrderIds ?? []).filter(qualifies), this.batchModelKeys);
+        }
       }
     } else {
       this.testedConfigId = null;
@@ -328,6 +359,7 @@ export class BenchmarkLauncherState implements OnDestroy {
       this.listsArrived.configs = true;
       this.markRunSettingsApplied('configs');
       this.applyPendingPrefill();
+      this.requestPreflight();
     }
   }
 
@@ -365,7 +397,8 @@ export class BenchmarkLauncherState implements OnDestroy {
    * exist to gate. Neither are the
    * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which are
    * not part of setting up a run. Nor are *Wait when the run cap blocks the next run* (allowCapWait) and
-   * *Reuse earlier runs* (reuseEarlierRuns), which are decided at each start.
+   * *Reuse earlier runs* (reuseEarlierRuns), which are decided at each start, nor a model batch's
+   * acknowledged warnings (acknowledgedFindingKeys).
    */
   persistRunSettings(): void {
     try {
@@ -401,7 +434,12 @@ export class BenchmarkLauncherState implements OnDestroy {
       targetKind: this.runTargetKind,
       batteryId: this.selectedBatteryId,
       completionSound: this.completionSound,
-      completionNotification: this.completionNotification
+      completionNotification: this.completionNotification,
+      runMode: this.runMode,
+      batchModelIds: [...this.batchModelKeys],
+      batchOrder: this.batchOrder,
+      batchOrderIds: [...this.batchOrderKeys],
+      batchRunsPerModel: this.effectiveBatchRunsPerModel
     };
 
     const pending = this.pendingRunSettings;
@@ -420,6 +458,8 @@ export class BenchmarkLauncherState implements OnDestroy {
         settings.secondOpinionConfigId = pending.secondOpinionConfigId;
         settings.claimVerifierConfigId = pending.claimVerifierConfigId;
         settings.reportWriterConfigId = pending.reportWriterConfigId;
+        settings.batchModelIds = pending.batchModelIds ?? null;
+        settings.batchOrderIds = pending.batchOrderIds ?? null;
       }
       if (!applied.battery) {
         settings.targetKind = pending.targetKind;
@@ -445,6 +485,8 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (!raw || typeof raw !== 'object') { return; }
 
     const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+    const ids = (v: unknown): number[] | null =>
+      Array.isArray(v) ? v.filter((id): id is number => typeof id === 'number' && Number.isInteger(id)) : null;
 
     this.pendingRunSettings = {
       suiteId: num(raw.suiteId),
@@ -462,8 +504,27 @@ export class BenchmarkLauncherState implements OnDestroy {
       targetKind: raw.targetKind === 'battery' || raw.targetKind === 'suite' ? raw.targetKind : null,
       batteryId: num(raw.batteryId),
       completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null,
-      completionNotification: typeof raw.completionNotification === 'boolean' ? raw.completionNotification : null
+      completionNotification: typeof raw.completionNotification === 'boolean' ? raw.completionNotification : null,
+      runMode: raw.runMode === 'batch' || raw.runMode === 'single' ? raw.runMode : null,
+      batchModelIds: ids(raw.batchModelIds),
+      batchOrder: raw.batchOrder === 'randomized' || raw.batchOrder === 'asListed' ? raw.batchOrder : null,
+      batchOrderIds: ids(raw.batchOrderIds),
+      batchRunsPerModel: num(raw.batchRunsPerModel)
     };
+
+    // A model batch's mode, order and runs per model need no list; its models wait for the configurations.
+    if (this.pendingRunSettings.runMode) {
+      this.runMode = this.pendingRunSettings.runMode;
+    }
+    if (this.pendingRunSettings.batchOrder) {
+      this.batchOrder = this.pendingRunSettings.batchOrder;
+    }
+    const batchRuns = this.pendingRunSettings.batchRunsPerModel ?? null;
+    if (batchRuns !== null && batchRuns >= 1) {
+      const intRuns = Math.floor(batchRuns);
+      const max = this.maxRunCountPerSeries;
+      this.batchRunsPerModel = max != null && intRuns > max ? max : intRuns;
+    }
 
     // These need no list to validate against, so they restore immediately.
     if (this.pendingRunSettings.verboseMode !== null) {
@@ -659,6 +720,7 @@ export class BenchmarkLauncherState implements OnDestroy {
 
     this.runCount = 1;
     this.runTargetKind = 'suite';
+    this.runMode = 'single';
     return notes;
   }
 
@@ -849,8 +911,290 @@ export class BenchmarkLauncherState implements OnDestroy {
     return this.workspace.scoringProfiles.find(p => p.id === this.selectedScoringProfileId);
   }
 
+  // --- Model batches ---
+  //
+  // A model batch runs several models under test one after another under this one settings set. The
+  // server judges every guardrail behind POST model-batches/preflight; the launcher asks it once the
+  // settings settle and renders what it returns, and Start sends the acknowledged warnings' keys.
+
+  /** One model under test, or a model batch. */
+  runMode: BenchmarkLauncherRunMode = 'single';
+
+  /** The chosen models under test, in the picker's option order. */
+  batchModelKeys: number[] = [];
+
+  batchOrder: BenchmarkModelBatchOrderChoice = 'randomized';
+
+  /** The chosen models in the As listed order: the run order under As listed. */
+  batchOrderKeys: number[] = [];
+
+  /** Runs per model on a single suite; a battery uses Runs per Suite (`runCount`) instead. */
+  batchRunsPerModel = 1;
+
+  /** The acknowledgment keys of the warnings the operator ticked. Kept for one start; never stored. */
+  acknowledgedFindingKeys = new Set<string>();
+
+  /** The latest check's findings, blockers first as the server orders them. */
+  findings: BenchmarkModelBatchFindingDto[] = [];
+
+  projection: BenchmarkModelBatchProjectionDto | null = null;
+
+  /** The most models one batch may run, as the latest check reported it; null before one has answered. */
+  maxModelsPerBatch: number | null = null;
+
+  /** A check is pending: debounced, or in flight. */
+  preflightLoading = false;
+
+  /** Why the latest check failed; null after a successful one. */
+  preflightError: string | null = null;
+
+  /** True once a check has answered for the settings in force. */
+  preflightAnswered = false;
+
+  private readonly preflightRequested$ = new Subject<void>();
+
+  private readonly preflightSubscription: Subscription;
+
+  private preflightRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private preflightFailures = 0;
+
+  get isModelBatch(): boolean {
+    return this.runMode === 'batch';
+  }
+
+  /** Runs per model in force: a non-numeric or out-of-range value resolves to 1, as Number of Runs does. */
+  get effectiveBatchRunsPerModel(): number {
+    const n = Math.floor(Number(this.batchRunsPerModel));
+    if (!Number.isFinite(n) || n < 1) return 1;
+    const max = this.maxRunCountPerSeries;
+    return max != null && n > max ? max : n;
+  }
+
+  /** R as the batch request carries it: runs per model on a suite, runs per suite on a battery. */
+  get batchRunsPerMember(): number {
+    return this.isBatteryTarget ? this.effectiveRunCount : this.effectiveBatchRunsPerModel;
+  }
+
+  /** The models in the order the request lists them: the As listed order, or the picker's under Randomized. */
+  get batchRunOrderIds(): number[] {
+    return this.batchOrder === 'asListed' ? this.batchOrderKeys : this.batchModelKeys;
+  }
+
+  /** The Models Under Test picker's hint in place of the default; null for the default. */
+  batchModelsHint: string | null = null;
+
+  /** Run Benchmark focuses the Models Under Test picker once it shows it. */
+  batchModelsFocusPending = false;
+
+  /**
+   * Fills the launcher as a model batch on this target with this model chosen, as a Chat Consistency
+   * suggestion asks; nothing starts. A target or model the lists no longer offer keeps the current
+   * choice. The report writer is cleared and earlier runs are not reused, as the Models radios do.
+   */
+  prefillModelBatch(prefill: ModelBatchPrefill): void {
+    this.runMode = 'batch';
+    this.reportWriterConfigId = null;
+    this.reuseEarlierRuns = false;
+    if (prefill.targetKind === 'battery') {
+      this.runTargetKind = 'battery';
+      if (prefill.batteryId != null && this.runnableBatteries.some(b => b.id === prefill.batteryId)) {
+        this.selectedBatteryId = prefill.batteryId;
+      } else if (this.selectedBatteryId == null) {
+        this.selectedBatteryId = this.runnableBatteries[0]?.id ?? null;
+      }
+    } else {
+      this.runTargetKind = 'suite';
+      if (prefill.suiteId != null && this.workspace.suites.some(s => s.id === prefill.suiteId)) {
+        this.selectedSuiteId = prefill.suiteId;
+      }
+    }
+    const modelId = prefill.modelConfigurationId;
+    if (modelId != null && this.workspace.benchmarkCapableConfigs.some(c => c.id === modelId)) {
+      this.setBatchModels([modelId]);
+    }
+    this.batchModelsHint = prefill.controlSuggested ? 'Add a control model from another provider.' : null;
+    this.batchModelsFocusPending = true;
+    this.clampRunCountToTarget();
+    this.refreshReusePreview();
+    this.persistRunSettings();
+    this.requestPreflight();
+    this.viewSync.notify();
+  }
+
+  /** Sets the chosen models; the As listed order keeps the models it had and appends the new ones. */
+  setBatchModels(keys: readonly number[]): void {
+    this.batchModelKeys = BenchmarkLauncherState.distinct(keys);
+    this.batchOrderKeys = BenchmarkLauncherState.mergeOrder(this.batchOrderKeys, this.batchModelKeys);
+  }
+
+  /** Sets the As listed order; ids that are not chosen are ignored and chosen ones missing are appended. */
+  setBatchOrderKeys(keys: readonly number[]): void {
+    this.batchOrderKeys = BenchmarkLauncherState.mergeOrder(keys, this.batchModelKeys);
+  }
+
+  /** `order` restricted to `chosen`, followed by the chosen ids it does not hold, in `chosen`'s order. */
+  private static mergeOrder(order: readonly number[], chosen: readonly number[]): number[] {
+    const kept = BenchmarkLauncherState.distinct(order.filter(id => chosen.includes(id)));
+    return [...kept, ...chosen.filter(id => !kept.includes(id))];
+  }
+
+  private static distinct(ids: readonly number[]): number[] {
+    return ids.filter((id, i) => ids.indexOf(id) === i);
+  }
+
+  /** Blockers among the findings. */
+  get batchBlockers(): BenchmarkModelBatchFindingDto[] {
+    return this.findings.filter(f => f.severity === 'Blocker');
+  }
+
+  /** Warnings among the findings. */
+  get batchWarnings(): BenchmarkModelBatchFindingDto[] {
+    return this.findings.filter(f => f.severity === 'Warning');
+  }
+
+  /** Warnings the operator has not acknowledged yet. A warning without a key cannot be acknowledged and does not hold Start. */
+  get unacknowledgedBatchWarnings(): BenchmarkModelBatchFindingDto[] {
+    return this.batchWarnings.filter(f => !!f.acknowledgmentKey && !this.acknowledgedFindingKeys.has(f.acknowledgmentKey));
+  }
+
+  /** The acknowledged warnings, for the confirmation dialog. */
+  get acknowledgedBatchWarnings(): BenchmarkModelBatchFindingDto[] {
+    return this.batchWarnings.filter(f => !!f.acknowledgmentKey && this.acknowledgedFindingKeys.has(f.acknowledgmentKey));
+  }
+
+  setFindingAcknowledged(key: string, acknowledged: boolean): void {
+    const next = new Set(this.acknowledgedFindingKeys);
+    if (acknowledged) {
+      next.add(key);
+    } else {
+      next.delete(key);
+    }
+    this.acknowledgedFindingKeys = next;
+  }
+
+  /**
+   * Takes findings from a check or a refused start. An acknowledgment whose key no longer appears is
+   * dropped, so an old tick never covers a new problem: the key changes with the affected models.
+   */
+  applyFindings(findings: readonly BenchmarkModelBatchFindingDto[]): void {
+    this.findings = [...findings];
+    const current = new Set(this.batchWarnings.map(f => f.acknowledgmentKey).filter((k): k is string => !!k));
+    const kept = [...this.acknowledgedFindingKeys].filter(k => current.has(k));
+    if (kept.length !== this.acknowledgedFindingKeys.size) {
+      this.acknowledgedFindingKeys = new Set(kept);
+    }
+  }
+
+  /** The model batch Start would send now; null while a field it needs is unset. */
+  buildModelBatchRequest(): StartBenchmarkModelBatchRequest | null {
+    const assessorId = this.assessorConfigId;
+    if (assessorId == null) return null;
+    const ids = this.batchRunOrderIds;
+    const templateTestedId = ids[0] ?? this.testedConfigId;
+    if (templateTestedId == null) return null;
+
+    const battery = this.isBatteryTarget ? this.selectedBattery : undefined;
+    const suiteId = this.launchSuiteId;
+    if (suiteId == null || (this.isBatteryTarget && !battery)) return null;
+
+    // Same-provider acknowledgments travel as warning keys; the server sets them per member.
+    const run: StartBenchmarkRunRequest = { ...this.buildRunRequest(suiteId, templateTestedId, assessorId), acknowledgeSameProvider: false };
+    delete run.acknowledgeSameProviderReportWriter;
+
+    const warningKeys = new Set(this.batchWarnings.map(f => f.acknowledgmentKey));
+    return {
+      targetKind: battery ? 'Battery' : 'Suite',
+      suiteId: battery ? null : suiteId,
+      batteryId: battery?.id ?? null,
+      testedModelConfigurationIds: [...ids],
+      runsPerModel: this.batchRunsPerMember,
+      order: this.batchOrder === 'asListed' ? 'AsListed' : 'Randomized',
+      allowCapWait: this.allowCapWait,
+      run,
+      acknowledgedFindingKeys: [...this.acknowledgedFindingKeys].filter(k => warningKeys.has(k))
+    };
+  }
+
+  /**
+   * Asks for a check of the batch settings once they settle. Outside batch mode it clears the
+   * findings instead. Every launcher change handler calls it through the run tab's save.
+   */
+  requestPreflight(): void {
+    this.clearPreflightRetry();
+    if (!this.isModelBatch) {
+      this.findings = [];
+      this.projection = null;
+      this.preflightLoading = false;
+      this.preflightError = null;
+      this.preflightAnswered = false;
+      return;
+    }
+    this.preflightLoading = true;
+    this.preflightAnswered = false;
+    this.preflightRequested$.next();
+  }
+
+  private runPreflight(): Observable<ModelBatchPreflightOutcome> {
+    const req = this.isModelBatch ? this.buildModelBatchRequest() : null;
+    if (!req) {
+      return of({ kind: 'none' } as const);
+    }
+    return this.benchmarkService.preflightModelBatch(req).pipe(
+      map(response => ({ kind: 'ok', response }) as const),
+      catchError(err => of({ kind: 'error', message: refusalText(err, 'The server could not check the batch.') } as const))
+    );
+  }
+
+  private applyPreflightOutcome(outcome: ModelBatchPreflightOutcome): void {
+    this.preflightLoading = false;
+    // An answer that lands after a switch to One model is about settings no longer shown.
+    if (!this.isModelBatch) {
+      return;
+    }
+    switch (outcome.kind) {
+      case 'none':
+        this.applyFindings([]);
+        this.projection = null;
+        this.preflightError = null;
+        this.preflightAnswered = false;
+        this.preflightFailures = 0;
+        break;
+      case 'ok':
+        this.applyFindings(outcome.response.findings ?? []);
+        this.projection = outcome.response.projection ?? null;
+        this.maxModelsPerBatch = outcome.response.maxModels ?? this.maxModelsPerBatch;
+        this.preflightError = null;
+        this.preflightAnswered = true;
+        this.preflightFailures = 0;
+        break;
+      case 'error': {
+        this.preflightError = outcome.message;
+        this.preflightAnswered = false;
+        // Backs off rather than hammering a failing endpoint; a settings change asks again at once.
+        const delay = Math.min(MODEL_BATCH_PREFLIGHT_RETRY_MAX_MS, MODEL_BATCH_PREFLIGHT_RETRY_MS * 2 ** this.preflightFailures);
+        this.preflightFailures++;
+        this.preflightRetryTimer = setTimeout(() => {
+          this.preflightRetryTimer = null;
+          this.requestPreflight();
+        }, delay);
+        break;
+      }
+    }
+    this.viewSync.notify();
+  }
+
+  private clearPreflightRetry(): void {
+    if (this.preflightRetryTimer != null) {
+      clearTimeout(this.preflightRetryTimer);
+      this.preflightRetryTimer = null;
+    }
+  }
+
   ngOnDestroy(): void {
     this.reusePreviewSubscription?.unsubscribe();
     this.reusePreviewSubscription = null;
+    this.preflightSubscription.unsubscribe();
+    this.clearPreflightRetry();
   }
 }

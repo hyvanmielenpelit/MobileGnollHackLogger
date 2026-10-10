@@ -635,6 +635,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     {
         try
         {
+            string? batchRefusal = await ModelBatchOwnershipRefusalAsync(_db, id, null, ct);
+            if (batchRefusal != null) return Conflict(batchRefusal);
+
             var result = await _orchestrator.ResumeAsync(id, request?.Mode ?? BenchmarkBatteryResumeMode.Continue, ct);
             return StartResultToActionResult(result);
         }
@@ -1163,8 +1166,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         var identities = await _leaderboard.LoadIdentitiesAsync(batteryRuns, IdentityRunIds(batteryRuns, state), ct);
         var writers = await LoadReportWritersAsync(batteryRuns, ct);
         var documentCounts = await LoadReportDocumentCountsAsync(ids, ct);
+        var batches = await LoadModelBatchIdsAsync(ids, ct);
 
-        return batteryRuns
+        var dtos = batteryRuns
             .Select(b => ToRunDto(
                 b,
                 state,
@@ -1176,6 +1180,55 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                 _orchestrator.IsDriving(b.Id),
                 _orchestrator.IsAnalysing(b.Id)))
             .ToList();
+
+        foreach (var dto in dtos)
+        {
+            dto.ModelBatchRunId = batches.TryGetValue(dto.Id, out long batchId) ? batchId : null;
+        }
+
+        return dtos;
+    }
+
+    /// <summary>The model batch each battery run is a member of, by battery run id; the newest when several are.</summary>
+    private async Task<Dictionary<long, long>> LoadModelBatchIdsAsync(IReadOnlyCollection<long> batteryRunIds, CancellationToken ct)
+    {
+        var ids = batteryRunIds.Distinct().ToList();
+        var rows = await _db.BenchmarkModelBatchMembers
+            .AsNoTracking()
+            .Where(m => m.BenchmarkBatteryRunId != null && ids.Contains(m.BenchmarkBatteryRunId.Value))
+            .Select(m => new { BatteryRunId = m.BenchmarkBatteryRunId!.Value, m.BenchmarkModelBatchRunId })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => r.BatteryRunId)
+            .ToDictionary(g => g.Key, g => g.Max(r => r.BenchmarkModelBatchRunId));
+    }
+
+    /// <summary>
+    /// The refusal of a manual resume of a battery run that a model batch still owns: one linked to a
+    /// batch that has not finished. Null when no such batch exists.
+    /// </summary>
+    internal static async Task<string?> ModelBatchOwnershipRefusalAsync(
+        ApplicationDbContext db,
+        long? batteryRunId,
+        long? seriesId,
+        CancellationToken ct)
+    {
+        var batchId = await db.BenchmarkModelBatchMembers
+            .AsNoTracking()
+            .Where(m => (batteryRunId != null && m.BenchmarkBatteryRunId == batteryRunId)
+                        || (seriesId != null && m.BenchmarkRunSeriesId == seriesId))
+            .Where(m => m.BenchmarkModelBatchRun.Status != BenchmarkRunSeriesStatus.Completed
+                        && m.BenchmarkModelBatchRun.Status != BenchmarkRunSeriesStatus.CompletedWithErrors
+                        && m.BenchmarkModelBatchRun.Status != BenchmarkRunSeriesStatus.Cancelled
+                        && m.BenchmarkModelBatchRun.Status != BenchmarkRunSeriesStatus.Failed)
+            .OrderByDescending(m => m.BenchmarkModelBatchRunId)
+            .Select(m => (long?)m.BenchmarkModelBatchRunId)
+            .FirstOrDefaultAsync(ct);
+
+        return batchId.HasValue
+            ? $"Part of model batch #{batchId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}; continue it from the batch's progress dialog."
+            : null;
     }
 
     /// <summary>The report writers' configurations by id, in one query; a deleted configuration is absent.</summary>

@@ -1352,7 +1352,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportWriterCost).toBe(0.12);
         expect(pollTicker()).toBeNull();
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z');
+        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z', 'complete');
 
         const polls = vi.mocked(benchmarkServiceMock.getRun).mock.calls.length;
         tick(10000);
@@ -1381,7 +1381,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportStage).toBe('notWritten');
         expect(component.runStageLabel).toBe('Completed. Answered 2 of 2.');
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z');
+        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z', 'complete');
 
         const polls = vi.mocked(benchmarkServiceMock.getRun).mock.calls.length;
         tick(10000);
@@ -1389,7 +1389,7 @@ describe('AdminBenchmarkComponent', () => {
         discardPeriodicTasks();
       }));
 
-      it('should stop at once and chime for a writer run that ends with another terminal status', fakeAsync(() => {
+      it('should stop at once and play the failure sound for a writer run that ends completed with errors', fakeAsync(() => {
         const playSpy = startWatching();
         benchmarkServiceMock.getRunReportJob.mockClear();
 
@@ -1402,7 +1402,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportStage).toBe('notWritten');
         expect(benchmarkServiceMock.getRunReportJob).not.toHaveBeenCalled();
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z');
+        expect(playSpy).toHaveBeenCalledWith('run:55:2026-09-03T07:10:00Z', 'failed');
         discardPeriodicTasks();
       }));
 

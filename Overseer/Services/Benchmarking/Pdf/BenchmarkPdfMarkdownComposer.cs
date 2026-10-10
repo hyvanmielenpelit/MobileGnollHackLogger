@@ -465,7 +465,35 @@ internal static class BenchmarkPdfMarkdownComposer
                 int? nextIndex = FirstPrintedAfter(blocks, last, ctx.Document);
                 var next = nextIndex is int n ? blocks[n] : null;
 
-                if (next is ParagraphBlock paragraph)
+                // A bold label after the headings introduces the table after it, so all of them keep together.
+                int? labeledIndex = next is ParagraphBlock label && IsBoldHeadingParagraph(label)
+                    ? FirstPrintedAfter(blocks, nextIndex!.Value, ctx.Document)
+                    : null;
+                var labeled = labeledIndex is int t ? blocks[t] as MdTable : null;
+
+                if (next is ParagraphBlock labelBlock && labeled != null && IsShortTable(labeled))
+                {
+                    col.Item().PreventPageBreak().Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                        group.Item().Element(c => ParagraphOrFigure(c, labelBlock, ctx));
+                        group.Item().Element(c => ComposeTable(c, labeled, ctx));
+                    });
+                    i = labeledIndex!.Value;
+                }
+                else if (next is ParagraphBlock longLabel && labeled != null)
+                {
+                    float height = KeepWithNextHeight(headings, null) + BenchmarkPdfStyle.BlockSpacing + LabelKeepHeight(longLabel, ctx);
+                    col.Item().EnsureSpace(height).Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                        group.Item().Element(c => ParagraphOrFigure(c, longLabel, ctx));
+                    });
+                    i = nextIndex!.Value;
+                }
+                else if (next is ParagraphBlock paragraph)
                 {
                     col.Item().PreventPageBreak().Column(group =>
                     {
@@ -498,9 +526,54 @@ internal static class BenchmarkPdfMarkdownComposer
                 continue;
             }
 
+            if (block is ParagraphBlock boldLabel && IsBoldHeadingParagraph(boldLabel)
+                && FirstPrintedAfter(blocks, i, ctx.Document) is int afterIndex)
+            {
+                // A bold label keeps with what follows as a heading does: a short table moves with it, and
+                // before anything else it needs room on its page for its own line and the first lines after it.
+                if (blocks[afterIndex] is MdTable labeledTable && IsShortTable(labeledTable))
+                {
+                    col.Item().PreventPageBreak().Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        group.Item().Element(c => ParagraphOrFigure(c, boldLabel, ctx));
+                        group.Item().Element(c => ComposeTable(c, labeledTable, ctx));
+                    });
+                    i = afterIndex;
+                }
+                else
+                {
+                    float room = blocks[afterIndex] is MdTable
+                        ? LabelKeepHeight(boldLabel, ctx)
+                        : EstimatedHeight(boldLabel, ctx.Document, ctx.Frame) + BenchmarkPdfStyle.BlockSpacing + BenchmarkPdfStyle.KeepWithNextHeight;
+                    col.Item().EnsureSpace(room).Element(c => ParagraphOrFigure(c, boldLabel, ctx));
+                }
+                continue;
+            }
+
             col.Item().Element(c => ComposeBlock(c, block, ctx, listDepth));
         }
     }
+
+    /// <summary>
+    /// A paragraph whose whole text is one bold span, <c>**Where the chat stands**</c>: a label that introduces
+    /// the block after it, as a heading does.
+    /// </summary>
+    internal static bool IsBoldHeadingParagraph(ParagraphBlock paragraph)
+    {
+        if (paragraph.Inline == null) return false;
+        var parts = paragraph.Inline
+            .Where(inline => !(inline is LiteralInline literal && string.IsNullOrWhiteSpace(literal.Content.ToString())))
+            .ToList();
+        return parts.Count == 1 && parts[0] is EmphasisInline { DelimiterCount: 2 };
+    }
+
+    /// <summary>
+    /// The room, in points, a bold label needs on its page before a table that does not fit on one: its own
+    /// estimated height, the spacing between blocks and <see cref="BenchmarkPdfStyle.KeepWithTableHeight"/>.
+    /// </summary>
+    private static float LabelKeepHeight(ParagraphBlock label, Context ctx)
+        => EstimatedHeight(label, ctx.Document, ctx.Frame) + BenchmarkPdfStyle.BlockSpacing + BenchmarkPdfStyle.KeepWithTableHeight;
 
     /// <summary>
     /// The index of the block a run of headings ending at <paramref name="last"/> keeps with: the first

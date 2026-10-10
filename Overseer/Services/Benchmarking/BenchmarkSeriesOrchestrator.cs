@@ -105,6 +105,9 @@ public class BenchmarkSeriesOrchestrator
     /// </summary>
     private readonly ConcurrentDictionary<long, CancellationTokenSource> _active = new();
 
+    /// <summary>The model batch claim each series driven for a batch launches its members under.</summary>
+    private readonly ConcurrentDictionary<long, string> _batchOwners = new();
+
     public BenchmarkSeriesOrchestrator(
         IServiceScopeFactory scopeFactory,
         BenchmarkRunManager runManager,
@@ -136,7 +139,8 @@ public class BenchmarkSeriesOrchestrator
     public async Task<BenchmarkSeriesStartResult> StartSeriesAsync(
         StartBenchmarkRunRequest request,
         string? userId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? batchOwner = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
@@ -148,6 +152,13 @@ public class BenchmarkSeriesOrchestrator
         {
             return BenchmarkSeriesStartResult.Fail(
                 BenchmarkSeriesStartOutcome.Conflict, "A benchmark run series is already in progress.");
+        }
+
+        // A held batch claim admits only the batch's own series.
+        if (_runManager.BatchOwner is { } heldBatch && heldBatch != batchOwner)
+        {
+            return BenchmarkSeriesStartResult.Fail(
+                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(heldBatch));
         }
 
         // Refused without taking the claim; it is taken only once the row exists.
@@ -239,19 +250,34 @@ public class BenchmarkSeriesOrchestrator
 
         // The owner token needs the row id, so the claim follows the save; a claim lost to a race
         // removes the row again and refuses the start.
-        if (!_runManager.TryClaimOrchestrator(BenchmarkRunManager.SeriesOwner(series.Id)))
+        if (!_runManager.TryClaimOrchestrator(BenchmarkRunManager.SeriesOwner(series.Id), batchOwner))
         {
             db.BenchmarkRunSeries.Remove(series);
             await db.SaveChangesAsync(CancellationToken.None);
 
             return BenchmarkSeriesStartResult.Fail(
                 BenchmarkSeriesStartOutcome.Conflict,
-                BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+                BenchmarkRunManager.ClaimConflictMessage(_runManager.ClaimHolder));
         }
 
+        SetBatchOwner(series.Id, batchOwner);
         BeginDriving(series.Id);
         return BenchmarkSeriesStartResult.Ok(series.Id);
     }
+
+    private void SetBatchOwner(long seriesId, string? batchOwner)
+    {
+        if (batchOwner == null)
+        {
+            _batchOwners.TryRemove(seriesId, out _);
+        }
+        else
+        {
+            _batchOwners[seriesId] = batchOwner;
+        }
+    }
+
+    private string? BatchOwnerOf(long seriesId) => _batchOwners.TryGetValue(seriesId, out var owner) ? owner : null;
 
     // ---------------------------------------------------------------------------------------
     // Resume
@@ -275,7 +301,8 @@ public class BenchmarkSeriesOrchestrator
     public async Task<BenchmarkSeriesStartResult> ResumeSeriesAsync(
         long seriesId,
         bool acknowledgeInstrumentChange,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? batchOwner = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
@@ -293,6 +320,12 @@ public class BenchmarkSeriesOrchestrator
         {
             return BenchmarkSeriesStartResult.Fail(
                 BenchmarkSeriesStartOutcome.Conflict, "Another benchmark run series is already in progress.");
+        }
+
+        if (_runManager.BatchOwner is { } heldBatch && heldBatch != batchOwner)
+        {
+            return BenchmarkSeriesStartResult.Fail(
+                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(heldBatch));
         }
 
         string owner = BenchmarkRunManager.SeriesOwner(seriesId);
@@ -408,10 +441,10 @@ public class BenchmarkSeriesOrchestrator
 
         // A claim this series already holds belongs to its live drive loop, which releases it.
         bool claimAlreadyHeld = _runManager.OrchestratorOwner == owner;
-        if (!_runManager.TryClaimOrchestrator(owner))
+        if (!_runManager.TryClaimOrchestrator(owner, batchOwner))
         {
             return BenchmarkSeriesStartResult.Fail(
-                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.ClaimHolder));
         }
 
         try
@@ -424,6 +457,7 @@ public class BenchmarkSeriesOrchestrator
             throw;
         }
 
+        SetBatchOwner(series.Id, batchOwner);
         BeginDriving(series.Id);
         return BenchmarkSeriesStartResult.Ok(series.Id);
     }
@@ -610,6 +644,8 @@ public class BenchmarkSeriesOrchestrator
             }
             finally
             {
+                _batchOwners.TryRemove(seriesId, out _);
+
                 if (_active.TryRemove(seriesId, out var removed))
                 {
                     removed.Dispose();
@@ -669,7 +705,7 @@ public class BenchmarkSeriesOrchestrator
             await db.SaveChangesAsync(ct);
 
             var launch = await launcher.CreateAndLaunchRunAsync(
-                request, series.StartedByUserId, series.Id, nextIndex, ct);
+                request, series.StartedByUserId, series.Id, nextIndex, ct, batchOwner: BatchOwnerOf(seriesId));
 
             if (!launch.Started)
             {

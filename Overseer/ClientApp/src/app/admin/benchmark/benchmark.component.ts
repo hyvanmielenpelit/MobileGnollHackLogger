@@ -41,6 +41,11 @@ import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { BenchmarkBatteriesComponent } from './batteries/batteries.component';
 import { BatteryMemberRunProgressRequest, BatteryProgressDialogComponent } from './batteries/battery-progress-dialog.component';
+import {
+  ModelBatchBatteryProgressRequest,
+  ModelBatchProgressDialogComponent,
+  ModelBatchRunProgressRequest
+} from './model-batch/model-batch-progress-dialog.component';
 import { BatteryRunReportDialogComponent } from './batteries/battery-run-report-dialog.component';
 import { RunPairedTestComponent } from './run-paired-test/run-paired-test.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
@@ -164,7 +169,7 @@ import { BenchmarkDifficultyJobService } from './state/benchmark-difficulty-job.
 import { BenchmarkComparisonState } from './state/benchmark-comparison.state';
 import { BenchmarkActiveRunMonitor } from './state/benchmark-active-run.monitor';
 import { BenchmarkViewSync } from './state/benchmark-view-sync.service';
-import { BenchmarkShellBridge, BenchmarkSubTab } from './state/benchmark-shell-bridge.service';
+import { BenchmarkShellBridge, BenchmarkSubTab, ComparisonWizardPreset, ModelBatchPrefill } from './state/benchmark-shell-bridge.service';
 import { BenchmarkRunTabComponent } from './run-tab/benchmark-run-tab.component';
 import { BenchmarkHistoryTabComponent } from './history-tab/benchmark-history-tab.component';
 import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.component';
@@ -191,7 +196,7 @@ export interface RunRailItem {
   selector: 'app-admin-benchmark',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent, ChatConsistencyTabComponent
+    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, ModelBatchProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent, ChatConsistencyTabComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss'],
@@ -279,6 +284,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
     });
     bridge.repeatRunSetup$.pipe(takeUntilDestroyed()).subscribe(runId => this.applyRepeatRunSetup(runId));
+    bridge.prefillModelBatch$.pipe(takeUntilDestroyed()).subscribe(prefill => this.applyModelBatchPrefill(prefill));
   }
 
   /** The admin page's configurations; the workspace store holds them for every sub-tab. */
@@ -704,6 +710,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.monitor.checkActiveRunSeries();
     this.workspace.loadBatteries();
     this.monitor.checkActiveBatteryRun();
+    this.monitor.checkActiveModelBatch();
     this.initialised = true;
     if (this.pendingNavigation) {
       this.applyNavigation(this.pendingNavigation);
@@ -778,6 +785,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.viewSync.notify();
       }
     });
+  }
+
+  /**
+   * Shows Run Benchmark as a model batch filled from a Chat Consistency suggestion; nothing starts.
+   * Leaving the Chat Consistency tab closes its wizard. Refused while the active sub-tab cannot be
+   * left; the suggestion's card says why.
+   */
+  private applyModelBatchPrefill(prefill: ModelBatchPrefill): void {
+    if (this.bridge.leaveRefusal()) return;
+    this.closeRunDetail();
+    this.selectSubTab('run');
+    this.repeatRunSetupError = null;
+    this.launcher.prefillModelBatch(prefill);
+    this.viewSync.notify();
   }
 
   /**
@@ -1421,8 +1442,46 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.viewSync.notify();
   }
 
-  /** The battery progress dialog's Open Analysis: the Battery Run Report replaces the dialog. */
+  // --- Model batch progress ---
+
+  /**
+   * Hands a member's run over to the run progress dialog, the batch dialog having closed: never two
+   * stacked. Closing the run progress dialog reopens the batch's.
+   */
+  onOpenRunProgressFromModelBatch(request: ModelBatchRunProgressRequest): void {
+    this.monitor.modelBatchDialogVisible = false;
+    if (request.runId === this.monitor.activeRunId) {
+      this.monitor.clearViewedRun();
+    } else {
+      this.monitor.viewRun(request.runId);
+    }
+    this.monitor.returnToModelBatchId = request.modelBatchRunId;
+    this.openRunProgressDialog();
+    this.viewSync.notify();
+  }
+
+  /** Hands a member's battery run over to the battery progress dialog; closing it reopens the batch's. */
+  onOpenBatteryProgressFromModelBatch(request: ModelBatchBatteryProgressRequest): void {
+    this.monitor.modelBatchDialogVisible = false;
+    this.monitor.returnToModelBatchId = request.modelBatchRunId;
+    this.monitor.batteryDialogRunId = request.batteryRunId;
+    this.monitor.batteryDialogVisible = true;
+    this.viewSync.notify();
+  }
+
+  /** The batch dialog's Open in Model Comparison: the wizard opens on the members' results. */
+  onOpenComparisonFromModelBatch(preset: ComparisonWizardPreset): void {
+    this.bridge.openComparisonWizard(preset);
+  }
+
+  /** A battery or series progress dialog's *Open model batch #N*: that dialog has closed. */
+  onOpenModelBatchFromMember(batchId: number): void {
+    this.monitor.openModelBatchDialog(batchId);
+  }
+
+  /** The battery progress dialog's Open Analysis: the Battery Run Report replaces the dialog, and any way back to a batch. */
   onOpenBatteryAnalysis(batteryRunId: number): void {
+    this.monitor.returnToModelBatchId = null;
     this.monitor.batteryDialogVisible = false;
     this.monitor.batteryDialogRunId = null;
     this.openBatteryRunReport(batteryRunId);
@@ -2686,7 +2745,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       + `${this.completionNotificationService.lastError ? `, last error: ${this.completionNotificationService.lastError}` : ''}`);
     lines.push('  attempts:');
     for (const a of this.monitor.notificationAttempts) {
-      lines.push(`    ${a.atUtc} key=${a.key} hidden=${a.hidden} focused=${a.focused} outcome=${a.outcome}`);
+      lines.push(`    ${a.atUtc} key=${a.key} hidden=${a.hidden} focused=${a.focused} outcome=${a.outcome} kind=${a.kind}`);
     }
     lines.push(`Background lock: ${this.backgroundActivity.state}`
       + `${this.backgroundActivity.heldName ? ` (${this.backgroundActivity.heldName})` : ''}`
@@ -2982,18 +3041,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /**
    * Every way the run progress dialog closes: its buttons, Escape and View Full Report. The dialog
-   * follows the live run again, and Back to Battery reopens the battery run the member came from.
+   * follows the live run again; Back to Batch reopens the model batch the member came from, and Back
+   * to Battery the battery run. The batch wins when both apply.
    */
   closeRunProgressDialog(returnToSeries: boolean = this.monitor.returnToSeriesOnClose): void {
     const shouldReturn = returnToSeries;
     const returnToBatteryRunId = this.monitor.returnToBatteryRunId;
+    const returnToModelBatchId = this.monitor.returnToModelBatchId;
     this.monitor.returnToSeriesOnClose = false;
     this.monitor.returnToBatteryRunId = null;
     this.monitor.isRunProgressDialogOpen = false;
     this.monitor.clearViewedRun();
     this.monitor.stopRunElapsedTicker();
     this.runProgressDialog?.nativeElement.close();
-    if (shouldReturn && this.monitor.activeSeriesId != null) {
+    if (returnToModelBatchId != null) {
+      this.monitor.openModelBatchDialog(returnToModelBatchId);
+    } else if (shouldReturn && this.monitor.activeSeriesId != null) {
       this.monitor.openMultiRunDialog();
     } else if (returnToBatteryRunId != null) {
       this.monitor.openBatteryDialog(returnToBatteryRunId);
@@ -3006,11 +3069,33 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.monitor.returnToBatteryRunId != null;
   }
 
+  /** The run progress dialog's Back to Batch leads back to a model batch; it wins over Back to Battery and Back to Series. */
+  get runProgressReturnsToModelBatch(): boolean {
+    return this.monitor.returnToModelBatchId != null;
+  }
+
+  /** The run progress dialog's dismissal: Back to Batch, Back to Series, Back to Battery, else `otherwise`. */
+  runProgressCloseLabel(otherwise: string): string {
+    if (this.runProgressReturnsToModelBatch) return 'Back to Batch';
+    if (this.monitor.returnToSeriesOnClose) return 'Back to Series';
+    if (this.runProgressReturnsToBattery) return 'Back to Battery';
+    return otherwise;
+  }
+
+  /** The run progress dialog's close button's name. */
+  get runProgressCloseAriaLabel(): string {
+    if (this.runProgressReturnsToModelBatch) return 'Return to model batch progress';
+    if (this.monitor.returnToSeriesOnClose) return 'Return to series progress';
+    if (this.runProgressReturnsToBattery) return 'Return to battery progress';
+    return 'Close benchmark run progress';
+  }
+
   /** Terminal-state action: hand the operator over to the existing full run detail dialog. */
   viewActiveRunDetail(): void {
     const runId = this.monitor.dialogRunDetail?.id ?? this.monitor.dialogRunId;
     if (runId == null) return;
     this.monitor.returnToBatteryRunId = null;
+    this.monitor.returnToModelBatchId = null;
     this.closeRunProgressDialog(false);
     this.viewRunDetail(runId);
   }

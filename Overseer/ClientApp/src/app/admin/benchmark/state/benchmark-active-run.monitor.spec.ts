@@ -1,7 +1,11 @@
 import type { Mock } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { NEVER, Observable, Subject, of, throwError } from 'rxjs';
-import { AdminBenchmarkService } from '../../../services/admin-benchmark.service';
+import {
+  AdminBenchmarkService,
+  BenchmarkModelBatchMemberDto,
+  BenchmarkModelBatchRunDto
+} from '../../../services/admin-benchmark.service';
 import { BenchmarkBackgroundActivityService } from '../../../services/benchmark-background-activity.service';
 import { BenchmarkCompletionNotificationService } from '../../../services/benchmark-completion-notification.service';
 import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
@@ -473,7 +477,7 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       vi.advanceTimersByTime(SERIES_POLL);
       await Promise.resolve();
       expect(play).toHaveBeenCalledTimes(1);
-      expect(play).toHaveBeenCalledWith('battery:9:5:Completed');
+      expect(play).toHaveBeenCalledWith('battery:9:5:Completed', 'complete');
       expect(workspace.loadHistory).toHaveBeenCalledTimes(1);
 
       const polls = service.getBatteryRun.mock.calls.length;
@@ -718,15 +722,384 @@ describe('BenchmarkActiveRunMonitor: the viewed run and battery post-run work', 
       play.mockImplementation(() => Promise.reject(new Error('audio pipeline gone')));
       monitor.activeRunDetail = runDetail(5, 'Completed') as any;
 
-      (monitor as any).signalCompletion('run:5');
+      (monitor as any).signalEnd('run:5', 'complete', 'Run #5 — Suite — Completed');
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(play).toHaveBeenCalledWith('run:5');
+      expect(play).toHaveBeenCalledWith('run:5', 'complete');
       expect(monitor.lastCompletionSoundOutcome).toBe('error');
       expect(notifications.notify).toHaveBeenCalledTimes(1);
       expect(notifications.notify).toHaveBeenCalledWith('run:5', 'GnollBench', expect.stringContaining('Run #5'));
+    });
+  });
+});
+
+describe('BenchmarkActiveRunMonitor: end signals of every run kind and model batches', () => {
+  let monitor: BenchmarkActiveRunMonitor;
+  let service: {
+    getBatteryRun: Mock; getRunSeries: Mock; getRun: Mock; getRunReportJob: Mock;
+    getModelBatch: Mock; getActiveModelBatch: Mock; cancelModelBatch: Mock; rerunFailedQuestions: Mock;
+  };
+  let launcher: { completionSound: boolean; completionNotification: boolean };
+  let play: Mock;
+  let notify: Mock;
+  let bridge: { openRunProgressDialog: Mock; openConfirmDialog: Mock };
+  /** The status each run id answers with; a run missing here answers Running. */
+  let runStatus: Map<number, string>;
+  /** What getModelBatch answers with. */
+  let batchAnswer: BenchmarkModelBatchRunDto;
+
+  const runDetail = (id: number, status = 'Running', extra: Record<string, unknown> = {}): unknown =>
+    ({
+      id, status, benchmarkSuiteId: 1, suiteName: 'Suite', totalQuestionCount: 3, answers: [],
+      completedAtUtc: status === 'Running' ? null : '2026-10-10T12:00:00Z', ...extra
+    });
+
+  function member(orderIndex: number, overrides: Partial<BenchmarkModelBatchMemberDto> = {}): BenchmarkModelBatchMemberDto {
+    return {
+      id: 100 + orderIndex, orderIndex, status: 'Pending',
+      model: { configurationId: 10 + orderIndex, displayName: `Model ${orderIndex + 1}`, provider: 'OpenAI', modelId: `m${orderIndex}`, endpoint: 'official' },
+      runIds: [], stepCount: 1, answeredQuestionCount: 0, totalQuestionCount: 3, instrumentDriftKeys: [],
+      ...overrides
+    };
+  }
+
+  function batch(overrides: Partial<BenchmarkModelBatchRunDto> = {}): BenchmarkModelBatchRunDto {
+    return {
+      id: 21, status: 'Running', targetKind: 'Suite', suiteId: 1, targetName: 'Suite', suiteNames: ['Suite'],
+      runsPerModel: 1, order: 'Randomized', orderSeed: 4711, allowCapWait: false, createdAtUtc: '2026-10-10T10:00:00Z',
+      members: [member(0, { status: 'Running', runId: 61, runIds: [61], currentRunId: 61 }), member(1)],
+      currentMemberIndex: 0, requestedMemberCount: 2, completedMemberCount: 0, failedMemberCount: 0, skippedMemberCount: 0,
+      acknowledgedFindings: [], adviceAtStart: [], instrumentChangeAcknowledged: false, isDriving: true,
+      resumable: false, resumeOptions: [], stalled: false, stallMinutes: 15, lastProgressAtUtc: '2026-10-10T11:00:00Z',
+      ...overrides
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'));
+    runStatus = new Map<number, string>();
+    batchAnswer = batch();
+    service = {
+      getBatteryRun: vi.fn(),
+      getRunSeries: vi.fn(),
+      getRun: vi.fn((id: number) => of(runDetail(id, runStatus.get(id) ?? 'Running'))),
+      getRunReportJob: vi.fn(() => of(null)),
+      getModelBatch: vi.fn(() => of(batchAnswer)),
+      getActiveModelBatch: vi.fn(() => of(null)),
+      cancelModelBatch: vi.fn(() => of(undefined)),
+      rerunFailedQuestions: vi.fn(() => of({ runId: 0 }))
+    };
+    launcher = { completionSound: true, completionNotification: true };
+    play = vi.fn(() => Promise.resolve('played'));
+    notify = vi.fn(() => 'shown');
+    bridge = { openRunProgressDialog: vi.fn(), openConfirmDialog: vi.fn() };
+
+    TestBed.configureTestingModule({
+      providers: [
+        BenchmarkActiveRunMonitor,
+        { provide: AdminBenchmarkService, useValue: service },
+        { provide: BenchmarkBackgroundActivityService, useValue: { acquireForRun: vi.fn(), acquireForSeries: vi.fn(), acquireForBattery: vi.fn(), release: vi.fn() } },
+        {
+          provide: BenchmarkPollTickerService,
+          useValue: {
+            start: (intervalMs: number, onTick: () => void) => {
+              const id = setInterval(onTick, intervalMs);
+              const handle = (() => clearInterval(id)) as any;
+              Object.defineProperty(handle, 'mode', { value: 'timer', enumerable: true });
+              return handle;
+            }
+          }
+        },
+        { provide: BenchmarkViewSync, useValue: { notify: vi.fn() } },
+        { provide: BenchmarkShellBridge, useValue: bridge },
+        {
+          provide: BenchmarkWorkspaceStore,
+          useValue: { loadHistory: vi.fn(), loadRunLimits: vi.fn(), loadRunGroups: vi.fn(), loadAllFootprints: vi.fn() }
+        },
+        { provide: BenchmarkLauncherState, useValue: launcher },
+        { provide: BenchmarkCompletionSoundService, useValue: { play, arm: vi.fn() } },
+        { provide: BenchmarkCompletionNotificationService, useValue: { notify, permission: vi.fn(() => 'granted'), requestPermission: vi.fn() } }
+      ]
+    });
+    monitor = TestBed.inject(BenchmarkActiveRunMonitor);
+  });
+
+  afterEach(() => {
+    monitor.ngOnDestroy();
+    vi.useRealTimers();
+  });
+
+  const plays = (): [string, string][] => play.mock.calls.map(call => [call[0] as string, call[1] as string]);
+  const bodies = (): string[] => notify.mock.calls.map(call => call[2] as string);
+
+  /** A run seen Running by the run poller, then polled at `status`. */
+  function watchRunEnd(id: number, status: string, extra: Record<string, unknown> = {}): void {
+    monitor.activeRunId = id;
+    monitor.startPolling(id);
+    service.getRun.mockImplementation((runId: number) => of(runDetail(runId, status, extra)));
+    vi.advanceTimersByTime(RUN_POLL);
+  }
+
+  describe('single runs', () => {
+    it('plays the failure sound for a failed run and notifies with the unchanged body', () => {
+      watchRunEnd(50, 'Failed');
+      expect(plays()).toEqual([['run:50:2026-10-10T12:00:00Z', 'failed']]);
+      expect(bodies()).toEqual(['Run #50 — Suite — Failed']);
+    });
+
+    it('plays the failure sound for a run completed with errors, naming its failed questions', () => {
+      watchRunEnd(50, 'CompletedWithErrors', { answers: [{ status: 'Ok' }, { status: 'ProviderError' }] });
+      expect(plays()).toEqual([['run:50:2026-10-10T12:00:00Z', 'failed']]);
+      expect(bodies()).toEqual(['Run #50 — Suite — Completed with errors: 1 failed question']);
+    });
+
+    it('chimes for a run completed with limits', () => {
+      watchRunEnd(50, 'CompletedWithLimits');
+      expect(plays()).toEqual([['run:50:2026-10-10T12:00:00Z', 'complete']]);
+    });
+
+    it('plays nothing for a canceled run', () => {
+      watchRunEnd(50, 'Canceled');
+      expect(plays()).toEqual([]);
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('records the sound kind of each notification attempt', () => {
+      watchRunEnd(50, 'Failed');
+      expect(monitor.notificationAttempts.map(a => a.kind)).toEqual(['failed']);
+    });
+  });
+
+  describe('series and battery runs', () => {
+    const series = (status: string, extra: Record<string, unknown> = {}): unknown =>
+      ({ id: 8, status, completedRunCount: 1, requestedRunCount: 3, members: [], ...extra });
+
+    it('plays the failure sound for a stopped series, with its reason', () => {
+      service.getRunSeries.mockReturnValue(of(series('Running')));
+      monitor.startSeriesPolling(8);
+      service.getRunSeries.mockReturnValue(of(series('Stopped', { stopReasonText: 'Run cap reached' })));
+      vi.advanceTimersByTime(SERIES_POLL);
+
+      expect(plays()).toEqual([['series:8:Stopped', 'failed']]);
+      expect(bodies()).toEqual(['Series #8 — 1 of 3 runs — Stopped: Run cap reached']);
+    });
+
+    it('plays nothing for a canceled series', () => {
+      service.getRunSeries.mockReturnValue(of(series('Running')));
+      monitor.startSeriesPolling(8);
+      service.getRunSeries.mockReturnValue(of(series('Cancelled')));
+      vi.advanceTimersByTime(SERIES_POLL);
+
+      expect(plays()).toEqual([]);
+    });
+
+    it('plays the failure sound for a stopped battery run, and nothing for a canceled one', () => {
+      const battery = (status: string): unknown => ({
+        id: 9, status, currentRunId: null, members: [], suiteCount: 2, completedSuiteCount: 1, batteryName: 'Core',
+        latestAnalysisId: null, reportDocumentsStatus: 0, postRunWork: 'None', repairingRunIds: [], stopReasonText: 'A member run failed'
+      });
+      service.getBatteryRun.mockReturnValue(of(battery('Running')));
+      monitor.startBatteryPolling(9);
+      service.getBatteryRun.mockReturnValue(of(battery('Stopped')));
+      vi.advanceTimersByTime(SERIES_POLL);
+      expect(plays()).toEqual([['battery:9:0:NotRequested', 'failed']]);
+      expect(bodies()).toEqual(['Battery #9 — Core — 1 of 2 suites — Stopped: A member run failed']);
+
+      service.getBatteryRun.mockReturnValue(of(battery('Running')));
+      monitor.startBatteryPolling(9);
+      service.getBatteryRun.mockReturnValue(of(battery('Cancelled')));
+      vi.advanceTimersByTime(SERIES_POLL);
+      expect(plays().length).toBe(1);
+    });
+  });
+
+  describe('model batches', () => {
+    it('plays the failure sound once for a batch that stops, with its reason, model and position', () => {
+      monitor.followModelBatch(batchAnswer);
+      expect(monitor.modelBatchIsLive).toBe(true);
+      expect(monitor.batchesSeenLive.has(21)).toBe(true);
+
+      batchAnswer = batch({ status: 'Stopped', stopReason: 'MemberStopped', isDriving: false, resumable: true });
+      vi.advanceTimersByTime(SERIES_POLL);
+      monitor.pollModelBatch(21);
+
+      expect(plays()).toEqual([['modelbatch:21:Stopped:MemberStopped:2026-10-10T11:00:00Z', 'failed']]);
+      expect(bodies()).toEqual(['Model batch #21 — stopped: a model\'s run stopped at Model 1 (1 of 2)']);
+    });
+
+    it('plays the failure sound for a failed batch and for one completed with errors', () => {
+      monitor.followModelBatch(batchAnswer);
+      batchAnswer = batch({ status: 'Failed', currentMemberIndex: null });
+      vi.advanceTimersByTime(SERIES_POLL);
+      expect(plays().map(p => p[1])).toEqual(['failed']);
+
+      batchAnswer = batch({ status: 'Running', lastProgressAtUtc: '2026-10-10T11:20:00Z' });
+      monitor.onModelBatchResumed(21);
+      batchAnswer = batch({ status: 'CompletedWithErrors', currentMemberIndex: null, completedMemberCount: 1, lastProgressAtUtc: '2026-10-10T11:30:00Z' });
+      monitor.pollModelBatch(21);
+      expect(plays().map(p => p[1])).toEqual(['failed', 'failed']);
+      expect(bodies()[1]).toBe('Model batch #21 — completed with errors: 1 of 2 models');
+    });
+
+    it('chimes for a completed batch with the finished body', () => {
+      monitor.followModelBatch(batchAnswer);
+      batchAnswer = batch({ status: 'Completed', currentMemberIndex: null, completedMemberCount: 2 });
+      vi.advanceTimersByTime(SERIES_POLL);
+
+      expect(plays()).toEqual([['modelbatch:21:Completed:-:2026-10-10T11:00:00Z', 'complete']]);
+      expect(bodies()).toEqual(['Model batch #21 — finished: 2 of 2 models']);
+    });
+
+    it('plays nothing for a canceled batch', () => {
+      monitor.followModelBatch(batchAnswer);
+      batchAnswer = batch({ status: 'Cancelled', currentMemberIndex: null });
+      vi.advanceTimersByTime(SERIES_POLL);
+
+      expect(plays()).toEqual([]);
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('does not repeat a second poll of the same end, and signals a later stop again', () => {
+      monitor.followModelBatch(batchAnswer);
+      batchAnswer = batch({ status: 'Stopped', stopReason: 'MemberStopped' });
+      vi.advanceTimersByTime(SERIES_POLL);
+      monitor.pollModelBatch(21);
+      monitor.pollModelBatch(21);
+      expect(plays().length).toBe(1);
+
+      // Continued from the dialog; the next model's run stops it again.
+      batchAnswer = batch({ status: 'Running', currentMemberIndex: 1, lastProgressAtUtc: '2026-10-10T11:40:00Z' });
+      monitor.onModelBatchResumed(21);
+      batchAnswer = batch({ status: 'Stopped', stopReason: 'MemberStopped', currentMemberIndex: 1, lastProgressAtUtc: '2026-10-10T11:50:00Z' });
+      vi.advanceTimersByTime(SERIES_POLL);
+
+      expect(plays().map(p => p[0])).toEqual([
+        'modelbatch:21:Stopped:MemberStopped:2026-10-10T11:00:00Z',
+        'modelbatch:21:Stopped:MemberStopped:2026-10-10T11:50:00Z'
+      ]);
+      expect(bodies()[1]).toBe('Model batch #21 — stopped: a model\'s run stopped at Model 2 (2 of 2)');
+    });
+
+    it('signals nothing for a batch first seen already stopped', () => {
+      batchAnswer = batch({ status: 'Stopped', stopReason: 'RestartReconciled' });
+      service.getActiveModelBatch.mockReturnValue(of(batchAnswer));
+      monitor.checkActiveModelBatch();
+      monitor.pollModelBatch(21);
+
+      expect(monitor.activeModelBatch?.status).toBe('Stopped');
+      expect(plays()).toEqual([]);
+    });
+
+    it('follows the member run in flight, and lets it signal nothing of its own', () => {
+      monitor.followModelBatch(batchAnswer);
+      expect(monitor.activeRunId).toBe(61);
+
+      // The member's run fails; the batch stops because of it.
+      runStatus.set(61, 'Failed');
+      vi.advanceTimersByTime(RUN_POLL);
+      expect(plays()).toEqual([]);
+
+      batchAnswer = batch({ status: 'Stopped', stopReason: 'MemberStopped' });
+      vi.advanceTimersByTime(SERIES_POLL);
+      expect(plays()).toEqual([['modelbatch:21:Stopped:MemberStopped:2026-10-10T11:00:00Z', 'failed']]);
+    });
+
+    it('lets a member run whose record names the batch signal nothing, also after the batch ended', () => {
+      monitor.followModelBatch(batchAnswer);
+      batchAnswer = batch({ status: 'Completed', currentMemberIndex: null, completedMemberCount: 2 });
+      vi.advanceTimersByTime(SERIES_POLL);
+      expect(plays().length).toBe(1);
+
+      monitor.activeRunId = 62;
+      monitor.startPolling(62);
+      service.getRun.mockImplementation((id: number) => of(runDetail(id, 'Completed', { modelBatchRunId: 21 })));
+      vi.advanceTimersByTime(RUN_POLL);
+      expect(plays().length).toBe(1);
+    });
+
+    it('lets a member series and a member battery run signal nothing while the batch follows them', () => {
+      monitor.followModelBatch(batchAnswer);
+
+      service.getRunSeries.mockReturnValue(of({ id: 8, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: [], modelBatchRunId: 21 }));
+      monitor.startSeriesPolling(8);
+      service.getRunSeries.mockReturnValue(of({ id: 8, status: 'Stopped', completedRunCount: 1, requestedRunCount: 2, members: [], modelBatchRunId: 21 }));
+      (monitor as any).pollSeries(8);
+
+      const battery = (status: string): unknown => ({
+        id: 9, status, currentRunId: null, members: [], suiteCount: 1, completedSuiteCount: 0, batteryName: 'Core',
+        latestAnalysisId: null, reportDocumentsStatus: 0, postRunWork: 'None', repairingRunIds: [], modelBatchRunId: 21
+      });
+      service.getBatteryRun.mockReturnValue(of(battery('Running')));
+      monitor.startBatteryPolling(9);
+      service.getBatteryRun.mockReturnValue(of(battery('Failed')));
+      monitor.pollBatteryRun(9);
+
+      expect(plays()).toEqual([]);
+    });
+
+    it('lets a member re-run by the operator signal as any run does', () => {
+      batchAnswer = batch({ status: 'Completed', currentMemberIndex: null });
+      monitor.followModelBatch(batchAnswer);
+      expect(plays().length).toBe(1);
+      play.mockClear();
+
+      runStatus.set(61, 'Running');
+      monitor.launchFailedQuestionRerun(61, [0]);
+      service.getRun.mockImplementation((id: number) => of(runDetail(id, 'Completed', { modelBatchRunId: 21 })));
+      vi.advanceTimersByTime(RUN_POLL);
+
+      expect(plays()).toEqual([['run:61:2026-10-10T12:00:00Z', 'complete']]);
+    });
+
+    it('asks before Cancel Batch, and cancels through the confirmation', () => {
+      monitor.followModelBatch(batchAnswer);
+      monitor.cancelActiveModelBatch();
+
+      expect(service.cancelModelBatch).not.toHaveBeenCalled();
+      const options = bridge.openConfirmDialog.mock.calls[0][0];
+      expect(options.title).toBe('Cancel model batch #21?');
+      expect(options.buttonText).toBe('Cancel Batch');
+
+      options.action();
+      expect(service.cancelModelBatch).toHaveBeenCalledWith(21);
+    });
+
+    it('names the batch in the Lost contact notice while its poller backs off', () => {
+      vi.spyOn(console, 'error').mockReturnValue(undefined);
+      service.getModelBatch.mockImplementation(() => throwError(() => ({ status: 503 })));
+      monitor.followModelBatch(batchAnswer);
+      vi.advanceTimersByTime(5_000);
+
+      expect(monitor.lostContact).toMatchObject({ kind: 'modelBatch', id: 21, failureCount: 2 });
+      expect(monitor.lostContactText).toContain('Model batch #21');
+    });
+  });
+
+  describe('returning to the batch dialog', () => {
+    it('reopens the batch dialog after a member\'s battery dialog closes', async () => {
+      monitor.returnToModelBatchId = 21;
+      monitor.batteryDialogVisible = true;
+
+      monitor.onBatteryDialogClosed();
+      expect(monitor.modelBatchDialogVisible).toBe(false);
+      await Promise.resolve();
+
+      expect(monitor.modelBatchDialogVisible).toBe(true);
+      expect(monitor.modelBatchDialogId).toBe(21);
+      expect(monitor.returnToModelBatchId).toBeNull();
+    });
+
+    it('keeps the way back when the battery dialog hands over to the run progress dialog in the same turn', async () => {
+      monitor.returnToModelBatchId = 21;
+      monitor.onBatteryDialogClosed();
+      monitor.isRunProgressDialogOpen = true;
+      await Promise.resolve();
+
+      expect(monitor.modelBatchDialogVisible).toBe(false);
+      expect(monitor.returnToModelBatchId).toBe(21);
     });
   });
 });

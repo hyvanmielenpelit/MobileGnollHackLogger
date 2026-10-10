@@ -1670,4 +1670,117 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.Equal(201, ReadRuns(await controller.GetRuns(null, 1000)).Count);
         Assert.Equal(201, ReadRuns(await controller.GetRuns(null, 5000)).Count);
     }
+
+    // --- Model batch ownership ------------------------------------------------------------------
+
+    /// <summary>A model batch whose one member links the given battery run or series.</summary>
+    private static async Task<BenchmarkModelBatchRun> SeedModelBatchAsync(
+        ApplicationDbContext db,
+        BenchmarkRunSeriesStatus status,
+        long? batteryRunId = null,
+        long? seriesId = null)
+    {
+        var batch = new BenchmarkModelBatchRun
+        {
+            TargetKind = batteryRunId.HasValue ? BenchmarkModelBatchTargetKind.Battery : BenchmarkModelBatchTargetKind.Suite,
+            StartRequestJson = "{}",
+            Status = status,
+            RequestedMemberCount = 1,
+            Members =
+            {
+                new BenchmarkModelBatchMember
+                {
+                    OrderIndex = 0,
+                    TestedModelConfigurationId = 1,
+                    Status = BenchmarkModelBatchMemberStatus.Stopped,
+                    BenchmarkBatteryRunId = batteryRunId,
+                    BenchmarkRunSeriesId = seriesId
+                }
+            }
+        };
+        db.BenchmarkModelBatchRuns.Add(batch);
+        await db.SaveChangesAsync();
+        return batch;
+    }
+
+    [Fact]
+    public async Task ResumeBatteryRun_IsRefused_WhileAnUnfinishedModelBatchOwnsIt()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Stopped);
+        var batch = await SeedModelBatchAsync(f.Db, BenchmarkRunSeriesStatus.Stopped, batteryRunId: batteryRun.Id);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(await f.Controller.ResumeBatteryRun(batteryRun.Id, null, ct));
+
+        Assert.Equal($"Part of model batch #{batch.Id}; continue it from the batch's progress dialog.", conflict.Value);
+    }
+
+    [Fact]
+    public async Task ResumeBatteryRun_IsNotRefusedForAModelBatch_OnceThatBatchHasFinished()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Cancelled);
+        await SeedModelBatchAsync(f.Db, BenchmarkRunSeriesStatus.CompletedWithErrors, batteryRunId: batteryRun.Id);
+
+        var result = await f.Controller.ResumeBatteryRun(batteryRun.Id, null, ct);
+
+        // The battery run's own refusal (a Cancelled battery run is not resumable), not the batch's.
+        var body = (result as ObjectResult)?.Value as string;
+        Assert.DoesNotContain("model batch", body ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task BatteryRunDto_CarriesTheModelBatchItBelongsTo()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var owned = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        var loose = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        var batch = await SeedModelBatchAsync(f.Db, BenchmarkRunSeriesStatus.Completed, batteryRunId: owned.Id);
+
+        var ownedDto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(owned.Id, ct)).Value);
+        var looseDto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(loose.Id, ct)).Value);
+
+        Assert.Equal(batch.Id, ownedDto.ModelBatchRunId);
+        Assert.Null(looseDto.ModelBatchRunId);
+    }
+
+    [Fact]
+    public async Task ResumeRunSeries_IsRefused_WhileAnUnfinishedModelBatchOwnsIt()
+    {
+        var f = await CreateFixtureAsync();
+        var series = new BenchmarkRunSeries
+        {
+            SuiteName = "Suite A",
+            RequestedRunCount = 3,
+            Status = BenchmarkRunSeriesStatus.Stopped,
+            StartRequestJson = "{}"
+        };
+        f.Db.BenchmarkRunSeries.Add(series);
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var batch = await SeedModelBatchAsync(f.Db, BenchmarkRunSeriesStatus.Running, seriesId: series.Id);
+
+        var controller = CreateBenchmarkController(f.Db, new BenchmarkRunManager());
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.ResumeRunSeries(series.Id, null));
+
+        Assert.Equal($"Part of model batch #{batch.Id}; continue it from the batch's progress dialog.", conflict.Value);
+    }
+
+    [Fact]
+    public async Task InPlaceReruns_AreRefusedWhileAModelBatchHoldsTheClaim_NamingTheBatch()
+    {
+        var f = await CreateFixtureAsync();
+        var runManager = new BenchmarkRunManager();
+        var controller = CreateBenchmarkController(f.Db, runManager);
+
+        Assert.True(runManager.TryClaimBatch(BenchmarkRunManager.ModelBatchOwner(4)));
+        Assert.True(runManager.TryClaimOrchestrator(BenchmarkRunManager.SeriesOwner(3), BenchmarkRunManager.ModelBatchOwner(4)));
+
+        var refused = Assert.IsType<ConflictObjectResult>(await controller.RerunFailedQuestions(1));
+        Assert.Equal("A model batch is running; wait for it or cancel it.", refused.Value);
+    }
 }

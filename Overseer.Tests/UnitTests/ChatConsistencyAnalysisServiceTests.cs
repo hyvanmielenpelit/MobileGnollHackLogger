@@ -285,7 +285,7 @@ public class ChatConsistencyAnalysisServiceTests
 
         var summary = Assert.Single(await service.ListAnalysesAsync(TestContext.Current.CancellationToken));
 
-        Assert.Equal(6, summary.AnalysisCodeVersion);
+        Assert.Equal(7, summary.AnalysisCodeVersion);
         Assert.NotNull(summary.Subject);
         Assert.Equal(result.Subject.DisplayName, summary.Subject!.DisplayName);
         Assert.Equal("OpenAI", summary.Subject.Provider);
@@ -581,6 +581,85 @@ public class ChatConsistencyAnalysisServiceTests
     }
 
     [Fact]
+    public async Task AReplacedComparisonBuild_AsksForANewCheckpoint_InsteadOfRunsInTheComparisonPeriod()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { ComparisonHourOffset = 12 });
+        foreach (var run in db.BenchmarkRuns) run.HarnessVersion = "53";
+        db.SaveChanges();
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var checkpoint = Assert.Single(result.NextRuns, n => n.Kind == ChatConsistencyNextRunKinds.NewCheckpoint);
+        Assert.Equal("newCheckpoint", checkpoint.Kind);
+        Assert.Same(checkpoint, result.NextRuns[0]);
+        Assert.DoesNotContain(result.NextRuns, n => n.Period == "comparison" && n.Kind is "checkpoint" or "stratum");
+        Assert.DoesNotContain(result.NextRuns, n => n.Suggestion.Contains("in the comparison period", StringComparison.Ordinal));
+
+        Assert.Equal(string.Empty, checkpoint.Period);
+        Assert.Equal("The comparison period's Overseer build (harness 53) has been replaced, so no run can join that period any more.", checkpoint.Reason);
+        Assert.Equal("Start a new baseline under the current build: 2 runs of gpt-test on Core Suite, on 2 different UTC days, each starting in "
+            + "weekdays 20–24 UTC, with one control run of another provider's model beside each. Quality will start a new segment; to compare it "
+            + "with these periods, re-grade with a common grader.", checkpoint.Suggestion);
+        Assert.Equal("run", checkpoint.UnitNoun);
+        Assert.Equal(2, checkpoint.Count);
+        Assert.Equal(2, checkpoint.Days);
+        Assert.Equal("Weekday 20–24 UTC", checkpoint.Stratum);
+        Assert.Equal(ChatConsistencyComparisonSetKinds.Suite, checkpoint.TargetKind);
+        Assert.Equal(7L, checkpoint.SuiteId);
+        Assert.Null(checkpoint.BatteryId);
+        Assert.Equal(key, checkpoint.SubjectModelKey);
+        Assert.True(checkpoint.ControlSuggested);
+        Assert.Equal(4L, checkpoint.RepeatRunId);
+
+        // The record's JSON shape, as the client reads it.
+        var json = JsonNode.Parse(JsonSerializer.Serialize(checkpoint, ChatConsistencyJson.Options))!.AsObject();
+        Assert.Equal(
+            new[] { "kind", "period", "endpointId", "reason", "suggestion", "repeatRunId", "unitNoun", "count", "days", "stratum", "targetKind",
+                "suiteId", "batteryId", "subjectModelKey", "subjectModelConfigurationId", "controlSuggested" },
+            json.Select(p => p.Key));
+        Assert.Equal("newCheckpoint", json["kind"]!.GetValue<string>());
+        Assert.Equal("suite", json["targetKind"]!.GetValue<string>());
+        Assert.True(json["controlSuggested"]!.GetValue<bool>());
+
+        // Under the current build the comparison period can still take runs.
+        using var current = NewDb();
+        string currentKey = Seed(current, new Scenario { ComparisonHourOffset = 12 });
+        var kept = await Service(current).AnalyzeAsync(Request(currentKey), TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(kept.NextRuns, n => n.Kind == ChatConsistencyNextRunKinds.NewCheckpoint);
+        Assert.Contains(kept.NextRuns, n => n.Kind == "stratum" && n.Period == "comparison");
+        Assert.All(kept.NextRuns, n => Assert.Null(n.TargetKind));
+    }
+
+    [Theory]
+    [InlineData(HarnessImpact.Grading, true)]
+    [InlineData(HarnessImpact.Scoring, true)]
+    [InlineData(HarnessImpact.CandidateInput | HarnessImpact.Grading, true)]
+    [InlineData(HarnessImpact.CandidateInput, false)]
+    [InlineData(HarnessImpact.None, false)]
+    public void ANewCheckpoint_SaysQualityStartsANewSegment_OnlyAcrossAGradingOrScoringChange(HarnessImpact impact, bool segment)
+    {
+        string text = ChatConsistencyAnalysisService.NewCheckpointSuggestion("battery run", 2, 2, "Claude 5.5 Haiku", "Two initial suites (revision 1)", null, impact);
+
+        Assert.StartsWith("Start a new baseline under the current build: 2 battery runs of Claude 5.5 Haiku on Two initial suites (revision 1), "
+            + "on 2 different UTC days, with one control run of another provider's model beside each.", text);
+        Assert.Equal(segment, text.Contains("Quality will start a new segment; to compare it with these periods, re-grade with a common grader.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheMinimumSampleText_StatesEachPartAsMetOrMissed()
+    {
+        var protocol = ChatConsistencyProtocol.V1;
+
+        Assert.Equal("1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20",
+            ChatConsistencyAnalysisService.MinimumSampleText("battery run", 1, 1, 1, 1, 32, protocol));
+        Assert.Equal("2 runs per period on 2 days, meeting the minimum of 2 runs on 2 days per period; paired items 12, below the minimum of 20",
+            ChatConsistencyAnalysisService.MinimumSampleText("run", 2, 2, 2, 2, 12, protocol));
+        Assert.Equal("2 runs per period on 2 days, meeting the minimum of 2 runs on 2 days per period",
+            ChatConsistencyAnalysisService.MinimumSampleText("run", 2, 2, 2, 2, null, protocol));
+    }
+
+    [Fact]
     public async Task CountsInTheTextsAgreeWithTheirNumbers()
     {
         using var db = NewDb();
@@ -589,7 +668,8 @@ public class ChatConsistencyAnalysisServiceTests
         var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
 
         var p1 = EndpointOf(result, ChatConsistencyEndpointIds.Quality);
-        Assert.StartsWith("baseline 2 runs on 1 day, comparison 2 runs on 2 days, 24 paired items; the minimum is ", p1.MinimumSampleDetail);
+        Assert.Equal("baseline 2 runs on 1 day, comparison 2 runs on 2 days, below the minimum of 2 runs on 2 days per period; "
+            + "paired items 24, above the minimum of 20.", p1.MinimumSampleDetail);
         Assert.Contains(p1.RobustnessChecks, c => c.Name == "Runs on separate days"
             && c.Detail == "Baseline 2 runs on 1 day; comparison 2 runs on 2 days.");
         Assert.Contains(result.NextRuns, n => n.Period == "baseline" && n.Reason == "The baseline has 2 runs on 1 day.");
@@ -1142,8 +1222,8 @@ public class ChatConsistencyAnalysisServiceTests
 
         var result = await Service(db).AnalyzeAsync(Request(key) with { ComparisonSet = BatterySet() }, TestContext.Current.CancellationToken);
 
-        Assert.Equal(6, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
-        Assert.Equal(6, result.AnalysisCodeVersion);
+        Assert.Equal(7, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
+        Assert.Equal(7, result.AnalysisCodeVersion);
         Assert.Equal(ChatConsistencyComparisonSetKinds.BatteryRunUnit, result.UnitKind);
         Assert.Equal(BatteryKey(TwoSuites()), result.ComparisonSet!.Key);
         Assert.Equal(BatteryName + " (revision 1)", result.ComparisonSet.Label);
@@ -1164,7 +1244,7 @@ public class ChatConsistencyAnalysisServiceTests
 
         var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
         Assert.Equal("[1,2,3,4,21,22,23,24]", row.TargetRunIdsJson);
-        Assert.Equal(6, row.AnalysisCodeVersion);
+        Assert.Equal(7, row.AnalysisCodeVersion);
 
         var summary = Assert.Single(await Service(db).ListAnalysesAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BatteryKey(TwoSuites()), summary.ComparisonSetKey);

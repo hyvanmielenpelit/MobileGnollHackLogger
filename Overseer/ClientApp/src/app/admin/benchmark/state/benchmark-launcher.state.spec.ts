@@ -1,13 +1,16 @@
-import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import type { Mock } from 'vitest';
+import { TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
+  BenchmarkBatteryDto,
+  BenchmarkModelBatchFindingDto,
   BenchmarkRunDetailDto,
   BenchmarkScoringProfileDto,
   BenchmarkSuiteDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
-import { BenchmarkLauncherState } from './benchmark-launcher.state';
+import { BenchmarkLauncherState, MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS } from './benchmark-launcher.state';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 
@@ -251,5 +254,285 @@ describe('BenchmarkLauncherState: prefillFromRun', () => {
 
     expect(launcher.prefillReady).toBe(false);
     expect(launcher.pendingPrefillRunId).toBe(55);
+  });
+
+  it('switches back to One model, since a run\'s setup has one model under test', () => {
+    loadPage();
+    launcher.runMode = 'batch';
+
+    launcher.prefillFromRun(run());
+
+    expect(launcher.runMode).toBe('single');
+    expect(stored().runMode).toBe('single');
+  });
+});
+
+describe('BenchmarkLauncherState: model batches', () => {
+  let launcher: BenchmarkLauncherState;
+  let workspace: BenchmarkWorkspaceStore;
+  let preflight: Mock;
+
+  const stored = (): any => JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? 'null');
+
+  const warning = (key: string, overrides: Partial<BenchmarkModelBatchFindingDto> = {}): BenchmarkModelBatchFindingDto => ({
+    code: 'MB-W01', name: 'MixedFamiliesSingleAssessor', severity: 'Warning', field: 'coAssessor',
+    title: 'Use a two-family panel for this batch',
+    detail: 'A single assessor favors its own provider\'s models over the others.',
+    modelConfigurationIds: [2, 3], acknowledgmentKey: key, ...overrides
+  });
+
+  const battery = (): BenchmarkBatteryDto => ({
+    id: 5, name: 'Core Battery', isArchived: false, brokenSuiteNames: [], validationErrors: [],
+    suites: [
+      { index: 0, suiteId: 1, suiteName: 'Default Suite', difficultyFullyAssessed: true },
+      { index: 1, suiteId: 2, suiteName: 'Second Suite', difficultyFullyAssessed: true }
+    ]
+  }) as unknown as BenchmarkBatteryDto;
+
+  function loadPage(): void {
+    launcher.restoreRunSettings();
+    workspace.suitesLoaded$.next();
+    workspace.profilesLoaded$.next();
+    launcher.setDefaultModelSelections();
+    workspace.batteriesLoaded$.next(true);
+  }
+
+  beforeEach(() => {
+    clearRunSettings();
+    preflight = vi.fn(() => of({ findings: [], projection: { plannedRunCount: 4, members: [] }, maxModels: 12 }));
+    TestBed.configureTestingModule({
+      providers: [
+        BenchmarkLauncherState,
+        BenchmarkWorkspaceStore,
+        BenchmarkViewSync,
+        {
+          provide: AdminBenchmarkService,
+          useValue: {
+            getLastAssessor: vi.fn(() => of({})),
+            previewBatteryReuse: vi.fn(() => of(null)),
+            preflightModelBatch: preflight
+          }
+        }
+      ]
+    });
+    launcher = TestBed.inject(BenchmarkLauncherState);
+    workspace = TestBed.inject(BenchmarkWorkspaceStore);
+    workspace.suites = [suite(1, 'Default Suite'), suite(2, 'Second Suite')];
+    workspace.scoringProfiles = [profile(1, 'Standard', true)];
+    workspace.setSystemConfigs([
+      config(1, 'Model One'), config(2, 'Model Two', { provider: 'OpenAI' }), config(3, 'Model Three', { provider: 'Google' }),
+      config(4, 'Model Four', { isEnabled: false })
+    ]);
+  });
+
+  afterEach(clearRunSettings);
+
+  it('keeps the As listed order of the models that stay chosen and appends new ones', () => {
+    launcher.setBatchModels([1, 2, 3]);
+    launcher.setBatchOrderKeys([3, 1, 2]);
+
+    launcher.setBatchModels([1, 3]);
+    expect(launcher.batchOrderKeys).toEqual([3, 1]);
+
+    launcher.setBatchModels([1, 2, 3]);
+    expect(launcher.batchOrderKeys).toEqual([3, 1, 2]);
+
+    launcher.setBatchOrderKeys([2, 9, 2]);
+    expect(launcher.batchOrderKeys).toEqual([2, 1, 3]);
+  });
+
+  it('builds a suite batch: the As listed order, runs per model, the template and only current acknowledgments', () => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([2, 3]);
+    launcher.batchOrder = 'asListed';
+    launcher.setBatchOrderKeys([3, 2]);
+    launcher.batchRunsPerModel = 2;
+    launcher.reportWriterConfigId = 1;
+    launcher.launchAcknowledgments = { assessor: true, reportWriter: true };
+    launcher.applyFindings([warning('MB-W01:2,3')]);
+    launcher.setFindingAcknowledged('MB-W01:2,3', true);
+    launcher.setFindingAcknowledged('MB-W10:9', true);
+
+    const req = launcher.buildModelBatchRequest()!;
+
+    expect(req).toEqual({
+      targetKind: 'Suite', suiteId: 1, batteryId: null, testedModelConfigurationIds: [3, 2], runsPerModel: 2,
+      order: 'AsListed', allowCapWait: false,
+      run: expect.objectContaining({
+        suiteId: 1, testedModelConfigurationId: 3, assessorModelConfigurationId: 1, reportWriterModelConfigurationId: 1,
+        acknowledgeSameProvider: false
+      }),
+      acknowledgedFindingKeys: ['MB-W01:2,3']
+    });
+    expect('acknowledgeSameProviderReportWriter' in req.run).toBe(false);
+  });
+
+  it('builds a randomized battery batch with Runs per Suite as R', () => {
+    loadPage();
+    workspace.launcherBatteries = [battery()];
+    launcher.runMode = 'batch';
+    launcher.runTargetKind = 'battery';
+    launcher.selectedBatteryId = 5;
+    launcher.runCount = 3;
+    launcher.batchRunsPerModel = 7;
+    launcher.allowCapWait = true;
+    launcher.setBatchModels([2, 3]);
+
+    const req = launcher.buildModelBatchRequest()!;
+
+    expect(req.targetKind).toBe('Battery');
+    expect(req.batteryId).toBe(5);
+    expect(req.suiteId).toBeNull();
+    expect(req.run.suiteId).toBe(1);
+    expect(req.runsPerModel).toBe(3);
+    expect(req.order).toBe('Randomized');
+    expect(req.testedModelConfigurationIds).toEqual([2, 3]);
+    expect(req.allowCapWait).toBe(true);
+  });
+
+  it('builds nothing without an assessor', () => {
+    loadPage();
+    launcher.assessorConfigId = null;
+    launcher.setBatchModels([2, 3]);
+
+    expect(launcher.buildModelBatchRequest()).toBeNull();
+  });
+
+  it('asks the server once the settings settle, and only in batch mode', fakeAsync(() => {
+    loadPage();
+    launcher.setBatchModels([2, 3]);
+
+    launcher.requestPreflight();
+    tick(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS);
+    expect(preflight).not.toHaveBeenCalled();
+    expect(launcher.preflightLoading).toBe(false);
+
+    launcher.runMode = 'batch';
+    launcher.requestPreflight();
+    tick(100);
+    launcher.requestPreflight();
+    tick(100);
+    launcher.requestPreflight();
+    expect(launcher.preflightLoading).toBe(true);
+    tick(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS - 1);
+    expect(preflight).not.toHaveBeenCalled();
+    tick(1);
+
+    expect(preflight).toHaveBeenCalledTimes(1);
+    expect(preflight.mock.calls[0][0]).toEqual(expect.objectContaining({ testedModelConfigurationIds: [2, 3] }));
+    expect(launcher.preflightLoading).toBe(false);
+    expect(launcher.preflightAnswered).toBe(true);
+    expect(launcher.projection?.plannedRunCount).toBe(4);
+    expect(launcher.maxModelsPerBatch).toBe(12);
+    discardPeriodicTasks();
+  }));
+
+  it('takes the findings and drops an acknowledgment whose key is gone', fakeAsync(() => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([2, 3]);
+    launcher.setFindingAcknowledged('MB-W01:2', true);
+    launcher.setFindingAcknowledged('MB-W01:2,3', true);
+    preflight.mockReturnValue(of({
+      findings: [
+        {
+          code: 'MB-B03', name: 'GraderIsCandidate', severity: 'Blocker', field: 'assessor',
+          title: 'Model One cannot grade itself', detail: '.', modelConfigurationIds: [1]
+        },
+        warning('MB-W01:2,3'),
+        warning('MB-W03', { code: 'MB-W03', name: 'NoClaimVerifier', field: 'verifier', title: 'No claim verifier' })
+      ],
+      projection: null
+    }));
+
+    launcher.requestPreflight();
+    tick(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS);
+
+    expect([...launcher.acknowledgedFindingKeys]).toEqual(['MB-W01:2,3']);
+    expect(launcher.batchBlockers.map(f => f.code)).toEqual(['MB-B03']);
+    expect(launcher.unacknowledgedBatchWarnings.map(f => f.acknowledgmentKey)).toEqual(['MB-W03']);
+    expect(launcher.acknowledgedBatchWarnings.map(f => f.acknowledgmentKey)).toEqual(['MB-W01:2,3']);
+    discardPeriodicTasks();
+  }));
+
+  it('backs off after a failed check and asks again', fakeAsync(() => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([2, 3]);
+    preflight.mockReturnValueOnce(throwError(() => ({ error: 'The guardrails are unavailable.' })));
+
+    launcher.requestPreflight();
+    tick(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS);
+    expect(launcher.preflightError).toBe('The guardrails are unavailable.');
+    expect(launcher.preflightAnswered).toBe(false);
+
+    tick(2000 + MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS);
+
+    expect(preflight).toHaveBeenCalledTimes(2);
+    expect(launcher.preflightError).toBeNull();
+    expect(launcher.preflightAnswered).toBe(true);
+    discardPeriodicTasks();
+  }));
+
+  it('clears the findings on a switch to One model', fakeAsync(() => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([2, 3]);
+    launcher.applyFindings([warning('MB-W01:2,3')]);
+
+    launcher.runMode = 'single';
+    launcher.requestPreflight();
+    tick(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS);
+
+    expect(launcher.findings).toEqual([]);
+    expect(launcher.projection).toBeNull();
+    expect(preflight).not.toHaveBeenCalled();
+    discardPeriodicTasks();
+  }));
+
+  it('stores the batch settings but never the acknowledgments', () => {
+    loadPage();
+    launcher.runMode = 'batch';
+    launcher.setBatchModels([3, 2]);
+    launcher.batchOrder = 'asListed';
+    launcher.batchRunsPerModel = 3;
+    launcher.setFindingAcknowledged('MB-W01:2,3', true);
+
+    launcher.persistRunSettings();
+
+    expect(stored()).toEqual(expect.objectContaining({
+      runMode: 'batch', batchModelIds: [3, 2], batchOrder: 'asListed', batchOrderIds: [3, 2], batchRunsPerModel: 3
+    }));
+    expect(JSON.stringify(stored())).not.toContain('MB-W01');
+  });
+
+  it('restores the batch settings, dropping a model that no longer qualifies', fakeAsync(() => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+      suiteId: 1, testedConfigId: 1, assessorConfigId: 1, runMode: 'batch',
+      batchModelIds: [2, 4, 3, 99], batchOrder: 'asListed', batchOrderIds: [3, 4, 2], batchRunsPerModel: 3
+    }));
+
+    loadPage();
+    tick(MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS);
+
+    expect(launcher.runMode).toBe('batch');
+    expect(launcher.batchModelKeys).toEqual([2, 3]);
+    expect(launcher.batchOrderKeys).toEqual([3, 2]);
+    expect(launcher.batchOrder).toBe('asListed');
+    expect(launcher.batchRunsPerModel).toBe(3);
+    expect(launcher.acknowledgedFindingKeys.size).toBe(0);
+    expect(preflight).toHaveBeenCalled();
+    discardPeriodicTasks();
+  }));
+
+  it('restores One model from a blob that predates model batches', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, testedConfigId: 1, assessorConfigId: 1 }));
+
+    loadPage();
+
+    expect(launcher.runMode).toBe('single');
+    expect(launcher.batchModelKeys).toEqual([]);
+    expect(launcher.batchOrder).toBe('randomized');
   });
 });

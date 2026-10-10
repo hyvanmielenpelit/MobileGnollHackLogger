@@ -9,9 +9,14 @@ import {
   BenchmarkBatteryRunDto,
   BenchmarkBatteryResumeMode,
   BenchmarkRunReportDocumentsStatus,
-  BenchmarkRunReportJobDto
+  BenchmarkRunReportJobDto,
+  BenchmarkModelBatchRunDto
 } from '../../../services/admin-benchmark.service';
-import { BenchmarkCompletionSoundOutcome, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
+import {
+  BenchmarkCompletionSoundKind,
+  BenchmarkCompletionSoundOutcome,
+  BenchmarkCompletionSoundService
+} from '../../../services/benchmark-completion-sound.service';
 import {
   BenchmarkCompletionNotificationService,
   BenchmarkNotificationPermissionOutcome,
@@ -28,14 +33,27 @@ import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkLauncherState } from './benchmark-launcher.state';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import { BenchmarkShellBridge } from './benchmark-shell-bridge.service';
+import {
+  BenchmarkEndKind,
+  batteryEndBody,
+  benchmarkEndSignal,
+  modelBatchEndBody,
+  modelBatchSignalKey,
+  runEndBody,
+  seriesEndBody
+} from './benchmark-end-signal';
+import { isLiveModelBatchStatus } from '../model-batch/model-batch.models';
 
 /** How a start request ended: started, or held for a same-provider acknowledgment. */
 export type BenchmarkStartOutcome = { kind: 'started' } | { kind: 'sameProvider'; warning: SameProviderWarningDto };
 
-/** A series or battery poller that keeps failing to reach the server, for the shell's Lost contact notice. */
+/** The pollers that back off rather than give up at once: a series, a battery run, a model batch. */
+export type BenchmarkLostContactKind = 'series' | 'battery' | 'modelBatch';
+
+/** A series, battery or model batch poller that keeps failing to reach the server, for the Lost contact notice. */
 export interface BenchmarkLostContactNotice {
-  readonly kind: 'series' | 'battery';
-  /** The series id or battery run id the poller follows. */
+  readonly kind: BenchmarkLostContactKind;
+  /** The series id, battery run id or model batch id the poller follows. */
   readonly id: number;
   /** Consecutive failed polls. */
   readonly failureCount: number;
@@ -47,7 +65,10 @@ export interface BenchmarkLostContactNotice {
   readonly gaveUp: boolean;
 }
 
-/** Starts runs, series and battery runs, follows them with their pollers, and signals their completion on every sub-tab. */
+/**
+ * Starts runs, series and battery runs, follows them and model batches with their pollers, and signals
+ * their ends on every sub-tab: the completion chime or the failure sound, by `benchmarkEndSignal`.
+ */
 @Injectable()
 export class BenchmarkActiveRunMonitor implements OnDestroy {
   private readonly viewSync = inject(BenchmarkViewSync);
@@ -346,6 +367,58 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   /** The battery run whose Battery Progress dialog the run progress dialog was opened from; closing reopens it. */
   returnToBatteryRunId: number | null = null;
 
+  // --- Model batches ---
+  //
+  // A batch runs its members one after another. Its banner and its signals stand for its members:
+  // while the page follows a batch, none of its runs, series or battery runs signals its own end.
+
+  /** The id of the batch the banner follows. */
+  activeModelBatchRunId: number | null = null;
+
+  /** The live or resumable batch the page follows; kept once it ends, for the banner's last state. */
+  activeModelBatch: BenchmarkModelBatchRunDto | null = null;
+
+  /** The Model Batch Progress dialog's visibility. The dialog element itself belongs to that component. */
+  modelBatchDialogVisible = false;
+
+  /** The batch the dialog shows: the active one, or one Run History opened. */
+  modelBatchDialogId: number | null = null;
+
+  modelBatchErrorMessage: string | null = null;
+
+  /**
+   * The batch whose progress dialog a member's run or battery progress dialog was opened from;
+   * closing that dialog reopens the batch's.
+   */
+  returnToModelBatchId: number | null = null;
+
+  /** Batches this page saw live; a poll that finds one ended signals it, once. */
+  readonly batchesSeenLive = new Set<number>();
+
+  /** Every batch this page followed live: their members never signal their own ends. */
+  private readonly modelBatchesFollowed = new Set<number>();
+
+  /** Member runs the operator re-ran by hand; their ends signal as any run's do. */
+  private readonly operatorRerunRunIds = new Set<number>();
+
+  private modelBatchPollTickerHandle: BenchmarkPollTickerHandle | null = null;
+
+  private modelBatchPollFailureCount = 0;
+
+  private modelBatchPollFailureSinceMs = 0;
+
+  /** While the batch poller is failing, ticks before this time (client clock, ms) are skipped. */
+  private modelBatchNextPollDueAtMs = 0;
+
+  private modelBatchVisibilityChangeHandler: (() => void) | null = null;
+
+  private lastModelBatchPollAttemptAtMs = 0;
+
+  /** Pending, Running or WaitingForCap: the batch may still launch a member. */
+  get modelBatchIsLive(): boolean {
+    return isLiveModelBatchStatus(this.activeModelBatch?.status);
+  }
+
   // --- Completion sound ---
   //
   // The chime plays once per run or series that was actually watched live, never for one opened
@@ -368,7 +441,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   /** One `notify()` call per record, kept for the run diagnostics capture; last 10, oldest dropped first. */
   readonly notificationAttempts: {
-    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome;
+    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome; kind: BenchmarkCompletionSoundKind;
   }[] = [];
 
   private static readonly MAX_NOTIFICATION_ATTEMPTS = 10;
@@ -624,17 +697,18 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         this.seriesNextPollDueAtMs = 0;
         this.clearLostContact('series');
         this.activeSeries = series;
-        // Chimes once per series actually watched live: seriesIsLive keeps re-adding the id while
-        // it runs, and the transition into Completed/Cancelled/Failed or Stopped (which needs the
-        // operator to continue it) fires the chime only for an id this poller has seen live —
-        // never for a series opened from history already finished, nor for one the operator
-        // cancelled.
+        // Signals once per series actually watched live: seriesIsLive keeps re-adding the id while
+        // it runs, and the transition into an end, Stopped included (which needs the operator to
+        // continue it), signals only for an id this poller has seen live — never for a
+        // series opened from history already finished. The end rule picks the sound and silences a
+        // cancel; a member of a followed model batch leaves its end to the batch.
         if (this.seriesIsLive) {
           this.seriesSeenLive.add(series.id);
-        } else if (this.seriesSeenLive.has(series.id) && (this.seriesIsFinished || this.seriesIsStopped)) {
+        } else if (this.seriesSeenLive.has(series.id)
+          && (this.seriesIsFinished || this.seriesIsStopped || series.status === 'CompletedWithErrors')) {
           this.seriesSeenLive.delete(series.id);
-          if (series.status !== 'Cancelled') {
-            this.signalCompletion(`series:${series.id}:${series.status}`);
+          if (!this.memberOfFollowedModelBatch(series.modelBatchRunId)) {
+            this.signalEndOf('series', series.status, `series:${series.id}:${series.status}`, () => seriesEndBody(series));
           }
         }
         // The member currently running is what the single-run banner and dialog describe, so the
@@ -842,9 +916,10 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         // A battery run that is not live is followed while the server still works on it: a member
         // repair, the analysis, the AI-written reports.
         const awaitsPostRun = !this.batteryIsLive && batteryAwaitsPostRun(batteryRun);
-        // One signal per chain of server work this page saw, at whatever end it reaches except a
-        // cancel, once its post-run work has ended. Its members' own completions are accounted for
-        // here, so none of them signals afterwards.
+        // One signal per chain of server work this page saw, at whatever end it reaches, once its
+        // post-run work has ended; the end rule picks the sound and silences a cancel. Its members'
+        // own ends are accounted for here, so none of them signals afterwards. A member of a
+        // followed model batch leaves its end to the batch.
         if (this.batteryIsLive || awaitsPostRun) {
           this.batteriesSeenLive.add(batteryRun.id);
         } else if (this.batteriesSeenLive.has(batteryRun.id)) {
@@ -853,8 +928,9 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
             this.runsSeenLive.delete(member.runId);
             this.runBatteryAtStart.delete(member.runId);
           }
-          if (batteryRun.status !== 'Cancelled') {
-            this.signalCompletion(BenchmarkActiveRunMonitor.batterySignalKey(batteryRun));
+          if (!this.memberOfFollowedModelBatch(batteryRun.modelBatchRunId)) {
+            this.signalEndOf('battery', batteryRun.status, BenchmarkActiveRunMonitor.batterySignalKey(batteryRun),
+              () => batteryEndBody(batteryRun));
           }
         }
         // The run banner and dialog follow the member in flight, as they do for a series.
@@ -923,14 +999,222 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     return generation ? `run:${run.id}:${generation}` : `run:${run.id}`;
   }
 
+  // --- Model batch banner and polling ---
+
+  /**
+   * Reattaches the batch banner to a batch already live or stopped when the page loads, as
+   * checkActiveBatteryRun does for a battery run. The dialog stays closed.
+   */
+  checkActiveModelBatch(): void {
+    this.benchmarkService.getActiveModelBatch().subscribe({
+      next: (batch) => {
+        if (!batch) return;
+        this.activeModelBatch = batch;
+        this.activeModelBatchRunId = batch.id;
+        if (isLiveModelBatchStatus(batch.status)) {
+          this.modelBatchesFollowed.add(batch.id);
+          this.startModelBatchPolling(batch.id);
+        }
+        this.viewSync.notify();
+      },
+      error: (err) => console.error('Failed to check active model batch', err)
+    });
+  }
+
+  /** Adopts a batch this page started as the one the banner follows, as seen live, and polls it. */
+  followModelBatch(batch: BenchmarkModelBatchRunDto): void {
+    this.activeModelBatch = batch;
+    this.activeModelBatchRunId = batch.id;
+    this.modelBatchErrorMessage = null;
+    this.batchesSeenLive.add(batch.id);
+    this.modelBatchesFollowed.add(batch.id);
+    this.startModelBatchPolling(batch.id);
+    this.viewSync.notify();
+  }
+
+  /** The progress dialog continued, skipped or re-ran a stopped batch: this page follows it again. */
+  onModelBatchResumed(batchId: number): void {
+    this.activeModelBatchRunId = batchId;
+    this.modelBatchErrorMessage = null;
+    this.batchesSeenLive.add(batchId);
+    this.modelBatchesFollowed.add(batchId);
+    this.startModelBatchPolling(batchId);
+    this.viewSync.notify();
+  }
+
+  /** The progress dialog canceled a batch; the banner reads it again. */
+  onModelBatchCanceled(batchId: number): void {
+    if (batchId === this.activeModelBatchRunId) {
+      this.pollModelBatch(batchId);
+    }
+  }
+
+  startModelBatchPolling(batchId: number): void {
+    this.stopModelBatchPolling();
+    this.modelBatchPollFailureCount = 0;
+    this.modelBatchNextPollDueAtMs = 0;
+    this.clearLostContact('modelBatch');
+    this.lastModelBatchPollAttemptAtMs = Date.now();
+    this.pollModelBatch(batchId);
+    this.modelBatchPollTickerHandle = this.pollTicker.start(BenchmarkActiveRunMonitor.SERIES_POLL_INTERVAL_MS, () => {
+      if (Date.now() < this.modelBatchNextPollDueAtMs) {
+        return;
+      }
+      if (typeof document !== 'undefined' && document.hidden) {
+        const hiddenPollDue = (this.launcher.completionSound || this.launcher.completionNotification)
+          && (Date.now() - this.lastModelBatchPollAttemptAtMs) >= BenchmarkActiveRunMonitor.HIDDEN_POLL_INTERVAL_MS;
+        if (!hiddenPollDue) {
+          return;
+        }
+      }
+      this.lastModelBatchPollAttemptAtMs = Date.now();
+      this.pollModelBatch(batchId);
+    });
+
+    if (typeof document !== 'undefined') {
+      this.modelBatchVisibilityChangeHandler = () => {
+        if (!document.hidden) {
+          this.pollModelBatch(batchId);
+        }
+      };
+      document.addEventListener('visibilitychange', this.modelBatchVisibilityChangeHandler);
+    }
+  }
+
+  stopModelBatchPolling(): void {
+    if (this.modelBatchPollTickerHandle) {
+      this.modelBatchPollTickerHandle();
+      this.modelBatchPollTickerHandle = null;
+    }
+    if (this.modelBatchVisibilityChangeHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.modelBatchVisibilityChangeHandler);
+      this.modelBatchVisibilityChangeHandler = null;
+    }
+  }
+
+  /**
+   * One poll of the followed batch. A batch seen live that is found ended or stopped signals once,
+   * by the end rule: the failure sound for a stop of any reason, a failure or a completion with
+   * errors, the completion chime for a completion, nothing for a cancel. While it runs, the run
+   * banner and its poller follow the member's run in flight.
+   */
+  pollModelBatch(batchId: number): void {
+    this.benchmarkService.getModelBatch(batchId).subscribe({
+      next: (batch) => {
+        this.modelBatchPollFailureCount = 0;
+        this.modelBatchNextPollDueAtMs = 0;
+        this.clearLostContact('modelBatch');
+        if (batchId === this.activeModelBatchRunId || this.activeModelBatch?.id === batchId) {
+          this.activeModelBatch = batch;
+        }
+        const live = isLiveModelBatchStatus(batch.status);
+        if (live) {
+          this.batchesSeenLive.add(batch.id);
+          this.modelBatchesFollowed.add(batch.id);
+        } else if (this.batchesSeenLive.has(batch.id)) {
+          this.batchesSeenLive.delete(batch.id);
+          this.signalEndOf('modelBatch', batch.status, modelBatchSignalKey(batch), () => modelBatchEndBody(batch));
+        }
+        const member = batch.currentMemberIndex != null ? batch.members[batch.currentMemberIndex] : undefined;
+        const runningId = live && member?.status === 'Running' ? member.currentRunId ?? null : null;
+        if (runningId != null && (runningId !== this.activeRunId || runningId === this.runPollGaveUpRunId)) {
+          this.activeRunId = runningId;
+          this.startPolling(runningId);
+        }
+        if (!live) {
+          this.stopModelBatchPolling();
+          this.workspace.loadHistory();
+          this.workspace.loadRunLimits();
+        }
+        this.viewSync.notify();
+      },
+      error: (err) => {
+        console.error('Failed to poll the model batch', err);
+        if (this.modelBatchPollFailureCount === 0) {
+          this.modelBatchPollFailureSinceMs = Date.now();
+        }
+        this.modelBatchPollFailureCount++;
+        const nextDueAtMs = this.noteLostContact('modelBatch', batchId, this.modelBatchPollFailureCount, this.modelBatchPollFailureSinceMs);
+        if (nextDueAtMs === null) {
+          this.stopModelBatchPolling();
+        } else {
+          this.modelBatchNextPollDueAtMs = nextDueAtMs;
+        }
+        this.viewSync.notify();
+      }
+    });
+  }
+
+  /** Opens the Model Batch Progress dialog on a batch, which also ends any way back to another one. */
+  openModelBatchDialog(batchId: number): void {
+    this.returnToModelBatchId = null;
+    this.modelBatchDialogId = batchId;
+    this.modelBatchDialogVisible = true;
+    this.viewSync.notify();
+  }
+
+  onModelBatchDialogClosed(): void {
+    this.modelBatchDialogVisible = false;
+    this.modelBatchDialogId = null;
+    this.viewSync.notify();
+  }
+
+  /**
+   * After a member's progress dialog closed: reopens the batch's dialog it came from. Deferred, so a
+   * close that hands over to another dialog in the same turn leaves the way back to that dialog.
+   */
+  reopenModelBatchAfterClose(): void {
+    const batchId = this.returnToModelBatchId;
+    if (batchId == null) return;
+    queueMicrotask(() => {
+      if (this.returnToModelBatchId !== batchId || this.isRunProgressDialogOpen
+        || this.batteryDialogVisible || this.modelBatchDialogVisible) {
+        return;
+      }
+      this.openModelBatchDialog(batchId);
+    });
+  }
+
+  /** The banner's Cancel Batch: asks first, through the shell's confirmation. */
+  cancelActiveModelBatch(): void {
+    const batchId = this.activeModelBatch?.id ?? this.activeModelBatchRunId;
+    if (batchId == null) return;
+    this.bridge.openConfirmDialog({
+      title: `Cancel model batch #${batchId}?`,
+      message: 'The model in flight is canceled and no further model starts. Completed models keep their results.',
+      buttonText: 'Cancel Batch',
+      buttonClass: 'btn-gh btn-gh-delete',
+      icon: 'none',
+      action: () => this.cancelModelBatch(batchId)
+    });
+  }
+
+  /** Cancels a batch; the banner learns the outcome from the next poll. */
+  cancelModelBatch(batchId: number): void {
+    this.modelBatchErrorMessage = null;
+    this.benchmarkService.cancelModelBatch(batchId).subscribe({
+      next: () => {
+        if (batchId === this.activeModelBatchRunId) {
+          this.pollModelBatch(batchId);
+        }
+        this.viewSync.notify();
+      },
+      error: (err) => {
+        console.error('Failed to cancel the model batch', err);
+        this.modelBatchErrorMessage = refusalText(err, 'Failed to cancel the model batch.');
+        this.viewSync.notify();
+      }
+    });
+  }
+
   // --- Lost contact ---
 
   /**
-   * Records a series or battery poller's failed poll and returns when its next attempt is due
-   * (client clock, ms), or null once the failures have lasted {@link LOST_CONTACT_GIVE_UP_MS}. The
-   * notice appears once {@link LOST_CONTACT_NOTICE_AFTER_FAILURES} polls in a row have failed.
+   * Records a series, battery or model batch poller's failed poll and returns when its next attempt
+   * is due (client clock, ms), or null once the failures have lasted {@link LOST_CONTACT_GIVE_UP_MS}.
+   * The notice appears once {@link LOST_CONTACT_NOTICE_AFTER_FAILURES} polls in a row have failed.
    */
-  private noteLostContact(kind: 'series' | 'battery', id: number, failureCount: number, sinceMs: number): number | null {
+  private noteLostContact(kind: BenchmarkLostContactKind, id: number, failureCount: number, sinceMs: number): number | null {
     const now = Date.now();
     const backoff = BenchmarkActiveRunMonitor.LOST_CONTACT_BACKOFF_MS;
     const retryIntervalMs = backoff[Math.min(failureCount, backoff.length) - 1];
@@ -941,17 +1225,19 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     return gaveUp ? null : now + retryIntervalMs;
   }
 
-  private clearLostContact(kind: 'series' | 'battery'): void {
+  private clearLostContact(kind: BenchmarkLostContactKind): void {
     if (this.lostContact?.kind === kind) {
       this.lostContact = null;
     }
   }
 
-  /** The Lost contact notice's sentence, or null while both pollers reach the server. */
+  /** The Lost contact notice's sentence, or null while every backing-off poller reaches the server. */
   get lostContactText(): string | null {
     const notice = this.lostContact;
     if (!notice) return null;
-    const subject = notice.kind === 'battery' ? `Battery Run #${notice.id}` : `Series #${notice.id}`;
+    const subject = notice.kind === 'battery'
+      ? `Battery Run #${notice.id}`
+      : notice.kind === 'modelBatch' ? `Model batch #${notice.id}` : `Series #${notice.id}`;
     const giveUpMinutes = BenchmarkActiveRunMonitor.LOST_CONTACT_GIVE_UP_MS / 60_000;
     if (notice.gaveUp) {
       return `Lost contact with the server for ${giveUpMinutes} minutes, so this page stopped following ${subject}. `
@@ -974,6 +1260,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     this.returnToBatteryRunId = null;
     this.batteryDialogVisible = false;
     this.batteryDialogRunId = null;
+    this.reopenModelBatchAfterClose();
     this.viewSync.notify();
   }
 
@@ -1184,39 +1471,59 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   }
 
   /**
-   * The run half of transition detection: chimes only for an id this poller watched Running, and
-   * only when it is not a member of a series still live — a series chimes once for the whole
-   * group instead, via `signalCompletion` in `pollSeries`. A member of a battery run reads that
-   * battery run fresh first: when the battery run takes the signal (`batteryTakesRunSignal`), it
-   * signals once for both, after its own work. A run ended by cancellation does not signal at all.
+   * The run half of transition detection: signals only for an id this poller watched Running, and
+   * only when it is not a member of a series still live — a series signals once for the whole
+   * group instead, in `pollSeries` — nor of a model batch this page follows, which signals for its
+   * members. A member of a battery run reads that battery run fresh first: when the battery run
+   * takes the signal (`batteryTakesRunSignal`), it signals once for both, after its own work. A run
+   * ended by cancellation does not signal at all; otherwise the end rule picks the sound.
    */
   private maybeSignalRunCompletion(run: BenchmarkRunDetailDto): void {
     if (!this.runsSeenLive.has(run.id)) return;
     this.runsSeenLive.delete(run.id);
     const cancelledByOperator = this.operatorCancelledRunIds.delete(run.id);
+    const rerunByOperator = this.operatorRerunRunIds.delete(run.id);
     const start = this.runBatteryAtStart.get(run.id) ?? null;
     this.runBatteryAtStart.delete(run.id);
     if (this.activeSeries != null && this.seriesIsLive) return;
     if (cancelledByOperator || this.runEndedByCancellation(run)) return;
+    if (!rerunByOperator && this.runOfFollowedModelBatch(run)) return;
     const batteryRunId = start?.batteryRunId ?? this.batteryRunIdOf(run.id);
     if (batteryRunId == null) {
-      this.signalCompletion(BenchmarkActiveRunMonitor.runSignalKey(run), run);
+      this.signalRunEnd(run);
       return;
     }
     this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
       next: (battery) => {
         if (battery.status === 'Cancelled' || this.batteryTakesRunSignal(battery, start?.status ?? null)) return;
-        this.signalCompletion(BenchmarkActiveRunMonitor.runSignalKey(run), run);
+        this.signalRunEnd(run);
         this.viewSync.notify();
       },
       error: (err) => {
         console.warn('Failed to read the battery run of a finished member run', err);
         if (!this.batteriesSeenLive.has(batteryRunId)) {
-          this.signalCompletion(BenchmarkActiveRunMonitor.runSignalKey(run), run);
+          this.signalRunEnd(run);
           this.viewSync.notify();
         }
       }
     });
+  }
+
+  private signalRunEnd(run: BenchmarkRunDetailDto): void {
+    this.signalEndOf('run', run.status, BenchmarkActiveRunMonitor.runSignalKey(run), () => runEndBody(run));
+  }
+
+  /** A model batch this page followed live owns the work: its members leave their ends to it. */
+  private memberOfFollowedModelBatch(modelBatchRunId: number | null | undefined): boolean {
+    return modelBatchRunId != null && this.modelBatchesFollowed.has(modelBatchRunId);
+  }
+
+  /** A run of a followed model batch: by its own record, or by the batch's member list. */
+  private runOfFollowedModelBatch(run: BenchmarkRunDetailDto): boolean {
+    if (this.memberOfFollowedModelBatch(run.modelBatchRunId)) return true;
+    const batch = this.activeModelBatch;
+    return !!batch && this.modelBatchesFollowed.has(batch.id)
+      && batch.members.some(m => m.runIds?.includes(run.id) || m.currentRunId === run.id);
   }
 
   /**
@@ -1231,20 +1538,28 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     return batteryRun?.status === 'Cancelled' && (batteryRun.members ?? []).some(m => m.runId === run.id);
   }
 
+  /** Applies the end rule to `status` and signals the end it names; a `'none'` end signals nothing. */
+  private signalEndOf(kind: BenchmarkEndKind, status: string | number | null | undefined, key: string, body: () => string): void {
+    const outcome = benchmarkEndSignal(kind, status);
+    if (outcome === 'none') return;
+    this.signalEnd(key, outcome, body());
+  }
+
   /**
-   * Marks the tab title even when both signals are off, so a hidden tab shows the completion
-   * either way. The sound and the notification are then handled independently — either, both or
-   * neither may be on, and the notification does not require the sound to have run. The
-   * notification fires whenever the checkbox is ticked, whatever the tab's own focus: a completion
-   * is worth surfacing on the desktop even for an operator looking straight at the tab, and a tab
-   * that merely lacks focus (another window in front, not actually hidden) is not a case worth
-   * special-casing away.
+   * Marks the tab title even when both signals are off, so a hidden tab shows the end either way.
+   * The sound — the completion chime or the failure sound, by `end` — and the notification are
+   * then handled independently: either, both or neither may be on, and the notification does not
+   * require the sound to have run. The notification fires whenever the checkbox is checked,
+   * whatever the tab's own focus: an end is worth surfacing on the desktop even for an operator
+   * looking straight at the tab, and a tab that merely lacks focus (another window in front, not
+   * actually hidden) is not a case worth special-casing away.
    */
-  private signalCompletion(key: string, run: BenchmarkRunDetailDto | null = null): void {
+  private signalEnd(key: string, end: 'complete' | 'failed', body: string | null): void {
     this.markTabTitleForCompletion();
+    const kind: BenchmarkCompletionSoundKind = end === 'failed' ? 'failed' : 'complete';
 
     if (this.launcher.completionSound) {
-      this.completionSoundService.play(key).then(outcome => {
+      this.completionSoundService.play(key, kind).then(outcome => {
         this.lastCompletionSoundOutcome = outcome;
         if (outcome === 'played') {
           this.completionSoundStatus = null;
@@ -1260,50 +1575,22 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
       });
     }
 
-    if (this.launcher.completionNotification) {
-      const body = this.completionNotificationBody(key, run);
-      if (body) {
-        const hidden = typeof document !== 'undefined' ? document.hidden : false;
-        const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
-        const outcome = this.completionNotificationService.notify(key, 'GnollBench', body);
-        this.recordNotificationAttempt({ atUtc: new Date().toISOString(), key, hidden, focused, outcome });
-      }
+    if (this.launcher.completionNotification && body) {
+      const hidden = typeof document !== 'undefined' ? document.hidden : false;
+      const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
+      const notified = this.completionNotificationService.notify(key, 'GnollBench', body);
+      this.recordNotificationAttempt({ atUtc: new Date().toISOString(), key, hidden, focused, outcome: notified, kind });
     }
   }
 
   /** Keeps the last {@link MAX_NOTIFICATION_ATTEMPTS} notification attempts for the diagnostics capture. */
   private recordNotificationAttempt(attempt: {
-    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome;
+    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome; kind: BenchmarkCompletionSoundKind;
   }): void {
     this.notificationAttempts.push(attempt);
     if (this.notificationAttempts.length > BenchmarkActiveRunMonitor.MAX_NOTIFICATION_ATTEMPTS) {
       this.notificationAttempts.shift();
     }
-  }
-
-  /**
-   * `Run #54 — <suite name> — <status>`, `Series #N — k of n runs — <status>` or
-   * `Battery #N — <battery name> — k of K suites — <status>`. A run's body is read from `signaled`,
-   * else from the live run.
-   */
-  private completionNotificationBody(key: string, signaled: BenchmarkRunDetailDto | null = null): string | null {
-    if (key.startsWith('run:')) {
-      const run = signaled ?? this.activeRunDetail;
-      if (!run) return null;
-      return `Run #${run.id} — ${run.suiteName} — ${formatStatus(run.status)}`;
-    }
-    if (key.startsWith('series:')) {
-      const series = this.activeSeries;
-      if (!series) return null;
-      return `Series #${series.id} — ${series.completedRunCount} of ${series.requestedRunCount} runs — ${series.status}`;
-    }
-    if (key.startsWith('battery:')) {
-      const batteryRun = this.activeBatteryRun;
-      if (!batteryRun) return null;
-      return `Battery #${batteryRun.id} — ${batteryRun.batteryName} — `
-        + `${batteryRun.completedSuiteCount} of ${batteryRun.suiteCount} suites — ${batteryRun.status}`;
-    }
-    return null;
   }
 
   /**
@@ -1776,6 +2063,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
    */
   launchFailedQuestionRerun(runId: number, failedOrderIndexes: number[]): void {
     this.operatorCancelledRunIds.delete(runId);
+    this.operatorRerunRunIds.add(runId);
     this.rerunScopeOrderIndexes = failedOrderIndexes;
     this.rerunLaunchPending = true;
     this.rerunLaunchedAtMs = Date.now();
@@ -1814,6 +2102,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     this.stopRunElapsedTicker();
     this.stopSeriesPolling();
     this.stopBatteryPolling();
+    this.stopModelBatchPolling();
     if (this.titleRestoreVisibilityHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
       this.titleRestoreVisibilityHandler = null;

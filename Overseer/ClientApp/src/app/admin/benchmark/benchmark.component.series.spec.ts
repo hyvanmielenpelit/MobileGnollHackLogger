@@ -384,7 +384,7 @@ describe('AdminBenchmarkComponent', () => {
 
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
       (ctx.monitor as any).pollRunDetail(42);
-      expect(playSpy).toHaveBeenCalledWith('run:42');
+      expect(playSpy).toHaveBeenCalledWith('run:42', 'complete');
       expect(playSpy).toHaveBeenCalledTimes(1);
 
       // A later poll of the same, already-terminal run must not chime a second time.
@@ -409,7 +409,7 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
       (ctx.monitor as any).pollRunDetail(42);
 
-      expect(playSpy).not.toHaveBeenCalledWith('run:42');
+      expect(vi.mocked(playSpy).mock.calls.map(call => call[0])).not.toContain('run:42');
     });
 
     it('should chime once for a series seen live and then reaching a terminal status', () => {
@@ -423,7 +423,7 @@ describe('AdminBenchmarkComponent', () => {
         id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
       } as any));
       (ctx.monitor as any).pollSeries(8);
-      expect(playSpy).toHaveBeenCalledWith('series:8:Completed');
+      expect(playSpy).toHaveBeenCalledWith('series:8:Completed', 'complete');
       expect(playSpy).toHaveBeenCalledTimes(1);
 
       // A later poll of the same, already-finished series must not chime a second time.
@@ -506,7 +506,7 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(playSpy).toHaveBeenCalledTimes(1);
 
-        expect(playSpy).toHaveBeenCalledWith('run:42');
+        expect(playSpy).toHaveBeenCalledWith('run:42', 'complete');
       });
 
       it('does not chime for a run cancelled from the run detail view', () => {
@@ -535,7 +535,7 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(playSpy).toHaveBeenCalledTimes(1);
 
-        expect(playSpy).toHaveBeenCalledWith('run:42');
+        expect(playSpy).toHaveBeenCalledWith('run:42', 'complete');
         component.closeRunProgressDialog();
       });
 
@@ -560,18 +560,19 @@ describe('AdminBenchmarkComponent', () => {
         expect(playSpy).not.toHaveBeenCalled();
       });
 
-      it('still chimes for a run that ends Failed', () => {
+      it('plays the failure sound for a run that ends Failed', () => {
         seeRunLive();
         pollRun(42, 'Failed');
 
         expect(playSpy).toHaveBeenCalledTimes(1);
 
-        expect(playSpy).toHaveBeenCalledWith('run:42');
+        expect(playSpy).toHaveBeenCalledWith('run:42', 'failed');
         expect(notifySpy).toHaveBeenCalledTimes(1);
+        expect(notifySpy).toHaveBeenCalledWith('run:42', 'GnollBench', 'Run #42 — Default Suite — Failed');
       });
 
       for (const status of ['Stopped', 'Failed']) {
-        it(`still chimes for a series that ends ${status}`, () => {
+        it(`plays the failure sound for a series that ends ${status}`, () => {
           benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Running')));
           (ctx.monitor as any).pollSeries(8);
           benchmarkServiceMock.getRunSeries.mockReturnValue(of(series(status)));
@@ -579,7 +580,7 @@ describe('AdminBenchmarkComponent', () => {
 
           expect(playSpy).toHaveBeenCalledTimes(1);
 
-          expect(playSpy).toHaveBeenCalledWith(`series:8:${status}`);
+          expect(playSpy).toHaveBeenCalledWith(`series:8:${status}`, 'failed');
         });
       }
     });

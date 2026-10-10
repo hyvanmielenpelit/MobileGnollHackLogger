@@ -13,6 +13,7 @@ import {
   inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Subscription } from 'rxjs';
 
 import {
   AdminBenchmarkService,
@@ -36,6 +37,8 @@ import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { MODEL_BATCH_OWNED_REASON, isFinalModelBatchStatus } from '../model-batch/model-batch.models';
+import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 
 /**
  * The stages of a multi-run operation. `waitingForCap` and `stopped` are stages in their own
@@ -160,6 +163,8 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   private systemService = inject(SystemService);
   private completionSoundService = inject(BenchmarkCompletionSoundService);
   private cdr = inject(ChangeDetectorRef);
+  /** The model batch the page follows, for whether a series' batch still owns it. */
+  private readonly monitor = inject(BenchmarkActiveRunMonitor, { optional: true });
 
   /** Matches the single-run dialog's cadence: the two dialogs poll the same server. */
   static readonly SERIES_POLL_INTERVAL_MS = 2000;
@@ -192,6 +197,9 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
    */
   @Output() seriesResumed = new EventEmitter<number>();
 
+  /** *Open model batch #N*: the batch whose progress dialog the host opens; this dialog has closed. */
+  @Output() openModelBatch = new EventEmitter<number>();
+
   @ViewChild('multiRunProgressDialog') dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('multiRunProgressHeading') heading?: ElementRef<HTMLElement>;
 
@@ -214,6 +222,16 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   private analysisRequestedForGroupId: number | null = null;
   private comparabilityForGroupId: number | null = null;
   analysisInFlight = false;
+
+  /**
+   * The model batch that owns this series while the batch is not final; null when none does. Its
+   * Continue and Cancel are the batch's, so they wait here with the reason.
+   */
+  modelBatchOwnerId: number | null = null;
+  /** The batch whose status was read for `modelBatchOwnerId`. */
+  private modelBatchOwnerCheckedId: number | null = null;
+  private modelBatchOwnerSubscription: Subscription | null = null;
+  readonly modelBatchOwnedReason = MODEL_BATCH_OWNED_REASON;
 
   /** The 409 body of a refused resume. Non-null puts the instrument-change choice on screen. */
   instrumentChange: BenchmarkInstrumentChangedDto | null = null;
@@ -269,6 +287,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   ngOnDestroy(): void {
     this.stopPolling();
     this.stopElapsedTicker();
+    this.modelBatchOwnerSubscription?.unsubscribe();
     if (this.copiedSeriesTimer) { clearTimeout(this.copiedSeriesTimer); }
     if (this.copiedGroupTimer) { clearTimeout(this.copiedGroupTimer); }
   }
@@ -290,6 +309,10 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     this.instrumentChange = null;
     this.errorMessage = null;
     this.lastPollError = null;
+    this.modelBatchOwnerSubscription?.unsubscribe();
+    this.modelBatchOwnerSubscription = null;
+    this.modelBatchOwnerId = null;
+    this.modelBatchOwnerCheckedId = null;
   }
 
   private openDialog(): void {
@@ -346,6 +369,46 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     this.closeDialog();
     this.closed.emit();
     this.openRunProgress.emit(member.runId);
+  }
+
+  /** *Open model batch #N*: closes this dialog and hands the batch to the host. */
+  showModelBatch(): void {
+    const batchId = this.modelBatchOwnerId ?? this.series?.modelBatchRunId ?? null;
+    if (batchId == null) return;
+    this.requestClose();
+    this.openModelBatch.emit(batchId);
+  }
+
+  /**
+   * Whether the series' model batch still owns it: from the batch the page follows when it is that
+   * one, else from the batch read once. Until the batch answers it is taken to own the series, as the
+   * server's refusal of a child resume does.
+   */
+  private resolveModelBatchOwner(series: BenchmarkRunSeriesDto): void {
+    const batchId = series.modelBatchRunId ?? null;
+    if (batchId == null) {
+      this.modelBatchOwnerId = null;
+      return;
+    }
+    const followed = this.monitor?.activeModelBatch;
+    if (followed?.id === batchId) {
+      this.modelBatchOwnerId = isFinalModelBatchStatus(followed.status) ? null : batchId;
+      return;
+    }
+    if (this.modelBatchOwnerCheckedId === batchId) {
+      return;
+    }
+    this.modelBatchOwnerCheckedId = batchId;
+    this.modelBatchOwnerId = batchId;
+    this.modelBatchOwnerSubscription?.unsubscribe();
+    this.modelBatchOwnerSubscription = this.benchmarkService.getModelBatch(batchId).subscribe({
+      next: (batch) => {
+        if (this.series?.modelBatchRunId !== batchId) return;
+        this.modelBatchOwnerId = isFinalModelBatchStatus(batch.status) ? null : batchId;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.warn('Failed to read the model batch of a series', err)
+    });
   }
 
   // -------------------------------------------------------------------------------------------
@@ -407,6 +470,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
         this.lastPollAtUtc = new Date().toISOString();
         this.lastPollError = null;
         this.series = series;
+        this.resolveModelBatchOwner(series);
 
         this.loadFirstMemberRunIfNeeded(series);
         this.resolveGroupAnalysis(series);
@@ -692,7 +756,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
 
   cancelSeries(): void {
     const seriesId = this.series?.id ?? this.seriesId;
-    if (seriesId == null || this.cancelInFlight) return;
+    if (seriesId == null || this.cancelInFlight || this.modelBatchOwnerId != null) return;
     this.cancelInFlight = true;
     this.errorMessage = null;
     this.benchmarkService.cancelRunSeries(seriesId).subscribe({
@@ -715,7 +779,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
    */
   continueSeries(acknowledgeInstrumentChange = false): void {
     const seriesId = this.series?.id ?? this.seriesId;
-    if (seriesId == null || this.resumeInFlight) return;
+    if (seriesId == null || this.resumeInFlight || this.modelBatchOwnerId != null) return;
     // Arms the completion sound under this click's gesture: a series resumed from here runs on
     // exactly as one resumed from the Run tab's own Continue button, and must be able to chime.
     void this.completionSoundService.arm();

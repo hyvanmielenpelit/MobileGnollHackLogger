@@ -7,7 +7,7 @@
 - **Analysis:** #7
 - **Model:** Test Model (TestProvider, test-model-1, thinking level high)
 - **Baseline period:** 2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 2 runs
-- **Comparison period:** 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
+- **Comparison period:** from 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
 - **Hours:** weekdays 04–12 UTC
 - **Suites:** Core suite
 - **Control models:** 1 control model (A), identity withheld
@@ -39,7 +39,7 @@ Answer quality degraded by −4.2 index points, and the analysis places it on t
 
 ## Affected model and configuration
 
-The model is Test Model with thinking level high, served as test-model-1-2026-08-01 (118 calls).
+The model is Test Model with thinking level high, served as test-model-1-2026-08-01 in both periods (120 and 118 calls).
 
 ## Timeline
 
@@ -126,7 +126,7 @@ Please tell us whether anything changed on your side in the period of Undeclared
 ## Reproducibility
 
 - **Analysis:** #7
-- **Analysis code version:** 6
+- **Analysis code version:** 7
 - **Protocol:** V1; the published protocol, without overrides; alpha 0.05
 - **Common grader:** none. No common grader covered every compared run, so quality compares each run's own grades.
 - **Price card:** not available

@@ -43,6 +43,9 @@ public class BenchmarkRunLimitsDto
 
     /// <summary>The most launches one battery run may plan (suites × runs per suite): `Benchmark:Battery:MaxMembers`.</summary>
     public int MaxMembersPerBattery { get; set; }
+
+    /// <summary>The most models one model batch may hold: `Benchmark:ModelBatch:MaxModels`.</summary>
+    public int MaxModelsPerBatch { get; set; }
 }
 
 public class BenchmarkRunSeriesMemberDto
@@ -110,6 +113,9 @@ public class BenchmarkRunSeriesDto
 
     public long? AutoCreatedGroupId { get; set; }
     public string? AutoCreatedGroupTier { get; set; }
+
+    /// <summary>The model batch this series is a member of; null when it belongs to none.</summary>
+    public long? ModelBatchRunId { get; set; }
 
     public List<BenchmarkRunSeriesMemberDto> Members { get; set; } = new();
 }

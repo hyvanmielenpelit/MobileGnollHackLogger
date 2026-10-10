@@ -85,7 +85,7 @@
   white-space: nowrap;
 }
 
-// The status is a word, an icon and the tier's colors; Not computed is neutral with a dashed border.
+// The status is a word, an icon and the tier's colors; Not computable is neutral with a dashed border.
 .cc-ap-status {
   display: inline-flex;
   align-items: center;
@@ -109,7 +109,8 @@
     color: var(--score-high-ink);
   }
 
-  [data-status="belowMinimum"] > & {
+  [data-status="belowMinimum"] > &,
+  [data-status="capped"] > & {
     border-color: var(--score-mid-border);
     background: var(--score-mid-bg);
     color: var(--score-mid-ink);
@@ -118,6 +119,18 @@
   [data-status="notComputed"] > & {
     border-style: dashed;
   }
+}
+
+// The evidence warning sits in the section's flow, not at the wizard's edge as `.gh-wizard-alert` does.
+.cc-ap-evidence.gh-wizard-alert {
+  margin: 0 0 0.5rem;
+}
+
+.cc-ap-regrade {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--score-mid-ink);
 }
 
 .cc-ap-fact {

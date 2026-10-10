@@ -1,8 +1,10 @@
-import { Component, ChangeDetectorRef, ElementRef, OnInit, ViewChild, inject } from '@angular/core';
+import { Component, ChangeDetectorRef, DestroyRef, ElementRef, OnInit, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   AdminBenchmarkService,
   BenchmarkBatteryRunDto,
+  BenchmarkModelBatchMemberDto,
+  BenchmarkModelBatchRunDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
 import { CardListChip, CardListFacet } from '../../../shared/data-table/card-list-state';
@@ -17,6 +19,7 @@ import {
   RUN_HISTORY_SORTS,
   RUN_HISTORY_LIMIT,
   BATTERY_RUN_HISTORY_LIMIT,
+  MODEL_BATCH_HISTORY_LIMIT,
   FINGERPRINT_LONG_NAMES,
   BenchmarkFingerprintEntry,
   HistoryItem
@@ -42,7 +45,18 @@ import {
   httpErrorText,
   isLiveBatteryRunStatus
 } from '../batteries/battery.models';
-import { BenchmarkWorkspaceStore, batteryRunDurationMs } from '../state/benchmark-workspace.store';
+import { BenchmarkWorkspaceStore, batteryRunDurationMs, modelBatchDurationMs } from '../state/benchmark-workspace.store';
+import {
+  MODEL_BATCH_COMPARE_REASON,
+  canCompareModelBatch,
+  isFinalModelBatchStatus,
+  modelBatchLaunchedRunCount,
+  modelBatchMemberBadges,
+  modelBatchMemberName,
+  modelBatchStatusLabel,
+  modelBatchTargetText,
+  resolveModelBatchComparisonPreset
+} from '../model-batch/model-batch.models';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
@@ -60,7 +74,7 @@ export interface BatteryFingerprintEntry {
   value: string;
 }
 
-/** The Run History sub-tab: the filterable list of run and battery run cards. */
+/** The Run History sub-tab: the filterable list of run, battery run and model batch cards. */
 @Component({
   selector: 'app-benchmark-history-tab',
   standalone: true,
@@ -76,6 +90,7 @@ export class BenchmarkHistoryTabComponent implements OnInit {
   readonly workspace = inject(BenchmarkWorkspaceStore);
   private readonly monitor = inject(BenchmarkActiveRunMonitor);
   private cdr = inject(ChangeDetectorRef);
+  private readonly destroyRef = inject(DestroyRef);
   private benchmarkService = inject(AdminBenchmarkService);
   readonly formatStatusLabel = formatStatusLabel;
   readonly formatDuration = formatDuration;
@@ -91,6 +106,18 @@ export class BenchmarkHistoryTabComponent implements OnInit {
   readonly batteryRunDurationMs = batteryRunDurationMs;
   readonly formatIndexWithHalfWidth = formatIndexWithHalfWidth;
   readonly formatNumber = formatNumber;
+  readonly modelBatchStatusLabel = modelBatchStatusLabel;
+  readonly modelBatchDurationMs = modelBatchDurationMs;
+  readonly modelBatchTargetText = modelBatchTargetText;
+  readonly modelBatchLaunchedRunCount = modelBatchLaunchedRunCount;
+  readonly canCompareModelBatch = canCompareModelBatch;
+  readonly modelBatchCompareReason = MODEL_BATCH_COMPARE_REASON;
+
+  /** The batch whose Open in Model Comparison is gathering its results; every such button waits for it. */
+  comparingModelBatchId: number | null = null;
+
+  /** Why a batch's Open in Model Comparison or Delete failed, by batch id; shown on its card. */
+  modelBatchErrors = new Map<number, string>();
 
   @ViewChild('deleteBatteryDialog') deleteBatteryDialog?: ElementRef<HTMLDialogElement>;
 
@@ -123,7 +150,8 @@ export class BenchmarkHistoryTabComponent implements OnInit {
 
   /** Nothing is recorded: no run and no battery run came back. */
   get historyEmpty(): boolean {
-    return this.workspace.historyRuns.length === 0 && this.workspace.batteryRuns.length === 0;
+    return this.workspace.historyRuns.length === 0 && this.workspace.batteryRuns.length === 0
+      && this.workspace.modelBatches.length === 0;
   }
 
   /** The cards on screen: the loaded runs and battery runs filtered, sorted and cut to the batch. */
@@ -160,6 +188,12 @@ export class BenchmarkHistoryTabComponent implements OnInit {
     if (this.workspace.batteryRunsFailed) {
       status += ' · Battery runs could not be loaded';
     }
+    if (this.workspace.modelBatches.length >= MODEL_BATCH_HISTORY_LIMIT) {
+      status += ` · newest ${MODEL_BATCH_HISTORY_LIMIT} model batches`;
+    }
+    if (this.workspace.modelBatchesFailed) {
+      status += ' · Model batches could not be loaded';
+    }
     return status;
   }
 
@@ -174,7 +208,11 @@ export class BenchmarkHistoryTabComponent implements OnInit {
 
   /** The id of a card's title, which Load more and a delete focus. */
   historyTitleId(item: HistoryItem): string {
-    return item.kind === 'run' ? `rh-run-${item.run.id}-title` : `rh-battery-${item.battery.id}-title`;
+    switch (item.kind) {
+      case 'run': return `rh-run-${item.run.id}-title`;
+      case 'battery': return `rh-battery-${item.battery.id}-title`;
+      default: return `rh-batch-${item.batch.id}-title`;
+    }
   }
 
   /** The tested model's badges per run, built once per run object. */
@@ -403,6 +441,95 @@ export class BenchmarkHistoryTabComponent implements OnInit {
       ? ` · suite ${run.batterySuitePosition}/${run.batterySuiteCount}`
       : '';
     return `Battery #${run.batteryRunId}${position}`;
+  }
+
+  // --- Model batches ---
+
+  /** The member models in run order, each with its badges, for a batch card. */
+  modelBatchMembers(batch: BenchmarkModelBatchRunDto): { member: BenchmarkModelBatchMemberDto; name: string; badges: RunFactBadge[] }[] {
+    let members = this.modelBatchMemberCache.get(batch);
+    if (!members) {
+      members = [...batch.members]
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map(member => ({ member, name: modelBatchMemberName(member), badges: modelBatchMemberBadges(member) }));
+      this.modelBatchMemberCache.set(batch, members);
+    }
+    return members;
+  }
+
+  private readonly modelBatchMemberCache = new WeakMap<
+    BenchmarkModelBatchRunDto, { member: BenchmarkModelBatchMemberDto; name: string; badges: RunFactBadge[] }[]>();
+
+  /** A run's *Batch #N* kicker, or null for a run of no loaded batch. */
+  modelBatchBadgeOfRun(run: BenchmarkRunSummaryDto): string | null {
+    const batchId = this.workspace.modelBatchIdOfRun(run.id);
+    return batchId != null ? `Batch #${batchId}` : null;
+  }
+
+  /** A battery run's *Batch #N* kicker, or null for a battery run of no batch. */
+  modelBatchBadgeOfBattery(battery: BenchmarkBatteryRunDto): string | null {
+    const batchId = this.workspace.modelBatchIdOfBatteryRun(battery);
+    return batchId != null ? `Batch #${batchId}` : null;
+  }
+
+  /** A batch may be deleted only once it is final; the server refuses a live or stopped one. */
+  canDeleteModelBatch(batch: BenchmarkModelBatchRunDto): boolean {
+    return isFinalModelBatchStatus(batch.status);
+  }
+
+  /** View progress: the model batch's progress dialog. */
+  showModelBatchProgress(batch: BenchmarkModelBatchRunDto): void {
+    this.monitor.openModelBatchDialog(batch.id);
+  }
+
+  /** Open in Model Comparison: the wizard opens on the members' results. */
+  openModelBatchInComparison(batch: BenchmarkModelBatchRunDto): void {
+    if (!canCompareModelBatch(batch) || this.comparingModelBatchId != null) {
+      return;
+    }
+    this.comparingModelBatchId = batch.id;
+    this.modelBatchErrors.delete(batch.id);
+    this.cdr.detectChanges();
+    resolveModelBatchComparisonPreset(batch, this.benchmarkService).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (preset) => {
+        this.comparingModelBatchId = null;
+        this.cdr.detectChanges();
+        this.bridge.openComparisonWizard(preset);
+      },
+      error: (err) => {
+        this.comparingModelBatchId = null;
+        this.modelBatchErrors.set(batch.id, httpErrorText(err, 'The results could not be gathered for Model Comparison.'));
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Delete model batch: asks first; the member runs are kept. Inert while the batch is not final. */
+  deleteModelBatch(batch: BenchmarkModelBatchRunDto): void {
+    if (!this.canDeleteModelBatch(batch)) {
+      return;
+    }
+    this.bridge.openConfirmDialog({
+      title: `Delete model batch #${batch.id}?`,
+      message: 'Its member runs are kept.',
+      dangerNotice: 'The batch record and its diagnostics are deleted permanently.',
+      buttonText: 'Delete',
+      buttonClass: 'btn-gh btn-gh-delete',
+      action: () => {
+        // Where the batch's card was, so focus lands on the card that takes its place.
+        const index = this.historyView.findIndex(item => item.kind === 'batch' && item.batch.id === batch.id);
+        this.modelBatchErrors.delete(batch.id);
+        this.benchmarkService.deleteModelBatch(batch.id).subscribe({
+          next: () => {
+            this.workspace.loadHistory(index >= 0 ? () => this.focusAfterHistoryDelete(index) : undefined);
+          },
+          error: (err) => {
+            this.modelBatchErrors.set(batch.id, httpErrorText(err, `Could not delete model batch #${batch.id}.`));
+            this.cdr.detectChanges();
+          }
+        });
+      }
+    });
   }
 
   downloadReport(runId: number) {

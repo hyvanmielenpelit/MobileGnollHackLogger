@@ -204,11 +204,12 @@ the Analyze step's period cards and preview, and the *Before vs after an Oversee
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
 takes the events one per kind and change, as above. Report charts tag the analysis's own events as its
-report documents do (below), and `CC_REPORT_CHART_VERSION` (7, in `chat-consistency-report-charts.ts`)
+report documents do (below), and `CC_REPORT_CHART_VERSION` (8, in `chat-consistency-report-charts.ts`)
 enters their settings hash with the chart choices and their layout, so newly drawn report charts are
 told apart from those drawn before the grouping, the timeline numbering below, the battery-run points,
-the validated palette, the GnollBench logo, the per-document choice and width of version 6, or the
-document's own event tags of version 7 (§ 17.2, step 5);
+the validated palette, the GnollBench logo, the per-document choice and width of version 6, the
+document's own event tags of version 7, or the fitted axis, band widths, protected labels and period
+legend of version 8 (§ 17.2, step 5);
 documents already written keep their charts until step 5's **Update charts** draws them again. An `E` number in a report therefore need not match
 the one the tab shows today.
 
@@ -249,7 +250,9 @@ way, the change fits our side; if the target moved and the control did not, it f
   the note reads *"No control run can be made for the \<period\> period any more: its Overseer build
   (harness \<n\>) has been replaced. Make a control run beside the next checkpoint instead."* and records
   `buildReplaced`. In a battery comparison there is one note per period per battery run, naming its
-  suites and recording `batteryRunId`. Both are code version 6.
+  suites and recording `batteryRunId`. Both are code version 6. From code version 7, when the
+  comparison period's build is replaced, the next runs ask for that checkpoint as a **new baseline**
+  (`newCheckpoint`, § 12), with a control run beside each unit.
 - **Difference in differences** (`ItemDifferenceInDifferences`): per endpoint and control subject,
   item-paired (target change) − (control change) with a run-cluster bootstrap (items resampled too,
   except for the speed endpoints). Each effect records whether the DiD interval includes 0, whether it
@@ -425,8 +428,29 @@ Secondary results are descriptive and adjusted within their family (Benjamini–
   control**, and the **implied generation rate** (Theil–Sen slope of decode time on output tokens).
 
 Every result also lists the data-quality notes, the limitations (§ 21), and the **next runs** that
-would resolve an open question — kinds *checkpoint*, *control*, *stratum* and *regrade*, each naming the
-run whose setup to repeat.
+would resolve an open question — kinds *checkpoint*, *control*, *stratum*, *regrade* and, from code
+version 7, *newCheckpoint* (`ChatConsistencyNextRunKinds`), each naming the run whose setup to repeat.
+
+- **A new baseline after a replaced build** (*newCheckpoint*, code version 7). No run can join a
+  comparison period whose Overseer build no longer runs: when **no** comparison run carries the running
+  `BenchmarkAssessmentPrompt.HarnessVersion`, the *checkpoint* and *stratum* suggestions for the
+  comparison period are removed and a single *newCheckpoint* suggestion is put **first** in the list.
+  Its reason reads
+  *"The comparison period's Overseer build (harness \<n\>) has been replaced, so no run can join that
+  period any more."* and its suggestion *"Start a new baseline under the current build: \<minimum units\>
+  \<units\> of \<model\> on \<target\>, on \<minimum days\> different UTC days, each starting in \<the
+  comparison period's most populated stratum\>, with one control run of another provider's model beside
+  each."* (the stratum clause left out when the period has no timed answer). When the
+  `HarnessImpactLedger` flags between the latest comparison run's harness and the current one include
+  `Grading` or `Scoring`, it adds *"Quality will start a new segment; to compare it with these periods,
+  re-grade with a common grader."* It belongs to neither period (`period` is empty), repeats the latest
+  comparison run, and is the one kind that carries structured fields, so a launcher can fill it in:
+  `unitNoun`, `count` and `days` (the protocol's minimum units and days per period), `stratum`
+  (*Weekday 12–16 UTC*), `targetKind` (`battery` or `suite`), `suiteId` (a suite target's, from the
+  latest comparison run) or `batteryId` (the battery of the latest comparison battery run, filled in
+  after the computation), `subjectModelKey`, `subjectModelConfigurationId` and `controlSuggested`
+  (true). On the Results step it is the card *A new baseline under the current build*, with **Set up as
+  model batch** (§ 17.2).
 
 - A speed endpoint not computed for `noCommonStratum` gets one *stratum* suggestion for the comparison
   period, which serves both speed endpoints: *"\<minimum speed runs per stratum\> \<units\> of \<model\>
@@ -584,7 +608,7 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 6; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
+currently 7; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
 streaming rate with its measurability bounds (§ 4.4), and the streaming-rate caveat counts the delivered
 answers with no measurable rate: *"k delivered answers have no rate: the visible text arrived in one
 burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*; version 4 compares
@@ -600,7 +624,14 @@ notes (§ 9), records each not-computed endpoint's `notComputedKind` (§ 10), th
 `periodHours` and `periodLevels` (§ 12) and the request it was analyzed with (`request`, which the
 freshness check repeats, § 16.1), suggests a stratum run for speed without a common stratum and widens
 the baseline only where an earlier unit exists (§ 12), and writes the replaced-build and per-battery-run
-missing-control notes (§ 6)). A stored analysis keeps the
+missing-control notes (§ 6); version 7 replaces the comparison period's checkpoint and stratum
+suggestions with one `newCheckpoint` suggestion when that period's build has been replaced, with its
+structured fields and the grading sentence from the `HarnessImpactLedger` flags between the latest
+comparison harness and the current one (§ 12), and writes the minimum-sample detail of an item-paired
+endpoint with each part stated as met or missed (*1 battery run per period on 1 day, below the minimum
+of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20*,
+`ChatConsistencyAnalysisService.MinimumSampleText`, which the report documents' `sample.shortfall` shares)).
+A stored analysis keeps the
 version it was computed under; its fingerprint and result do not change. **Run-mode invariance:** in a
 suite comparison, or with no compared set, every number of a version-4 analysis equals version 3's on
 the same runs; only the code version, the fingerprint and the new set and unit fields differ, and a test
@@ -866,13 +897,27 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      controls checked*, or none matched), *Grading* (*Native grades* or *Re-graded by …: 4 of 6
      runs*), *Pooling* and *Protocol* (*V1*, or *V1 with overrides: …*).
    - **Endpoint readiness** — one row per primary endpoint, P1 to P5, with its margin, a status and
-     one fact: *Meets the minimum sample* (*Baseline 3 runs on 2 days · Comparison 2 runs on 2 days*),
-     *Cannot be Established* (which period is short of the minimum sample, or for P2 and P3 *No common
-     stratum has 3 runs in each period* with the runs per stratum), or *Not computed* (no unit of a
-     period eligible on the endpoint's axis, or no time stratum shared). P2 is read on the legacy
-     proxy when a period has no run with call telemetry, as the analysis does (*Measured as model time
-     (legacy proxy).*). **The readiness never predicts a verdict or a grade**: the most it says is that
-     an endpoint cannot be Established.
+     one fact: *Meets the minimum sample* (*Baseline 3 runs on 2 days · Comparison 2 runs on 2 days*);
+     **At most Indicated** — below the minimum sample (*Fewer than 2 runs on 2 days in the baseline: …*,
+     or *per period* when both are short; for P2 and P3 *No common stratum has 3 runs in each period*
+     with the runs per stratum), or pooled across a measurement change (*Pooled across a grading change
+     (harness 53 → 54), which caps the grade at Indicated: …*); or **Not computable** (no unit of a
+     period eligible on the endpoint's axis, no time stratum shared, or a quality comparison across a
+     grading change without a common grader). P2 is read on the legacy proxy when a period has no run
+     with call telemetry, as the analysis does (*Measured as model time (legacy proxy).*).
+     **P1 across a grading boundary.** When the eligible units of the two periods share no quality
+     measurement segment — a grading or scoring change between them — P1 is *Not computable*: *Grading
+     changed between the periods (harness 53 → 54). Re-grade every compared run with a common grader to
+     compare quality.*, with the pointer *Re-grade with a common assessor is under Controls in the
+     analysis settings.* With **Pool across measurement segment boundaries** on it is *At most
+     Indicated* instead. When one assessor's re-grades cover every run of both periods, P1 is judged as
+     usual and its fact adds *Quality is compared under \<grader\>, whose re-grades cover every compared
+     run.* **The readiness never predicts a verdict**, and of a grade it says only that it is at most
+     Indicated or not computable.
+   - **The evidence warning.** When no endpoint meets the minimum sample (every row *At most Indicated*
+     or *Not computable*) on valid periods, an amber note over the list reads *With this selection
+     nothing can be Established. Each endpoint below says why. The analysis can still be made.* It never
+     blocks *Analyze*.
    - **Notes**, each marked *Warning* or *Note*: the composite Overseer changes between the windows
      (*A change inside a period mixes measurements; split at it, or check that it does not affect what
      you compare.*); a measurement segment change across the periods, refused unless *Pool across
@@ -1045,7 +1090,14 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
        Anthropic*), keeps the server's suggestion behind *Details* (with its instrument fingerprint in an
        analysis saved before code version 5), and
        ends *Then choose a model from a provider other than Anthropic.*; a re-grade card has no button
-       (*Re-grade from step 3: Controls → Re-grade.*).
+       (*Re-grade from step 3: Controls → Re-grade.*). A **new baseline** (`newCheckpoint`, § 12) comes
+       first, as the section and card *A new baseline under the current build*; with a control suggested
+       and a target named it also offers **Set up as model batch** (*With a control model from a
+       provider other than \<provider\>.*), which closes the wizard, switches to Run Benchmark and fills
+       the launcher as a model batch on the card's suite or battery with the analyzed model chosen, the
+       report writer at *None* and the Models Under Test hint *Add a control model from another
+       provider.*, focusing the picker; nothing starts. While the tab cannot be left (a chart export, or
+       report charts being attached) it is refused with the reason on the card.
      - **Details** — background that does not change the verdicts, each part a closed disclosure that
        is not remembered: the **Run selection**, *Events in the analyzed span (N)* as an event list
        (§ 17.3), *Limitations (N)*, *Data quality (N)* and *About this analysis* (the analysis id and
@@ -1076,7 +1128,13 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      document list loads. Delete is disabled while a job writes or charts are attached (*Wait for the
      reports and their charts to finish.*). With nothing left to write the list says *Every document of
      this analysis is written.*, and *Write Reports* stays focusable with the reason *Every document of
-     this analysis is written. Delete one to write it again.* Under the list, **Update charts** draws
+     this analysis is written. Delete one to write it again.* When every primary endpoint of the
+     analysis is inconclusive or not computable, an amber notice above the list says so beforehand,
+     *Every endpoint is inconclusive or not computable; the documents will say Not enough evidence
+     yet.*, with **Write the Executive Summary only** while that summary is unwritten and something is
+     left to write: it checks the Executive Summary alone, says *Only the Executive Summary is
+     checked.* in the documents' live line, and updates the estimate. The notice never blocks *Write
+     Reports*. Under the list, **Update charts** draws
      the charts of every written document of the analysis again with the current choices below and
      replaces them; a document whose type has no chart chosen loses the charts it had. It is
      unavailable, with its reason shown, while a job writes (*Reports are being written. Update the
@@ -1122,7 +1180,12 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      drawn off-screen (`chat-consistency-report-charts.ts`) and uploaded with the document's chart
      layout. **Each figure is drawn at the width it prints at** in that document, with its labels at
      the chosen size in points, so an 8 pt label prints at 8 pt; its time axis spans the plotted runs
-     (padded by 5 % or 30 minutes, whichever is more) rather than the whole periods; and a figure whose
+     and the markers near them (padded by 8 % of that span or 45 minutes, whichever is more) rather than
+     the whole periods, widened on the side where a period band is cut by its edge until the band's
+     visible part is at least 10 % of the plot (`CC_MIN_BAND_SHARE`); the value labels of each period's
+     first and last point in every set are never given up for a period name, which takes a clear corner
+     of its band, and when a period's name may not find room in its band a one-line period legend under
+     the time axis names every period (chart version 8); and a figure whose
      endpoint is not computable opens its caption with *Not comparable across the periods: {reason}.*
      Captions describe the points neutrally (*ranged from 81.7 to 82.0 across 4 runs*, *was 82.0 in all
      4 runs*), never as *held*.

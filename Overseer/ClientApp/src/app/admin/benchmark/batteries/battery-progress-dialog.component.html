@@ -116,6 +116,14 @@
       </div>
 
       @if (batteryRun; as run) {
+        @if (modelBatchOwnerId != null) {
+          <!-- The batch drives this battery run: its Continue, Re-run and Cancel are the batch's. -->
+          <p class="bp-batch-notice">
+            <span>Part of model batch #{{ modelBatchOwnerId }}. </span>
+            <button type="button" class="btn-link bp-open-batch" (click)="showModelBatch()">Open model batch #{{ modelBatchOwnerId }}</button>
+          </p>
+        }
+
         @if (run.status === 'Stopped' || run.status === 'WaitingForCap') {
           <div class="bp-state-block" [class.state-stopped]="run.status === 'Stopped'"
                [class.state-waiting]="run.status === 'WaitingForCap'">
@@ -433,27 +441,37 @@
     </div>
 
     <div class="dialog-footer">
-      @if (isLive) {
+      @if (returnsToModelBatch) {
+        <button type="button" class="btn-gh btn-gh-cancel bp-back-to-batch" (click)="requestClose()">Back to Batch</button>
+      } @else if (isLive) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Run in Background</button>
       } @else {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
       }
+      @if (modelBatchOwnerId != null && (canCancel || canRerun || canContinue)) {
+        <span class="bp-batch-owned-reason" id="bpBatchOwnedReason">{{ modelBatchOwnedReason }}</span>
+      }
       @if (canCancel) {
         <button type="button" class="btn-gh btn-gh-delete bp-cancel-battery" [disabled]="cancelInFlight"
+                [attr.aria-disabled]="modelBatchOwnerId != null ? 'true' : null"
+                [attr.aria-describedby]="modelBatchOwnerId != null ? 'bpBatchOwnedReason' : null"
                 (click)="cancelBattery()">Cancel Battery</button>
       }
-      <!-- aria-disabled while a resume request is in flight: the button stays focusable, its label says
-           why, and resume() ignores a second click. -->
+      <!-- aria-disabled while a resume request is in flight or the model batch owns the battery run:
+           the button stays focusable, its label or the reason beside it says why, and resume() ignores
+           the click. -->
       @if (canRerun) {
         <button type="button" class="btn-gh bp-rerun"
-                [attr.aria-disabled]="resumeInFlight ? 'true' : null"
+                [attr.aria-disabled]="resumeInFlight || modelBatchOwnerId != null ? 'true' : null"
+                [attr.aria-describedby]="modelBatchOwnerId != null ? 'bpBatchOwnedReason' : null"
                 (click)="resume('RerunUnderCurrentInstrument')">
           {{ resumeInFlight ? 'Starting over…' : 'Re-run under current instrument' }}
         </button>
       }
       @if (canContinue) {
         <button type="button" class="btn-gh bp-continue"
-                [attr.aria-disabled]="resumeInFlight ? 'true' : null"
+                [attr.aria-disabled]="resumeInFlight || modelBatchOwnerId != null ? 'true' : null"
+                [attr.aria-describedby]="modelBatchOwnerId != null ? 'bpBatchOwnedReason' : null"
                 (click)="resume('Continue')">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

@@ -35,6 +35,7 @@ import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatElapsed, formatModelTime } from '../benchmark-run-format';
 import { RunFactBadge, RunFactModel, runFactBadges } from '../run-report-frame/run-facts';
 import { runStageCaption } from '../run-stage-labels';
+import { MODEL_BATCH_OWNED_REASON, isFinalModelBatchStatus } from '../model-batch/model-batch.models';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
@@ -182,6 +183,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   @Input() batteryRunId: number | null = null;
   @Input() visible = false;
+  /** Opened from a model batch's progress dialog: the dismissal reads *Back to Batch*, and closing returns there. */
+  @Input() returnsToModelBatch = false;
 
   /** Escape, the close button, *Close* and *Run in Background*; the host lowers `visible`. */
   @Output() closed = new EventEmitter<void>();
@@ -195,6 +198,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   @Output() batteryCanceled = new EventEmitter<number>();
   /** The battery run id after an existing run was attached to one of its slots. */
   @Output() memberAttached = new EventEmitter<number>();
+  /** *Open model batch #N*: the batch whose progress dialog the host opens; this dialog has closed. */
+  @Output() openModelBatch = new EventEmitter<number>();
 
   @ViewChild('batteryProgressDialog') dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('batteryProgressHeading') heading?: ElementRef<HTMLElement>;
@@ -224,6 +229,16 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   resumeRefusedForInstrument = false;
   resumeInFlight = false;
   cancelInFlight = false;
+
+  /**
+   * The model batch that owns this battery run while the batch is not final; null when none does.
+   * Its Continue, Re-run and Cancel are the batch's, so they wait here with the reason.
+   */
+  modelBatchOwnerId: number | null = null;
+  /** The batch whose status was read for `modelBatchOwnerId`. */
+  private modelBatchOwnerCheckedId: number | null = null;
+  private modelBatchOwnerSubscription: Subscription | null = null;
+  readonly modelBatchOwnedReason = MODEL_BATCH_OWNED_REASON;
 
   readonly slotLabels = BATTERY_SLOT_STATE_LABELS;
   readonly repairingLabel = BATTERY_REPAIRING_LABEL;
@@ -264,6 +279,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     this.stopPolling();
     this.stopElapsedTicker();
     this.attachCandidatesSubscription?.unsubscribe();
+    this.modelBatchOwnerSubscription?.unsubscribe();
   }
 
   // --- Dialog lifecycle ------------------------------------------------------------------------
@@ -277,6 +293,10 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     this.loadError = null;
     this.actionError = null;
     this.resumeRefusedForInstrument = false;
+    this.modelBatchOwnerSubscription?.unsubscribe();
+    this.modelBatchOwnerSubscription = null;
+    this.modelBatchOwnerId = null;
+    this.modelBatchOwnerCheckedId = null;
     this.resetAttach();
   }
 
@@ -324,6 +344,14 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     if (batteryRunId != null) {
       this.openRunProgress.emit({ runId: member.runId, batteryRunId });
     }
+  }
+
+  /** *Open model batch #N*: closes this dialog and hands the batch to the host. */
+  showModelBatch(): void {
+    const batchId = this.modelBatchOwnerId ?? this.batteryRun?.modelBatchRunId ?? null;
+    if (batchId == null) return;
+    this.requestClose();
+    this.openModelBatch.emit(batchId);
   }
 
   showAnalysis(): void {
@@ -460,6 +488,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   private applyRun(run: BenchmarkBatteryRunDto): void {
     this.batteryRun = run;
+    this.resolveModelBatchOwner(run);
     const roundCount = Math.max(1, run.runsPerSuite || 1);
     this.rounds = Array.from({ length: roundCount }, (_, i) => i + 1);
     const suites = [...(run.suites ?? [])].sort((a, b) => a.index - b.index);
@@ -479,6 +508,38 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         };
       })
     }));
+  }
+
+  /**
+   * Whether the battery run's model batch still owns it: from the batch the page follows when it is
+   * that one, else from the batch read once. Until the batch answers it is taken to own the run, as
+   * the server's refusal of a child resume does.
+   */
+  private resolveModelBatchOwner(run: BenchmarkBatteryRunDto): void {
+    const batchId = run.modelBatchRunId ?? null;
+    if (batchId == null) {
+      this.modelBatchOwnerId = null;
+      return;
+    }
+    const followed = this.monitor?.activeModelBatch;
+    if (followed?.id === batchId) {
+      this.modelBatchOwnerId = isFinalModelBatchStatus(followed.status) ? null : batchId;
+      return;
+    }
+    if (this.modelBatchOwnerCheckedId === batchId) {
+      return;
+    }
+    this.modelBatchOwnerCheckedId = batchId;
+    this.modelBatchOwnerId = batchId;
+    this.modelBatchOwnerSubscription?.unsubscribe();
+    this.modelBatchOwnerSubscription = this.benchmarkService.getModelBatch(batchId).subscribe({
+      next: (batch) => {
+        if (this.batteryRun?.modelBatchRunId !== batchId) return;
+        this.modelBatchOwnerId = isFinalModelBatchStatus(batch.status) ? null : batchId;
+        this.cdr.markForCheck();
+      },
+      error: (err) => console.warn('Failed to read the model batch of a battery run', err)
+    });
   }
 
   // --- Actions ---------------------------------------------------------------------------------
@@ -522,7 +583,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   resume(mode: BenchmarkBatteryResumeMode): void {
     const run = this.batteryRun;
-    if (!run || this.resumeInFlight) {
+    if (!run || this.resumeInFlight || this.modelBatchOwnerId != null) {
       return;
     }
     // Synchronous, inside the click's gesture, so the completion sound may play later from a hidden tab.
@@ -552,7 +613,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   cancelBattery(): void {
     const run = this.batteryRun;
-    if (!run || this.cancelInFlight) {
+    if (!run || this.cancelInFlight || this.modelBatchOwnerId != null) {
       return;
     }
     this.cancelInFlight = true;

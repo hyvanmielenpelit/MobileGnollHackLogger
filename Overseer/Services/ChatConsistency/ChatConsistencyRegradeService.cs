@@ -344,7 +344,7 @@ public class ChatConsistencyRegradeService
         if (refusals.Count > 0) return Refused(string.Join(" ", refusals));
 
         if (_runManager.CurrentRunId.HasValue) return Refused("A benchmark run is already in progress.");
-        if (_runManager.OrchestratorOwner is { } owner) return Refused(BenchmarkRunManager.ClaimConflictMessage(owner));
+        if (_runManager.ClaimHolder is { } owner) return Refused(BenchmarkRunManager.ClaimConflictMessage(owner));
 
         if (_complianceGuard != null)
         {

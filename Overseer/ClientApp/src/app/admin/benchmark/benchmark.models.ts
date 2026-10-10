@@ -1,5 +1,6 @@
 import {
   BenchmarkBatteryRunDto,
+  BenchmarkModelBatchRunDto,
   BenchmarkRunAnswerDto,
   BenchmarkRunSummaryDto,
   BenchmarkModelComparisonPricingBasis
@@ -39,13 +40,14 @@ export const RUN_HISTORY_VIEW_STORAGE_KEY = 'overseer.benchmark.runHistory.view'
 /** Where Run History's *Show battery member runs* is remembered, per viewer, as `'1'` or `'0'`. */
 export const RUN_HISTORY_MEMBERS_STORAGE_KEY = 'overseer.benchmark.runHistory.members';
 
-/** One card of Run History: a single run, or a battery run standing for its members. */
+/** One card of Run History: a single run, a battery run standing for its members, or a model batch. */
 export type HistoryItem =
   | { readonly kind: 'run'; readonly key: string; readonly run: BenchmarkRunSummaryDto }
-  | { readonly kind: 'battery'; readonly key: string; readonly battery: BenchmarkBatteryRunDto };
+  | { readonly kind: 'battery'; readonly key: string; readonly battery: BenchmarkBatteryRunDto }
+  | { readonly kind: 'batch'; readonly key: string; readonly batch: BenchmarkModelBatchRunDto };
 
 /** The Kind facet's values, in the order it lists them. */
-export const RUN_HISTORY_KINDS = ['Single run', 'Battery run'] as const;
+export const RUN_HISTORY_KINDS = ['Single run', 'Battery run', 'Model batch'] as const;
 
 /**
  * The orders Run History's Sort by offers. The `id` column is the card's position in
@@ -83,6 +85,9 @@ export const RUN_HISTORY_LIMIT = 1000;
 
 /** The battery run count Run History asks for; it says when it holds that many. */
 export const BATTERY_RUN_HISTORY_LIMIT = 500;
+
+/** The model batch count Run History asks for; it says when it holds that many. */
+export const MODEL_BATCH_HISTORY_LIMIT = 200;
 
 /** What each instrument label stands for, read after the short label by assistive technology. */
 export const FINGERPRINT_LONG_NAMES: Record<BenchmarkFingerprintEntry['label'], string> = {
@@ -300,4 +305,20 @@ export interface BenchmarkRunSettings {
   completionSound: boolean | null;
   /** Whether a run or series completion also raises a desktop notification. Defaults to false when absent. */
   completionNotification: boolean | null;
+  /** One model under test, or a model batch. Absent restores One model. */
+  runMode?: BenchmarkLauncherRunMode | null;
+  /** A model batch's models under test; each restored only while it still qualifies. */
+  batchModelIds?: number[] | null;
+  /** A model batch's run order. Absent restores Randomized. */
+  batchOrder?: BenchmarkModelBatchOrderChoice | null;
+  /** The As listed order of the chosen models; restored like `batchModelIds`. */
+  batchOrderIds?: number[] | null;
+  /** Runs per model on a single suite; a battery uses `runCount` as Runs per Suite. */
+  batchRunsPerModel?: number | null;
 }
+
+/** What Start launches: one model under test, or several one after another. */
+export type BenchmarkLauncherRunMode = 'single' | 'batch';
+
+/** The Model order radios of a model batch. */
+export type BenchmarkModelBatchOrderChoice = 'randomized' | 'asListed';

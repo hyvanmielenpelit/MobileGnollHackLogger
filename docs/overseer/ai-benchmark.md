@@ -26,6 +26,7 @@ The benchmark framework consists of:
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
 - **Multi-Suite Batteries**: A battery is a named, fixed set of two or more suites with declared weights. A battery run tests one model on every suite of the battery, one suite after another, *R* times each, and combines the per-suite results into an **Overall Intelligence Index** with an uncertainty interval, a suite profile, weighting-sensitivity figures, speed and cost composites, a leaderboard per comparability class and a paired comparison of two results. See [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
+- **Model Batches**: several models under test run one after another under one settings set — a single run, a replicate series or a battery run per model — with guardrails the server evaluates before Start (blockers, warnings to acknowledge, advice), a whole-batch run-limit calculation, run-time guards that stop the batch when the instrument moves, and one progress dialog that opens each member's own. See [`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md).
 - **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Report for AI Researchers and Developers and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. Their PDF and Word copies can carry the comparison's own charts, drawn in the browser from the wizard's chart settings and stored beside the document. The Model Comparison wizard's step 3, *Write*, writes them, and its step 4, *Documents*, lists, views, charts, downloads and deletes the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, sums up every comparison document as **Comparison reports** and opens them in the Download Center. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
 
 ### Run Target: One Suite or a Battery
@@ -48,6 +49,13 @@ it is changed, Run Target and the battery included; the reuse choice is not. A *
 has finished and been analyzed, and the member runs write none. Batteries are defined on the
 **Multi-Suite** tab, and battery runs are listed in **Run History**. Everything about batteries is in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
+
+**Models: one model or a model batch.** Above *Test Setup*, the card opens with **Models**, a radio
+group: *One model* (the default) or **Model batch**, which replaces *Model Under Test* with a multi-model
+picker and runs several models one after another under one settings set — on a suite (one run or a
+replicate series per model) or on a battery (one battery run per model) — with server-evaluated
+guardrails shown before Start. See § 3 *Model batches* and
+[`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md).
 
 ### Run Progress Dialog
 
@@ -73,7 +81,7 @@ The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there i
 - **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 3 documents, 1m 48s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
 - **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"3 documents, 1m 48s"*), *None written* or *Not written*.
 - **The cost panel** has a *Report writer* row — the job's running cost while writing, then `ReportDocumentsCostUsd` — and *Run total with reports*, in a block of its own under the note that the AI-written reports are outside the benchmark's own cost. The run's stored `EstimatedCost` and every figure above that block are unchanged.
-- **Completion signal.** One user action starts one chain of server work, and the chime, the tab-title mark and the desktop notification fire once, at its end: when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends. A battery member's terminal poll reads its battery run fresh; when that battery run is live, still has post-run work (`postRunWork` not `None`), changed status while the run ran, or is already watched, the battery run takes the signal and the member does not chime on its own. The run's signal key carries its generation (`run:<id>:<rerunCompletedAtUtc ?? completedAtUtc>`), so one settled state signals once and a later re-run of the same run signals again (§ *Harness Version 52 Updates*).
+- **Completion signal.** One user action starts one chain of server work, and the chime, the tab-title mark and the desktop notification fire once, at its end: when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends. A battery member's terminal poll reads its battery run fresh; when that battery run is live, still has post-run work (`postRunWork` not `None`), changed status while the run ran, or is already watched, the battery run takes the signal and the member does not chime on its own. The run's signal key carries its generation (`run:<id>:<rerunCompletedAtUtc ?? completedAtUtc>`), so one settled state signals once and a later re-run of the same run signals again (§ *Harness Version 52 Updates*). Which sound plays follows one end rule for every run kind: the completion chime for a run that ends `Completed` or `CompletedWithLimits`, the *AI Benchmarking Failed* sound for one that ends `Failed` or `CompletedWithErrors`, nothing for a cancel (§ *Model Batches, the Failure Sound and Chat Consistency v16*).
 - **Diagnostics** gain a `--- REPORTS ---` block: writer (provider / model id, thinking), status, message, documents written, duration, tokens and cost, marked as outside the run's own cost.
 
 The writing is not part of the run by design. Writing the reports inside the run was rejected: a writer failure would blemish a run whose scoring succeeded, a queue behind a running Report Pack would delay the run's end, and every run's duration would change with the writer.
@@ -7568,6 +7576,60 @@ graded) are not: a harness-54 run keeps its grades, its stored verification and 
 run with source references disallowed, and A6 the advisory flags. A battery run started under harness 54
 refuses to launch members under 55 (`HarnessVersionRefusal`).
 
+### Model Batches, the Failure Sound and Chat Consistency v16 (2026-10-10) — No Harness Version Bump
+
+Three changes in one round. `HarnessVersion` stays **"55"** and `ScoringMethodVersion` **14**, so no
+`HarnessImpactLedger` entry; `ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion` moves 6 → 7
+([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) § 16) and
+`BenchmarkPdfRenderer.LayoutVersion` 7 → 8 ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)
+§ 8). Migration `AddModelBatches` adds the `BenchmarkModelBatchRuns` and `BenchmarkModelBatchMembers`
+tables.
+
+- **Model batches.** A third way to start runs: several models under test, run one after another under
+  one settings set, each as a single run, a replicate series or a battery run, with guardrails evaluated
+  on the server before Start, run-time guards that stop the batch when the instrument moves, and a
+  full-screen progress dialog with Continue, Skip, Re-run under current instrument and Cancel. The batch
+  claim on `BenchmarkRunManager` sits above the series and battery claim. Everything is in
+  [`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md); how the guardrails relate to the grader
+  roster is § 3 *Model batches*.
+- **The failure sound.** The completion alerts — *Play a sound* and *Show a desktop notification* under
+  *Completion Alerts* in the launcher's *Execution* fieldset — now distinguish an end that needs
+  attention. `BenchmarkCompletionSoundService` holds two sounds, the completion chime
+  (`/audio/AIBenchmarkingComplete.opus`, AAC fallback `.m4a`) and the *AI Benchmarking Failed* sound
+  (`/audio/AIBenchmarkingFailed.opus`, `.m4a`), each with its own element and decoded buffer on one
+  `AudioContext`; arming decodes both, and `play(key, kind)` deduplicates per sound and key. Beside *Test
+  sound* a **Test failure sound** button plays the second one. Which one an end plays is decided by one
+  pure function, `benchmarkEndSignal(kind, status)` (`admin/benchmark/state/benchmark-end-signal.ts`), for
+  all four run kinds:
+
+  | Kind | Completion chime | Failure sound | No sound |
+  |---|---|---|---|
+  | Single run | `Completed`, `CompletedWithLimits` | `Failed`, `CompletedWithErrors` | `Canceled`, and every end the operator canceled |
+  | Series | `Completed` | `Stopped`, `Failed`, `CompletedWithErrors` | `Cancelled` |
+  | Battery run | `Completed` (after its post-run work) | `Stopped`, `Failed`, `CompletedWithErrors` | `Cancelled` |
+  | Model batch | `Completed` | `Stopped` (any stop reason), `Failed`, `CompletedWithErrors` | `Cancelled` |
+
+  A live status signals nothing, and a status the rule does not name signals completion, so an
+  unforeseen status never silences an end. `CompletedWithErrors` takes the failure sound because it
+  leaves work: failed questions to re-run on a run, an unusable member on a series, battery run or batch.
+  `CompletedWithLimits` takes the chime: every question was answered and scored, and a harness limit only
+  shortened some answers' tool use. A batch `Stopped` after a server restart takes the failure sound too —
+  a page left open across the restart is exactly the reader who needs to know. The desktop notification
+  names the end (*Run #54 — \<suite\> — Completed with errors: 3 failed questions*, *Series #8 — 2 of 3
+  runs — Stopped: \<reason\>*, *Battery #12 — \<battery\> — 1 of 2 suites — Failed: \<reason\>*, *Model
+  batch #5 — stopped: \<reason\> at \<model\> (2 of 4)*), and each notification attempt kept for the
+  run diagnostics carries the sound it went with. While the page follows a model batch, its members'
+  runs, series and battery runs signal nothing of their own; the batch signals once for them. The rest of
+  the signal machinery — arming under the gesture, the path order by visibility, deduplication, hidden-tab
+  polling — is unchanged (§ *Harness Version 32 Updates*, § *Harness Version 48 Updates*).
+- **Chat Consistency v16 fixes.** The analysis suggests a new baseline under the current build when the
+  comparison period's build has been replaced, the Analyze step's preview says beforehand when nothing
+  can be Established, the Reports step says when the documents can only conclude *Not enough evidence
+  yet*, the report documents gain the period windows and a repetition rule (C9), and the PDF keeps a
+  bold label with the short table after it (layout 8). Details in
+  [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) and
+  [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
+
 ---
 
 ## 3. Assessor Strategy
@@ -7886,6 +7948,31 @@ advice behind the two wizards' Write steps' and the AI Reports tab's info tips
   Sol ($4/$20), which is a different instrument, so it is not comparable with runs graded by GPT-6 Sol.
 - The co-assessor shares a family with the other OpenAI candidates. That is the panel design; **Panels are
   the standard configuration** in **The Two-Family Assessor Panel** covers it.
+
+### Model batches
+
+A **model batch** (Run Benchmark → *Models* → *Model batch*) runs several candidates one after another
+under **one** roster, profile, prompt option set, target and build, which is what a model-selection set
+needs. Its guardrails, evaluated on the server and shown in the launcher's *Batch Readiness* card, put the
+rules of this section into the launcher, for the whole set at once instead of run by run:
+
+| Rule here | Guardrail |
+|---|---|
+| A scoring grader is never a model under test | **MB-B03**, a blocker: the assessor or co-assessor is a candidate (and the picker offers neither as a candidate, *Grades this batch*) |
+| The report writer is never the model under report | **MB-B04**, a blocker (*Writes its reports*) |
+| A panel's members come from two providers | **MB-B05**, the launcher's own refusal |
+| Candidates of several providers need a two-family panel | **MB-W01**, a warning to acknowledge |
+| The reference reader and the claim verifier are neutral anchors | **MB-W02** (one of them is a candidate), a warning; **MB-A03** (it shares a provider with a candidate or a panel member), advice |
+| Every role avoids `xhigh` and `max` | **MB-W04**, a warning |
+| A claim verifier is configured | **MB-W03**, a warning |
+| The co-assessor is a peer of the assessor | **MB-A05**, advice, when their effort differs |
+| A reference reader is configured | **MB-A04**, advice |
+| A same-provider assessor or writer is acknowledged | **MB-W10** and **MB-W08**, asked once for the batch and passed to each affected member as its acknowledgment |
+| One roster for the whole set | **MB-A10**, advice, when the roster differs from the target's most recent completed run; held fixed inside the batch by construction, and an edit of a grader's configuration mid-batch stops it (**MB-R2**) |
+
+The guardrails name configured models only; the families and efforts to choose are the recommendations
+above. The batch's settings, guardrail catalog, run-limit calculation, execution, progress dialog,
+alerts and API are in [`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md).
 
 ### The second reader is an independent reader, not an adjudicator
 
@@ -8944,6 +9031,16 @@ The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, 
 axes, timeline and run table, the analyses and their report documents, the common-grader re-grade,
 grader anchors and annotations. Every route, with its responses, is listed in
 [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) § 19.
+
+### Model Batches
+
+`AdminBenchmarkModelBatchesController`, `/api/admin/benchmark/model-batches` (`AdminOnly`): `POST
+preflight` (the guardrail findings and the projection, spending nothing), `POST runs` (start), `GET
+runs/active`, `GET runs`, `GET runs/{id}`, `GET runs/{id}/diagnostics`, `POST runs/{id}/cancel`, `POST
+runs/{id}/resume`, `POST runs/{id}/members/{memberId}/skip` and `DELETE runs/{id}`. Every route, with its
+responses, is listed in [`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md) § 11.
+`GET /api/admin/benchmark/runs/limits` carries `maxModelsPerBatch`, and a run's detail and a series carry
+`modelBatchRunId`; a series resume of a member of a batch that is not final answers **409**.
 
 ---
 

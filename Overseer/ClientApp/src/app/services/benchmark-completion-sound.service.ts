@@ -9,10 +9,14 @@ export type BenchmarkCompletionSoundOutcome = 'played' | 'blocked' | 'unsupporte
 /** Which playback path an attempt used. */
 export type BenchmarkCompletionSoundPath = 'buffer' | 'element';
 
+/** Which chime: the completion chime, or the *AI Benchmarking Failed* sound for an end that needs attention. */
+export type BenchmarkCompletionSoundKind = 'complete' | 'failed';
+
 /** One `play()` or `prime()` call, kept for the run diagnostics capture. `key` is `'test'` for `prime`. */
 export interface BenchmarkCompletionSoundAttempt {
   atUtc: string;
   key: string;
+  kind: BenchmarkCompletionSoundKind;
   hidden: boolean;
   focused: boolean;
   path: BenchmarkCompletionSoundPath;
@@ -25,8 +29,12 @@ export interface BenchmarkCompletionSoundAttempt {
   outcome: BenchmarkCompletionSoundOutcome;
 }
 
-const OPUS_URL = '/audio/AIBenchmarkingComplete.opus';
-const M4A_URL = '/audio/AIBenchmarkingComplete.m4a';
+/** Each chime's Opus source and its AAC fallback. */
+const SOUND_URLS: Readonly<Record<BenchmarkCompletionSoundKind, { opus: string; m4a: string }>> = {
+  complete: { opus: '/audio/AIBenchmarkingComplete.opus', m4a: '/audio/AIBenchmarkingComplete.m4a' },
+  failed: { opus: '/audio/AIBenchmarkingFailed.opus', m4a: '/audio/AIBenchmarkingFailed.m4a' }
+};
+const SOUND_KINDS: readonly BenchmarkCompletionSoundKind[] = ['complete', 'failed'];
 const GAIN = 0.6;
 /** How long a hidden tab's element playback may stay pending before it counts as 'deferred'. */
 const DEFERRED_MS = 2000;
@@ -48,11 +56,13 @@ export interface BenchmarkCompletionSoundContextStateEvent {
 }
 
 /**
- * The chime the GnollBench run tab plays when a run or series finishes. Two playback paths
- * exist side by side:
+ * The sounds the GnollBench run tab plays when a run, series, battery run or model batch ends. It
+ * plays two chimes: *complete*, the default, and *failed*, the *AI Benchmarking Failed* sound for an
+ * end that needs the operator's attention. Each kind has its own element and decoded buffer; one
+ * `AudioContext` serves both. Two playback paths exist side by side:
  *
- * - A Web Audio `AudioContext` with the chime pre-decoded into an `AudioBuffer`, armed by
- *   {@link arm} from a user gesture.
+ * - A Web Audio `AudioContext` with each chime pre-decoded into an `AudioBuffer`, armed by
+ *   {@link arm} from a user gesture, which decodes both.
  * - The original `HTMLAudioElement` with an Opus source ahead of an AAC fallback.
  *
  * Which path is tried first depends on the tab's own visibility, not on which path "works
@@ -76,7 +86,7 @@ export interface BenchmarkCompletionSoundContextStateEvent {
  * twice. The last {@link MAX_ATTEMPTS} attempts, from both `play()` and `prime()`, are kept on
  * {@link diagnostics} for the run diagnostics capture.
  *
- * `play()` deduplicates per key within the page's lifetime: a run or series id that already
+ * `play()` deduplicates per kind and key within the page's lifetime: a run or series id that already
  * chimed once does not chime again for a second terminal poll of the same entity. `prime()`
  * is not deduplicated — it exists for the *Test sound* button, which the operator may press
  * more than once, and which doubles as the user gesture that unlocks autoplay on browsers
@@ -86,11 +96,12 @@ export interface BenchmarkCompletionSoundContextStateEvent {
   providedIn: 'root'
 })
 export class BenchmarkCompletionSoundService {
-  private audio: HTMLAudioElement | null = null;
+  private readonly audio: Record<BenchmarkCompletionSoundKind, HTMLAudioElement | null> = { complete: null, failed: null };
+  /** `${kind}:${key}` of every play that succeeded. */
   private readonly playedKeys = new Set<string>();
 
   private audioContext: AudioContext | null = null;
-  private decodedBuffer: AudioBuffer | null = null;
+  private readonly decodedBuffers: Record<BenchmarkCompletionSoundKind, AudioBuffer | null> = { complete: null, failed: null };
   private armPromise: Promise<void> | null = null;
   private arming = false;
 
@@ -105,7 +116,10 @@ export class BenchmarkCompletionSoundService {
   /** A snapshot for the run diagnostics capture; nothing here drives playback behaviour. */
   get diagnostics(): {
     arming: boolean;
+    /** The completion chime is decoded. */
     armed: boolean;
+    /** Every chime that is decoded. */
+    armedKinds: BenchmarkCompletionSoundKind[];
     audioContextState: AudioContextState | null;
     lastPlayPath: BenchmarkCompletionSoundPath | null;
     lastDeferredSettleMs: number | null;
@@ -114,7 +128,8 @@ export class BenchmarkCompletionSoundService {
   } {
     return {
       arming: this.arming,
-      armed: this.decodedBuffer !== null,
+      armed: this.decodedBuffers.complete !== null,
+      armedKinds: SOUND_KINDS.filter(kind => this.decodedBuffers[kind] !== null),
       audioContextState: this.audioContext?.state ?? null,
       lastPlayPath: this.lastPlayPath,
       lastDeferredSettleMs: this.lastDeferredSettleMs,
@@ -123,8 +138,9 @@ export class BenchmarkCompletionSoundService {
     };
   }
 
-  private ensureAudio(): HTMLAudioElement | null {
-    if (this.audio) return this.audio;
+  private ensureAudio(kind: BenchmarkCompletionSoundKind): HTMLAudioElement | null {
+    const existing = this.audio[kind];
+    if (existing) return existing;
     if (typeof Audio === 'undefined') return null;
 
     const audio = new Audio();
@@ -132,17 +148,17 @@ export class BenchmarkCompletionSoundService {
     audio.volume = GAIN;
 
     const opusSource = document.createElement('source');
-    opusSource.src = OPUS_URL;
+    opusSource.src = SOUND_URLS[kind].opus;
     opusSource.type = 'audio/ogg; codecs=opus';
     audio.appendChild(opusSource);
 
     const aacSource = document.createElement('source');
-    aacSource.src = M4A_URL;
+    aacSource.src = SOUND_URLS[kind].m4a;
     aacSource.type = 'audio/mp4; codecs="mp4a.40.2"';
     audio.appendChild(aacSource);
 
     audio.load();
-    this.audio = audio;
+    this.audio[kind] = audio;
     return audio;
   }
 
@@ -181,7 +197,7 @@ export class BenchmarkCompletionSoundService {
       this.arming = false;
       // A fully failed arm (no decoded buffer at all) is allowed to retry on the next gesture;
       // a successful one stays cached so a second arm() this session is a genuine no-op.
-      if (!this.decodedBuffer) {
+      if (SOUND_KINDS.every(kind => !this.decodedBuffers[kind])) {
         this.armPromise = null;
       }
     }
@@ -192,7 +208,7 @@ export class BenchmarkCompletionSoundService {
    * buffer must be scheduled before this function's first `await`, because that await is the
    * moment control returns to the event loop and the browser stops treating the call stack as
    * originating from the user's gesture. Everything after the buffer starts — resuming the
-   * context, loading the fallback element, fetching and decoding the real chime — can freely
+   * context, loading the fallback elements, fetching and decoding both real chimes — can freely
    * await, because by then the activation has already been spent on the buffer.
    */
   private async doArm(): Promise<void> {
@@ -218,16 +234,22 @@ export class BenchmarkCompletionSoundService {
       }
     }
 
-    // Loaded now, while the tab is visible, so a later gesture-less play() on the fallback
+    // Loaded now, while the tab is visible, so a later gesture-less play() on a fallback
     // element is not starting cold in a hidden tab.
-    this.ensureAudio();
+    for (const kind of SOUND_KINDS) {
+      this.ensureAudio(kind);
+    }
 
     if (resumePromise) {
       await resumePromise;
     }
 
-    if (ctx && !this.decodedBuffer) {
-      this.decodedBuffer = await this.decodeChime(ctx).catch(() => null);
+    if (ctx) {
+      for (const kind of SOUND_KINDS) {
+        if (!this.decodedBuffers[kind]) {
+          this.decodedBuffers[kind] = await this.decodeChime(ctx, kind).catch(() => null);
+        }
+      }
     }
   }
 
@@ -243,10 +265,10 @@ export class BenchmarkCompletionSoundService {
     }
   }
 
-  private async decodeChime(ctx: AudioContext): Promise<AudioBuffer | null> {
-    const opus = await this.tryDecode(ctx, OPUS_URL);
+  private async decodeChime(ctx: AudioContext, kind: BenchmarkCompletionSoundKind): Promise<AudioBuffer | null> {
+    const opus = await this.tryDecode(ctx, SOUND_URLS[kind].opus);
     if (opus) return opus;
-    return this.tryDecode(ctx, M4A_URL);
+    return this.tryDecode(ctx, SOUND_URLS[kind].m4a);
   }
 
   private async tryDecode(ctx: AudioContext, url: string): Promise<AudioBuffer | null> {
@@ -331,14 +353,14 @@ export class BenchmarkCompletionSoundService {
    * single rebuild-and-retry before giving up. Reports enough of what happened for the caller to
    * fill in an {@link BenchmarkCompletionSoundAttempt}.
    */
-  private async playViaBufferChecked(): Promise<{
+  private async playViaBufferChecked(kind: BenchmarkCompletionSoundKind): Promise<{
     outcome: 'played' | 'unsupported';
     contextStateAfter: AudioContextState | null;
     clockAdvanced: boolean | null;
     rebuilt: boolean;
   }> {
     let ctx = this.audioContext;
-    const buffer = this.decodedBuffer;
+    const buffer = this.decodedBuffers[kind];
     if (!ctx || !buffer) {
       return { outcome: 'unsupported', contextStateAfter: ctx?.state ?? null, clockAdvanced: null, rebuilt: false };
     }
@@ -380,12 +402,13 @@ export class BenchmarkCompletionSoundService {
    *   without a late element start sounding a second chime; a late fulfilment marks nothing.
    *
    * In both cases handlers stay attached to the *original* promise, so a late fulfilment or
-   * rejection is never unhandled.
+   * rejection is never unhandled. `playedKey` is the `${kind}:${key}` a late fulfilment marks.
    */
   private async attemptPlayElement(
-    key: string
+    playedKey: string,
+    kind: BenchmarkCompletionSoundKind
   ): Promise<'played' | 'blocked' | 'unsupported' | 'deferred' | 'timeout'> {
-    const audio = this.ensureAudio();
+    const audio = this.ensureAudio(kind);
     if (!audio) return 'unsupported';
 
     audio.currentTime = 0;
@@ -418,7 +441,7 @@ export class BenchmarkCompletionSoundService {
     playPromise.then(
       () => {
         this.lastDeferredSettleMs = Date.now() - startedAt;
-        this.playedKeys.add(key);
+        this.playedKeys.add(playedKey);
       },
       () => { /* A late rejection needs no further handling; the key stays unplayed and retryable. */ }
     );
@@ -441,17 +464,23 @@ export class BenchmarkCompletionSoundService {
     }
   }
 
+  /** The deduplication key of one chime for one entity. */
+  private static playedKeyOf(key: string, kind: BenchmarkCompletionSoundKind): string {
+    return `${kind}:${key}`;
+  }
+
   /**
-   * Runs one play attempt for `key`, in the path order the tab's own visibility dictates, and
-   * records it. Shared by `play()` and `prime()`; neither the per-key deduplication nor the
-   * `playedKeys` bookkeeping happens here — that stays with each caller.
+   * Runs one play attempt of the `kind` chime for `key`, in the path order the tab's own
+   * visibility dictates, and records it. Shared by `play()` and `prime()`; neither the per-key
+   * deduplication nor the `playedKeys` bookkeeping happens here — that stays with each caller.
    */
-  private async runAttempt(key: string): Promise<BenchmarkCompletionSoundOutcome> {
+  private async runAttempt(key: string, kind: BenchmarkCompletionSoundKind): Promise<BenchmarkCompletionSoundOutcome> {
     const hidden = typeof document !== 'undefined' ? document.hidden : false;
     const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
     const attempt: BenchmarkCompletionSoundAttempt = {
       atUtc: new Date().toISOString(),
       key,
+      kind,
       hidden,
       focused,
       path: hidden ? 'buffer' : 'element',
@@ -462,11 +491,12 @@ export class BenchmarkCompletionSoundService {
       outcome: 'unsupported'
     };
 
+    const playedKey = BenchmarkCompletionSoundService.playedKeyOf(key, kind);
     let outcome: BenchmarkCompletionSoundOutcome;
     if (hidden) {
-      outcome = await this.tryBufferThenElement(key, attempt);
+      outcome = await this.tryBufferThenElement(playedKey, kind, attempt);
     } else {
-      outcome = await this.tryElementThenBuffer(key, attempt);
+      outcome = await this.tryElementThenBuffer(playedKey, kind, attempt);
     }
 
     attempt.outcome = outcome;
@@ -479,18 +509,19 @@ export class BenchmarkCompletionSoundService {
    * `'timeout'`.
    */
   private async tryElementThenBuffer(
-    key: string,
+    playedKey: string,
+    kind: BenchmarkCompletionSoundKind,
     attempt: BenchmarkCompletionSoundAttempt
   ): Promise<BenchmarkCompletionSoundOutcome> {
     this.lastPlayPath = 'element';
-    const elementOutcome = await this.attemptPlayElement(key);
+    const elementOutcome = await this.attemptPlayElement(playedKey, kind);
     if (elementOutcome === 'played') return 'played';
 
     if ((elementOutcome === 'blocked' || elementOutcome === 'unsupported' || elementOutcome === 'timeout')
-      && this.decodedBuffer && this.audioContext) {
+      && this.decodedBuffers[kind] && this.audioContext) {
       attempt.path = 'buffer';
       this.lastPlayPath = 'buffer';
-      const result = await this.playViaBufferChecked();
+      const result = await this.playViaBufferChecked(kind);
       attempt.contextStateAfter = result.contextStateAfter;
       attempt.clockAdvanced = result.clockAdvanced;
       attempt.rebuilt = result.rebuilt;
@@ -501,12 +532,13 @@ export class BenchmarkCompletionSoundService {
 
   /** Hidden-tab order: the armed buffer first, the element only when the buffer fails. */
   private async tryBufferThenElement(
-    key: string,
+    playedKey: string,
+    kind: BenchmarkCompletionSoundKind,
     attempt: BenchmarkCompletionSoundAttempt
   ): Promise<BenchmarkCompletionSoundOutcome> {
-    if (this.decodedBuffer && this.audioContext) {
+    if (this.decodedBuffers[kind] && this.audioContext) {
       this.lastPlayPath = 'buffer';
-      const result = await this.playViaBufferChecked();
+      const result = await this.playViaBufferChecked(kind);
       attempt.contextStateAfter = result.contextStateAfter;
       attempt.clockAdvanced = result.clockAdvanced;
       attempt.rebuilt = result.rebuilt;
@@ -515,34 +547,35 @@ export class BenchmarkCompletionSoundService {
 
     attempt.path = 'element';
     this.lastPlayPath = 'element';
-    return this.attemptPlayElement(key);
+    return this.attemptPlayElement(playedKey, kind);
   }
 
   /**
-   * Plays the chime for `key` (`run:<id>` or `series:<id>`), unless that key already played
-   * successfully once this session. A rejection is never thrown into the caller: every outcome,
-   * including a deferred or blocked attempt, resolves rather than rejecting, so a poller can
-   * await this without a try/catch. `'played'` means the browser accepted the playback, not that
-   * anyone heard it.
+   * Plays the `kind` chime for `key` (`run:<id>` or `series:<id>`), unless that chime already
+   * played successfully for that key once this session; the two kinds deduplicate separately. A
+   * rejection is never thrown into the caller: every outcome, including a deferred or blocked
+   * attempt, resolves rather than rejecting, so a poller can await this without a try/catch.
+   * `'played'` means the browser accepted the playback, not that anyone heard it.
    */
-  async play(key: string): Promise<BenchmarkCompletionSoundOutcome> {
-    if (this.playedKeys.has(key)) return 'duplicate';
+  async play(key: string, kind: BenchmarkCompletionSoundKind = 'complete'): Promise<BenchmarkCompletionSoundOutcome> {
+    const playedKey = BenchmarkCompletionSoundService.playedKeyOf(key, kind);
+    if (this.playedKeys.has(playedKey)) return 'duplicate';
 
-    const outcome = await this.runAttempt(key);
+    const outcome = await this.runAttempt(key, kind);
     if (outcome === 'played') {
-      this.playedKeys.add(key);
+      this.playedKeys.add(playedKey);
     }
     return outcome;
   }
 
   /**
-   * Plays under the user gesture that invoked it (the *Test sound* button), which also
-   * unlocks later, gesture-less `play()` calls on browsers that require one interaction
-   * before audio is allowed. Bypasses the per-key deduplication `play()` applies, since the
-   * operator may press the button more than once.
+   * Plays the `kind` chime under the user gesture that invoked it (the *Test sound* and *Test
+   * failure sound* buttons), which also unlocks later, gesture-less `play()` calls on browsers
+   * that require one interaction before audio is allowed. Bypasses the per-key deduplication
+   * `play()` applies, since the operator may press a button more than once.
    */
-  async prime(): Promise<'played' | 'blocked' | 'unsupported'> {
-    const outcome = await this.runAttempt('test');
+  async prime(kind: BenchmarkCompletionSoundKind = 'complete'): Promise<'played' | 'blocked' | 'unsupported'> {
+    const outcome = await this.runAttempt('test', kind);
     return outcome === 'played' || outcome === 'blocked' ? outcome : 'unsupported';
   }
 }

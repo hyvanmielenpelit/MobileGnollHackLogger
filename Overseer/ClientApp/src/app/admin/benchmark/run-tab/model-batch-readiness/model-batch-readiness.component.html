@@ -1,0 +1,120 @@
+<ng-template #severityIcon let-kind>
+  @switch (kind) {
+    @case ('blocker') {
+      <svg class="gh-readiness-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    }
+    @case ('warning') {
+      <svg class="gh-readiness-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    }
+    @case ('ready') {
+      <svg class="gh-readiness-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+    }
+    @default {
+      <svg class="gh-readiness-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    }
+  }
+</ng-template>
+
+<ng-template #findingLine let-finding let-index="index">
+  <li class="gh-readiness-item" [id]="itemId(finding, index)" [attr.data-severity]="severityKey(finding)"
+      [attr.data-code]="finding.code">
+    <div class="gh-readiness-item-head">
+      <span class="gh-readiness-severity">
+        <ng-container *ngTemplateOutlet="severityIcon; context: { $implicit: severityKey(finding) }"></ng-container>
+        <span>{{ severityWord(finding) }}</span>
+      </span>
+      <strong class="gh-readiness-item-title" [id]="itemId(finding, index) + '-title'">{{ finding.title }}</strong>
+      <app-info-tip trigger="click" [tipId]="tipId(finding, index)" [subject]="finding.title">{{ rationaleOf(finding) }}</app-info-tip>
+    </div>
+    <p class="gh-readiness-item-detail" [id]="itemId(finding, index) + '-detail'">{{ finding.detail }}</p>
+    @if (finding.field || (finding.severity === 'Warning' && finding.acknowledgmentKey)) {
+      <div class="gh-readiness-item-actions">
+        @if (finding.severity === 'Warning' && finding.acknowledgmentKey) {
+          <label class="checkbox-label gh-readiness-ack">
+            <input type="checkbox" [id]="itemId(finding, index) + '-ack'"
+                   [checked]="isAcknowledged(finding)"
+                   [attr.aria-describedby]="itemId(finding, index) + '-title ' + itemId(finding, index) + '-detail'"
+                   (change)="onAcknowledgedChange(finding, $event)">
+            <span>I understand</span>
+          </label>
+        }
+        @if (finding.field) {
+          <button type="button" class="btn-link gh-readiness-go" (click)="onGoToField(finding)">
+            Go to field<span class="visually-hidden">: {{ finding.title }}</span>
+          </button>
+        }
+      </div>
+    }
+  </li>
+</ng-template>
+
+<section class="gh-readiness" [attr.data-state]="state" [attr.aria-busy]="busy ? 'true' : null"
+         [attr.aria-labelledby]="idPrefix + '-title'">
+  <div class="gh-readiness-summary">
+    <h4 class="gh-readiness-title" [id]="idPrefix + '-title'">Batch Readiness</h4>
+    <span class="gh-readiness-status" [attr.data-state]="state">
+      <ng-container *ngTemplateOutlet="severityIcon; context: { $implicit: state === 'blocked' ? 'blocker' : state === 'review' ? 'warning' : 'ready' }"></ng-container>
+      <span class="gh-readiness-status-word">{{ statusWord }}</span>
+    </span>
+    @if (findings.length > 0) {
+      <ul class="gh-readiness-chips" role="list" aria-label="Checks by severity">
+        @if (blockers.length > 0) {
+          <li class="gh-readiness-chip" data-severity="blocker">
+            <ng-container *ngTemplateOutlet="severityIcon; context: { $implicit: 'blocker' }"></ng-container>
+            Blocking {{ blockers.length }}
+          </li>
+        }
+        @if (unacknowledgedCount > 0) {
+          <li class="gh-readiness-chip" data-severity="warning">
+            <ng-container *ngTemplateOutlet="severityIcon; context: { $implicit: 'warning' }"></ng-container>
+            To review {{ unacknowledgedCount }}
+          </li>
+        }
+        @if (acknowledgedCount > 0) {
+          <li class="gh-readiness-chip" data-severity="acknowledged">
+            <ng-container *ngTemplateOutlet="severityIcon; context: { $implicit: 'ready' }"></ng-container>
+            Acknowledged {{ acknowledgedCount }}
+          </li>
+        }
+        @if (advice.length > 0) {
+          <li class="gh-readiness-chip" data-severity="advice">
+            <ng-container *ngTemplateOutlet="severityIcon; context: { $implicit: 'advice' }"></ng-container>
+            Tips {{ advice.length }}
+          </li>
+        }
+      </ul>
+    }
+    @if (busy) {
+      <span class="gh-readiness-busy">Checking…</span>
+    }
+  </div>
+
+  @if (findings.length > 0) {
+    <details class="gh-disclosure gh-readiness-details" [open]="needsAttention">
+      <summary>Findings ({{ findings.length }})</summary>
+      <div class="gh-disclosure-body">
+        @if (mainLines.length > 0) {
+          <ul class="gh-readiness-list" role="list">
+            @for (finding of mainLines; track trackFinding(finding, $index)) {
+              <ng-container *ngTemplateOutlet="findingLine; context: { $implicit: finding, index: $index }"></ng-container>
+            }
+          </ul>
+        }
+        @if (advice.length > 0) {
+          <details class="gh-disclosure gh-readiness-tips">
+            <summary>{{ advice.length }} {{ advice.length === 1 ? 'tip' : 'tips' }}</summary>
+            <div class="gh-disclosure-body">
+              <ul class="gh-readiness-list" role="list">
+                @for (finding of advice; track trackFinding(finding, $index)) {
+                  <ng-container *ngTemplateOutlet="findingLine; context: { $implicit: finding, index: $index }"></ng-container>
+                }
+              </ul>
+            </div>
+          </details>
+        }
+      </div>
+    </details>
+  }
+
+  <p class="visually-hidden" role="status">{{ announcement }}</p>
+</section>

@@ -379,18 +379,26 @@ public class BenchmarkRunLauncher
         return failure;
     }
 
+    /// <param name="batchOwner">The model batch claim the launch runs under; null outside a batch.</param>
     public async Task<BenchmarkRunLaunchResult> CreateAndLaunchRunAsync(
         StartBenchmarkRunRequest request,
         string? userId,
         long? seriesId = null,
         int? seriesIndex = null,
         CancellationToken ct = default,
-        BenchmarkBatteryRunMember? batteryMember = null)
+        BenchmarkBatteryRunMember? batteryMember = null,
+        string? batchOwner = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
             return BenchmarkRunLaunchResult.Fail(
                 BenchmarkRunLaunchOutcome.Conflict, "A benchmark run is already in progress.");
+        }
+
+        if (_runManager.BatchOwner is { } heldBatch && heldBatch != batchOwner)
+        {
+            return BenchmarkRunLaunchResult.Fail(
+                BenchmarkRunLaunchOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(heldBatch));
         }
 
         string? orchestratorOwner = OrchestratorOwnerFor(seriesId, batteryMember);
@@ -511,7 +519,7 @@ public class BenchmarkRunLauncher
         await _dbContext.SaveChangesAsync(ct);
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _, orchestratorOwner))
+        if (!_runManager.TryStart(run.Id, cts, out _, orchestratorOwner, batchOwner))
         {
             // Lost the race between the checks above and here. The row is already written, so mark
             // it failed rather than leaving a Running row nothing will advance, and free its slot.
@@ -524,10 +532,11 @@ public class BenchmarkRunLauncher
             }
             await _dbContext.SaveChangesAsync(ct);
 
-            string? raceOwner = _runManager.OrchestratorOwner;
+            string? raceBatch = _runManager.BatchOwner;
+            string? raceOwner = raceBatch != null && raceBatch != batchOwner ? raceBatch : _runManager.OrchestratorOwner;
             return BenchmarkRunLaunchResult.Fail(
                 BenchmarkRunLaunchOutcome.Conflict,
-                raceOwner != null && raceOwner != orchestratorOwner
+                raceOwner != null && raceOwner != orchestratorOwner && raceOwner != batchOwner
                     ? BenchmarkRunManager.ClaimConflictMessage(raceOwner)
                     : "A benchmark run is already in progress.");
         }

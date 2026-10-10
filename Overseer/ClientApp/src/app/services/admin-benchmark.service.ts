@@ -1626,6 +1626,9 @@ export interface BenchmarkRunDetailDto {
   /** The run's answers by outcome class and its critical errors by resolution. Null before scoring method 13. */
   outcomeSummary?: BenchmarkRunOutcomeSummaryDto | null;
 
+  /** The model batch this run is a member of, directly or through its series or battery run; null or absent for none. */
+  modelBatchRunId?: number | null;
+
   answers: BenchmarkRunAnswerDto[];
 }
 
@@ -1948,6 +1951,11 @@ export interface BenchmarkRunLimitsDto {
    * without batteries, which leaves Runs per Suite bounded by the server alone.
    */
   maxMembersPerBattery?: number;
+  /**
+   * The most models one model batch may run (`Benchmark:ModelBatch:MaxModels`). Absent from a server
+   * without model batches, which leaves the Models Under Test picker bounded by the server alone.
+   */
+  maxModelsPerBatch?: number;
 }
 
 export type BenchmarkRunSeriesStatus =
@@ -2012,6 +2020,9 @@ export interface BenchmarkRunSeriesDto {
 
   autoCreatedGroupId?: number | null;
   autoCreatedGroupTier?: string | null;
+
+  /** The model batch this series is a member of; null or absent for none. */
+  modelBatchRunId?: number | null;
 
   members: BenchmarkRunSeriesMemberDto[];
 }
@@ -2401,6 +2412,8 @@ export interface BenchmarkBatteryRunDto {
   meanModelTimeMs?: number | null;
   /** The Ok answers `meanModelTimeMs` is the mean of; 0 on the battery-run list. */
   modelTimedAnswerCount?: number;
+  /** The model batch this battery run is a member of; null or absent for none. */
+  modelBatchRunId?: number | null;
 }
 
 /** Computes a battery analysis, optionally paired against a baseline battery run. */
@@ -2493,6 +2506,333 @@ export interface BenchmarkBatteryLeaderboardDto {
   classes: BenchmarkBatteryLeaderboardClassDto[];
   /** Battery runs whose latest analysis is incomplete, unranked, newest first. */
   incomplete: BenchmarkBatteryLeaderboardRowDto[];
+}
+
+// =========================================================================================
+// Model batches: several models under test, one after another, under one settings set
+// =========================================================================================
+
+/** What every member of a model batch runs: one suite (a run or a series) or a battery. */
+export type BenchmarkModelBatchTargetKind = 'Suite' | 'Battery';
+
+/** The members' run order: drawn at start from a stored seed, or as the request lists them. */
+export type BenchmarkModelBatchOrder = 'Randomized' | 'AsListed';
+
+export type BenchmarkModelBatchStatus =
+  | 'Pending'
+  | 'Running'
+  | 'WaitingForCap'
+  | 'Stopped'
+  | 'Completed'
+  | 'CompletedWithErrors'
+  | 'Cancelled'
+  | 'Failed';
+
+/** Why a model batch stopped. */
+export type BenchmarkModelBatchStopReason =
+  | 'MemberStopped'
+  | 'InstrumentChanged'
+  | 'GraderConfigChanged'
+  | 'RunCapReached'
+  | 'SpendDenied'
+  | 'RestartReconciled';
+
+/** A member's state. A member's cancellation is `Canceled`; the batch's own is `Cancelled`. */
+export type BenchmarkModelBatchMemberStatus =
+  | 'Pending'
+  | 'Running'
+  | 'Completed'
+  | 'CompletedWithErrors'
+  | 'Stopped'
+  | 'Failed'
+  | 'Skipped'
+  | 'Canceled';
+
+/** How a stopped model batch is resumed. */
+export type BenchmarkModelBatchResumeMode =
+  | 'Continue'
+  | 'SkipCurrent'
+  | 'AcceptInstrumentChange'
+  | 'RerunUnderCurrentInstrument';
+
+/**
+ * How a guardrail finding acts: a blocker holds Start back, a warning needs an acknowledgment, advice
+ * never blocks.
+ */
+export type BenchmarkModelBatchFindingSeverity = 'Blocker' | 'Warning' | 'Advice';
+
+/** Starts a model batch, or asks what starting it would meet (`preflight`). */
+export interface StartBenchmarkModelBatchRequest {
+  targetKind: BenchmarkModelBatchTargetKind;
+  /** The suite of a Suite target; null for a battery. */
+  suiteId?: number | null;
+  /** The battery of a Battery target; null for a suite. */
+  batteryId?: number | null;
+  /** The models under test; under `AsListed` also their run order. */
+  testedModelConfigurationIds: number[];
+  /** R: runs per model on a suite (a series from 2), runs per suite on a battery. */
+  runsPerModel: number;
+  order: BenchmarkModelBatchOrder;
+  /** Pauses at the run cap rather than stopping; also admits a batch larger than the daily cap. */
+  allowCapWait: boolean;
+  /** Every member's request; the server replaces the model under test per member. */
+  run: StartBenchmarkRunRequest;
+  /** The acknowledgment keys of the warnings the operator accepted. */
+  acknowledgedFindingKeys: string[];
+}
+
+/** One guardrail finding, as the preflight, the start refusal and the stored batch report it. */
+export interface BenchmarkModelBatchFindingDto {
+  /** The stable guardrail code, such as `MB-W01`. */
+  code: string;
+  /** The code's name, such as `MixedFamiliesSingleAssessor`. */
+  name: string;
+  severity: BenchmarkModelBatchFindingSeverity;
+  /**
+   * The launcher field the finding is about: `models`, `assessor`, `coAssessor`, `reader` (the second
+   * or reference reader), `verifier` (the claim verifier), `reportWriter`, `profile`, `responseStyle`,
+   * `sourceReferences`, `runsPerModel`, `order`, `capWait` or `target`; null when it is about no one field.
+   */
+  field?: string | null;
+  /** At most 60 characters. */
+  title: string;
+  /** One sentence of at most 140 characters. */
+  detail: string;
+  /** A rationale for the line's info tip. The server sends none, so the launcher's own text for the code applies. */
+  rationale?: string | null;
+  /** The candidates the finding is about; empty when it is about none in particular. */
+  modelConfigurationIds: number[];
+  /** A warning's acknowledgment key; it changes when the affected models do. Null for blockers and advice. */
+  acknowledgmentKey?: string | null;
+}
+
+/** The body of a start a guardrail refuses: 400 for a blocker, 409 for an unacknowledged warning or a busy runner. */
+export interface BenchmarkModelBatchRefusalDto {
+  message: string;
+  findings: BenchmarkModelBatchFindingDto[];
+}
+
+/** The 409 body of a resume refused because the instrument changed since the first member. */
+export interface BenchmarkModelBatchInstrumentChangedDto {
+  instrumentChanged: true;
+  batchId: number;
+  changedKeys: string[];
+  message: string;
+}
+
+/**
+ * The run caps and rolling windows, and the batch's place under them. Whether the plan exceeds the
+ * daily cap, the daily headroom or the hourly rate is read from these numbers and `plannedRunCount`;
+ * the findings MB-B08, MB-W11 and MB-W12 say it with authority. One cap wait inside a member is
+ * bounded by 26 hours.
+ */
+export interface BenchmarkModelBatchLimitsDto {
+  maxRunsPerDay: number;
+  maxRunsPerHour: number;
+  runsInLast24Hours: number;
+  runsInLastHour: number;
+  remainingDailyHeadroom: number;
+  /** The rolling 24-hour windows the plan needs at the daily cap; null when it needs one. */
+  daySpan?: number | null;
+  /** (daySpan − 1) × 24 h, in ms; null when daySpan is. */
+  minimumWallMs?: number | null;
+  /** Launches per hour at the shortest recent mean run duration among the target's suites; null without a basis. */
+  projectedRunsPerHour?: number | null;
+  /** K × R, the launches each battery member plans; null for a suite target. */
+  memberPlanRuns?: number | null;
+  /** The most launches one battery run may plan. */
+  maxBatteryMembers: number;
+  /** The spend guard admits the first launch now. */
+  spendAllowedNow: boolean;
+  spendDenialReason?: string | null;
+  /** The spend guard's denial is a cap that a wait can outlast. */
+  spendDenialIsCap: boolean;
+}
+
+/** What a member's projection rests on: its own recent runs, partly its own, the target's mean, or nothing. */
+export type BenchmarkModelBatchProjectionBasis = 'OwnRuns' | 'Mixed' | 'TargetMean' | 'None';
+
+/** One model's share of the projection, with what it was projected from. */
+export interface BenchmarkModelBatchProjectionMemberDto {
+  modelConfigurationId: number;
+  plannedRunCount: number;
+  projectedCostUsd?: number | null;
+  projectedWallMs?: number | null;
+  basis: BenchmarkModelBatchProjectionBasis;
+}
+
+export interface BenchmarkModelBatchProjectionDto {
+  /** L: models × R on a suite, models × K × R on a battery. */
+  plannedRunCount: number;
+  /** Null while any member has no priced basis. */
+  projectedCostUsd?: number | null;
+  /** Null while any member has no timed basis. */
+  projectedWallMs?: number | null;
+  limits: BenchmarkModelBatchLimitsDto;
+  members: BenchmarkModelBatchProjectionMemberDto[];
+}
+
+/** What `preflight` answers: every finding starting the request now would meet, and the projection. */
+export interface BenchmarkModelBatchPreflightResponse {
+  findings: BenchmarkModelBatchFindingDto[];
+  projection: BenchmarkModelBatchProjectionDto;
+  /** `Benchmark:ModelBatch:MaxModels`. */
+  maxModels: number;
+}
+
+/** The model a member runs, as the batch recorded it at start. */
+export interface BenchmarkModelBatchMemberModelDto {
+  /** The configuration's id; it may since have been deleted. */
+  configurationId: number;
+  displayName: string;
+  provider: string;
+  modelId: string;
+  thinkingLevel?: string | null;
+  reasoningMode?: string | null;
+  serviceTier?: string | null;
+  parallelExecutionMode?: number | null;
+  /** "official", or a custom endpoint's description. Never a hostname. */
+  endpoint: string;
+  maxOutputTokens?: number | null;
+}
+
+/** A member's result, from the run summary or the battery run it produced. */
+export interface BenchmarkModelBatchMemberResultDto {
+  /** A suite target's Intelligence Index (a series' mean). */
+  intelligenceIndex?: number | null;
+  /** A battery target's Overall Index. */
+  overallIndex?: number | null;
+  /** The half-width of the index's interval; null for a single run. */
+  indexHalfWidth?: number | null;
+  /** Where the index comes from. */
+  indexSource?: string | null;
+  medianModelTimeMs?: number | null;
+  ttftP50Ms?: number | null;
+  candidateCostPerQuestionUsd?: number | null;
+  candidateCostUsd?: number | null;
+  totalCostUsd?: number | null;
+  refutedClaims: number;
+  confirmedCriticalErrors: number;
+  /** The share of model time spent waiting on the provider; null without timing. */
+  ownWaitShare?: number | null;
+  failedAnswers: number;
+  providerErrors: number;
+  retries: number;
+}
+
+/** The instrument a member ran under. */
+export interface BenchmarkModelBatchInstrumentDto {
+  candidateSystemPromptSha256?: string | null;
+  toolGuidesSha256?: string | null;
+  knowledgeBaseHeadSha?: string | null;
+  wikiHeadSha?: string | null;
+  sourceCodeHeadSha?: string | null;
+  harnessVersion?: string | null;
+  scoringMethodVersion?: number | null;
+  /** The corpus index fingerprints, as JSON. */
+  corpusIndexFingerprintsJson?: string | null;
+}
+
+/** One model of a model batch, with the run, series or battery run it produced. */
+export interface BenchmarkModelBatchMemberDto {
+  id: number;
+  /** 0-based position in the run order. */
+  orderIndex: number;
+  model: BenchmarkModelBatchMemberModelDto;
+  status: BenchmarkModelBatchMemberStatus;
+  /** A single run's id (Suite target, R = 1). */
+  runId?: number | null;
+  /** A replicate series' id (Suite target, R ≥ 2). */
+  seriesId?: number | null;
+  /** A battery run's id (Battery target). */
+  batteryRunId?: number | null;
+  /** Every run the member launched, oldest first. */
+  runIds: number[];
+  /** The member's run in flight, if any. */
+  currentRunId?: number | null;
+  /** The stage of the run in flight, as the server names it. */
+  currentStage?: string | null;
+  /** The step the member is on: a series' run or a battery's slot. */
+  currentStepIndex?: number | null;
+  /** The member's steps: R runs on a suite, K × R slots on a battery. */
+  stepCount: number;
+  /** The answers given so far in the run in flight, and the questions it asks. */
+  answeredQuestionCount: number;
+  totalQuestionCount: number;
+  result?: BenchmarkModelBatchMemberResultDto | null;
+  instrument?: BenchmarkModelBatchInstrumentDto | null;
+  /** The instrument keys that moved since the first member; empty when none did. */
+  instrumentDriftKeys: string[];
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+  errorMessage?: string | null;
+}
+
+/** A resume mode valid now, with its button label and why it is offered. */
+export interface BenchmarkModelBatchResumeOptionDto {
+  mode: BenchmarkModelBatchResumeMode;
+  label: string;
+  reason?: string | null;
+}
+
+export interface BenchmarkModelBatchRunDto {
+  id: number;
+  status: BenchmarkModelBatchStatus;
+  /** Null unless stopped. */
+  stopReason?: BenchmarkModelBatchStopReason | null;
+  stopReasonText?: string | null;
+  /** What stopped it in detail, such as the keys that moved. */
+  stopDetail?: string | null;
+  targetKind: BenchmarkModelBatchTargetKind;
+  suiteId?: number | null;
+  batteryId?: number | null;
+  targetName?: string | null;
+  /** The battery's definition revision and hash at start; null for a suite. */
+  batteryRevision?: number | null;
+  batteryDefinitionSha256?: string | null;
+  /** The target's suites in run order; one for a suite target. */
+  suiteNames: string[];
+  runsPerModel: number;
+  order: BenchmarkModelBatchOrder;
+  /** The seed a randomized order was drawn from; null under `AsListed`. */
+  orderSeed?: number | null;
+  allowCapWait: boolean;
+  /** Every member's request template. */
+  run?: StartBenchmarkRunRequest | null;
+  createdAtUtc: string;
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+  createdByUserName?: string | null;
+  /** In run order. */
+  members: BenchmarkModelBatchMemberDto[];
+  /** The member running, else the next to start, as a 0-based index into `members`; null when neither applies. */
+  currentMemberIndex?: number | null;
+  /** M, the models in the batch. */
+  requestedMemberCount: number;
+  completedMemberCount: number;
+  failedMemberCount: number;
+  skippedMemberCount: number;
+  /** The estimated cost so far, in US dollars. */
+  liveCandidateCostUsd?: number | null;
+  liveTotalCostUsd?: number | null;
+  /** The warnings acknowledged at start. */
+  acknowledgedFindings: BenchmarkModelBatchFindingDto[];
+  /** The advice shown at start. */
+  adviceAtStart: BenchmarkModelBatchFindingDto[];
+  firstMemberInstrument?: BenchmarkModelBatchInstrumentDto | null;
+  /** The operator continued over an instrument change; the batch is not comparable across it. */
+  instrumentChangeAcknowledged: boolean;
+  /** This server process is driving the batch now. */
+  isDriving: boolean;
+  resumable: boolean;
+  resumeOptions: BenchmarkModelBatchResumeOptionDto[];
+  lastProgressAtUtc?: string | null;
+  /** No progress for longer than `stallMinutes`; informational. */
+  stalled: boolean;
+  /** `Benchmark:ModelBatch:StallMinutes`. */
+  stallMinutes: number;
+  /** The members a re-run under the current instrument replaced, as JSON. */
+  supersededMembersJson?: string | null;
 }
 
 /**
@@ -3424,6 +3764,9 @@ export interface BenchmarkRunPairKindDto {
 /** The root of the battery endpoints (`AdminBenchmarkBatteriesController`). */
 const BATTERIES_ENDPOINT = '/api/admin/benchmark/batteries';
 
+/** The root of the model batch endpoints (`AdminBenchmarkModelBatchesController`). */
+const MODEL_BATCHES_ENDPOINT = '/api/admin/benchmark/model-batches';
+
 @Injectable({
   providedIn: 'root'
 })
@@ -4034,6 +4377,70 @@ export class AdminBenchmarkService {
   getBatteryLeaderboard(definitionSha256: string): Observable<BenchmarkBatteryLeaderboardDto> {
     const params = new HttpParams().set('definitionSha256', definitionSha256);
     return this.http.get<BenchmarkBatteryLeaderboardDto>(`${BATTERIES_ENDPOINT}/leaderboard`, { params });
+  }
+
+  // Model batches
+
+  /** Every guardrail finding starting this request now would meet, with the projection. Creates and spends nothing. */
+  preflightModelBatch(req: StartBenchmarkModelBatchRequest): Observable<BenchmarkModelBatchPreflightResponse> {
+    return this.http.post<BenchmarkModelBatchPreflightResponse>(`${MODEL_BATCHES_ENDPOINT}/preflight`, req);
+  }
+
+  /**
+   * Starts a model batch; 201 with the batch. A guardrail refusal is a `BenchmarkModelBatchRefusalDto`:
+   * 400 for a blocker, 409 for an unacknowledged warning or a busy runner (MB-B09). A 409 with a plain
+   * string is a lost race for the runner; 404 an unknown target.
+   */
+  startModelBatch(req: StartBenchmarkModelBatchRequest): Observable<BenchmarkModelBatchRunDto> {
+    return this.http.post<BenchmarkModelBatchRunDto>(`${MODEL_BATCHES_ENDPOINT}/runs`, req);
+  }
+
+  /** The live or resumable model batch; a 204 arrives as null. */
+  getActiveModelBatch(): Observable<BenchmarkModelBatchRunDto | null> {
+    return this.http.get<BenchmarkModelBatchRunDto | null>(`${MODEL_BATCHES_ENDPOINT}/runs/active`);
+  }
+
+  /** Model batches, newest first. */
+  listModelBatches(skip?: number, take?: number): Observable<BenchmarkModelBatchRunDto[]> {
+    let params = new HttpParams();
+    if (skip != null) {
+      params = params.set('skip', String(skip));
+    }
+    if (take != null) {
+      params = params.set('take', String(take));
+    }
+    return this.http.get<BenchmarkModelBatchRunDto[]>(`${MODEL_BATCHES_ENDPOINT}/runs`, { params });
+  }
+
+  getModelBatch(id: number): Observable<BenchmarkModelBatchRunDto> {
+    return this.http.get<BenchmarkModelBatchRunDto>(`${MODEL_BATCHES_ENDPOINT}/runs/${id}`);
+  }
+
+  cancelModelBatch(id: number): Observable<void> {
+    return this.http.post<void>(`${MODEL_BATCHES_ENDPOINT}/runs/${id}/cancel`, {});
+  }
+
+  /**
+   * Resumes a stopped model batch in one of the modes its `resumeOptions` offer. A 409
+   * `BenchmarkModelBatchInstrumentChangedDto` names the keys that moved since the first member.
+   */
+  resumeModelBatch(id: number, mode: BenchmarkModelBatchResumeMode): Observable<BenchmarkModelBatchRunDto> {
+    return this.http.post<BenchmarkModelBatchRunDto>(`${MODEL_BATCHES_ENDPOINT}/runs/${id}/resume`, { mode });
+  }
+
+  /** Marks a pending member Skipped. */
+  skipModelBatchMember(id: number, memberId: number): Observable<BenchmarkModelBatchRunDto> {
+    return this.http.post<BenchmarkModelBatchRunDto>(`${MODEL_BATCHES_ENDPOINT}/runs/${id}/members/${memberId}/skip`, {});
+  }
+
+  /** The batch's diagnostics as plain text. */
+  getModelBatchDiagnostics(id: number): Observable<string> {
+    return this.http.get(`${MODEL_BATCHES_ENDPOINT}/runs/${id}/diagnostics`, { responseType: 'text' });
+  }
+
+  /** Deletes a finished batch's record; its member runs, series and battery runs are kept. 204; 404 unknown; 409 while it is live. */
+  deleteModelBatch(id: number): Observable<void> {
+    return this.http.delete<void>(`${MODEL_BATCHES_ENDPOINT}/runs/${id}`);
   }
 
   /**

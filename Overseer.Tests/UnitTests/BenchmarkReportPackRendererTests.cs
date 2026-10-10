@@ -2828,6 +2828,35 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
+    public void ABatteryComparison_NamesAnUpdatesRunByItsBatteryRun_AndASameDaySplitPrintsTheBaselineUntilTheComparison()
+    {
+        var day = new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc);
+        var split = day.AddHours(14).AddMinutes(49);
+        var baseResult = ChatConsistencyReportTestData.Result();
+        var result = baseResult with
+        {
+            UnitKind = Overseer.Services.ChatConsistency.ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+            Units = new[]
+            {
+                new Overseer.Services.ChatConsistency.ChatConsistencyUnitView { UnitId = 11, Kind = "batteryRun", Period = "baseline", MemberRunIds = new long[] { 10, 11 } },
+                new Overseer.Services.ChatConsistency.ChatConsistencyUnitView { UnitId = 12, Kind = "batteryRun", Period = "comparison", MemberRunIds = new long[] { 20, 21 } }
+            },
+            Baseline = baseResult.Baseline with { StartUtc = day, EndUtc = split.AddMilliseconds(-1) },
+            Comparison = baseResult.Comparison with { StartUtc = split, EndUtc = day.AddDays(1).AddMilliseconds(-1) }
+        };
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport));
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+
+        Assert.Contains("| E1 | 2026-09-11 00:00 | battery run #12 (run #20) | Game snapshot: off → on |\n", text);
+        // A control's run belongs to no analyzed battery run, so it keeps its run number.
+        Assert.Contains("| E2 | 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
+        Assert.Contains("- **Baseline period:** 2026-10-08 00:00 UTC until 14:49 UTC, 1 battery run\n", text);
+        Assert.Contains("- **Comparison period:** from 2026-10-08 14:49 UTC to 2026-10-08 23:59 UTC, 1 battery run\n", text);
+    }
+
+    [Fact]
     public void ReliabilityRatesThatAreAllZero_ShareOneRow()
     {
         var baseResult = ChatConsistencyReportTestData.Result();

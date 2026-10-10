@@ -9,7 +9,8 @@ import {
   AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY, RUN_REPORT_HEADER_STORAGE_KEY, RUN_REPORT_TAB_STORAGE_KEY
 } from './benchmark.component';
 import {
-  AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto, BenchmarkComparisonDto, BenchmarkRunDetailDto
+  AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto, BenchmarkComparisonDto, BenchmarkModelBatchMemberDto,
+  BenchmarkModelBatchRunDto, BenchmarkRunDetailDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 import { SystemService } from '../../services/system.service';
@@ -115,6 +116,38 @@ export function buildBatteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {})
     startedAtUtc: '2026-10-02T00:00:00Z', currentSuitePosition: 1, currentSuiteName: 'Default Suite',
     currentRound: 1, currentRunId: null, slots: [], members: [],
     analysisStale: false, analysisHasExcludedMembers: false, postRunWork: 'None', repairingRunIds: [],
+    ...overrides
+  };
+}
+
+/** Member `orderIndex` of a model batch: the model of configuration `configurationId`, pending. */
+export function buildModelBatchMember(
+  orderIndex: number, configurationId: number, overrides: Partial<BenchmarkModelBatchMemberDto> = {}
+): BenchmarkModelBatchMemberDto {
+  return {
+    id: 100 + orderIndex, orderIndex, status: 'Pending',
+    model: {
+      configurationId, displayName: `Model ${configurationId}`, provider: orderIndex % 2 === 0 ? 'OpenAI' : 'Google',
+      modelId: `model-${configurationId}`, endpoint: 'official'
+    },
+    runIds: [], stepCount: 1, answeredQuestionCount: 0, totalQuestionCount: 15, instrumentDriftKeys: [],
+    ...overrides
+  };
+}
+
+/** Model batch 21 on suite 1, one run per model, running the first of two models. */
+export function buildModelBatchRun(overrides: Partial<BenchmarkModelBatchRunDto> = {}): BenchmarkModelBatchRunDto {
+  return {
+    id: 21, status: 'Running', targetKind: 'Suite', suiteId: 1, targetName: 'Default Suite', suiteNames: ['Default Suite'],
+    runsPerModel: 1, order: 'Randomized', orderSeed: 4711, allowCapWait: false, createdAtUtc: '2026-10-10T08:00:00Z',
+    startedAtUtc: '2026-10-10T08:00:00Z',
+    members: [
+      buildModelBatchMember(0, 2, { status: 'Running', runId: 61, runIds: [61], currentRunId: 61, currentStage: 'Answering', answeredQuestionCount: 4 }),
+      buildModelBatchMember(1, 3)
+    ],
+    currentMemberIndex: 0, requestedMemberCount: 2, completedMemberCount: 0, failedMemberCount: 0,
+    skippedMemberCount: 0, acknowledgedFindings: [], adviceAtStart: [], instrumentChangeAcknowledged: false,
+    isDriving: true, resumable: false, resumeOptions: [], stalled: false, stallMinutes: 15,
     ...overrides
   };
 }
@@ -314,13 +347,47 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     getBatteryAttachCandidates: vi.fn().mockName("AdminBenchmarkService.getBatteryAttachCandidates"),
     identifyComparison: vi.fn().mockName("AdminBenchmarkService.identifyComparison"),
     renameComparison: vi.fn().mockName("AdminBenchmarkService.renameComparison"),
-    listComparisons: vi.fn().mockName("AdminBenchmarkService.listComparisons")
+    listComparisons: vi.fn().mockName("AdminBenchmarkService.listComparisons"),
+    preflightModelBatch: vi.fn().mockName("AdminBenchmarkService.preflightModelBatch"),
+    startModelBatch: vi.fn().mockName("AdminBenchmarkService.startModelBatch"),
+    getActiveModelBatch: vi.fn().mockName("AdminBenchmarkService.getActiveModelBatch"),
+    listModelBatches: vi.fn().mockName("AdminBenchmarkService.listModelBatches"),
+    getModelBatch: vi.fn().mockName("AdminBenchmarkService.getModelBatch"),
+    cancelModelBatch: vi.fn().mockName("AdminBenchmarkService.cancelModelBatch"),
+    resumeModelBatch: vi.fn().mockName("AdminBenchmarkService.resumeModelBatch"),
+    skipModelBatchMember: vi.fn().mockName("AdminBenchmarkService.skipModelBatchMember"),
+    getModelBatchDiagnostics: vi.fn().mockName("AdminBenchmarkService.getModelBatchDiagnostics"),
+    deleteModelBatch: vi.fn().mockName("AdminBenchmarkService.deleteModelBatch")
   } as unknown as MockedObject<AdminBenchmarkService>;
 
   // The comparison wizard numbers every computed comparison, and its header can rename it.
   benchmarkServiceMock.identifyComparison.mockReturnValue(of(BENCHMARK_SPEC_COMPARISON));
   benchmarkServiceMock.renameComparison.mockReturnValue(of(BENCHMARK_SPEC_COMPARISON));
   benchmarkServiceMock.listComparisons.mockReturnValue(of([]));
+
+  // ngOnInit reattaches a live model batch, and Run History lists the batches; the batch progress
+  // dialog reads, cancels, resumes and skips through the rest.
+  benchmarkServiceMock.getActiveModelBatch.mockReturnValue(of(null));
+  benchmarkServiceMock.listModelBatches.mockReturnValue(of([]));
+  benchmarkServiceMock.getModelBatch.mockReturnValue(of(buildModelBatchRun()));
+  benchmarkServiceMock.cancelModelBatch.mockReturnValue(of(undefined));
+  benchmarkServiceMock.resumeModelBatch.mockReturnValue(of(buildModelBatchRun()));
+  benchmarkServiceMock.skipModelBatchMember.mockReturnValue(of(buildModelBatchRun()));
+  benchmarkServiceMock.getModelBatchDiagnostics.mockReturnValue(of('BATCH\n  id: 21'));
+  benchmarkServiceMock.deleteModelBatch.mockReturnValue(of(undefined));
+  benchmarkServiceMock.preflightModelBatch.mockReturnValue(of({
+    findings: [],
+    projection: {
+      plannedRunCount: 0, projectedCostUsd: null, projectedWallMs: null, members: [],
+      limits: {
+        maxRunsPerDay: 20, maxRunsPerHour: 4, runsInLast24Hours: 0, runsInLastHour: 0, remainingDailyHeadroom: 20,
+        daySpan: null, minimumWallMs: null, projectedRunsPerHour: null, memberPlanRuns: null, maxBatteryMembers: 120,
+        spendAllowedNow: true, spendDenialReason: null, spendDenialIsCap: false
+      }
+    },
+    maxModels: 12
+  }));
+  benchmarkServiceMock.startModelBatch.mockReturnValue(of(buildModelBatchRun()));
 
   // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Multi-Suite tab
   // and the Battery Progress dialog read the rest.

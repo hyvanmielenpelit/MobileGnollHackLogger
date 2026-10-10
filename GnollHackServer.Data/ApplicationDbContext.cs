@@ -55,6 +55,8 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkBatteryRun> BenchmarkBatteryRuns { get; set; } = null!;
         public DbSet<BenchmarkBatteryRunMember> BenchmarkBatteryRunMembers { get; set; } = null!;
         public DbSet<BenchmarkBatteryAnalysis> BenchmarkBatteryAnalyses { get; set; } = null!;
+        public DbSet<BenchmarkModelBatchRun> BenchmarkModelBatchRuns { get; set; } = null!;
+        public DbSet<BenchmarkModelBatchMember> BenchmarkModelBatchMembers { get; set; } = null!;
         public DbSet<SystemAiConfigurationSnapshot> SystemAiConfigurationSnapshots { get; set; } = null!;
         public DbSet<BenchmarkRunBoardSnapshot> BenchmarkRunBoardSnapshots { get; set; } = null!;
         public DbSet<BenchmarkReportDocument> BenchmarkReportDocuments { get; set; } = null!;
@@ -562,6 +564,54 @@ namespace MobileGnollHackLogger.Data
             // The leaderboard reads by definition hash.
             modelBuilder.Entity<BenchmarkBatteryAnalysis>()
                 .HasIndex(a => new { a.DefinitionSha256, a.ComputedAtUtc });
+
+            // --- Model batches: several models under one start request ---
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasOne(m => m.BenchmarkModelBatchRun)
+                .WithMany(b => b.Members)
+                .HasForeignKey(m => m.BenchmarkModelBatchRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // A member keeps its row when the run, series or battery run it produced is deleted; the
+            // batch record never deletes them.
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasOne(m => m.BenchmarkRun)
+                .WithMany()
+                .HasForeignKey(m => m.BenchmarkRunId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasOne(m => m.BenchmarkRunSeries)
+                .WithMany()
+                .HasForeignKey(m => m.BenchmarkRunSeriesId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasOne(m => m.BenchmarkBatteryRun)
+                .WithMany()
+                .HasForeignKey(m => m.BenchmarkBatteryRunId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasIndex(m => new { m.BenchmarkModelBatchRunId, m.OrderIndex })
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasIndex(m => m.BenchmarkRunId);
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasIndex(m => m.BenchmarkRunSeriesId);
+
+            modelBuilder.Entity<BenchmarkModelBatchMember>()
+                .HasIndex(m => m.BenchmarkBatteryRunId);
+
+            // Startup reconciliation and the active-batch lookup scan by status.
+            modelBuilder.Entity<BenchmarkModelBatchRun>()
+                .HasIndex(b => b.Status);
+
+            modelBuilder.Entity<BenchmarkModelBatchRun>()
+                .HasIndex(b => b.CreatedAtUtc);
 
             // --- Report-pack documents ---
 

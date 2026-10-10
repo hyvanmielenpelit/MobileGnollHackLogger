@@ -43,6 +43,17 @@
   @if (refusal) {
     <p class="cc-ap-waiting">Endpoint readiness needs valid periods: {{ refusal }}</p>
   } @else {
+    <!-- Above the list it sums up, and never blocking: the analysis can still be made. -->
+    @if (nothingEstablishable) {
+      <div class="alert alert-warning gh-wizard-alert cc-ap-evidence" role="note">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <div class="alert-content">
+          <div class="alert-body">
+            <strong class="cc-ap-evidence-title">{{ nothingEstablishableText }}</strong>&ngsp;<span class="cc-ap-evidence-text">{{ evidenceReasonText }}</span>
+          </div>
+        </div>
+      </div>
+    }
     <ul class="cc-ap-endpoints" role="list">
       @for (endpoint of endpoints; track endpoint.id) {
         <li class="cc-ap-endpoint" [attr.data-endpoint]="endpoint.id" [attr.data-status]="endpoint.status">
@@ -54,6 +65,9 @@
               @case ('belowMinimum') {
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
               }
+              @case ('capped') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              }
               @default {
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               }
@@ -61,6 +75,9 @@
             <span class="cc-ap-status-word">{{ statusText(endpoint.status) }}</span>
           </span>
           <p class="cc-ap-fact">{{ endpoint.fact }}</p>
+          @if (endpoint.regrade) {
+            <p class="cc-ap-regrade">{{ regradePointer }}</p>
+          }
         </li>
       }
     </ul>

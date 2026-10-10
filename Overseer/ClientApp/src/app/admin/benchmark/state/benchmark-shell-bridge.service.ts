@@ -30,9 +30,25 @@ export interface BenchmarkGraderGuideRequest {
   profile?: GraderGuideProfile | null;
 }
 
-/** What the comparison wizard opens with selected; it opens on step 1. */
+/**
+ * What the comparison wizard opens with selected; it opens on step 1. Battery results are never
+ * selected beside runs or groups: when `batteryRunIds` is not empty, `runIds` and `groupIds` are ignored.
+ */
 export interface ComparisonWizardPreset {
   batteryRunIds: readonly number[];
+  runIds?: readonly number[];
+  groupIds?: readonly number[];
+}
+
+/** What Run Benchmark's model batch launcher is filled with: the target and the first model. Nothing starts. */
+export interface ModelBatchPrefill {
+  targetKind: 'suite' | 'battery';
+  suiteId: number | null;
+  batteryId: number | null;
+  /** The model under test to select first; null when it is not known. */
+  modelConfigurationId: number | null;
+  /** The picker's hint asks for a control model from another provider. */
+  controlSuggested: boolean;
 }
 
 /**
@@ -54,6 +70,8 @@ export class BenchmarkShellBridge {
   readonly runDeleted$ = new Subject<number>();
   /** A run id whose setup the Run Benchmark launcher takes over. */
   readonly repeatRunSetup$ = new Subject<number>();
+  /** A model batch setup the Run Benchmark launcher takes over. */
+  readonly prefillModelBatch$ = new Subject<ModelBatchPrefill>();
 
   private leaveGuard: (() => string | null) | null = null;
 
@@ -121,5 +139,10 @@ export class BenchmarkShellBridge {
   /** Opens Run Benchmark with this run's setup filled in; nothing starts. */
   repeatRunSetup(runId: number): void {
     this.repeatRunSetup$.next(runId);
+  }
+
+  /** Opens Run Benchmark as a model batch with this target and model; nothing starts. */
+  prefillModelBatch(prefill: ModelBatchPrefill): void {
+    this.prefillModelBatch$.next(prefill);
   }
 }

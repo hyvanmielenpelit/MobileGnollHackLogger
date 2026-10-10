@@ -174,14 +174,21 @@ describe('BenchmarkCompletionSoundService', () => {
       await armPromise;
     });
 
-    it('decodes the Opus source when its fetch succeeds', async () => {
-      fetchSpy.mockResolvedValue(okResponse());
+    /** The fetched URLs, in order. */
+    const fetchedUrls = (): string[] => vi.mocked(fetchSpy).mock.calls.map(call => String(call[0]));
+
+    it('decodes the Opus source of each chime when its fetch succeeds', async () => {
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
 
       await service.arm();
 
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(fetchSpy).mock.calls[0][0]).toMatch(/AIBenchmarkingComplete\.opus$/);
-      expect(fakeCtx.decodeAudioDataCalls.length).toBe(1);
+      expect(fetchedUrls()).toEqual([
+        expect.stringMatching(/AIBenchmarkingComplete\.opus$/),
+        expect.stringMatching(/AIBenchmarkingFailed\.opus$/)
+      ]);
+      expect(fakeCtx.decodeAudioDataCalls.length).toBe(2);
+      expect(service.diagnostics.armed).toBe(true);
+      expect(service.diagnostics.armedKinds).toEqual(['complete', 'failed']);
     });
 
     it('falls back to the AAC source when the Opus fetch fails', async () => {
@@ -189,8 +196,13 @@ describe('BenchmarkCompletionSoundService', () => {
 
       await service.arm();
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      expect(fakeCtx.decodeAudioDataCalls.length).toBe(1);
+      expect(fetchedUrls()).toEqual([
+        expect.stringMatching(/AIBenchmarkingComplete\.opus$/),
+        expect.stringMatching(/AIBenchmarkingComplete\.m4a$/),
+        expect.stringMatching(/AIBenchmarkingFailed\.opus$/),
+        expect.stringMatching(/AIBenchmarkingFailed\.m4a$/)
+      ]);
+      expect(fakeCtx.decodeAudioDataCalls.length).toBe(2);
     });
 
     it('falls back to the AAC source when the Opus decode fails', async () => {
@@ -204,53 +216,71 @@ describe('BenchmarkCompletionSoundService', () => {
 
       await service.arm();
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      expect(decodeCalls).toBe(2);
+      // The completion chime's Opus decode fails and its AAC is tried; the failure chime's Opus decodes.
+      expect(fetchedUrls()).toEqual([
+        expect.stringMatching(/AIBenchmarkingComplete\.opus$/),
+        expect.stringMatching(/AIBenchmarkingComplete\.m4a$/),
+        expect.stringMatching(/AIBenchmarkingFailed\.opus$/)
+      ]);
+      expect(decodeCalls).toBe(3);
     });
 
     it('shares one in-flight arm() across concurrent callers', async () => {
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
 
       await Promise.all([service.arm(), service.arm()]);
 
       expect(ctorSpy).toHaveBeenCalledTimes(1);
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
     it('is a no-op on a second, later arm() once armed', async () => {
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
 
       await service.arm();
       await service.arm();
 
       expect(ctorSpy).toHaveBeenCalledTimes(1);
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     });
 
     it('retries a fully failed arm on the next call', async () => {
       fetchSpy.mockRejectedValue(new Error('network down'));
 
       await service.arm();
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
 
       fetchSpy.mockClear();
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
       await service.arm();
 
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('stays armed with the completion chime alone when the failure chime is missing', async () => {
+      fetchSpy.mockImplementation((url: string) => String(url).includes('Failed')
+        ? Promise.resolve(new Response(null, { status: 404 }))
+        : Promise.resolve(okResponse()));
+
+      await service.arm();
+      fetchSpy.mockClear();
+      await service.arm();
+
+      expect(service.diagnostics.armedKinds).toEqual(['complete']);
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it('never rejects, even when AudioContext throws on construction', async () => {
       ctorSpy.mockImplementation(function () {
         throw new Error('no audio hardware');
       });
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
 
       await expect(service.arm()).resolves.not.toThrow();
     });
 
     it('on a visible tab, tries the element first and never touches the armed buffer when the element succeeds', async () => {
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
       await service.arm();
       const buffersBeforePlay = fakeCtx.createdBufferSources.length;
       const resumesBeforePlay = fakeCtx.resumeCalls;
@@ -265,7 +295,7 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('falls back to the armed buffer when the element is blocked on a visible tab', async () => {
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
       await service.arm();
       fakeAudio.playResult = new DOMException('autoplay refused', 'NotAllowedError');
 
@@ -277,7 +307,7 @@ describe('BenchmarkCompletionSoundService', () => {
 
     it('plays through the decoded buffer first on a hidden tab, never touching the fallback element', async () => {
       vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
 
       await service.arm();
       const outcome = await service.play('run:1');
@@ -289,7 +319,7 @@ describe('BenchmarkCompletionSoundService', () => {
 
     it('resumes a suspended context before playing the buffer on a hidden tab', async () => {
       vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
-      fetchSpy.mockResolvedValue(okResponse());
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
       await service.arm();
       fakeCtx.state = 'suspended';
       fakeCtx.resumeCalls = 0;
@@ -311,11 +341,11 @@ describe('BenchmarkCompletionSoundService', () => {
 
     it('falls through to the element within 1000 ms when ctx.resume() never settles', fakeAsync(() => {
       // A visible tab tries the element first; it is blocked here so the buffer path — the one
-      // under test — actually runs. The buffer's own decodedBuffer is set directly, bypassing
+      // under test — actually runs. The completion chime's buffer is set directly, bypassing
       // arm()'s fetch/decode, since only the resume race matters to this spec.
       fakeAudio.playResult = new DOMException('autoplay refused', 'NotAllowedError');
       (service as any).audioContext = fakeCtx;
-      (service as any).decodedBuffer = {} as AudioBuffer;
+      (service as any).decodedBuffers.complete = {} as AudioBuffer;
       fakeCtx.resume = () => new Promise<void>(() => { });
 
       let outcome: string | undefined;
@@ -345,7 +375,7 @@ describe('BenchmarkCompletionSoundService', () => {
       // ever consulted for the rebuild — the single call every test here expects.
       ctorSpy = vi.spyOn(window as any, 'AudioContext').mockImplementation(function () { return fakeCtx2; } as any) as unknown as Mock;
       (service as any).audioContext = fakeCtx1;
-      (service as any).decodedBuffer = {} as AudioBuffer;
+      (service as any).decodedBuffers.complete = {} as AudioBuffer;
     });
 
     it('rebuilds the context once and plays on the rebuilt context when the first clock never advances', async () => {
@@ -446,7 +476,7 @@ describe('BenchmarkCompletionSoundService', () => {
     it('times out a play() that never settles, pauses the element and plays the armed buffer instead', async () => {
       const fakeCtx = new FakeAudioContext();
       (service as any).audioContext = fakeCtx;
-      (service as any).decodedBuffer = {} as AudioBuffer;
+      (service as any).decodedBuffers.complete = {} as AudioBuffer;
 
       vi.useFakeTimers();
       let outcome: string | undefined;
@@ -527,6 +557,95 @@ describe('BenchmarkCompletionSoundService', () => {
       }
 
       expect(outcome).toBe('unsupported');
+    });
+  });
+
+  describe('the failure chime', () => {
+    /** One fake element per kind, in creation order. */
+    let created: FakeAudioElement[];
+
+    beforeEach(() => {
+      created = [];
+      audioSpy.mockImplementation(function () {
+        const element = new FakeAudioElement();
+        created.push(element);
+        return element;
+      } as any);
+    });
+
+    const elementOf = (pattern: RegExp): FakeAudioElement | undefined =>
+      created.find(e => e.appendedSources.some(s => pattern.test(s.src)));
+
+    it('plays the failure chime through its own element, with its Opus source ahead of the AAC fallback', async () => {
+      const outcome = await service.play('battery:9', 'failed');
+
+      expect(outcome).toBe('played');
+      const failed = elementOf(/AIBenchmarkingFailed\.opus$/)!;
+      expect(failed.appendedSources).toEqual([
+        { src: expect.stringMatching(/AIBenchmarkingFailed\.opus$/), type: 'audio/ogg; codecs=opus' } as any,
+        { src: expect.stringMatching(/AIBenchmarkingFailed\.m4a$/), type: 'audio/mp4; codecs="mp4a.40.2"' } as any
+      ]);
+      expect(failed.playCallCount).toBe(1);
+      expect(elementOf(/AIBenchmarkingComplete\.opus$/)).toBeUndefined();
+    });
+
+    it('defaults to the completion chime', async () => {
+      await service.play('run:1');
+      await service.prime();
+
+      const complete = elementOf(/AIBenchmarkingComplete\.opus$/)!;
+      expect(complete.playCallCount).toBe(2);
+      expect(elementOf(/AIBenchmarkingFailed\.opus$/)).toBeUndefined();
+    });
+
+    it('plays the same key once per kind: the two chimes deduplicate separately', async () => {
+      expect(await service.play('run:1', 'complete')).toBe('played');
+      expect(await service.play('run:1', 'failed')).toBe('played');
+      expect(await service.play('run:1', 'failed')).toBe('duplicate');
+      expect(await service.play('run:1')).toBe('duplicate');
+    });
+
+    it('primes the failure chime without deduplication', async () => {
+      expect(await service.prime('failed')).toBe('played');
+      expect(await service.prime('failed')).toBe('played');
+
+      expect(elementOf(/AIBenchmarkingFailed\.opus$/)!.playCallCount).toBe(2);
+    });
+
+    it('records the kind of every attempt', async () => {
+      await service.play('run:1', 'failed');
+      await service.prime();
+
+      expect(service.diagnostics.attempts.map(a => [a.key, a.kind])).toEqual([['run:1', 'failed'], ['test', 'complete']]);
+    });
+
+    it('plays the failure chime\'s own decoded buffer on a hidden tab', async () => {
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      const fakeCtx = new FakeAudioContext();
+      const completeBuffer = { name: 'complete' } as unknown as AudioBuffer;
+      const failedBuffer = { name: 'failed' } as unknown as AudioBuffer;
+      (service as any).audioContext = fakeCtx;
+      (service as any).decodedBuffers.complete = completeBuffer;
+      (service as any).decodedBuffers.failed = failedBuffer;
+
+      const outcome = await service.play('series:4', 'failed');
+
+      expect(outcome).toBe('played');
+      expect(fakeCtx.createdBufferSources.map(s => s.buffer)).toEqual([failedBuffer]);
+      expect(created.length).toBe(0);
+    });
+
+    it('falls back to the failure chime\'s element when only the completion chime is decoded', async () => {
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      const fakeCtx = new FakeAudioContext();
+      (service as any).audioContext = fakeCtx;
+      (service as any).decodedBuffers.complete = {} as AudioBuffer;
+
+      const outcome = await service.play('series:4', 'failed');
+
+      expect(outcome).toBe('played');
+      expect(fakeCtx.createdBufferSources.length).toBe(0);
+      expect(elementOf(/AIBenchmarkingFailed\.opus$/)!.playCallCount).toBe(1);
     });
   });
 

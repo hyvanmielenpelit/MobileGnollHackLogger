@@ -6,6 +6,8 @@ import {
   BenchmarkBatteryAnalysisDto,
   BenchmarkBatteryRunDto,
   BenchmarkBinaryFile,
+  BenchmarkModelBatchPreflightResponse,
+  BenchmarkModelBatchRunDto,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportPackPricingBasis,
@@ -17,6 +19,7 @@ import {
   BenchmarkTextFile,
   CreateBenchmarkBatteryRequest,
   StartBenchmarkBatteryRunRequest,
+  StartBenchmarkModelBatchRequest,
   decodeBinaryErrorBody,
   fileNameFromContentDisposition,
   reportDisclosureParam,
@@ -834,6 +837,90 @@ describe('AdminBenchmarkService', () => {
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('definitionSha256')).toBe('abc123');
       req.flush({ definitionSha256: 'abc123', classes: [], incomplete: [] });
+    });
+  });
+
+  describe('model batches', () => {
+    const root = '/api/admin/benchmark/model-batches';
+    const body: StartBenchmarkModelBatchRequest = {
+      targetKind: 'Suite', suiteId: 1, batteryId: null, testedModelConfigurationIds: [3, 4], runsPerModel: 2,
+      order: 'Randomized', allowCapWait: false,
+      run: { suiteId: 1, testedModelConfigurationId: 3, assessorModelConfigurationId: 1 },
+      acknowledgedFindingKeys: ['MB-W01:3,4']
+    };
+
+    it('posts the request to preflight and to start', () => {
+      let preflight: BenchmarkModelBatchPreflightResponse | undefined;
+      service.preflightModelBatch(body).subscribe(res => preflight = res);
+      const check = httpMock.expectOne(`${root}/preflight`);
+      expect(check.request.method).toBe('POST');
+      expect(check.request.body).toEqual(body);
+      check.flush({ findings: [], projection: { plannedRunCount: 4, members: [] } });
+      expect(preflight?.projection?.plannedRunCount).toBe(4);
+
+      service.startModelBatch(body).subscribe();
+      const start = httpMock.expectOne(`${root}/runs`);
+      expect(start.request.method).toBe('POST');
+      expect(start.request.body).toEqual(body);
+      start.flush({ id: 2 });
+    });
+
+    it('gets the active batch, and surfaces 204 as null', () => {
+      let active: BenchmarkModelBatchRunDto | null | undefined;
+      service.getActiveModelBatch().subscribe(res => active = res);
+      httpMock.expectOne(`${root}/runs/active`).flush(null, { status: 204, statusText: 'No Content' });
+      expect(active).toBeNull();
+    });
+
+    it('lists batches with an optional skip and take', () => {
+      service.listModelBatches().subscribe();
+      const all = httpMock.expectOne(request => request.url === `${root}/runs`);
+      expect(all.request.params.keys()).toEqual([]);
+      all.flush([]);
+
+      service.listModelBatches(20, 10).subscribe();
+      const page = httpMock.expectOne(request => request.url === `${root}/runs`);
+      expect(page.request.params.get('skip')).toBe('20');
+      expect(page.request.params.get('take')).toBe('10');
+      page.flush([]);
+    });
+
+    it('reaches one batch, its cancel, resume, skip and delete', () => {
+      service.getModelBatch(7).subscribe();
+      expect(httpMock.expectOne(`${root}/runs/7`).request.method).toBe('GET');
+
+      service.cancelModelBatch(7).subscribe();
+      expect(httpMock.expectOne(`${root}/runs/7/cancel`).request.method).toBe('POST');
+
+      service.resumeModelBatch(7, 'SkipCurrent').subscribe();
+      const resume = httpMock.expectOne(`${root}/runs/7/resume`);
+      expect(resume.request.method).toBe('POST');
+      expect(resume.request.body).toEqual({ mode: 'SkipCurrent' });
+
+      service.skipModelBatchMember(7, 31).subscribe();
+      expect(httpMock.expectOne(`${root}/runs/7/members/31/skip`).request.method).toBe('POST');
+
+      service.deleteModelBatch(7).subscribe();
+      expect(httpMock.expectOne(`${root}/runs/7`).request.method).toBe('DELETE');
+    });
+
+    it('reads the diagnostics as text', () => {
+      let text: string | undefined;
+      service.getModelBatchDiagnostics(7).subscribe(res => text = res);
+      const req = httpMock.expectOne(`${root}/runs/7/diagnostics`);
+      expect(req.request.responseType).toBe('text');
+      req.flush('BATCH\n#7');
+      expect(text).toBe('BATCH\n#7');
+    });
+
+    it('reads the per-batch model ceiling of the run limits', () => {
+      let limits: BenchmarkRunLimitsDto | undefined;
+      service.getRunLimits().subscribe(res => limits = res);
+      httpMock.expectOne('/api/admin/benchmark/runs/limits').flush({
+        maxRunsPerHour: 4, maxRunsPerDay: 20, runsInLastHour: 0, runsInLast24Hours: 0,
+        remainingDailyHeadroom: 20, maxRunCountPerSeries: 20, maxModelsPerBatch: 12
+      });
+      expect(limits?.maxModelsPerBatch).toBe(12);
     });
   });
 });

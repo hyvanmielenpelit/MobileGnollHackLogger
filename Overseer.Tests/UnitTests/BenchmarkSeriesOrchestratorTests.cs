@@ -225,6 +225,68 @@ public class BenchmarkSeriesOrchestratorTests
     }
 
     [Fact]
+    public async Task StartSeries_IsRefused_WhileAModelBatchHoldsTheClaim_UnlessItIsThatBatchs()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+
+        var runManager = new BenchmarkRunManager();
+        string batch = BenchmarkRunManager.ModelBatchOwner(8);
+        Assert.True(runManager.TryClaimBatch(batch));
+        var orchestrator = CreateOrchestrator(factory, runManager);
+
+        var outside = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 2), "user", ct);
+        Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, outside.Outcome);
+        Assert.Equal("A model batch is running; wait for it or cancel it.", outside.Error);
+        Assert.Empty(await db.BenchmarkRunSeries.ToListAsync(ct));
+
+        var foreign = await orchestrator.StartSeriesAsync(
+            Request(suite.Id, runCount: 2), "user", ct, BenchmarkRunManager.ModelBatchOwner(9));
+        Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, foreign.Outcome);
+
+        var own = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 2), "user", ct, batch);
+        Assert.Equal(BenchmarkSeriesStartOutcome.Started, own.Outcome);
+        Assert.Equal(batch, runManager.BatchOwner);
+
+        await orchestrator.CancelSeriesAsync(own.SeriesId!.Value, ct);
+    }
+
+    [Fact]
+    public async Task ResumeSeries_IsRefused_WhileAModelBatchHoldsTheClaim_WithoutThatBatchsOwner()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+
+        var series = new BenchmarkRunSeries
+        {
+            BenchmarkSuiteId = suite.Id,
+            SuiteName = suite.Name,
+            RequestedRunCount = 3,
+            Status = BenchmarkRunSeriesStatus.Stopped,
+            StopReason = BenchmarkRunSeriesStopReason.MemberFailed,
+            StartRequestJson = JsonSerializer.Serialize(Request(suite.Id, runCount: 3))
+        };
+        db.BenchmarkRunSeries.Add(series);
+        await db.SaveChangesAsync(ct);
+
+        var runManager = new BenchmarkRunManager();
+        Assert.True(runManager.TryClaimBatch(BenchmarkRunManager.ModelBatchOwner(8)));
+        var orchestrator = CreateOrchestrator(factory, runManager);
+
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, result.Outcome);
+        Assert.Equal("A model batch is running; wait for it or cancel it.", result.Error);
+        Assert.Null(runManager.OrchestratorOwner);
+    }
+
+    [Fact]
     public async Task StartSeries_RecordsTheRequestAndTheCapPreference_OnTheRow()
     {
         var ct = TestContext.Current.CancellationToken;

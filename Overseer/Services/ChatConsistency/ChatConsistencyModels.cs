@@ -801,11 +801,29 @@ public sealed record ChatConsistencyRunSelectionView
     public IReadOnlyList<ChatConsistencyUnanalyzedRun> UnanalyzedRuns { get; init; } = Array.Empty<ChatConsistencyUnanalyzedRun>();
 }
 
-/// <summary>A run that would resolve an inconclusive or unattributable verdict.</summary>
+/// <summary>The kinds of <see cref="ChatConsistencyNextRun"/>.</summary>
+public static class ChatConsistencyNextRunKinds
+{
+    public const string Checkpoint = "checkpoint";
+    public const string Control = "control";
+    public const string Stratum = "stratum";
+    public const string Regrade = "regrade";
+
+    /// <summary>A new baseline under the current build, because the comparison period's build has been replaced.</summary>
+    public const string NewCheckpoint = "newCheckpoint";
+}
+
+/// <summary>
+/// A run that would resolve an inconclusive or unattributable verdict. A <c>newCheckpoint</c> suggestion
+/// also carries the structured fields from <see cref="UnitNoun"/> to <see cref="SubjectModelConfigurationId"/>,
+/// so a launcher can pre-fill it; every other kind leaves them null.
+/// </summary>
 public sealed record ChatConsistencyNextRun
 {
-    /// <summary><c>checkpoint</c>, <c>control</c>, <c>stratum</c> or <c>regrade</c>.</summary>
+    /// <summary><c>checkpoint</c>, <c>control</c>, <c>stratum</c>, <c>regrade</c> or <c>newCheckpoint</c> (<see cref="ChatConsistencyNextRunKinds"/>).</summary>
     public string Kind { get; init; } = string.Empty;
+
+    /// <summary><c>baseline</c>, <c>comparison</c> or <c>both</c>; empty for a <c>newCheckpoint</c>, which belongs to neither period.</summary>
     public string Period { get; init; } = string.Empty;
     public string? EndpointId { get; init; }
     public string Reason { get; init; } = string.Empty;
@@ -813,6 +831,39 @@ public sealed record ChatConsistencyNextRun
 
     /// <summary>The run whose setup to repeat ("Repeat this run's setup"); null for a re-grade.</summary>
     public long? RepeatRunId { get; init; }
+
+    /// <summary><c>run</c> or <c>battery run</c>: what <see cref="Count"/> counts.</summary>
+    public string? UnitNoun { get; init; }
+
+    /// <summary>How many units to make: the protocol's minimum units per period.</summary>
+    public int? Count { get; init; }
+
+    /// <summary>On how many different UTC days: the protocol's minimum days per period.</summary>
+    public int? Days { get; init; }
+
+    /// <summary>
+    /// The time-of-week stratum each unit should start in, as <see cref="ChatConsistencyStatistics.StratumLabel"/>
+    /// names it (<c>Weekday 12–16 UTC</c>): the comparison period's most populated stratum; null when it has no timed answer.
+    /// </summary>
+    public string? Stratum { get; init; }
+
+    /// <summary><c>battery</c> or <c>suite</c> (<see cref="ChatConsistencyComparisonSetKinds"/>): what each unit is run on.</summary>
+    public string? TargetKind { get; init; }
+
+    /// <summary>The suite of the latest comparison run, when <see cref="TargetKind"/> is <c>suite</c>.</summary>
+    public long? SuiteId { get; init; }
+
+    /// <summary>The battery of the latest comparison battery run, when <see cref="TargetKind"/> is <c>battery</c>; null when it is not known.</summary>
+    public long? BatteryId { get; init; }
+
+    /// <summary>The model under test, as <see cref="ChatConsistencyComparability.ModelAxisKey"/> renders it.</summary>
+    public string? SubjectModelKey { get; init; }
+
+    /// <summary>The tested model configuration of the subject's latest run (<see cref="ChatConsistencySubject.ConfigurationId"/>).</summary>
+    public long? SubjectModelConfigurationId { get; init; }
+
+    /// <summary>A control run of another provider's model is suggested beside each unit.</summary>
+    public bool? ControlSuggested { get; init; }
 }
 
 /// <summary>An admin annotation on the timeline.</summary>

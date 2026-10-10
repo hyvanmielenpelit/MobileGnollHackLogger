@@ -61,6 +61,22 @@
               <p class="cc-nr-reason">{{ reason }}</p>
             }
 
+            @if (card.modelBatch) {
+              <div class="cc-nr-actions cc-nr-batch">
+                <button type="button" class="btn-ghost cc-nr-model-batch"
+                        [attr.aria-label]="'Set up as model batch: ' + card.title + ', ' + card.periodText + ' — fills Run Benchmark, starts nothing'"
+                        [attr.aria-describedby]="modelBatchRefusals.has(card.key) ? card.titleId + '-batch-refusal' : null"
+                        (click)="setUpModelBatch(card)">Set up as model batch</button>
+                <p class="cc-nr-hint">With a control model from a provider other than {{ provider }}.</p>
+                @if (modelBatchRefusals.get(card.key); as refusal) {
+                  <p class="gh-field-error cc-nr-batch-refusal" [id]="card.titleId + '-batch-refusal'" role="status">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    {{ refusal }}
+                  </p>
+                }
+              </div>
+            }
+
             @if (card.kind === 'regrade') {
               <p class="cc-nr-hint">Re-grade from step 3: Controls → Re-grade.</p>
             } @else if (card.targets.length > 0 || card.kind === 'control') {

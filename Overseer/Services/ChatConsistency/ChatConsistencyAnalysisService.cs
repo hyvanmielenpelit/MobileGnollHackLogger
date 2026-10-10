@@ -39,7 +39,7 @@ using Overseer.Services.Telemetry;
 public class ChatConsistencyAnalysisService
 {
     /// <summary>The version of this analysis code; stored with every analysis.</summary>
-    public const int CurrentAnalysisCodeVersion = 6;
+    public const int CurrentAnalysisCodeVersion = 7;
 
     private const int MaxNameLength = 200;
     private const int MaxSubjectKeyLength = 512;
@@ -93,7 +93,7 @@ public class ChatConsistencyAnalysisService
             throw new ChatConsistencyRequestException("The comparison period holds no usable run of this model.");
         }
 
-        var result = Compute(request, protocol, evidence);
+        var result = await WithCheckpointBatteryAsync(Compute(request, protocol, evidence), ct);
 
         var row = new ChatConsistencyAnalysis
         {
@@ -124,6 +124,33 @@ public class ChatConsistencyAnalysisService
             row.Id, result.Subject.DisplayName, result.Headline);
 
         return result with { AnalysisId = row.Id, CreatedAtUtc = row.CreatedAtUtc };
+    }
+
+    /// <summary>
+    /// The result with each battery <c>newCheckpoint</c> next run naming the battery of the latest comparison
+    /// battery run, which <see cref="Compute"/> cannot read; unchanged when there is none or it has no battery.
+    /// </summary>
+    private async Task<ChatConsistencyAnalysisResult> WithCheckpointBatteryAsync(ChatConsistencyAnalysisResult result, CancellationToken ct)
+    {
+        static bool Needs(ChatConsistencyNextRun n)
+            => n.Kind == ChatConsistencyNextRunKinds.NewCheckpoint && n.TargetKind == ChatConsistencyComparisonSetKinds.Battery && n.BatteryId == null;
+
+        if (!result.NextRuns.Any(Needs)) return result;
+
+        var latest = result.Units
+            .Where(u => u.Period == "comparison" && u.Kind == ChatConsistencyComparisonSetKinds.BatteryRunUnit)
+            .OrderBy(u => u.StartedAtUtc)
+            .ThenBy(u => u.UnitId)
+            .LastOrDefault();
+        if (latest == null) return result;
+
+        long? batteryId = await _db.BenchmarkBatteryRuns.AsNoTracking()
+            .Where(b => b.Id == latest.UnitId)
+            .Select(b => b.BenchmarkBatteryId)
+            .FirstOrDefaultAsync(ct);
+        if (batteryId == null) return result;
+
+        return result with { NextRuns = result.NextRuns.Select(n => Needs(n) ? n with { BatteryId = batteryId } : n).ToList() };
     }
 
     /// <summary>
@@ -441,6 +468,54 @@ public class ChatConsistencyAnalysisService
         }
 
         return new Engine(request, protocol, evidence).Run();
+    }
+
+    /// <summary>
+    /// The item-paired endpoints' minimum sample against the units analyzed, each part stated as met or
+    /// missed: <c>1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per
+    /// period; paired items 32, above the minimum of 20</c>. Periods that differ read <c>baseline 2 runs on 1
+    /// day, comparison 2 runs on 2 days, …</c>; the paired part is left out when <paramref name="pairedItems"/> is null.
+    /// </summary>
+    public static string MinimumSampleText(
+        string unitNoun, int baselineUnits, int baselineDays, int comparisonUnits, int comparisonDays, int? pairedItems, ChatConsistencyProtocol protocol)
+    {
+        ArgumentNullException.ThrowIfNull(protocol);
+        string have = baselineUnits == comparisonUnits && baselineDays == comparisonDays
+            ? Plural(baselineUnits, unitNoun) + " per period on " + Plural(baselineDays, "day")
+            : "baseline " + Plural(baselineUnits, unitNoun) + " on " + Plural(baselineDays, "day")
+              + ", comparison " + Plural(comparisonUnits, unitNoun) + " on " + Plural(comparisonDays, "day");
+        bool unitsMet = baselineUnits >= protocol.MinimumRunsPerPeriod && comparisonUnits >= protocol.MinimumRunsPerPeriod
+                        && baselineDays >= protocol.MinimumDaysPerPeriod && comparisonDays >= protocol.MinimumDaysPerPeriod;
+        string text = have + (unitsMet ? ", meeting" : ", below") + " the minimum of " + Plural(protocol.MinimumRunsPerPeriod, unitNoun)
+            + " on " + Plural(protocol.MinimumDaysPerPeriod, "day") + " per period";
+        if (pairedItems is int items)
+        {
+            string side = items > protocol.MinimumPairedItems ? "above" : items == protocol.MinimumPairedItems ? "at" : "below";
+            text += "; paired items " + Inv(items) + ", " + side + " the minimum of " + Inv(protocol.MinimumPairedItems);
+        }
+        return text;
+    }
+
+    /// <summary>
+    /// The suggestion text of a <c>newCheckpoint</c> next run: <c>Start a new baseline under the current build: 2
+    /// battery runs of &lt;model&gt; on &lt;target&gt;, on 2 different UTC days, each starting in weekdays 12–16 UTC,
+    /// with one control run of another provider's model beside each.</c> The stratum clause is left out without
+    /// <paramref name="stratumText"/>; when <paramref name="impactSinceComparison"/> includes grading or scoring, a
+    /// sentence says that quality starts a new segment and how to compare it.
+    /// </summary>
+    public static string NewCheckpointSuggestion(
+        string unitNoun, int count, int days, string subject, string target, string? stratumText, HarnessImpact impactSinceComparison)
+    {
+        string text = "Start a new baseline under the current build: " + Plural(count, unitNoun) + " of " + subject
+            + (string.IsNullOrWhiteSpace(target) ? string.Empty : " on " + target)
+            + ", on " + Inv(days) + " different UTC " + (days == 1 ? "day" : "days")
+            + (string.IsNullOrWhiteSpace(stratumText) ? string.Empty : ", each starting in " + stratumText)
+            + ", with one control run of another provider's model beside each.";
+        if ((impactSinceComparison & (HarnessImpact.Grading | HarnessImpact.Scoring)) != HarnessImpact.None)
+        {
+            text += " Quality will start a new segment; to compare it with these periods, re-grade with a common grader.";
+        }
+        return text;
     }
 
     /// <summary>
@@ -1205,10 +1280,7 @@ public class ChatConsistencyAnalysisService
             bool daysOk = Days(b) >= _protocol.MinimumDaysPerPeriod && Days(c) >= _protocol.MinimumDaysPerPeriod;
             bool itemsOk = w.ItemCount >= _protocol.MinimumPairedItems;
             w.MinimumSampleMet = runsOk && daysOk && itemsOk;
-            w.MinimumSampleDetail = "baseline " + Plural(b.Count, UnitNoun) + " on " + Plural(Days(b), "day") + ", comparison "
-                + Plural(c.Count, UnitNoun) + " on " + Plural(Days(c), "day") + ", " + Plural(w.ItemCount, "paired item") + "; the minimum is "
-                + Inv(_protocol.MinimumRunsPerPeriod) + " " + UnitsNoun + " on " + Inv(_protocol.MinimumDaysPerPeriod) + " days per period and "
-                + Inv(_protocol.MinimumPairedItems) + " paired items.";
+            w.MinimumSampleDetail = MinimumSampleText(UnitNoun, b.Count, Days(b), c.Count, Days(c), w.ItemCount, _protocol) + ".";
 
             // Leave one unit out.
             if (b.Count >= 2)
@@ -3124,10 +3196,53 @@ public class ChatConsistencyAnalysisService
                 });
             }
 
+            // No run can join a comparison period whose build no longer runs: its runs are asked for as a new checkpoint instead.
+            string current = BenchmarkAssessmentPrompt.HarnessVersion;
+            bool comparisonReplaced = _comparison.All(r => !string.Equals(r.HarnessVersion, current, StringComparison.Ordinal));
+            if (comparisonReplaced)
+            {
+                list.RemoveAll(n => n.Period == "comparison" && n.Kind is ChatConsistencyNextRunKinds.Checkpoint or ChatConsistencyNextRunKinds.Stratum);
+                list.Insert(0, NewCheckpoint(latestComparison, current));
+            }
+
             return list
                 .GroupBy(n => (n.Kind, n.Period, n.Suggestion))
                 .Select(g => g.First())
                 .ToList();
+        }
+
+        /// <summary>
+        /// The <c>newCheckpoint</c> suggestion of an analysis whose comparison period's build has been replaced:
+        /// the protocol's minimum units of the subject under <paramref name="currentHarness"/>, on as many UTC days,
+        /// each starting in the comparison period's most populated stratum, a control run beside each.
+        /// </summary>
+        private ChatConsistencyNextRun NewCheckpoint(BenchmarkRun latestComparison, string currentHarness)
+        {
+            int? stratum = MostPopulatedStratum(_comparison);
+            string harness = string.IsNullOrWhiteSpace(latestComparison.HarnessVersion) ? "unrecorded" : latestComparison.HarnessVersion;
+            var impact = HarnessImpactLedger.ImpactBetween(latestComparison.HarnessVersion, currentHarness);
+            bool battery = _battery && _evidence.ComparisonSet is { Kind: ChatConsistencyComparisonSetKinds.Battery };
+
+            return new ChatConsistencyNextRun
+            {
+                Kind = ChatConsistencyNextRunKinds.NewCheckpoint,
+                Period = string.Empty,
+                Reason = "The comparison period's Overseer build (harness " + harness + ") has been replaced, so no run can join that period any more.",
+                Suggestion = NewCheckpointSuggestion(
+                    UnitNoun, _protocol.MinimumRunsPerPeriod, _protocol.MinimumDaysPerPeriod, _evidence.Subject.DisplayName,
+                    RunTarget(latestComparison), stratum is int s ? StrataText(new[] { s }) : null, impact),
+                RepeatRunId = latestComparison.Id,
+                UnitNoun = UnitNoun,
+                Count = _protocol.MinimumRunsPerPeriod,
+                Days = _protocol.MinimumDaysPerPeriod,
+                Stratum = stratum is int label ? ChatConsistencyStatistics.StratumLabel(label) : null,
+                TargetKind = battery ? ChatConsistencyComparisonSetKinds.Battery : ChatConsistencyComparisonSetKinds.Suite,
+                SuiteId = battery ? null : latestComparison.BenchmarkSuiteIdUsed ?? latestComparison.BenchmarkSuiteId,
+                BatteryId = null,
+                SubjectModelKey = string.IsNullOrWhiteSpace(_evidence.SubjectKey) ? _request.SubjectModelKey : _evidence.SubjectKey,
+                SubjectModelConfigurationId = _evidence.Subject.ConfigurationId,
+                ControlSuggested = true
+            };
         }
 
         /// <summary>The stratum most of <paramref name="runs"/>' delivered, timed answers started in; the lower index on a tie; null without any.</summary>

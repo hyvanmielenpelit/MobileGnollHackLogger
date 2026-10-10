@@ -345,9 +345,10 @@ export interface CcChartOptions {
   /** The sizes and optional parts; absent draws `CC_CHART_STYLE_DEFAULTS`. */
   style?: CcChartStyle;
   /**
-   * The time axis spans the plotted points and the markers near them, padded by 5 % of that span or
-   * 30 minutes, whichever is more; the period bands are clipped to it rather than widening it.
-   * Absent spans the bands too, padded by 3 % or 12 hours.
+   * The time axis spans the plotted points and the markers near them, padded by 8 % of that span or
+   * 45 minutes, whichever is more; the period bands are clipped to it, widening it only where a band
+   * cut by its edge would be under `CC_MIN_BAND_SHARE` of the plot. Absent spans the bands too, padded
+   * by 3 % or 12 hours.
    */
   fitToData?: boolean;
 }
@@ -930,8 +931,120 @@ function headerBandOf(chart: Chart<'line'>): CcHeaderBand {
   return band;
 }
 
+/**
+ * The layout box under the plot and its time axis that holds the period legend: one line of a swatch
+ * and a word per period band. It takes a line only when, judged at layout from the bands' widths and
+ * the plotted points' positions, a period's name may not find room in its band
+ * (`ccPeriodNameNeedsLegend`); the overlay plugin draws it. Kept per chart like the tag band.
+ */
+interface CcPeriodLegendBand extends LayoutItem {
+  options: Record<string, never>;
+  bands: readonly CcPeriodBand[];
+  range: { min: number; max: number } | null;
+  font: string;
+  /** The bands the legend names, in band order; empty when it takes no line. */
+  shown: readonly CcPeriodBand[];
+}
+
+const PERIOD_LEGEND_BANDS = new WeakMap<object, CcPeriodLegendBand>();
+
+const PERIOD_LEGEND_SWATCH_PX = 10;
+const PERIOD_LEGEND_SWATCH_GAP = 4;
+const PERIOD_LEGEND_ITEM_GAP = 12;
+
+/** Per band, the x values of the first and last plotted point of each visible dataset inside it. */
+function bandEdgePointXs(chart: Chart<'line'>, bands: readonly CcPeriodBand[]): number[][] {
+  const xs: number[][] = bands.map(() => []);
+  chart.data.datasets.forEach((dataset, index) => {
+    if (!chart.isDatasetVisible(index)) return;
+    const data = (dataset.data ?? []) as CcChartPoint[];
+    bands.forEach((band, b) => {
+      const inside = data.filter(point => point && point.y !== null && point.x >= band.start && point.x <= band.end);
+      if (inside.length === 0) return;
+      xs[b].push(inside[0].x, inside[inside.length - 1].x);
+    });
+  });
+  return xs;
+}
+
+function periodLegendRows(chart: Chart<'line'>, legend: CcPeriodLegendBand, width: number): readonly CcPeriodBand[] {
+  const range = legend.range;
+  if (!range || !(range.max > range.min) || !(width > 0) || legend.bands.length === 0) return [];
+  const ctx = chart.ctx;
+  if (!ctx) return [];
+  const px = (value: number) => ((value - range.min) / (range.max - range.min)) * width;
+  const visible = legend.bands.filter(band => Math.min(px(band.end), width) > Math.max(px(band.start), 0));
+  if (visible.length === 0) return [];
+  ctx.save();
+  ctx.font = legend.font;
+  const edges = bandEdgePointXs(chart, visible);
+  const needed = visible.some((band, i) => ccPeriodNameNeedsLegend(
+    band.name, text => ctx.measureText(text).width,
+    { left: Math.max(px(band.start), 0), right: Math.min(px(band.end), width) },
+    edges[i].map(px)));
+  ctx.restore();
+  return needed ? visible : [];
+}
+
+function periodLegendBandOf(chart: Chart<'line'>): CcPeriodLegendBand {
+  const existing = PERIOD_LEGEND_BANDS.get(chart);
+  if (existing) return existing;
+  const band: CcPeriodLegendBand = {
+    position: 'bottom',
+    // Below the time axis (0): a higher weight sits farther from the plot.
+    weight: 1,
+    fullSize: false,
+    width: 0,
+    height: 0,
+    left: 0,
+    top: 0,
+    right: 0,
+    bottom: 0,
+    options: {},
+    bands: [],
+    range: null,
+    font: '',
+    shown: [],
+    isHorizontal: () => true,
+    draw: () => undefined,
+    update(width: number) {
+      band.shown = periodLegendRows(chart, band, width);
+      band.width = width;
+      band.height = band.shown.length > 0 ? CC_PERIOD_LEGEND_HEIGHT : 0;
+    }
+  };
+  layouts.addBox(chart as unknown as Chart, band);
+  PERIOD_LEGEND_BANDS.set(chart, band);
+  return band;
+}
+
+/** The period legend in its box: a swatch of each band's fill and its name, left to right. */
+function drawPeriodLegend(chart: Chart<'line'>, legend: CcPeriodLegendBand, theme: CcChartTheme): void {
+  if (!(legend.height > 0) || legend.shown.length === 0) return;
+  const { ctx } = chart;
+  ctx.save();
+  ctx.font = legend.font;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const middle = legend.top + legend.height / 2;
+  let x = legend.left;
+  for (const band of legend.shown) {
+    const top = middle - PERIOD_LEGEND_SWATCH_PX / 2;
+    ctx.fillStyle = band.name === 'Baseline' ? theme.baselineBand : theme.comparisonBand;
+    ctx.fillRect(x, top, PERIOD_LEGEND_SWATCH_PX, PERIOD_LEGEND_SWATCH_PX);
+    ctx.strokeStyle = theme.muted;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, top + 0.5, PERIOD_LEGEND_SWATCH_PX - 1, PERIOD_LEGEND_SWATCH_PX - 1);
+    x += PERIOD_LEGEND_SWATCH_PX + PERIOD_LEGEND_SWATCH_GAP;
+    ctx.fillStyle = theme.muted;
+    ctx.fillText(band.name, x, middle);
+    x += ctx.measureText(band.name).width + PERIOD_LEGEND_ITEM_GAP;
+  }
+  ctx.restore();
+}
+
 function removeBands(chart: Chart<'line'>): void {
-  for (const bands of [TAG_BANDS, HEADER_BANDS] as WeakMap<object, LayoutItem>[]) {
+  for (const bands of [TAG_BANDS, HEADER_BANDS, PERIOD_LEGEND_BANDS] as WeakMap<object, LayoutItem>[]) {
     const band = bands.get(chart);
     if (!band) continue;
     layouts.removeBox(chart as unknown as Chart, band);
@@ -1004,22 +1117,32 @@ function boxesMeet(a: CcLabelBox, b: CcLabelBox): boolean {
 /**
  * The point labels kept, as indices into `candidates`, which come in priority order: each box is kept
  * unless it leaves `area`, or comes within `POINT_LABEL_GAP` of a box kept before it or of an obstacle
- * (a period name).
+ * (a period name). The first `leading` candidates, the labels that are never given up for a period
+ * name, ignore the obstacles.
  */
-export function ccPlaceLabels(candidates: readonly CcLabelBox[], area: CcLabelBox, obstacles: readonly CcLabelBox[] = []): number[] {
+export function ccPlaceLabels(
+  candidates: readonly CcLabelBox[],
+  area: CcLabelBox,
+  obstacles: readonly CcLabelBox[] = [],
+  leading = 0
+): number[] {
   const kept: number[] = [];
   candidates.forEach((box, i) => {
     if (box.left < area.left || box.right > area.right || box.top < area.top || box.bottom > area.bottom) return;
-    if (obstacles.some(obstacle => boxesMeet(box, obstacle))) return;
+    if (i >= leading && obstacles.some(obstacle => boxesMeet(box, obstacle))) return;
     if (!kept.some(k => boxesMeet(box, candidates[k]))) kept.push(i);
   });
   return kept;
 }
 
-/** A period band's name as drawn: its text, cut to the band, and its box in canvas px. */
+/**
+ * A period band's name as drawn: its text, cut to the band, and its box in canvas px. `clear` when the
+ * box meets no obstacle and covers no point.
+ */
 export interface CcPeriodLabel {
   text: string;
   box: CcLabelBox;
+  clear: boolean;
 }
 
 /** The period names' text size, and their inset from the band's sides and the plot's top or bottom, in px. */
@@ -1028,22 +1151,35 @@ const PERIOD_LABEL_INSET_X = 6;
 const PERIOD_LABEL_INSET_Y = 4;
 /** How near a point may come to a period name, in px: about a point's radius. */
 const PERIOD_LABEL_POINT_CLEARANCE = 5;
+/** The fewest letters a cut period name keeps before its ellipsis; a band too narrow for them names its period in the legend. */
+export const CC_PERIOD_NAME_MIN_LETTERS = 4;
+/** How far from a point its value label may reach sideways, in px, as the layout judges a corner taken. */
+const PERIOD_LEGEND_POINT_REACH = 24;
 
-/** `text` whole while it fits `width`, else cut with an ellipsis; empty when not even one letter does. */
-function fitMeasured(text: string, width: number, measure: (text: string) => number): string {
+/** The period legend's line: the 11 px names and 3 px above and below them. */
+export const CC_PERIOD_LEGEND_HEIGHT = CC_PERIOD_LABEL_PX + 6;
+
+/**
+ * `text` whole while it fits `width`, else cut with an ellipsis; empty when fewer than `minLetters`
+ * letters would be left.
+ */
+function fitMeasured(text: string, width: number, measure: (text: string) => number, minLetters = 1): string {
   if (!(width > 0)) return '';
   if (measure(text) <= width) return text;
   let end = text.length;
   while (end > 0 && measure(`${text.slice(0, end).trimEnd()}…`) > width) end--;
-  return end > 0 ? `${text.slice(0, end).trimEnd()}…` : '';
+  const kept = text.slice(0, end).trimEnd();
+  return kept.length >= Math.max(1, minLetters) ? `${kept}…` : '';
 }
 
 /**
  * Where a period band's name goes, inside the band (`left`–`right`, clipped to the plot `area`): its
- * top left, top right, bottom left or bottom right corner, the first that meets no obstacle (a marker
- * tag) and covers no point; failing that, the first that meets no obstacle; failing that, the bottom
- * left. The whole name while the band has room for it, else cut with an ellipsis; null when not even
- * a letter fits. The point labels are then kept clear of it.
+ * top left, bottom left, top right or bottom right corner, so a name keeps the left of its band from
+ * chart to chart; the first that meets no obstacle (a marker tag, a point label that is never given
+ * up) and covers no point, which is `clear`; failing that, the first that meets no obstacle; failing
+ * that, the bottom left. The whole name while the band has room for it, else cut with an ellipsis;
+ * null when fewer than `CC_PERIOD_NAME_MIN_LETTERS` letters fit. The other point labels are then kept
+ * clear of it.
  */
 export function ccPeriodLabelPlacement(
   name: string,
@@ -1054,49 +1190,81 @@ export function ccPeriodLabelPlacement(
   points: readonly { x: number; y: number }[] = [],
   sizePx: number = CC_PERIOD_LABEL_PX
 ): CcPeriodLabel | null {
-  const text = fitMeasured(name, band.right - band.left - 2 * PERIOD_LABEL_INSET_X, measure);
+  const text = fitMeasured(name, band.right - band.left - 2 * PERIOD_LABEL_INSET_X, measure, CC_PERIOD_NAME_MIN_LETTERS);
   if (!text) return null;
   const width = measure(text);
   const lefts = [band.left + PERIOD_LABEL_INSET_X, band.right - PERIOD_LABEL_INSET_X - width];
   const tops = [area.top + PERIOD_LABEL_INSET_Y, area.bottom - PERIOD_LABEL_INSET_Y - sizePx];
   const corners: CcLabelBox[] = [
-    [lefts[0], tops[0]], [lefts[1], tops[0]], [lefts[0], tops[1]], [lefts[1], tops[1]]
+    [lefts[0], tops[0]], [lefts[0], tops[1]], [lefts[1], tops[0]], [lefts[1], tops[1]]
   ].map(([left, top]) => ({ left, top, right: left + width, bottom: top + sizePx }));
   const covers = (box: CcLabelBox, point: { x: number; y: number }) =>
     point.x >= box.left - PERIOD_LABEL_POINT_CLEARANCE && point.x <= box.right + PERIOD_LABEL_POINT_CLEARANCE
     && point.y >= box.top - PERIOD_LABEL_POINT_CLEARANCE && point.y <= box.bottom + PERIOD_LABEL_POINT_CLEARANCE;
-  const clear = corners.filter(box => !obstacles.some(obstacle => boxesMeet(box, obstacle)));
-  const box = clear.find(candidate => !points.some(point => covers(candidate, point))) ?? clear[0] ?? corners[2];
-  return { text, box };
+  const unobstructed = corners.filter(box => !obstacles.some(obstacle => boxesMeet(box, obstacle)));
+  const free = unobstructed.find(candidate => !points.some(point => covers(candidate, point)));
+  return free ? { text, box: free, clear: true } : { text, box: unobstructed[0] ?? corners[1], clear: false };
+}
+
+/**
+ * Whether a period's name may need the legend under the plot, judged at layout before the value axis
+ * is known: its band (`left`–`right`, in px of the plot) cannot hold the name with
+ * `CC_PERIOD_NAME_MIN_LETTERS` letters, or both its left and its right corners lie over the first or
+ * last point of a period (`pointXs`, in px), whose value labels are never given up.
+ */
+export function ccPeriodNameNeedsLegend(
+  name: string,
+  measure: (text: string) => number,
+  band: { left: number; right: number },
+  pointXs: readonly number[]
+): boolean {
+  const text = fitMeasured(name, band.right - band.left - 2 * PERIOD_LABEL_INSET_X, measure, CC_PERIOD_NAME_MIN_LETTERS);
+  if (!text) return true;
+  const width = measure(text);
+  const reach = PERIOD_LABEL_POINT_CLEARANCE + PERIOD_LEGEND_POINT_REACH;
+  const taken = (left: number) => pointXs.some(x => x >= left - reach && x <= left + width + reach);
+  return taken(band.left + PERIOD_LABEL_INSET_X) && taken(band.right - PERIOD_LABEL_INSET_X - width);
 }
 
 interface PointLabel {
   text: string;
   value: number;
+  /** The point's time, epoch ms. */
+  at: number;
   x: number;
   box: CcLabelBox;
   muted: boolean;
+}
+
+/** The point labels in priority order; the first `leading` are never given up for a period name. */
+interface PointLabels {
+  labels: PointLabel[];
+  leading: number;
 }
 
 /** The gap between a whisker's cap and the point label beyond it, in px. */
 const WHISKER_LABEL_GAP_PX = 3;
 
 /**
- * Each set's labels, ordered by priority: per set its latest, highest and lowest point, then every
- * other point left to right. A label sits above its point (below for a `below` set), beyond the cap of
- * the point's whisker where it has one, and on the other side where it would cross the plot's edge;
- * it is kept inside the canvas horizontally.
+ * Each set's labels, ordered by priority: with period bands, the first and last point of each period
+ * in every set, which are never given up for a period name; then per set its latest, highest and
+ * lowest point; then every other point left to right. A label sits above its point (below for a
+ * `below` set), beyond the cap of the point's whisker where it has one, and on the other side where it
+ * would cross the plot's edge; it is kept inside the canvas horizontally. Measured in the context's
+ * current font.
  */
 function pointLabelCandidates(
   chart: Chart<'line'>,
   sets: readonly CcPointLabelSet[],
   notAnalyzed: ReadonlyMap<number, string> | null,
-  font: CcPointLabelFont
-): PointLabel[] {
+  font: CcPointLabelFont,
+  bands: readonly CcPeriodBand[] = []
+): PointLabels {
   const { sizePx, offsetPx } = font;
   const area = chart.chartArea;
   const ctx = chart.ctx;
   const yScale = chart.scales['y'];
+  const guarded: PointLabel[] = [];
   const first: PointLabel[] = [];
   const rest: PointLabel[] = [];
   for (const set of sets) {
@@ -1119,43 +1287,68 @@ function pointLabelCandidates(
       if (!set.below && aboveTop < area.top) top = belowTop;
       if (set.below && belowTop + sizePx > area.bottom) top = aboveTop;
       labels.push({
-        text, value: point.y, x: element.x, muted: notAnalyzed?.has(point.runId) ?? false,
+        text, value: point.y, at: point.x, x: element.x, muted: notAnalyzed?.has(point.runId) ?? false,
         box: { left, top, right: left + width, bottom: top + sizePx }
       });
     });
     if (labels.length === 0) continue;
+    const edges = [...new Set(bands.flatMap(band => {
+      const inside = labels.filter(label => label.at >= band.start && label.at <= band.end);
+      return inside.length > 0 ? [inside[0], inside[inside.length - 1]] : [];
+    }))];
+    guarded.push(...edges);
     const latest = labels[labels.length - 1];
     const highest = labels.reduce((best, label) => label.value > best.value ? label : best);
     const lowest = labels.reduce((best, label) => label.value < best.value ? label : best);
-    const lead = [...new Set([latest, highest, lowest])];
+    const lead = [...new Set([latest, highest, lowest])].filter(label => !edges.includes(label));
     first.push(...lead);
-    rest.push(...labels.filter(label => !lead.includes(label)));
+    rest.push(...labels.filter(label => !edges.includes(label) && !lead.includes(label)));
   }
-  return [...first, ...rest.sort((a, b) => a.x - b.x)];
+  return { labels: [...guarded, ...first, ...rest.sort((a, b) => a.x - b.x)], leading: guarded.length };
 }
 
-/** The kept point labels, each over a halo of the background so it reads across lines and fills, clear of `obstacles`. */
-function drawPointLabels(
+/** The point labels of `sets`, measured in their font; none without sets. */
+function measurePointLabels(
   chart: Chart<'line'>,
   sets: readonly CcPointLabelSet[],
   theme: CcChartTheme,
   notAnalyzed: ReadonlyMap<number, string> | null,
   font: CcPointLabelFont,
-  obstacles: readonly CcLabelBox[] = []
-): void {
-  if (sets.length === 0) return;
+  bands: readonly CcPeriodBand[]
+): PointLabels {
+  if (sets.length === 0) return { labels: [], leading: 0 };
   const ctx = chart.ctx;
   ctx.save();
   ctx.font = `${font.weight} ${font.sizePx}px ${theme.fontFamily}`;
-  const candidates = pointLabelCandidates(chart, sets, notAnalyzed, font);
-  const kept = ccPlaceLabels(candidates.map(label => label.box), { left: 0, top: 0, right: chart.width, bottom: chart.height }, obstacles);
+  const labels = pointLabelCandidates(chart, sets, notAnalyzed, font, bands);
+  ctx.restore();
+  return labels;
+}
+
+/**
+ * The kept point labels, each over a halo of the background so it reads across lines and fills; all
+ * but the leading ones clear of `obstacles`.
+ */
+function drawPointLabels(
+  chart: Chart<'line'>,
+  candidates: PointLabels,
+  theme: CcChartTheme,
+  font: CcPointLabelFont,
+  obstacles: readonly CcLabelBox[] = []
+): void {
+  if (candidates.labels.length === 0) return;
+  const ctx = chart.ctx;
+  ctx.save();
+  ctx.font = `${font.weight} ${font.sizePx}px ${theme.fontFamily}`;
+  const kept = ccPlaceLabels(candidates.labels.map(label => label.box), { left: 0, top: 0, right: chart.width, bottom: chart.height },
+    obstacles, candidates.leading);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.lineJoin = 'round';
   ctx.lineWidth = 3;
   ctx.strokeStyle = theme.background ?? theme.surface;
   for (const i of kept) {
-    const { text, box, muted } = candidates[i];
+    const { text, box, muted } = candidates.labels[i];
     ctx.strokeText(text, box.left, box.top);
     ctx.fillStyle = muted ? theme.muted : theme.text;
     ctx.fillText(text, box.left, box.top);
@@ -1220,8 +1413,10 @@ function drawnPoints(chart: Chart<'line'>): { x: number; y: number }[] {
  * The tags sit in a band of up to `CC_TAG_MAX_ROWS` rows between the legend and the plot, laid out
  * by `ccTagRows`; the band is sized from the markers within `range` (the x axis's bounds when null)
  * before drawing, so a crowded day never covers the data. Each line starts under its own tag. Each
- * period's name takes a corner of its band clear of the tags (`ccPeriodLabelPlacement`), and the
- * point labels keep clear of the names.
+ * period's name takes a corner of its band clear of the tags and of the value labels of each period's
+ * first and last point, which are never given up (`ccPeriodLabelPlacement`); the other point labels
+ * keep clear of the names. Where a name may not find room in its band, a one-line period legend under
+ * the time axis names every period instead, and a name stays in its band only where it is clear.
  */
 export function ccOverlayPlugin(
   markers: readonly CcChartMarker[],
@@ -1248,6 +1443,10 @@ export function ccOverlayPlugin(
       band.range = range;
       band.font = font;
       band.rowHeight = rowHeight;
+      const legend = periodLegendBandOf(chart);
+      legend.bands = bands;
+      legend.range = range;
+      legend.font = `${CC_PERIOD_LABEL_PX}px ${theme.fontFamily}`;
     },
     stop(chart) {
       removeBands(chart);
@@ -1342,21 +1541,29 @@ export function ccOverlayPlugin(
         tagBoxes.push({ left: px - width / 2, top, right: px + width / 2, bottom: top + boxHeight });
       });
       ctx.restore();
-      const periodBoxes = drawPeriodLabels(chart, bands, theme, tagBoxes);
-      drawPointLabels(chart, decor.pointLabels ?? [], theme, decor.notAnalyzed ?? null, decor.labelFont ?? ccPointLabelFont(), periodBoxes);
+      const labelFont = decor.labelFont ?? ccPointLabelFont();
+      const pointLabels = measurePointLabels(chart, decor.pointLabels ?? [], theme, decor.notAnalyzed ?? null, labelFont, bands);
+      const guarded = pointLabels.labels.slice(0, pointLabels.leading).map(label => label.box);
+      const legend = PERIOD_LEGEND_BANDS.get(chart) ?? null;
+      const periodBoxes = drawPeriodLabels(chart, bands, theme, [...tagBoxes, ...guarded], legend !== null && legend.height > 0);
+      if (legend) drawPeriodLegend(chart, legend, theme);
+      drawPointLabels(chart, pointLabels, theme, labelFont, periodBoxes);
     }
   };
 }
 
 /**
  * Writes each period band's name where `ccPeriodLabelPlacement` puts it, over a halo of the background,
- * and returns the boxes written, for the point labels to keep clear of.
+ * and returns the boxes written, for the other point labels to keep clear of. With the period legend
+ * laid out (`inLegend`), which names every band, a name is written in its band only where it is
+ * clear of the obstacles and the points.
  */
 function drawPeriodLabels(
   chart: Chart<'line'>,
   bands: readonly CcPeriodBand[],
   theme: CcChartTheme,
-  tagBoxes: readonly CcLabelBox[]
+  obstacles: readonly CcLabelBox[],
+  inLegend = false
 ): CcLabelBox[] {
   const x = chart.scales['x'];
   const area = chart.chartArea;
@@ -1378,8 +1585,8 @@ function drawPeriodLabels(
     const right = Math.min(area.right, x.getPixelForValue(band.end));
     if (right <= left) continue;
     const label = ccPeriodLabelPlacement(band.name, text => ctx.measureText(text).width, { left, right }, plot,
-      [...tagBoxes, ...written], points);
-    if (!label) continue;
+      [...obstacles, ...written], points);
+    if (!label || (inLegend && !label.clear)) continue;
     ctx.strokeText(label.text, label.box.left, label.box.top);
     ctx.fillText(label.text, label.box.left, label.box.top);
     written.push(label.box);
@@ -1594,9 +1801,55 @@ interface AxisSpec {
   policy: CcAxisPolicy | null;
 }
 
+/** The fitted time axis's padding on each side: 8 % of the span, at least 45 minutes. */
+const FIT_PAD_SHARE = 0.08;
+const FIT_PAD_MIN_MS = 45 * 60_000;
+
+/** The least share of the plot a period band cut by the time axis's edge is widened to. */
+export const CC_MIN_BAND_SHARE = 0.1;
+
+/**
+ * `range` widened on the side where a period band runs past its edge, until the band's visible part
+ * is at least `share` of the range or the band's own end is reached. A band inside the range, or
+ * wholly outside it, is left as it is.
+ */
+export function ccWidenRangeForBands(
+  range: { min: number; max: number },
+  bands: readonly CcPeriodBand[],
+  share: number = CC_MIN_BAND_SHARE
+): { min: number; max: number } {
+  let { min, max } = range;
+  // Widening one side changes the other band's share, so a few passes settle both.
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (const band of bands) {
+      if (!(band.end > band.start)) continue;
+      const left = Math.max(band.start, min);
+      const right = Math.min(band.end, max);
+      if (right <= left || right - left >= share * (max - min)) continue;
+      if (band.end > max) {
+        const target = Math.min(band.end, (left - share * min) / (1 - share));
+        if (target > max) {
+          max = target;
+          changed = true;
+        }
+      } else if (band.start < min) {
+        const target = Math.max(band.start, (right - share * max) / (1 - share));
+        if (target < min) {
+          min = target;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  return { min, max };
+}
+
 /**
  * The time axis: the plotted points, the period bands unless `fitToData`, and the markers within a
- * week of them, padded on both sides.
+ * week of them, padded on both sides, then widened where a period band would be a sliver
+ * (`ccWidenRangeForBands`).
  */
 function xRange(
   series: readonly CcChartPoint[][],
@@ -1618,9 +1871,9 @@ function xRange(
     }
   }
   const pad = fitToData
-    ? Math.max((max - min) * 0.05, 30 * 60_000)
+    ? Math.max((max - min) * FIT_PAD_SHARE, FIT_PAD_MIN_MS)
     : Math.max((max - min) * 0.03, 12 * 3_600_000);
-  return { min: min - pad, max: max + pad };
+  return ccWidenRangeForBands({ min: min - pad, max: max + pad }, bands);
 }
 
 /** The points not in the analysis and the plain point look of each drawn dataset, for the legend. */

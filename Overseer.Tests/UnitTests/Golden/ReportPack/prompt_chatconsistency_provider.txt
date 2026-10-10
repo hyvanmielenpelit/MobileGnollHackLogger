@@ -15,6 +15,7 @@ TERMS AND UNITS:
 - Grading is how the answers were scored by the graders; write grading, never scoring method.
 - The unit of the analysis is {{period.baseline.unitNoun}}. Where the analysis compares battery runs, count in battery runs ({{period.baseline.units}}, {{period.comparison.units}}), never in the member runs inside them.
 - Where the minimum sample is not met ({{sample.met}}), the result rests on fewer runs than the protocol asks for; say so with {{sample.shortfall}} where the slot asks for it.
+- Name an Overseer update by what changed, in the words of its events.<n>.change, eventGroups.<n>.changes or events.<n>.kind fact, never by a field name.
 - GnollBench runs are made by hand, on the development computer, when someone decides to make them. Never write that the chat is monitored or watched, or that a check runs by itself; say which runs to make.
 - The document prints code-built blocks before the slots and above some of them, as each slot's description says: the overall verdict, the verdict table and others. Interpret them; never restate them, and never repeat their figures one by one.
 
@@ -22,7 +23,7 @@ SLOTS (the keys of "sections"; each one is required, holds Markdown paragraphs a
 Printed before every slot: the overall verdict (the outcome, the endpoints not computable and why, the sample, the hours and the control runs); interpret them, never restate them.
 - issueSummary ("Summary"): At most 120 words: what we observed, in plain and neutral terms: the endpoints whose verdict shows a change, with their estimates and intervals, the hours observed and the provider-side attribution with its grade. Printed above it: the attribution; interpret them, never restate them.
 - affectedModel ("Affected model and configuration"): At most 80 words: the model and configuration: {{subject.label}}, {{subject.modelId}}, the thinking level and service tier, and the served model ids of each period.
-- timeline ("Timeline"): At most 150 words: the baseline and comparison periods with their dates and run days, and the dates of any annotations, as the facts give them.
+- timeline ("Timeline"): At most 150 words: the baseline and comparison periods with their windows ({{period.baseline.window}}, {{period.comparison.window}}) and run days, and the dates of any annotations, as the facts give them.
 - measurements ("Measurements with intervals"): At most 200 words: each endpoint's estimate with its interval, verdict and grade, and the control models' own change. Measurements only, never an interpretation of the provider's systems. Printed above it: the verdict table with a note line per endpoint, the endpoints not computable, the secondary measures and where the chat stands in each period; interpret them, never restate them.
 - hoursObserved ("Hours observed"): At most 80 words: the hours the comparison covers ({{scope.hours}}, or the hours each period ran when they share none), its strata and whether time of day can be assessed. Say plainly that the measurements hold for these hours only.
 - ruledOut ("What we ruled out (our changes, infrastructure)"): At most 200 words: what we checked on our side. List every Overseer event of the period, each with one of its events.<n> tokens as CLAIM SUPPORT lists them, then our own waits and retries, the served tier and fallbacks, and what the control models show, each as far as its facts and the attribution grades go. Printed above it: the table of Overseer updates and the control models and the periods without a control; interpret them, never restate them.
@@ -48,6 +49,9 @@ NUMBERS AND NAMES:
 REPETITION AND LENGTH:
 - A fact whose value is a sentence (limitation.*, limitation.dataQuality.*, robustness.<n>.detail, controls.missing.<n>.suggestion, nextRuns.<n>.reason and .suggestion, and any fact whose key ends in reason) appears at most once in the whole document, and never inside parentheses. After its one citation, refer to it in a few plain words.
 - Endpoints that share a status or a value get one sentence together, not one sentence each: for example, two endpoints that are not computable for the same reason.
+- Never write "X and X, respectively". When the two periods share a value, or two endpoints share a verdict, name it once, as in "inconclusive for both"; where FACTS states one value for both periods (identity.servedModels, serving.speeds, ownWaits.share, ownWaits.retries), cite that fact instead of the two.
+- A fact whose value is a sentence is written as a sentence of its own, or quoted inside yours without its final full stop; never continue a sentence after it with and.
+- Cite an interval (a ci95, ci90 or controlChangeCi95 fact) only in a sentence that also cites its estimate and names its measure.
 - State an inconclusive endpoint's minimum detectable effect once in the document, where you first discuss that endpoint.
 - For the robustness checks, prefer robustness.<check>.summary, which states every endpoint of one check in one sentence, to the robustness.<n>.* facts one by one.
 - When {{verdict.short}} reads Not enough evidence yet, write at most two sentences per slot. Do not restate which endpoints are not computable: the overall verdict already says so. Spend the words on what the runs do show and on which runs would give an answer.
@@ -115,7 +119,7 @@ PEERS (the control models; write {{peer:X}} to refer to one)
 - {{peer:A}}: its facts (values under FACTS): controls.1.model, controls.1.periods, controls.1.runs, controls.1.sameProvider
 
 FACTS (write {{key}} to place a figure; key = value as printed)
-analysis.codeVersion = 6
+analysis.codeVersion = 7
 analysis.id = #7
 analysis.name = Weekly check
 analysis.relaxedPooling = no pooling across a measurement change
@@ -258,14 +262,14 @@ eventGroups.2.tag = E2
 eventGroups.count = 2 Overseer updates
 events.1.at = 2026-09-11 00:00 UTC
 events.1.change = game snapshot: off → on
-events.1.kind = Prompt options
+events.1.kind = prompt options
 events.1.label = candidate prompt options changed on 2026-09-11 (run #20)
 events.1.previousRun = run #11
 events.1.run = run #20
 events.1.series = the model under test
 events.2.at = 2026-09-12 00:00 UTC
 events.2.change = re-indexed: GnollHack wiki (812 → 815 files)
-events.2.kind = Corpus index
+events.2.kind = corpus re-index
 events.2.label = corpus index changed on 2026-09-12 (run #31)
 events.2.previousRun = run #30
 events.2.run = run #31
@@ -273,10 +277,9 @@ events.2.series = Model A
 events.count = 2 Overseer events
 grader.drift.count = 0 anchor runs
 identity.baseline.calls = 120 candidate calls
-identity.baseline.servedModels = test-model-1-2026-08-01 (120 calls)
 identity.changed = the served model IDs are the same in both periods
 identity.comparison.calls = 118 candidate calls
-identity.comparison.servedModels = test-model-1-2026-08-01 (118 calls)
+identity.servedModels = test-model-1-2026-08-01 in both periods (120 and 118 calls)
 level.baseline.answers = 40 answers
 level.baseline.costPerQuestion = mean $0.0071 per question
 level.baseline.failedAnswers = 0 of 40 answers
@@ -323,6 +326,7 @@ period.baseline.start = 2026-09-01 00:00 UTC
 period.baseline.suites = Core suite
 period.baseline.unitNoun = run
 period.baseline.units = 2 runs
+period.baseline.window = 2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC
 period.comparison.answers = 40 answers
 period.comparison.days = 2 days: 2026-09-15, 2026-09-16
 period.comparison.end = 2026-09-22 00:00 UTC
@@ -335,6 +339,7 @@ period.comparison.start = 2026-09-15 00:00 UTC
 period.comparison.suites = Core suite
 period.comparison.unitNoun = run
 period.comparison.units = 2 runs
+period.comparison.window = from 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC
 pricing.asOf = unavailable: The price card records no date.
 pricing.card = unavailable: No price card was available, so cost was not compared.
 pricing.source = unavailable: No price card source was recorded.

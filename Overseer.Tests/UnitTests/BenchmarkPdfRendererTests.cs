@@ -389,7 +389,7 @@ public class BenchmarkPdfRendererTests
         // The Markdown footer is left out; the cover states its facts once.
         Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
         Assert.DoesNotContain(Squash("rendered with format version"), text);
-        Assert.Contains(Squash("PDF layout 7"), text);
+        Assert.Contains(Squash("PDF layout 8"), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.
         Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
@@ -490,7 +490,7 @@ public class BenchmarkPdfRendererTests
         string second = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, changed));
         Assert.Contains("Source" + original[..16], first);
         Assert.Contains("Source" + altered[..16], second);
-        Assert.Contains("PDFlayout7", first);
+        Assert.Contains("PDFlayout8", first);
 
         // A chart with no marker is not drawn and leaves the hash alone.
         string unplaced = AllText(BenchmarkPdfRenderer.RenderMarkdown("Only text.\n", Info(), TestContext.Current.CancellationToken, charts));
@@ -674,9 +674,38 @@ public class BenchmarkPdfRendererTests
     // --- The last section ----------------------------------------------------------------------------
 
     [Fact]
-    public void TheLayoutVersion_IsSeven()
+    public void TheLayoutVersion_IsEight()
     {
-        Assert.Equal(7, BenchmarkPdfRenderer.LayoutVersion);
+        Assert.Equal(8, BenchmarkPdfRenderer.LayoutVersion);
+    }
+
+    [Fact]
+    public void ABoldLabelBeforeATable_MovesWithTheTable_SoItNeverStandsAloneAtThePageFoot()
+    {
+        // Filler pushes the label, alone and under a heading, down the page at every position near its foot
+        // in turn; the short table after it is kept on one page.
+        foreach (string lead in new[] { string.Empty, "## Verdicts by endpoint\n\n" })
+        {
+            for (int filler = 30; filler <= 58; filler += 2)
+            {
+                var sb = new StringBuilder("# Heading\n\n");
+                for (int i = 0; i < filler; i++) sb.Append("Filler paragraph ").Append(i).Append(" with some words to take up a line.\n\n");
+                sb.Append(lead).Append("**WHERESTANDSLABEL**\n\n| Measure | Baseline | Comparison |\n|---|---|---|\n");
+                for (int i = 0; i < 6; i++) sb.Append("| ROW").Append(i + 1).Append(" | 82.0 | 81.7 |\n");
+
+                byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(sb.ToString(), Info(), TestContext.Current.CancellationToken);
+
+                using var reader = PdfDocument.Open(pdf);
+                var labelPage = reader.GetPages().Last(p => Squash(p.Text).Contains("WHERESTANDSLABEL", StringComparison.Ordinal));
+                Assert.True(Squash(labelPage.Text).Contains("ROW182.081.7", StringComparison.Ordinal),
+                    "With " + filler + " filler paragraphs" + (lead.Length > 0 ? " and a heading" : string.Empty) + " the label stands on a page without its table.");
+            }
+        }
+
+        Assert.True(BenchmarkPdfMarkdownComposer.IsBoldHeadingParagraph(
+            BenchmarkPdfMarkdownComposer.Parse("**Where the chat stands**").OfType<Markdig.Syntax.ParagraphBlock>().Single()));
+        Assert.False(BenchmarkPdfMarkdownComposer.IsBoldHeadingParagraph(
+            BenchmarkPdfMarkdownComposer.Parse("**Where the change came from.** The analysis attributes it.").OfType<Markdig.Syntax.ParagraphBlock>().Single()));
     }
 
     [Fact]

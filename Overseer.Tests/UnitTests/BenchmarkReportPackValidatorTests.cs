@@ -492,7 +492,7 @@ internal static class ChatConsistencyReportTestData
             case BenchmarkReportAudience.ProviderIssueReport:
                 output.Headline = "Answer quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
                 s[BenchmarkReportSlots.IssueSummary] = "Answer quality degraded by {{endpoint.P1.estimate}}, and the analysis places it on the provider's side as {{attribution.1.grade}}.";
-                s[BenchmarkReportSlots.AffectedModel] = "The model is {{subject.label}} with thinking level {{subject.thinkingLevel}}, served as {{identity.comparison.servedModels}}.";
+                s[BenchmarkReportSlots.AffectedModel] = "The model is {{subject.label}} with thinking level {{subject.thinkingLevel}}, served as {{identity.servedModels}}.";
                 s[BenchmarkReportSlots.Timeline] = "The baseline ran from {{period.baseline.start}} to {{period.baseline.end}}, and the comparison from {{period.comparison.start}} to {{period.comparison.end}}.";
                 s[BenchmarkReportSlots.Measurements] = "Quality degraded by {{endpoint.P1.estimate}}, with an interval of {{endpoint.P1.ci95}}, graded {{endpoint.P1.grade}}.";
                 s[BenchmarkReportSlots.HoursObserved] = "We observed {{scope.hours}} only, and time of day is {{serving.timeOfDayAssessable}}.";
@@ -2455,8 +2455,9 @@ public class BenchmarkReportPackComparisonValidatorTests
 }
 
 /// <summary>
-/// The chat consistency scope: its slots and word caps, the claim discipline of rules C1 to C7 and the
-/// readable-text rule C8, each with a passing and a failing case; a per-model document is unaffected by them.
+/// The chat consistency scope: its slots and word caps, the claim discipline of rules C1 to C7, the
+/// readable-text rule C8 and the repetition rule C9, each with a passing and a failing case; a per-model
+/// document is unaffected by them.
 /// </summary>
 public class BenchmarkReportPackChatConsistencyValidatorTests
 {
@@ -2704,8 +2705,8 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
             "The model's answers degraded by {{endpoint.P1.estimate}}, which the analysis places on the provider's side as {{attribution.1.grade}}."));
 
         // C7 reads a Provider Issue Report only, and not its slots that only identify.
-        Assert.Empty(ValidateChatSlot(Pir, BenchmarkReportSlots.AffectedModel, "The model is {{subject.label}}, with the served model {{identity.baseline.servedModels}}."));
-        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.ProviderChanges, "The served model is {{identity.comparison.servedModels}} in the comparison period."));
+        Assert.Empty(ValidateChatSlot(Pir, BenchmarkReportSlots.AffectedModel, "The model is {{subject.label}}, with the served model {{identity.servedModels}}."));
+        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.ProviderChanges, "The served model is {{identity.servedModels}}."));
     }
 
     [Fact]
@@ -2759,6 +2760,88 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
         var cleaned = BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
         Assert.True(cleaned.Fatal);
         Assert.Contains(cleaned.Notes, n => n.Rule == BenchmarkReportPackValidator.ChatReadableTextRule && n.Location == "headline");
+    }
+
+    [Fact]
+    public void C8_APairStatedOnceForBothPeriods_IsKeptFromTheWriter()
+    {
+        // The served model ID is the same in both periods, so the pair is stated once and the two halves are hidden.
+        var note = Assert.Single(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents,
+            "The served model was {{identity.baseline.servedModels}}, within {{scope.hours}}."));
+        Assert.Equal(BenchmarkReportPackValidator.ChatReadableTextRule, note.Rule);
+        Assert.Contains("{{identity.baseline.servedModels}}", note.Message, StringComparison.Ordinal);
+
+        Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, "The served model was {{identity.servedModels}}, within {{scope.hours}}."));
+    }
+
+    [Fact]
+    public void C8_TheMeanAnswerScore_IsKeptFromTheWriter_InABatteryComparisonWithOverallIndexes()
+    {
+        var baseResult = ChatConsistencyReportTestData.Result();
+        var battery = baseResult with
+        {
+            ComparisonSet = new ChatConsistencyComparedSet { Kind = ChatConsistencyComparisonSetKinds.Battery, Key = "battery:abc", Label = "Two suites (revision 1)" },
+            UnitKind = ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+            Units = new[]
+            {
+                new ChatConsistencyUnitView { UnitId = 101, Kind = ChatConsistencyComparisonSetKinds.BatteryRunUnit, Period = "baseline", MemberRunIds = new long[] { 10, 11 } },
+                new ChatConsistencyUnitView { UnitId = 102, Kind = ChatConsistencyComparisonSetKinds.BatteryRunUnit, Period = "comparison", MemberRunIds = new long[] { 20, 21 } }
+            },
+            PeriodLevels = baseResult.PeriodLevels!.Select(l => l with { OverallIndex = l.Period == "baseline" ? 82.0 : 81.7 }).ToList()
+        };
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.PlayerImpact] = "Answers scored {{level.comparison.quality}} within {{scope.hours}}.";
+
+        var notes = BenchmarkReportPackValidator.Validate(Es, output, BenchmarkChatConsistencyReportFacts.Build(battery, Es), ChatConsistencyReportTestData.Content());
+        var note = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.ChatReadableTextRule);
+        Assert.Contains("{{level.comparison.quality}}", note.Message, StringComparison.Ordinal);
+
+        // A comparison of runs keeps the mean answer score for the writer.
+        Assert.DoesNotContain(ValidateChat(Es, output), n => n.Rule == BenchmarkReportPackValidator.ChatReadableTextRule);
+    }
+
+    [Theory]
+    [InlineData("Quality and cost per answer are {{endpoint.P5.verdict}} and {{endpoint.P5.verdict}}, respectively.", "inconclusive and inconclusive, respectively")]
+    [InlineData("The two estimates were 3.1 and 3.1, respectively.", "3.1 and 3.1, respectively")]
+    [InlineData("Quality and speed paired {{endpoint.P1.items}} and {{endpoint.P2.items}} respectively.", "20 items and 20 items, respectively")]
+    [InlineData("The checks report {{limitation.1}} and more.", "sampled. and more")]
+    public void C9_ARepeatedPairOrASplicedSentence_IsAWarning(string text, string excerpt)
+    {
+        var notes = ValidateChatSlot(Tr, BenchmarkReportSlots.EndpointResults, text + " Within {{scope.hours}}.")
+            .Where(n => n.Rule == BenchmarkReportPackValidator.ChatRepetitionRule)
+            .ToList();
+
+        var note = Assert.Single(notes);
+        Assert.Equal("sections.endpointResults[p1]", note.Location);
+        Assert.StartsWith("C9: ", note.Message, StringComparison.Ordinal);
+        Assert.Contains(excerpt, note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+    }
+
+    [Fact]
+    public void C9_KeepsItsParagraph_AfterTheRepairTurn()
+    {
+        var output = ChatConsistencyReportTestData.ValidOutput(Tr);
+        output.Sections[BenchmarkReportSlots.EndpointResults] = "The checks report {{limitation.1}} and more. Within {{scope.hours}}.";
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Tr, output, ChatConsistencyReportTestData.Sheet(Tr), ChatConsistencyReportTestData.Content());
+
+        Assert.False(cleaned.Fatal);
+        Assert.Equal(output.Sections[BenchmarkReportSlots.EndpointResults], cleaned.Output.Sections[BenchmarkReportSlots.EndpointResults]);
+        var note = Assert.Single(cleaned.Notes);
+        Assert.Equal(BenchmarkReportPackValidator.ChatRepetitionRule, note.Rule);
+        Assert.False(note.Dropped);
+    }
+
+    [Theory]
+    [InlineData("The two estimates were 3.1 and 3.2, respectively.")]
+    [InlineData("Time to first answer text and cost per answer were {{endpoint.P2.verdict}} and {{endpoint.P5.verdict}}, respectively.")]
+    [InlineData("Some updates, e.g. and most notably the wiki, fall between the periods.")]
+    [InlineData("The analysis records a limitation. And it names the hours.")]
+    public void C9_DistinctValues_AnAbbreviation_OrANewSentence_Pass(string text)
+    {
+        Assert.DoesNotContain(ValidateChatSlot(Tr, BenchmarkReportSlots.EndpointResults, text + " Within {{scope.hours}}."),
+            n => n.Rule == BenchmarkReportPackValidator.ChatRepetitionRule);
     }
 
     [Fact]

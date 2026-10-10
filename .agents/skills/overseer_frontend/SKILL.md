@@ -79,6 +79,22 @@ Harness-neutral, and the floor for any Overseer frontend work.
   *alert-circle* SVG (`aria-hidden`), then the text, in `--color-error-text` (a lighter red that
   clears 4.5:1 on the dialog surfaces, where `--color-error` does not). Use it for a refusal under a
   control rather than `form-hint text-danger`; the icon, the word and the color all carry the message.
+- **`.gh-field-warning`** (since 2026-10-10) is its warning counterpart: a condition the user may
+  proceed past once it is acknowledged, with a leading 14 px Feather *alert-triangle* SVG
+  (`aria-hidden`) and the text in `--color-warning`. The model batch launcher puts a field's first
+  blocker under it as `.gh-field-error` and else its first warning as `.gh-field-warning`, linked by the
+  field's `aria-describedby`; the model batch progress dialog uses it for its corpus-quiet and stall
+  lines. Global; never copied into a component.
+- **`.gh-readiness*`** (since 2026-10-10) — the readiness card, global in `styles.scss`, first used by
+  the model batch launcher's *Batch Readiness* (`app-model-batch-readiness`): `.gh-readiness` (with
+  `[data-state]` `blocked`, `review` or `ready` on the card, which colors its start edge), the summary
+  row `.gh-readiness-summary` (`-title`, `-status` with the glyph `.gh-readiness-icon`, `-busy`), the
+  count chips `.gh-readiness-chips` / `.gh-readiness-chip[data-severity]` (`blocker`, `warning`,
+  `acknowledged`, `advice`), the disclosures `.gh-readiness-details` and the nested `.gh-readiness-tips`,
+  and the list `.gh-readiness-list` of `.gh-readiness-item[data-severity]` with `-item-head`,
+  `-severity`, `-item-title`, `-item-detail`, `-item-actions` and `.gh-readiness-ack`. Every severity is
+  a word and a glyph, never a color alone, and forced-colors mode keeps the borders and words. Contract:
+  [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4i.
 - Shared since 2026-09-29, and not to be copied back into a component: **`.run-stage-rail`** (the
   stage list of the run, multi-run, battery and AI report writing progress dialogs; `.is-done` /
   `.is-current`, plus `.is-skipped` (muted, dashed ring) and `.is-ended` (`--color-warning`) for a
@@ -1652,7 +1668,62 @@ To find specific popups, look in the corresponding component's `.html` template:
     monitor's `armCompletionSignalsFromGesture()` synchronously in the click. Opened from the battery
     banner's **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery
     Run Report's *Show progress* action. **Open Analysis** emits `openAnalysis` with the battery run id, and
-    the shell's `onOpenBatteryAnalysis` opens the Battery Run Report.
+    the shell's `onOpenBatteryAnalysis` opens the Battery Run Report. **A model batch's battery run**:
+    while its batch (`modelBatchRunId`) is not final, a `.bp-batch-notice` under the heading reads *Part of
+    model batch #N.* with **Open model batch #N** (`openModelBatch`), and Cancel Battery, Re-run under
+    current instrument and Continue are `aria-disabled` with `MODEL_BATCH_OWNED_REASON` beside them
+    (`#bpBatchOwnedReason`); opened from the batch dialog (`returnsToModelBatch`), its dismissal reads
+    **Back to Batch**. The multi-run progress dialog does the same for a batch's series
+    (`.series-batch-notice`, `#seriesBatchOwnedReason`), and the run progress dialog's dismissal reads
+    **Back to Batch** for a member run opened from the batch.
+  - `app-model-batch-progress-dialog` (`model-batch/model-batch-progress-dialog.component.*`, `mb`
+    ids, pure helpers in `model-batch/model-batch.models.ts`; method in
+    `docs/overseer/ai-benchmark-model-batches.md`): **full-screen** progress of one model batch, hosted
+    by the shell (`benchmark.component.html`) and shown by `BenchmarkActiveRunMonitor`
+    (`modelBatchDialogVisible`, `modelBatchDialogId`). Header *Model Batch #N* with the GnollBench
+    emblem, the subtitle *target · n models × K suites × R runs · order and seed* and the scoring graders
+    as `app-run-facts`; then the shared `.run-stage-rail` (*Model runs*, *Ready to compare*), the *Models
+    finished* bar with the dialog's **only** `role="status"` line, a state block for a stopped or waiting
+    batch (the stop reason and detail, and each resume option with what it does), a `.run-stat-strip`
+    (*Status*, *Elapsed*, *Models done*, *Runs*, *Failed*, *Candidate cost*, *Total cost*), the shared
+    instrument line or the *Instrument changed before …* alert (tagged *Not comparable across the
+    change* once accepted), the MB-T04 and stall lines as `.gh-field-warning`, and **Models in run
+    order**: an `ol` of `article.mb-member` cards (position, name, `runFactBadges` badges, a
+    `.job-status-chip`; a running member's step, stage, `progress.job-progress` and elapsed time; a
+    finished member's `app-index-badge` and facts; an ended member's reason; **Skip model** on a pending
+    one; icon-only *Open run progress* per run or *Open battery progress*, and *View report*), then
+    *Batch diagnostics* with icon-only **Copy** and **Download** (`model-batch-<id>-diagnostics.txt`). The
+    footer: **Run in Background** / **Close**, **Cancel Batch** and **Re-run under current instrument**
+    (each behind the shell's confirmation, `BenchmarkShellBridge.openConfirmDialog`), the other resume
+    options (*Continue* behind the *play* glyph), and **Open in Model Comparison** (emits the comparison
+    preset; `aria-disabled` with *Two models with a completed result are needed to compare.* until two
+    members have a result). While a request is in flight the other actions are `aria-disabled` with the
+    reason beside them, and each resume arms the end signals under the click. It loads and polls the
+    batch itself (`GET model-batches/runs/{id}`, 2 s, one request at a time, backing off 4 → 8 → 16 →
+    30 s, paused while the tab is hidden). **It never embeds a member's dialog**: *Open run progress* and
+    *Open battery progress* close it and emit the id; the shell opens that dialog with **Back to Batch**,
+    and `reopenModelBatchAfterClose()` reopens the batch dialog when it closes. Opened on Start, from the
+    run tab's batch banner (**Show Batch Progress**) and from a Run History batch card (**View
+    progress**).
+  - **The run tab's model batch mode** (`run-tab/`, state in `BenchmarkLauncherState`, *Model batches*
+    block): the **Models** radios (`fieldset.gh-choice.run-mode-choice`, *One model* / *Model batch*,
+    `setRunMode`, which clears the report writer and the reuse) inside `.setup-primary-field`; in batch
+    mode **Models Under Test** (`app-model-multi-picker.batch-models-picker`, `showPrice` and
+    `showParallel`, `max` from `runLimits.maxModelsPerBatch`, `maxChips` 12, options from
+    `batchPickerOptions` with `disabledReason` *Grades this batch* / *Writes its reports* and warning
+    chip notes as `detail`), *Runs per model* (suite) or *Runs per Suite* (battery), the **Model order**
+    radios (`fieldset.gh-choice.batch-order-choice`) with an `app-reorderable-list` under *As listed*,
+    *Batch Options*, the **Batch Projection** fieldset (`.series-projection-fieldset.batch-projection`,
+    with a *Per-model basis* `gh-disclosure`), and `.model-batch-actions`: `app-model-batch-readiness`
+    above **Start Model Batch** (`aria-disabled` with `#startModelBatchHint`), which opens
+    `#modelBatchConfirmDialog` (*Start model batch?*, the plan as a `gh-table`; its **Start Model Batch**
+    sends). Each finding's inline line is the `#batchLine` template under its field (`mbLine-<field>`,
+    added to the field's `aria-describedby` by `describedWithBatchLine`); the server's `field` names map
+    to the launcher's through `modelBatchFieldOf`. The preflight is asked through
+    `BenchmarkLauncherState.requestPreflight()` from every batch change handler (300 ms debounce,
+    `switchMap`, retry with backoff), never computed in the browser. The banner (`.model-batch-banner`,
+    *Model batch #N*, **Show Batch Progress**, **Cancel Batch** with a confirmation) holds the other
+    banners back while the batch is live or stopped (`modelBatchHoldsBanners`).
   - **The progress dialogs' elapsed clock.** The run (`BenchmarkActiveRunMonitor`, stop function in
     `runElapsedInterval`), multi-run and battery progress dialogs share one format, `formatElapsed`
     (`benchmark-run-format.ts`: *45s*, *3m 05s*, *1h 02m 05s*, whole seconds floored), and one tick,
@@ -2371,7 +2442,7 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 
 In the GnollBench tab (`/admin` -> GnollBench), the settings in the **New Benchmark Run** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
 
-The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds the **Run Target** radio group (*Single suite* / *Battery*, a `role="radiogroup"` fieldset), then Benchmark Suite — or, for a battery, the **Battery** select `#batterySelect` — Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Reader or Reference Reader (with its dependent Coverage) and Claim Verifier, plus the *How the graders work* button that opens the grader guide; *Execution* holds Number of Runs (its click tip lists when one run fits and when several do), then — for a series or a battery — a borderless `fieldset.exec-options` whose `legend#execOptionsCaption` (*Series Options* / *Battery Options*, in the `.field-caption` style) holds *Wait when the run cap blocks the next run* and, for a battery, *Reuse earlier runs*, 0.5 rem apart, then *Completion Alerts*: a `role="group"` captioned by `#completionSignalsCaption`, its (i) directly after the caption in `.exec-heading-row`, two `.checkbox-label` checkboxes and **Test sound**. Launcher field labels and group captions share one heading style (0.875 rem, 600), lighter checkbox text below them. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
+The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds the **Run Target** radio group (*Single suite* / *Battery*, a `role="radiogroup"` fieldset), then Benchmark Suite — or, for a battery, the **Battery** select `#batterySelect` — Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Reader or Reference Reader (with its dependent Coverage) and Claim Verifier, plus the *How the graders work* button that opens the grader guide; *Execution* holds Number of Runs (its click tip lists when one run fits and when several do), then — for a series or a battery — a borderless `fieldset.exec-options` whose `legend#execOptionsCaption` (*Series Options* / *Battery Options*, in the `.field-caption` style) holds *Wait when the run cap blocks the next run* and, for a battery, *Reuse earlier runs*, 0.5 rem apart, then *Completion Alerts*: a `role="group"` captioned by `#completionSignalsCaption`, its (i) directly after the caption in `.exec-heading-row`, two `.checkbox-label` checkboxes and, in `.completion-signals-actions`, **Test sound** and **Test failure sound**. The alerts play one of **two chimes** of `BenchmarkCompletionSoundService` (`services/benchmark-completion-sound.service.ts`): `'complete'` (`/audio/AIBenchmarkingComplete.*`) and `'failed'`, the *AI Benchmarking Failed* sound (`/audio/AIBenchmarkingFailed.*`, Opus with an AAC fallback, from `ClientApp/public/audio/`), each with its own element and decoded buffer on one `AudioContext`; `arm()` decodes both, `play(key, kind)` deduplicates per kind and key, and `prime(kind)` serves the two test buttons. Which one an end plays is decided only by `benchmarkEndSignal(kind, status)` (`state/benchmark-end-signal.ts`: the failure sound for a run that failed or completed with errors and for a series, battery run or model batch that stopped, failed or completed with errors; nothing for a cancel; the chime otherwise) — never by a status test in a component. While the page follows a model batch, its members signal nothing of their own. With *Models* set to *Model batch*, the primary field holds the **Models** radios and **Models Under Test**, *Execution* holds *Runs per model* (suite) and the **Model order** radios, the options group is captioned *Batch Options*, and **Start Model Batch** sits under the *Batch Readiness* card (§ *Popups*, *The run tab's model batch mode*). Launcher field labels and group captions share one heading style (0.875 rem, 600), lighter checkbox text below them. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
 
 ### 1. Stored Setting Fields (`BenchmarkRunSettings`)
 Whenever modifying or extending the benchmark setup form, ensure the following fields are preserved in `BenchmarkRunSettings`:
@@ -2388,6 +2459,10 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
 - **`runCount`**: Number of runs (`1` for a single run, or `≥ 2` for a replicate multi-run series). In battery mode the same field is **Runs per Suite** and the same `runCount` holds it; there is no second field.
 - **`targetKind`**: The **Run Target** radio group (`runTargetKind`): `'suite'` (Single suite) or `'battery'`. Absent (a blob predating it) restores Single suite.
 - **`batteryId`**: The battery selected in `#batterySelect` (`selectedBatteryId`), restored only while that battery is listed, unarchived and runnable (no deleted suite, no validation error); otherwise the launcher falls back to Single suite.
+- **`runMode`**: The **Models** radios, `'single'` (One model) or `'batch'` (Model batch). Absent restores One model.
+- **`batchModelIds`** and **`batchOrderIds`**: A model batch's chosen models and their *As listed* order, restored with the configurations (the `configs` part), each id only while that configuration still qualifies.
+- **`batchOrder`**: The **Model order** radios, `'randomized'` or `'asListed'`. Absent restores Randomized.
+- **`batchRunsPerModel`**: *Runs per model* on a single suite, clamped like `runCount`; a battery batch uses `runCount` as *Runs per Suite*. The model batch's warning acknowledgments are never stored: they hold for one start (*Safety Acknowledgments Excluded*).
 
 ### 2. Persistence Lifecycle & Invariants
 - **Persisted on change**: Every operator change handler of the launcher calls `persistRunSettings()` (in the run tab through `rememberSettings()`; the desktop-notification checkbox once its permission outcome is applied, so a refused prompt is stored as off), and Start calls it again before the request is sent. A loader's own fallback — a remembered suite that is gone, a configuration that lost its role — does not write, so opening the page never overwrites a remembered value. **A new launcher control must call the save from its change handler.**

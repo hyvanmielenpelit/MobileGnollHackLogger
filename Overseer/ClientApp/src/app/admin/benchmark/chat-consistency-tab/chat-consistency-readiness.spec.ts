@@ -7,6 +7,7 @@ import {
   ccIneligibleInPeriods,
   ccMarginText,
   ccMissingControlsText,
+  ccNothingEstablishable,
   ccPeriodSample,
   ccPreviewNotes,
   ccSampleCountText,
@@ -16,8 +17,8 @@ import {
   ccSegmentNotes,
   ccUnitEligibleOn
 } from './chat-consistency-readiness';
-import { CcAxisEligibility, CcRunRow, CcTimelinePoint } from './chat-consistency.models';
-import { ccBatteryRunRows, ccEvent, ccRunRow, ccRunRows, ccTimeline } from './chat-consistency-tab.testing';
+import { CcAxisEligibility, CcBatteryRunRow, CcRegradeCoverage, CcRunRow, CcTimelinePoint } from './chat-consistency.models';
+import { ccBatteryRunRow, ccBatteryRunRows, ccEvent, ccRunRow, ccRunRows, ccTimeline } from './chat-consistency-tab.testing';
 
 function ids(baselineFirstId: number | null, baselineLastId: number | null,
   comparisonFirstId: number | null, comparisonLastId: number | null): CcPeriodIds {
@@ -113,7 +114,7 @@ describe('chat consistency readiness', () => {
       expect(rows[0].fact).toBe('Baseline 3 runs on 3 days · Comparison 3 runs on 3 days');
       // Run 103 has no call telemetry, so the baseline has two telemetry runs in the stratum.
       expect(rows[1].fact).toBe('No common stratum has 3 runs in each period: weekday 08–12 UTC: 2 / 3.');
-      expect(CC_READINESS_STATUS_TEXT[rows[1].status]).toBe('Cannot be Established');
+      expect(CC_READINESS_STATUS_TEXT[rows[1].status]).toBe('At most Indicated');
     });
 
     it('meets the stratum minimum with three runs a side', () => {
@@ -130,7 +131,7 @@ describe('chat consistency readiness', () => {
     it('names the period short of the minimum sample', () => {
       const p1 = readiness([101], [104, 105, 106])[0];
       expect(p1.status).toBe('belowMinimum');
-      expect(p1.fact).toBe('The baseline needs at least 2 runs on 2 days: Baseline 1 run on 1 day · Comparison 3 runs on 3 days.');
+      expect(p1.fact).toBe('Fewer than 2 runs on 2 days in the baseline: Baseline 1 run on 1 day · Comparison 3 runs on 3 days.');
     });
 
     it('says when a period has no unit eligible on the endpoint\'s axis', () => {
@@ -156,8 +157,17 @@ describe('chat consistency readiness', () => {
     it('does not compute P2 and P3 when the periods share no time stratum', () => {
       const rows = ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, twoBatteryRuns().slice(0, 1), twoBatteryRuns().slice(1), new Map(), true);
       expect(rows.map(row => row.status)).toEqual(['belowMinimum', 'notComputed', 'notComputed', 'belowMinimum', 'belowMinimum']);
-      expect(rows[0].fact).toBe('Both periods need at least 2 battery runs on 2 days: Baseline 1 battery run on 1 day · Comparison 1 battery run on 1 day.');
+      expect(rows[0].fact).toBe('Fewer than 2 battery runs on 2 days per period: Baseline 1 battery run on 1 day · Comparison 1 battery run on 1 day.');
       expect(rows[1].fact).toBe('The periods share no time stratum.');
+    });
+
+    it('says at most Indicated below the minimum sample, and Not computable where nothing can be computed', () => {
+      expect(CC_READINESS_STATUS_TEXT).toEqual({
+        meets: 'Meets the minimum sample',
+        belowMinimum: 'At most Indicated',
+        capped: 'At most Indicated',
+        notComputed: 'Not computable'
+      });
     });
 
     it('reads a battery run\'s eligibility from its aggregate', () => {
@@ -165,6 +175,79 @@ describe('chat consistency readiness', () => {
       expect(ccUnitEligibleOn(eleven, 'quality')).toBe(true);
       const blocked = { ...eleven, battery: { ...eleven.battery!, eligibility: [{ axis: 'quality' as const, eligible: false, segment: null, reason: '#301: No grades' }] } };
       expect(ccUnitEligibleOn(blocked, 'quality')).toBe(false);
+    });
+  });
+
+  describe('across a grading change', () => {
+    const opus: CcRegradeCoverage = { snapshotId: 9, display: 'Claude Opus', calibrationIds: [90], latestAtUtc: '2026-10-09T00:00:00Z' };
+
+    /** Battery runs #11 (harness 53, quality segment 1) and #12 (harness 54, segment 2), each member re-graded by `graders`. */
+    function batteries(graders: (runId: number) => CcRegradeCoverage[] = () => [], comparison: Partial<CcRunRow> = {}): CcBatteryRunRow[] {
+      const eleven = ccBatteryRunRow(11, '2026-10-08T06:00:00Z', [301, 302]);
+      eleven.members = eleven.members.map(run => ({ ...run, harnessVersion: '53', regradeCoverage: graders(run.runId) }));
+      const twelve = ccBatteryRunRow(12, '2026-10-08T14:50:00Z', [303, 304]);
+      twelve.members = twelve.members.map(run => ({
+        ...run, eligibility: inSegment(2), regradeCoverage: graders(run.runId), ...comparison
+      }));
+      return [twelve, eleven];
+    }
+
+    const p1 = (rows: CcBatteryRunRow[], relaxedPooling = false) => {
+      const units = ccPeriodUnits([], rows, true);
+      return ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, units.slice(0, 1), units.slice(1), new Map(), true, { relaxedPooling })[0];
+    };
+
+    it('does not compute P1 without a common grader, and points to the re-grade', () => {
+      expect(p1(batteries())).toEqual({
+        id: 'P1', name: 'Quality', marginText: '±3 index points', status: 'notComputed',
+        fact: 'Grading changed between the periods (harness 53 → 54). Re-grade every compared run with a common grader to compare quality.',
+        regrade: true
+      });
+      // A grader that misses one run is no common grader.
+      expect(p1(batteries(runId => runId === 304 ? [] : [opus])).status).toBe('notComputed');
+    });
+
+    it('compares quality under a common grader that covers every run of both periods', () => {
+      const covered = p1(batteries(() => [opus]));
+      expect(covered.status).toBe('belowMinimum');
+      expect(covered.regrade).toBeUndefined();
+      expect(covered.fact).toBe('Fewer than 2 battery runs on 2 days per period: Baseline 1 battery run on 1 day · Comparison 1 battery run on 1 day. '
+        + 'Quality is compared under Claude Opus, whose re-grades cover every compared run.');
+    });
+
+    it('pools across the change when pooling is on, at most Indicated', () => {
+      expect(p1(batteries(), true)).toEqual(expect.objectContaining({
+        status: 'belowMinimum',
+        fact: 'Fewer than 2 battery runs on 2 days per period: Baseline 1 battery run on 1 day · Comparison 1 battery run on 1 day. '
+          + 'Pooled across a grading change (harness 53 → 54).'
+      }));
+      const rows = [
+        ccRunRow(101, '2026-09-01T08:00:00Z'), ccRunRow(102, '2026-09-05T08:00:00Z'),
+        ccRunRow(104, '2026-09-20T08:00:00Z', { harnessVersion: '31', eligibility: inSegment(2) }),
+        ccRunRow(105, '2026-09-26T08:00:00Z', { harnessVersion: '31', eligibility: inSegment(2) })
+      ];
+      const units = ccPeriodUnits(rows, [], false);
+      const capped = ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, units.slice(0, 2), units.slice(2), new Map(), false, { relaxedPooling: true })[0];
+      expect(capped).toEqual(expect.objectContaining({
+        status: 'capped',
+        fact: 'Pooled across a grading change (harness 30 → 31), which caps the grade at Indicated: Baseline 2 runs on 2 days · Comparison 2 runs on 2 days.'
+      }));
+      expect(CC_READINESS_STATUS_TEXT[capped.status]).toBe('At most Indicated');
+    });
+
+    it('names a scoring change by its scoring methods', () => {
+      const rows = batteries(() => [], { harnessVersion: '53', scoringMethodVersion: 5 });
+      expect(p1(rows).fact).toBe('Scoring changed between the periods (scoring method 4 → 5). '
+        + 'Re-grade every compared run with a common grader to compare quality.');
+    });
+
+    it('finds nothing that can be Established when no endpoint meets its minimum', () => {
+      const units = ccPeriodUnits([], batteries(), true);
+      const rows = ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, units.slice(0, 1), units.slice(1), new Map(), true);
+      expect(rows.map(row => row.status)).toEqual(['notComputed', 'notComputed', 'notComputed', 'belowMinimum', 'belowMinimum']);
+      expect(ccNothingEstablishable(rows)).toBe(true);
+      expect(ccNothingEstablishable(readiness([101, 102, 103], [104, 105, 106]))).toBe(false);
+      expect(ccNothingEstablishable([])).toBe(false);
     });
   });
 

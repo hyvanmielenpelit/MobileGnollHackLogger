@@ -1389,6 +1389,23 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("Where {{scope.hours}} is available, every document cites it at least once.", system);
         Assert.Contains("never write that a result holds within no stratum", system);
         Assert.DoesNotContain("Every document cites {{scope.hours}} at least once.", system);
+        Assert.Contains("Never write \"X and X, respectively\".", system);
+        Assert.Contains("cite that fact instead of the two", system);
+        Assert.Contains("A fact whose value is a sentence is written as a sentence of its own, or quoted inside yours without its final full stop; never continue a sentence after it with and.", system);
+        Assert.Contains("Cite an interval (a ci95, ci90 or controlChangeCi95 fact) only in a sentence that also cites its estimate and names its measure.", system);
+        Assert.Contains("never by a field name", system);
+        Assert.Equal(audience == BenchmarkReportAudience.ExecutiveSummary,
+            system.Contains("Quality is the battery Overall Index when one is given; a mean answer score is never called quality.", StringComparison.Ordinal));
+        Assert.Equal(audience == BenchmarkReportAudience.ProviderIssueReport, system.Contains("{{period.baseline.window}}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheChatConsistencyRepairMessage_RemindsOfTheRepetitionAndSpliceRules()
+    {
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>(), BenchmarkReportScope.ChatConsistency);
+
+        Assert.Contains("never continue a sentence after it with and.", message);
+        Assert.Contains("Never write \"X and X, respectively\"", message);
     }
 
     [Fact]

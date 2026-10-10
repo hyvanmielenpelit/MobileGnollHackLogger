@@ -1,4 +1,58 @@
 <!--
+  Active Model Batch Banner. While a batch is live or stopped it stands for its members, so the
+  series, battery and run banners of the member in flight stay hidden.
+-->
+@if (modelBatchBannerVisible && monitor.activeModelBatch) {
+  <div class="active-run-banner model-batch-banner">
+    <div class="banner-header">
+      @if (monitor.modelBatchIsLive) {
+        <div class="pulse-indicator" aria-hidden="true"></div>
+      }
+      <div>
+        <h4>Model batch #{{ monitor.activeModelBatch.id }}@if (monitor.activeModelBatch.targetName) { ({{ monitor.activeModelBatch.targetName }})}</h4>
+        <p class="text-muted model-batch-progress-label">{{ modelBatchProgressLabel }}</p>
+        @if (monitor.completionSoundStatus) {
+          <p class="text-muted" role="status">{{ monitor.completionSoundStatus }}</p>
+        }
+      </div>
+    </div>
+    @if (monitor.modelBatchErrorMessage) {
+      <div class="alert alert-warning mb-10" role="alert" aria-live="polite">
+        <div class="alert-content">
+          <div class="alert-body">{{ monitor.modelBatchErrorMessage }}</div>
+        </div>
+      </div>
+    }
+    @if (monitor.lostContact?.kind === 'modelBatch' && monitor.lostContactText) {
+      <div class="alert alert-warning mb-10 lost-contact-notice" role="status">
+        <div class="alert-content">
+          <div class="alert-body">{{ monitor.lostContactText }}</div>
+        </div>
+      </div>
+    }
+    <div class="banner-progress" role="status">
+      @if (monitor.activeModelBatch.status === 'WaitingForCap') {
+        <span class="series-state-chip state-waiting">Waiting for run cap</span>
+      }
+      @if (monitor.activeModelBatch.status === 'Stopped') {
+        <span class="series-state-chip state-stopped">Stopped</span>
+      }
+      @if (monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running') {
+        <span>Run #{{ monitor.activeRunDetail.id }}: answered {{ monitor.activeRunDetail.answers.length }} of {{ monitor.activeRunDetail.totalQuestionCount }}</span>
+      }
+      <!-- Continue, Skip this model and Re-run are the progress dialog's; the banner only opens it. -->
+      <button type="button" class="btn-gh model-batch-show-progress" (click)="showModelBatchProgress()">
+        Show Batch Progress
+      </button>
+      <button type="button" class="btn-gh btn-gh-delete model-batch-cancel" (click)="monitor.cancelActiveModelBatch()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+        Cancel Batch
+      </button>
+    </div>
+  </div>
+}
+
+<!--
   Active Series Banner. A series replaces the single-run banner rather than sitting beside it:
   while a series is live the interesting unit is "run n of N", and two banners describing the
   same execution at two scales is how an operator ends up cancelling the wrong thing. Waiting
@@ -112,7 +166,7 @@
 }
 
 <!-- Active Run Banner -->
-@if (!monitor.activeSeries && !monitor.batteryIsLive && monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running' && !monitor.isRunProgressDialogOpen) {
+@if (!monitor.activeSeries && !monitor.batteryIsLive && !modelBatchHoldsBanners && monitor.activeRunDetail && formatStatus(monitor.activeRunDetail.status) === 'Running' && !monitor.isRunProgressDialogOpen) {
   <div class="active-run-banner">
     <div class="banner-header">
       <div class="pulse-indicator" aria-hidden="true"></div>
@@ -173,18 +227,67 @@
   }
 
   <div class="form-group setup-primary-field">
-    <label id="bmTestedModelLabel">Model Under Test</label>
-    <div class="gh-field-row">
-      <app-model-picker class="tested-model-selector"
-                        labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
-                        [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
-                        [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.testedConfigId"
-                        (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
-      <app-info-tip trigger="click" tipId="bmTestedModelHint" subject="Model Under Test">
-        Answers every question. Speed Index is only comparable at the same thinking level.
-      </app-info-tip>
-    </div>
+    <fieldset class="gh-choice run-mode-choice" role="radiogroup"
+              aria-labelledby="runModeLabel" aria-describedby="runModeHint">
+      <legend>
+        <span id="runModeLabel">Models</span>
+        <app-info-tip trigger="click" tipId="runModeHint" subject="Models">
+          Run several models one after another under the same graders and settings, for a fair comparison.
+        </app-info-tip>
+      </legend>
+      <label class="gh-radio">
+        <input type="radio" id="runModeSingle" name="runMode" value="single"
+               [checked]="launcher.runMode === 'single'" (change)="setRunMode('single')">
+        <span>One model</span>
+      </label>
+      <label class="gh-radio">
+        <input type="radio" id="runModeBatch" name="runMode" value="batch"
+               [checked]="launcher.runMode === 'batch'" (change)="setRunMode('batch')">
+        <span>Model batch</span>
+      </label>
+    </fieldset>
+
+    @if (launcher.isModelBatch) {
+      <label id="bmBatchModelsLabel">Models Under Test</label>
+      <app-model-multi-picker class="batch-models-picker"
+                              labelledBy="bmBatchModelsLabel"
+                              [describedBy]="describedWithBatchLine('bmBatchModelsHint', 'models')"
+                              placeholder="Choose models"
+                              [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                              [max]="workspace.runLimits?.maxModelsPerBatch ?? launcher.maxModelsPerBatch" [maxChips]="12"
+                              [options]="batchPickerOptions" [selectedKeys]="launcher.batchModelKeys"
+                              (selectionChange)="onBatchModelsChange($event.keys)"></app-model-multi-picker>
+      <span id="bmBatchModelsHint" class="form-hint">{{ batchModelsHintText }}</span>
+      <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'models' }"></ng-container>
+    } @else {
+      <label id="bmTestedModelLabel">Model Under Test</label>
+      <div class="gh-field-row">
+        <app-model-picker class="tested-model-selector"
+                          labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
+                          [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                          [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.testedConfigId"
+                          (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
+        <app-info-tip trigger="click" tipId="bmTestedModelHint" subject="Model Under Test">
+          Answers every question. Speed Index is only comparable at the same thinking level.
+        </app-info-tip>
+      </div>
+    }
   </div>
+
+  <!-- A model batch finding about one field: its blocker or warning, one line under the field. -->
+  <ng-template #batchLine let-field>
+    @if (batchFieldLine(field); as line) {
+      <p [id]="batchLineId(field)" class="mt-10 mb-field-line"
+         [class.gh-field-error]="line.severity === 'Blocker'" [class.gh-field-warning]="line.severity !== 'Blocker'">
+        @if (line.severity === 'Blocker') {
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        } @else {
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        }
+        <span>{{ line.title }}</span>
+      </p>
+    }
+  </ng-template>
 
   <div class="setup-groups-container">
     <div class="setup-groups">
@@ -229,7 +332,7 @@
             </div>
             <div class="gh-field-row">
               <select id="batterySelect" class="gh-input" [(ngModel)]="launcher.selectedBatteryId" (ngModelChange)="onSelectedBatteryChanged()"
-                      aria-describedby="batteryHint">
+                      [attr.aria-describedby]="describedWithBatchLine('batteryHint', 'target')">
                 @if (launcher.runnableBatteries.length === 0) {
                   <option [ngValue]="null" disabled>{{ workspace.loadingBatteries ? 'Loading batteries...' : 'No batteries available' }}</option>
                 }
@@ -253,6 +356,7 @@
                 }
               </app-info-tip>
             </div>
+            <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'target' }"></ng-container>
             @if (selectedBatteryUnassessedSuites.length > 0) {
               <div class="alert alert-warning mt-10" role="alert">
                 <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -277,7 +381,7 @@
           </div>
           <div class="gh-field-row">
             <select id="suiteSelect" class="gh-input" [(ngModel)]="launcher.selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
-                    aria-describedby="suiteHint">
+                    [attr.aria-describedby]="describedWithBatchLine('suiteHint', 'target')">
               @if (workspace.suites.length === 0) {
                 <option [ngValue]="null" disabled>{{ workspace.loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
               }
@@ -289,6 +393,7 @@
               Runs are only comparable within one suite; editing a question starts a new baseline.
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'target' }"></ng-container>
           @if (launcher.selectedSuite && !launcher.selectedSuite.difficultyFullyAssessed) {
             <div class="alert alert-warning mt-10" role="alert">
               <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -321,7 +426,7 @@
           </div>
           <div class="gh-field-row">
             <select id="profileSelect" class="gh-input" [(ngModel)]="launcher.selectedScoringProfileId" (ngModelChange)="onReuseInputsChanged()"
-                    [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
+                    [attr.aria-describedby]="describedWithBatchLine(showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint', 'profile')">
               @for (profile of workspace.scoringProfiles; track profile.id) {
                 <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
               }
@@ -330,6 +435,7 @@
               Turns the four dimension grades into indices; runs are only comparable under one profile.
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'profile' }"></ng-container>
           <!--
             Profile fit. A high/max thinking model measured against a profile tuned for
             interactive latency scores badly on Speed Index for a reason that has nothing to do
@@ -351,7 +457,7 @@
           <div class="gh-field-row">
             <select id="candidateResponseStyle" class="gh-input"
                     [(ngModel)]="launcher.candidateVerboseMode" (ngModelChange)="onReuseInputsChanged()"
-                    [attr.aria-describedby]="launcher.candidateVerboseMode ? 'candidateResponseStyleHint candidateResponseStyleNote' : 'candidateResponseStyleHint'">
+                    [attr.aria-describedby]="describedWithBatchLine(launcher.candidateVerboseMode ? 'candidateResponseStyleHint candidateResponseStyleNote' : 'candidateResponseStyleHint', 'responseStyle')">
               <option [ngValue]="false">Concise — production default</option>
               <option [ngValue]="true">Detailed — diagnostic</option>
             </select>
@@ -364,6 +470,7 @@
           @if (launcher.candidateVerboseMode) {
             <span id="candidateResponseStyleNote" class="form-hint">{{ candidateResponseStyleHint }}</span>
           }
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'responseStyle' }"></ng-container>
         </div>
 
         <div class="form-group">
@@ -371,7 +478,7 @@
           <div class="gh-field-row">
             <select id="candidateSourceCodeReferences" class="gh-input"
                     [(ngModel)]="launcher.candidateAllowSourceCodeReferences" (ngModelChange)="onReuseInputsChanged()"
-                    aria-describedby="candidateSourceCodeReferencesHint">
+                    [attr.aria-describedby]="describedWithBatchLine('candidateSourceCodeReferencesHint', 'sourceCodeReferences')">
               <option [ngValue]="false">Disallowed — production default</option>
               <option [ngValue]="true">Allowed — answers cite source files and lines</option>
             </select>
@@ -380,6 +487,7 @@
               references, so Disallowed matches what most of them get. Allowed lets the answers cite them.
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'sourceCodeReferences' }"></ng-container>
         </div>
       </fieldset>
 
@@ -394,7 +502,7 @@
           <label id="bmAssessorModelLabel">Assessor</label>
           <div class="gh-field-row">
             <app-model-picker class="assessor-model-selector"
-                              labelledBy="bmAssessorModelLabel" describedBy="bmAssessorModelHint"
+                              labelledBy="bmAssessorModelLabel" [describedBy]="describedWithBatchLine('bmAssessorModelHint', 'assessor')"
                               [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.assessorConfigId"
                               (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
@@ -407,6 +515,7 @@
               <p>More: How the graders work.</p>
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'assessor' }"></ng-container>
 
           @if (showAssessorChangeAdvisory) {
             <div class="alert alert-info mt-10" role="note">
@@ -428,7 +537,7 @@
           <label id="bmCoAssessorModelLabel">Co-Assessor <span class="field-optional">Optional</span></label>
           <div class="gh-field-row">
             <app-model-picker class="co-assessor-model-selector"
-                              labelledBy="bmCoAssessorModelLabel" describedBy="bmCoAssessorModelHint"
+                              labelledBy="bmCoAssessorModelLabel" [describedBy]="describedWithBatchLine('bmCoAssessorModelHint', 'coAssessor')"
                               noneLabel="None — single assessor" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.coAssessorConfigId"
                               (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
@@ -442,6 +551,7 @@
               <p>More: How the graders work.</p>
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'coAssessor' }"></ng-container>
 
           <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
           @if (showCoAssessorSameProviderAdvisory) {
@@ -479,7 +589,7 @@
           <div class="gh-field-row">
             <app-model-picker class="second-opinion-model-selector"
                               labelledBy="bmSecondOpinionModelLabel"
-                              [describedBy]="showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint'"
+                              [describedBy]="describedWithBatchLine(showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint', 'secondOpinion')"
                               [noneLabel]="launcher.isPanelLaunch ? 'None — no reference reader' : 'None — no second reader'" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.secondOpinionConfigId"
                               (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
@@ -507,6 +617,7 @@
               <strong>Same model as the assessor: it will mostly confirm its own verdict.</strong>
             </span>
           }
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'secondOpinion' }"></ng-container>
 
           <!--
             Second Opinion Mode. Inert without an assessor above, which is the hard gate that
@@ -587,7 +698,7 @@
           <label id="bmClaimVerifierModelLabel">Claim Verifier <span class="field-optional">Optional</span></label>
           <div class="gh-field-row">
             <app-model-picker class="claim-verifier-model-selector"
-                              labelledBy="bmClaimVerifierModelLabel" describedBy="bmClaimVerifierModelHint"
+                              labelledBy="bmClaimVerifierModelLabel" [describedBy]="describedWithBatchLine('bmClaimVerifierModelHint', 'claimVerifier')"
                               noneLabel="None — no claim verification" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.claimVerifierConfigId"
                               (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
@@ -603,6 +714,7 @@
               <p>More: How the graders work.</p>
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'claimVerifier' }"></ng-container>
 
           @if (showClaimVerifierCandidateAdvisory) {
             <div class="alert alert-info mt-10" role="note">
@@ -637,7 +749,7 @@
           <div class="gh-field-row">
             <app-model-picker class="report-writer-model-selector"
                               labelledBy="bmReportWriterModelLabel"
-                              [describedBy]="reportWriterLaunchRefusal ? 'bmReportWriterModelHint bmReportWriterRefusal' : 'bmReportWriterModelHint'"
+                              [describedBy]="describedWithBatchLine(reportWriterLaunchRefusal ? 'bmReportWriterModelHint bmReportWriterRefusal' : 'bmReportWriterModelHint', 'reportWriter')"
                               noneLabel="None — no AI-written reports" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.reportWriterConfigId"
                               (selectionChange)="selectReportWriterModel($event.model)"></app-model-picker>
@@ -654,8 +766,13 @@
               }
               <p>Use a strong model from another provider than the model under test, such as the one you use as
                 an assessor.</p>
+              @if (launcher.isModelBatch) {
+                <p>In a model batch every member gets its own documents, so the batch starts with None. For one
+                  document over the whole batch, use Model Comparison once it ends.</p>
+              }
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'reportWriter' }"></ng-container>
 
           <!-- The server's report-writer refusal, shown before Start so the run is never sent. -->
           @if (reportWriterLaunchRefusal) {
@@ -693,6 +810,25 @@
             battery's suite count.
           -->
           <div class="exec-runs">
+            @if (launcher.isModelBatch && !launcher.isBatteryTarget) {
+              <!-- Runs per model: R = 1 runs each model once, R ≥ 2 a replicate series per model. -->
+              <div class="form-group">
+                <label for="batchRunsPerModelInput">Runs per model</label>
+                <div class="gh-field-row">
+                  <input id="batchRunsPerModelInput" type="number" class="gh-input run-count-input"
+                         min="1"
+                         [attr.max]="launcher.maxRunCountPerSeries"
+                         [(ngModel)]="launcher.batchRunsPerModel" (ngModelChange)="onBatchSettingsChanged()"
+                         [attr.aria-describedby]="describedWithBatchLine('batchRunsPerModelHint', 'runs')">
+                  <app-info-tip trigger="click" tipId="batchRunsPerModelHint" subject="Runs per model">
+                    <p>Each model runs the suite this many times before the next model starts: once as a single run,
+                      two or more times as a replicate series.</p>
+                    <p>One run is one sample. To rank close models, use two or three runs per model.</p>
+                  </app-info-tip>
+                </div>
+                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'runs' }"></ng-container>
+              </div>
+            } @else {
             <div class="form-group">
               <label for="runCountInput">{{ launcher.isBatteryTarget ? 'Runs per Suite' : 'Number of Runs' }}</label>
               <div class="gh-field-row">
@@ -700,7 +836,7 @@
                        min="1"
                        [attr.max]="launcher.runCountMax"
                        [(ngModel)]="launcher.runCount" (ngModelChange)="onReuseInputsChanged()"
-                       aria-describedby="runCountHint">
+                       [attr.aria-describedby]="describedWithBatchLine('runCountHint', 'runs')">
                 @if (launcher.isBatteryTarget) {
                   <app-info-tip trigger="click" tipId="runCountHint" subject="Runs per Suite">
                     <p>Every suite of the battery runs this many times, round by round: all suites once, then all
@@ -737,27 +873,76 @@
                 </app-info-tip>
                 }
               </div>
+              @if (launcher.isModelBatch) {
+                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'runs' }"></ng-container>
+              }
             </div>
+            }
 
-            @if (isMultiRunRequested || launcher.isBatteryTarget) {
+            @if (launcher.isModelBatch) {
+              <fieldset class="gh-choice batch-order-choice" role="radiogroup"
+                        aria-labelledby="batchOrderLabel"
+                        [attr.aria-describedby]="describedWithBatchLine('batchOrderHint', 'order')">
+                <legend>
+                  <span id="batchOrderLabel">Model order</span>
+                  <app-info-tip trigger="click" tipId="batchOrderHint" subject="Model order">
+                    <dl>
+                      <div>
+                        <dt><span class="gh-info-term">Randomized</span><span class="gh-info-badge">Recommended</span></dt>
+                        <dd>The order is drawn when the batch starts, and its seed is stored, so no model always gets the
+                          same hours of the day.</dd>
+                      </div>
+                      <div>
+                        <dt><span class="gh-info-term">As listed</span></dt>
+                        <dd>The models run in the order you set below.</dd>
+                      </div>
+                    </dl>
+                  </app-info-tip>
+                </legend>
+                <label class="gh-radio">
+                  <input type="radio" id="batchOrderRandomized" name="batchOrder" value="randomized"
+                         [checked]="launcher.batchOrder === 'randomized'" (change)="setBatchOrder('randomized')">
+                  <span>Randomized (recommended)</span>
+                </label>
+                <label class="gh-radio">
+                  <input type="radio" id="batchOrderAsListed" name="batchOrder" value="asListed"
+                         [checked]="launcher.batchOrder === 'asListed'" (change)="setBatchOrder('asListed')">
+                  <span>As listed</span>
+                </label>
+              </fieldset>
+              <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'order' }"></ng-container>
+              @if (launcher.batchOrder === 'asListed' && batchOrderItems.length > 0) {
+                <app-reorderable-list class="batch-order-list" [items]="batchOrderItems" idPrefix="mb-order"
+                                      listLabel="Models in run order" itemNoun="model"
+                                      (orderChange)="onBatchOrderListChange($event)"></app-reorderable-list>
+              }
+            }
+
+            @if (isMultiRunRequested || launcher.isBatteryTarget || launcher.isModelBatch) {
               <fieldset class="exec-options">
                 <legend class="field-caption" id="execOptionsCaption">
-                  {{ launcher.isBatteryTarget ? 'Battery Options' : 'Series Options' }}
+                  {{ launcher.isModelBatch ? 'Batch Options' : launcher.isBatteryTarget ? 'Battery Options' : 'Series Options' }}
                 </legend>
                 <div class="checkbox-with-tip">
                   <label class="checkbox-label" for="allowCapWaitInput">
                     <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="launcher.allowCapWait"
-                           aria-describedby="allowCapWaitHint">
+                           (ngModelChange)="onAllowCapWaitChanged()"
+                           [attr.aria-describedby]="describedWithBatchLine('allowCapWaitHint', 'allowCapWait')">
                     <span>Wait when the run cap blocks the next run</span>
                   </label>
                   <app-info-tip trigger="click" tipId="allowCapWaitHint" subject="Wait at the run cap">
-                    Otherwise the {{ launcher.isBatteryTarget ? 'battery' : 'series' }} stops at the cap and can be continued; finished runs are always kept.
-                    @if (launcher.isBatteryTarget) {
+                    Otherwise the {{ launcher.isModelBatch ? 'batch' : launcher.isBatteryTarget ? 'battery' : 'series' }} stops at the cap and can be continued; finished runs are always kept.
+                    @if (launcher.isModelBatch) {
+                      A batch larger than the daily cap needs this.
+                    } @else if (launcher.isBatteryTarget) {
                       A battery larger than the daily cap needs this.
                     }
                   </app-info-tip>
                 </div>
-                @if (launcher.isBatteryTarget) {
+                <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'allowCapWait' }"></ng-container>
+                @if (launcher.isModelBatch && launcher.isBatteryTarget) {
+                  <p class="form-hint batch-reuse-note">Reuse earlier runs: not available for a model batch.</p>
+                } @else if (launcher.isBatteryTarget) {
                   <div class="checkbox-with-tip">
                     <label class="checkbox-label" for="reuseEarlierRunsInput">
                       <input id="reuseEarlierRunsInput" type="checkbox" [checked]="launcher.reuseEarlierRuns"
@@ -783,7 +968,9 @@
                 <dl>
                   <div>
                     <dt><span class="gh-info-term">Sound</span></dt>
-                    <dd>Plays a short chime. If the browser blocks audio, press Test sound once to allow it.</dd>
+                    <dd>Plays a short chime. If the browser blocks audio, press Test sound once to allow it. A run,
+                      series, battery run or model batch that fails, stops or completes with errors plays a different
+                      sound.</dd>
                   </div>
                   <div>
                     <dt><span class="gh-info-term">Desktop notification</span></dt>
@@ -791,8 +978,8 @@
                   </div>
                   <div>
                     <dt><span class="gh-info-term">Timing</span></dt>
-                    <dd>Alerts come from this page, so keep its tab open. A series or a battery alerts once,
-                      after its last run. In a background tab an alert can arrive up to a minute late.</dd>
+                    <dd>Alerts come from this page, so keep its tab open. A series, a battery or a model batch alerts
+                      once, after its last run. In a background tab an alert can arrive up to a minute late.</dd>
                   </div>
                 </dl>
               </app-info-tip>
@@ -811,7 +998,10 @@
             </label>
             <p class="text-muted completion-signals-status" role="status" aria-live="polite"
                [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
-            <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
+            <div class="completion-signals-actions">
+              <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
+              <button type="button" class="btn-gh btn-gh-small test-failure-sound" (click)="testFailureSound()">Test failure sound</button>
+            </div>
           </div>
 
           @if (isMultiRunRequested) {
@@ -871,7 +1061,119 @@
             </fieldset>
           }
 
-          @if (launcher.isBatteryTarget && launcher.selectedBattery) {
+          @if (launcher.isModelBatch && launcher.batchModelKeys.length > 0) {
+            <fieldset class="series-projection-fieldset batch-projection" role="region" aria-labelledby="batchProjectionLegend">
+              <legend id="batchProjectionLegend" class="series-projection-legend">
+                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                <span>{{ batchProjectionLegend }}</span>
+              </legend>
+
+              <div class="projection-grid" role="list">
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected wall time:</span>
+                  @if (projectedBatchWallLabel) {
+                    <span class="projection-value"><strong>{{ projectedBatchWallLabel }}</strong></span>
+                    <span class="projection-note text-muted">(each model at its recent mean run duration on this target)</span>
+                  } @else if (launcher.preflightLoading) {
+                    <span class="projection-empty text-muted">projecting…</span>
+                  } @else {
+                    <span class="projection-empty text-muted">not every model has a completed run to project from</span>
+                  }
+                </div>
+
+                <div class="projection-row" role="listitem">
+                  <span class="projection-label">Projected cost:</span>
+                  @if (projectedBatchCostLabel) {
+                    <span class="projection-value"><strong>{{ projectedBatchCostLabel }}</strong></span>
+                    <span class="projection-note text-muted">(each model at its recent mean run cost on this target)</span>
+                  } @else if (launcher.preflightLoading) {
+                    <span class="projection-empty text-muted">projecting…</span>
+                  } @else {
+                    <span class="projection-empty text-muted">not every model has a priced run to project from</span>
+                  }
+                </div>
+
+                @if (batchWindow; as caps) {
+                  <div class="projection-row" role="listitem">
+                    <span class="projection-label">Remaining daily headroom:</span>
+                    <span class="projection-value"><strong>{{ caps.remainingDailyHeadroom }}</strong> of {{ caps.maxRunsPerDay }}</span>
+                    <span class="projection-note text-muted">({{ caps.runsInLast24Hours }} run(s) in the last 24 hours, {{ caps.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                  </div>
+                }
+
+                @if (batchDaySpan != null) {
+                  <div class="projection-row batch-day-span-row" role="listitem">
+                    <span class="projection-label">Day span:</span>
+                    <span class="projection-value"><strong>at least {{ batchDaySpan }}</strong> rolling 24-hour windows</span>
+                    @if (batchMinimumWallLabel) {
+                      <span class="projection-note text-muted">(at least {{ batchMinimumWallLabel }})</span>
+                    }
+                  </div>
+                }
+              </div>
+
+              @if (batchProjectionMembers.length > 0) {
+                <details class="gh-disclosure batch-projection-basis">
+                  <summary>Per-model basis</summary>
+                  <div class="gh-disclosure-body">
+                    <ul class="batch-projection-members" role="list">
+                      @for (member of batchProjectionMembers; track $index) {
+                        <li>
+                          <span class="batch-projection-model">{{ member.name }}:</span>
+                          {{ member.wall ?? 'no wall-time basis' }}, {{ member.cost ?? 'no cost basis' }} — {{ member.basis }}
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                </details>
+              }
+
+              @if (batchExceedsDailyCap) {
+                <div class="alert alert-warning mt-10 batch-cap-warning" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      {{ batchPlannedRunCount }} runs exceed the daily cap of {{ batchWindow?.maxRunsPerDay }}, so this batch
+                      spans at least {{ batchDaySpan }} days.
+                      @if (launcher.allowCapWait) {
+                        It will pause at the cap and continue as the rolling window frees up.
+                      } @else {
+                        Select <strong>Wait when the run cap blocks the next run</strong> to start it.
+                      }
+                    </div>
+                  </div>
+                </div>
+              } @else if (batchExceedsDailyHeadroom) {
+                <div class="alert alert-warning mt-10 batch-headroom-warning" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      This batch asks for more runs ({{ batchPlannedRunCount }}) than the rolling 24-hour window currently
+                      allows ({{ batchWindow?.remainingDailyHeadroom }} of {{ batchWindow?.maxRunsPerDay }}).
+                      @if (launcher.allowCapWait) {
+                        It will pause at the cap and continue when the window frees up.
+                      } @else {
+                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                        completed run and offering a Continue button.
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+              @if (batchHourlyCapRisk) {
+                <div class="alert alert-warning mt-10 batch-hourly-warning" role="alert">
+                  <div class="alert-content">
+                    <div class="alert-body">
+                      Runs may launch faster than the hourly cap of {{ batchWindow?.maxRunsPerHour }} allows; the batch
+                      will pause until the hour frees up.
+                    </div>
+                  </div>
+                </div>
+              }
+            </fieldset>
+          }
+
+          @if (!launcher.isModelBatch && launcher.isBatteryTarget && launcher.selectedBattery) {
             <fieldset class="series-projection-fieldset battery-projection" role="region" aria-labelledby="batteryProjectionLegend">
               <legend id="batteryProjectionLegend" class="series-projection-legend">
                 <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -969,6 +1271,32 @@
     </div>
   </div>
 
+  @if (launcher.isModelBatch) {
+    <div class="form-actions mt-20 model-batch-actions">
+      @if (batchReadinessVisible) {
+        <app-model-batch-readiness class="model-batch-readiness"
+                                   [findings]="launcher.findings" [acknowledgedKeys]="launcher.acknowledgedFindingKeys"
+                                   [busy]="launcher.preflightLoading"
+                                   (acknowledgedChange)="onFindingAcknowledged($event)"
+                                   (focusField)="focusBatchField($event)"></app-model-batch-readiness>
+      }
+      <button type="button"
+        class="btn-gh start-model-batch"
+        [attr.aria-disabled]="!canStartModelBatch"
+        aria-describedby="startModelBatchHint"
+        (click)="openModelBatchConfirm()">
+        @if (startingModelBatch) {
+          Starting...
+        } @else {
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Start Model Batch
+        }
+      </button>
+      @if (startModelBatchHint) {
+        <div id="startModelBatchHint" class="text-muted mt-10">{{ startModelBatchHint }}</div>
+      }
+    </div>
+  } @else {
   <div class="form-actions mt-20">
     <button type="button"
       class="btn-gh"
@@ -986,7 +1314,89 @@
       <div id="startBenchmarkHint" class="text-muted mt-10">{{ startBenchmarkHint }}</div>
     }
   </div>
+  }
 </div>
+
+<!-- MODEL BATCH START CONFIRMATION: the plan in one table; nothing is sent until it is confirmed. -->
+<dialog #modelBatchConfirmDialog class="gh-dialog benchmark-form-dialog model-batch-confirm-dialog"
+        aria-labelledby="modelBatchConfirmTitle">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="modelBatchConfirmTitle">Start model batch?</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close the model batch confirmation"
+              interestfor="modelBatchConfirmCloseTip" [attr.style]="'anchor-name: --modelBatchConfirmCloseTip'"
+              (click)="closeModelBatchConfirm()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="modelBatchConfirmCloseTip"
+           [attr.style]="'position-anchor: --modelBatchConfirmCloseTip'">Close without starting</div>
+    </div>
+    <div class="dialog-body">
+      <table class="gh-table model-batch-plan">
+        <caption class="visually-hidden">The model batch to start</caption>
+        <tbody>
+          <tr>
+            <th scope="row">Models</th>
+            <td>
+              <ol class="model-batch-plan-models">
+                @for (name of batchConfirmModels; track $index) {
+                  <li>{{ name }}</li>
+                }
+              </ol>
+              <span class="text-muted model-batch-plan-order">{{ batchConfirmOrderText }}</span>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Target</th>
+            <td>{{ batchConfirmTargetText }}</td>
+          </tr>
+          <tr>
+            <th scope="row">{{ launcher.isBatteryTarget ? 'Runs per suite' : 'Runs per model' }}</th>
+            <td>{{ launcher.batchRunsPerMember }}</td>
+          </tr>
+          <tr>
+            <th scope="row">Planned runs</th>
+            <td>{{ batchPlannedRunCount }}</td>
+          </tr>
+          <tr>
+            <th scope="row">Projected cost</th>
+            <td>{{ projectedBatchCostLabel ?? 'Not projected: not every model has a priced run' }}</td>
+          </tr>
+          <tr>
+            <th scope="row">Projected wall time</th>
+            <td>{{ projectedBatchWallLabel ?? 'Not projected: not every model has a completed run' }}</td>
+          </tr>
+          <tr>
+            <th scope="row">Graders</th>
+            <td>{{ batchConfirmGraders }}</td>
+          </tr>
+          @if (launcher.acknowledgedBatchWarnings.length > 0) {
+            <tr>
+              <th scope="row">Acknowledged</th>
+              <td>
+                <ul class="model-batch-plan-acknowledged">
+                  @for (warning of launcher.acknowledgedBatchWarnings; track warning.acknowledgmentKey) {
+                    <li>{{ warning.title }}</li>
+                  }
+                </ul>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModelBatchConfirm()">Cancel</button>
+      <button type="button" class="btn-gh confirm-model-batch" [attr.aria-disabled]="startingModelBatch ? 'true' : null"
+              (click)="confirmModelBatchStart()"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Model Batch</button>
+    </div>
+  </div>
+</dialog>
 
 
 <!-- SAME-PROVIDER WARNING DIALOG -->

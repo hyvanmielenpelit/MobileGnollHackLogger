@@ -1102,8 +1102,9 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   /** Each primary endpoint's readiness over the two periods; see {@link ccEndpointReadiness}. */
   get endpointReadiness(): readonly CcEndpointReadiness[] {
     const state = this.periodState;
-    return this.memo('readiness', [state, this.pointsById], () =>
-      ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, state.baseline, state.comparison, this.pointsById, state.battery));
+    return this.memo('readiness', [state, this.pointsById, this.relaxedPooling], () =>
+      ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, state.baseline, state.comparison, this.pointsById, state.battery,
+        { relaxedPooling: this.relaxedPooling }));
   }
 
   /** The preview's notes; each counts once in the Preview tab's badge and the strip's link. */

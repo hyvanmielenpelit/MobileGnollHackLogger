@@ -1270,11 +1270,16 @@ public static partial class BenchmarkReportPackRenderer
         return parts.Count == 0 ? sheet.SubjectLabel : sheet.SubjectLabel + " (" + string.Join(", ", parts) + ")";
     }
 
-    /// <summary><c>2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 1 battery run</c>; the runs on a sheet without units.</summary>
+    /// <summary>
+    /// <c>2026-10-08 00:00 UTC until 14:49 UTC, 1 battery run</c> or <c>from 2026-10-08 14:49 UTC to 2026-10-08 23:59 UTC,
+    /// 1 battery run</c> (<see cref="BenchmarkChatConsistencyReportFacts.WindowText(IReadOnlyList{BenchmarkReportFact}, string)"/>);
+    /// the runs on a sheet without units.
+    /// </summary>
     private static string ChatPeriodText(Context ctx, string period)
     {
         string p = "period." + period + ".";
-        return D(ctx, p + "start") + " to " + D(ctx, p + "end") + ", " + (IsAvailable(ctx, p + "units") ? D(ctx, p + "units") : D(ctx, p + "runs"));
+        string window = BenchmarkChatConsistencyReportFacts.WindowText(ctx.Sheet.Facts, period) ?? D(ctx, p + "start") + " to " + D(ctx, p + "end");
+        return window + ", " + (IsAvailable(ctx, p + "units") ? D(ctx, p + "units") : D(ctx, p + "runs"));
     }
 
     /// <summary>The hours the result holds for, or that the periods ran at different hours.</summary>

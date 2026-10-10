@@ -115,6 +115,13 @@ export const CC_ALL_WRITTEN_TEXT = 'Every document of this analysis is written.'
 /** Why Write Reports is unavailable when every document is written; the button stays focusable. */
 export const CC_ALL_WRITTEN_REASON = 'Every document of this analysis is written. Delete one to write it again.';
 
+/** The notice above the documents of an analysis without a decisive verdict. */
+export const CC_NO_DECISIVE_VERDICT_TEXT =
+  'Every endpoint is inconclusive or not computable; the documents will say Not enough evidence yet.';
+
+/** The documents' live line after *Write the Executive Summary only*. */
+export const CC_SUMMARY_ONLY_LIVE_TEXT = 'Only the Executive Summary is checked.';
+
 /** Why Delete is unavailable while a job runs or charts are attached. */
 export const CC_DELETE_BUSY_REASON = 'Wait for the reports and their charts to finish.';
 
@@ -242,6 +249,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   readonly writerAdvice = CHAT_CONSISTENCY_REPORT_WRITER_ADVICE;
   readonly writerAdviceLead = REPORT_WRITER_ADVICE_LEAD;
   readonly allWrittenText = CC_ALL_WRITTEN_TEXT;
+  readonly noDecisiveVerdictText = CC_NO_DECISIVE_VERDICT_TEXT;
   readonly deleteBusyReason = CC_DELETE_BUSY_REASON;
 
   writerId: number | null = null;
@@ -300,7 +308,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   deleteTarget: DeleteTarget | null = null;
   deleting = false;
   deleteError: string | null = null;
-  /** The last delete, for the documents' live line. */
+  /** The last delete or *Write the Executive Summary only*, for the documents' live line. */
   documentsLiveText = '';
 
   // --- Client polling and diagnostics ---
@@ -437,6 +445,31 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   /** A written document is never deleted while a job writes or its charts are attached. */
   get deleteBusy(): boolean {
     return this.chartState === 'attaching' || this.jobInProgress;
+  }
+
+  /**
+   * Every primary endpoint of the analysis is inconclusive or not computable, so every document will
+   * say *Not enough evidence yet*; false for an analysis without endpoints.
+   */
+  get noDecisiveVerdict(): boolean {
+    const endpoints = this.result?.endpoints ?? [];
+    return endpoints.length > 0
+      && endpoints.every(endpoint => !endpoint.computed || endpoint.verdict === null || endpoint.verdict === 'inconclusive');
+  }
+
+  /** *Write the Executive Summary only* is offered while the summary is unwritten and something is left to write. */
+  get summaryOnlyAvailable(): boolean {
+    return !this.allWritten && !this.written.has(BenchmarkReportAudience.ExecutiveSummary);
+  }
+
+  /** Checks the Executive Summary alone; the estimate follows. */
+  writeSummaryOnly(): void {
+    if (!this.summaryOnlyAvailable) return;
+    this.checked.clear();
+    this.checked.add(BenchmarkReportAudience.ExecutiveSummary);
+    this.documentsLiveText = CC_SUMMARY_ONLY_LIVE_TEXT;
+    this.queueEstimate();
+    this.cdr.markForCheck();
   }
 
   // --- Audiences ---

@@ -3703,7 +3703,28 @@ public class AdminBenchmarkController : ControllerBase
             }).ToList()
         };
 
+        dto.ModelBatchRunId = await ModelBatchRunIdOfRunAsync(run.Id, run.RunSeriesId);
+
         return Ok(dto);
+    }
+
+    /// <summary>
+    /// The newest model batch a run belongs to: as a batch's single run, as a member of a batch's
+    /// series, or as a member of a batch's battery run. Null when it belongs to none.
+    /// </summary>
+    private async Task<long?> ModelBatchRunIdOfRunAsync(long runId, long? seriesId)
+    {
+        var batteryRunIds = _dbContext.BenchmarkBatteryRunMembers
+            .Where(m => m.BenchmarkRunId == runId)
+            .Select(m => m.BenchmarkBatteryRunId);
+
+        return await _dbContext.BenchmarkModelBatchMembers
+            .Where(m => m.BenchmarkRunId == runId
+                        || (seriesId != null && m.BenchmarkRunSeriesId == seriesId)
+                        || (m.BenchmarkBatteryRunId != null && batteryRunIds.Contains(m.BenchmarkBatteryRunId.Value)))
+            .OrderByDescending(m => m.BenchmarkModelBatchRunId)
+            .Select(m => (long?)m.BenchmarkModelBatchRunId)
+            .FirstOrDefaultAsync();
     }
 
     /// <summary>
@@ -4070,7 +4091,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -4232,7 +4253,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -4350,7 +4371,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -4451,7 +4472,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -4528,7 +4549,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -4614,7 +4635,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -4725,7 +4746,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        if (_runManager.OrchestratorOwner is { } claimOwner)
+        if (_runManager.ClaimHolder is { } claimOwner)
         {
             return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
@@ -5242,7 +5263,7 @@ public class AdminBenchmarkController : ControllerBase
     /// or the client would disagree with the guard that actually refuses the run.</para>
     /// </summary>
     [HttpGet("runs/limits")]
-    public async Task<IActionResult> GetRunLimits()
+    public async Task<IActionResult> GetRunLimits([FromServices] Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
     {
         var limits = await _complianceGuard.GetLimitsAsync();
 
@@ -5259,7 +5280,9 @@ public class AdminBenchmarkController : ControllerBase
             // guard tests the count *before* creating each run and the last member sees Max - 1.
             MaxRunCountPerSeries = limits.MaxRunsPerDay,
 
-            MaxMembersPerBattery = _complianceGuard.MaxBatteryMembers
+            MaxMembersPerBattery = _complianceGuard.MaxBatteryMembers,
+
+            MaxModelsPerBatch = BenchmarkModelBatchOptions.From(configuration).MaxModels
         });
     }
 
@@ -5315,6 +5338,10 @@ public class AdminBenchmarkController : ControllerBase
     [HttpPost("runs/series/{id}/resume")]
     public async Task<IActionResult> ResumeRunSeries(long id, [FromBody] ResumeBenchmarkRunSeriesRequest? request)
     {
+        string? batchRefusal = await AdminBenchmarkBatteriesController.ModelBatchOwnershipRefusalAsync(
+            _dbContext, null, id, HttpContext?.RequestAborted ?? default);
+        if (batchRefusal != null) return Conflict(batchRefusal);
+
         var result = await _seriesOrchestrator.ResumeSeriesAsync(
             id, request?.AcknowledgeInstrumentChange ?? false);
 
@@ -5421,7 +5448,12 @@ public class AdminBenchmarkController : ControllerBase
             FirstMemberWikiHeadSha = series.FirstMemberWikiHeadSha,
             FirstMemberSourceCodeHeadSha = series.FirstMemberSourceCodeHeadSha,
             InstrumentChangeAcknowledged = series.InstrumentChangeAcknowledged,
-            AutoCreatedGroupId = series.AutoCreatedGroupId
+            AutoCreatedGroupId = series.AutoCreatedGroupId,
+            ModelBatchRunId = await _dbContext.BenchmarkModelBatchMembers
+                .Where(m => m.BenchmarkRunSeriesId == id)
+                .OrderByDescending(m => m.BenchmarkModelBatchRunId)
+                .Select(m => (long?)m.BenchmarkModelBatchRunId)
+                .FirstOrDefaultAsync()
         };
 
         // The current fingerprint, so a refused resume is self-explaining in the diagnostics capture

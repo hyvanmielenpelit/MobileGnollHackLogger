@@ -7,7 +7,7 @@
 - **Analysis:** #7
 - **Model:** Test Model (TestProvider, test-model-1, thinking level high)
 - **Baseline period:** 2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 2 runs
-- **Comparison period:** 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
+- **Comparison period:** from 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
 - **Hours:** weekdays 04–12 UTC
 - **Suites:** Core suite
 - **Control models:** 1 control model (A), identity withheld

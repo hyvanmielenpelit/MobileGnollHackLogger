@@ -96,7 +96,8 @@ build** is what turns R2 into an answer. Make it while that build still runs: on
 (its `HarnessVersion`) is no longer the running `BenchmarkAssessmentPrompt.HarnessVersion`, the
 missing-control note says no control run can be made for that period any more and asks for one beside
 the next checkpoint instead (`buildReplaced`). A battery comparison has one note per period per battery
-run, naming its suites.
+run, naming its suites. When the comparison period's build is the one replaced, the next runs ask for
+that checkpoint as a new baseline with its control (§ 8, *Next runs after a replaced build*).
 
 ## 5. The Scope: Hours
 
@@ -141,6 +142,21 @@ a re-run, a run finished, deleted or changed in status, a control, an annotation
 refresh it, press **Analyze again** for a new analysis; keep the old one as the record behind any
 document already shared, and delete only what you never need, its documents first
 (`ai-benchmark-chat-consistency.md` § 16.1).
+
+**Next runs after a replaced build.** No run can join a period whose Overseer build no longer runs. When
+no comparison run carries the running `HarnessVersion`, the analysis (from the code version that
+introduced it; read the number from the method document's § 16) drops the comparison period's
+*checkpoint* and *stratum* suggestions and asks first for a **new checkpoint** (`newCheckpoint`): the
+protocol's minimum units of the model on the same target, on as many different UTC days, each starting in
+the comparison period's most populated stratum, **with one control run of another provider's model
+beside each**. When the `HarnessImpactLedger` flags between the latest comparison harness and the current
+one include `Grading` or `Scoring`, it adds that quality will start a new segment and needs a re-grade
+with a common grader to compare. Plan it so: the new runs start a new baseline, they do not extend the old
+comparison, and a control beside each is what keeps a later change attributable. A **model batch** makes
+the checkpoint and its control in one launch — the Results step's **Set up as model batch** fills Run
+Benchmark with the target and the model and asks for a control model of another provider
+(`docs/overseer/ai-benchmark-model-batches.md`); with *Runs per model* 1, launch it once per required UTC
+day, in the suggested stratum.
 
 **The periods are run ranges, not dates.** Step 1 alone chooses the runs (or battery runs) the analysis
 uses; step 3, *Analyze*, splits them: each period is every step-1 unit from a chosen first run to a

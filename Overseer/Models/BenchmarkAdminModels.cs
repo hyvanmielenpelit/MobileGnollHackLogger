@@ -863,6 +863,12 @@ public class BenchmarkRunDetailDto
     public long Id { get; set; }
 
     /// <summary>
+    /// The model batch this run belongs to, directly or through its series or battery run; null when
+    /// it belongs to none.
+    /// </summary>
+    public long? ModelBatchRunId { get; set; }
+
+    /// <summary>
     /// The run stopped before finishing its suite, so re-scoring and every re-run are refused.
     /// <see cref="Overseer.Services.Benchmarking.BenchmarkRunFinalizer.IsAbortedRun(MobileGnollHackLogger.Data.BenchmarkRunStatus, int, int)"/>
     /// decides it; the client reads this flag rather than reimplementing the test on the status.

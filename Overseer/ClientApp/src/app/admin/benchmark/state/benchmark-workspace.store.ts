@@ -9,7 +9,8 @@ import {
   BenchmarkRunLimitsDto,
   BenchmarkBatteryDto,
   BenchmarkBatteryRunDto,
-  BenchmarkRunGroupDto
+  BenchmarkRunGroupDto,
+  BenchmarkModelBatchRunDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { parseServerUtcDate } from '../../../utils/date.util';
@@ -19,7 +20,7 @@ import {
   ModelPickerOption,
   toModelPickerOptions
 } from '../../../shared/model-picker/model-picker.component';
-import { Observable, Subject, catchError, combineLatest, map, of, take } from 'rxjs';
+import { Observable, Subject, catchError, combineLatest, defer, map, of, take } from 'rxjs';
 import {
   SnapshotExport
 } from '../question-yaml/question-yaml-format';
@@ -33,10 +34,12 @@ import {
   RUN_HISTORY_MEMBERS_STORAGE_KEY,
   RUN_HISTORY_KINDS,
   BATTERY_RUN_HISTORY_LIMIT,
+  MODEL_BATCH_HISTORY_LIMIT,
   HistoryItem
 } from '../benchmark.models';
 import { formatStatusLabel, instrumentChangeOf, runDurationMs } from '../benchmark-run-format';
 import { batteryRunStatusLabel } from '../batteries/battery.models';
+import { modelBatchMemberName, modelBatchStatusLabel } from '../model-batch/model-batch.models';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 
 /**
@@ -109,18 +112,60 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
   /** Run History lists runs that are members of a battery run; off by default. */
   showBatteryMembers = readStoredShowMembers();
 
+  /** The newest model batches, which Run History lists beside runs and battery runs. */
+  modelBatches: BenchmarkModelBatchRunDto[] = [];
+
+  /** The model batch list did not load with the last history load; Run History shows no batch card. */
+  modelBatchesFailed = false;
+
   private historyItemsMemo: {
     runs: readonly BenchmarkRunSummaryDto[];
     batteries: readonly BenchmarkBatteryRunDto[];
+    batches: readonly BenchmarkModelBatchRunDto[];
     members: boolean;
     items: HistoryItem[];
     positions: Map<HistoryItem, number>;
   } | null = null;
 
+  private modelBatchMembershipMemo: {
+    batches: readonly BenchmarkModelBatchRunDto[];
+    runs: Map<number, number>;
+    batteryRuns: Map<number, number>;
+  } | null = null;
+
+  /** The loaded model batch a run belongs to, by the batches' member lists; null for none. */
+  modelBatchIdOfRun(runId: number): number | null {
+    return this.modelBatchMembership().runs.get(runId) ?? null;
+  }
+
+  /** The model batch a battery run belongs to: its own record, else the loaded batches' member lists. */
+  modelBatchIdOfBatteryRun(battery: BenchmarkBatteryRunDto): number | null {
+    return battery.modelBatchRunId ?? this.modelBatchMembership().batteryRuns.get(battery.id) ?? null;
+  }
+
+  private modelBatchMembership(): NonNullable<BenchmarkWorkspaceStore['modelBatchMembershipMemo']> {
+    const memo = this.modelBatchMembershipMemo;
+    if (memo && memo.batches === this.modelBatches) {
+      return memo;
+    }
+    const runs = new Map<number, number>();
+    const batteryRuns = new Map<number, number>();
+    for (const batch of this.modelBatches) {
+      for (const member of batch.members ?? []) {
+        for (const runId of member.runIds ?? []) runs.set(runId, batch.id);
+        if (member.runId != null) runs.set(member.runId, batch.id);
+        if (member.batteryRunId != null) batteryRuns.set(member.batteryRunId, batch.id);
+      }
+    }
+    const next = { batches: this.modelBatches, runs, batteryRuns };
+    this.modelBatchMembershipMemo = next;
+    return next;
+  }
+
   /**
-   * Run History's cards: `historyRuns` in server order, merged with `batteryRuns` by start time,
-   * newest first. Member runs are left out while `showBatteryMembers` is off. Memoized on its
-   * inputs, so the card list sees one array until they change.
+   * Run History's cards: `historyRuns` in server order, merged with `batteryRuns` and `modelBatches`
+   * by start time, newest first. Member runs are left out while `showBatteryMembers` is off. Memoized
+   * on its inputs, so the card list sees one array until they change.
    */
   get historyItems(): HistoryItem[] {
     return this.historyItemsState().items;
@@ -144,13 +189,16 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
   private historyItemsState(): NonNullable<BenchmarkWorkspaceStore['historyItemsMemo']> {
     const memo = this.historyItemsMemo;
     if (memo && memo.runs === this.historyRuns && memo.batteries === this.batteryRuns &&
-        memo.members === this.showBatteryMembers) {
+        memo.batches === this.modelBatches && memo.members === this.showBatteryMembers) {
       return memo;
     }
-    const items = mergeHistoryItems(this.historyRuns, this.batteryRuns, this.showBatteryMembers);
+    const items = mergeHistoryItems(this.historyRuns, this.batteryRuns, this.showBatteryMembers, this.modelBatches);
     const positions = new Map<HistoryItem, number>();
     items.forEach((item, index) => positions.set(item, items.length - index));
-    const next = { runs: this.historyRuns, batteries: this.batteryRuns, members: this.showBatteryMembers, items, positions };
+    const next = {
+      runs: this.historyRuns, batteries: this.batteryRuns, batches: this.modelBatches, members: this.showBatteryMembers,
+      items, positions
+    };
     this.historyItemsMemo = next;
     return next;
   }
@@ -165,16 +213,23 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
     {
       // The card's position in `historyItems`, newest highest.
       id: item => this.historyItemsState().positions.get(item) ?? 0,
-      suiteName: item => item.kind === 'run' ? item.run.suiteName : item.battery.batteryName,
-      testedModelDisplayNameUsed: item => item.kind === 'run' ? item.run.testedModelDisplayNameUsed : item.battery.testedModelLabel,
-      assessorModelDisplayNameUsed: item => item.kind === 'run' ? item.run.assessorModelDisplayNameUsed : item.battery.assessorLabel,
+      suiteName: item => item.kind === 'run' ? item.run.suiteName
+        : item.kind === 'battery' ? item.battery.batteryName : item.batch.targetName ?? item.batch.suiteNames[0] ?? null,
+      testedModelDisplayNameUsed: item => item.kind === 'run' ? item.run.testedModelDisplayNameUsed
+        : item.kind === 'battery' ? item.battery.testedModelLabel : modelBatchModelNames(item.batch).join(', '),
+      assessorModelDisplayNameUsed: item => item.kind === 'run' ? item.run.assessorModelDisplayNameUsed
+        : item.kind === 'battery' ? item.battery.assessorLabel : null,
       status: item => this.historyStatusOf(item),
-      // Null sorts last automatically, which is right for a run that never scored.
-      qualityIndex: item => item.kind === 'run' ? item.run.qualityIndex ?? item.run.finalScore : item.battery.overallIndex,
-      speedIndex: item => item.kind === 'run' ? item.run.speedIndex : item.battery.overallSpeedIndex,
+      // Null sorts last automatically, which is right for a run that never scored and for a batch.
+      qualityIndex: item => item.kind === 'run' ? item.run.qualityIndex ?? item.run.finalScore
+        : item.kind === 'battery' ? item.battery.overallIndex : null,
+      speedIndex: item => item.kind === 'run' ? item.run.speedIndex
+        : item.kind === 'battery' ? item.battery.overallSpeedIndex : null,
       // The same expression the Duration metric displays, so the list sorts by what it shows.
-      durationMs: item => item.kind === 'run' ? runDurationMs(item.run) : batteryRunDurationMs(item.battery),
-      estimatedCost: item => item.kind === 'run' ? item.run.estimatedCandidateCost ?? item.run.estimatedCost : item.battery.totalCost,
+      durationMs: item => item.kind === 'run' ? runDurationMs(item.run)
+        : item.kind === 'battery' ? batteryRunDurationMs(item.battery) : modelBatchDurationMs(item.batch),
+      estimatedCost: item => item.kind === 'run' ? item.run.estimatedCandidateCost ?? item.run.estimatedCost
+        : item.kind === 'battery' ? item.battery.totalCost : item.batch.liveTotalCostUsd ?? null,
       startedAtUtc: item => new Date(this.historyStartedText(item))
     },
     {
@@ -223,6 +278,17 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
 
   /** What the search matches a card against, lower-cased. */
   private historySearchText(item: HistoryItem): string {
+    if (item.kind === 'batch') {
+      const batch = item.batch;
+      return [
+        `model batch #${batch.id}`,
+        `#${batch.id}`,
+        batch.targetName,
+        ...batch.suiteNames,
+        ...batch.members.flatMap(m => [m.model.displayName, m.model.modelId, m.model.provider]),
+        modelBatchStatusLabel(batch.status)
+      ].filter(part => !!part).join(' ').toLowerCase();
+    }
     if (item.kind === 'battery') {
       const battery = item.battery;
       return [
@@ -260,25 +326,41 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
     if (item.kind === 'run') {
       return item.run.suiteName || null;
     }
-    const names = item.battery.suites.map(suite => suite.suiteName).filter(name => !!name);
+    const names = item.kind === 'battery'
+      ? item.battery.suites.map(suite => suite.suiteName).filter(name => !!name)
+      : item.batch.suiteNames.filter(name => !!name);
     return names.length > 0 ? names : null;
   }
 
-  private historyTestedOf(item: HistoryItem): string | null {
+  private historyTestedOf(item: HistoryItem): string | string[] | null {
+    if (item.kind === 'batch') {
+      const names = modelBatchModelNames(item.batch);
+      return names.length > 0 ? names : null;
+    }
     return (item.kind === 'run' ? item.run.testedModelDisplayNameUsed : item.battery.testedModelLabel) || null;
   }
 
   private historyAssessorOf(item: HistoryItem): string | null {
+    if (item.kind === 'batch') {
+      return null;
+    }
     return (item.kind === 'run' ? item.run.assessorModelDisplayNameUsed : item.battery.assessorLabel) || null;
   }
 
   private historyStatusOf(item: HistoryItem): string {
-    return item.kind === 'run' ? formatStatusLabel(item.run.status) : batteryRunStatusLabel(item.battery.status);
+    switch (item.kind) {
+      case 'run': return formatStatusLabel(item.run.status);
+      case 'battery': return batteryRunStatusLabel(item.battery.status);
+      default: return modelBatchStatusLabel(item.batch.status);
+    }
   }
 
   /** The Flags facet's values of a card; `None` when it has none of them. */
   private historyFlagsOf(item: HistoryItem): string[] {
     const flags: string[] = [];
+    if (item.kind === 'batch') {
+      return ['None'];
+    }
     if (item.kind === 'battery') {
       const battery = item.battery;
       if (battery.latestAnalysisId == null) {
@@ -300,7 +382,7 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
 
   /** The Changes facet's value of a run, from `instrumentChangeOf`; none for a battery run. */
   private historyChangeOf(item: HistoryItem): string | null {
-    if (item.kind === 'battery') {
+    if (item.kind !== 'run') {
       return null;
     }
     const change = this.instrumentChangeOf(item.run);
@@ -308,7 +390,11 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
   }
 
   private historyStartedText(item: HistoryItem): string {
-    return item.kind === 'run' ? item.run.startedAtUtc : item.battery.startedAtUtc;
+    switch (item.kind) {
+      case 'run': return item.run.startedAtUtc;
+      case 'battery': return item.battery.startedAtUtc;
+      default: return item.batch.startedAtUtc ?? item.batch.createdAtUtc;
+    }
   }
 
   private historyStartedAt(item: HistoryItem): Date | null {
@@ -496,8 +582,9 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
   // --- History ---
 
   /**
-   * Loads the newest runs of every suite and, in parallel, the newest battery runs; `afterLoad`
-   * runs once they are rendered. A failed battery list leaves Run History with single runs only.
+   * Loads the newest runs of every suite and, in parallel, the newest battery runs and model batches;
+   * `afterLoad` runs once they are rendered. A failed battery or batch list leaves Run History without
+   * those cards.
    */
   loadHistory(afterLoad?: () => void) {
     this.loadingHistory = true;
@@ -509,11 +596,23 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
         return of({ list: [] as BenchmarkBatteryRunDto[], failed: true });
       })
     );
-    combineLatest({ runs: this.benchmarkService.getRuns(undefined, RUN_HISTORY_LIMIT), batteries: batteries$ }).pipe(take(1)).subscribe({
-      next: ({ runs: data, batteries }) => {
+    // Deferred, so a call that throws fails into the fallback like a failed request.
+    const batches$ = defer(() => this.benchmarkService.listModelBatches(0, MODEL_BATCH_HISTORY_LIMIT)).pipe(
+      map(list => ({ list: list ?? [], failed: false })),
+      catchError(err => {
+        console.warn('Failed to load model batches', err);
+        return of({ list: [] as BenchmarkModelBatchRunDto[], failed: true });
+      })
+    );
+    combineLatest({
+      runs: this.benchmarkService.getRuns(undefined, RUN_HISTORY_LIMIT), batteries: batteries$, batches: batches$
+    }).pipe(take(1)).subscribe({
+      next: ({ runs: data, batteries, batches }) => {
         this.historyRuns = data;
         this.batteryRuns = batteries.list;
         this.batteryRunsFailed = batteries.failed;
+        this.modelBatches = batches.list;
+        this.modelBatchesFailed = batches.failed;
         this.historyList.invalidate();
         this.loadingHistory = false;
         this.historyLoaded$.next();
@@ -600,7 +699,25 @@ function readStoredShowMembers(): boolean {
 
 /** The Kind facet's value of a card. */
 export function historyKindOf(item: HistoryItem): string {
-  return item.kind === 'run' ? RUN_HISTORY_KINDS[0] : RUN_HISTORY_KINDS[1];
+  switch (item.kind) {
+    case 'run': return RUN_HISTORY_KINDS[0];
+    case 'battery': return RUN_HISTORY_KINDS[1];
+    default: return RUN_HISTORY_KINDS[2];
+  }
+}
+
+/** A batch's model names in run order. */
+export function modelBatchModelNames(batch: BenchmarkModelBatchRunDto): string[] {
+  return [...batch.members].sort((a, b) => a.orderIndex - b.orderIndex).map(m => modelBatchMemberName(m)).filter(name => !!name);
+}
+
+/** Completed minus started, or 0 while the batch has not completed. */
+export function modelBatchDurationMs(batch: BenchmarkModelBatchRunDto): number {
+  if (!batch.completedAtUtc || !batch.startedAtUtc) {
+    return 0;
+  }
+  const elapsed = parseServerUtcDate(batch.completedAtUtc).getTime() - parseServerUtcDate(batch.startedAtUtc).getTime();
+  return Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
 }
 
 /** Completed minus started, or 0 while the battery run has not completed. */
@@ -621,33 +738,42 @@ function startedMs(text: string | null | undefined): number {
 }
 
 /**
- * `runs` in their own order, with each battery run placed before the first run that started no
- * later than it did; `batteries` arrive newest first. Runs with a `batteryRunId` are left out
- * unless `showMembers`.
+ * `runs` in their own order, with each battery run and model batch placed before the first run that
+ * started no later than it did; battery runs and batches are ordered newest first among themselves,
+ * a battery run before a batch that started at the same time. Runs with a `batteryRunId` are left
+ * out unless `showMembers`; a batch's runs stay, each card naming its batch.
  */
 export function mergeHistoryItems(
   runs: readonly BenchmarkRunSummaryDto[],
   batteries: readonly BenchmarkBatteryRunDto[],
-  showMembers: boolean
+  showMembers: boolean,
+  batches: readonly BenchmarkModelBatchRunDto[] = []
 ): HistoryItem[] {
-  const sorted = batteries
-    .slice()
-    .sort((a, b) => startedMs(b.startedAtUtc) - startedMs(a.startedAtUtc) || b.id - a.id);
+  const groups: { item: HistoryItem; started: number; rank: number; id: number }[] = [
+    ...batteries.map(battery => ({
+      item: { kind: 'battery', key: `battery:${battery.id}`, battery } as HistoryItem,
+      started: startedMs(battery.startedAtUtc), rank: 0, id: battery.id
+    })),
+    ...batches.map(batch => ({
+      item: { kind: 'batch', key: `batch:${batch.id}`, batch } as HistoryItem,
+      started: startedMs(batch.startedAtUtc ?? batch.createdAtUtc), rank: 1, id: batch.id
+    }))
+  ];
+  const sorted = groups.sort((a, b) => b.started - a.started || a.rank - b.rank || b.id - a.id);
   const items: HistoryItem[] = [];
   let next = 0;
-  const pushBattery = (battery: BenchmarkBatteryRunDto) => items.push({ kind: 'battery', key: `battery:${battery.id}`, battery });
   for (const run of runs) {
     if (!showMembers && run.batteryRunId != null) {
       continue;
     }
     const runStarted = startedMs(run.startedAtUtc);
-    while (next < sorted.length && startedMs(sorted[next].startedAtUtc) >= runStarted) {
-      pushBattery(sorted[next++]);
+    while (next < sorted.length && sorted[next].started >= runStarted) {
+      items.push(sorted[next++].item);
     }
     items.push({ kind: 'run', key: `run:${run.id}`, run });
   }
   while (next < sorted.length) {
-    pushBattery(sorted[next++]);
+    items.push(sorted[next++].item);
   }
   return items;
 }

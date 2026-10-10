@@ -1076,12 +1076,12 @@ describe('AdminBenchmarkComponent', () => {
         pollRun(42, 'Completed');
         pollBattery({ status: 'Completed', completedSuiteCount: 2, currentRunId: null, members: [member(41, 0), member(42, 1)] });
 
-        expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:9:0:NotRequested']]);
+        expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:9:0:NotRequested', 'complete']]);
         expect(notifySpy).toHaveBeenCalledTimes(1);
         expect(notifySpy).toHaveBeenCalledWith('battery:9:0:NotRequested', 'GnollBench', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
       });
 
-      it('should signal a battery run that stops, but not one that is canceled', () => {
+      it('should signal a battery run that stops with the failure sound, but not one that is canceled', () => {
         pollBattery({ status: 'Running' });
         pollBattery({ status: 'Cancelled' });
         expect(playSpy).not.toHaveBeenCalled();
@@ -1089,9 +1089,11 @@ describe('AdminBenchmarkComponent', () => {
         // The dialog continues it; this page's poller sees it live again.
         benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun({ status: 'Running' })));
         component.onBatteryResumedFromDialog(9);
-        pollBattery({ status: 'Stopped', stopReason: 'MemberFailed' });
+        pollBattery({ status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'A member run failed' });
         expect(playSpy).toHaveBeenCalledTimes(1);
-        expect(playSpy).toHaveBeenCalledWith('battery:9:0:NotRequested');
+        expect(playSpy).toHaveBeenCalledWith('battery:9:0:NotRequested', 'failed');
+        expect(notifySpy).toHaveBeenCalledWith('battery:9:0:NotRequested', 'GnollBench',
+          'Battery #9 — Core Battery — 0 of 2 suites — Stopped: A member run failed');
       });
 
       it('should not signal a battery run first seen already finished', () => {
@@ -1157,7 +1159,7 @@ describe('AdminBenchmarkComponent', () => {
           ctx.monitor.pollBatteryRun(8);
           pollRun(91, 'Completed');
 
-          expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:8:12:Completed']]);
+          expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:8:12:Completed', 'complete']]);
           expect(notifySpy).toHaveBeenCalledTimes(1);
           expect(notifySpy).toHaveBeenCalledWith('battery:8:12:Completed', 'GnollBench', 'Battery #8 — Core Battery — 2 of 2 suites — Completed');
         });
@@ -1187,7 +1189,7 @@ describe('AdminBenchmarkComponent', () => {
           pollRun(50, 'Completed', '2026-10-02T02:00:00Z');
           pollRun(50, 'Completed', '2026-10-02T02:00:00Z');
 
-          expect(vi.mocked(playSpy).mock.calls).toEqual([['run:50:2026-10-02T02:00:00Z']]);
+          expect(vi.mocked(playSpy).mock.calls).toEqual([['run:50:2026-10-02T02:00:00Z', 'complete']]);
           expect(benchmarkServiceMock.getBatteryRun).not.toHaveBeenCalled();
         });
       });

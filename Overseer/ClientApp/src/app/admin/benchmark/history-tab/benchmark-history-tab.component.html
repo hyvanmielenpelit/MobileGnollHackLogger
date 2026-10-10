@@ -1,4 +1,4 @@
-<!-- The loaded runs and battery runs as a filterable list of cards shown ten at a time; historyRuns stays in server order. -->
+<!-- The loaded runs, battery runs and model batches as a filterable list of cards shown ten at a time; historyRuns stays in server order. -->
 <section class="rh-list" aria-labelledby="rh-list-title">
   <div class="rh-list-head">
     <!-- Focused after a delete that leaves no card to focus. -->
@@ -124,6 +124,11 @@
                     @if (batteryBadge) {
                       <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                       <span class="rh-battery-badge">{{ batteryBadge }}</span>
+                    }
+                    @let runBatchBadge = modelBatchBadgeOfRun(run);
+                    @if (runBatchBadge) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="rh-batch-badge">{{ runBatchBadge }}</span>
                     }
                     @if ((run.degradedAnswerCount ?? 0) > 0) {
                       <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
@@ -312,6 +317,11 @@
                     <span class="rh-battery-suites">{{ battery.completedSuiteCount }} of {{ battery.suiteCount }} suites</span>
                     <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                     <span class="rh-battery-rounds">{{ battery.runsPerSuite }} {{ battery.runsPerSuite === 1 ? 'run' : 'runs' }} per suite</span>
+                    @let batteryBatchBadge = modelBatchBadgeOfBattery(battery);
+                    @if (batteryBatchBadge) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="rh-batch-badge">{{ batteryBatchBadge }}</span>
+                    }
                     @if (!analyzed) {
                       <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                       <span class="gh-tag rh-battery-not-analyzed">Not analyzed</span>
@@ -466,6 +476,140 @@
                       }
                     </dl>
                   </app-info-tip>
+                </div>
+              </article>
+            </li>
+          } @else if (item.kind === 'batch') {
+            @let batch = item.batch;
+            @let batchFinal = canDeleteModelBatch(batch);
+            @let batchComparable = canCompareModelBatch(batch);
+            @let batchTotal = batch.requestedMemberCount || batch.members.length;
+            <li class="rh-card-item">
+              <article class="rh-card rh-card-batch" [attr.data-model-batch-run-id]="batch.id" [attr.aria-labelledby]="'rh-batch-' + batch.id + '-title'">
+                <header class="rh-card-head">
+                  <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                  <div class="rh-card-kicker">
+                    <span class="rh-batch-run-badge">Model batch #{{ batch.id }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="status-badge" [class]="batteryStatusBadgeClass(batch.status)">{{ modelBatchStatusLabel(batch.status) }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="rh-batch-progress">{{ batch.completedMemberCount }} of {{ batchTotal }} models</span>
+                  </div>
+                  <!-- Focused after Load more and after a delete. -->
+                  <h5 class="rh-card-title" [id]="'rh-batch-' + batch.id + '-title'" tabindex="-1">
+                    <span class="rh-card-model">{{ modelBatchTargetText(batch) }}</span>
+                  </h5>
+                  <p class="rh-card-meta">
+                    <span>{{ batch.targetKind === 'Battery' ? 'battery' : 'suite' }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span>{{ batch.runsPerModel }} {{ batch.runsPerModel === 1 ? 'run' : 'runs' }} per {{ batch.targetKind === 'Battery' ? 'suite' : 'model' }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <time class="rh-card-time" [attr.datetime]="batch.startedAtUtc ?? batch.createdAtUtc">{{ (batch.startedAtUtc ?? batch.createdAtUtc) | date:'yyyy-MM-dd HH:mm' }} UTC</time>
+                    @if (batch.createdByUserName) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span>by {{ batch.createdByUserName }}</span>
+                    }
+                  </p>
+                </header>
+
+                <dl class="rh-metrics">
+                  <div class="rh-metric" data-metric="models">
+                    <dt>Models</dt>
+                    <dd><span class="rh-metric-value">{{ batch.completedMemberCount }} / {{ batchTotal }}</span>
+                      @if (batch.failedMemberCount > 0) {
+                        <span class="rh-metric-note">{{ batch.failedMemberCount }} failed</span>
+                      }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="runs">
+                    <dt>Runs</dt>
+                    <dd><span class="rh-metric-value">{{ modelBatchLaunchedRunCount(batch) }}</span></dd>
+                  </div>
+                  <div class="rh-metric" data-metric="duration">
+                    <dt>Duration</dt>
+                    <dd>
+                      @if (batch.completedAtUtc) {
+                        <span class="rh-metric-value">{{ formatDuration(modelBatchDurationMs(batch)) }}</span>
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
+                        @if (!batchFinal) {
+                          <span class="rh-metric-note">{{ batch.status === 'Stopped' ? 'stopped' : 'in progress' }}</span>
+                        }
+                      }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="cost">
+                    <dt>Cost</dt>
+                    <dd>
+                      @if (batch.liveTotalCostUsd != null) {
+                        <span class="rh-metric-value rh-cost-primary">{{ formatCostAmount(batch.liveTotalCostUsd) }}</span>
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
+                      }
+                    </dd>
+                  </div>
+                </dl>
+
+                <div class="rh-card-actions" role="group" [attr.aria-label]="'Actions for model batch ' + batch.id">
+                  <button type="button" class="action-btn rh-batch-progress-btn" (click)="showModelBatchProgress(batch)"
+                          [attr.aria-label]="'View progress of model batch ' + batch.id"
+                          [attr.interestfor]="'tip-progress-batch-' + batch.id"
+                          [attr.style]="'anchor-name: --tip-progress-batch-' + batch.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-progress-batch-' + batch.id"
+                       [attr.style]="'position-anchor: --tip-progress-batch-' + batch.id">View progress</div>
+                  <button type="button" class="action-btn rh-batch-compare" (click)="openModelBatchInComparison(batch)"
+                          [attr.aria-disabled]="!batchComparable || comparingModelBatchId != null ? 'true' : null"
+                          [attr.aria-label]="'Open model batch ' + batch.id + ' in Model Comparison'"
+                          [attr.interestfor]="'tip-compare-batch-' + batch.id"
+                          [attr.style]="'anchor-name: --tip-compare-batch-' + batch.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-compare-batch-' + batch.id"
+                       [attr.style]="'position-anchor: --tip-compare-batch-' + batch.id">{{ batchComparable ? (comparingModelBatchId === batch.id ? 'Gathering the results…' : 'Open in Model Comparison') : modelBatchCompareReason }}</div>
+                  <button type="button" class="action-btn action-btn-danger rh-delete-btn rh-batch-delete" (click)="deleteModelBatch(batch)"
+                          [attr.aria-disabled]="batchFinal ? null : 'true'"
+                          [attr.aria-label]="'Delete model batch ' + batch.id"
+                          [attr.interestfor]="'tip-del-batch-' + batch.id"
+                          [attr.style]="'anchor-name: --tip-del-batch-' + batch.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-del-batch-' + batch.id"
+                       [attr.style]="'position-anchor: --tip-del-batch-' + batch.id">{{ batchFinal ? 'Delete model batch' : 'A live or stopped model batch cannot be deleted; cancel it first' }}</div>
+                </div>
+
+                <!-- The member models in run order, where a run card shows its instrument. -->
+                <div class="rh-batch-models-strip">
+                  <ul class="rh-batch-models" role="list" [attr.aria-label]="'Models of model batch ' + batch.id">
+                    @for (entry of modelBatchMembers(batch); track entry.member.id) {
+                      <li class="rh-batch-model" [attr.data-status]="entry.member.status">
+                        <span class="rh-batch-model-name">{{ entry.name }}</span>
+                        @for (badge of entry.badges; track badge.kind) {
+                          @switch (badge.kind) {
+                            @case ('provider') {
+                              <app-provider-badge [provider]="badge.provider" />
+                            }
+                            @case ('thinking') {
+                              <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                            }
+                            @case ('reasoning') {
+                              <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                            }
+                            @default {
+                              <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                            }
+                          }
+                        }
+                      </li>
+                    }
+                  </ul>
+                  @if (modelBatchErrors.get(batch.id); as batchError) {
+                    <p class="gh-field-error rh-batch-error">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                      {{ batchError }}
+                    </p>
+                  }
                 </div>
               </article>
             </li>

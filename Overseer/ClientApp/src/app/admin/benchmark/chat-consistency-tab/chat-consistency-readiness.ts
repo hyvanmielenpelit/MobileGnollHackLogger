@@ -1,8 +1,8 @@
 /**
  * What the browser can tell about an analysis before it is sent: each period's sample against Protocol
  * V1's published minimums, which primary endpoints can reach a verdict, and the notes the Analyze step's
- * preview lists. Pure and DOM-free. It never predicts a verdict or a grade beyond *cannot be
- * Established*: the server applies the protocol itself.
+ * preview lists. Pure and DOM-free. It never predicts a verdict, and of a grade only that it is at
+ * most Indicated or not computable: the server applies the protocol itself.
  */
 
 import { CcEventGroup } from './chat-consistency-events';
@@ -127,13 +127,17 @@ export function ccSampleLine(period: CcPeriod, units: readonly CcPeriodUnit[], b
 
 // --- Endpoint readiness ---
 
-/** What the browser can say of an endpoint: it meets the minimum, cannot be Established, or is not computed. */
-export type CcReadinessStatus = 'meets' | 'belowMinimum' | 'notComputed';
+/**
+ * What the browser can say of an endpoint: it meets the minimum sample; it is below it, or pooled
+ * across a measurement change, and so at most Indicated; or it cannot be computed.
+ */
+export type CcReadinessStatus = 'meets' | 'belowMinimum' | 'capped' | 'notComputed';
 
 export const CC_READINESS_STATUS_TEXT: Readonly<Record<CcReadinessStatus, string>> = Object.freeze({
   meets: 'Meets the minimum sample',
-  belowMinimum: 'Cannot be Established',
-  notComputed: 'Not computed'
+  belowMinimum: 'At most Indicated',
+  capped: 'At most Indicated',
+  notComputed: 'Not computable'
 });
 
 export interface CcEndpointReadiness {
@@ -144,6 +148,19 @@ export interface CcEndpointReadiness {
   status: CcReadinessStatus;
   /** The one fact behind the status. */
   fact: string;
+  /** A re-grade of every compared run by one common grader would make the endpoint computable; absent otherwise. */
+  regrade?: boolean;
+}
+
+/** What {@link ccEndpointReadiness} reads besides the periods. */
+export interface CcReadinessOptions {
+  /** *Pool across measurement segment boundaries* is on. */
+  relaxedPooling?: boolean;
+}
+
+/** No endpoint can be better than Indicated, or be computed at all, with these periods. */
+export function ccNothingEstablishable(endpoints: readonly CcEndpointReadiness[]): boolean {
+  return endpoints.length > 0 && endpoints.every(endpoint => endpoint.status !== 'meets');
 }
 
 /** The eligibility a unit carries: a battery run's aggregate, or the run's own. */
@@ -176,25 +193,104 @@ function strataCounts(units: readonly CcPeriodUnit[], points: ReadonlyMap<number
   return counts;
 }
 
+/** The quality grading change between the periods, as the preview can tell it from the run table. */
+interface CcGradingSplit {
+  /** `Grading changed between the periods (harness 53 → 54).` */
+  text: string;
+  /** `grading change (harness 53 → 54)`, for a pooled endpoint's fact. */
+  phrase: string;
+  /** The assessor snapshot whose re-grades cover every run of both periods; null when none does. */
+  commonGrader: { snapshotId: number; display: string } | null;
+}
+
+function qualitySegments(units: readonly CcPeriodUnit[]): Set<number> {
+  return new Set(units.flatMap(unit => unit.runs).flatMap(run => run.eligibility)
+    .filter(entry => entry.axis === 'quality' && entry.eligible && entry.segment !== null)
+    .map(entry => entry.segment as number));
+}
+
+function byStart(a: CcRunRow, b: CcRunRow): number {
+  return a.startedAtUtc.localeCompare(b.startedAtUtc) || a.runId - b.runId;
+}
+
+/** The snapshot of the first re-grade in `runs[0]`'s coverage that every run of `runs` carries; null when none. */
+function coveringGrader(runs: readonly CcRunRow[]): { snapshotId: number; display: string } | null {
+  if (runs.length === 0) return null;
+  const covers = (run: CcRunRow, snapshotId: number) => run.regradeCoverage.some(entry => entry.snapshotId === snapshotId);
+  const found = runs[0].regradeCoverage.find(entry => runs.every(run => covers(run, entry.snapshotId)));
+  return found ? { snapshotId: found.snapshotId, display: found.display } : null;
+}
+
+/**
+ * Whether the quality measurement changed between the periods: the eligible units' runs of the two
+ * periods share no quality measurement segment, which a grading or scoring change starts. Named by the
+ * harness versions (and scoring methods, where they differ) of the baseline's last run and the
+ * comparison's first; null when the periods share a segment. `allRuns` are every run of both periods,
+ * which a common grader must cover, as the analysis requires.
+ */
+function gradingSplit(
+  baseline: readonly CcPeriodUnit[],
+  comparison: readonly CcPeriodUnit[],
+  allRuns: readonly CcRunRow[]
+): CcGradingSplit | null {
+  const sb = qualitySegments(baseline);
+  const sc = qualitySegments(comparison);
+  if (sb.size === 0 || sc.size === 0 || [...sb].some(segment => sc.has(segment))) return null;
+  const last = [...baseline.flatMap(unit => unit.runs)].sort(byStart).pop();
+  const first = [...comparison.flatMap(unit => unit.runs)].sort(byStart)[0];
+  const harness = last?.harnessVersion && first?.harnessVersion && last.harnessVersion !== first.harnessVersion
+    ? `harness ${last.harnessVersion} → ${first.harnessVersion}` : '';
+  const scoringChanged = !!last && !!first && last.scoringMethodVersion !== first.scoringMethodVersion;
+  const scoring = scoringChanged ? `scoring method ${last!.scoringMethodVersion} → ${first!.scoringMethodVersion}` : '';
+  const what = scoringChanged ? (harness ? 'grading and scoring' : 'scoring') : 'grading';
+  const versions = [harness, scoring].filter(part => part).join('; ');
+  const detail = versions ? ` (${versions})` : '';
+  return {
+    text: `${capitalized(what)} changed between the periods${detail}.`,
+    phrase: `${what} change${detail}`,
+    commonGrader: coveringGrader(allRuns)
+  };
+}
+
 function plainReadiness(
   endpoint: CcProtocolEndpoint,
   baseline: readonly CcPeriodUnit[],
   comparison: readonly CcPeriodUnit[],
-  battery: boolean
-): Pick<CcEndpointReadiness, 'status' | 'fact'> {
+  battery: boolean,
+  options: CcReadinessOptions
+): Pick<CcEndpointReadiness, 'status' | 'fact' | 'regrade'> {
   const b = baseline.filter(unit => ccUnitEligibleOn(unit, endpoint.axis));
   const c = comparison.filter(unit => ccUnitEligibleOn(unit, endpoint.axis));
   if (b.length === 0 || c.length === 0) {
     return { status: 'notComputed', fact: noEligibleFact(endpoint.axis, b.length === 0, c.length === 0, battery) };
   }
+  const split = endpoint.axis === 'quality'
+    ? gradingSplit(b, c, [...baseline, ...comparison].flatMap(unit => unit.runs))
+    : null;
+  const pooled = split !== null && split.commonGrader === null && options.relaxedPooling === true;
+  if (split && !split.commonGrader && !pooled) {
+    return {
+      status: 'notComputed',
+      fact: `${split.text} Re-grade every compared run with a common grader to compare quality.`,
+      regrade: true
+    };
+  }
+  const graderNote = split?.commonGrader
+    ? ` Quality is compared under ${split.commonGrader.display}, whose re-grades cover every compared run.`
+    : '';
   const bs = ccPeriodSample(b);
   const cs = ccPeriodSample(c);
-  if (bs.meetsMinimum && cs.meetsMinimum) return { status: 'meets', fact: samplesFact(bs, cs, battery) };
-  const short = [bs.meetsMinimum ? null : 'baseline', cs.meetsMinimum ? null : 'comparison'].filter((p): p is string => p !== null);
+  if (bs.meetsMinimum && cs.meetsMinimum) {
+    if (pooled) {
+      return { status: 'capped', fact: `Pooled across a ${split!.phrase}, which caps the grade at Indicated: ${samplesFact(bs, cs, battery)}.` };
+    }
+    return { status: 'meets', fact: `${samplesFact(bs, cs, battery)}${graderNote ? `.${graderNote}` : ''}` };
+  }
   const p = CC_PROTOCOL_V1;
-  const need = `at least ${plural(p.minimumRunsPerPeriod, unitNoun(battery))} on ${plural(p.minimumDaysPerPeriod, 'day')}`;
-  const which = short.length === 2 ? 'Both periods need' : `The ${short[0]} needs`;
-  return { status: 'belowMinimum', fact: `${which} ${need}: ${samplesFact(bs, cs, battery)}.` };
+  const fewer = `Fewer than ${plural(p.minimumRunsPerPeriod, unitNoun(battery))} on ${plural(p.minimumDaysPerPeriod, 'day')}`;
+  const where = !bs.meetsMinimum && !cs.meetsMinimum ? 'per period' : `in the ${bs.meetsMinimum ? 'comparison' : 'baseline'}`;
+  const poolNote = pooled ? ` Pooled across a ${split!.phrase}.` : '';
+  return { status: 'belowMinimum', fact: `${fewer} ${where}: ${samplesFact(bs, cs, battery)}.${poolNote}${graderNote}` };
 }
 
 function stratifiedReadiness(
@@ -231,15 +327,19 @@ function stratifiedReadiness(
 
 /**
  * Each endpoint's readiness over the eligible units of the two periods: P1, P4 and P5 by the minimum
- * runs and days of the units eligible on their axis; P2 and P3 by the runs per common time stratum, P2
- * falling back to its legacy proxy as the server does. `points` are the timeline's run points by run id.
+ * runs and days of the units eligible on their axis, below which they are at most Indicated; P2 and P3
+ * by the runs per common time stratum, P2 falling back to its legacy proxy as the server does. P1 is
+ * not computable where the periods share no quality measurement segment (a grading or scoring change)
+ * and no re-grade by one assessor covers every run of both periods, unless pooling is on, which caps
+ * it at Indicated. `points` are the timeline's run points by run id.
  */
 export function ccEndpointReadiness(
   endpoints: readonly CcProtocolEndpoint[],
   baseline: readonly CcPeriodUnit[],
   comparison: readonly CcPeriodUnit[],
   points: ReadonlyMap<number, CcTimelinePoint>,
-  battery: boolean
+  battery: boolean,
+  options: CcReadinessOptions = {}
 ): CcEndpointReadiness[] {
   return endpoints.map(endpoint => ({
     id: endpoint.id,
@@ -247,7 +347,7 @@ export function ccEndpointReadiness(
     marginText: ccMarginText(endpoint.margin, endpoint.unit),
     ...(endpoint.stratified
       ? stratifiedReadiness(endpoint, baseline, comparison, points, battery)
-      : plainReadiness(endpoint, baseline, comparison, battery))
+      : plainReadiness(endpoint, baseline, comparison, battery, options))
   }));
 }
 

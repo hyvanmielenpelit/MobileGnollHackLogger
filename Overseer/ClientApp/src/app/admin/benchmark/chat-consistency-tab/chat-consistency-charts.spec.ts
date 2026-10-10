@@ -13,6 +13,7 @@ import {
   CC_FIGURE_SERIES,
   CC_HEADER_LOGO_PX,
   CC_INTERVAL_COLUMN,
+  CC_MIN_BAND_SHARE,
   CC_PRINT_THEME,
   CC_REPORT_FIGURES,
   CC_SCREEN_THEME,
@@ -39,6 +40,7 @@ import {
   ccNotComparableText,
   ccPeriodBreak,
   ccPeriodLabelPlacement,
+  ccPeriodNameNeedsLegend,
   ccPlaceLabels,
   ccPointLabelFont,
   ccStepDecimals,
@@ -49,6 +51,7 @@ import {
   ccTimeTicks,
   ccValueAxis,
   ccWhiskerPlugin,
+  ccWidenRangeForBands,
   costFigure,
   dominantCommonGrader,
   dominantServedModel,
@@ -434,32 +437,133 @@ describe('chat-consistency-charts', () => {
     const measure = (text: string) => text.length * 6;
     const area = { left: 0, top: 0, right: 600, bottom: 300 };
 
-    it('writes the whole name where the band has room for it, and cuts it only where it has not', () => {
+    it('writes the whole name where the band has room for it, and cuts it only to four letters or more', () => {
       expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 172 }, area)).toEqual({
-        text: 'Comparison', box: { left: 106, top: 4, right: 166, bottom: 15 }
+        text: 'Comparison', box: { left: 106, top: 4, right: 166, bottom: 15 }, clear: true
       });
       expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 150 }, area)!.text).toBe('Compa…');
+      // Room for `Com…` only: the period is named in the legend instead.
+      expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 140 }, area)).toBeNull();
       expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 110 }, area)).toBeNull();
     });
 
-    it('takes the first corner clear of the tags and the points, then the first clear of the tags', () => {
+    it('keeps the name on the left of its band: top left, bottom left, then the right corners', () => {
       const band = { left: 100, right: 400 };
       const topLeftTag = { left: 100, top: 0, right: 180, bottom: 20 };
-      expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [topLeftTag])!.box)
-        .toEqual({ left: 346, top: 4, right: 394, bottom: 15 });
-      // Points under both top corners: the bottom left.
-      const points = [{ x: 120, y: 10 }, { x: 380, y: 10 }];
+      expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [topLeftTag]))
+        .toEqual({ text: 'Baseline', box: { left: 106, top: 285, right: 154, bottom: 296 }, clear: true });
+      // Points under both left corners: the top right.
+      const points = [{ x: 120, y: 10 }, { x: 120, y: 290 }];
       expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [], points)!.box)
-        .toEqual({ left: 106, top: 285, right: 154, bottom: 296 });
-      // A point under every corner: the first corner clear of the tags.
+        .toEqual({ left: 346, top: 4, right: 394, bottom: 15 });
+      // A point under every corner: the first corner clear of the tags, not clear.
       const everywhere = [{ x: 120, y: 10 }, { x: 380, y: 10 }, { x: 120, y: 290 }, { x: 380, y: 290 }];
-      expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [topLeftTag], everywhere)!.box.left).toBe(346);
+      const covered = ccPeriodLabelPlacement('Baseline', measure, band, area, [topLeftTag], everywhere)!;
+      expect([covered.box.left, covered.box.top, covered.clear]).toEqual([106, 285, false]);
     });
 
-    it('keeps the point labels clear of the names', () => {
+    it('keeps the point labels clear of the names, except the leading ones that are never given up', () => {
       const name = { left: 106, top: 4, right: 154, bottom: 15 };
-      expect(ccPlaceLabels([{ left: 120, top: 6, right: 140, bottom: 17 }, { left: 300, top: 6, right: 320, bottom: 17 }], area, [name]))
-        .toEqual([1]);
+      const labels = [{ left: 120, top: 6, right: 140, bottom: 17 }, { left: 300, top: 6, right: 320, bottom: 17 }];
+      expect(ccPlaceLabels(labels, area, [name])).toEqual([1]);
+      expect(ccPlaceLabels(labels, area, [name], 1)).toEqual([0, 1]);
+    });
+
+    it('asks for the legend where the band cannot hold four letters, or both of its sides are over a period\'s edge point', () => {
+      expect(ccPeriodNameNeedsLegend('Comparison', measure, { left: 100, right: 400 }, [])).toBe(false);
+      expect(ccPeriodNameNeedsLegend('Comparison', measure, { left: 100, right: 140 }, [])).toBe(true);
+      // `Baseline` takes 106–154 on the left and 346–394 on the right.
+      expect(ccPeriodNameNeedsLegend('Baseline', measure, { left: 100, right: 400 }, [130])).toBe(false);
+      expect(ccPeriodNameNeedsLegend('Baseline', measure, { left: 100, right: 400 }, [130, 370])).toBe(true);
+      expect(ccPeriodNameNeedsLegend('Baseline', measure, { left: 100, right: 400 }, [250])).toBe(false);
+    });
+  });
+
+  describe('the fitted time axis', () => {
+    const HOUR = 3_600_000;
+    // Battery runs #11 and #12 on one day; the comparison runs from 14:49 to two days later.
+    const bands = analysisBands(
+      { startUtc: '2026-10-08T00:00:00Z', endUtc: '2026-10-08T14:48:59.999Z' },
+      { startUtc: '2026-10-08T14:49:00Z', endUtc: '2026-10-10T15:34:00Z' });
+    const sameDay: CcFigureInput = {
+      points: [
+        ccBatteryPoint(11, '2026-10-08T07:14:00Z', { overallIndex: 82.0 }),
+        ccBatteryPoint(12, '2026-10-08T14:52:00Z', { overallIndex: 81.7 })
+      ],
+      unitKind: 'batteryRun',
+      bands
+    };
+    const xBounds = (figure: CcFigure) => figure.config!.options.scales!['x'] as unknown as { min: number; max: number };
+    const visibleShare = (range: { min: number; max: number }, name: 'Baseline' | 'Comparison') => {
+      const band = bands.find(entry => entry.name === name)!;
+      return (Math.min(band.end, range.max) - Math.max(band.start, range.min)) / (range.max - range.min);
+    };
+
+    it('pads by 8 % of the span or 45 minutes, and widens a period band cut by the edge to a tenth of the plot', () => {
+      const range = xBounds(qualityFigure(sameDay, { fitToData: true }));
+      // 45 minutes before the first battery run; the comparison side is widened beyond its padding.
+      expect(range.min).toBe(at('2026-10-08T07:14:00Z') - 0.75 * HOUR);
+      expect(range.max).toBeGreaterThan(at('2026-10-08T14:52:00Z') + 0.75 * HOUR);
+      expect(visibleShare(range, 'Comparison')).toBeGreaterThanOrEqual(CC_MIN_BAND_SHARE - 1e-9);
+      expect(visibleShare(range, 'Comparison')).toBeLessThan(CC_MIN_BAND_SHARE + 1e-6);
+      // A long span pads by 8 %.
+      const long: CcFigureInput = { ...sameDay, bands: [], points: [sameDay.points[0], ccBatteryPoint(12, '2026-10-18T07:14:00Z', { overallIndex: 81.7 })] };
+      expect(xBounds(qualityFigure(long, { fitToData: true })).min).toBeCloseTo(at('2026-10-08T07:14:00Z') - 0.08 * 240 * HOUR, 0);
+    });
+
+    it('widens only a band cut by the edge, never past the band\'s own end', () => {
+      const range = { min: 0, max: 100 };
+      expect(ccWidenRangeForBands(range, [{ name: 'Comparison', start: 95, end: 1000 }])).toEqual({ min: 0, max: (95 - 0) / 0.9 });
+      expect(ccWidenRangeForBands(range, [{ name: 'Comparison', start: 95, end: 101 }])).toEqual({ min: 0, max: 101 });
+      expect(ccWidenRangeForBands(range, [{ name: 'Baseline', start: -1000, end: 5 }])).toEqual({ min: (5 - 0.1 * 100) / 0.9, max: 100 });
+      // Inside the range, wide enough, or wholly outside it: unchanged.
+      expect(ccWidenRangeForBands(range, [{ name: 'Comparison', start: 40, end: 45 }])).toEqual(range);
+      expect(ccWidenRangeForBands(range, [{ name: 'Comparison', start: 50, end: 1000 }])).toEqual(range);
+      expect(ccWidenRangeForBands(range, [{ name: 'Comparison', start: 200, end: 300 }])).toEqual(range);
+    });
+
+    describe('on a chart', () => {
+      let chart: Chart | null = null;
+      const drawn: string[] = [];
+
+      beforeAll(() => {
+        Chart.register(...APP_CHART_REGISTRABLES);
+      });
+
+      afterEach(() => {
+        const canvas = chart?.canvas;
+        chart?.destroy();
+        canvas?.remove();
+        chart = null;
+        drawn.length = 0;
+      });
+
+      it('draws both battery runs\' values and names both periods, in their bands or in the legend under the plot', () => {
+        const figure = qualityFigure(sameDay, { fitToData: true });
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 320;
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d')!;
+        const fillText = ctx.fillText.bind(ctx);
+        ctx.fillText = (text: string, x: number, y: number) => {
+          drawn.push(text);
+          fillText(text, x, y);
+        };
+        chart = new Chart(canvas, {
+          ...figure.config!,
+          options: { ...figure.config!.options, responsive: false, animation: false }
+        } as unknown as ChartConfiguration);
+        expect(drawn).toContain('82.0');
+        expect(drawn).toContain('81.7');
+        expect(drawn.some(text => text.startsWith('Base'))).toBe(true);
+        expect(drawn.some(text => text.startsWith('Comp'))).toBe(true);
+        // The comparison band is a tenth of the plot.
+        const x = chart.scales['x'];
+        const comparison = bands[1];
+        const share = (x.right - x.getPixelForValue(comparison.start)) / (x.right - x.left);
+        expect(share).toBeGreaterThanOrEqual(CC_MIN_BAND_SHARE - 0.005);
+      });
     });
   });
 
@@ -1748,11 +1852,11 @@ describe('chat-consistency-charts', () => {
       return { min: x.min, max: x.max };
     };
 
-    it('fits the time axis to the plotted points, padded by the larger of 5 % and 30 minutes, not to the periods', () => {
+    it('fits the time axis to the plotted points, padded by the larger of 8 % and 45 minutes, not to the periods', () => {
       const fitted = xBounds(qualityFigure(oneDay, { fitToData: true }));
       const span = 12 * HOUR_MS;
-      expect(fitted.min).toBe(at('2026-10-08T08:00:00Z') - span * 0.05);
-      expect(fitted.max).toBe(at('2026-10-08T20:00:00Z') + span * 0.05);
+      expect(fitted.min).toBe(at('2026-10-08T08:00:00Z') - span * 0.08);
+      expect(fitted.max).toBe(at('2026-10-08T20:00:00Z') + span * 0.08);
 
       // Without it, the axis spans the periods too.
       const wide = xBounds(qualityFigure(oneDay));
@@ -1761,8 +1865,8 @@ describe('chat-consistency-charts', () => {
 
       const close: CcFigureInput = { points: [ccPoint(301, '2026-10-08T08:00:00Z'), ccPoint(302, '2026-10-08T09:00:00Z')] };
       const padded = xBounds(workFigure(close, { fitToData: true }));
-      expect(padded.min).toBe(at('2026-10-08T07:30:00Z'));
-      expect(padded.max).toBe(at('2026-10-08T09:30:00Z'));
+      expect(padded.min).toBe(at('2026-10-08T07:15:00Z'));
+      expect(padded.max).toBe(at('2026-10-08T09:45:00Z'));
     });
 
     it('keeps a marker near the points inside the fitted axis', () => {

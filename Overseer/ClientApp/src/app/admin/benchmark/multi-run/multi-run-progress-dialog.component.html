@@ -169,6 +169,14 @@
         <p class="progress-status" role="status" aria-live="polite">{{ stageLabel }}</p>
       </div>
 
+      @if (modelBatchOwnerId != null) {
+        <!-- The batch drives this series: its Continue and Cancel are the batch's. -->
+        <p class="series-batch-notice">
+          <span>Part of model batch #{{ modelBatchOwnerId }}. </span>
+          <button type="button" class="btn-link series-open-batch" (click)="showModelBatch()">Open model batch #{{ modelBatchOwnerId }}</button>
+        </p>
+      }
+
       <!-- A named state, not a stalled spinner. -->
       @if (isNamedPause) {
         <div class="series-state-block" [class.state-waiting]="stage === 'waitingForCap'"
@@ -193,6 +201,8 @@
               Start a new series
             </button>
             <button type="button" class="btn-gh" [disabled]="resumeInFlight"
+                    [attr.aria-disabled]="modelBatchOwnerId != null ? 'true' : null"
+                    [attr.aria-describedby]="modelBatchOwnerId != null ? 'seriesBatchOwnedReason' : null"
                     (click)="continueSeries(true)">
               Continue anyway (marks the group cross-condition)
             </button>
@@ -376,9 +386,14 @@
     </div>
 
     <div class="dialog-footer">
+      @if (modelBatchOwnerId != null && (seriesIsLive || canContinue || instrumentChange)) {
+        <span class="series-batch-owned-reason" id="seriesBatchOwnedReason">{{ modelBatchOwnedReason }}</span>
+      }
       @if (seriesIsLive) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Run in Background</button>
-        <button type="button" class="btn-gh btn-gh-delete" [disabled]="cancelInFlight"
+        <button type="button" class="btn-gh btn-gh-delete series-cancel" [disabled]="cancelInFlight"
+                [attr.aria-disabled]="modelBatchOwnerId != null ? 'true' : null"
+                [attr.aria-describedby]="modelBatchOwnerId != null ? 'seriesBatchOwnedReason' : null"
                 (click)="cancelSeries()">
           Cancel Series
         </button>
@@ -387,7 +402,10 @@
       }
 
       @if (canContinue) {
-        <button type="button" class="btn-gh" [disabled]="resumeInFlight" (click)="continueSeries()">
+        <button type="button" class="btn-gh series-continue" [disabled]="resumeInFlight"
+                [attr.aria-disabled]="modelBatchOwnerId != null ? 'true' : null"
+                [attr.aria-describedby]="modelBatchOwnerId != null ? 'seriesBatchOwnedReason' : null"
+                (click)="continueSeries()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

@@ -464,6 +464,9 @@ public class BenchmarkBatteryRunDto
     /// <summary>The member runs being repaired: running while the battery run is not live. Empty otherwise.</summary>
     public long[] RepairingRunIds { get; set; } = Array.Empty<long>();
 
+    /// <summary>The model batch this battery run is a member of; null when it belongs to none.</summary>
+    public long? ModelBatchRunId { get; set; }
+
     public DateTime StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
     public DateTime? LastProgressAtUtc { get; set; }

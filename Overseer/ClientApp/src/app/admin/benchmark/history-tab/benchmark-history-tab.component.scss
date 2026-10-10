@@ -268,9 +268,69 @@
 }
 
 .rh-battery-suites,
-.rh-battery-rounds {
+.rh-battery-rounds,
+.rh-batch-progress {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* The model batch a run or battery run belongs to. */
+.rh-batch-badge {
+  padding: 0 0.4em;
+  border: 1px dashed var(--border-glass);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  color: #d4d4d8;
+  white-space: nowrap;
+}
+
+/* A model batch's own card, told apart from a member's *Batch #N* by its gold label. */
+.rh-batch-run-badge {
+  padding: 0 0.4em;
+  border: 1px dashed color-mix(in srgb, var(--primary-color) 55%, transparent);
+  border-radius: 4px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+  white-space: nowrap;
+}
+
+/* A batch card's member models, in the row a run card gives its instrument. */
+.rh-batch-models-strip {
+  grid-area: instrument;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-block-start: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  min-inline-size: 0;
+}
+
+.rh-batch-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-secondary);
+}
+
+.rh-batch-model {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.rh-batch-model-name {
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+}
+
+.rh-batch-error {
+  margin: 0;
 }
 
 .rh-battery-not-analyzed {

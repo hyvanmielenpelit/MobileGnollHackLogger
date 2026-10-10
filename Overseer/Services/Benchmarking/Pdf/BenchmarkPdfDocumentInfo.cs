@@ -262,7 +262,8 @@ public sealed record BenchmarkPdfDocumentInfo
         string Period(string period)
         {
             string p = "period." + period + ".";
-            return Fact(p + "start") + " to " + Fact(p + "end") + ", " + (FactOf(p + "units") is { Available: true } ? Fact(p + "units") : Fact(p + "runs"));
+            string window = BenchmarkChatConsistencyReportFacts.WindowText(sheet.Facts, period) ?? Fact(p + "start") + " to " + Fact(p + "end");
+            return window + ", " + (FactOf(p + "units") is { Available: true } ? Fact(p + "units") : Fact(p + "runs"));
         }
 
         string analysis = "Chat consistency analysis " + (subject.AnalysisId is int id ? "#" + Inv(id) : "(not saved)");

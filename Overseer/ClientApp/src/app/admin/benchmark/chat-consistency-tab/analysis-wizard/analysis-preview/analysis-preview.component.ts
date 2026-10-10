@@ -1,7 +1,13 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 
 import { CcEventGroup, eventGroupChangesText } from '../../chat-consistency-events';
-import { CC_READINESS_STATUS_TEXT, CcEndpointReadiness, CcPreviewNote, CcReadinessStatus } from '../../chat-consistency-readiness';
+import {
+  CC_READINESS_STATUS_TEXT,
+  CcEndpointReadiness,
+  CcPreviewNote,
+  CcReadinessStatus,
+  ccNothingEstablishable
+} from '../../chat-consistency-readiness';
 import { CcComparisonSet, CcModelAxis } from '../../chat-consistency.models';
 import { CcModelBadgesComponent } from '../../model-badges/model-badges.component';
 
@@ -14,6 +20,13 @@ export interface CcPreviewFact {
   note?: string;
 }
 
+/** The evidence warning over the endpoint list when no endpoint can be better than Indicated. */
+export const CC_NOTHING_ESTABLISHABLE_TEXT = 'With this selection nothing can be Established.';
+export const CC_EVIDENCE_REASON_TEXT = 'Each endpoint below says why. The analysis can still be made.';
+
+/** Where an endpoint that needs a common grader points to. */
+export const CC_REGRADE_POINTER_TEXT = 'Re-grade with a common assessor is under Controls in the analysis settings.';
+
 /** What the Compared fact's tag reads: a battery, a suite, or every suite run by run. */
 export interface CcPreviewKind {
   kind: 'battery' | 'suite' | 'all';
@@ -22,8 +35,10 @@ export interface CcPreviewKind {
 
 /**
  * The Analyze step's *Preview*: what the analysis will be sent, which primary endpoints can reach a
- * verdict on the chosen periods, and the notes that may change or qualify the result. Read-only; every
- * figure is built by the host from the readiness module, and the server applies the protocol itself.
+ * verdict on the chosen periods, and the notes that may change or qualify the result. When no endpoint
+ * can be better than Indicated, a warning over the endpoint list says so beforehand; it never blocks.
+ * Read-only; every figure is built by the host from the readiness module, and the server applies the
+ * protocol itself.
  */
 @Component({
   selector: 'app-cc-analysis-preview',
@@ -42,6 +57,15 @@ export class CcAnalysisPreviewComponent {
   @Input() refusal = '';
   @Input() endpoints: readonly CcEndpointReadiness[] = [];
   @Input() notes: readonly CcPreviewNote[] = [];
+
+  readonly nothingEstablishableText = CC_NOTHING_ESTABLISHABLE_TEXT;
+  readonly evidenceReasonText = CC_EVIDENCE_REASON_TEXT;
+  readonly regradePointer = CC_REGRADE_POINTER_TEXT;
+
+  /** No endpoint can be better than Indicated, or be computed at all, on valid periods. */
+  get nothingEstablishable(): boolean {
+    return !this.refusal && ccNothingEstablishable(this.endpoints);
+  }
 
   get compareKind(): CcPreviewKind {
     if (!this.compareSet) return { kind: 'all', text: 'All suites' };

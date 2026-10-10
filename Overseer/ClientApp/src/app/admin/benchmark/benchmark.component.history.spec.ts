@@ -26,7 +26,7 @@ describe('AdminBenchmarkComponent', () => {
 
   /** The run ids of the Run History tab's cards, in order; these specs load no battery runs. */
   function viewRunIds(): number[] {
-    return ctx.historyTab().historyView.map(item => item.kind === 'run' ? item.run.id : -item.battery.id);
+    return ctx.historyTab().historyView.map(item => item.kind === 'run' ? item.run.id : item.kind === 'battery' ? -item.battery.id : -item.batch.id);
   }
 
   describe('Run History card list (data-table)', () => {

@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, ViewChild, ElementRef, inject } from '@angular/core';
+import { AfterViewInit, Component, ChangeDetectorRef, ViewChild, ElementRef, OnInit, inject } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -9,23 +9,37 @@ import {
   BENCHMARK_SECOND_OPINION_MODES,
   BenchmarkBatteryReusePreviewSlotDto,
   BoardFactsCheckDto,
-  BoardFactIssueDto
+  BoardFactIssueDto,
+  BenchmarkModelBatchFindingDto,
+  BenchmarkModelBatchLimitsDto,
+  BenchmarkModelBatchRunDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
-import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
+import { BenchmarkCompletionSoundKind, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
-  ModelPickerComponent
+  ModelPickerComponent,
+  ModelPickerOption
 } from '../../../shared/model-picker/model-picker.component';
+import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-multi-picker.component';
+import { ReorderableListComponent, ReorderableListItem } from '../../../shared/reorderable-list/reorderable-list.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { reportWriterRefusal, reportWriterWarning } from '../run-ai-reports/report-writer-policy';
 import {
   formatCostAmount,
   formatStatus,
   formatElapsed,
+  refusalText,
   DELIBERATING_THINKING_LEVELS,
   INTERACTIVE_SPEED_TARGET_MAX_MS,
   MISSING_BOARD_QUOTE_LIST_CAP
 } from '../benchmark-run-format';
+import { BenchmarkLauncherRunMode, BenchmarkModelBatchOrderChoice } from '../benchmark.models';
+import {
+  ModelBatchAcknowledgment,
+  ModelBatchReadinessComponent,
+  modelBatchFindingCode
+} from './model-batch-readiness/model-batch-readiness.component';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import { BenchmarkLauncherState } from '../state/benchmark-launcher.state';
 import { BenchmarkDifficultyJobService } from '../state/benchmark-difficulty-job.service';
@@ -35,17 +49,69 @@ import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
-/** The Run Benchmark sub-tab: the launcher, the active run, series and battery banners, and the start dialogs. */
+/** A launcher field a model batch finding can point at, for its inline line and Go to field. */
+export type ModelBatchField =
+  | 'models' | 'target' | 'profile' | 'responseStyle' | 'sourceCodeReferences'
+  | 'assessor' | 'coAssessor' | 'secondOpinion' | 'claimVerifier' | 'reportWriter'
+  | 'runs' | 'allowCapWait' | 'order';
+
+/**
+ * The server's `field` names, lower-cased with everything but letters removed, to the launcher's
+ * fields. The server sends `models`, `assessor`, `coAssessor`, `reader`, `verifier`, `reportWriter`,
+ * `profile`, `responseStyle`, `sourceReferences`, `runsPerModel`, `order`, `capWait` and `target`.
+ */
+const MODEL_BATCH_FIELD_ALIASES: Readonly<Record<string, ModelBatchField>> = {
+  models: 'models',
+  target: 'target',
+  profile: 'profile',
+  responsestyle: 'responseStyle',
+  sourcereferences: 'sourceCodeReferences',
+  assessor: 'assessor',
+  coassessor: 'coAssessor',
+  reader: 'secondOpinion',
+  verifier: 'claimVerifier',
+  reportwriter: 'reportWriter',
+  runspermodel: 'runs',
+  capwait: 'allowCapWait',
+  order: 'order'
+};
+
+/** A projection basis in words. */
+const MODEL_BATCH_BASIS_TEXT: Readonly<Record<string, string>> = {
+  OwnRuns: 'its own recent runs on this target',
+  Mixed: 'partly its own recent runs, partly the target\'s mean',
+  TargetMean: 'the target\'s mean over other models: it has no run of its own here',
+  None: 'no basis: neither it nor the target has a completed run'
+};
+
+/** The launcher field a finding's `field` names, or null when it names none the launcher shows. */
+export function modelBatchFieldOf(field: string | null | undefined): ModelBatchField | null {
+  if (!field) return null;
+  return MODEL_BATCH_FIELD_ALIASES[field.toLowerCase().replace(/[^a-z]/g, '')] ?? null;
+}
+
+/** The short note a selected candidate's chip carries for a warning about it, by code. */
+const MODEL_BATCH_CHIP_NOTES: Readonly<Record<string, string>> = {
+  'MB-W02': 'Checks its own answers',
+  'MB-W05': 'Settings differ',
+  'MB-W06': 'Selected twice',
+  'MB-W08': 'Same provider as the report writer',
+  'MB-W10': 'Same provider as the assessor'
+};
+
+/** The Run Benchmark sub-tab: the launcher, the active run, series, battery and model batch banners, and the start dialogs. */
 @Component({
   selector: 'app-benchmark-run-tab',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, FormsModule, ModelPickerComponent, InfoTipComponent
+    CommonModule, DecimalPipe, FormsModule, ModelPickerComponent, ModelMultiPickerComponent, ReorderableListComponent,
+    InfoTipComponent, ModelBatchReadinessComponent
   ],
   templateUrl: './benchmark-run-tab.component.html',
   styleUrls: ['./benchmark-run-tab.component.scss']
 })
-export class BenchmarkRunTabComponent {
+export class BenchmarkRunTabComponent implements OnInit, AfterViewInit {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly viewSync = inject(BenchmarkViewSync);
   readonly bridge = inject(BenchmarkShellBridge);
   readonly workspace = inject(BenchmarkWorkspaceStore);
@@ -65,6 +131,7 @@ export class BenchmarkRunTabComponent {
     this.viewSync.changed$.pipe(takeUntilDestroyed()).subscribe(() => {
       this.cdr.markForCheck();
       this.cdr.detectChanges();
+      this.focusBatchModelsIfPending();
     });
     // A start that ends while this tab is not shown gets no dialog; the run simply does not start.
     this.monitor.startOutcome$.pipe(takeUntilDestroyed()).subscribe(outcome => {
@@ -75,6 +142,34 @@ export class BenchmarkRunTabComponent {
         this.showSameProviderDialog(outcome.warning);
       }
     });
+  }
+
+  ngOnInit(): void {
+    // The model batch confirmation's close button carries an interest-triggered tooltip.
+    ensureOverlayPolyfills();
+  }
+
+  ngAfterViewInit(): void {
+    this.focusBatchModelsIfPending();
+  }
+
+  /**
+   * Focuses the Models Under Test picker once, after a Chat Consistency suggestion set up a model
+   * batch; nothing while the picker is not shown yet.
+   */
+  private focusBatchModelsIfPending(): void {
+    if (!this.launcher.batchModelsFocusPending || !this.launcher.isModelBatch) return;
+    const control = this.host.nativeElement.querySelector<HTMLElement>('.batch-models-picker .selector-trigger');
+    if (!control) return;
+    this.launcher.batchModelsFocusPending = false;
+    control.scrollIntoView({ block: 'center' });
+    control.focus();
+  }
+
+  /** The Models Under Test hint: a suggestion's own while fewer than two models are chosen, else the default. */
+  get batchModelsHintText(): string {
+    const hint = this.launcher.batchModelsHint;
+    return hint && this.launcher.batchModelKeys.length < 2 ? hint : 'Choose two or more models.';
   }
 
   @ViewChild('sameProviderDialog') sameProviderDialog!: ElementRef<HTMLDialogElement>;
@@ -133,16 +228,19 @@ export class BenchmarkRunTabComponent {
       a.modelId.trim().toLowerCase() === b.modelId.trim().toLowerCase();
   }
 
-  /** Mirrors the server's refusal: the two panel members must come from different providers. */
+  /**
+   * Mirrors the server's refusal: the two panel members must come from different providers. In
+   * batch mode the server's findings say this and every other candidate-dependent advisory instead.
+   */
   get showCoAssessorSameProviderAdvisory(): boolean {
-    return this.launcher.isPanelLaunch &&
+    return !this.launcher.isModelBatch && this.launcher.isPanelLaunch &&
       BenchmarkLauncherState.sameProvider(this.selectedAssessorModel?.provider, this.selectedCoAssessorModel?.provider);
   }
 
   /** Mirrors the server's refusal: neither panel member may be the model under test. */
   get showCoAssessorCandidateAdvisory(): boolean {
     const candidate = this.selectedTestedModel;
-    return this.launcher.isPanelLaunch &&
+    return !this.launcher.isModelBatch && this.launcher.isPanelLaunch &&
       (BenchmarkRunTabComponent.sameModel(candidate, this.selectedAssessorModel) ||
         BenchmarkRunTabComponent.sameModel(candidate, this.selectedCoAssessorModel));
   }
@@ -163,6 +261,7 @@ export class BenchmarkRunTabComponent {
    * itself. Holds Start back. Empty when there is no writer or nothing to refuse.
    */
   get reportWriterLaunchRefusal(): string {
+    if (this.launcher.isModelBatch) return '';
     return reportWriterRefusal(this.selectedReportWriterModel, this.selectedTestedModel);
   }
 
@@ -171,6 +270,7 @@ export class BenchmarkRunTabComponent {
    * asks for the acknowledgment. Empty when there is no writer, it is refused, or its provider differs.
    */
   get reportWriterLaunchWarning(): string {
+    if (this.launcher.isModelBatch) return '';
     return reportWriterWarning(this.selectedReportWriterModel, this.selectedTestedModel);
   }
 
@@ -179,7 +279,7 @@ export class BenchmarkRunTabComponent {
    * a non-scoring role is most useful from a family that is neither a candidate nor a panel member.
    */
   private sharedFamilyRoles(provider: string | null | undefined): string[] {
-    if (!this.launcher.isPanelLaunch || !provider) return [];
+    if (this.launcher.isModelBatch || !this.launcher.isPanelLaunch || !provider) return [];
     const roles: [string, string | null | undefined][] = [
       ['the model under test', this.selectedTestedModel?.provider],
       ['panel member A', this.selectedAssessorModel?.provider],
@@ -201,7 +301,8 @@ export class BenchmarkRunTabComponent {
    * memory, so this is not worthless — but it is the weakest available pairing.
    */
   get showClaimVerifierCandidateAdvisory(): boolean {
-    return this.launcher.claimVerifierConfigId != null &&
+    return !this.launcher.isModelBatch &&
+      this.launcher.claimVerifierConfigId != null &&
       this.launcher.testedConfigId != null &&
       this.launcher.claimVerifierConfigId === this.launcher.testedConfigId;
   }
@@ -248,9 +349,10 @@ export class BenchmarkRunTabComponent {
     return previous != null && this.launcher.assessorConfigId != null && previous !== this.launcher.assessorConfigId;
   }
 
-  /** Stores the launcher's settings as they now stand. */
+  /** Stores the launcher's settings as they now stand, and in batch mode asks for them to be checked. */
   private rememberSettings(): void {
     this.launcher.persistRunSettings();
+    this.launcher.requestPreflight();
   }
 
   onSelectedSuiteChanged(): void {
@@ -377,10 +479,10 @@ export class BenchmarkRunTabComponent {
 
   /**
    * True once the operator has asked for more than one run of a single suite, which is what reveals
-   * the series projection. A battery has a projection of its own.
+   * the series projection. A battery and a model batch have projections of their own.
    */
   get isMultiRunRequested(): boolean {
-    return !this.launcher.isBatteryTarget && this.launcher.effectiveRunCount > 1;
+    return !this.launcher.isModelBatch && !this.launcher.isBatteryTarget && this.launcher.effectiveRunCount > 1;
   }
 
   /**
@@ -652,7 +754,8 @@ export class BenchmarkRunTabComponent {
    * either diagnostics capture can be copied from.</p>
    */
   get seriesBannerVisible(): boolean {
-    return this.monitor.activeSeries != null && !this.monitor.multiRunDialogVisible && !this.monitor.seriesIsFinished;
+    return this.monitor.activeSeries != null && !this.monitor.multiRunDialogVisible && !this.monitor.seriesIsFinished
+      && !this.modelBatchHoldsBanners;
   }
 
   get seriesIsWaitingForCap(): boolean {
@@ -695,7 +798,7 @@ export class BenchmarkRunTabComponent {
    */
   get batteryBannerVisible(): boolean {
     const batteryRun = this.monitor.activeBatteryRun;
-    if (batteryRun == null || this.monitor.batteryDialogVisible) {
+    if (batteryRun == null || this.monitor.batteryDialogVisible || this.modelBatchHoldsBanners) {
       return false;
     }
     return this.monitor.batteryIsLive || this.batteryIsStopped || batteryAwaitsPostRun(batteryRun);
@@ -766,9 +869,18 @@ export class BenchmarkRunTabComponent {
    * programmatic playback on browsers that require one interaction before audio is allowed.
    */
   testCompletionSound(): void {
+    this.testSound('complete');
+  }
+
+  /** The *Test failure sound* button: the same, with the sound a failed, stopped or erroneous end plays. */
+  testFailureSound(): void {
+    this.testSound('failed');
+  }
+
+  private testSound(kind: BenchmarkCompletionSoundKind): void {
     this.monitor.armCompletionSignalsFromGesture();
     this.monitor.completionSoundStatus = null;
-    this.completionSoundService.prime().then(outcome => {
+    this.completionSoundService.prime(kind).then(outcome => {
       this.monitor.lastCompletionSoundOutcome = outcome;
       if (outcome === 'blocked') {
         this.monitor.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
@@ -778,6 +890,7 @@ export class BenchmarkRunTabComponent {
   }
 
   get showProfileFitAdvisory(): boolean {
+    if (this.launcher.isModelBatch) return false;
     const thinkingLevel = this.selectedTestedModel?.thinkingLevel;
     const speedTargetMs = this.launcher.selectedScoringProfile?.speedTargetMs;
     if (!thinkingLevel || speedTargetMs == null) return false;
@@ -820,5 +933,480 @@ export class BenchmarkRunTabComponent {
       return this.reportWriterLaunchRefusal;
     }
     return '';
+  }
+
+  // --- Model batches ---
+  //
+  // The Models radios switch the launcher between one model under test and a model batch. In batch
+  // mode the server's guardrail findings are shown three ways: a field's blocker or warning as one
+  // line under it, all of them in the Batch Readiness card above Start, and the acknowledged warnings
+  // in the Start confirmation. Nothing here judges a guardrail itself, except the picker's
+  // unavailable options (a scoring grader or the report writer), which are derived for immediacy.
+
+  /** The Models radios' change handler. A batch starts with no report writer: each member would get its own documents. */
+  setRunMode(mode: BenchmarkLauncherRunMode): void {
+    if (this.launcher.runMode === mode) return;
+    this.launcher.runMode = mode;
+    if (mode === 'batch') {
+      this.launcher.reportWriterConfigId = null;
+      // A model batch never reuses earlier runs.
+      this.launcher.reuseEarlierRuns = false;
+      this.launcher.refreshReusePreview();
+    }
+    this.rememberSettings();
+    this.cdr.markForCheck();
+  }
+
+  /** The Models Under Test picker's change handler. */
+  onBatchModelsChange(keys: readonly (string | number)[]): void {
+    this.launcher.setBatchModels(keys.map(k => Number(k)).filter(k => Number.isFinite(k)));
+    this.rememberSettings();
+  }
+
+  /** The Model order radios' change handler. */
+  setBatchOrder(order: BenchmarkModelBatchOrderChoice): void {
+    this.launcher.batchOrder = order;
+    this.rememberSettings();
+    this.cdr.markForCheck();
+  }
+
+  /** The As listed order's change handler. */
+  onBatchOrderListChange(keys: string[]): void {
+    this.launcher.setBatchOrderKeys(keys.map(k => Number(k)));
+    this.rememberSettings();
+  }
+
+  /** Runs per model, and every other batch field whose change only needs saving and checking. */
+  onBatchSettingsChanged(): void {
+    this.rememberSettings();
+  }
+
+  /** *Wait when the run cap blocks the next run*: decided at each start, so checked but not saved. */
+  onAllowCapWaitChanged(): void {
+    this.launcher.requestPreflight();
+  }
+
+  onFindingAcknowledged(change: ModelBatchAcknowledgment): void {
+    this.launcher.setFindingAcknowledged(change.key, change.acknowledged);
+    this.cdr.markForCheck();
+  }
+
+  private batchPickerCache: {
+    source: ModelPickerOption<SystemAiConfigDto>[];
+    assessorId: number | null;
+    coAssessorId: number | null;
+    reportWriterId: number | null;
+    findings: BenchmarkModelBatchFindingDto[];
+    models: number[];
+    options: ModelPickerOption<SystemAiConfigDto>[];
+  } | null = null;
+
+  /**
+   * The Models Under Test options: every benchmark-capable model, a scoring grader or the report
+   * writer unavailable with the reason (MB-B03, MB-B04), and a chosen model that a warning names
+   * carrying a short note. Memoized on its inputs, so the picker sees a new array only when one changes.
+   */
+  get batchPickerOptions(): ModelPickerOption<SystemAiConfigDto>[] {
+    const source = this.workspace.benchmarkPickerOptions;
+    const launcher = this.launcher;
+    const cached = this.batchPickerCache;
+    if (cached && cached.source === source && cached.assessorId === launcher.assessorConfigId
+        && cached.coAssessorId === launcher.coAssessorConfigId && cached.reportWriterId === launcher.reportWriterConfigId
+        && cached.findings === launcher.findings && cached.models === launcher.batchModelKeys) {
+      return cached.options;
+    }
+    const assessor = this.selectedAssessorModel;
+    const coAssessor = this.selectedCoAssessorModel;
+    const writer = this.selectedReportWriterModel;
+    const options = source.map(option => {
+      const model = option.model;
+      const reason = BenchmarkRunTabComponent.sameModel(model, assessor) || BenchmarkRunTabComponent.sameModel(model, coAssessor)
+        ? 'Grades this batch'
+        : BenchmarkRunTabComponent.sameModel(model, writer) ? 'Writes its reports' : '';
+      const detail = this.batchChipNote(model.id);
+      return {
+        ...option,
+        ...(detail ? { detail } : {}),
+        ...(reason ? { disabledReason: reason } : {})
+      };
+    });
+    this.batchPickerCache = {
+      source, assessorId: launcher.assessorConfigId, coAssessorId: launcher.coAssessorConfigId,
+      reportWriterId: launcher.reportWriterConfigId, findings: launcher.findings, models: launcher.batchModelKeys, options
+    };
+    return options;
+  }
+
+  /** The warnings that name this chosen model, as the short notes its chip shows. */
+  private batchChipNote(configId: number): string {
+    if (!this.launcher.batchModelKeys.includes(configId)) return '';
+    const notes = this.launcher.batchWarnings
+      .filter(f => f.modelConfigurationIds?.includes(configId))
+      .map(f => MODEL_BATCH_CHIP_NOTES[modelBatchFindingCode(f)])
+      .filter((note): note is string => !!note);
+    return notes.filter((note, i) => notes.indexOf(note) === i).join(' · ');
+  }
+
+  private batchOrderCache: { keys: number[]; source: SystemAiConfigDto[]; items: ReorderableListItem[] } | null = null;
+
+  /** The chosen models in the As listed order, for the reorderable list. Memoized like the picker options. */
+  get batchOrderItems(): ReorderableListItem[] {
+    const keys = this.launcher.batchOrderKeys;
+    const source = this.workspace.stableBenchmarkCapableConfigs;
+    const cached = this.batchOrderCache;
+    if (cached && cached.keys === keys && cached.source === source) {
+      return cached.items;
+    }
+    const items = keys.map(id => ({ key: String(id), label: this.batchModelName(id) }));
+    this.batchOrderCache = { keys, source, items };
+    return items;
+  }
+
+  /** A configuration's display name, else its model id, else its id. */
+  batchModelName(configId: number): string {
+    const config = this.workspace.benchmarkCapableConfigs.find(c => c.id === configId);
+    return config?.displayName || config?.modelId || `Configuration #${configId}`;
+  }
+
+  private batchFieldLinesCache: { findings: BenchmarkModelBatchFindingDto[]; lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> } | null = null;
+
+  /** Each field's inline line: its first blocker, else its first warning. Advice is never inline. */
+  get batchFieldLines(): Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> {
+    if (!this.launcher.isModelBatch) return {};
+    const findings = this.launcher.findings;
+    if (this.batchFieldLinesCache?.findings === findings) {
+      return this.batchFieldLinesCache.lines;
+    }
+    const lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> = {};
+    for (const severity of ['Blocker', 'Warning'] as const) {
+      for (const finding of findings) {
+        const field = modelBatchFieldOf(finding.field);
+        if (finding.severity === severity && field && !lines[field]) {
+          lines[field] = finding;
+        }
+      }
+    }
+    this.batchFieldLinesCache = { findings, lines };
+    return lines;
+  }
+
+  /** The finding shown inline under `field`, if any. */
+  batchFieldLine(field: ModelBatchField): BenchmarkModelBatchFindingDto | undefined {
+    return this.batchFieldLines[field];
+  }
+
+  /** The id of the field's inline line. */
+  batchLineId(field: ModelBatchField): string {
+    return `mbLine-${field}`;
+  }
+
+  /** `base` with the field's inline line added while it shows. */
+  describedWithBatchLine(base: string, field: ModelBatchField): string {
+    return this.batchFieldLines[field] ? `${base} ${this.batchLineId(field)}`.trim() : base;
+  }
+
+  /** Go to field: brings the field's control into view and focuses it. */
+  focusBatchField(field: string): void {
+    const selector = this.batchFieldSelector(modelBatchFieldOf(field));
+    const control = selector ? this.host.nativeElement.querySelector<HTMLElement>(selector) : null;
+    if (!control) return;
+    control.scrollIntoView({ block: 'center' });
+    control.focus();
+  }
+
+  private batchFieldSelector(field: ModelBatchField | null): string | null {
+    switch (field) {
+      case 'models': return '.batch-models-picker .selector-trigger';
+      case 'target': return this.launcher.isBatteryTarget ? '#batterySelect' : '#suiteSelect';
+      case 'profile': return '#profileSelect';
+      case 'responseStyle': return '#candidateResponseStyle';
+      case 'sourceCodeReferences': return '#candidateSourceCodeReferences';
+      case 'assessor': return '.assessor-model-selector .selector-trigger';
+      case 'coAssessor': return '.co-assessor-model-selector .selector-trigger';
+      case 'secondOpinion': return '.second-opinion-model-selector .selector-trigger';
+      case 'claimVerifier': return '.claim-verifier-model-selector .selector-trigger';
+      case 'reportWriter': return '.report-writer-model-selector .selector-trigger';
+      case 'runs': return this.launcher.isBatteryTarget ? '#runCountInput' : '#batchRunsPerModelInput';
+      case 'allowCapWait': return '#allowCapWaitInput';
+      case 'order': return this.launcher.batchOrder === 'asListed' ? '#batchOrderAsListed' : '#batchOrderRandomized';
+      default: return null;
+    }
+  }
+
+  /**
+   * The card shows once a model is chosen, and before that only for a blocker that does not depend on
+   * the choice (a benchmark already running).
+   */
+  get batchReadinessVisible(): boolean {
+    if (!this.launcher.isModelBatch) return false;
+    return this.launcher.batchModelKeys.length > 0
+      || this.launcher.batchBlockers.some(f => !['MB-B01', 'MB-B06'].includes(modelBatchFindingCode(f)));
+  }
+
+  // --- Model batches: the projection ---
+
+  /** K: the battery's suites, or the one suite. */
+  get batchSuiteCount(): number {
+    return this.launcher.isBatteryTarget ? (this.launcher.selectedBattery?.suites.length ?? 0) : 1;
+  }
+
+  /** L, as the server projects it, else models × K × R. */
+  get batchPlannedRunCount(): number {
+    return this.launcher.projection?.plannedRunCount
+      ?? this.launcher.batchModelKeys.length * this.batchSuiteCount * this.launcher.batchRunsPerMember;
+  }
+
+  get batchProjectionLegend(): string {
+    const models = this.launcher.batchModelKeys.length;
+    const modelsText = `${models} ${models === 1 ? 'model' : 'models'}`;
+    const runs = this.launcher.batchRunsPerMember;
+    return this.launcher.isBatteryTarget
+      ? `Batch Projection (${modelsText} × ${this.batchSuiteCount} suites × ${runs} = ${this.batchPlannedRunCount} runs)`
+      : `Batch Projection (${modelsText} × ${runs} = ${this.batchPlannedRunCount} runs)`;
+  }
+
+  get batchLimits(): BenchmarkModelBatchLimitsDto | null {
+    return this.launcher.projection?.limits ?? null;
+  }
+
+  /** The caps and windows the projection names: the batch's own read-out, else the launcher's run limits. */
+  get batchWindow(): { remainingDailyHeadroom: number; maxRunsPerDay: number; maxRunsPerHour: number; runsInLast24Hours: number; runsInLastHour: number } | null {
+    return this.batchLimits ?? this.workspace.runLimits ?? null;
+  }
+
+  get projectedBatchWallLabel(): string | null {
+    const ms = this.launcher.projection?.projectedWallMs;
+    return ms == null ? null : formatElapsed(ms);
+  }
+
+  get projectedBatchCostLabel(): string | null {
+    const cost = this.launcher.projection?.projectedCostUsd;
+    return cost == null ? null : formatCostAmount(cost);
+  }
+
+  // The three alerts below the projection are read from the numbers; the findings MB-B08, MB-W11 and
+  // MB-W12 say the same with authority in the readiness card.
+
+  /** More launches than the daily cap itself: admitted only with Wait when the run cap blocks the next run. */
+  get batchExceedsDailyCap(): boolean {
+    const cap = this.batchWindow?.maxRunsPerDay;
+    return cap != null && cap > 0 && this.batchPlannedRunCount > cap;
+  }
+
+  /** More launches than the rolling 24-hour window still allows, within the cap. */
+  get batchExceedsDailyHeadroom(): boolean {
+    if (this.batchExceedsDailyCap) return false;
+    const headroom = this.batchWindow?.remainingDailyHeadroom;
+    return headroom != null && this.batchPlannedRunCount > headroom;
+  }
+
+  /** The rolling 24-hour windows the plan needs, when it needs more than one. */
+  get batchDaySpan(): number | null {
+    const own = this.batchLimits?.daySpan;
+    if (own != null) return own > 1 ? own : null;
+    const cap = this.batchWindow?.maxRunsPerDay;
+    if (cap == null || cap <= 0) return null;
+    const span = Math.ceil(this.batchPlannedRunCount / cap);
+    return span > 1 ? span : null;
+  }
+
+  /** The least wall time a plan of several windows takes: (windows − 1) × 24 h. */
+  get batchMinimumWallLabel(): string | null {
+    const own = this.batchLimits?.minimumWallMs;
+    if (own != null) return formatElapsed(own);
+    const span = this.batchDaySpan;
+    return span == null ? null : formatElapsed((span - 1) * 24 * 3600 * 1000);
+  }
+
+  /** The projected launch rate is above what the hourly cap still allows this hour. */
+  get batchHourlyCapRisk(): boolean {
+    const limits = this.batchLimits;
+    const rate = limits?.projectedRunsPerHour;
+    return limits != null && rate != null && rate > limits.maxRunsPerHour - limits.runsInLastHour;
+  }
+
+  /** The per-model basis lines of the projection, each with its model's name. */
+  get batchProjectionMembers(): { name: string; cost: string | null; wall: string | null; basis: string }[] {
+    return (this.launcher.projection?.members ?? []).map(m => ({
+      name: this.batchModelName(m.modelConfigurationId),
+      cost: m.projectedCostUsd == null ? null : formatCostAmount(m.projectedCostUsd),
+      wall: m.projectedWallMs == null ? null : formatElapsed(m.projectedWallMs),
+      basis: MODEL_BATCH_BASIS_TEXT[m.basis] ?? m.basis
+    }));
+  }
+
+  // --- Model batches: Start ---
+
+  @ViewChild('modelBatchConfirmDialog') modelBatchConfirmDialog?: ElementRef<HTMLDialogElement>;
+
+  /** The start request is in flight. */
+  startingModelBatch = false;
+
+  get canStartModelBatch(): boolean {
+    return !this.startModelBatchHint;
+  }
+
+  /** Names the first condition Start Model Batch waits on, for the button's aria-disabled hint. Empty once it may start. */
+  get startModelBatchHint(): string {
+    const launcher = this.launcher;
+    if (this.startingModelBatch) {
+      return 'Starting the model batch…';
+    }
+    if (launcher.batchModelKeys.length < 2) {
+      return 'Choose two or more models.';
+    }
+    if (launcher.isBatteryTarget) {
+      if (!launcher.selectedBattery) {
+        return this.batteryLaunchRefusal;
+      }
+    } else if (!launcher.selectedSuiteId) {
+      return 'Select a question suite first.';
+    }
+    if (!launcher.assessorConfigId) {
+      return 'Choose an assessor.';
+    }
+    if (launcher.preflightError) {
+      return `The batch could not be checked: ${launcher.preflightError} It is checked again shortly.`;
+    }
+    if (launcher.preflightLoading || !launcher.preflightAnswered) {
+      return 'Checking the batch…';
+    }
+    const blocker = launcher.batchBlockers[0];
+    if (blocker) {
+      return /[.!?]$/.test(blocker.title) ? blocker.title : `${blocker.title}.`;
+    }
+    const unacknowledged = launcher.unacknowledgedBatchWarnings.length;
+    if (unacknowledged > 0) {
+      return unacknowledged === 1
+        ? 'Acknowledge the warning in Batch Readiness.'
+        : `Acknowledge the ${unacknowledged} warnings in Batch Readiness.`;
+    }
+    return '';
+  }
+
+  /** Start Model Batch: shows the plan for confirmation; nothing is sent yet. */
+  openModelBatchConfirm(): void {
+    if (!this.canStartModelBatch || !this.launcher.buildModelBatchRequest()) return;
+    this.cdr.detectChanges();
+    this.modelBatchConfirmDialog?.nativeElement.showModal();
+  }
+
+  closeModelBatchConfirm(): void {
+    this.modelBatchConfirmDialog?.nativeElement.close();
+  }
+
+  /**
+   * The confirmation's Start Model Batch. Arms both chimes under this gesture, then starts the batch
+   * and opens its progress dialog. A refusal carrying findings refreshes the card instead.
+   */
+  confirmModelBatchStart(): void {
+    const req = this.launcher.buildModelBatchRequest();
+    if (!req || this.startingModelBatch) return;
+
+    this.monitor.armCompletionSignalsFromGesture();
+    this.launcher.persistRunSettings();
+    this.startingModelBatch = true;
+    this.monitor.runErrorMessage = null;
+
+    this.benchmarkService.startModelBatch(req).subscribe({
+      next: (batch: BenchmarkModelBatchRunDto) => {
+        this.startingModelBatch = false;
+        this.closeModelBatchConfirm();
+        // Acknowledgments are given for one start.
+        this.launcher.acknowledgedFindingKeys = new Set();
+        this.monitor.followModelBatch(batch);
+        this.monitor.openModelBatchDialog(batch.id);
+        this.workspace.loadHistory();
+        this.launcher.requestPreflight();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.startingModelBatch = false;
+        this.closeModelBatchConfirm();
+        const findings = err?.error?.findings;
+        if (Array.isArray(findings)) {
+          this.launcher.applyFindings(findings as BenchmarkModelBatchFindingDto[]);
+          this.launcher.preflightAnswered = true;
+        } else {
+          this.monitor.runErrorMessage = refusalText(err, 'Failed to start the model batch.');
+        }
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** The confirmation's run order: the As listed order, or the chosen models under a random order. */
+  get batchConfirmModels(): string[] {
+    return this.launcher.batchRunOrderIds.map(id => this.batchModelName(id));
+  }
+
+  get batchConfirmOrderText(): string {
+    return this.launcher.batchOrder === 'asListed'
+      ? 'As listed'
+      : 'Random order, drawn when the batch starts; the progress dialog shows the order and its seed';
+  }
+
+  get batchConfirmTargetText(): string {
+    if (this.launcher.isBatteryTarget) {
+      const battery = this.launcher.selectedBattery;
+      return battery ? `Battery: ${battery.name} (${battery.suites.length} suites)` : 'Battery';
+    }
+    return `Suite: ${this.launcher.selectedSuite?.name ?? 'none selected'}`;
+  }
+
+  /** Every grading role in one line, with its model. */
+  get batchConfirmGraders(): string {
+    const parts: string[] = [];
+    const add = (role: string, model: SystemAiConfigDto | undefined): void => {
+      if (model) parts.push(`${role}: ${model.displayName || model.modelId}`);
+    };
+    add('Assessor', this.selectedAssessorModel);
+    add('Co-assessor', this.selectedCoAssessorModel);
+    add(this.launcher.isPanelLaunch ? 'Reference reader' : 'Second reader', this.selectedSecondOpinionModel);
+    add('Claim verifier', this.selectedClaimVerifierModel);
+    add('Report writer', this.selectedReportWriterModel);
+    return parts.join(' · ');
+  }
+
+  // --- Model batches: the banner ---
+
+  /** A model batch is live or stopped: its banner stands for its members, whose own banners stay hidden. */
+  get modelBatchHoldsBanners(): boolean {
+    const batch = this.monitor.activeModelBatch;
+    return batch != null && (this.monitor.modelBatchIsLive || batch.status === 'Stopped');
+  }
+
+  /** The banner's Show Batch Progress. */
+  showModelBatchProgress(): void {
+    const id = this.monitor.activeModelBatch?.id;
+    if (id != null) {
+      this.monitor.openModelBatchDialog(id);
+    }
+  }
+
+  /** The batch banner shows while the batch is live or stopped and its dialog is closed. */
+  get modelBatchBannerVisible(): boolean {
+    return this.modelBatchHoldsBanners && !this.monitor.modelBatchDialogVisible;
+  }
+
+  /** *Model k of M: {model}*, or the state that replaces it. */
+  get modelBatchProgressLabel(): string {
+    const batch = this.monitor.activeModelBatch;
+    if (!batch) return '';
+    const total = batch.requestedMemberCount || batch.members.length;
+    const index = batch.currentMemberIndex;
+    const member = index != null ? batch.members[index] : undefined;
+    const done = `${batch.completedMemberCount} of ${total} models completed`;
+    switch (batch.status) {
+      case 'Stopped':
+        return `Stopped — ${batch.stopReasonText || batch.stopReason || 'reason not recorded'}. ${done}. `
+          + 'Continue from the progress dialog.';
+      case 'WaitingForCap':
+        return `Waiting for run cap — ${done}.`;
+      default:
+        return member
+          ? `Model ${index! + 1} of ${total}: ${member.model.displayName}`
+          : `Launching — ${done}.`;
+    }
   }
 }

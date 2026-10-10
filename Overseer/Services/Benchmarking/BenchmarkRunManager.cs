@@ -80,6 +80,9 @@ public class BenchmarkRunManager
     /// <summary>Owner-token prefix of a battery orchestrator claim: <c>battery:{batteryRunId}</c>.</summary>
     public const string BatteryOwnerPrefix = "battery:";
 
+    /// <summary>Owner-token prefix of a model batch claim: <c>modelbatch:{batchId}</c>.</summary>
+    public const string ModelBatchOwnerPrefix = "modelbatch:";
+
     private readonly object _lock = new();
     private BenchmarkRunState? _currentRun;
 
@@ -89,9 +92,17 @@ public class BenchmarkRunManager
     /// </summary>
     private string? _orchestratorOwner;
 
+    /// <summary>
+    /// The model batch that owns the run gate above any orchestrator claim, or null. While it is
+    /// held, only launches and orchestrator claims made for that batch are admitted.
+    /// </summary>
+    private string? _batchOwner;
+
     public static string SeriesOwner(long seriesId) => SeriesOwnerPrefix + seriesId.ToString(CultureInfo.InvariantCulture);
 
     public static string BatteryOwner(long batteryRunId) => BatteryOwnerPrefix + batteryRunId.ToString(CultureInfo.InvariantCulture);
+
+    public static string ModelBatchOwner(long batchId) => ModelBatchOwnerPrefix + batchId.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
     /// The refusal shown when a claim held by <paramref name="owner"/> blocks a launch. A null owner
@@ -100,6 +111,11 @@ public class BenchmarkRunManager
     public static string ClaimConflictMessage(string? owner)
     {
         if (owner == null) return "A benchmark series or battery is running; wait for it or cancel it.";
+
+        if (owner.StartsWith(ModelBatchOwnerPrefix, StringComparison.Ordinal))
+        {
+            return "A model batch is running; wait for it or cancel it.";
+        }
 
         return owner.StartsWith(BatteryOwnerPrefix, StringComparison.Ordinal)
             ? "A battery is running; wait for it or cancel it."
@@ -118,16 +134,81 @@ public class BenchmarkRunManager
         }
     }
 
+    /// <summary>The owner of the model batch claim, or null when none is held.</summary>
+    public string? BatchOwner
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _batchOwner;
+            }
+        }
+    }
+
     /// <summary>
-    /// Takes the orchestrator claim for <paramref name="owner"/>. Succeeds when no claim is held or
-    /// the same owner already holds it.
+    /// The claim a refusal names: the batch claim when one is held, else the orchestrator claim,
+    /// else null.
     /// </summary>
-    public bool TryClaimOrchestrator(string owner)
+    public string? ClaimHolder
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _batchOwner ?? _orchestratorOwner;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes the model batch claim for <paramref name="owner"/>. Succeeds when no batch claim is held
+    /// or the same owner already holds it.
+    /// </summary>
+    public bool TryClaimBatch(string owner)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(owner);
 
         lock (_lock)
         {
+            if (_batchOwner == null || string.Equals(_batchOwner, owner, StringComparison.Ordinal))
+            {
+                _batchOwner = owner;
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>Releases the batch claim when <paramref name="owner"/> holds it; a no-op for any other owner.</summary>
+    public void ReleaseBatch(string owner)
+    {
+        lock (_lock)
+        {
+            if (string.Equals(_batchOwner, owner, StringComparison.Ordinal))
+            {
+                _batchOwner = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes the orchestrator claim for <paramref name="owner"/>. Succeeds when no claim is held or
+    /// the same owner already holds it, and, while a batch claim is held, only for that batch's
+    /// <paramref name="batchOwner"/>.
+    /// </summary>
+    public bool TryClaimOrchestrator(string owner, string? batchOwner = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner);
+
+        lock (_lock)
+        {
+            if (_batchOwner != null && !string.Equals(_batchOwner, batchOwner, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
             if (_orchestratorOwner == null || string.Equals(_orchestratorOwner, owner, StringComparison.Ordinal))
             {
                 _orchestratorOwner = owner;
@@ -167,17 +248,28 @@ public class BenchmarkRunManager
 
     /// <summary>
     /// Registers <paramref name="runId"/> as the one run in flight. Refused while another run is in
-    /// flight, and while an orchestrator claim is held by anyone other than
-    /// <paramref name="orchestratorOwner"/>; on a claim refusal <paramref name="state"/> is the
-    /// current run's state, or null when there is none.
+    /// flight, while a batch claim is held by anyone other than <paramref name="batchOwner"/>, and
+    /// while an orchestrator claim is held by anyone other than <paramref name="orchestratorOwner"/>;
+    /// on a claim refusal <paramref name="state"/> is the current run's state, or null when there is none.
     /// </summary>
-    public bool TryStart(long runId, CancellationTokenSource cts, out BenchmarkRunState state, string? orchestratorOwner = null)
+    public bool TryStart(
+        long runId,
+        CancellationTokenSource cts,
+        out BenchmarkRunState state,
+        string? orchestratorOwner = null,
+        string? batchOwner = null)
     {
         lock (_lock)
         {
             if (_currentRun != null && !_currentRun.IsCompleted)
             {
                 state = _currentRun;
+                return false;
+            }
+
+            if (_batchOwner != null && !string.Equals(_batchOwner, batchOwner, StringComparison.Ordinal))
+            {
+                state = _currentRun!;
                 return false;
             }
 

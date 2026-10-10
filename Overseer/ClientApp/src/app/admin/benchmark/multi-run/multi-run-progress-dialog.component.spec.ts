@@ -331,6 +331,42 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(footerText()).not.toContain('Continue');
   });
 
+  // --- A member of a model batch ------------------------------------------------------------
+
+  it('should say a model batch owns the series and keep Continue waiting with the reason', () => {
+    const getModelBatch = vi.fn(() => of({ id: 21, status: 'Stopped' }));
+    (serviceMock as unknown as { getModelBatch: typeof getModelBatch }).getModelBatch = getModelBatch;
+    open(buildSeries({
+      status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'Run 42 failed.', resumable: true, modelBatchRunId: 21
+    }));
+
+    expect(getModelBatch).toHaveBeenCalledWith(21);
+    expect(text('.series-batch-notice')).toBe('Part of model batch #21. Open model batch #21');
+    expect(text('#seriesBatchOwnedReason')).toBe('Use the model batch\'s progress dialog.');
+    const continueButton = fixture.nativeElement.querySelector('.series-continue') as HTMLButtonElement;
+    expect(continueButton.getAttribute('aria-disabled')).toBe('true');
+    expect(continueButton.getAttribute('aria-describedby')).toBe('seriesBatchOwnedReason');
+
+    continueButton.click();
+    expect(serviceMock.resumeRunSeries).not.toHaveBeenCalled();
+
+    const opened = vi.fn();
+    component.openModelBatch.subscribe(opened);
+    (fixture.nativeElement.querySelector('.series-open-batch') as HTMLButtonElement).click();
+    expect(opened).toHaveBeenCalledWith(21);
+  });
+
+  it('should keep Cancel Series waiting while a live batch drives the series', () => {
+    const getModelBatch = vi.fn(() => of({ id: 21, status: 'Running' }));
+    (serviceMock as unknown as { getModelBatch: typeof getModelBatch }).getModelBatch = getModelBatch;
+    open(buildSeries({ modelBatchRunId: 21 }));
+
+    const cancel = fixture.nativeElement.querySelector('.series-cancel') as HTMLButtonElement;
+    expect(cancel.getAttribute('aria-disabled')).toBe('true');
+    cancel.click();
+    expect(serviceMock.cancelRunSeries).not.toHaveBeenCalled();
+  });
+
   it('should keep View Report unavailable, with a reason, until an analysis exists', () => {
     open(buildSeries());
 

@@ -323,7 +323,7 @@ whether that member shares the subject's provider.
 
 `BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules, and a comparison-wide
 document against rule 21 too, with rules 2, 10 and 16 read for its tokens (§ 15); a chat consistency
-document is checked against rules 22 to 29 (C1 to C8, § 16) as well. Each failure is a
+document is checked against rules 22 to 30 (C1 to C9, § 16) as well. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message. Rule 20 is not a check on the writer: it is the note a battery
 subject's preparation records when it left question detail out of the prompt (§ 14).
@@ -358,7 +358,8 @@ subject's preparation records when it left question detail out of the prompt (§
 | 26 | **C5**, chat consistency only: a slot that cites an inconclusive endpoint also cites its `{{endpoint.<P>.mde}}` (`ChatInconclusiveMdeRule`). A **warning**, checked over the slot's kept text |
 | 27 | **C6**, chat consistency only: an all-hours word (`ChatAllHoursWords`) needs `{{serving.timeOfDayAssessable}}` in the sentence and that fact true; and the document cites `{{scope.hours}}` somewhere (`ChatHoursRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 | 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
-| 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
+| 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`; and the sheet's own `WriterHiddenKeys`, § 16) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
+| 30 | **C9**, *repetition*, chat consistency only: read with every fact token replaced by its display value, the headline and every paragraph hold no *A and A, respectively* whose two operands are the same words, ignoring case, and no full stop followed by a lower-case *and* inside one sentence — a sentence-valued fact spliced into a sentence — outside abbreviations such as *e.g.*, *i.e.*, *etc.*, *vs.*, *cf.*, *approx.*, *incl.* and *resp.* (`ChatRepetitionRule`). One note per kind, quoting the offending text. A **warning**: it asks for the repair turn and marks the document *Completed with warnings*, but never drops a paragraph |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
@@ -392,7 +393,7 @@ then the evidence."*
    **kept**, its note is recorded without `Dropped`, and the document is stored as
    **CompletedWithWarnings**. The
    Executive Summary states the interval's span in a code-rendered sentence whatever the writer wrote
-   (§ 6).
+   (§ 6). Rules 21, 26 (C5) and 30 (C9) are warning rules in the same way.
 4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
    row is stored. A headline whose only fault is rule 12 is kept.
 
@@ -1315,7 +1316,7 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 7* (*PDF layout 7* alone for a chat consistency
+  *Source {first 16 hex of the source hash} · PDF layout 8* (*PDF layout 8* alone for a chat consistency
   document, whose cover and footer carry no hash, § 16), and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
@@ -1382,6 +1383,12 @@ still reaches no model client, clock or configuration, and the architecture pins
 - **Headings before short tables** (*PDF layout 7*, 2026-10-10): a run of headings followed by a short
   table (`IsShortTable`) is kept on one page together with it, so a heading never stays alone at a page
   foot while its table moves to the next page.
+- **Bold labels before tables** (*PDF layout 8*, 2026-10-10): a paragraph whose whole text is one bold
+  span, such as `**Where the chat stands**` (`IsBoldHeadingParagraph`), introduces the block after it as a
+  heading does. Followed by a short table, the label is kept on one page with it (with any headings
+  before the label as well); followed by a longer table, it needs room on its page for its own line and
+  the first rows (`KeepWithTableHeight`), else it moves to the next page; followed by anything else, room
+  for its own line and the first lines after it.
 - **Wide tables** (*PDF layout 6*, 2026-10-06; `BenchmarkPdfMarkdownComposer.TableLayout`, shared with
   Word as `BenchmarkTableLayout`): every column's minimum is its longest word, header and body together,
   and when those do not fit across the text width these measures are taken in order until they do —
@@ -2841,7 +2848,7 @@ than five columns; a table of one row becomes a sentence.
 | Block | Executive Summary | Researcher Report and Provider Issue Report | Internal Improvement Brief |
 |---|---|---|---|
 | Out-of-date box | under the title block when the analysis is out of date (below) | the same | the same |
-| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason in plain words (a grading change on quality, periods run at different hours), *Sample* (`sample.shortfall` when the minimum is not met: *1 battery run per period on 1 day; the minimum is 2 battery runs on 2 days per period and 20 paired items*), *Hours*, *Controls* | the same with the technical not-computable reasons, plus *Time strata* | as the Researcher Report |
+| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason in plain words (a grading change on quality, periods run at different hours), *Sample* (`sample.shortfall` when the minimum is not met, each part stated as met or missed: *1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20*), *Hours*, *Controls* | the same with the technical not-computable reasons, plus *Time strata* | as the Researcher Report |
 | Verdicts | *Measure · Result · What it means* for the computed endpoints, named without P1–P5 ids, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Baseline → comparison, or change (95 % interval) · Verdict* | as the Researcher Report, without the p-values in the note lines |
 | Where the chat stands | after the verdict table | the same | the same |
 | Overseer events | one sentence naming each update by its tag with its time and changes and no run ids (*Between the periods, Overseer was updated once: E1, 2026-10-08 14:49 UTC — harness 53 → 54.*), a count when there are more than three, and how many more the control models' runs show | *Event · When (UTC) · Run · What changed*, one row per update (`eventGroups.*`, below), the time reading from–to when the update's events span time, a control model's update naming its series | as the Researcher Report |
@@ -2912,7 +2919,8 @@ with *IDs* in capitals, and per-question costs print with at least two decimals.
 `.unitNoun`) beside its member runs (`.memberRuns`), and the minimum sample is `sample.minimumUnits`,
 `.minimumDays`, `.minimumPairedItems`, `.met` and, when not met, `.shortfall` with real plurals.
 `controls.missing.count` reads *N missing-control notes*. An Overseer event's `events.<n>.kind` displays
-its label (`ChatConsistencyEventText.Label`), and `events.<n>.change` its short before → after
+its kind in the event table's words, never as a field name (`EventKindText`: *harness version*, *wiki
+revision*, *source code revision*, *corpus re-index* …), and `events.<n>.change` its short before → after
 (`ChatConsistencyEventText.Change`: *harness 53 → 54*, *wiki revision a8fa85a → 4bb80dc* with seven
 characters of a revision, *re-indexed: GnollHack wiki, GnollHack source code (file counts unchanged)*, *game snapshot: off
 → on* for the changed prompt options only, *tool iterations per question: 8 → 10*, *changed* for a
@@ -2924,7 +2932,20 @@ harness version of the event's run (from the series' harness events) and the sid
 a group never spans the baseline and the comparison. The client's report charts tag their event markers
 the same way (`ccReportEventGroups`), and the shared fixture
 `Overseer/ClientApp/src/app/admin/benchmark/chat-consistency-tab/cc-event-groups.fixture.json` pins
-both. `events.<n>.from` and `.to` are no longer stated.
+both. `events.<n>.from` and `.to` are no longer stated. In a battery comparison an event's and an update's
+runs (`events.<n>.run`, `.previousRun`, `eventGroups.<n>.run`) read under their battery run, *battery run
+#12 (run #98)*, the members of one battery run together; a control's run reads as before.
+
+A period's **window** is `period.<p>.window`: the comparison *from 2026-10-08 14:49 UTC to 2026-10-08
+23:59 UTC*; the baseline *2026-10-08 00:00 UTC until 14:49 UTC* when it ends within a minute before the
+comparison starts (its end then the comparison's start, the date left out on the start's day), and *… to
+…* otherwise (`WindowText`). The cover's *Baseline* and *Comparison* facts and the documents' period lines
+print the window, and a sheet written before `.window` is read the same way from its `.start` and `.end`.
+
+**Combined facts.** Where the two periods print alike, one fact states the value once:
+`identity.servedModels` (*\<ids\> in both periods (n and m calls)*), `serving.speeds`, `ownWaits.share` and
+`ownWaits.retries` (*… in both periods*). The writer then gets the combined fact instead of the pair it
+stands for (`CombinedPairs`), so a sentence never repeats one value.
 
 Further facts: `analysis.writtenOutOfDate` (the out-of-date box above); `period.<p>.hours` (the hours
 each period ran at); `level.<p>.<answers|quality|overallIndex|timeToFirstAnswerText|streamingRate|outputTokens|costPerQuestion|failedAnswers>`
@@ -2935,7 +2956,11 @@ periods share no time-of-week stratum, and `serving.timeOfDayAssessable` then re
 the periods share no hours*. **Facts kept from the
 writer** (`WriterHidden`): `analysis.inputSha256`, which stays on the sheet, and the raw
 `events.<n>.from` / `.to` an older sheet still carries; the writer's fact list leaves them out, and a
-token of one in older prose resolves to *not shown*, *the earlier value* or *the later value*.
+token of one in older prose resolves to *not shown*, *the earlier value* or *the later value*. A sheet
+also keeps its own `WriterHiddenKeys` from the writer, which stay on the sheet for the rendered blocks:
+each period's pair a combined fact states once (above), and in a battery comparison where both periods
+have a battery Overall Index, each period's `level.<p>.quality`, the mean answer score, so that quality
+has one figure. Rule C8 treats a token of either kind as kept from the writer.
 
 The writer prompt names the canonical endpoint names (P1 Quality, P2 Time to first answer text, P3
 Answer streaming rate, P4 Work per turn, P5 Cost per question) and forbids any other; counts in battery
@@ -2951,16 +2976,31 @@ data-quality notes, robustness details, missing-control suggestions, next-run re
 any `*.reason`) is cited at most once per document and never in parentheses; endpoints sharing a status
 or a value go in one sentence; an inconclusive endpoint's MDE is cited once per document, where it is
 first discussed; `robustness.<check>.summary` is preferred to the details; and with `verdict.short`
-*Not enough evidence yet*, a slot has at most two sentences. **The hours rule is conditional**: with
+*Not enough evidence yet*, a slot has at most two sentences. Since rule C9 the section adds: never *X and
+X, respectively* — a value the two periods share, or a verdict two endpoints share, is named once (*"inconclusive
+for both"*), and where FACTS states one value for both periods (`identity.servedModels`, `serving.speeds`,
+`ownWaits.share`, `ownWaits.retries`) that fact is cited instead of the two; a sentence-valued fact is a
+sentence of its own, or quoted without its final full stop, and a sentence never goes on after it with
+*and*; and an interval (a `ci95`, `ci90` or `controlChangeCi95` fact) is cited only in a sentence that
+also cites its estimate and names its measure. The terms add that an Overseer update is named by what
+changed, in the words of its `events.<n>.change`, `eventGroups.<n>.changes` or `events.<n>.kind` fact,
+never by a field name; the Executive Summary's *What it means for a player* slot says that quality is the
+battery Overall Index when one is given and that a mean answer score is never called quality; and the
+Provider Issue Report's *Timeline* slot cites the windows, `{{period.baseline.window}}` and
+`{{period.comparison.window}}`. **The hours rule is conditional**: with
 `scope.hours` available every document cites it; without it the writer says once that the periods ran
 at different hours, citing `period.baseline.hours` and `period.comparison.hours`, and never writes
 *within no stratum*. CLAIM SUPPORT states which of the two applies.
 
 ### Validation
 
-Rules 22 to 29 (**C1** to **C8**, § 3) apply on top of the prose rules. C1 to C4, the first half of C6
+Rules 22 to 30 (**C1** to **C9**, § 3) apply on top of the prose rules. C1 to C4, the first half of C6
 and the first half of C7 are checked sentence by sentence on the headline and every paragraph, and C8,
-*readable text*, on each whole string: a failing paragraph is dropped, a failing headline is fatal. C5 is a **warning**,
+*readable text*, on each whole string: a failing paragraph is dropped, a failing headline is fatal. C9,
+*repetition*, reads the headline and every paragraph with each fact token replaced by its display value,
+for a repeated *A and A, respectively* and for a sentence spliced on after a full stop with a lower-case
+*and*; it is a **warning**, which asks for the repair turn and marks the document **Completed with
+warnings** but never drops a paragraph. C5 is a **warning**,
 satisfied when the inconclusive endpoint's MDE is cited anywhere in the document, and so checked once per
 document (location *sections*). The second halves of C6 (*the document never cites `{{scope.hours}}`*,
 which applies only while `scope.hours` is available) and C7 (*`ruledOut` misses
@@ -3018,7 +3058,11 @@ through `PUT report-documents/{id}/charts` with its chart layout, `{ version: 1,
 widthShare, rowGroup }], maxHeightShare }`; two consecutive half-width figures at one anchor share a
 row. A document whose type has no figure chosen gets none, and loses the charts it had. Step 5's
 **Update charts** does the same for every written document of the analysis. The client's
-`CC_REPORT_CHART_VERSION` is 7, and its settings hash covers the choice and the layout. A report chart
+`CC_REPORT_CHART_VERSION` is 8, and its settings hash covers the choice and the layout. Version 8 fits the
+time axis to the plotted points and the markers near them, padded by 8 % of that span or 45 minutes,
+whichever is more; widens it where a period band would otherwise be under 10 % of the plot; never gives
+up the value labels of each period's first and last point for a period name; and, where a period's name
+may not find room in its band, adds a one-line period legend under the time axis. A report chart
 tags its Overseer-event markers as the document's events table does (`ccReportFigureInput`, from the
 analysis's own events and its period split), whatever the timeline numbered them. The defaults:
 Executive Summary cc1, cc2; Researcher Report all four; Internal Improvement Brief cc1, cc3; Provider
@@ -3045,15 +3089,17 @@ default name *Chat consistency: \<model\>*, which the title already says) and th
 *Model*, *Compared* (the battery or suite, else the suites), *Baseline* and *Comparison* (each with its
 dates and its battery runs or runs), *Controls* (as the naming allows, never by name in a Provider
 Issue Report), *Hours* (`scope.hours`, or *none: the periods ran at different hours*), *Protocol*
-(*\<protocol label\>, α \<alpha\>*), *Analysis code* (*version 6*, or *version 4 — out of date (current:
-6)*, or *version 6 — out of date (its inputs changed)*, decided when the document is rendered), *Written*
-(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 7*
+(*\<protocol label\>, α \<alpha\>*), *Analysis code* (*version 7*, or *version 4 — out of date (current:
+7)*, or *version 7 — out of date (its inputs changed)*, decided when the document is rendered), *Written*
+(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 8*
 or *Word layout 2* without a source hash. The page footer reads the short classification, then *Chat
 consistency analysis #12 · Executive Summary · page 2 of 3* (`BenchmarkPdfDocumentInfo.FooterText`).
 The Word file still records the source hash in its *GnollBench Source SHA-256* custom property, as
-metadata only. Other scopes keep their cover and the *Source … · PDF layout 7* footer
-(`BenchmarkPdfRenderer.LayoutVersion` 7: a heading followed by a short table, at most 10 body rows,
-which is kept on one page, moves with the table instead of staying alone at a page foot).
+metadata only. Other scopes keep their cover and the *Source … · PDF layout 8* footer
+(`BenchmarkPdfRenderer.LayoutVersion` 8: a heading followed by a short table, at most 10 body rows,
+which is kept on one page, moves with the table instead of staying alone at a page foot, layout 7; and a
+bold label paragraph such as **Where the chat stands** does the same before its short table, layout 8,
+§ 8).
 `ChatConsistencyReportFormatVersion` is 2.
 
 ### Endpoints

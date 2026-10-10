@@ -7,7 +7,7 @@
 - **Analysis:** #7 — Weekly check
 - **Model:** Test Model (TestProvider, test-model-1, thinking level high)
 - **Baseline period:** 2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 2 runs
-- **Comparison period:** 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
+- **Comparison period:** from 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
 - **Hours:** weekdays 04–12 UTC
 - **Suites:** Core suite
 - **Control models:** Control Model Two
@@ -108,7 +108,7 @@ The analysis records one limitation: Only weekday mornings were sampled.
 ## Reproducibility
 
 - **Analysis:** #7 — Weekly check
-- **Analysis code version:** 6
+- **Analysis code version:** 7
 - **Protocol:** V1; the published protocol, without overrides; alpha 0.05
 - **Common grader:** none. No common grader covered every compared run, so quality compares each run's own grades.
 - **Price card:** not available
@@ -117,7 +117,7 @@ The analysis records one limitation: Only weekday mornings were sampled.
 - **Control runs:** #30, #31
 - **Report format version:** 2
 
-Analysis #7 used code version 6 under V1.
+Analysis #7 used code version 7 under V1.
 
 ## How to read this
 

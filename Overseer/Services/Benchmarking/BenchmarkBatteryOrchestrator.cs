@@ -144,6 +144,9 @@ public class BenchmarkBatteryOrchestrator
     /// <summary>Cancellation for the battery run being driven, keyed by battery run id.</summary>
     private readonly ConcurrentDictionary<long, CancellationTokenSource> _active = new();
 
+    /// <summary>The model batch claim each battery run driven for a batch launches its members under.</summary>
+    private readonly ConcurrentDictionary<long, string> _batchOwners = new();
+
     /// <summary>
     /// Guards taking the claim for a reconcile or a resume, and <see cref="_reconciling"/>, so the two
     /// never hold one battery run's claim at once.
@@ -203,7 +206,8 @@ public class BenchmarkBatteryOrchestrator
     public async Task<BenchmarkBatteryStartResult> StartAsync(
         StartBenchmarkBatteryRunRequest request,
         string? userId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? batchOwner = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -217,6 +221,13 @@ public class BenchmarkBatteryOrchestrator
         {
             return BenchmarkBatteryStartResult.Fail(
                 BenchmarkBatteryStartOutcome.Conflict, "A battery run is already in progress.");
+        }
+
+        // A held batch claim admits only the batch's own battery runs.
+        if (_runManager.BatchOwner is { } heldBatch && heldBatch != batchOwner)
+        {
+            return BenchmarkBatteryStartResult.Fail(
+                BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(heldBatch));
         }
 
         // Refused without taking the claim; it is taken only once the row exists.
@@ -381,19 +392,35 @@ public class BenchmarkBatteryOrchestrator
 
         // The owner token needs the row id, so the claim follows the save; a claim lost to a race
         // removes the row again and refuses the start.
-        if (!_runManager.TryClaimOrchestrator(BenchmarkRunManager.BatteryOwner(batteryRun.Id)))
+        if (!_runManager.TryClaimOrchestrator(BenchmarkRunManager.BatteryOwner(batteryRun.Id), batchOwner))
         {
             db.BenchmarkBatteryRuns.Remove(batteryRun);
             await db.SaveChangesAsync(CancellationToken.None);
 
             return BenchmarkBatteryStartResult.Fail(
                 BenchmarkBatteryStartOutcome.Conflict,
-                BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+                BenchmarkRunManager.ClaimConflictMessage(_runManager.ClaimHolder));
         }
 
+        SetBatchOwner(batteryRun.Id, batchOwner);
         BeginDriving(batteryRun.Id);
         return BenchmarkBatteryStartResult.Ok(batteryRun.Id);
     }
+
+    private void SetBatchOwner(long batteryRunId, string? batchOwner)
+    {
+        if (batchOwner == null)
+        {
+            _batchOwners.TryRemove(batteryRunId, out _);
+        }
+        else
+        {
+            _batchOwners[batteryRunId] = batchOwner;
+        }
+    }
+
+    private string? BatchOwnerOf(long batteryRunId)
+        => _batchOwners.TryGetValue(batteryRunId, out var owner) ? owner : null;
 
     /// <summary>
     /// Why the attach list of a start cannot be used as given, or null: every entry names a slot of
@@ -1086,12 +1113,19 @@ public class BenchmarkBatteryOrchestrator
     public async Task<BenchmarkBatteryStartResult> ResumeAsync(
         long batteryRunId,
         BenchmarkBatteryResumeMode mode,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? batchOwner = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
             return BenchmarkBatteryStartResult.Fail(
                 BenchmarkBatteryStartOutcome.Conflict, "A benchmark run is already in progress.");
+        }
+
+        if (_runManager.BatchOwner is { } heldBatch && heldBatch != batchOwner)
+        {
+            return BenchmarkBatteryStartResult.Fail(
+                BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(heldBatch));
         }
 
         if (_active.ContainsKey(batteryRunId))
@@ -1321,10 +1355,10 @@ public class BenchmarkBatteryOrchestrator
             }
 
             claimAlreadyHeld = _runManager.OrchestratorOwner == owner;
-            if (!_runManager.TryClaimOrchestrator(owner))
+            if (!_runManager.TryClaimOrchestrator(owner, batchOwner))
             {
                 return BenchmarkBatteryStartResult.Fail(
-                    BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+                    BenchmarkBatteryStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.ClaimHolder));
             }
         }
 
@@ -1338,6 +1372,7 @@ public class BenchmarkBatteryOrchestrator
             throw;
         }
 
+        SetBatchOwner(batteryRun.Id, batchOwner);
         BeginDriving(batteryRun.Id);
         return BenchmarkBatteryStartResult.Ok(batteryRun.Id);
     }
@@ -1548,7 +1583,7 @@ public class BenchmarkBatteryOrchestrator
             {
                 _logger.LogInformation(
                     "Benchmark battery run {BatteryRunId} was not reconciled: the orchestrator claim is held by {Owner}.",
-                    batteryRunId, _runManager.OrchestratorOwner);
+                    batteryRunId, _runManager.ClaimHolder);
                 return false;
             }
 
@@ -1687,6 +1722,8 @@ public class BenchmarkBatteryOrchestrator
             }
             finally
             {
+                _batchOwners.TryRemove(batteryRunId, out _);
+
                 if (_active.TryRemove(batteryRunId, out var removed))
                 {
                     removed.Dispose();
@@ -1771,7 +1808,7 @@ public class BenchmarkBatteryOrchestrator
             };
 
             var launch = await launcher.CreateAndLaunchRunAsync(
-                request, batteryRun.StartedByUserId, null, null, ct, member);
+                request, batteryRun.StartedByUserId, null, null, ct, member, BatchOwnerOf(batteryRunId));
 
             if (!launch.Started)
             {

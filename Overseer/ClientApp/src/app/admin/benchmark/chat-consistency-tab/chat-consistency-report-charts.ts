@@ -49,7 +49,7 @@ import {
 import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from './chat-consistency.models';
 
 /** Bumped whenever the drawing changes, so the settings hash tells old charts from new ones. */
-export const CC_REPORT_CHART_VERSION = 7;
+export const CC_REPORT_CHART_VERSION = 8;
 
 /** SHA-256 of the drawing settings, the chart choices and their layout, 64 lowercase hex characters; throws outside a secure context. */
 export async function ccReportChartSettingsHash(settings: CcReportChartSettings): Promise<string> {

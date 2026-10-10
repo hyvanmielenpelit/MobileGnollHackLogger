@@ -718,7 +718,10 @@ export interface CcNote {
 }
 
 export interface CcNextRun {
-  /** `checkpoint`, `control`, `stratum` or `regrade`. */
+  /**
+   * `checkpoint`, `control`, `stratum`, `regrade`, or `newCheckpoint`: a new baseline under the current
+   * build, suggested instead of runs in a comparison period whose build is replaced.
+   */
   kind: string;
   period: string;
   endpointId: string | null;
@@ -726,6 +729,25 @@ export interface CcNextRun {
   suggestion: string;
   /** The run whose setup to repeat; null for a re-grade. */
   repeatRunId: number | null;
+  // The structured fields of a `newCheckpoint`; absent on the other kinds and from analysis code version 6 or earlier.
+  /** `run` or `battery run`, as the suggestion writes it. */
+  unitNoun?: string;
+  /** The units to make: the protocol's minimum per period. */
+  count?: number;
+  /** The different UTC days they start on. */
+  days?: number;
+  /** The time-of-week stratum each starts in, for example `weekday 04–08 UTC`. */
+  stratum?: string;
+  /** What each unit runs: a suite, or a battery. */
+  targetKind?: CcComparisonSetKind;
+  suiteId?: number | null;
+  batteryId?: number | null;
+  /** The subject's model axis key. */
+  subjectModelKey?: string;
+  /** A control run of another provider's model is suggested beside each unit. */
+  controlSuggested?: boolean;
+  /** The subject's model configuration, to launch with; null when it is not known. */
+  subjectModelConfigurationId?: number | null;
 }
 
 export interface CcAnalysisResult {
@@ -843,7 +865,7 @@ export interface CcEndpointBrief {
  * The analysis code version the server analyzes under now (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`).
  * A saved analysis below it was analyzed by earlier code.
  */
-export const CC_CURRENT_ANALYSIS_CODE_VERSION = 6;
+export const CC_CURRENT_ANALYSIS_CODE_VERSION = 7;
 
 export interface CcAnalysisSummary {
   id: number;

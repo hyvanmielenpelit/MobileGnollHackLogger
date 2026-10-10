@@ -1,0 +1,372 @@
+/* Model batch progress dialog: layout and component-local presentation only. The dialog frame
+ * (.gh-dialog-fullscreen), the buttons, .job-status-chip, .run-stat-strip, .run-stage-rail,
+ * .job-progress-block, .job-diagnostics, .rr-identity, .gh-field-warning and .gh-tooltip come from
+ * styles.scss. */
+
+.model-batch-progress-dialog {
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dialog-header {
+    flex-shrink: 0;
+    gap: 12px;
+    margin: 0;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  .dialog-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+
+    h3 {
+      margin: 0;
+      overflow-wrap: anywhere;
+
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 3px;
+      }
+    }
+
+    .dialog-subtitle {
+      margin: 0;
+      font-size: var(--text-secondary);
+      color: #aaa;
+    }
+  }
+
+  .dialog-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 16px 24px 20px;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    flex-shrink: 0;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-glass);
+    background: rgba(16, 16, 16, 0.98);
+
+    .btn-gh {
+      white-space: nowrap;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .dialog-header,
+    .dialog-body,
+    .dialog-footer {
+      padding-inline: 16px;
+    }
+
+    .mb-emblem {
+      width: 40px;
+      height: 40px;
+    }
+  }
+}
+
+/* --- Body ------------------------------------------------------------------------------- */
+
+.mb-body {
+  container-type: inline-size;
+  container-name: mb-body;
+}
+
+.mb-rail {
+  margin-block: 0 1rem;
+}
+
+/* Below 40 rem the stages stack, one per line, so their notes are never cut short. */
+@container mb-body (max-width: 40rem) {
+  .mb-rail {
+    flex-direction: column;
+  }
+}
+
+.mb-body .run-stat-strip dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.mb-body .run-stat-strip .mb-stat-note {
+  display: block;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  color: #aaa;
+}
+
+.mb-state-block {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+
+  .mb-state-name {
+    margin: 0 0 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .mb-state-detail {
+    margin: 0;
+    font-size: var(--text-secondary);
+    color: #ccc;
+  }
+
+  .mb-resume-options {
+    margin: 8px 0 0;
+    font-size: var(--text-secondary);
+
+    > div {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 0.5rem;
+    }
+
+    dt {
+      font-weight: 600;
+      color: #ddd;
+
+      &::after {
+        content: ':';
+      }
+    }
+
+    dd {
+      margin: 0;
+      color: #bbb;
+    }
+  }
+
+  &.state-waiting {
+    border-color: rgba(251, 191, 36, 0.4);
+    background: rgba(251, 191, 36, 0.08);
+
+    .mb-state-name { color: #fbbf24; }
+  }
+
+  &.state-stopped {
+    border-color: rgba(248, 81, 73, 0.4);
+    background: rgba(248, 81, 73, 0.08);
+
+    .mb-state-name { color: #ff7b72; }
+  }
+}
+
+.mb-comparability {
+  margin: 12px 0 0;
+}
+
+.mb-instrument-shared {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-secondary);
+  color: #bbb;
+
+  svg {
+    flex-shrink: 0;
+    color: var(--color-success);
+  }
+}
+
+.mb-not-comparable {
+  margin-inline-start: 6px;
+}
+
+.mb-corpus-quiet,
+.mb-stall {
+  margin: 8px 0 0;
+}
+
+.mb-members-title {
+  margin: 20px 0 8px;
+}
+
+/* --- Members ---------------------------------------------------------------------------- */
+
+.mb-members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mb-member {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'head actions'
+    'body actions';
+  gap: 6px 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+
+  &.is-current {
+    border-color: rgba(212, 160, 23, 0.45);
+    background: rgba(212, 160, 23, 0.07);
+  }
+}
+
+/* Below 36 rem the actions go under the card's text. */
+@container mb-body (max-width: 36rem) {
+  .mb-member {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'head'
+      'body'
+      'actions';
+  }
+}
+
+.mb-member-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.mb-member-position {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 1.75em;
+  block-size: 1.75em;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  color: #bbb;
+}
+
+.mb-member-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  min-inline-size: 0;
+  font-weight: 600;
+
+  .model-name {
+    overflow-wrap: anywhere;
+  }
+}
+
+.mb-member-body {
+  grid-area: body;
+  min-inline-size: 0;
+}
+
+.mb-member-meta {
+  margin: 2px 0 0;
+  font-size: var(--text-secondary);
+  color: #bbb;
+  font-variant-numeric: tabular-nums;
+}
+
+.mb-member-stage {
+  color: #ddd;
+}
+
+.mb-member-waiting {
+  color: #999;
+}
+
+.mb-member-progress {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 28rem;
+  margin-block-start: 6px;
+}
+
+.mb-member-index {
+  margin-block-start: 4px;
+}
+
+.mb-member-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 6px 0 0;
+  font-size: var(--text-secondary);
+
+  > div {
+    display: flex;
+    gap: 0.375rem;
+  }
+
+  dt {
+    color: #aaa;
+    font-weight: 400;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.mb-member-hint {
+  margin: 4px 0 0;
+  font-size: var(--text-secondary);
+  color: #e8d9a8;
+  max-inline-size: 40rem;
+}
+
+.mb-member-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mb-empty {
+  color: #999;
+  font-style: italic;
+}
+
+.mb-diagnostics {
+  margin-top: 20px;
+}
+
+.mb-diagnostics-status {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #bbb;
+}
+
+/* The reason the footer's actions wait, beside them. */
+.mb-action-reason {
+  font-size: var(--text-secondary);
+  color: #bbb;
+}
+
+.mt-15 {
+  margin-top: 15px;
+}

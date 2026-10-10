@@ -316,6 +316,10 @@ builder.Services.AddScoped<Overseer.Services.SystemConfigUsageGuard>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();
 // Singleton for the same reason: it drives a battery run across many requests.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkBatteryOrchestrator>();
+// Singleton for the same reason: it drives a model batch across many requests, one member at a time.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkModelBatchOrchestrator>();
+// Scoped: it reads the request's DbContext and asks the scoped launcher.
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelBatchGuardrailService>();
 // Singleton: caches the parsed default-suite files per write time, and takes the DbContext and the
 // compliance guard per call rather than capturing scoped services.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.DefaultSuiteCatalogService>();
@@ -562,6 +566,17 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await batteryOrchestrator.ReconcileOrphanedAsync(db);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-battery reconciliation failed."); }
+
+    // A model batch left Running, Pending or WaitingForCap stops after its series and battery runs.
+    try
+    {
+        var modelBatchOrchestrator = app.Services
+            .GetRequiredService<Overseer.Services.Benchmarking.BenchmarkModelBatchOrchestrator>();
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await modelBatchOrchestrator.ReconcileOrphanedAsync(db);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-model-batch reconciliation failed."); }
 
     // No run-completion document job survives a restart: a run left Pending or Writing is failed, and
     // the run report dialog's Write Reports writes what is missing.

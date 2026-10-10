@@ -146,6 +146,10 @@ public static class BenchmarkReportFactLabels
         ["robustness.count"] = "Robustness checks",
         ["robustness.failed"] = "Failed robustness checks",
         ["identity.changed"] = "Served model changed",
+        ["identity.servedModels"] = "Served model IDs, both periods",
+        ["serving.speeds"] = "Served speeds, both periods",
+        ["ownWaits.share"] = "Own-wait share of model time, both periods",
+        ["ownWaits.retries"] = "Retry attempts, both periods",
         ["serving.configurationDiffers"] = "Served configuration differs from the request",
         ["serving.timeOfDayAssessable"] = "Time of day assessable",
         ["pricing.source"] = "Price card source",
@@ -279,6 +283,7 @@ public static class BenchmarkReportFactLabels
         ["repeatRun"] = "run whose setup to repeat",
         ["start"] = "start",
         ["end"] = "end",
+        ["window"] = "window",
         ["days"] = "days",
         ["units"] = "units compared",
         ["unitNoun"] = "unit",
@@ -307,7 +312,7 @@ public static class BenchmarkReportFactLabels
     private static readonly IReadOnlyDictionary<string, string> LevelMeasureNames = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["answers"] = "answers",
-        ["quality"] = "mean quality score",
+        ["quality"] = "mean answer score",
         ["overallIndex"] = "battery Overall Index",
         ["timeToFirstAnswerText"] = "median time to first answer text",
         ["streamingRate"] = "median answer streaming rate",

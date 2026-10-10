@@ -275,6 +275,8 @@ the battery run follows it when the re-run finishes."* Resume has two modes:
   harness-version checks are skipped then, because nothing new is mixed in. This is how a
   `CompletedWithErrors` battery run whose repaired members are all usable is finished when the
   automatic reconcile (§ 3.4) was skipped.
+- **A battery run that a model batch owns** (§ 3.9) is resumed only by its batch: while the batch is not
+  final, this endpoint refuses both modes with **409** before any other check.
 - **Re-run under the current instrument** supersedes **every** member, attached ones included, forgets
   the auto-created groups (they stay, as ordinary groups), re-records every suite's fingerprint and
   starts over.
@@ -345,6 +347,11 @@ A stopped series or battery holds no claim, so repairs such as *Re-run failed qu
 reconcile that follows a repair of a battery member (§ 3.4) holds the claim, under the battery run's
 owner token, only for its own pass.
 
+A **model batch** holds a third claim above this one, `modelbatch:<id>` (§ 3.9): while it is held, a
+battery start or resume, an orchestrator claim and a run launch are admitted only when made for that
+batch, and every other is refused with **409**, *"A model batch is running; wait for it or cancel it."*
+A refusal that names a claim names the batch claim when one is held (`BenchmarkRunManager.ClaimHolder`).
+
 ### 3.8 Deleting things a battery uses
 
 - **A member run** may be deleted; its membership row goes with it and its slot becomes free. On a
@@ -363,6 +370,41 @@ owner token, only for its own pass.
 - **A system AI configuration** cannot be deleted while an active battery run's start request names
   it; stopped battery runs that name it are counted in the delete dialog (*N stopped battery runs
   name this configuration and can no longer be resumed.*).
+
+### 3.9 A battery run as a model batch member
+
+A **model batch** on a battery target ([`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md))
+runs one **battery run per model under test**, one after another, each an ordinary battery run of this
+document started by `BenchmarkModelBatchOrchestrator` through `BenchmarkBatteryOrchestrator.StartAsync`
+with the batch's owner token: `RunsPerSuite` is the batch's *Runs per Suite*, `AllowCapWait` the batch's,
+and `Run` the batch's stored settings with the member's tested configuration and the same-provider
+acknowledgments the batch's warnings carried. Nothing in the battery run itself changes: its slots, its
+guards after every member (§ 3.4), its analysis and its documents are the same, and so are its rows.
+
+- **Under the batch claim.** The battery orchestrator remembers the batch owner of a battery run it
+  drives for a batch and launches every member run under it (§ 3.7); a resume the batch makes of a
+  stopped battery run passes the same owner.
+- **When the next model starts.** The batch treats its battery run as ended only once its post-run work
+  is done — it is not driven, not analyzing, and its documents are neither *Pending* nor *Writing* — so the
+  next model never starts while the previous battery run's analysis or documents are still under way.
+- **How it ends the member.** `Completed` and `CompletedWithErrors` let the batch go on (a
+  `CompletedWithErrors` battery run makes the batch end `CompletedWithErrors`); `Stopped`, `Failed` and
+  `Cancelled` stop the batch, with `RunCapReached` or `SpendDenied` when the battery run stopped for that
+  reason. The batch's **Continue** resumes a stopped battery run with its own *Continue* under the
+  batch claim (a failed or canceled one is launched afresh, the old one recorded as superseded on the
+  batch); **Skip this model** leaves it as it is.
+- **The battery's definition** is recorded at the batch's start (`BatteryRevision`,
+  `BatteryDefinitionSha256`); a battery edited mid-batch so that its hash moves stops the batch before
+  the next model with `InstrumentChanged` (`BatteryDefinitionSha256`).
+- **The batch owns it until the batch is final.** While the batch is not `Completed`,
+  `CompletedWithErrors`, `Cancelled` or `Failed`, `POST runs/{id}/resume` on the battery run is refused
+  with **409**, *"Part of model batch #N; continue it from the batch's progress dialog."*, and the battery
+  progress dialog shows the batch-owned notice (§ 4.3). Repairs of its member runs work as for any
+  stopped battery run, since a stopped batch holds no claim.
+- **Its record.** The battery run DTO carries `modelBatchRunId`, the newest batch it belongs to, and the
+  run detail of a member run carries the same id through its battery run.
+- **Alerts.** While the page follows the batch, the battery run signals nothing of its own; the batch
+  signals once at its end (§ 4.3, *Completion signals*).
 
 ---
 
@@ -557,6 +599,16 @@ on it when the battery moves on to its next member; the banner keeps showing the
 **Back to Battery** returns to the battery the member was opened from ([`ai-benchmark.md`](ai-benchmark.md)
 § *Run Progress Dialog*).
 
+**A model batch's battery run** (§ 3.9). While its batch is not final, the dialog says *Part of model
+batch #N.* under the heading, with **Open model batch #N**, which closes this dialog and opens the batch's
+progress dialog. **Cancel Battery**, **Re-run under current instrument** and **Continue** stay visible but
+`aria-disabled`, with the reason beside them, *Use the model batch's progress dialog.*, as the server
+refuses that resume (**409**). Whether the batch still owns the battery run is read from the batch the
+page follows when it is that one, else from the batch fetched once; until it answers, the batch is taken
+to own it. Opened from the batch's progress dialog, which it replaces, the dismissal reads **Back to
+Batch** and returns there. The completion chime and notification of § *Completion signals* are the
+batch's while the page follows it: the battery run signals nothing of its own.
+
 ### 4.4 The Multi-Suite tab
 
 The fourth benchmark tab, after *Multi-Run Analysis*. It holds the battery **definitions** only:
@@ -728,7 +780,7 @@ All routes are under `api/admin/benchmark/batteries` and require the `AdminOnly`
 | GET | `runs/{id}` | Detail: status, stop reason and its text, `Resumable` (false while a member run is being re-run, § 3.5), the suite × round slot grid with each member's run status, index, origin, usability and reason, the current position, the latest analysis' headline and staleness, `PostRunWork` — what the server still does for the battery run, the first that applies: `Repairing` (a member run is `Running` while the battery run is not live), `Analysing` (the analysis is being computed), `WritingReports` (its documents are Pending or Writing), else `None`; wire values — and `RepairingRunIds`, the member runs being re-run. The list (`runs`) and `runs/active` carry the same fields |
 | POST | `runs/{id}/cancel` | Cancel. 400 for a battery run already `Completed`, `Cancelled` or `Failed` |
 | DELETE | `runs/{id}?deleteMembers=false` | Delete a battery run with its analyses, member rows and battery-completion documents, canceling a report job of it. With `deleteMembers=true` each member run is deleted through the single-run delete, except one that serves another battery run. 204; 404 unknown; 409 while it is driven or live, or while a member run to delete is in flight (§ 3.8) |
-| POST | `runs/{id}/resume` | Body `{ mode: "Continue" \| "RerunUnderCurrentInstrument" }`. 202; 409 with `{ instrumentChanged, batteryRunId, changedHashes, message }` when the instrument moved — a guard failure, a refused composite, another harness version, a moved fingerprint, or a kept member graded under another scoring method (`changedHashes: ["ScoringMethodVersion"]`); a plain 409 while a member run is being re-run or a reconcile holds the battery run (§§ 3.4, 3.5); 400 when the status is neither `Stopped` nor `CompletedWithErrors`; otherwise mapped as the start. Continue on a battery run whose every slot is usable launches nothing and only finishes it |
+| POST | `runs/{id}/resume` | Body `{ mode: "Continue" \| "RerunUnderCurrentInstrument" }`. 202; 409 with `{ instrumentChanged, batteryRunId, changedHashes, message }` when the instrument moved — a guard failure, a refused composite, another harness version, a moved fingerprint, or a kept member graded under another scoring method (`changedHashes: ["ScoringMethodVersion"]`); a plain 409 while a member run is being re-run or a reconcile holds the battery run (§§ 3.4, 3.5), and while a model batch that is not final owns it (§ 3.9); 400 when the status is neither `Stopped` nor `CompletedWithErrors`; otherwise mapped as the start. Continue on a battery run whose every slot is usable launches nothing and only finishes it |
 | POST | `runs/reuse-preview` | For a start request not yet sent: per slot, the run that would be reused, or the reason none qualifies. Writes nothing |
 | POST | `runs/{id}/members` | Attach a run to a slot (body `{ suiteIndex, round, runId }`), refused with its reason |
 | GET | `runs/{id}/members/candidates?suiteIndex=&round=` | The runs that could fill one slot, newest first, each eligible or with its reason |
@@ -758,6 +810,9 @@ baselineBatteryRunId, pricingBasis }`) returns the dimension, speed and cost row
 Report's **Paired Test** tab, with M7 as the Intelligence row, judged by the M7 eligibility rule; 404
 for an unknown battery run, 400 with *Not comparable: …* for a refused pair. The wizard's
 `POST model-comparison/paired` takes `batteryRunIds` as well (`ai-benchmark.md`, *Paired Tests*).
+
+A battery run DTO (`runs`, `runs/active`, `runs/{id}`) carries `modelBatchRunId`, the newest model batch
+the battery run is a member of, or null (§ 3.9).
 
 Elsewhere: `GET /api/admin/benchmark/runs/limits` carries `maxMembersPerBattery`, the run summary DTO
 carries `batteryRunId`, `batteryName`, `batterySuitePosition` and `batterySuiteCount`, and the

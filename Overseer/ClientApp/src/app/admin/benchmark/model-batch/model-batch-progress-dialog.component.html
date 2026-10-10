@@ -1,0 +1,393 @@
+<!-- MODEL BATCH PROGRESS: header / scrolling body / footer, as the battery progress dialog. -->
+<dialog #modelBatchDialog class="gh-dialog gh-dialog-fullscreen model-batch-progress-dialog"
+        aria-labelledby="mbTitle"
+        (cancel)="onCancel($event)">
+  <!-- A model's name and its badges. -->
+  <ng-template #modelIdentity let-name let-badges="badges">
+    <span class="model-name">{{ name }}</span>
+    @for (badge of badges; track badge.kind) {
+      @switch (badge.kind) {
+        @case ('provider') {
+          <app-provider-badge [provider]="badge.provider" />
+        }
+        @case ('thinking') {
+          <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+        }
+        @case ('reasoning') {
+          <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+        }
+        @default {
+          <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+        }
+      }
+    }
+  </ng-template>
+
+  <!-- A stat tile's value that is not known yet. -->
+  <ng-template #notAvailable><span aria-hidden="true">—</span><span class="visually-hidden">not available yet</span></ng-template>
+
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="rr-identity mb-identity">
+        <!-- Decorative: the title beside it names the batch. -->
+        <img class="gnollbench-emblem rr-emblem mb-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
+        <div class="dialog-title-group">
+          <h3 #mbTitle id="mbTitle" tabindex="-1">{{ titleText }}</h3>
+          @if (batch) {
+            <p class="dialog-subtitle mb-subtitle">{{ subtitle }}</p>
+            @if (graderRows.length > 0) {
+              <app-run-facts class="rr-run-facts rr-run-facts-primary mb-graders" [rows]="graderRows" />
+            }
+          }
+        </div>
+      </div>
+      <button type="button" class="btn-icon-action"
+              aria-label="Close model batch progress"
+              interestfor="mb-tip-close"
+              style="anchor-name: --mb-tip-close"
+              (click)="requestClose()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="mb-tip-close" style="position-anchor: --mb-tip-close">Close</div>
+    </div>
+
+    <!-- An inline-size container: the rail stacks and the member cards narrow when the body is narrow. -->
+    <div class="dialog-body mb-body">
+      @if (railItems.length > 0) {
+        <ol class="run-stage-rail mb-rail" aria-label="Model batch stages">
+          @for (item of railItems; track item.key; let i = $index) {
+            <li class="run-stage" [attr.data-stage]="item.key"
+                [class.is-current]="item.state === 'current'" [class.is-done]="item.state === 'done'"
+                [class.is-ended]="item.state === 'ended'"
+                [attr.aria-current]="item.state === 'current' ? 'step' : null">
+              <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+              <span class="run-stage-label">
+                <span class="run-stage-name">{{ item.name }}</span>
+                @if (item.note) {
+                  <span class="run-stage-note">{{ item.note }}</span>
+                }
+              </span>
+              @if (item.state !== 'pending') {
+                <span class="visually-hidden">{{ railStateWord(item.state) }}</span>
+              }
+            </li>
+          }
+        </ol>
+      }
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="mbProgressBar">Models finished</label>
+        @if (requestedCount > 0) {
+          <progress id="mbProgressBar" class="job-progress" [value]="finishedCount" [max]="requestedCount"></progress>
+        } @else {
+          <progress id="mbProgressBar" class="job-progress"></progress>
+        }
+        <!-- The dialog's only status region. -->
+        <p class="progress-status mb-stage-line" role="status" aria-live="polite">{{ stageLine }}</p>
+      </div>
+
+      @if (batch; as run) {
+        @if (run.status === 'Stopped' || run.status === 'WaitingForCap') {
+          <div class="mb-state-block" [class.state-stopped]="run.status === 'Stopped'"
+               [class.state-waiting]="run.status === 'WaitingForCap'">
+            <p class="mb-state-name">{{ statusLabel(run.status) }}</p>
+            @if (run.status === 'WaitingForCap') {
+              <p class="mb-state-detail">The run cap is reached. The batch retries by itself and continues when a run may start.</p>
+            } @else {
+              <p class="mb-state-detail">
+                {{ run.stopReasonText || run.stopReason || 'The batch stopped.' }}
+                @if (run.stopDetail) { {{ run.stopDetail }} }
+              </p>
+              @if (resumeOptions.length > 0) {
+                <dl class="mb-resume-options">
+                  @for (option of resumeOptions; track option.mode) {
+                    <div>
+                      <dt>{{ resumeLabel(option) }}</dt>
+                      <dd>{{ option.reason || option.label }}</dd>
+                    </div>
+                  }
+                </dl>
+              }
+            }
+          </div>
+        }
+
+        <dl class="run-stat-strip mb-stats">
+          <div class="run-stat">
+            <dt>Status</dt>
+            <dd>{{ statusLabel(run.status) }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Elapsed</dt>
+            <dd>{{ elapsedLabel }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Models done</dt>
+            <dd>{{ run.completedMemberCount }} of {{ requestedCount }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Runs</dt>
+            <dd>{{ runsText }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Failed</dt>
+            <dd>{{ run.failedMemberCount }}</dd>
+          </div>
+          <div class="run-stat mb-stat-candidate-cost">
+            <dt>Candidate cost</dt>
+            <dd>
+              @if (candidateCostLabel; as value) { {{ value }} } @else { <ng-container [ngTemplateOutlet]="notAvailable" /> }
+              @if (isLive && candidateCostLabel) { <span class="mb-stat-note">so far</span> }
+            </dd>
+          </div>
+          <div class="run-stat mb-stat-total-cost">
+            <dt>Total cost</dt>
+            <dd>
+              @if (totalCostLabel; as value) { {{ value }} } @else { <ng-container [ngTemplateOutlet]="notAvailable" /> }
+              @if (isLive && totalCostLabel) { <span class="mb-stat-note">so far</span> }
+            </dd>
+          </div>
+        </dl>
+
+        @if (instrumentDrift; as drift) {
+          <div class="alert alert-warning mb-comparability mb-instrument-changed">
+            <div class="alert-content">
+              <div class="alert-body">
+                Instrument changed before {{ drift.model }}: {{ drift.keys }}
+                @if (run.instrumentChangeAcknowledged) {
+                  <span class="gh-tag gh-tag-changed mb-not-comparable">Not comparable across the change</span>
+                }
+              </div>
+            </div>
+          </div>
+        } @else {
+          <p class="mb-comparability mb-instrument-shared">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>All members share one instrument</span>
+          </p>
+        }
+        <p class="gh-field-warning mb-corpus-quiet">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span>{{ corpusQuietText }}</span>
+        </p>
+        @if (stallText; as stall) {
+          <p class="gh-field-warning mb-stall">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            <span>{{ stall }}</span>
+          </p>
+        }
+
+        <h4 class="gh-section-title mb-members-title" id="mbMembersTitle">Models in run order</h4>
+        <ol class="mb-members" aria-labelledby="mbMembersTitle">
+          @for (view of members; track view.member.id) {
+            @let member = view.member;
+            <li class="mb-member-item">
+              <article class="mb-member" [attr.data-member-id]="member.id" [attr.data-status]="member.status"
+                       [class.is-current]="member.status === 'Running'"
+                       [attr.aria-labelledby]="'mb-member-' + member.id + '-name'">
+                <div class="mb-member-head">
+                  <span class="mb-member-position" aria-hidden="true">{{ view.position }}</span>
+                  <p class="mb-member-name" [id]="'mb-member-' + member.id + '-name'">
+                    <span class="visually-hidden">Model {{ view.position }}: </span>
+                    <ng-container [ngTemplateOutlet]="modelIdentity"
+                                  [ngTemplateOutletContext]="{ $implicit: view.name, badges: view.badges }" />
+                  </p>
+                  <span [class]="view.chipClass">{{ view.statusLabel }}</span>
+                </div>
+
+                <div class="mb-member-body">
+                  @switch (member.status) {
+                    @case ('Running') {
+                      @if (view.stepText) {
+                        <p class="mb-member-meta mb-member-step">{{ view.stepText }}</p>
+                      }
+                      <p class="mb-member-meta mb-member-stage">{{ view.stageCaption ?? 'Starting' }}</p>
+                      @if (member.totalQuestionCount > 0) {
+                        <progress class="job-progress mb-member-progress"
+                                  [max]="member.totalQuestionCount" [value]="member.answeredQuestionCount"
+                                  [attr.aria-labelledby]="'mb-member-progress-' + member.id"></progress>
+                      }
+                      <p class="mb-member-meta" [id]="'mb-member-progress-' + member.id">{{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered</p>
+                      @if (memberElapsedLabel(member); as elapsed) {
+                        <p class="mb-member-meta mb-member-elapsed">Elapsed {{ elapsed }}</p>
+                      }
+                    }
+                    @case ('Pending') {
+                      <p class="mb-member-meta mb-member-waiting">Waiting</p>
+                    }
+                    @default {
+                      @if (view.indexValue != null) {
+                        <div class="mb-member-index">
+                          <app-index-badge [value]="view.indexValue ?? 0" [halfWidth]="member.result?.indexHalfWidth" [label]="view.indexLabel" />
+                        </div>
+                      }
+                      @if (view.facts.length > 0) {
+                        <dl class="mb-member-facts">
+                          @for (fact of view.facts; track fact.label) {
+                            <div>
+                              <dt>{{ fact.label }}</dt>
+                              <dd>{{ fact.value }}</dd>
+                            </div>
+                          }
+                        </dl>
+                      }
+                      @if (view.reason) {
+                        <p class="mb-member-hint">{{ view.reason }}</p>
+                      }
+                    }
+                  }
+                  @if (view.refText) {
+                    <p class="mb-member-meta mb-member-ref">{{ view.refText }}</p>
+                  }
+                </div>
+
+                <div class="mb-member-actions" role="group" [attr.aria-label]="'Actions for ' + view.name">
+                  @if (view.canSkip) {
+                    <button type="button" class="btn-ghost mb-skip"
+                            [attr.aria-label]="'Skip model ' + view.name"
+                            [attr.aria-disabled]="busy ? 'true' : null"
+                            [attr.aria-describedby]="busy ? 'mbActionReason' : null"
+                            (click)="skipMember(member)">{{ skippingMemberId === member.id ? 'Skipping…' : 'Skip model' }}</button>
+                  }
+                  @if (run.targetKind === 'Battery') {
+                    @if (member.batteryRunId != null) {
+                      <button type="button" class="action-btn mb-open-battery"
+                              [attr.aria-label]="'Open battery progress for battery run #' + member.batteryRunId + ', ' + view.name"
+                              [attr.interestfor]="'mb-tip-battery-' + member.id"
+                              [attr.style]="'anchor-name: --mb-tip-battery-' + member.id"
+                              (click)="openMemberBatteryProgress(member)">
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="'mb-tip-battery-' + member.id"
+                           [attr.style]="'position-anchor: --mb-tip-battery-' + member.id">Open battery progress</div>
+                    }
+                  } @else {
+                    @for (runId of member.runIds; track runId) {
+                      <button type="button" class="action-btn mb-open-run" [attr.data-run-id]="runId"
+                              [attr.aria-label]="'Open run progress for run #' + runId"
+                              [attr.interestfor]="'mb-tip-run-' + runId"
+                              [attr.style]="'anchor-name: --mb-tip-run-' + runId"
+                              (click)="openMemberRunProgress(runId)">
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                          <polyline points="15 3 21 3 21 9"></polyline>
+                          <line x1="10" y1="14" x2="21" y2="3"></line>
+                        </svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="'mb-tip-run-' + runId"
+                           [attr.style]="'position-anchor: --mb-tip-run-' + runId">Open run progress for run #{{ runId }}</div>
+                    }
+                  }
+                  @if (view.report; as report) {
+                    <button type="button" class="action-btn mb-view-report"
+                            [attr.aria-label]="report.kind === 'battery' ? 'View Battery Run Report of battery run #' + report.id : 'View report of run #' + report.id"
+                            [attr.interestfor]="'mb-tip-report-' + member.id"
+                            [attr.style]="'anchor-name: --mb-tip-report-' + member.id"
+                            (click)="viewMemberReport(view)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'mb-tip-report-' + member.id"
+                         [attr.style]="'position-anchor: --mb-tip-report-' + member.id">View report</div>
+                  }
+                </div>
+              </article>
+            </li>
+          } @empty {
+            <li class="mb-empty">This batch has no models.</li>
+          }
+        </ol>
+
+        <details class="job-diagnostics mt-15 mb-diagnostics" (toggle)="onDiagnosticsToggle($event)">
+          <summary>Batch diagnostics</summary>
+          <div class="diagnostics-toolbar">
+            <button type="button" class="action-btn mb-copy-diagnostics"
+                    aria-label="Copy model batch diagnostics"
+                    [attr.aria-disabled]="diagnosticsText ? null : 'true'"
+                    interestfor="mb-tip-copy-diagnostics"
+                    style="anchor-name: --mb-tip-copy-diagnostics"
+                    (click)="copyDiagnostics()">
+              @if (copiedDiagnostics) {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              } @else {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              }
+            </button>
+            <div popover="hint" class="gh-tooltip" id="mb-tip-copy-diagnostics"
+                 style="position-anchor: --mb-tip-copy-diagnostics">Copy diagnostics</div>
+            <button type="button" class="action-btn mb-download-diagnostics"
+                    aria-label="Download model batch diagnostics as a text file"
+                    [attr.aria-disabled]="diagnosticsText ? null : 'true'"
+                    interestfor="mb-tip-download-diagnostics"
+                    style="anchor-name: --mb-tip-download-diagnostics"
+                    (click)="downloadDiagnostics()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="mb-tip-download-diagnostics"
+                 style="position-anchor: --mb-tip-download-diagnostics">Download diagnostics</div>
+            <p class="diagnostics-copy-status" aria-live="polite">{{ diagnosticsCopyStatus }}</p>
+          </div>
+          @if (diagnosticsLoading && !diagnosticsText) {
+            <p class="mb-diagnostics-status">Loading the batch diagnostics…</p>
+          }
+          @if (diagnosticsError) {
+            <p class="gh-field-error mb-diagnostics-error">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              {{ diagnosticsError }}
+            </p>
+          }
+          @if (diagnosticsText) {
+            <pre tabindex="0" class="mb-diagnostics-text"><code>{{ diagnosticsText }}</code></pre>
+          }
+        </details>
+      }
+
+      @if (loadError) {
+        <p class="gh-field-error mt-15" id="mbLoadError">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          {{ loadError }}
+        </p>
+      }
+      @if (actionError) {
+        <div class="alert alert-danger mt-15 mb-action-error" role="alert">{{ actionError }}</div>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel mb-close" (click)="requestClose()">{{ isLive ? 'Run in Background' : 'Close' }}</button>
+      @if (busy) {
+        <span class="mb-action-reason" id="mbActionReason">{{ busyReason }}</span>
+      }
+      @if (canCancel) {
+        <button type="button" class="btn-gh btn-gh-delete mb-cancel-batch"
+                [attr.aria-disabled]="busy ? 'true' : null"
+                [attr.aria-describedby]="busy ? 'mbActionReason' : null"
+                (click)="cancelBatch()">Cancel Batch</button>
+      }
+      @for (option of resumeOptions; track option.mode) {
+        <button type="button" class="btn-gh mb-resume" [attr.data-mode]="option.mode"
+                [attr.aria-disabled]="busy ? 'true' : null"
+                [attr.aria-describedby]="busy ? 'mbActionReason' : null"
+                (click)="resume(option)">
+          @if (option.mode === 'Continue') {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          }
+          {{ resumeLabel(option) }}
+        </button>
+      }
+      @if (!canCompare) {
+        <span class="mb-action-reason" id="mbCompareReason">{{ compareReason }}</span>
+      }
+      <button type="button" class="btn-gh mb-open-comparison"
+              [attr.aria-disabled]="!canCompare || busy ? 'true' : null"
+              [attr.aria-describedby]="!canCompare ? 'mbCompareReason' : busy ? 'mbActionReason' : null"
+              (click)="openInComparison()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+        Open in Model Comparison
+      </button>
+    </div>
+  </div>
+</dialog>

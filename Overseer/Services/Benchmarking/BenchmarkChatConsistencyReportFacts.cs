@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
@@ -25,9 +26,10 @@ using Overseer.Services.ChatConsistency;
 //   verdict.overall, .short, .quality, .headline, .reliabilityIncreases
 //   scope.hours, .excludedShare, .oneTimeStratum
 //   coverage.strata.count, coverage.strata.<n>, coverage.usBusinessHours, .outsideBusinessHours
-//   period.<baseline|comparison>.start, .end, .runs, .units, .unitNoun, .memberRuns, .days, .items, .answers, .legacyRuns, .suites, .hours
+//   period.<baseline|comparison>.start, .end, .window, .runs, .units, .unitNoun, .memberRuns, .days, .items, .answers, .legacyRuns, .suites, .hours
 //   level.<baseline|comparison>.answers, .quality, .overallIndex, .timeToFirstAnswerText, .streamingRate, .outputTokens,
 //     .costPerQuestion, .failedAnswers   descriptive, unavailable before analysis code version 6
+//     level.<period>.quality is kept from the writer in a battery comparison with both Overall Indexes (WriterHiddenKeys)
 //   sample.minimumUnits, .minimumDays, .minimumPairedItems, .met, .shortfall (only when not met)
 //   protocol.version, .label, .alpha, .overridden, protocol.margin.<P1..P5>
 //   n.targetRuns, n.controlRuns, n.answers
@@ -41,6 +43,7 @@ using Overseer.Services.ChatConsistency;
 //   tools.<id>.*                                   secondary results of the tool-use family
 //   secondary.<family>.<id>.*, secondary.<family>.note   every other secondary family
 //   events.count, events.<n>.at, .kind, .label, .change, .run, .previousRun, .series
+//     a run of a battery comparison's unit reads as its battery run: "battery run #12 (run #98)"
 //     (sheets written before .change also stored the raw .from and .to; they never reach the writer)
 //   eventGroups.count, eventGroups.<n>.tag, .at, .lastAt, .run, .changes, .series   the events of one UTC day, series,
 //     harness version and side of the period split (EventGroupKey), tagged E1, E2, … in time order
@@ -54,6 +57,8 @@ using Overseer.Services.ChatConsistency;
 //   serving.<period>.tierMismatchCalls, .fallbackCalls, .speeds, serving.configurationDiffers,
 //     serving.timeOfDayAssessable
 //   ownWaits.<period>.share, .permitWait, .backoffWait, .retries, .answersWithTelemetry
+//   identity.servedModels, serving.speeds, ownWaits.share, ownWaits.retries   one value for both periods, only when
+//     the periods' values are equal; the pair it stands for is then kept from the writer (CombinedPairs)
 //   pricing.source, .asOf, .card
 //   annotation.count, annotation.providerConfirmed, annotation.<n>.at, .kind, .text, .provider, .model, .source
 //   attribution.count, attribution.<n>.label, .side, .grade, .rule, .endpoints, .evidence
@@ -129,6 +134,59 @@ public static class BenchmarkChatConsistencyReportFacts
     /// </summary>
     public static bool WriterHidden(string? key)
         => key != null && (string.Equals(key, InputSha256Key, StringComparison.Ordinal) || RawEventValueKey.IsMatch(key));
+
+    /// <summary>
+    /// Whether a fact of <paramref name="sheet"/> stays off the writer's fact list: <see cref="WriterHidden(string)"/>,
+    /// or one of <see cref="WriterHiddenKeys"/>. Those stay on the sheet for the rendered blocks.
+    /// </summary>
+    public static bool WriterHidden(BenchmarkReportFactSheet sheet, string? key)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        return WriterHidden(key) || (key != null && WriterHiddenKeys(sheet.Facts).Contains(key));
+    }
+
+    /// <summary>
+    /// The facts a sheet keeps from the writer beyond <see cref="WriterHidden(string)"/>: each period's pair a
+    /// combined fact states once (<see cref="CombinedPairs"/>), and in a battery comparison where both periods
+    /// have a battery Overall Index, each period's <c>level.&lt;period&gt;.quality</c>, the mean answer score,
+    /// so that quality has one figure.
+    /// </summary>
+    public static IReadOnlySet<string> WriterHiddenKeys(IEnumerable<BenchmarkReportFact> facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        var byKey = new Dictionary<string, BenchmarkReportFact>(StringComparer.Ordinal);
+        foreach (var fact in facts) byKey.TryAdd(fact.Key, fact);
+
+        var hidden = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (combined, baseline, comparison) in CombinedPairs)
+        {
+            if (!byKey.ContainsKey(combined)) continue;
+            hidden.Add(baseline);
+            hidden.Add(comparison);
+        }
+
+        bool battery = byKey.TryGetValue("period.baseline.unitNoun", out var noun) && noun.Available && noun.Display == "battery run";
+        bool indexes = byKey.TryGetValue("level.baseline.overallIndex", out var b) && b.Available
+                       && byKey.TryGetValue("level.comparison.overallIndex", out var c) && c.Available;
+        if (battery && indexes)
+        {
+            hidden.Add("level.baseline.quality");
+            hidden.Add("level.comparison.quality");
+        }
+        return hidden;
+    }
+
+    /// <summary>
+    /// The facts stated once for both periods when the periods' values are equal, each with the pair it
+    /// stands for: retry attempts, own-wait shares, served model IDs and served speeds.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Combined, string Baseline, string Comparison)> CombinedPairs = new[]
+    {
+        ("ownWaits.retries", "ownWaits.baseline.retries", "ownWaits.comparison.retries"),
+        ("ownWaits.share", "ownWaits.baseline.share", "ownWaits.comparison.share"),
+        ("identity.servedModels", "identity.baseline.servedModels", "identity.comparison.servedModels"),
+        ("serving.speeds", "serving.baseline.speeds", "serving.comparison.speeds"),
+    };
 
     /// <summary>A control suggestion without its <c>(instrument &lt;hex&gt;)</c> note.</summary>
     public static string WithoutInstrument(string? text)
@@ -570,6 +628,7 @@ public static class BenchmarkChatConsistencyReportFacts
         string p = "period." + name + ".";
         facts.Add(p + "start", Iso(period.StartUtc), When(period.StartUtc));
         facts.Add(p + "end", Iso(period.EndUtc), When(period.EndUtc));
+        facts.Text(p + "window", WindowText(name, period.StartUtc, period.EndUtc, result.Comparison?.StartUtc));
         facts.Add(p + "runs", period.RunCount, Runs(period.RunCount));
 
         string noun = UnitNounOf(result);
@@ -597,6 +656,45 @@ public static class BenchmarkChatConsistencyReportFacts
         var hours = result.PeriodHours?.FirstOrDefault(h => string.Equals(h.Period, name, StringComparison.Ordinal));
         if (hours == null) facts.Unavailable(p + "hours", BeforeLevelsReason);
         else facts.Add(p + "hours", hours.Strata.Count, hours.Text);
+    }
+
+    /// <summary>
+    /// A period's window in words. The baseline reads <c>2026-10-08 00:00 UTC until 14:49 UTC</c> when it ends
+    /// within a minute before the comparison starts, its end then the comparison's start (the date left out on
+    /// the start's day), and <c>… to …</c> otherwise; the comparison reads <c>from 2026-10-08 14:49 UTC to
+    /// 2026-10-08 23:59 UTC</c>.
+    /// </summary>
+    public static string WindowText(string period, DateTime startUtc, DateTime endUtc, DateTime? comparisonStartUtc)
+    {
+        if (string.Equals(period, Comparison, StringComparison.Ordinal)) return "from " + When(startUtc) + " to " + When(endUtc);
+
+        if (comparisonStartUtc is DateTime split && split > endUtc && split - endUtc <= TimeSpan.FromMinutes(1))
+        {
+            bool sameDay = split.Date == startUtc.Date;
+            return When(startUtc) + " until " + (sameDay ? split.ToString("HH:mm", CultureInfo.InvariantCulture) + " UTC" : When(split));
+        }
+        return When(startUtc) + " to " + When(endUtc);
+    }
+
+    /// <summary>
+    /// <see cref="WindowText(string, DateTime, DateTime, DateTime?)"/> of a period from a sheet's <c>period.&lt;period&gt;.start</c> and <c>.end</c> values,
+    /// the baseline's split read from <c>period.comparison.start</c>, so a sheet written before <c>.window</c> reads
+    /// the same; null when a value is missing or unreadable.
+    /// </summary>
+    public static string? WindowText(IReadOnlyList<BenchmarkReportFact> facts, string period)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        DateTime? Instant(string key)
+            => facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal)) is { Available: true, Value: JsonValue value }
+               && value.TryGetValue(out string? text)
+               && DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed)
+                ? parsed
+                : null;
+
+        string p = "period." + period + ".";
+        return Instant(p + "start") is DateTime start && Instant(p + "end") is DateTime end
+            ? WindowText(period, start, end, Instant("period.comparison.start"))
+            : null;
     }
 
     /// <summary>Why a level or a period's hours are unavailable on an analysis saved before they were recorded.</summary>
@@ -665,9 +763,10 @@ public static class BenchmarkChatConsistencyReportFacts
     /// <summary>
     /// The protocol's minimum sample for quality, work and cost (P1, P4, P5) against the analyzed units:
     /// <c>sample.minimumUnits</c>, <c>.minimumDays</c>, <c>.minimumPairedItems</c>, <c>.met</c>, and while it
-    /// is not met <c>sample.shortfall</c>, <c>1 battery run per period on 1 day; the minimum is 2 battery
-    /// runs on 2 days per period and 20 paired items</c>. The paired items count only where one of those
-    /// endpoints was computed.
+    /// is not met <c>sample.shortfall</c>, each part stated as met or missed
+    /// (<see cref="ChatConsistencyAnalysisService.MinimumSampleText"/>): <c>1 battery run per period on 1 day,
+    /// below the minimum of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20</c>.
+    /// The paired items count only where one of those endpoints was computed.
     /// </summary>
     private static void AddSample(BenchmarkReportFacts.FactList facts, ChatConsistencyAnalysisResult result)
     {
@@ -701,12 +800,7 @@ public static class BenchmarkChatConsistencyReportFacts
             return;
         }
 
-        string have = unitsB == unitsC && daysB == daysC
-            ? Plural(unitsB, noun) + " per period on " + Plural(daysB, "day")
-            : "the baseline has " + Plural(unitsB, noun) + " on " + Plural(daysB, "day") + " and the comparison "
-              + Plural(unitsC, noun) + " on " + Plural(daysC, "day");
-        if (paired is int pairedItems && pairedItems < protocol.MinimumPairedItems) have += ", with " + Plural(pairedItems, "paired item");
-        facts.Text("sample.shortfall", have + "; the minimum is " + minimum);
+        facts.Text("sample.shortfall", ChatConsistencyAnalysisService.MinimumSampleText(noun, unitsB, daysB, unitsC, daysC, paired, protocol));
     }
 
     private static string ProtocolLabelOf(ChatConsistencyAnalysisResult result)
@@ -976,11 +1070,11 @@ public static class BenchmarkChatConsistencyReportFacts
             var e = events[i];
             string p = "events." + Inv(i + 1) + ".";
             facts.Add(p + "at", Iso(e.AtUtc), When(e.AtUtc));
-            facts.Add(p + "kind", e.Kind, ChatConsistencyEventText.Label(e.Kind));
+            facts.Add(p + "kind", e.Kind, EventKindText(e.Kind));
             facts.Add(p + "label", ctx.Lettered(e.Label), ctx.Lettered(e.Label));
             facts.Text(p + "change", ChatConsistencyEventText.Describe(e.Kind, e.From, e.To));
-            facts.Add(p + "run", e.RunId, RunText(e.RunId));
-            facts.Add(p + "previousRun", e.PreviousRunId, RunText(e.PreviousRunId));
+            facts.Add(p + "run", e.RunId, UnitRunList(ctx.Result, new[] { e.RunId }));
+            facts.Add(p + "previousRun", e.PreviousRunId, UnitRunList(ctx.Result, new[] { e.PreviousRunId }));
             string series = e.InTargetSeries ? "the model under test" : ModelOf(ctx, e.SubjectKey);
             facts.Add(p + "series", e.InTargetSeries ? "target" : "control", series);
         }
@@ -988,8 +1082,9 @@ public static class BenchmarkChatConsistencyReportFacts
 
     /// <summary>
     /// The events grouped into Overseer updates (<see cref="EventGroups"/>), tagged E1, E2, … in time order:
-    /// each group's earliest and latest time, its runs those the events were first seen at, and its changes
-    /// the events' <see cref="ChatConsistencyEventText.Describe"/>, joined with <c>; </c>.
+    /// each group's earliest and latest time, its runs those the events were first seen at (by their battery
+    /// run in a battery comparison, <see cref="UnitRunList"/>), and its changes the events'
+    /// <see cref="ChatConsistencyEventText.Describe"/>, joined with <c>; </c>.
     /// </summary>
     private static void AddEventGroups(BenchmarkReportFacts.FactList facts, Context ctx)
     {
@@ -1008,10 +1103,41 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Add(p + "tag", groups[i].Tag, groups[i].Tag);
             facts.Add(p + "at", Iso(first.AtUtc), When(first.AtUtc));
             facts.Add(p + "lastAt", Iso(last.AtUtc), When(last.AtUtc));
-            facts.Add(p + "run", runs[0], RunList(runs));
+            facts.Add(p + "run", runs[0], UnitRunList(ctx.Result, runs));
             facts.Text(p + "changes", string.Join("; ", changes));
             facts.Add(p + "series", first.InTargetSeries ? "target" : "control", first.InTargetSeries ? "the model under test" : ModelOf(ctx, first.SubjectKey));
         }
+    }
+
+    /// <summary>
+    /// An event kind as the event table words it, never as a field name: <c>corpus re-index</c>, <c>harness
+    /// version</c>, <c>source code revision</c>, <c>wiki revision</c>.
+    /// </summary>
+    public static string EventKindText(string? kind)
+        => kind == OverseerEventKinds.CorpusIndex ? "corpus re-index" : LowerFirst(ChatConsistencyEventText.Label(kind));
+
+    /// <summary>
+    /// Runs as the analysis's units name them. In a battery comparison each run that is a member of an analyzed
+    /// battery run reads under it, <c>battery run #12 (run #98)</c>, the members of one battery run together, and
+    /// any other run (a control's) as <see cref="RunList"/> does; in any other analysis <see cref="RunList"/>.
+    /// </summary>
+    private static string UnitRunList(ChatConsistencyAnalysisResult result, IReadOnlyCollection<long> runIds)
+    {
+        if (result.UnitKind != ChatConsistencyComparisonSetKinds.BatteryRunUnit) return RunList(runIds);
+
+        var unitOf = new Dictionary<long, long>();
+        foreach (var unit in result.Units ?? Array.Empty<ChatConsistencyUnitView>())
+        {
+            foreach (long member in unit.MemberRunIds) unitOf.TryAdd(member, unit.UnitId);
+        }
+
+        var parts = runIds.Distinct()
+            .OrderBy(id => id)
+            .GroupBy(id => unitOf.TryGetValue(id, out long unit) ? (long?)unit : null)
+            .OrderBy(g => g.Min())
+            .Select(g => g.Key is long unit ? "battery run #" + Inv(unit) + " (" + RunList(g.ToList()) + ")" : RunList(g.ToList()))
+            .ToList();
+        return parts.Count == 0 ? "no run" : BenchmarkReportFormat.LetterList(parts);
     }
 
     /// <summary>One Overseer update: its tag (<c>E1</c>, …) and its events, in time, then run order.</summary>
@@ -1216,6 +1342,19 @@ public static class BenchmarkChatConsistencyReportFacts
             else facts.Add("serving." + period + ".speeds", speeds.Count, string.Join(", ", speeds));
         }
 
+        // One fact for both periods where they were served alike, so a sentence never repeats one value.
+        if (served.Baseline.Count > 0 && served.Baseline.Select(m => m.ModelId).SequenceEqual(served.Comparison.Select(m => m.ModelId), StringComparer.Ordinal))
+        {
+            int baselineCalls = served.Baseline.Sum(m => m.CallCount);
+            int comparisonCalls = served.Comparison.Sum(m => m.CallCount);
+            facts.Add("identity.servedModels", served.Baseline.Count, string.Join(", ", served.Baseline.Select(m => m.ModelId))
+                + " in both periods (" + Inv(baselineCalls) + " and " + Inv(comparisonCalls) + (comparisonCalls == 1 ? " call)" : " calls)"));
+        }
+        if (served.BaselineServedSpeeds.Count > 0 && served.BaselineServedSpeeds.SequenceEqual(served.ComparisonServedSpeeds, StringComparer.Ordinal))
+        {
+            facts.Add("serving.speeds", served.BaselineServedSpeeds.Count, string.Join(", ", served.BaselineServedSpeeds) + " in both periods");
+        }
+
         bool recorded = served.Baseline.Count > 0 && served.Comparison.Count > 0;
         facts.Add("identity.changed", served.Changed, served.Changed
             ? "the served model IDs differ between the periods"
@@ -1227,17 +1366,33 @@ public static class BenchmarkChatConsistencyReportFacts
 
     private static void AddOwnWaits(BenchmarkReportFacts.FactList facts, IReadOnlyList<ChatConsistencyOwnWaits> waits)
     {
-        foreach (var w in waits.Where(w => w.Period is Baseline or Comparison).GroupBy(w => w.Period).Select(g => g.First()))
+        var periods = waits.Where(w => w.Period is Baseline or Comparison).GroupBy(w => w.Period).Select(g => g.First()).ToList();
+        foreach (var w in periods)
         {
             string p = "ownWaits." + w.Period + ".";
             if (w.OwnWaitShare is double share && double.IsFinite(share)) facts.Add(p + "share", share, Share(share));
             else facts.Unavailable(p + "share", "No answer of the " + w.Period + " period has call telemetry.");
             facts.Add(p + "permitWait", w.PermitWaitMs, Seconds(w.PermitWaitMs));
             facts.Add(p + "backoffWait", w.BackoffWaitMs, Seconds(w.BackoffWaitMs));
-            facts.Add(p + "retries", w.RetryAttemptCount, Inv(w.RetryAttemptCount) + (w.RetryAttemptCount == 1 ? " retry attempt" : " retry attempts"));
+            facts.Add(p + "retries", w.RetryAttemptCount, RetryAttempts(w.RetryAttemptCount));
             facts.Add(p + "answersWithTelemetry", w.AnswersWithTelemetry, Inv(w.AnswersWithTelemetry) + (w.AnswersWithTelemetry == 1 ? " answer" : " answers"));
         }
+
+        // One fact for both periods where their values print alike, so a sentence never repeats one value.
+        var baseline = periods.FirstOrDefault(w => w.Period == Baseline);
+        var comparison = periods.FirstOrDefault(w => w.Period == Comparison);
+        if (baseline == null || comparison == null) return;
+        if (baseline.RetryAttemptCount == comparison.RetryAttemptCount)
+        {
+            facts.Add("ownWaits.retries", baseline.RetryAttemptCount, RetryAttempts(baseline.RetryAttemptCount) + " in both periods");
+        }
+        if (baseline.OwnWaitShare is double b && double.IsFinite(b) && comparison.OwnWaitShare is double c && double.IsFinite(c) && Share(b) == Share(c))
+        {
+            facts.Add("ownWaits.share", b, Share(b) + " in both periods");
+        }
     }
+
+    private static string RetryAttempts(int count) => Inv(count) + (count == 1 ? " retry attempt" : " retry attempts");
 
     private static void AddPricing(BenchmarkReportFacts.FactList facts, ChatConsistencyPriceCard card)
     {

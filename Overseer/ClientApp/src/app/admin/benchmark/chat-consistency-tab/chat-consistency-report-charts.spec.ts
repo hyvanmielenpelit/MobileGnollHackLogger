@@ -37,8 +37,8 @@ function pngSize(base64: string): { width: number; height: number } {
 describe('chat-consistency-report-charts', () => {
   const input: CcFigureInput = { points: ccTimeline().points };
 
-  it('is drawing version 7', () => {
-    expect(CC_REPORT_CHART_VERSION).toBe(7);
+  it('is drawing version 8', () => {
+    expect(CC_REPORT_CHART_VERSION).toBe(8);
   });
 
   describe('event numbering', () => {

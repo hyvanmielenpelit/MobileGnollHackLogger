@@ -422,6 +422,22 @@ identical**:
 - A model change is ladder **rung 6** and still has to clear the evidence bar: one run per
   candidate motivates a recommendation; a second comparable run, or a replicate set, justifies
   changing `RecommendedModels`.
+- **A model-selection set may be one model batch** (Run Benchmark → `Models` → `Model batch`,
+  `docs/overseer/ai-benchmark-model-batches.md`): every candidate runs one after another under one
+  stored settings set, one target and one build, so the identical-everything rule above holds by
+  construction, and the server's guardrails (the *Batch Readiness* card) refuse or flag what would
+  break it — a candidate as a scoring grader or report writer, a single assessor over several
+  providers, a same-provider assessor, very high grader effort, candidates that differ in tier,
+  parallel mode, endpoint or output limit. Propose a batch whenever the set has two or more
+  candidates on one suite or one battery; propose separate runs only when the candidates need
+  something a batch cannot hold fixed for them, and say what. A batch is **one `RUN` step** (§ 5),
+  with its own `CHECK` and `SAVE` steps, not one step per candidate. A batch runs its members
+  sequentially and never interleaves replicate rounds, so keep *Model order* *Randomized* unless the
+  step says why the order matters, and expect the speed figures of models run hours apart to include
+  the hour (MB-T02). The batch stops on an instrument change, a grader-configuration edit or a
+  member that does not finish; the step says which resume option to take for each (*Continue*,
+  *Skip this model*, *Re-run under current instrument*, *Continue — accept the change*), and never
+  *accept the change* for an M set.
 
 ### Panel roster (two-family assessor panel)
 
@@ -475,6 +491,11 @@ runs it needs are planned like any other `RUN` step, with these rules:
   guide, corpus, budget, a harness bump with candidate input — make **one run of a model from another
   provider under the current build**, on the same suite. Without it a change across the event is *not
   attributable*.
+- **After a replaced build, a new baseline with its control.** When the analysis's next runs open with
+  *A new baseline under the current build* (`server_chat_consistency` § 8), plan the checkpoint and its
+  control as **one model batch** per required UTC day — the analyzed model plus a control model of
+  another provider — set up with the card's **Set up as model batch**, which fills Run Benchmark and
+  starts nothing.
 - **A grader roster change is a measurement change.** Keep the assessor, panel, second reader, claim
   verifier and scoring profile constant across the runs an analysis compares, or plan a common-grader
   re-grade of every compared run in the Chat Consistency wizard (scoring method 14 runs only).
@@ -575,6 +596,28 @@ Rules for writing a `RUN` step:
   what to do when it reports fewer: reuse needs all five instrument hashes unchanged since those runs,
   so a moved wiki, source or knowledge-base clone disqualifies them. A `RUN` step that wants fresh runs
   leaves it unchecked.
+- **A model batch `RUN` step** sets `Models` to *Model batch* and replaces the `Model Under Test` row
+  with these rows, in this order, beside the ordinary `Run Target`, suite or battery, scoring, grading
+  and option rows:
+
+  | Launcher field | Set to |
+  |---|---|
+  | Models | Model batch |
+  | Models Under Test | <every candidate as the picker prints it, with its badges, **in the order the step wants them listed**> |
+  | Model order | Randomized (recommended) / As listed — with As listed, the run order of the *Models in run order* list |
+  | Runs per model | <R> — Single suite only; 1 runs each model once, 2 or more a replicate series per model |
+  | Runs per Suite | <R> — Battery only |
+  | Report Writer (optional) | None — the batch starts with None; a writer writes every member's own documents |
+  | Wait when the run cap blocks the next run | checked / unchecked — required when the *Batch Projection* says the planned runs exceed the daily cap |
+  | Batch Readiness: I understand | <each warning the step expects, by its title as the card prints it (*Use a two-family panel for this batch* …), and why acknowledging it is right for this set>; any other warning, or any blocker, is a stop |
+
+  `Reuse earlier runs` is not offered in batch mode, and `Number of Runs` is not shown on a suite
+  target. The estimate is the *Batch Projection*'s, per model and in total (its *Per-model basis*
+  names the basis of each), compared with the step's own as in § 4 *Cost and time*; the confirmation
+  dialog *Start model batch?* repeats the plan, and its run order under *Randomized* is drawn only at
+  Start, so the step names the models, never their positions. The criteria are read per member in
+  **Model Comparison** (the progress dialog's **Open in Model Comparison**) and the step names the
+  batch's diagnostics (**Batch diagnostics**, **Download**) as a capture to save.
 - **A battery `RUN` step's estimate is summed over its suites**: for each suite, its analysed or recent
   run's cost and duration, summed and multiplied by `Runs per Suite`, less the runs reused. Compare it
   with the launcher's **Battery Projection**, which sums each suite's recent mean run duration and
@@ -714,6 +757,9 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` (the sub-tab row); each sub-tab's panel is in `admin/benchmark/<name>-tab/` |
 | Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings (field order verified on 2026-09-27: Model Under Test first, above the three fieldsets) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
+| The `Models` radios, `Models Under Test`, `Model order`, `Runs per model`, the `Batch Projection` and the `Start Model Batch` confirmation (from 2026-10-10) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
+| The Batch Readiness card's words and the guardrail titles | `admin/benchmark/run-tab/model-batch-readiness/`, `Overseer/Services/Benchmarking/BenchmarkModelBatchGuardrails.cs` |
+| The model batch progress dialog's resume options and their labels | `admin/benchmark/model-batch/`, `Overseer/Services/Benchmarking/BenchmarkModelBatchOrchestrator.cs` (`ResumeOptionsFor`) |
 | The `Source Code References` field and its two option labels (from 2026-09-30, harness 44; a run before it always used *Allowed*, so a card repeating an earlier run's configuration sets *Allowed* explicitly) | `admin/benchmark/run-tab/benchmark-run-tab.component.html` |
 | Coverage option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |

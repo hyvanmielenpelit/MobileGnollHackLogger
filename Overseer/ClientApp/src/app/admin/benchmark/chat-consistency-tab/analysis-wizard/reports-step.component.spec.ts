@@ -36,6 +36,7 @@ import { CcAnalysisFreshness } from '../chat-consistency.models';
 import {
   CC_ALL_WRITTEN_REASON,
   CC_ALL_WRITTEN_TEXT,
+  CC_NO_DECISIVE_VERDICT_TEXT,
   CC_PROVIDER_REPORT_UNKNOWN,
   CC_REPORTS_STORAGE_KEY,
   CC_REPORT_ESTIMATE_DEBOUNCE_MS,
@@ -223,6 +224,66 @@ describe('CcReportsStepComponent', () => {
     const boxes = Array.from(el.querySelectorAll<HTMLInputElement>('.cc-rep-audiences input[type="checkbox"]'));
     expect(boxes.map(box => box.checked)).toEqual([true, true, true, false]);
     expect(textOf(row(BenchmarkReportAudience.ExecutiveSummary).querySelector('.cds-check'))).toBe('Write: the Executive Summary');
+  });
+
+  /** Analysis 7 with every endpoint inconclusive or not computable. */
+  const undecided = () => ccAnalysisResult({
+    endpoints: [
+      ccEndpoint('P1', { computed: false, notComputedReason: 'Grading changed.', verdict: null, verdictLabel: 'not computable', grade: 'notEstablished' }),
+      ccEndpoint('P2', { computed: false, notComputedReason: 'No common stratum.', verdict: null, verdictLabel: 'not computable', grade: 'notEstablished' }),
+      ccEndpoint('P3', { computed: false, notComputedReason: 'No common stratum.', verdict: null, verdictLabel: 'not computable', grade: 'notEstablished' }),
+      ccEndpoint('P4', { verdict: 'inconclusive', verdictLabel: 'inconclusive', grade: 'notEstablished' }),
+      ccEndpoint('P5', { verdict: 'inconclusive', verdictLabel: 'inconclusive', grade: 'notEstablished' })
+    ]
+  });
+
+  it('says above the documents that they will find not enough evidence, and checks the Executive Summary alone on request', async () => {
+    expect(el.querySelector('.cc-rep-evidence')).toBeNull();
+    fixture.componentRef.setInput('result', undecided());
+    fixture.detectChanges();
+    const notice = () => el.querySelector<HTMLElement>('.cc-rep-audiences .alert.alert-warning.cc-rep-evidence');
+    expect(notice()?.getAttribute('role')).toBe('note');
+    expect(notice()?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(textOf(notice()?.querySelector('.cc-rep-evidence-text'))).toBe(CC_NO_DECISIVE_VERDICT_TEXT);
+    expect(CC_NO_DECISIVE_VERDICT_TEXT)
+      .toBe('Every endpoint is inconclusive or not computable; the documents will say Not enough evidence yet.');
+    // Above the document list.
+    expect(notice()?.nextElementSibling?.classList.contains('cds-list')).toBe(true);
+
+    const estimate = await chooseWriter();
+    expect(estimate.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3] });
+    estimate.flush(ccReportEstimate());
+    fixture.detectChanges();
+
+    const button = notice()!.querySelector<HTMLButtonElement>('button.btn-ghost.cc-rep-summary-only')!;
+    expect(button.type).toBe('button');
+    expect(textOf(button)).toBe('Write the Executive Summary only');
+    button.click();
+    fixture.detectChanges();
+    const boxes = Array.from(el.querySelectorAll<HTMLInputElement>('.cc-rep-audiences input[type="checkbox"]'));
+    expect(boxes.map(box => box.checked)).toEqual([true, false, false, false]);
+    expect(textOf(el.querySelector('.cc-rep-audiences [role="status"]'))).toBe('Only the Executive Summary is checked.');
+    // Not blocking: Write Report stays available, and the estimate follows the one document.
+    expect(writeButton().disabled).toBe(false);
+    expect(textOf(writeButton())).toBe('Write Report');
+    await settle();
+    const again = http.expectOne(`${CC_API}/analyses/7/report-documents/estimate`);
+    expect(again.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1] });
+    again.flush(ccReportEstimate());
+    fixture.detectChanges();
+  });
+
+  it('keeps the notice but offers no Executive Summary only once the summary is written, and shows none for a decisive verdict', () => {
+    fixture.componentRef.setInput('result', undecided());
+    fixture.detectChanges();
+    expect(el.querySelector('.cc-rep-summary-only')).not.toBeNull();
+    listDocuments([ccDoc(41, BenchmarkReportAudience.ExecutiveSummary)]);
+    expect(el.querySelector('.cc-rep-evidence')).not.toBeNull();
+    expect(el.querySelector('.cc-rep-summary-only')).toBeNull();
+
+    fixture.componentRef.setInput('result', ccAnalysisResult());
+    fixture.detectChanges();
+    expect(el.querySelector('.cc-rep-evidence')).toBeNull();
   });
 
   it('disables the Provider Issue Report with its reason shown as text', async () => {

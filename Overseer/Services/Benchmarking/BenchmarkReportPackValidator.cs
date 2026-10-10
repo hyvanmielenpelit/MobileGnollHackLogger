@@ -87,10 +87,11 @@ public sealed class BenchmarkReportCleanResult
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
-/// C1 to C7 (rule numbers 22 to 28) and the readable-text rule C8 (rule 29) on top of the rules above.
-/// Its controls are the peers, so <c>{{peer:X}}</c> names one. C1, C2, C3, C4, the wording half of C6,
-/// the claim half of C7 and C8 read the headline and every paragraph, and a paragraph failing one is
-/// dropped like any other error. C5 is a warning on the whole document. The other halves of C6 (the document cites
+/// C1 to C7 (rule numbers 22 to 28), the readable-text rule C8 (rule 29) and the repetition rule C9 (rule 30)
+/// on top of the rules above. Its controls are the peers, so <c>{{peer:X}}</c> names one. C1, C2, C3, C4, the
+/// wording half of C6, the claim half of C7 and C8 read the headline and every paragraph, and a paragraph
+/// failing one is dropped like any other error; C9 reads them too, as a warning that keeps the text. C5 is a
+/// warning on the whole document. The other halves of C6 (the document cites
 /// <c>{{scope.hours}}</c>, where the periods share any hours) and C7 (<c>ruledOut</c> cites every Overseer event) have nothing to drop,
 /// so after the repair turn they are recorded against the kept text without
 /// <see cref="BenchmarkReportValidationNote.Dropped"/>.</para>
@@ -243,14 +244,24 @@ public static class BenchmarkReportPackValidator
     /// C8: readable text. A chat consistency headline or paragraph holds no run of twelve or more hex
     /// digits, no JSON (<c>{"</c>), no <see cref="global::Overseer.Services.ChatConsistency.OverseerEventKinds"/>
     /// identifier, and cites no fact kept from the writer
-    /// (<see cref="BenchmarkChatConsistencyReportFacts.WriterHidden"/>).
+    /// (<see cref="BenchmarkChatConsistencyReportFacts.WriterHidden(string)"/> and
+    /// <see cref="BenchmarkChatConsistencyReportFacts.WriterHiddenKeys"/>).
     /// </summary>
     public const int ChatReadableTextRule = 29;
+
+    /// <summary>
+    /// C9: no slot-filling repetition and no spliced sentence, read with every fact token resolved to its
+    /// value: no <c>A and A, respectively</c> whose two operands are equal (ignoring case), and no full stop
+    /// followed by a lower-case <c>and</c> inside one sentence. A warning: it asks for the repair turn and
+    /// keeps the text.
+    /// </summary>
+    public const int ChatRepetitionRule = 30;
 
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule
-            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule;
+            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule
+            or ChatRepetitionRule;
 
     /// <summary>
     /// Terms rule 18 flags in a <c>model_developers</c> recommendation, matched as whole words ignoring
@@ -460,6 +471,22 @@ public static class BenchmarkReportPackValidator
 
     /// <summary>C8: a run of twelve or more hex digits, as a hash or a revision prints.</summary>
     private static readonly Regex HexRunRegex = new("[0-9a-fA-F]{12,}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// C9: <c>, respectively</c>; the operands are read back from the text before it, the right one after the
+    /// last <see cref="AndWordRegex"/> and the left one, word for word, before it.
+    /// </summary>
+    private static readonly Regex RespectivelyRegex = new(
+        @",?\s+respectively(?![\p{L}\p{N}])", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>C9: <c>and</c> as a whole word, ignoring case.</summary>
+    private static readonly Regex AndWordRegex = new(
+        @"(?<![\p{L}\p{N}])and(?![\p{L}\p{N}])", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>C9: a full stop followed by a lower-case <c>and</c>, except after a common abbreviation.</summary>
+    private static readonly Regex SplicedSentenceRegex = new(
+        @"(?<!(?<![\p{L}])(?:e\.g|i\.e|etc|vs|cf|approx|incl|resp))\.\s+and\s",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>C8: every <see cref="global::Overseer.Services.ChatConsistency.OverseerEventKinds"/> identifier, as a whole word.</summary>
     private static readonly Regex EventKindRegex = new(
@@ -1464,7 +1491,8 @@ public static class BenchmarkReportPackValidator
             Issue(notes, ChatProviderReportRule, location, $"C7: Makes a claim about the model or its serving ({Quoted(modelServing)}) without a provider-side attribution in the same sentence: cite an attribution.<n> token whose side is the provider, or describe what was measured of the Overseer chat instead.");
         }
 
-        CheckChatReadable(text, location, notes);
+        CheckChatReadable(ctx, text, location, notes);
+        CheckChatRepetition(ctx, text, location, notes);
     }
 
     /// <summary>
@@ -1472,12 +1500,12 @@ public static class BenchmarkReportPackValidator
     /// JSON, no <see cref="global::Overseer.Services.ChatConsistency.OverseerEventKinds"/> identifier, and no
     /// token of a fact kept from the writer; one note naming every offending token.
     /// </summary>
-    private static void CheckChatReadable(string text, string location, List<BenchmarkReportValidationNote> notes)
+    private static void CheckChatReadable(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
     {
         string plain = TokenRegex.Replace(text, " ");
         var found = new List<string>();
         found.AddRange(TokenRegex.Matches(text)
-            .Where(m => BenchmarkChatConsistencyReportFacts.WriterHidden(m.Groups[1].Value.Trim()))
+            .Where(m => ctx.ChatWriterHidden(m.Groups[1].Value.Trim()))
             .Select(m => m.Value));
         found.AddRange(HexRunRegex.Matches(plain).Select(m => m.Value));
         if (plain.Contains("{\"", StringComparison.Ordinal)) found.Add("{\"");
@@ -1487,6 +1515,63 @@ public static class BenchmarkReportPackValidator
         Issue(notes, ChatReadableTextRule, location, $"C8: Contains \"{string.Join("\", \"", found.Distinct(StringComparer.Ordinal))}\": "
             + "write for a reader, without hashes, hex revisions, JSON or internal field names. Describe the change in plain words, "
             + "such as a new harness version or an updated wiki, and cite the readable fact tokens, such as events.<n>.change.");
+    }
+
+    /// <summary>
+    /// Rule C9, a warning, on one prose string of a chat consistency sheet, read with each fact token replaced by
+    /// its value as the document prints it: an <c>A and A, respectively</c> whose operands are the same words
+    /// (ignoring case), and a full stop followed by a lower-case <c>and</c> (a sentence-valued fact spliced into a
+    /// sentence) outside the abbreviations <c>e.g.</c>, <c>i.e.</c> and the like; one note for each.
+    /// </summary>
+    private static void CheckChatRepetition(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        string resolved = TokenRegex.Replace(text, m => ctx.FactDisplay(m.Groups[1].Value.Trim()) ?? m.Value);
+
+        var repeated = new List<string>();
+        foreach (Match respectively in RespectivelyRegex.Matches(resolved))
+        {
+            string head = resolved[..respectively.Index];
+            var and = AndWordRegex.Matches(head).LastOrDefault();
+            if (and == null) continue;
+
+            var right = OperandWords(head[(and.Index + and.Length)..]);
+            var before = OperandWords(head[..and.Index]);
+            if (right.Count == 0 || before.Count < right.Count) continue;
+
+            var left = before.Skip(before.Count - right.Count).ToList();
+            if (left.SequenceEqual(right, StringComparer.OrdinalIgnoreCase))
+            {
+                repeated.Add(string.Join(" ", left) + " and " + string.Join(" ", right) + ", respectively");
+            }
+        }
+        if (repeated.Count > 0)
+        {
+            Issue(notes, ChatRepetitionRule, location, $"C9: Repeats one value as two (\"{string.Join("\", \"", repeated.Distinct(StringComparer.Ordinal))}\"): "
+                + "when both periods or both endpoints share a value or a verdict, name it once, as in \"inconclusive for both\", "
+                + "or cite the fact FACTS gives for both periods.");
+        }
+
+        var spliced = SplicedSentenceRegex.Matches(resolved).Select(m => Excerpt(resolved, m)).ToList();
+        if (spliced.Count > 0)
+        {
+            Issue(notes, ChatRepetitionRule, location, $"C9: Continues a sentence after a full stop (\"{string.Join("\", \"", spliced.Distinct(StringComparer.Ordinal))}\"): "
+                + "write a fact whose value is a sentence as a sentence of its own, or quote it without its final full stop.");
+        }
+    }
+
+    /// <summary>An operand's words, split at whitespace, each without the punctuation around it.</summary>
+    private static List<string> OperandWords(string text)
+        => Regex.Split(text.Trim(), @"\s+")
+            .Select(w => w.Trim(',', ';', ':', '(', ')', '"', '“', '”', '*', '_'))
+            .Where(w => w.Length > 0)
+            .ToList();
+
+    /// <summary>The match with a few words around it, cut with an ellipsis.</summary>
+    private static string Excerpt(string text, Match match)
+    {
+        int start = Math.Max(0, match.Index - 30);
+        int end = Math.Min(text.Length, match.Index + match.Length + 20);
+        return (start > 0 ? "…" : string.Empty) + text[start..end].Trim() + (end < text.Length ? "…" : string.Empty);
     }
 
     /// <summary>
@@ -2043,6 +2128,11 @@ public static class BenchmarkReportPackValidator
                 : Comparison ? BenchmarkReportScope.Comparison
                 : BenchmarkReportScope.Model;
             Claims = BenchmarkReportPackPrompt.ChatClaimSupport.From(ChatConsistency ? sheet : new BenchmarkReportFactSheet());
+            _chatHiddenKeys = ChatConsistency
+                ? BenchmarkChatConsistencyReportFacts.WriterHiddenKeys(sheet.Facts)
+                : new HashSet<string>(StringComparer.Ordinal);
+            _factDisplays = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var fact in sheet.Facts) _factDisplays.TryAdd(fact.Key, fact.Display ?? string.Empty);
             RequiredSlots = Comparison ? Spec.RequiredSlots : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
             _trueFacts = new HashSet<string>(
@@ -2154,8 +2244,17 @@ public static class BenchmarkReportPackValidator
         private readonly Dictionary<string, string> _zeroDisplays;
         private readonly Dictionary<int, string> _referenceByNumber;
         private readonly Dictionary<string, int> _numberByReference;
+        private readonly IReadOnlySet<string> _chatHiddenKeys;
+        private readonly Dictionary<string, string> _factDisplays;
 
         public BenchmarkReportAudienceSpec Spec { get; }
+
+        /// <summary>A chat consistency fact kept from the writer: <see cref="BenchmarkChatConsistencyReportFacts.WriterHidden(string)"/>, or one of this sheet's <see cref="BenchmarkChatConsistencyReportFacts.WriterHiddenKeys"/>.</summary>
+        public bool ChatWriterHidden(string key)
+            => BenchmarkChatConsistencyReportFacts.WriterHidden(key) || _chatHiddenKeys.Contains(key);
+
+        /// <summary>The display of the sheet's first fact keyed <paramref name="key"/>; null when there is none.</summary>
+        public string? FactDisplay(string key) => _factDisplays.TryGetValue(key, out string? display) ? display : null;
 
         /// <summary>The sheet is a battery's: its questions are referred to as <c>S&lt;suite&gt;-Q&lt;n&gt;</c>.</summary>
         public bool Battery { get; }

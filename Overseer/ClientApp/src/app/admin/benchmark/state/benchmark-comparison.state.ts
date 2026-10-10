@@ -9,6 +9,7 @@ import {
   BenchmarkModelComparisonPricingBasis
 } from '../../../services/admin-benchmark.service';
 import {
+  MAX_COMPARISON_SOURCES,
   ModelComparisonSelection
 } from '../model-comparison/comparison-source-picker.component';
 import {
@@ -257,16 +258,49 @@ export class BenchmarkComparisonState implements OnDestroy {
   }
 
   /**
-   * Replaces the selection with a preset's battery results, so the wizard opens on step 1 with
-   * them selected: runs and groups are cleared (the server refuses the mix), and the comparison on
-   * hand is dropped, which is what returns the wizard to step 1. Ids are de-duplicated in order.
-   * The host calls this before opening the wizard.
+   * Replaces the selection with a preset's sources, so the wizard opens on step 1 with them selected,
+   * and drops the comparison on hand, which is what returns the wizard to step 1. Battery results
+   * replace runs and groups (the server refuses the mix); otherwise the preset's runs and groups are
+   * selected, and a suite scope that does not offer them all is cleared. Ids are de-duplicated in
+   * order and capped at `MAX_COMPARISON_SOURCES`, runs first. The host calls this before opening the
+   * wizard.
    */
   applyComparisonPreset(preset: ComparisonWizardPreset): void {
-    const batteryRunIds = [...new Set(preset.batteryRunIds)];
-    this.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds });
-    this.loadMissingBatteryRuns(batteryRunIds);
+    const batteryRunIds = [...new Set(preset.batteryRunIds)].slice(0, MAX_COMPARISON_SOURCES);
+    if (batteryRunIds.length > 0) {
+      this.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds });
+      this.loadMissingBatteryRuns(batteryRunIds);
+      this.viewSync.notify();
+      return;
+    }
+    const runIds = [...new Set(preset.runIds ?? [])].slice(0, MAX_COMPARISON_SOURCES);
+    const groupIds = [...new Set(preset.groupIds ?? [])].slice(0, MAX_COMPARISON_SOURCES - runIds.length);
+    if (this.comparisonSuiteId !== null && runIds.length + groupIds.length > 0) {
+      const runsInScope = new Set(this.comparisonRunOptions.map(run => run.id));
+      const groupsInScope = new Set(this.comparisonGroupOptions.map(group => group.id));
+      if (runIds.some(id => !runsInScope.has(id)) || groupIds.some(id => !groupsInScope.has(id))) {
+        this.comparisonSuiteId = null;
+        this.loadComparabilityIndex();
+      }
+    }
+    this.onComparisonSelectionChange({ runIds, groupIds, batteryRunIds: [] });
+    this.loadMissingRunsAndGroups(runIds, groupIds);
     this.viewSync.notify();
+  }
+
+  /**
+   * Loads Run History when a preset's run is not loaded yet, and the run groups when one of its groups
+   * is not: the picker offers what those lists hold, and a just-finished batch may postdate them.
+   */
+  private loadMissingRunsAndGroups(runIds: readonly number[], groupIds: readonly number[]): void {
+    const runs = new Set(this.workspace.historyRuns.map(run => run.id));
+    if (runIds.some(id => !runs.has(id))) {
+      this.workspace.loadHistory();
+    }
+    const groups = new Set(this.workspace.runGroups.map(group => group.id));
+    if (groupIds.some(id => !groups.has(id))) {
+      this.workspace.loadRunGroups();
+    }
   }
 
   /**

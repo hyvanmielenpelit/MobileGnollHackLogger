@@ -4,7 +4,7 @@ import { groupOverseerEvents } from '../../chat-consistency-events';
 import { CcPeriodIds, ccPeriodMembers, ccPeriodUnits } from '../../chat-consistency-periods';
 import { CC_PROTOCOL_V1_ENDPOINTS, CcEndpointReadiness, CcPreviewNote, ccEndpointReadiness } from '../../chat-consistency-readiness';
 import { CcTimelinePoint } from '../../chat-consistency.models';
-import { ccAxis, ccComparisonSets, ccRunRows, ccTimeline, textOf } from '../../chat-consistency-tab.testing';
+import { ccAxis, ccBatteryRunRows, ccComparisonSets, ccRunRows, ccTimeline, textOf } from '../../chat-consistency-tab.testing';
 import { CcAnalysisPreviewComponent, CcPreviewFact } from './analysis-preview.component';
 
 /** Runs 101–103 against 104–106. */
@@ -16,6 +16,12 @@ function runReadiness(): CcEndpointReadiness[] {
   const members = ccPeriodMembers(units, RUN_IDS);
   const points = new Map<number, CcTimelinePoint>(ccTimeline().points.map(point => [point.runId, point]));
   return ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, members.baseline, members.comparison, points, false);
+}
+
+/** The readiness of battery run #11 against #12: one battery run a period, on one day, in no common stratum. */
+function batteryReadiness(): CcEndpointReadiness[] {
+  const units = ccPeriodUnits([], ccBatteryRunRows(), true);
+  return ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, units.slice(0, 1), units.slice(1), new Map(), true);
 }
 
 function eventsNote(): CcPreviewNote {
@@ -146,11 +152,11 @@ describe('CcAnalysisPreviewComponent', () => {
     expect(p2?.getAttribute('data-status')).toBe('belowMinimum');
     expect(textOf(p2?.querySelector('.cc-ap-endpoint-name'))).toBe('Time to first answer text');
     expect(textOf(p2?.querySelector('.cc-ap-margin'))).toBe('±15 %');
-    expect(textOf(p2?.querySelector('.cc-ap-status'))).toBe('Cannot be Established');
+    expect(textOf(p2?.querySelector('.cc-ap-status'))).toBe('At most Indicated');
     expect(textOf(p2?.querySelector('.cc-ap-fact'))).toBe('No common stratum has 3 runs in each period: weekday 08–12 UTC: 2 / 3.');
   });
 
-  it('reads Not computed for an endpoint the periods cannot compute', () => {
+  it('reads Not computable for an endpoint the periods cannot compute', () => {
     set({
       endpoints: [{
         id: 'P5', name: 'Cost per question', marginText: '±10 %', status: 'notComputed',
@@ -159,9 +165,56 @@ describe('CcAnalysisPreviewComponent', () => {
     });
     const p5 = endpoint('P5');
     expect(p5?.getAttribute('data-status')).toBe('notComputed');
-    expect(textOf(p5?.querySelector('.cc-ap-status'))).toBe('Not computed');
+    expect(textOf(p5?.querySelector('.cc-ap-status'))).toBe('Not computable');
     expect(p5?.querySelector('.cc-ap-status svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(textOf(p5?.querySelector('.cc-ap-fact'))).toBe('No run in the baseline is eligible for Cost.');
+  });
+
+  it('warns above the endpoint list when nothing can be Established, without blocking', () => {
+    set({ endpoints: batteryReadiness() });
+    const warning = el.querySelector('.cc-ap-readiness .alert.alert-warning.gh-wizard-alert.cc-ap-evidence');
+    expect(warning).not.toBeNull();
+    expect(warning?.getAttribute('role')).toBe('note');
+    expect(warning?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(textOf(warning?.querySelector('.cc-ap-evidence-title'))).toBe('With this selection nothing can be Established.');
+    expect(textOf(warning?.querySelector('.cc-ap-evidence-text'))).toBe('Each endpoint below says why. The analysis can still be made.');
+    // Above the list, whose lines carry the reasons.
+    expect(warning?.nextElementSibling?.classList.contains('cc-ap-endpoints')).toBe(true);
+    expect(textOf(endpoint('P1')?.querySelector('.cc-ap-status'))).toBe('At most Indicated');
+    expect(textOf(endpoint('P1')?.querySelector('.cc-ap-fact')))
+      .toBe('Fewer than 2 battery runs on 2 days per period: Baseline 1 battery run on 1 day · Comparison 1 battery run on 1 day.');
+    expect(textOf(endpoint('P2')?.querySelector('.cc-ap-status'))).toBe('Not computable');
+  });
+
+  it('shows no warning while an endpoint meets its minimum, or while the periods are refused', () => {
+    set({ endpoints: runReadiness() });
+    expect(el.querySelector('.cc-ap-evidence')).toBeNull();
+    set({ endpoints: batteryReadiness(), refusal: 'Choose the first and last run of both periods.' });
+    expect(el.querySelector('.cc-ap-evidence')).toBeNull();
+  });
+
+  it('points an endpoint that needs a common grader to the re-grade, and marks a capped one at most Indicated', () => {
+    set({
+      endpoints: [
+        {
+          id: 'P1', name: 'Quality', marginText: '±3 index points', status: 'notComputed', regrade: true,
+          fact: 'Grading changed between the periods (harness 53 → 54). Re-grade every compared run with a common grader to compare quality.'
+        },
+        {
+          id: 'P4', name: 'Work per turn', marginText: '±15 %', status: 'capped',
+          fact: 'Pooled across a grading change (harness 53 → 54), which caps the grade at Indicated: Baseline 2 runs on 2 days · Comparison 2 runs on 2 days.'
+        }
+      ]
+    });
+    const p1 = endpoint('P1');
+    expect(textOf(p1?.querySelector('.cc-ap-status'))).toBe('Not computable');
+    expect(textOf(p1?.querySelector('p.cc-ap-regrade'))).toBe('Re-grade with a common assessor is under Controls in the analysis settings.');
+    const p4 = endpoint('P4');
+    expect(p4?.getAttribute('data-status')).toBe('capped');
+    expect(textOf(p4?.querySelector('.cc-ap-status'))).toBe('At most Indicated');
+    expect(p4?.querySelector('.cc-ap-status svg')?.getAttribute('aria-hidden')).toBe('true');
+    expect(p4?.querySelector('.cc-ap-regrade')).toBeNull();
+    expect(el.querySelector('.cc-ap-evidence')).not.toBeNull();
   });
 
   it('replaces the endpoint list with the refusal while the periods are refused', () => {

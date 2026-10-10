@@ -1023,7 +1023,9 @@ chip removal**.
 A thin wrapper over `app-multi-picker` in `app/shared/model-picker/` for choosing several **models**:
 each option is drawn as the model's name, the single picker's badges (`app-model-option-badges`) and a
 muted detail. It keeps every rule of §4e-2; only the option rendering (its `optionTemplate`) is its own.
-The Model Comparison wizard's step 3 uses it to choose which models a report covers (labeled *Models*).
+The Model Comparison wizard's step 3 uses it to choose which models a report covers (labeled *Models*),
+and the Run Benchmark launcher's model batch mode to choose the models a batch runs (labeled *Models Under
+Test*, `.batch-models-picker`).
 
 | Input | Meaning |
 |-------|---------|
@@ -1035,6 +1037,13 @@ The Model Comparison wizard's step 3 uses it to choose which models a report cov
 
 - **A picker choosing which models a report covers shows no price or parallel badge**: it chooses what a
   document is about, not what to run. Thinking level, reasoning mode and provider are always shown.
+- **A picker choosing what runs shows both** (`[showPrice]="true" [showParallel]="true"`), as the single
+  *Model Under Test* picker does: price and parallel mode are part of what the operator is choosing to
+  spend on and to compare. The model batch picker is the one so far. It also uses the two option fields
+  only this picker honors: `disabledReason` for a model the batch cannot run as a candidate (*Grades this
+  batch*, *Writes its reports*: a blocker made unselectable at the source, §4i), and `detail` for a short
+  note on a chosen model's chip that a warning names (*Same provider as the assessor*). Its `max` is the
+  server's `maxModelsPerBatch` and its `maxChips` that maximum, so every chosen model stays visible.
 - **Keys stay the host's units.** Step 3 keys each option by comparison entry (`run:` / `group:` /
   `battery:`), so two entries of one model are two options; where two options would look identical,
   each carries its source as `detail` (*Battery run #10*), and only then.
@@ -1275,6 +1284,52 @@ gives it a translucent, blurred, gold-accented surface, and its typed format fol
 locale rather than the `YYYY-MM-DD` the rest of the application shows. So the calendar is our own,
 while the text field stays a real `<input>` and typing keeps working.
 
+### 4i. Readiness card: blockers, warnings to acknowledge, and advice
+
+When a form's start action is checked against **many rules at once** — blockers that refuse it,
+warnings the user must knowingly accept, and advice — the result is a **readiness card** directly above
+the start button, not a stack of alerts and never a popup. The model batch launcher's *Batch Readiness*
+(`run-tab/model-batch-readiness/`, `app-model-batch-readiness`) is the first; its styles are the global
+`.gh-readiness*` classes (`overseer_frontend` § *Global Styles*).
+
+**Four layers, each carrying less text than the one before it is allowed to:**
+
+1. **At the source.** A choice that would be a blocker is not offered: an option with a
+   `disabledReason` in the picker (§4e-3). A chosen value a warning names carries a short chip note.
+2. **Inline, one line per field.** Under a field, its first blocker as a `.gh-field-error` line, else its
+   first warning as a `.gh-field-warning` line, with the field's `aria-describedby` extended to it.
+   Advice is never inline.
+3. **The card.** A summary row — a heading, a status word with its glyph (*Ready*, *{n} to review*,
+   *{n} blocking*) and count chips per severity (*Blocking n*, *To review n*, *Acknowledged n*, *Tips n*),
+   each a word and a glyph — then the findings in a `details.gh-disclosure`, **open while anything blocks
+   or awaits acknowledgment** and closed otherwise. Blockers first, then warnings, then the advice in a
+   nested, closed *{n} tips* disclosure. Each line: the severity word and glyph, the title, one sentence,
+   a click-mode `app-info-tip` with the rationale (§4b), **Go to field** (a `.btn-link` whose hidden
+   completion names the finding, focusing the control), and for a warning an **I understand** checkbox
+   (`.checkbox-label`, described by the line's title and sentence). A visually hidden `role="status"` line
+   announces **only the counts**, once per settled check, never each finding.
+4. **The confirmation dialog.** The start button opens a `<dialog>` with the plan in one table and the
+   acknowledged warnings listed by title; only its confirm button sends.
+
+**Rules.**
+
+- **The server decides every finding.** The card is presentational: the host passes the findings and
+  the acknowledged keys and handles `acknowledgedChange` and `focusField`. The client duplicates no rule
+  except a source-level `disabledReason` derived from the same ids, for immediacy.
+- **Text limits**: a title of at most 60 characters and one sentence of at most 140. Anything longer
+  goes in the line's info tip.
+- **The start button is `aria-disabled`, never `disabled`,** with the first reason it waits on shown
+  under it and linked by `aria-describedby` (*Choose two or more models.*, *Checking the batch…*, the
+  first blocker's title, *Acknowledge the 2 warnings in Batch Readiness.*).
+- **An acknowledgment covers one condition.** It is keyed by the warning's code and the values it is
+  about, so a change of condition drops it; it holds for one start and is never stored.
+- **Timing.** The card is not shown before the first choice has been made, except for a blocker that
+  exists from the start. The check is debounced (300 ms) and one request is in flight at a time; the card
+  marks itself `aria-busy` and shows *Checking…* meanwhile, and the counts are announced only once it
+  settles.
+- **Never by color alone.** Severity is a word and a glyph on every chip, line and status, and the
+  forced-colors rules keep them legible.
+
 ---
 
 ## 5. Tabs
@@ -1508,6 +1563,11 @@ concerns.
   in `var(--color-error-text)`, a red that keeps 4.5:1 on the dialog surfaces. Give it an `id` and add
   that to the control's `aria-describedby`. The icon and the words carry the meaning with the color
   (§6); a warning the user may proceed past is an amber `alert-warning` instead, never this line.
+- `.gh-field-warning` is that warning as one inline line under a field (since 2026-10-10): a leading
+  14 px *alert-triangle* SVG (`aria-hidden`) and the text in `var(--color-warning)`, linked by the
+  field's `aria-describedby` like `.gh-field-error`. Use it where a form shows one finding per field
+  beside a readiness card (§4i); a standalone warning block stays an `alert-warning`. The readiness
+  card's own classes are `.gh-readiness*`.
 - Use the design tokens: `var(--primary-color)`, `var(--gold-glow)`,
   `var(--border-glass)`, `var(--nav-color)`. Not `#e0ba6d`, which *is* `--primary-color`
   and will not follow it if the theme ever changes.

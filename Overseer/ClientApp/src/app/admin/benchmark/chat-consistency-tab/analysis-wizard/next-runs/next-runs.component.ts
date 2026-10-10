@@ -1,7 +1,24 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  Input,
+  OnChanges,
+  Output,
+  SimpleChanges,
+  inject
+} from '@angular/core';
 
+import { BenchmarkShellBridge } from '../../../state/benchmark-shell-bridge.service';
 import { NO_VALUE, plural } from '../../chat-consistency-format';
-import { CcNextRunGroup, ccModelBaseName, ccNextRunActionCount, ccNextRunGroups } from '../../chat-consistency-results';
+import {
+  CcModelBatchSetup,
+  CcNextRunGroup,
+  ccModelBaseName,
+  ccNextRunActionCount,
+  ccNextRunGroups
+} from '../../chat-consistency-results';
 import { CcAnalysisResult, CcRunRow } from '../../chat-consistency.models';
 
 /** One *Set up from run #N* button of a card. */
@@ -30,6 +47,8 @@ export interface CcNextRunCardView {
   /** The control card's *Suite* and *Same build as* facts; empty on the other kinds. */
   suitesText: string;
   buildText: string;
+  /** A new baseline's *Set up as model batch*: the batch it fills Run Benchmark with; null without one. */
+  modelBatch: CcModelBatchSetup | null;
 }
 
 /** The cards of one kind under its heading. */
@@ -83,6 +102,13 @@ export class CcNextRunsComponent implements OnChanges {
   /** A run id whose setup fills Run Benchmark; nothing starts. */
   @Output() readonly repeatSetup = new EventEmitter<number>();
 
+  /** Fills Run Benchmark's model batch launcher; absent outside the GnollBench page. */
+  private readonly bridge = inject(BenchmarkShellBridge, { optional: true });
+  private readonly cdr = inject(ChangeDetectorRef);
+
+  /** Why *Set up as model batch* could not leave this tab now, by card key; shown on that card. */
+  modelBatchRefusals = new Map<string, string>();
+
   sections: CcNextRunSection[] = [];
   /** How many runs and re-grades the cards ask for. */
   actionCount = 0;
@@ -102,6 +128,30 @@ export class CcNextRunsComponent implements OnChanges {
 
   get provider(): string {
     return this.result.subject.provider;
+  }
+
+  /**
+   * *Set up as model batch*: Run Benchmark opens as a model batch on the card's target with the
+   * subject's model chosen, and asks for a control model of another provider; nothing starts. Leaving
+   * this tab closes the wizard. Refused, with the reason on the card, while the tab cannot be left.
+   */
+  setUpModelBatch(card: CcNextRunCardView): void {
+    const setup = card.modelBatch;
+    if (!setup || !this.bridge) return;
+    const refusal = this.bridge.leaveRefusal();
+    if (refusal) {
+      this.modelBatchRefusals = new Map(this.modelBatchRefusals).set(card.key, refusal);
+      this.cdr.markForCheck();
+      return;
+    }
+    this.modelBatchRefusals = new Map();
+    this.bridge.prefillModelBatch({
+      targetKind: setup.targetKind,
+      suiteId: setup.suiteId,
+      batteryId: setup.batteryId,
+      modelConfigurationId: setup.modelConfigurationId,
+      controlSuggested: true
+    });
   }
 }
 
@@ -176,6 +226,7 @@ function cardView(group: CcNextRunGroup, titleId: string): CcNextRunCardView {
     suitesText: control ? (suites.length > 0 ? [...new Set(suites)].join(', ') : NO_VALUE) : '',
     buildText: control
       ? (group.targets.length > 0 ? group.targets.map(target => `run #${target.runId}`).join(', ') : NO_VALUE)
-      : ''
+      : '',
+    modelBatch: group.modelBatch ?? null
   };
 }

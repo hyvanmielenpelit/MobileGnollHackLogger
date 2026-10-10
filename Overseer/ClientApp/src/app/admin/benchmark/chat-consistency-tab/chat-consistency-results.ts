@@ -471,10 +471,11 @@ export function ccNotComputableGroups(endpoints: readonly CcEndpointResult[]): C
 
 // --- Next runs ---
 
-export type CcNextRunKind = 'checkpoint' | 'stratum' | 'control' | 'regrade';
+export type CcNextRunKind = 'newCheckpoint' | 'checkpoint' | 'stratum' | 'control' | 'regrade';
 
 /** The next-run kinds in card order, with a card's title and the word a count of them takes. */
 export const CC_NEXT_RUN_KINDS: readonly { readonly kind: CcNextRunKind; readonly title: string; readonly countText: string }[] = [
+  { kind: 'newCheckpoint', title: 'A new baseline under the current build', countText: 'new baseline' },
   { kind: 'checkpoint', title: 'Another run of the model', countText: 'of the model' },
   { kind: 'stratum', title: 'A run at another time of day', countText: 'at another time of day' },
   { kind: 'control', title: 'A control run', countText: 'control' },
@@ -490,6 +491,18 @@ export interface CcRepeatTarget {
   suiteName: string | null;
 }
 
+/**
+ * The model batch a new baseline's card can set up in Run Benchmark: its target and the subject's
+ * model, to which the operator adds a control model of another provider.
+ */
+export interface CcModelBatchSetup {
+  targetKind: 'suite' | 'battery';
+  suiteId: number | null;
+  batteryId: number | null;
+  /** The subject's model configuration; null when the analysis does not know it. */
+  modelConfigurationId: number | null;
+}
+
 /** The next runs of one kind and period, as one card. */
 export interface CcNextRunGroup {
   /** `control:baseline`. */
@@ -503,6 +516,25 @@ export interface CcNextRunGroup {
   suggestions: string[];
   /** Every distinct run to repeat, in the server's order; empty for a re-grade. */
   targets: CcRepeatTarget[];
+  /**
+   * A new baseline that suggests a control run beside it: the model batch it sets up. Absent on the
+   * other kinds, and when the server named no target.
+   */
+  modelBatch?: CcModelBatchSetup;
+}
+
+/** The model batch a `newCheckpoint` next run sets up, or null when it suggests no control or names no target. */
+function modelBatchSetupOf(next: CcAnalysisResult['nextRuns'][number]): CcModelBatchSetup | null {
+  if (next.kind !== 'newCheckpoint' || !next.controlSuggested || !next.targetKind) return null;
+  const suiteId = next.suiteId ?? null;
+  const batteryId = next.batteryId ?? null;
+  if (next.targetKind === 'battery' ? batteryId == null : suiteId == null) return null;
+  return {
+    targetKind: next.targetKind,
+    suiteId,
+    batteryId,
+    modelConfigurationId: next.subjectModelConfigurationId ?? null
+  };
 }
 
 function distinctPush(list: string[], value: string | null | undefined): void {
@@ -546,6 +578,10 @@ export function ccNextRunGroups(result: CcAnalysisResult, rows: readonly CcRunRo
     distinctPush(group.endpointIds, next.endpointId);
     distinctPush(group.reasons, next.reason);
     distinctPush(group.suggestions, next.suggestion);
+    if (!group.modelBatch) {
+      const setup = modelBatchSetupOf(next);
+      if (setup) group.modelBatch = setup;
+    }
     const runId = next.repeatRunId;
     if (typeof runId === 'number' && !group.targets.some(target => target.runId === runId)) {
       group.targets.push({ runId, suiteName: suiteOf.get(runId) ?? null });
