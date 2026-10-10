@@ -155,6 +155,8 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   openError: string | null = null;
   /** Where the open under way, or the failed one `openError` describes, was started. */
   openOrigin: CcOpenOrigin | null = null;
+  /** The wizard was opened from Analysis History, which reopens when the wizard closes. */
+  private returnToHistory = false;
 
   /** The full result of the newest saved analysis, fetched once per distinct id. */
   latestResult: CcAnalysisResult | null = null;
@@ -471,7 +473,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
    * Nothing is torn down: the mounted content is what reopening preserves. The saved analyses are read
    * again, since the Write step may have written documents from one of them. A close that gets
    * through while the wizard is blocked (a repeated Escape, or a browser without `closedby`) reopens
-   * the dialog instead.
+   * the dialog instead. A wizard opened from Analysis History reopens Analysis History where it was left.
    */
   onWizardClose(event: Event): void {
     if (event.target !== this.wizardDialog?.nativeElement) return;
@@ -480,8 +482,11 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
       this.reopenBlockedWizard();
       return;
     }
+    const returnToHistory = this.returnToHistory;
+    this.returnToHistory = false;
     this.loadAnalyses();
     this.cdr.markForCheck();
+    if (returnToHistory && this.analyses.length > 0) this.historyDialog?.restore();
   }
 
   /** Shows the dialog again and puts focus back where it was, else on the wizard heading. */
@@ -652,6 +657,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
       this.cdr.markForCheck();
       return;
     }
+    this.returnToHistory = false;
     this.closeWizard();
     this.bridge.repeatRunSetup(runId);
   }
@@ -725,7 +731,8 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
    * Opens a saved analysis in the wizard on its results, or on its documents (step 6), switching the
    * subject to its model and step 1 to its compared set first. The step-1 run selection is cleared,
    * since the analysis carries its own record of the runs it used. The Analysis History dialog closes
-   * before the wizard opens, so two modals never stack; an error shows where the open was started.
+   * before the wizard opens, so two modals never stack, and reopens when the wizard closes; an error
+   * shows where the open was started.
    */
   openAnalysis(id: number, step: 4 | 6 = 4, origin: CcOpenOrigin = 'latest'): void {
     this.openingId = id;
@@ -761,6 +768,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
         if (hadSelection) {
           this.announcement = 'The run selection in step 1 was cleared to show the saved analysis.';
         }
+        this.returnToHistory = origin === 'history';
         // Renders the wizard with the new subject before the result is handed to it.
         this.openWizard();
         this.wizard?.showResult(result);

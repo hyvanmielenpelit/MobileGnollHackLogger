@@ -667,6 +667,96 @@ describe('ChatConsistencyTabComponent', () => {
     expect(fixture.componentInstance.wizard!.step).toBe(4);
   });
 
+  it('returns to Analysis History when a wizard opened from it closes, at the same scroll offset, with the card\'s Open focused', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ccAnalysisSummary(20 - i));
+    createTab(many);
+    openHistory();
+    const body = historyDialog().querySelector<HTMLElement>('.cc-history-body')!;
+    body.scrollTop = 300;
+    const saved = body.scrollTop;
+    expect(saved).toBeGreaterThan(0);
+
+    historyCard(17).querySelector<HTMLButtonElement>('.cc-hist-open')!.click();
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses/17`).flush(ccAnalysisResult({ analysisId: 17 }));
+    fixture.detectChanges();
+    flushSubject();
+    expect(historyDialog().open).toBe(false);
+    expect(dialog().open).toBe(true);
+
+    const done = closed();
+    dialog().querySelector<HTMLButtonElement>('.cc-wizard-close')!.click();
+    await done;
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses`).flush(many);
+    fixture.detectChanges();
+
+    expect(historyDialog().open).toBe(true);
+    expect(Math.abs(body.scrollTop - saved)).toBeLessThanOrEqual(1);
+    expect(document.activeElement).toBe(historyCard(17).querySelector('.cc-hist-open'));
+  });
+
+  it('does not return to Analysis History when the wizard was opened from the Latest analysis card or the launcher', async () => {
+    createTab([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    // A return to Analysis History first, so a leftover would show in the opens after it.
+    openHistory();
+    historyCard(7).querySelector<HTMLButtonElement>('.cc-hist-open')!.click();
+    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
+    fixture.detectChanges();
+    flushSubject();
+    let done = closed();
+    dialog().close();
+    await done;
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    fixture.detectChanges();
+    expect(historyDialog().open).toBe(true);
+    historyDialog().querySelector<HTMLButtonElement>('.cc-history-done')!.click();
+    expect(historyDialog().open).toBe(false);
+
+    el.querySelector<HTMLButtonElement>('#cc-latest-open')!.click();
+    http.expectOne(`${CC_API}/analyses/8`).flush(ccAnalysisResult({ analysisId: 8 }));
+    fixture.detectChanges();
+    expect(dialog().open).toBe(true);
+    done = closed();
+    dialog().querySelector<HTMLButtonElement>('.cc-wizard-close')!.click();
+    await done;
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    fixture.detectChanges();
+    expect(historyDialog().open).toBe(false);
+
+    openWizard();
+    done = closed();
+    dialog().querySelector<HTMLButtonElement>('.cc-wizard-close')!.click();
+    await done;
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    fixture.detectChanges();
+    expect(historyDialog().open).toBe(false);
+  });
+
+  it('does not return to Analysis History when the wizard closes to repeat a run\'s setup', async () => {
+    createTab([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    openHistory();
+    historyCard(7).querySelector<HTMLButtonElement>('.cc-hist-open')!.click();
+    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
+    fixture.detectChanges();
+    flushSubject();
+    const repeat = vi.spyOn(bridge, 'repeatRunSetup').mockImplementation(() => undefined);
+
+    const done = closed();
+    // Step 1's panel is hidden while step 4 shows, but its buttons are in the DOM.
+    dialog().querySelector<HTMLButtonElement>('.cc-run-card[data-run-id="105"] .cc-repeat-btn')!.click();
+    expect(repeat).toHaveBeenCalledWith(105);
+    await done;
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    fixture.detectChanges();
+    expect(dialog().open).toBe(false);
+    expect(historyDialog().open).toBe(false);
+  });
+
   it('shows an open error in Analysis History when the open starts there, and keeps the dialog open', () => {
     createTab([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
     openHistory();

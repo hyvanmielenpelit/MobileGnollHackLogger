@@ -420,6 +420,23 @@ describe('ReportChartPickerComponent', () => {
       }
     });
 
+    it('centers a width select on its row\'s checkbox and keeps it within the row\'s top, under a multi-line cell', () => {
+      fixture.componentRef.setInput('notes', { 'p1a-quality': 'P1 was not computable in this analysis.' });
+      fixture.detectChanges();
+      host.style.inlineSize = '24rem';
+
+      const row = q(`.rcp-row[data-figure="p1a-quality"]`)!;
+      expect(row.querySelector('.rcp-note')).not.toBeNull();
+      const select = row.querySelector<HTMLSelectElement>('.rcp-width-select')!.getBoundingClientRect();
+      const checkbox = row.querySelector<HTMLInputElement>('input[type="checkbox"]')!.getBoundingClientRect();
+      const cellBox = row.querySelector<HTMLElement>('.rcp-cell')!.getBoundingClientRect();
+      expect(cellBox.height).toBeGreaterThan(select.height);
+      const selectCenter = (select.top + select.bottom) / 2;
+      const checkboxCenter = (checkbox.top + checkbox.bottom) / 2;
+      expect(Math.abs(selectCenter - checkboxCenter)).toBeLessThanOrEqual(1);
+      expect(select.top).toBeGreaterThanOrEqual(row.getBoundingClientRect().top - 0.5);
+    });
+
     it('keeps the width and says why when a refused width is chosen, and emits a width that fits', () => {
       atNinePoints();
       const intelligence = width(ExecutiveSummary, 'p1a-quality');

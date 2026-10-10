@@ -129,6 +129,10 @@ export class CcAnalysisHistoryDialogComponent implements OnInit, OnDestroy {
 
   private deleteSub: Subscription | null = null;
   private returnFocus: HTMLElement | null = null;
+  /** The list's scroll offset when the dialog last closed, for `restore()`. */
+  private savedScrollTop = 0;
+  /** The analysis last opened from the list, whose Open `restore()` focuses. */
+  private returnCardId: number | null = null;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -159,7 +163,29 @@ export class CcAnalysisHistoryDialogComponent implements OnInit, OnDestroy {
 
   close(): void {
     const dialog = this.historyDialog?.nativeElement;
-    if (dialog?.open) dialog.close();
+    if (!dialog?.open) return;
+    this.savedScrollTop = this.element('.cc-history-body')?.scrollTop ?? 0;
+    dialog.close();
+  }
+
+  /**
+   * Reopens the dialog where it was left: the list at its saved scroll offset, focus on the Open
+   * button of the analysis last opened from it, else the title.
+   */
+  restore(): void {
+    this.announcement = '';
+    this.cdr.detectChanges();
+    const dialog = this.historyDialog?.nativeElement;
+    if (dialog && !dialog.open) dialog.showModal();
+    refreshAnchorPositioning();
+    const body = this.element('.cc-history-body');
+    if (body) body.scrollTop = this.savedScrollTop;
+    const id = this.returnCardId;
+    this.returnCardId = null;
+    const open = id !== null
+      ? this.element(`.cc-hist-card[data-analysis-id="${id}"] .cc-hist-open`)
+      : null;
+    (open ?? this.historyTitle?.nativeElement)?.focus({ preventScroll: true });
   }
 
   /**
@@ -319,6 +345,7 @@ export class CcAnalysisHistoryDialogComponent implements OnInit, OnDestroy {
 
   onOpen(analysis: CcAnalysisSummary): void {
     if (this.openingId !== null) return;
+    this.returnCardId = analysis.id;
     this.open.emit(analysis.id);
   }
 

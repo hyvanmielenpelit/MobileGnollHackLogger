@@ -200,6 +200,27 @@ describe('CcAnalysisHistoryDialogComponent', () => {
     expect(textOf(error)).toBe('The analysis could not be opened.');
   });
 
+  it('restores the dialog with the title focused, or the Open of the analysis last opened from it', () => {
+    create();
+    history.restore();
+    fixture.detectChanges();
+    expect(dialog().open).toBe(true);
+    expect(document.activeElement?.id).toBe('cc-history-title');
+
+    card(8).querySelector<HTMLButtonElement>('.cc-hist-open')!.click();
+    history.close();
+    expect(dialog().open).toBe(false);
+    history.restore();
+    fixture.detectChanges();
+    expect(dialog().open).toBe(true);
+    expect(document.activeElement).toBe(card(8).querySelector('.cc-hist-open'));
+
+    // The return target is used once.
+    history.close();
+    history.restore();
+    expect(document.activeElement?.id).toBe('cc-history-title');
+  });
+
   it('searches the name, the headline, the model and #id', async () => {
     create();
     show();
@@ -317,6 +338,24 @@ describe('CcAnalysisHistoryDialogComponent', () => {
     fixture.detectChanges();
     expect(confirm().open).toBe(false);
     expect(card(9).querySelector('.cc-hist-delete')!.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('lays out the confirmation\'s Keep It and Delete as one right-aligned row, the same height, 12px apart', () => {
+    create();
+    show();
+    card(9).querySelector<HTMLButtonElement>('.cc-hist-delete')!.click();
+    fixture.detectChanges();
+    expect(confirm().open).toBe(true);
+
+    const footer = confirm().querySelector<HTMLElement>('.dialog-footer')!;
+    const style = getComputedStyle(footer);
+    expect(style.display).toBe('flex');
+    expect(style.columnGap).toBe('12px');
+    const keep = footer.querySelector<HTMLElement>('.cc-delete-keep')!.getBoundingClientRect();
+    const remove = footer.querySelector<HTMLElement>('.cc-delete-confirm')!.getBoundingClientRect();
+    expect(Math.abs(keep.top - remove.top)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(keep.bottom - remove.bottom)).toBeLessThanOrEqual(0.5);
+    expect(remove.left).toBeGreaterThanOrEqual(keep.right + 11.5);
   });
 
   it('shows the server\'s 409 refusal in the confirmation and keeps the analysis', () => {

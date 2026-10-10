@@ -146,15 +146,22 @@
 }
 
 /* With a layout, each row ends in its width select: beside the figure where the picker is wide
-   enough, under its title where it is not. One breakpoint for every row, so they never mix. */
+   enough, under its title where it is not. One breakpoint for every row, so they never mix.
+   The select is centered on the row's first line, the checkbox beside the figure title, and
+   top-aligned with the row: the cell moves down by half the select's extra height. */
 .rcp-row:has(.rcp-width-select) {
+  /* The global checkbox's 20px, or one title line if that is taller. */
+  --rcp-first-line: max(20px, 1lh);
+  /* Never shorter than the first line, so only the cell is ever offset. */
+  --rcp-select-size: max(30px, 1lh + 10px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 4px 12px;
 
   .rcp-cell {
     min-inline-size: 0;
+    padding-block-start: calc((var(--rcp-select-size) - var(--rcp-first-line)) / 2);
   }
 
   .rcp-refused {
@@ -167,7 +174,7 @@
   field-sizing: content;
   inline-size: auto;
   max-inline-size: 12rem;
-  min-block-size: 30px;
+  block-size: var(--rcp-select-size);
   padding: 4px 8px;
   font: inherit;
   font-size: var(--text-secondary);
@@ -176,6 +183,10 @@
 @container rcp (inline-size < 20rem) {
   .rcp-row:has(.rcp-width-select) {
     grid-template-columns: minmax(0, 1fr);
+
+    .rcp-cell {
+      padding-block-start: 0;
+    }
   }
 
   /* Indented to the figure title: the checkbox's 20px and the cell's 8px gap. */

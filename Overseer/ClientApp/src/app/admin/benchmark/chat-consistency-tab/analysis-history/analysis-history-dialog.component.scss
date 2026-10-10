@@ -14,6 +14,7 @@
 }
 
 .gh-dialog.cc-delete-dialog {
+  @include frame.frame($width: 34rem);
   @include frame.confirm;
 }
 
