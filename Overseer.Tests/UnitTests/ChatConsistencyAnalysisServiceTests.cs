@@ -285,7 +285,7 @@ public class ChatConsistencyAnalysisServiceTests
 
         var summary = Assert.Single(await service.ListAnalysesAsync(TestContext.Current.CancellationToken));
 
-        Assert.Equal(5, summary.AnalysisCodeVersion);
+        Assert.Equal(6, summary.AnalysisCodeVersion);
         Assert.NotNull(summary.Subject);
         Assert.Equal(result.Subject.DisplayName, summary.Subject!.DisplayName);
         Assert.Equal("OpenAI", summary.Subject.Provider);
@@ -373,6 +373,214 @@ public class ChatConsistencyAnalysisServiceTests
     }
 
     [Fact]
+    public async Task WithoutACommonTimeStratum_SpeedIsNotComputedForThatKind_AndOneStratumRunIsSuggested()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { ComparisonHourOffset = 12 });
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        foreach (string id in new[] { ChatConsistencyEndpointIds.TimeToFirstAnswerText, ChatConsistencyEndpointIds.StreamingRate })
+        {
+            var endpoint = EndpointOf(result, id);
+            Assert.False(endpoint.Computed);
+            Assert.Equal(ChatConsistencyNotComputedKinds.NoCommonStratum, endpoint.NotComputedKind);
+        }
+        Assert.Null(EndpointOf(result, ChatConsistencyEndpointIds.Work).NotComputedKind);
+
+        var stratum = Assert.Single(result.NextRuns, n => n.Kind == "stratum");
+        Assert.Equal("comparison", stratum.Period);
+        Assert.Equal("3 runs of gpt-test on Core Suite starting in weekdays 08–12 UTC, in the comparison period.", stratum.Suggestion);
+        Assert.Equal(4L, stratum.RepeatRunId);
+
+        Assert.Equal(new[] { "baseline", "comparison" }, result.PeriodHours!.Select(h => h.Period));
+        Assert.Equal("weekdays 08–12 UTC", result.PeriodHours![0].Text);
+        Assert.Equal(new[] { "Weekday 08–12 UTC" }, result.PeriodHours[0].Strata);
+        Assert.Equal("weekdays 20–24 UTC", result.PeriodHours[1].Text);
+    }
+
+    [Fact]
+    public async Task AMeasurementChange_IsNotComputedForThatKind_WithItsReasonsPunctuatedOnce()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario());
+        foreach (var run in db.BenchmarkRuns.Local.Where(r => r.Id is 3 or 4)) run.ScoringMethodVersion = 13;
+        db.SaveChanges();
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var p1 = EndpointOf(result, ChatConsistencyEndpointIds.Quality);
+        Assert.False(p1.Computed);
+        Assert.Equal(ChatConsistencyNotComputedKinds.MeasurementChanged, p1.NotComputedKind);
+        Assert.StartsWith("The measurement of quality changed between the periods (", p1.NotComputedReason);
+        Assert.DoesNotContain(".)", p1.NotComputedReason, StringComparison.Ordinal);
+        Assert.EndsWith("Re-grade every compared run with one assessor (a common grader), or choose relaxed pooling.", p1.NotComputedReason);
+    }
+
+    [Fact]
+    public async Task RevisedQuestions_AreCountedAsQuestions_NotTwiceAsUnpairedItems()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario());
+        foreach (var answer in db.BenchmarkRuns.Local.Where(r => r.Id is 3 or 4).SelectMany(r => r.Answers).Where(a => a.OrderIndex < 2))
+        {
+            answer.ItemRevisionUsed = 2;
+        }
+        db.SaveChanges();
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var revised = Assert.Single(result.DataQuality, n => n.Kind == "revisedQuestions");
+        Assert.Equal("2 of 24 questions (8.3 %) were revised between the periods and are left out of the paired comparison; 22 are paired.", revised.Text);
+        Assert.DoesNotContain(result.DataQuality, n => n.Kind == "unpairedItems");
+    }
+
+    [Fact]
+    public async Task EachPeriodsLevels_ArePooledOverItsAnalyzedAnswers()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var levels = result.PeriodLevels!;
+        Assert.Equal(new[] { "baseline", "comparison" }, levels.Select(l => l.Period));
+        var baselineAnswers = db.BenchmarkRuns.Local.Where(r => r.Id is 1 or 2).SelectMany(r => r.Answers).ToList();
+        Assert.Equal(baselineAnswers.Count, levels[0].AnswerCount);
+        Assert.Equal(baselineAnswers.Average(a => (double)a.OutputTokens!.Value), levels[0].MeanOutputTokensPerAnswer!.Value, 9);
+        Assert.Equal(baselineAnswers.Average(a => (double)a.QualityScore!.Value), levels[0].NativeMeanQuality!.Value, 9);
+        Assert.True(levels[1].NativeMeanQuality < levels[0].NativeMeanQuality);
+        Assert.NotNull(levels[0].MedianTimeToFirstAnswerTextMs);
+        Assert.NotNull(levels[0].MeanCostPerQuestionUsd);
+        Assert.Equal(0, levels[0].FailedAnswerCount);
+        Assert.Null(levels[0].OverallIndex);
+    }
+
+    // --- Freshness -------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ACurrentAnalysisWithUnchangedInputs_IsNotOutOfDate()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, SelectionRuns = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(ExplicitRequest(key, Selection()), TestContext.Current.CancellationToken);
+
+        var freshness = await service.CheckFreshnessAsync(result.AnalysisId!.Value, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(freshness);
+        Assert.False(freshness!.EarlierAnalysisCode);
+        Assert.False(freshness.InputsChanged);
+        Assert.Null(freshness.InputsNote);
+        Assert.False(freshness.OutOfDate);
+        Assert.Equal(ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion, freshness.AnalysisCodeVersion);
+        Assert.Equal(ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion, freshness.CurrentAnalysisCodeVersion);
+        Assert.Equal(result.InputSha256, ChatConsistencyAnalysisService.ComputeInputSha256(
+            result.Request!, ChatConsistencyProtocol.V1, await new ChatConsistencyEvidenceBuilder(db).LoadAsync(result.Request!, TestContext.Current.CancellationToken)));
+    }
+
+    [Fact]
+    public async Task AnAnalysisWithMarginOverrides_IsCheckedUnderTheSameProtocol()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var request = Request(key) with
+        {
+            ProtocolOverrides = new ChatConsistencyProtocolOverrides { Margins = new Dictionary<string, double> { ["P1"] = 4.0 }, Alpha = 0.1 }
+        };
+        var result = await service.AnalyzeAsync(request, TestContext.Current.CancellationToken);
+
+        var freshness = await service.CheckFreshnessAsync(result.AnalysisId!.Value, TestContext.Current.CancellationToken);
+
+        Assert.False(freshness!.InputsChanged);
+        Assert.Null(freshness.InputsNote);
+        Assert.False(freshness.OutOfDate);
+    }
+
+    [Fact]
+    public async Task AnAnnotationAddedAfterSaving_MakesTheAnalysisOutOfDateForChangedInputs()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        await service.AddAnnotationAsync(new ChatConsistencyAnnotationInput
+        {
+            AtUtc = ComparisonDay1.AddHours(2),
+            Provider = "OpenAI",
+            Kind = ChatConsistencyAnnotationKind.ProviderStatement,
+            Text = "A status note."
+        }, TestContext.Current.CancellationToken);
+
+        var freshness = await service.CheckFreshnessAsync(result.AnalysisId!.Value, TestContext.Current.CancellationToken);
+
+        Assert.False(freshness!.EarlierAnalysisCode);
+        Assert.True(freshness.InputsChanged);
+        Assert.True(freshness.OutOfDate);
+    }
+
+    [Fact]
+    public async Task ACommonGraderReGradeAfterSaving_MakesTheAnalysisOutOfDateForChangedInputs()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        db.BenchmarkAssessorCalibrations.Add(Calibration(1, 1, 900, ComparisonDay2, 80, 80));
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var freshness = await service.CheckFreshnessAsync(result.AnalysisId!.Value, TestContext.Current.CancellationToken);
+
+        Assert.True(freshness!.InputsChanged);
+        Assert.True(freshness.OutOfDate);
+    }
+
+    [Fact]
+    public async Task AnAnalysisSavedUnderEarlierCode_IsOutOfDate_WithoutCheckingItsInputs()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+        var row = db.ChatConsistencyAnalyses.Single();
+        row.AnalysisCodeVersion = 4;
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var freshness = await service.CheckFreshnessAsync(result.AnalysisId!.Value, TestContext.Current.CancellationToken);
+
+        Assert.True(freshness!.EarlierAnalysisCode);
+        Assert.Null(freshness.InputsChanged);
+        Assert.Equal("Not checked: the analysis code changed, so its input fingerprint is not comparable.", freshness.InputsNote);
+        Assert.True(freshness.OutOfDate);
+        Assert.Equal(4, freshness.AnalysisCodeVersion);
+        Assert.Null(await service.CheckFreshnessAsync(999, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task AnAnalysisThatRecordsNoRequest_IsNotCheckedForChangedInputs()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+        var row = db.ChatConsistencyAnalyses.Single();
+        var json = JsonNode.Parse(row.ResultJson)!.AsObject();
+        Assert.True(json.Remove("request"));
+        row.ResultJson = json.ToJsonString();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var freshness = await service.CheckFreshnessAsync(result.AnalysisId!.Value, TestContext.Current.CancellationToken);
+
+        Assert.False(freshness!.EarlierAnalysisCode);
+        Assert.Null(freshness.InputsChanged);
+        Assert.Equal("Not checked: this analysis does not record how its runs were chosen.", freshness.InputsNote);
+        Assert.False(freshness.OutOfDate);
+    }
+
+    [Fact]
     public async Task CountsInTheTextsAgreeWithTheirNumbers()
     {
         using var db = NewDb();
@@ -457,7 +665,25 @@ public class ChatConsistencyAnalysisServiceTests
         var p4 = EndpointOf(result, ChatConsistencyEndpointIds.Work);
         Assert.Equal(ConsistencyVerdict.Equivalent, p4.Verdict);
         Assert.Equal(ChatConsistencyEvidenceGrade.Indicated, p4.Grade);
-        Assert.Contains(result.NextRuns, n => n.Period == "baseline" && n.RepeatRunId == 2);
+
+        // No earlier run of the model exists, so widening the baseline is not suggested.
+        Assert.Contains(result.NextRuns, n => n.Period == "baseline" && n.RepeatRunId == null
+            && n.Suggestion == "No other run of gpt-test exists for the baseline period. A later analysis can take this comparison period as its baseline.");
+        Assert.DoesNotContain(result.NextRuns, n => n.Suggestion.StartsWith("Widen the baseline", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnEarlierUnusedRunOfTheModel_LetsTheBaselineBeWidened()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, BaselineOnOneDay = true, SelectionRuns = true });
+
+        // Run #6 (2026-08-31) lies in the baseline window, before the step-1 dates, and before the first baseline run.
+        var result = await Service(db).AnalyzeAsync(ExplicitRequest(key, Selection()), TestContext.Current.CancellationToken);
+
+        Assert.Contains(result.RunSelection.UnanalyzedRuns, u => u.RunId == 6 && u.Reason == ChatConsistencyUnanalyzedReasons.OutsideDateRange);
+        Assert.Contains(result.NextRuns, n => n.Period == "baseline" && n.RepeatRunId == 2
+            && n.Suggestion.StartsWith("Widen the baseline period", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -916,8 +1142,8 @@ public class ChatConsistencyAnalysisServiceTests
 
         var result = await Service(db).AnalyzeAsync(Request(key) with { ComparisonSet = BatterySet() }, TestContext.Current.CancellationToken);
 
-        Assert.Equal(5, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
-        Assert.Equal(5, result.AnalysisCodeVersion);
+        Assert.Equal(6, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
+        Assert.Equal(6, result.AnalysisCodeVersion);
         Assert.Equal(ChatConsistencyComparisonSetKinds.BatteryRunUnit, result.UnitKind);
         Assert.Equal(BatteryKey(TwoSuites()), result.ComparisonSet!.Key);
         Assert.Equal(BatteryName + " (revision 1)", result.ComparisonSet.Label);
@@ -938,7 +1164,7 @@ public class ChatConsistencyAnalysisServiceTests
 
         var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
         Assert.Equal("[1,2,3,4,21,22,23,24]", row.TargetRunIdsJson);
-        Assert.Equal(5, row.AnalysisCodeVersion);
+        Assert.Equal(6, row.AnalysisCodeVersion);
 
         var summary = Assert.Single(await Service(db).ListAnalysesAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BatteryKey(TwoSuites()), summary.ComparisonSetKey);
@@ -1514,5 +1740,89 @@ public class ChatConsistencyAnalysisServiceTests
         Assert.Equal(2, job.Total);
         Assert.Empty(job.Errors);
         Assert.Equal(new[] { (31L, 501L), (32L, 501L) }, calls);
+    }
+
+    // --- Battery units: the paired floor, the missing controls, the Overall Index and its interval ----
+
+    /// <summary>A stored, complete battery analysis whose Overall Index carries a 95 % half-width from item sampling alone.</summary>
+    private static BenchmarkBatteryAnalysis BatteryAnalysisWithInterval(long id, long batteryRunId, double overallIndex, double halfWidth, params long[] memberRunIds)
+    {
+        var analysis = BatteryAnalysis(id, batteryRunId, ComparisonDay2, overallIndex, memberRunIds);
+        analysis.ResultJson = JsonSerializer.Serialize(new BenchmarkBatteryStatisticsResult
+        {
+            Complete = true,
+            OverallIndex = new BenchmarkBatteryOverallIndex { PointEstimate = overallIndex, ItemSamplingHalfWidth = halfWidth, CombinedHalfWidth = halfWidth }
+        });
+        return analysis;
+    }
+
+    [Fact]
+    public async Task OneBatteryRunPerPeriod_UsesThePairedMinimumDetectableEffect_AFloor()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+        foreach (var answer in db.BenchmarkRuns.Local.Where(r => r.Id is 3 or 23).SelectMany(r => r.Answers))
+        {
+            answer.OutputTokens += answer.BenchmarkQuestionIdUsed % 3 == 0 ? 60 : 10;
+        }
+        db.SaveChanges();
+
+        var result = await Service(db).AnalyzeAsync(
+            Request(key) with { ComparisonSet = BatterySet(), BaselineBatteryRunIds = new long[] { 101 }, ComparisonBatteryRunIds = new long[] { 103 } },
+            TestContext.Current.CancellationToken);
+
+        var p4 = EndpointOf(result, ChatConsistencyEndpointIds.Work);
+        Assert.True(p4.Computed);
+        Assert.Equal(MinimumDetectableEffectResult.PairedFloorNote, p4.MinimumDetectableEffectNote);
+        Assert.Null(p4.RunsPerPeriodForMargin);
+        Assert.NotNull(p4.MinimumDetectableEffect);
+        Assert.True(p4.MinimumDetectableEffect > 0 && p4.MinimumDetectableEffect < 0.2, p4.MinimumDetectableEffect.ToString());
+    }
+
+    [Fact]
+    public async Task ABatteryComparisonWithoutControls_HasOneMissingControlNotePerPeriodAndBatteryRun()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+
+        var result = await Service(db).AnalyzeAsync(Request(key) with { ComparisonSet = BatterySet() }, TestContext.Current.CancellationToken);
+
+        var missing = result.Controls.MissingControls;
+        Assert.Equal(new[] { ("baseline", (long?)102L), ("comparison", (long?)104L) }, missing.Select(m => (m.Period, m.BatteryRunId)));
+        Assert.All(missing, m => Assert.False(m.BuildReplaced));
+        Assert.Equal("Core Suite, " + SecondSuite, missing[0].SuiteName);
+        Assert.Equal("No control run for period baseline: make a battery run of a model from a provider other than OpenAI on "
+            + BatteryName + " (revision 1) under the same Overseer build as battery run #102 (suites Core Suite, " + SecondSuite + ").",
+            missing[0].SuggestedText);
+    }
+
+    [Fact]
+    public async Task TheBatteryOverallIndexAndItsInterval_ReachTheLevelsAndTheTimeline()
+    {
+        using var db = NewDb();
+        string key = SeedBatteries(db);
+        db.BenchmarkBatteryAnalyses.AddRange(
+            BatteryAnalysisWithInterval(1, 101, 82.05, 2.45, 1, 21),
+            BatteryAnalysisWithInterval(2, 103, 81.7, 2.5, 3, 23));
+        db.SaveChanges();
+
+        var result = await Service(db).AnalyzeAsync(
+            Request(key) with { ComparisonSet = BatterySet(), BaselineBatteryRunIds = new long[] { 101 }, ComparisonBatteryRunIds = new long[] { 103 } },
+            TestContext.Current.CancellationToken);
+
+        var baseline = result.PeriodLevels![0];
+        Assert.Equal(82.05, baseline.OverallIndex);
+        Assert.Equal(2.45, baseline.OverallIndexHalfWidth);
+        Assert.Equal("question sampling only", baseline.OverallIndexIntervalNote);
+        Assert.Equal(81.7, result.PeriodLevels[1].OverallIndex);
+
+        var timeline = await Timeline(db, key);
+        var point = timeline.BatteryPoints.Single(p => p.RunId == 101);
+        Assert.Equal(82.05, point.OverallIndex);
+        Assert.Equal(2.45, point.OverallIndexHalfWidth);
+        Assert.Equal("question sampling only", point.OverallIndexIntervalNote);
+        var without = timeline.BatteryPoints.Single(p => p.RunId == 102);
+        Assert.Null(without.OverallIndexHalfWidth);
+        Assert.Null(without.OverallIndexIntervalNote);
     }
 }

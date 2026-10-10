@@ -293,6 +293,11 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   @Output() readonly repeatSetup = new EventEmitter<number>();
   /** A step asks the outer wizard to show another: the Write step's *See the documents*. */
   @Output() readonly stepRequested = new EventEmitter<'documents'>();
+  /**
+   * *Analyze again* on the out-of-date notice of Results or Write: the outer wizard restores the shown
+   * analysis's settings and shows Analyze, without analyzing.
+   */
+  @Output() readonly analyzeAgain = new EventEmitter<void>();
   /** A period card's run report, by run id. */
   @Output() readonly openRunReport = new EventEmitter<number>();
   /** A period card's battery run report, by battery run id. */
@@ -507,7 +512,19 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     this.presetNote = '';
     this.presetAnchorUtc = null;
     this.periodNote = '';
-    this.relaxedPooling = result.endpoints.some(endpoint => endpoint.relaxedPooling);
+    this.relaxedPooling = result.request?.relaxedPooling ?? result.endpoints.some(endpoint => endpoint.relaxedPooling);
+    // The margin and α overrides the analysis was requested with, as the step-3 fields hold them; none
+    // for an analysis that records no request. Stored margin keys are camelCased (p1), the fields' ids are not.
+    const overrides = result.request?.protocolOverrides ?? null;
+    const margins = Object.entries(overrides?.margins ?? {});
+    this.marginOverrides = {};
+    for (const endpoint of CC_PROTOCOL_V1_ENDPOINTS) {
+      const margin = margins.find(([id]) => id.toLowerCase() === endpoint.id.toLowerCase())?.[1];
+      if (typeof margin === 'number' && Number.isFinite(margin)) {
+        this.marginOverrides[endpoint.id] = String(endpoint.unit === '%' ? Math.round(margin * 100 * 1e6) / 1e6 : margin);
+      }
+    }
+    this.alphaOverride = typeof overrides?.alpha === 'number' ? String(overrides.alpha) : '';
     if (result.unitKind === 'batteryRun' && result.units) {
       const unitsOf = (period: string) => result.units!.filter(unit => unit.period === period).map(unit => unit.unitId);
       this.resultUnits = { battery: true, baseline: unitsOf('baseline'), comparison: unitsOf('comparison') };

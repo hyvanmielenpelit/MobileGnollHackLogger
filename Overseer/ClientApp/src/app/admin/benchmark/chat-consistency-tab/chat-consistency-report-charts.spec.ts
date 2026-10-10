@@ -2,7 +2,9 @@ import { of, throwError } from 'rxjs';
 
 import { AdminBenchmarkService, BenchmarkReportAudience, ReportDocumentChartLayout, ReportDocumentChartUpload } from '../../../services/admin-benchmark.service';
 import { DOCUMENT_CHART_COLUMN_PT, documentFigureLayout } from '../report-pack/report-charts';
-import { CcFigureInput } from './chat-consistency-charts';
+import fixture from './cc-event-groups.fixture.json';
+import { CcFigureInput, CcPeriodBand, buildCcFigure } from './chat-consistency-charts';
+import { ccReportEventGroups, groupOverseerEvents } from './chat-consistency-events';
 import {
   CC_DEFAULT_DOCUMENT_CHART_LAYOUT,
   CC_DEFAULT_REPORT_CHART_LAYOUT,
@@ -15,10 +17,12 @@ import {
   ccDocumentChartSource,
   ccDocumentFigureBox,
   ccReportChartSettingsHash,
+  ccReportFigureInput,
   composeCcReportChart,
   publishCcReportCharts
 } from './chat-consistency-report-charts';
 import { ccEndpoint, ccPoint, ccTimeline } from './chat-consistency-tab.testing';
+import { CcEvent } from './chat-consistency.models';
 
 const { ExecutiveSummary, TechnicalReport, ProviderIssueReport } = BenchmarkReportAudience;
 const DEFAULTS: CcReportChartSettings = { selection: CC_DEFAULT_REPORT_CHART_SELECTION, layout: CC_DEFAULT_REPORT_CHART_LAYOUT };
@@ -33,8 +37,43 @@ function pngSize(base64: string): { width: number; height: number } {
 describe('chat-consistency-report-charts', () => {
   const input: CcFigureInput = { points: ccTimeline().points };
 
-  it('is drawing version 6', () => {
-    expect(CC_REPORT_CHART_VERSION).toBe(6);
+  it('is drawing version 7', () => {
+    expect(CC_REPORT_CHART_VERSION).toBe(7);
+  });
+
+  describe('event numbering', () => {
+    const events = fixture.events as CcEvent[];
+    const bands: CcPeriodBand[] = [
+      { name: 'Baseline', start: Date.parse('2026-10-07T00:00:00Z'), end: Date.parse(fixture.baselineEndUtc) },
+      { name: 'Comparison', start: Date.parse(fixture.comparisonStartUtc), end: Date.parse('2026-10-08T23:59:59Z') }
+    ];
+
+    it('tags every event of the shared fixture as the server\'s events table does', () => {
+      const groups = ccReportEventGroups(events, fixture.baselineEndUtc, fixture.comparisonStartUtc);
+      expect(groups.map(group => group.tag)).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
+      const tagOf = new Map(groups.flatMap(group => group.events.map(event => [event, group.tag] as const)));
+      for (const event of fixture.events) {
+        expect(tagOf.get(event as CcEvent), event.label + ' at ' + event.atUtc).toBe(event.tag);
+      }
+      // The same from the split as epoch milliseconds, as the bands carry it.
+      const fromBands = ccReportEventGroups(events, bands[0].end, bands[1].start);
+      expect(fromBands.map(group => group.events.length)).toEqual(groups.map(group => group.events.length));
+    });
+
+    it('draws the report chart\'s markers with those tags, ignoring the timeline\'s numbering', () => {
+      const timelineNumbering = groupOverseerEvents(events, []).map((group, i) => ({ ...group, tag: `E${i + 20}` }));
+      const reportInput = ccReportFigureInput({
+        points: [ccPoint(90, '2026-10-07T09:00:00Z'), ccPoint(97, '2026-10-08T07:37:00Z'), ccPoint(99, '2026-10-08T16:00:00Z')],
+        events,
+        bands,
+        eventNumbering: timelineNumbering
+      });
+      expect(reportInput.eventNumbering).toBeUndefined();
+      const figure = buildCcFigure('timeline', reportInput);
+      expect(figure.markers.filter(marker => marker.kind === 'event').map(marker => marker.tag)).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
+      const quality = buildCcFigure('quality', reportInput);
+      expect(quality.markers.filter(marker => marker.kind === 'event').map(marker => marker.tag)).toEqual(['E1', 'E2', 'E3', 'E4', 'E5']);
+    });
   });
 
   it('hashes the drawing settings with the chart choices and their layout', async () => {

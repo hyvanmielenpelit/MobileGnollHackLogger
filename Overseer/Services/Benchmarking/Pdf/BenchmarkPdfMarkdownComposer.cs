@@ -475,6 +475,17 @@ internal static class BenchmarkPdfMarkdownComposer
                     });
                     i = nextIndex!.Value;
                 }
+                else if (next is MdTable shortTable && IsShortTable(shortTable))
+                {
+                    // A short table is kept on one page, so its headings move with it rather than stay behind.
+                    col.Item().PreventPageBreak().Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                        group.Item().Element(c => ComposeTable(c, shortTable, ctx));
+                    });
+                    i = nextIndex!.Value;
+                }
                 else
                 {
                     col.Item().EnsureSpace(KeepWithNextHeight(headings, next)).Column(group =>
@@ -792,6 +803,10 @@ internal static class BenchmarkPdfMarkdownComposer
     /// short headers with their legend line below the table, and a column set on a second line of each
     /// body row are <see cref="TableLayout"/>'s.
     /// </summary>
+    /// <summary>A table <see cref="ComposeTable"/> keeps on one page: at most <see cref="ShortTableMaxBodyRows"/> body rows.</summary>
+    internal static bool IsShortTable(MdTable table)
+        => table.OfType<MdTableRow>().Count(r => !r.IsHeader) <= ShortTableMaxBodyRows;
+
     private static void ComposeTable(IContainer container, MdTable table, Context ctx)
     {
         var rows = table.OfType<MdTableRow>().ToList();

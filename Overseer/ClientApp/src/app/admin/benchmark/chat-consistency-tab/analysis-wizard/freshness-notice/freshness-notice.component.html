@@ -1,0 +1,25 @@
+<!-- An out-of-date analysis: the amber notice, its reasons and Analyze again. A current one whose inputs
+     could not be checked: one quiet line. Otherwise, and while the freshness loads, nothing. -->
+@if (outOfDate) {
+  <div class="alert alert-warning cc-fresh-notice" role="note" [attr.aria-labelledby]="idPrefix + '-title'">
+    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    <div class="alert-content">
+      <div class="cc-fresh-head">
+        <p class="alert-heading cc-fresh-title" [id]="idPrefix + '-title'"><strong>This analysis is out of date.</strong></p>
+        <app-info-tip [tipId]="idPrefix + '-rule-tip'" subject="Out-of-date analyses">{{ rule }}</app-info-tip>
+      </div>
+      <p class="alert-body cc-fresh-text">
+        @for (reason of reasons; track $index) {
+          <span class="cc-fresh-reason">{{ reason }}</span>{{ ' ' }}
+        }
+        <span class="cc-fresh-advice">{{ advice }}</span>
+      </p>
+      <div class="cc-fresh-actions">
+        <button type="button" class="btn-ghost cc-fresh-again" [id]="idPrefix + '-again'"
+                (click)="analyzeAgain.emit()">Analyze again</button>
+      </div>
+    </div>
+  </div>
+} @else if (uncheckedText) {
+  <p class="form-hint cc-fresh-unchecked">{{ uncheckedText }}</p>
+}

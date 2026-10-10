@@ -166,8 +166,9 @@ out of telemetry speed. Both stay on every other axis.
 
 **Choosing runs.** For each endpoint the analysis keeps the latest segment both periods share and lists
 the runs it left out as a data-quality note. When the periods share no segment, the endpoint is not
-computed and the refusal names the change — for quality, with the advice to re-grade every compared run
-with one assessor. **Relaxed pooling** (a request option) pools across the boundary instead and caps the
+computed and the refusal names the change (several reasons joined with *"; "* inside one pair of
+parentheses, with no period before the closing one) — for quality, with the advice to re-grade every
+compared run with one assessor. **Relaxed pooling** (a request option) pools across the boundary instead and caps the
 affected grades at Indicated.
 
 ### 5.2 Overseer events
@@ -202,18 +203,27 @@ the Analyze step's period cards and preview, and the *Before vs after an Oversee
 (`groupOverseerEvents`, client-side): every Overseer event of one UTC day under one harness version is one composite, and a harness change starts a new
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
-takes the events one per kind and change, as above. Report charts are drawn the same way, and
-`CC_REPORT_CHART_VERSION` (6, in `chat-consistency-report-charts.ts`) enters their settings hash with the
-chart choices and their layout, so newly drawn report charts are told apart from those drawn before
-the grouping, the timeline numbering below, the battery-run points, the validated palette, the
-GnollBench logo, or the per-document choice and width of version 6 (§ 17.2, step 5);
-documents already written keep their charts until step 5's **Update charts** draws them again. An `E` number in an older report therefore need not match
+takes the events one per kind and change, as above. Report charts tag the analysis's own events as its
+report documents do (below), and `CC_REPORT_CHART_VERSION` (7, in `chat-consistency-report-charts.ts`)
+enters their settings hash with the chart choices and their layout, so newly drawn report charts are
+told apart from those drawn before the grouping, the timeline numbering below, the battery-run points,
+the validated palette, the GnollBench logo, the per-document choice and width of version 6, or the
+document's own event tags of version 7 (§ 17.2, step 5);
+documents already written keep their charts until step 5's **Update charts** draws them again. An `E` number in a report therefore need not match
 the one the tab shows today.
 
-The Results step's event list and period cards, and newly drawn report charts, take each composite's
+The Results step's event list and period cards take each composite's
 `E` number from the timeline loaded in step 1, so a change keeps its number across the steps. A composite the timeline lacks (a control-series
 change, or a span outside the step-1 dates) is numbered after the timeline's last, so it can carry a
 higher number than a later composite.
+
+**Report documents group the events on their own.** A report document's events table and its charts
+group the analysis's events by UTC day, series (the target's, or a control model's), the harness version
+the event happened under (the `to` of the series' latest harness change at or before it, else the `from`
+of its earliest) and the side of the period split (baseline, between, comparison), so a group never spans
+the split; the groups are tagged `E1`, `E2`, … in time order (`BenchmarkChatConsistencyReportFacts.EventGroups`
+and `EventGroupKey` on the server, `ccReportEventGroups` in the client, pinned together by the shared
+fixture `chat-consistency-tab/cc-event-groups.fixture.json`).
 
 ## 6. Events and Control Runs
 
@@ -234,7 +244,12 @@ way, the change fits our side; if the target moved and the control did not, it f
   \<model\> (a provider other than \<provider\>) on suite \<suite\> under the same Overseer build as run
   #N."* The model is the first of the request's `availableOtherProviderModels` from another provider.
   Analyses saved before code version 5 end the note with *"(instrument \<12 hex\>)"*; the Results images
-  and the report documents strip it.
+  and the report documents strip it. A control run can be made only while the target run's build still
+  runs: when its `HarnessVersion` differs from the running `BenchmarkAssessmentPrompt.HarnessVersion`,
+  the note reads *"No control run can be made for the \<period\> period any more: its Overseer build
+  (harness \<n\>) has been replaced. Make a control run beside the next checkpoint instead."* and records
+  `buildReplaced`. In a battery comparison there is one note per period per battery run, naming its
+  suites and recording `batteryRunId`. Both are code version 6.
 - **Difference in differences** (`ItemDifferenceInDifferences`): per endpoint and control subject,
   item-paired (target change) − (control change) with a run-cluster bootstrap (items resampled too,
   except for the speed endpoints). Each effect records whether the DiD interval includes 0, whether it
@@ -287,6 +302,8 @@ Provider latency depends on load, and load on the hour. The analysis therefore c
 - **Scope**: the common strata as text — *weekdays 04–12 UTC; weekends 16–20 UTC*, *(one time stratum)*
   when only one is shared, *no common time stratum* when none is. The headline ends *"within
   \<scope\>"*, or, when the periods share no stratum, *"; the periods share no common time stratum"*.
+  Each period's own hours are recorded in `periodHours` (§ 12), so a result whose periods share none
+  can still say when each ran.
 - **US business hours** are weekdays 14–22 UTC. A common stratum counts as inside them when it is a
   weekday block overlapping that window (12–16, 16–20 or 20–24 UTC), and outside them otherwise. A
   change is called **load-independent** only when the common strata include at least one block of each
@@ -313,6 +330,9 @@ new protocol version. The protocol is stored with every analysis (`ProtocolJson`
   replicates, seed 20261007, every resampling seeded from the protocol.
 - **Items** pair only on an identical question and item revision; a revised item drops out on both
   sides, and an unrecorded revision pairs only with another unrecorded one. Both are data-quality notes.
+  From code version 6 the notes count questions: `revisedQuestions` (*"4 of 36 questions (11.1 %) were
+  revised between the periods and are left out of the paired comparison; 32 are paired."*), and
+  `unpairedItems` only for questions answered in one period only.
 - **Minimum replication** counts **units**: a run, or, in a battery comparison (§ 17.2), a **battery
   run**, whose usable members are merged into one unit:
   - P1, P4, P5 — **at least 2 units per period, on at least 2 distinct UTC days of the unit start, and
@@ -351,7 +371,9 @@ Each endpoint gets one of **Lakens' four outcomes** against its margin, checked 
 | Equivalent | the 90 % interval lies inside the margin (TOST) | *equivalent* |
 | Inconclusive | none of the above | *inconclusive* |
 
-An endpoint the data cannot compute is *not computable*, with its reason.
+An endpoint the data cannot compute is *not computable*, with its reason and, from code version 6, its
+`notComputedKind`: `measurementChanged`, `noCommonStratum`, `noTelemetry`, `noPricing`, `tooFewPairs` or
+`other`.
 
 Each decisive verdict carries an **evidence grade**:
 
@@ -362,9 +384,13 @@ Each decisive verdict carries an **evidence grade**:
   are listed.
 - **Not established** — inconclusive or not computable.
 
-Every endpoint also reports its **minimum detectable effect** at α and power 0.8 (from the run-to-run
-spread; *one run per period: run-to-run noise not estimable* when a period has one run) and the runs
-per period that would bring it down to the margin. The **headline** leads every result:
+Every endpoint also reports its **minimum detectable effect** at α and power 0.8 and the runs per period
+that would bring it down to the margin. With at least two units in each period it comes from the
+run-to-run spread. With fewer, an item-paired endpoint (P1, P4, P5) reports the paired one,
+`(z₀.₉₇₅ + z₀.₈) · SD(d) / √n` over the per-item differences of the unit means
+(`ChatConsistencyStatistics.PairedMinimumDetectableEffect`), noted *"A floor: one unit per period, so
+run-to-run noise is not included."*; the speed endpoints (P2, P3) fall back to their item-centered
+values, noted *one run per period: run-to-run noise not estimable*. The **headline** leads every result:
 *"Overseer chat with \<model\>: quality \<verdict\> (\<grade\>); speed …; work …; cost … within
 \<scope\>"*, with any established reliability increase appended.
 
@@ -401,6 +427,25 @@ Secondary results are descriptive and adjusted within their family (Benjamini–
 Every result also lists the data-quality notes, the limitations (§ 21), and the **next runs** that
 would resolve an open question — kinds *checkpoint*, *control*, *stratum* and *regrade*, each naming the
 run whose setup to repeat.
+
+- A speed endpoint not computed for `noCommonStratum` gets one *stratum* suggestion for the comparison
+  period, which serves both speed endpoints: *"\<minimum speed runs per stratum\> \<units\> of \<model\>
+  on \<target\> starting in \<the baseline's most-populated stratum\>, in the comparison period."* A
+  stratum label inside a sentence reads *weekdays 04–08 UTC*.
+- *"Widen the baseline period …"* is suggested only when the run selection lists an unused unit of the
+  model in the baseline window before its first unit (left out as outside the step-1 dates or before
+  the first run); otherwise the suggestion reads *"No other \<unit\> of \<model\> exists for the baseline
+  period. A later analysis can take this comparison period as its baseline."*
+- A *control* suggestion follows the missing-control note (§ 6), including the note for a build that
+  has been replaced.
+
+**Descriptive levels** (code version 6). The result records, per period, `periodHours` — the
+time-of-week strata its delivered, timed answers started in, and a text such as *weekdays 04–08 UTC* —
+and `periodLevels`: the answers, the native mean quality, the battery **Overall Index** with its 95 %
+half-width (when every unit is a battery run with a current stored battery analysis; the half-width only
+with one unit), the median time to first answer text, the median answer streaming rate, the mean output
+tokens and the mean cost per delivered answer at the analysis's price card, and the failed answers. They
+describe each period and compare nothing; the verdicts say what changed.
 
 ## 13. Attribution
 
@@ -539,7 +584,7 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 5; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
+currently 6; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
 streaming rate with its measurability bounds (§ 4.4), and the streaming-rate caveat counts the delivered
 answers with no measurable rate: *"k delivered answers have no rate: the visible text arrived in one
 burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*; version 4 compares
@@ -549,7 +594,13 @@ run ids), with battery runs as the unit of a battery comparison, § 9; version 5
 per model and suite and merges one change seen in several suites (§ 5.2), drops the instrument
 fingerprint from the missing-control notes (§ 6), writes real plurals (*1 day*, *2 battery runs*) in
 place of *(s)*, and ends a headline whose periods share no common time stratum with *"; the periods
-share no common time stratum"*). A stored analysis keeps the
+share no common time stratum"*; version 6 gives an item-paired endpoint with one unit in a period the
+paired minimum detectable effect (§ 10), counts questions in the revised and unpaired data-quality
+notes (§ 9), records each not-computed endpoint's `notComputedKind` (§ 10), the descriptive
+`periodHours` and `periodLevels` (§ 12) and the request it was analyzed with (`request`, which the
+freshness check repeats, § 16.1), suggests a stratum run for speed without a common stratum and widens
+the baseline only where an earlier unit exists (§ 12), and writes the replaced-build and per-battery-run
+missing-control notes (§ 6)). A stored analysis keeps the
 version it was computed under; its fingerprint and result do not change. **Run-mode invariance:** in a
 suite comparison, or with no compared set, every number of a version-4 analysis equals version 3's on
 the same runs; only the code version, the fingerprint and the new set and unit fields differ, and a test
@@ -567,6 +618,49 @@ pins it.
   ordered, and the result JSON excludes the row's id and creation time.
 
 An analysis cannot be deleted while report documents written from it exist.
+
+### 16.1 When an Analysis Is Out of Date, and What to Do
+
+**A saved analysis never changes.** *Analyze* always saves a new analysis with a new number; nothing
+updates one. A saved analysis is a record of what the analysis code concluded from the stored runs at
+the moment it was saved.
+
+An analysis is **out of date** when either is true:
+
+1. **Earlier analysis code** — its `AnalysisCodeVersion` is lower than the `CurrentAnalysisCodeVersion`
+   of the running Overseer. It becomes out of date the moment an Overseer build with a higher version
+   starts, and stays so.
+2. **Changed inputs** — something the analysis read has changed since it was saved: a common-grader
+   re-grade of one of its runs, a re-run of failed questions, a run in its periods newly finished,
+   deleted or changed in status, a control run added or removed, an annotation added, edited or
+   deleted, or a change of the price card it used. Precisely: the input fingerprint (`InputSha256`)
+   recomputed today from the stored request differs from the stored one.
+
+The check (`ChatConsistencyAnalysisService.CheckFreshnessAsync`, `GET analyses/{id}/freshness`, § 19)
+loads the evidence again and computes only the fingerprint; it saves nothing and computes no
+statistic. For an analysis saved under earlier code the inputs are not checked, since its fingerprint
+is not comparable, and an analysis that records no request (saved before code version 6) is not checked
+for changed inputs either; the Results and Write steps then say, in one quiet line, that changes since
+saving could not be checked.
+
+An analysis is **not** out of date because of time passing, runs made after its comparison period
+ends, Overseer changes after its periods, a newer analysis existing, or documents written from it. An
+analysis of last month stays valid as a statement about last month.
+
+**What to do.**
+
+- **Do not edit or delete it to refresh it.** Press **Analyze again** on the out-of-date notice of the
+  Results and Write steps: it opens step 3 with the same model, runs, periods, controls, pooling and
+  protocol, and *Analyze* saves a new, current analysis. Write new documents from the new one.
+- **Keep the old one** when its documents were shared or quoted anywhere: it is the record behind them,
+  and its documents print the out-of-date box when downloaded again (`ai-benchmark-report-pack.md` § 16).
+- **Delete it only if you no longer need it at all** (a test, for example): delete its documents first,
+  then the analysis, in Analysis history. Deleting is permanent.
+- **Writing documents from an out-of-date analysis** is allowed after a confirmation, the Write step's
+  dialog *Write from an out-of-date analysis?* (*Write anyway*). The request then carries
+  `acknowledgeOutOfDate: true`; without it the server answers 409 with `{ error, outOfDate: true }` and
+  *"Analysis #\<id\> is out of date: \<reasons\>. Analyze again, or confirm to write from it anyway."*
+  Every such document says so on its first page.
 
 ## 17. The Chat Consistency Tab
 
@@ -601,8 +695,9 @@ they stack in that order.
   · 5 report documents*) and **Open Analysis History**, unavailable while no analysis is saved. The
   **Analysis History** dialog (`chat-consistency-tab/analysis-history/`) lists every saved analysis as
   a card, newest first: its number, saved time and protocol, the tags *N reports*, *Relaxed pooling*
-  and *Earlier analysis code* (saved under an analysis code version below the current one; *Analyze
-  again to apply version 5.*), its name, model and compared set, its periods, headline and endpoint
+  and *Earlier analysis code* (saved under an analysis code version below the current one; its *i* tip
+  reads *Saved under analysis code version 5; Overseer now analyzes under version 6. Open it and press
+  Analyze again for a current analysis; this one stays as a record.*, § 16.1), its name, model and compared set, its periods, headline and endpoint
   chips. It has a search (name, headline, model or `#id`), **Sort by** (*Newest first*, *Oldest first*,
   *Model (A–Z)*, remembered in this browser) and the filters *Model*, *Provider*, *Compared* and
   *Reports*, shows ten cards at a time, and offers per card **Open** and **Delete**. *Open* switches to
@@ -831,6 +926,15 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
    the step-1 selection (§ 19), and moves to Results; *Stop Analysis* stops it.
 4. **Results** — the stored result, read as it was saved, in six tabs. **It draws no charts**: step 2
    has them.
+   - **The out-of-date notice.** Over every tab, the Results step reads the analysis's freshness
+     (§ 16.1) and, when it is out of date, shows an amber notice, *This analysis is out of date.*, with
+     an *i* tip saying what out of date means, one sentence per reason (*Saved under analysis code
+     version 5; Overseer now analyzes under version 6.*, *Its runs, grades, controls, annotations or
+     prices changed after it was saved.*), the advice *Saved analyses never change. Analyze again for a
+     current analysis with the same settings; this one stays in Analysis history as a record.* and
+     **Analyze again**, which restores the analysis's settings as opening it from the history does and
+     shows step 3; nothing is analyzed until *Analyze*. A current analysis whose inputs could not be
+     checked shows one quiet line instead; a current one, nothing.
    - **The tabs** *Summary · Verdicts · Periods · Attribution · Next runs · Details*, *Next runs*
      counting its cards. No tab shows a visible heading repeating its name; each panel keeps one for
      screen readers. The tab is remembered in this browser
@@ -1000,6 +1104,11 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      0.3 s after the last change) and **Write Reports** (*Write Report* for one), with the reason it is
      unavailable. A writer of the analyzed model's provider asks *Same-Provider Report Writer* on every
      write; *Write Anyway* goes on.
+   - **An out-of-date analysis** (§ 16.1) carries the Results step's out-of-date notice, with **Analyze
+     again**, under the step's lead. Every write from it then asks *Write from an out-of-date
+     analysis?*, with the reasons and *Every document will say so on its first page.*; *Write anyway*
+     sends `acknowledgeOutOfDate: true`. The server's 409 for an out-of-date analysis opens the same
+     dialog.
    - **Report progress** — a status line for screen readers only (the stage rail shows the phase), then,
      while a job runs, *Reports in progress*: the
      stage rail (*Queued*, *Preparing*, one stage per document, *Done*), the stat strip (*Elapsed*, the
@@ -1067,7 +1176,12 @@ its battery analysis's **Overall Intelligence Index**, the number the battery re
 and Model Comparison show: the latest stored analysis, used only while it covers the battery run's
 current members. Without one, with a stale one, or for an incomplete battery run there is no
 Intelligence point, and the takeaway and the data card's *Note* field say why (*No battery analysis.
-Compute it from the battery report.*). Every data card of a battery chart adds *Suites* and *Member
+Compute it from the battery report.*). A battery point also carries `overallIndexHalfWidth`, the
+battery analysis's combined 95 % half-width, and `overallIndexIntervalNote` (*question sampling only*
+when the interval has no reproducibility part, that is, one round); the Intelligence figure draws it as a
+whisker at the point, its data gain a *95 % interval* column, and the takeaway says the bars are each
+battery run's own interval, not the interval of the change between the periods. Run points carry no
+interval. Every data card of a battery chart adds *Suites* and *Member
 runs*, the members named with their suites. **Plot by** on the Data tab switches to *Member runs*, the
 per-run charts, for looking inside a battery; it returns to *Battery runs* when another set is chosen.
 
@@ -1293,9 +1407,10 @@ routes, which use the run report-documents contract.
 | POST | `analyses` | runs and saves an analysis; 200 with the result and `analysisId`; 400 for malformed or overlapping periods, a period without a usable run, or a malformed or contradictory `runSelection` (below); 499 when the client aborts |
 | GET | `analyses` | every saved analysis, newest first, without the results; each summary carries `subject` (`displayName`, `provider`, `modelId`, `thinkingLevel`, `serviceTier`; null when the stored result lacks it) and `endpoints` (`id`, `name`, `computed`, `verdictLabel`, `grade` as `established` / `indicated` / `notEstablished`; `[]` when absent), read from the stored result |
 | GET | `analyses/{id}` | one saved analysis; 404 |
+| GET | `analyses/{id}/freshness` | whether it is out of date (§ 16.1): `analysisId`, `analysisCodeVersion`, `currentAnalysisCodeVersion`, `earlierAnalysisCode`, `inputsChanged` (null when not checked), `inputsNote` (why not), `outOfDate`; saves nothing and computes no statistic; 404 |
 | DELETE | `analyses/{id}` | 204; 404; 409 while report documents written from it exist |
 | POST | `analyses/{id}/report-documents/estimate` | the report cost estimate with `providerIssueReportAvailable` and `providerIssueReportReason`; no model call |
-| POST | `analyses/{id}/report-documents` | writes the documents; 202 (§ 20) |
+| POST | `analyses/{id}/report-documents` | writes the documents; 202 (§ 20); 409 with `{ error, outOfDate: true }` for an out-of-date analysis unless the request carries `acknowledgeOutOfDate: true` |
 | GET | `analyses/{id}/report-documents/job` | the report job; 200, or 204 when this process knows none |
 | POST | `analyses/{id}/report-documents/cancel` | cancels the report job; 202; 409 when none runs |
 | POST | `regrade/estimate` | the re-grade estimate per run with eligibility; no model call; 400 without runs or over 200 |
@@ -1375,7 +1490,7 @@ The validator's chat consistency rules **C1–C8** (report-pack rules 22–29) h
 method: a change claim needs the fact that shows it, an intent or mechanism claim needs a
 provider-confirmed cause (and nothing may call the runs *monitoring*), a causal claim needs an
 attribution, *established* needs an Established grade, an inconclusive endpoint needs its detectable
-effect, the document must cite its hours and may not claim all hours, a Provider Issue Report may
+effect, the document must cite its hours (when the periods share any) and may not claim all hours, a Provider Issue Report may
 assert a model or serving change only from a provider-side attribution and must list every Overseer
 event it ruled out, and (C8, *readable text*) no paragraph may carry a hash, a hex revision, JSON or an
 internal event-field name.
@@ -1390,7 +1505,12 @@ identifier: an Overseer event is shown in words (*harness 53 → 54*, *wiki revi
 stored values, so
 documents written earlier render readably too; the input fingerprint stays out of every document. The
 PDF and Word footer reads *Chat consistency analysis #N · {document} · page N of M*, and the cover
-names the model, the compared set, the two periods, the controls and when the document was written.
+names the model, the compared set, the two periods, the controls, the hours, the protocol, the analysis
+code version (marked out of date when it is) and when the document was written. A document from an
+out-of-date analysis (§ 16.1) opens, in every audience, with a box saying so under its title block. The
+box is decided when the document is rendered, from its analysis code version against the current one
+and from the out-of-date state recorded when it was written with an acknowledgment, so a document written
+earlier shows it when downloaded again after the analysis code moved on.
 Each document's charts are those step 5 chose for its type, at the chosen width (§ 17.2). Files are named
 `chat-consistency-<id>_<model>_<kind>_<disclosure>_<peers>`, for example
 `chat-consistency-12_<model>_provider-issue-report_summary_anonymized.pdf`.

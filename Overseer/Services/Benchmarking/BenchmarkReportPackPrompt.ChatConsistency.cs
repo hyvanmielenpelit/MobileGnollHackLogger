@@ -37,6 +37,7 @@ public static partial class BenchmarkReportPackPrompt
         AppendChatConsistencySlots(sb, spec);
         AppendChatConsistencyLists(sb);
         AppendChatConsistencyTokenRules(sb);
+        AppendChatConsistencyRepetitionRules(sb);
         AppendChatConsistencyClaimRules(sb, spec);
         AppendFormatRules(sb, spec);
         AppendChatConsistencyOutput(sb, spec);
@@ -64,10 +65,11 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
         Line(sb, "REMINDERS");
         Line(sb, "- Figures, dates, hours and run ids appear only as {{key}} with a key from FACTS exactly as written; the model as {{subject}}; a control model only as {{peer:X}} with its letter from PEERS. No other {{...}} tokens, no digits in prose and no question references.");
-        Line(sb, "- Report the total change first, then the attribution. Every document cites {{scope.hours}} at least once.");
+        Line(sb, "- Report the total change first, then the attribution. Where {{scope.hours}} is available, cite it at least once; where it is unavailable, say once in plain words that the periods ran at different hours, citing {{period.baseline.hours}} and {{period.comparison.hours}}.");
+        Line(sb, "- A sentence-valued fact (limitation.*, a reason, a suggestion, a robustness detail) appears at most once and never inside parentheses.");
         Line(sb, "- A change word needs, in the same sentence, a token CLAIM SUPPORT lists as showing a change. A causal connective needs an attribution token in the same sentence.");
         Line(sb, "- Never claim intent. A mechanism needs a provider-confirmed cause in the same sentence. Established, confirmed and the other public-claim words need an Established grade token in the same sentence.");
-        Line(sb, "- An inconclusive endpoint you cite needs its {{endpoint.<P>.mde}} token in the same section. All-hours words need a true {{serving.timeOfDayAssessable}} in the same sentence.");
+        Line(sb, "- An inconclusive endpoint you cite needs its {{endpoint.<P>.mde}} token once in the document. All-hours words need a true {{serving.timeOfDayAssessable}} in the same sentence.");
         Line(sb, "- In a Provider Issue Report, a sentence about the model or its serving cites a provider-side attribution token, and ruledOut cites every Overseer event.");
         Line(sb, "- Never name another model, provider or product. No hype or filler words, and never significant, significantly or statistically.");
         Line(sb, "- Never write a hash, a run of hex digits, JSON or an internal field name, and never write monitor or monitoring: GnollBench runs are made by hand.");
@@ -147,7 +149,7 @@ public static partial class BenchmarkReportPackPrompt
     private static string ChatConsistencySlotDescription(BenchmarkReportAudience audience, string slot) => (audience, slot) switch
     {
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.AsGoodAsBefore) =>
-            $"At most {ChatCap(audience, slot)} words: the document's answer to its title. Lead with {{{{verdict.short}}}}, then the total change on each computed endpoint, with its verdict token, within {{{{scope.hours}}}}; then, in a sentence of its own, what the attribution says about where the change came from.",
+            $"At most {ChatCap(audience, slot)} words: the document's answer to its title. Lead with {{{{verdict.short}}}}, then the total change on each computed endpoint, with its verdict token, within {{{{scope.hours}}}} where it is available; then, in a sentence of its own, what the attribution says about where the change came from.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.PlayerImpact) =>
             $"At most {ChatCap(audience, slot)} words: what the result means for a player who asks the Overseer chat during play and waits for each answer: the quality of the answers, the time to first answer text and failed answers, each with its token. Where an endpoint is inconclusive, say so and give its minimum detectable effect.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.OurChanges) =>
@@ -155,14 +157,14 @@ public static partial class BenchmarkReportPackPrompt
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.ProviderChanges) =>
             $"At most {ChatCap(audience, slot)} words: what the analysis shows on the provider's side: the served model ids, the served tier and the provider-side attributions with their grades. Report what was measured; never guess what the provider did or why.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.ConfidenceAndScope) =>
-            $"At most {ChatCap(audience, slot)} words: how far the result reaches: the hours it covers ({{{{scope.hours}}}}), whether time of day can be assessed, the battery runs or runs it rests on, and which results are Established, Indicated or inconclusive. Where the minimum sample is not met, state the shortfall with {{{{sample.shortfall}}}}.",
+            $"At most {ChatCap(audience, slot)} words: how far the result reaches: the hours it covers ({{{{scope.hours}}}}, or the hours each period ran when they share none), whether time of day can be assessed, the battery runs or runs it rests on, and which results are Established, Indicated or inconclusive. Where the minimum sample is not met, state the shortfall with {{{{sample.shortfall}}}}.",
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.NextRuns) =>
             $"At most {ChatCap(audience, slot)} words: the runs the analysis suggests next (the nextRuns.* facts) and what each would settle, in plain words. The runs are made by hand: say which to make.",
 
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.QuestionAndDesign) =>
             $"At most {ChatCap(audience, slot)} words: the question the analysis answers, whether the Overseer chat with {{{{subject}}}} changed between the two periods, and its design: matched runs of the same suites in each period, the primary endpoints with their margins (protocol.margin.*), the protocol and its alpha, the control models and their difference in differences, and the evidence grades.",
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.RunsAndCoverage) =>
-            $"At most {ChatCap(audience, slot)} words: the runs, items and answers of each period, the common hours {{{{scope.hours}}}} and the share of answers left out of them, the strata, the runs without call telemetry, and the control runs.",
+            $"At most {ChatCap(audience, slot)} words: the runs, items and answers of each period, the common hours {{{{scope.hours}}}} and the share of answers left out of them (or, when the periods share none, the hours each ran), the strata, the runs without call telemetry, and the control runs.",
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.OverseerEvents) =>
             $"At most {ChatCap(audience, slot)} words: what the Overseer updates between the periods (eventGroups.*, events.*) mean for the comparison: which part of the chat each changed, and whether it falls in the series of {{{{subject}}}} or of a control.",
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.EndpointResults) =>
@@ -172,7 +174,7 @@ public static partial class BenchmarkReportPackPrompt
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Robustness) =>
             $"At most {ChatCap(audience, slot)} words: the robustness checks and their status, the common grader and the grader drift, and the secondary results where they bear on the primary endpoints.",
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Limitations) =>
-            $"At most {ChatCap(audience, slot)} words: what the recorded limitations and data-quality notes (limitation.*) mean for the result, and what the result does not cover, such as the hours outside {{{{scope.hours}}}}.",
+            $"At most {ChatCap(audience, slot)} words: what the recorded limitations and data-quality notes (limitation.*) mean for the result, and what the result does not cover, such as the hours outside those both periods share.",
         (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Reproducibility) =>
             $"At most {ChatCap(audience, slot)} words: what someone needs to reproduce the analysis: its number {{{{analysis.id}}}}, the analysis code version, the protocol and any overrides, each period's battery runs or runs, and the price card. Never cite a hash.",
 
@@ -196,7 +198,7 @@ public static partial class BenchmarkReportPackPrompt
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Measurements) =>
             $"At most {ChatCap(audience, slot)} words: each endpoint's estimate with its interval, verdict and grade, and the control models' own change. Measurements only, never an interpretation of the provider's systems.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.HoursObserved) =>
-            $"At most {ChatCap(audience, slot)} words: the hours the comparison covers ({{{{scope.hours}}}}), its strata and whether time of day can be assessed. Say plainly that the measurements hold for these hours only.",
+            $"At most {ChatCap(audience, slot)} words: the hours the comparison covers ({{{{scope.hours}}}}, or the hours each period ran when they share none), its strata and whether time of day can be assessed. Say plainly that the measurements hold for these hours only.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.RuledOut) =>
             $"At most {ChatCap(audience, slot)} words: what we checked on our side. List every Overseer event of the period, each with one of its events.<n> tokens as CLAIM SUPPORT lists them, then our own waits and retries, the served tier and fallbacks, and what the control models show, each as far as its facts and the attribution grades go.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.SampleRequestIds) =>
@@ -230,15 +232,27 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
+    /// <summary>The rules against repeating the same fact, and the shorter slots of an analysis without enough evidence.</summary>
+    private static void AppendChatConsistencyRepetitionRules(StringBuilder sb)
+    {
+        Line(sb, "REPETITION AND LENGTH:");
+        Line(sb, "- A fact whose value is a sentence (limitation.*, limitation.dataQuality.*, robustness.<n>.detail, controls.missing.<n>.suggestion, nextRuns.<n>.reason and .suggestion, and any fact whose key ends in reason) appears at most once in the whole document, and never inside parentheses. After its one citation, refer to it in a few plain words.");
+        Line(sb, "- Endpoints that share a status or a value get one sentence together, not one sentence each: for example, two endpoints that are not computable for the same reason.");
+        Line(sb, "- State an inconclusive endpoint's minimum detectable effect once in the document, where you first discuss that endpoint.");
+        Line(sb, "- For the robustness checks, prefer robustness.<check>.summary, which states every endpoint of one check in one sentence, to the robustness.<n>.* facts one by one.");
+        Line(sb, "- When {{verdict.short}} reads Not enough evidence yet, write at most two sentences per slot. Do not restate which endpoints are not computable: the overall verdict already says so. Spend the words on what the runs do show and on which runs would give an answer.");
+        Line(sb);
+    }
+
     private static void AppendChatConsistencyClaimRules(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
         static string Join(IEnumerable<string> words) => string.Join(", ", words);
 
         Line(sb, "CLAIM DISCIPLINE (code checks every sentence; a paragraph that breaks a rule is removed):");
         Line(sb, "- Report the total change first: what changed for the Overseer chat with {{subject}} between the periods, endpoint by endpoint, each with its verdict and estimate tokens and its interval where it matters. Only then say what the attribution says about where the change came from.");
-        Line(sb, "- Every document cites {{scope.hours}} at least once. Every result holds for those hours only, the hours both periods share; never widen it.");
+        Line(sb, "- Where {{scope.hours}} is available, every document cites it at least once. Every result holds for those hours only, the hours both periods share; never widen it. Where it is unavailable, the periods ran at different hours: say so once, in plain words, citing {{period.baseline.hours}} and {{period.comparison.hours}}, and never write that a result holds within no stratum.");
         Line(sb, $"- Change words ({Join(BenchmarkReportPackValidator.ChatChangeWords)}) appear only in a sentence that also cites a result showing a change: an endpoint.<P> token, a verdict token or an attribution token whose verdict is not inconclusive. CLAIM SUPPORT lists the tokens that qualify.");
-        Line(sb, "- An inconclusive endpoint means the runs cannot tell a change from no change. Wherever you cite one, say that it is inconclusive and state its minimum detectable effect, {{endpoint.<P>.mde}}, in the same section: the smallest change these runs could have detected.");
+        Line(sb, "- An inconclusive endpoint means the runs cannot tell a change from no change. Wherever you cite one, say that it is inconclusive; state its minimum detectable effect, {{endpoint.<P>.mde}}, the smallest change these runs could have detected, once in the document.");
         Line(sb, $"- Causal connectives ({Join(BenchmarkReportPackValidator.ChatCausalConnectives)}) appear only in a sentence that cites the attribution token they state. Never use them to explain the method; write two sentences instead.");
         Line(sb, $"- Never claim intent ({Join(BenchmarkReportPackValidator.ChatIntentWords)}): the analysis measures what changed, never why anyone changed it.");
         Line(sb, $"- Never name a mechanism ({Join(BenchmarkReportPackValidator.ChatMechanismWords)}) unless the sentence cites an annotation whose kind is ProviderConfirmedCause, as CLAIM SUPPORT lists them; then attribute it to the provider's statement.");
@@ -369,7 +383,13 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, claims.TimeOfDayAssessable
             ? $"- Time of day: {ChatClaimSupport.TimeOfDayKey} is true, so all-hours words may appear in a sentence that cites it."
             : $"- Time of day: {ChatClaimSupport.TimeOfDayKey} is not true, so use no all-hours word.");
-        Line(sb, $"- Hours: every document cites {{{{{ChatClaimSupport.HoursKey}}}}} at least once.");
+        Line(sb, claims.HoursAvailable
+            ? $"- Hours: every document cites {{{{{ChatClaimSupport.HoursKey}}}}} at least once."
+            : $"- Hours: {ChatClaimSupport.HoursKey} is unavailable because the periods ran at different hours; say so once in plain words, citing {{{{period.baseline.hours}}}} and {{{{period.comparison.hours}}}}.");
+        if (claims.NotEnoughEvidence)
+        {
+            Line(sb, "- Length: verdict.short reads Not enough evidence yet, so write at most two sentences per slot.");
+        }
         if (audience == BenchmarkReportAudience.ProviderIssueReport)
         {
             Line(sb, "- Provider-side attributions, for sentences about the model or its serving: "
@@ -428,6 +448,8 @@ public static partial class BenchmarkReportPackPrompt
                 .Where(n => string.Equals(Value(AnnotationPrefix(n) + "kind"), ProviderConfirmedKind, StringComparison.Ordinal))
                 .ToList();
             TimeOfDayAssessable = facts.TryGetValue(TimeOfDayKey, out var timeOfDay) && IsTrue(timeOfDay);
+            HoursAvailable = facts.TryGetValue(HoursKey, out var hours) && hours.Available;
+            NotEnoughEvidence = string.Equals(Value("verdict.short"), NotEnoughEvidenceText, StringComparison.Ordinal);
             RequestIdKeys = facts.Keys
                 .Where(k => RequestIdKeyRegex.IsMatch(k))
                 .OrderBy(k => int.Parse(k[(k.LastIndexOf('.') + 1)..], NumberStyles.None, CultureInfo.InvariantCulture))
@@ -466,6 +488,14 @@ public static partial class BenchmarkReportPackPrompt
 
         /// <summary><see cref="TimeOfDayKey"/> is available and true.</summary>
         public bool TimeOfDayAssessable { get; }
+
+        /// <summary><see cref="HoursKey"/> is available: the periods share at least one time-of-week stratum.</summary>
+        public bool HoursAvailable { get; }
+
+        /// <summary><c>verdict.short</c> is <see cref="NotEnoughEvidenceText"/>.</summary>
+        public bool NotEnoughEvidence { get; }
+
+        public const string NotEnoughEvidenceText = "Not enough evidence yet";
 
         public static string EndpointPrefix(string id) => "endpoint." + id + ".";
 

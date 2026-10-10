@@ -167,6 +167,9 @@ public sealed record MinimumDetectableEffectResult
     /// <summary>The note attached when the noise had to come from item spread.</summary>
     public const string OneRunPerPeriodNote = "one run per period: run-to-run noise not estimable";
 
+    /// <summary>The note of <see cref="ChatConsistencyStatistics.PairedMinimumDetectableEffect"/>.</summary>
+    public const string PairedFloorNote = "A floor: one unit per period, so run-to-run noise is not included.";
+
     /// <summary>The smallest true difference detectable at the stated α and power.</summary>
     public double Effect { get; init; }
 
@@ -939,7 +942,9 @@ public static class ChatConsistencyStatistics
     /// run-to-run standard deviation of the run means — the reproducibility SD — and the counts
     /// are run counts. Otherwise σ is the pooled item standard deviation, the counts are item
     /// counts, and <see cref="MinimumDetectableEffectResult.CapNote"/> is set: with one run per
-    /// period run-to-run noise is not estimable, so the effect is a floor, not a fair estimate.
+    /// period run-to-run noise is not estimable. That fallback is not a floor: σ includes the
+    /// item-to-item spread an item-paired estimate removes, so for paired data it overstates the
+    /// effect; <see cref="PairedMinimumDetectableEffect"/> is the paired counterpart.
     /// <para>Null when a period has no value or the pooled standard deviation is undefined.</para>
     /// </summary>
     public static MinimumDetectableEffectResult? MinimumDetectableEffect(
@@ -967,6 +972,43 @@ public static class ChatConsistencyStatistics
             TreatmentCount = t.Length,
             CapNote = !perRun,
             Note = perRun ? null : MinimumDetectableEffectResult.OneRunPerPeriodNote,
+            Alpha = alpha,
+            Power = power
+        };
+    }
+
+    /// <summary>
+    /// The minimum detectable effect of a paired comparison from its per-item differences:
+    /// <c>(z_{1−α/2} + z_{power}) · SD(d) / √n</c> (Cohen 1988, ch. 2). With one unit per period the
+    /// differences carry question-to-question noise only, so the effect is a floor:
+    /// <see cref="MinimumDetectableEffectResult.CapNote"/> is set and the note is
+    /// <see cref="MinimumDetectableEffectResult.PairedFloorNote"/>. The counts are the item count.
+    /// <para>Null for fewer than two differences or an undefined standard deviation.</para>
+    /// </summary>
+    public static MinimumDetectableEffectResult? PairedMinimumDetectableEffect(
+        IReadOnlyList<double> differences,
+        double alpha = DefaultAlpha,
+        double power = DefaultPower)
+    {
+        ArgumentNullException.ThrowIfNull(differences);
+        RequireFinite(differences, nameof(differences));
+        RequireOpenProbability(alpha, nameof(alpha));
+        RequireOpenProbability(power, nameof(power));
+        if (differences.Count < 2) return null;
+
+        double? variance = BenchmarkGroupStatistics.SampleVariance(differences);
+        if (!variance.HasValue || double.IsNaN(variance.Value) || variance.Value < 0.0) return null;
+
+        double sd = Math.Sqrt(variance.Value);
+        double z = NormalQuantile(1.0 - alpha / 2.0) + NormalQuantile(power);
+        return new MinimumDetectableEffectResult
+        {
+            Effect = z * sd / Math.Sqrt(differences.Count),
+            StandardDeviation = sd,
+            BaselineCount = differences.Count,
+            TreatmentCount = differences.Count,
+            CapNote = true,
+            Note = MinimumDetectableEffectResult.PairedFloorNote,
             Alpha = alpha,
             Power = power
         };

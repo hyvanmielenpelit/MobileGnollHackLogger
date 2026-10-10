@@ -246,8 +246,9 @@ public sealed record BenchmarkPdfDocumentInfo
     /// <summary>
     /// A stored chat consistency document: its cover names the model, the battery or suite compared,
     /// both periods with their battery runs or runs, the control models as the naming allows (never by
-    /// name in a Provider Issue Report) and who wrote it when. The subject line is <c>Chat consistency
-    /// analysis #12 — name</c>, the name left out of an anonymized copy, and the footer
+    /// name in a Provider Issue Report), the hours, the protocol, the analysis code version (out of date
+    /// as decided when rendered), who wrote it when and the provenance. The subject line is <c>Chat consistency
+    /// analysis #12 — name</c>, the name left out of an anonymized copy and when it is the default name, and the footer
     /// <c>Chat consistency analysis #12 · Executive Summary</c> before the page number: no hash anywhere.
     /// </summary>
     private static BenchmarkPdfDocumentInfo ForChatConsistencyDocument(
@@ -265,9 +266,23 @@ public sealed record BenchmarkPdfDocumentInfo
         }
 
         string analysis = "Chat consistency analysis " + (subject.AnalysisId is int id ? "#" + Inv(id) : "(not saved)");
-        string subjectLine = naming == BenchmarkReportPeerNaming.Named && !string.IsNullOrWhiteSpace(subject.Name)
+        string subjectLine = naming == BenchmarkReportPeerNaming.Named && !string.IsNullOrWhiteSpace(subject.Name) && !IsDefaultChatName(subject.Name, sheet)
             ? analysis + " — " + subject.Name.Trim()
             : analysis;
+
+        int codeVersion = subject.AnalysisCodeVersion > 0
+            ? subject.AnalysisCodeVersion
+            : FactOf("analysis.codeVersion") is { Available: true, Value: System.Text.Json.Nodes.JsonValue v } && v.TryGetValue(out int stored) ? stored : 0;
+        int current = Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion;
+        string analysisCode = codeVersion <= 0
+            ? "not recorded"
+            : codeVersion < current
+                ? "version " + Inv(codeVersion) + " — out of date (current: " + Inv(current) + ")"
+                : FactOf("analysis.writtenOutOfDate") is { Available: true } written && written.Display.Contains("changed inputs", StringComparison.Ordinal)
+                    ? "version " + Inv(codeVersion) + " — out of date (its inputs changed)"
+                    : "version " + Inv(codeVersion);
+        string protocolLabel = !string.IsNullOrWhiteSpace(subject.ProtocolLabel) ? subject.ProtocolLabel.Trim() : Fact("protocol.label");
+        string protocol = protocolLabel + ", α " + Fact("protocol.alpha");
 
         string model = string.Join(", ", new[] { sheet.SubjectProvider, sheet.SubjectModelId }.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()));
         string compared = FactOf("analysis.compared") is { Available: true }
@@ -280,7 +295,11 @@ public sealed record BenchmarkPdfDocumentInfo
             new("Baseline", Period("baseline")),
             new("Comparison", Period("comparison")),
             new("Controls", sheet.Peers.Count == 0 ? "none" : ComparedWithText(sheet, naming)),
+            new("Hours", FactOf("scope.hours") is { Available: true } ? Fact("scope.hours") : "none: the periods ran at different hours"),
+            new("Protocol", protocol),
+            new("Analysis code", analysisCode),
             new("Written", Stamp(document.CreatedAtUtc) + " UTC by " + WriterText(document)),
+            new("Provenance", ProvenanceText),
         };
 
         return new BenchmarkPdfDocumentInfo
@@ -298,6 +317,10 @@ public sealed record BenchmarkPdfDocumentInfo
             FooterText = analysis + " · " + audience
         };
     }
+
+    /// <summary>The analysis's name is the one it gets by default, <c>Chat consistency: &lt;model&gt;</c>, which the title already says.</summary>
+    private static bool IsDefaultChatName(string name, BenchmarkReportFactSheet sheet)
+        => string.Equals(name.Trim(), "Chat consistency: " + (sheet.SubjectLabel ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A run's Markdown report.</summary>
     public static BenchmarkPdfDocumentInfo ForRunReport(BenchmarkRun run, string? overseerVersion, BenchmarkPdfPaper paper)

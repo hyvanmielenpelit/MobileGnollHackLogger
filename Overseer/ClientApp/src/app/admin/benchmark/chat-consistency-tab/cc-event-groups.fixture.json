@@ -1,0 +1,15 @@
+{
+  "description": "Event groups of a chat consistency report: UTC day, series, harness version of the event's run and side of the period split. Read by chat-consistency-report-charts.spec.ts and by Overseer.Tests BenchmarkChatConsistencyReportFactsTests; both must assign these tags.",
+  "baselineEndUtc": "2026-10-08T12:00:00Z",
+  "comparisonStartUtc": "2026-10-08T13:00:00Z",
+  "events": [
+    { "atUtc": "2026-10-07T09:00:00Z", "kind": "HarnessVersion", "label": "harness 52 to 53", "from": "52", "to": "53", "runId": 90, "previousRunId": 89, "subjectKey": "target", "inTargetSeries": true, "tag": "E1" },
+    { "atUtc": "2026-10-07T09:00:00Z", "kind": "WikiHeadSha", "label": "wiki revised", "from": "aaa", "to": "bbb", "runId": 90, "previousRunId": 89, "subjectKey": "target", "inTargetSeries": true, "tag": "E1" },
+    { "atUtc": "2026-10-08T07:37:00Z", "kind": "ToolGuidesSha256", "label": "tool guides edited", "from": "ccc", "to": "ddd", "runId": 97, "previousRunId": 96, "subjectKey": "target", "inTargetSeries": true, "tag": "E2" },
+    { "atUtc": "2026-10-08T14:49:00Z", "kind": "HarnessVersion", "label": "harness 53 to 54", "from": "53", "to": "54", "runId": 98, "previousRunId": 97, "subjectKey": "target", "inTargetSeries": true, "tag": "E4" },
+    { "atUtc": "2026-10-08T14:49:00Z", "kind": "SourceCodeHeadSha", "label": "source revised", "from": "eee", "to": "fff", "runId": 98, "previousRunId": 97, "subjectKey": "target", "inTargetSeries": true, "tag": "E4" },
+    { "atUtc": "2026-10-08T16:00:00Z", "kind": "CorpusIndexFingerprintsJson", "label": "indexes rebuilt", "from": "ggg", "to": "hhh", "runId": 99, "previousRunId": 98, "subjectKey": "target", "inTargetSeries": true, "tag": "E4" },
+    { "atUtc": "2026-10-08T15:00:00Z", "kind": "WikiHeadSha", "label": "wiki revised", "from": "bbb", "to": "iii", "runId": 120, "previousRunId": 119, "subjectKey": "control-a", "inTargetSeries": false, "tag": "E5" },
+    { "atUtc": "2026-10-08T12:30:00Z", "kind": "KnowledgeBaseHeadSha", "label": "knowledge base revised", "from": "jjj", "to": "kkk", "runId": 96, "previousRunId": 95, "subjectKey": "target", "inTargetSeries": true, "tag": "E3" }
+  ]
+}

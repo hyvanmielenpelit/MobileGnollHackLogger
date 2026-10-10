@@ -252,6 +252,15 @@ public sealed record MissingControlNote(string Period, string SuiteName, string 
 {
     /// <summary>The latest target run of the period on this suite and build.</summary>
     public long TargetRunId { get; init; }
+
+    /// <summary>The target's harness version differs from the running one, so its build cannot be reproduced.</summary>
+    public bool BuildReplaced { get; init; }
+
+    /// <summary>The target's harness version.</summary>
+    public string? HarnessVersion { get; init; }
+
+    /// <summary>The target's candidate provider, as the comparability key records it.</summary>
+    public string Provider { get; init; } = string.Empty;
 }
 
 /// <summary>The control runs that qualified, and a note for every period that has none.</summary>
@@ -740,7 +749,9 @@ public static class ChatConsistencyComparability
     /// suite (<see cref="BenchmarkRun.BenchmarkSuiteIdUsed"/>, else <see cref="BenchmarkRun.BenchmarkSuiteId"/>,
     /// falling back to <see cref="BenchmarkRun.SuiteName"/> when either run has no id), with at least one
     /// item in common. A period with no qualifying control gets one <see cref="MissingControlNote"/>
-    /// per suite and build among its targets, naming the run that would close the gap.
+    /// per suite and build among its targets, naming the run that would close the gap, or, when the
+    /// target's harness version is not <paramref name="currentHarnessVersion"/>, saying that its build
+    /// has been replaced.
     /// </summary>
     /// <param name="periods">The periods, in the order they are reported.</param>
     /// <param name="candidateControls">The runs that may serve as controls.</param>
@@ -749,10 +760,12 @@ public static class ChatConsistencyComparability
     /// limited to other providers. An entry whose provider part equals the target's provider
     /// (ignoring case) is skipped; the first remaining entry, in the caller's order, is suggested.
     /// </param>
+    /// <param name="currentHarnessVersion">The running harness version; null treats every build as reproducible.</param>
     public static ControlRunMatching MatchControlRuns(
         IEnumerable<ChatConsistencyPeriod> periods,
         IEnumerable<BenchmarkRun> candidateControls,
-        IEnumerable<string>? availableOtherProviderModels = null)
+        IEnumerable<string>? availableOtherProviderModels = null,
+        string? currentHarnessVersion = null)
     {
         ArgumentNullException.ThrowIfNull(periods);
         ArgumentNullException.ThrowIfNull(candidateControls);
@@ -808,11 +821,16 @@ public static class ChatConsistencyComparability
 
             foreach (var target in gaps)
             {
+                bool replaced = currentHarnessVersion != null
+                    && !string.Equals(target.Run.HarnessVersion, currentHarnessVersion, StringComparison.Ordinal);
                 notes.Add(new MissingControlNote(
                     period.Name, target.Run.SuiteName ?? string.Empty, target.Fingerprint,
-                    SuggestControl(period.Name, target, models))
+                    replaced ? ReplacedBuildControlText(period.Name, target.Run.HarnessVersion) : SuggestControl(period.Name, target, models))
                 {
-                    TargetRunId = target.Run.Id
+                    TargetRunId = target.Run.Id,
+                    BuildReplaced = replaced,
+                    HarnessVersion = target.Run.HarnessVersion,
+                    Provider = target.Provider
                 });
             }
         }
@@ -820,19 +838,36 @@ public static class ChatConsistencyComparability
         return new ControlRunMatching(matches, notes);
     }
 
+    /// <summary>The missing-control text of a period whose Overseer build no longer runs.</summary>
+    public static string ReplacedBuildControlText(string period, string? harnessVersion)
+        => "No control run can be made for the " + period + " period any more: its Overseer build (harness "
+           + (string.IsNullOrWhiteSpace(harnessVersion) ? "unrecorded" : harnessVersion) + ") has been replaced. "
+           + "Make a control run beside the next checkpoint instead.";
+
+    /// <summary>
+    /// "a run of &lt;model&gt; (a provider other than &lt;provider&gt;)": the first of <paramref name="models"/>
+    /// whose provider part is not <paramref name="provider"/>, or any model of another provider; with
+    /// <paramref name="unit"/> naming what is made.
+    /// </summary>
+    public static string ControlSubjectPhrase(string provider, IEnumerable<string>? models, string unit = "run")
+    {
+        string? model = (models ?? Array.Empty<string>())
+            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Select(m => m.Trim())
+            .FirstOrDefault(m =>
+            {
+                int slash = m.IndexOf('/', StringComparison.Ordinal);
+                return slash <= 0 || !string.Equals(m.Substring(0, slash).Trim(), provider, StringComparison.OrdinalIgnoreCase);
+            });
+
+        return model != null
+            ? "a " + unit + " of " + model + " (a provider other than " + provider + ")"
+            : "a " + unit + " of a model from a provider other than " + provider;
+    }
+
     private static string SuggestControl(string period, RunFacts target, IReadOnlyList<string> models)
     {
-        string provider = target.Provider;
-        string? model = models.FirstOrDefault(m =>
-        {
-            int slash = m.IndexOf('/', StringComparison.Ordinal);
-            return slash <= 0 || !string.Equals(m.Substring(0, slash).Trim(), provider, StringComparison.OrdinalIgnoreCase);
-        });
-
-        string subject = model != null
-            ? "a run of " + model + " (a provider other than " + provider + ")"
-            : "a run of a model from a provider other than " + provider;
-
+        string subject = ControlSubjectPhrase(target.Provider, models);
         string suite = string.IsNullOrWhiteSpace(target.Run.SuiteName) ? SuiteIdentity(target.Run) : target.Run.SuiteName;
 
         return "No control run for period " + period + ": make " + subject

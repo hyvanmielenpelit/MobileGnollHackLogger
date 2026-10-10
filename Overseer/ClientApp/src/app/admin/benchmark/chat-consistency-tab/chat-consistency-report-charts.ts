@@ -37,6 +37,7 @@ import {
   printFigureAppearance
 } from '../report-pack/report-charts';
 import { CC_PRINT_THEME, CC_REPORT_FIGURES, CcFigureInput, buildCcFigure, ccFigureTitle } from './chat-consistency-charts';
+import { ccReportEventGroups } from './chat-consistency-events';
 import {
   CcDocumentChartLayout,
   CcReportChartSettings,
@@ -48,7 +49,7 @@ import {
 import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from './chat-consistency.models';
 
 /** Bumped whenever the drawing changes, so the settings hash tells old charts from new ones. */
-export const CC_REPORT_CHART_VERSION = 6;
+export const CC_REPORT_CHART_VERSION = 7;
 
 /** SHA-256 of the drawing settings, the chart choices and their layout, 64 lowercase hex characters; throws outside a secure context. */
 export async function ccReportChartSettingsHash(settings: CcReportChartSettings): Promise<string> {
@@ -122,9 +123,21 @@ export function ccDocumentFigureBox(key: CcReportFigureKey, width: ReportChartWi
 }
 
 /**
+ * The input of a report chart: `input` with the analysis's own events grouped and tagged as its report
+ * documents number them (`ccReportEventGroups`), whatever the timeline numbered them. The split comes
+ * from the period bands, which `analysisBands` draws at the baseline's end and the comparison's start.
+ */
+export function ccReportFigureInput(input: CcFigureInput): CcFigureInput {
+  const baselineEnd = input.bands?.find(band => band.name === 'Baseline')?.end ?? null;
+  const comparisonStart = input.bands?.find(band => band.name === 'Comparison')?.start ?? null;
+  return { ...input, eventGroups: ccReportEventGroups(input.events ?? [], baselineEnd, comparisonStart), eventNumbering: undefined };
+}
+
+/**
  * One figure as a document of `layout` prints it: at its width of the text column at 300 dpi, its
  * axis labels at the layout's size in points (the charts' 11 px axis text is {@link BASE_LABEL_PX}),
- * the time axis fitted to the plotted points, in the print theme. Null when the figure has nothing to
+ * the time axis fitted to the plotted points, in the print theme, its event markers tagged as the
+ * document's events table tags them ({@link ccReportFigureInput}). Null when the figure has nothing to
  * draw; throws when its width does not fit or it cannot be composed.
  */
 export async function composeCcReportChart(
@@ -139,7 +152,7 @@ export async function composeCcReportChart(
   if (refusal) {
     throw new Error(`${title} cannot be drawn: ${refusal}`);
   }
-  const figure = buildCcFigure(CC_REPORT_FIGURES[key], input, {
+  const figure = buildCcFigure(CC_REPORT_FIGURES[key], ccReportFigureInput(input), {
     theme: DOCUMENT_CHART_THEME,
     reducedMotion: true,
     header: { title: null, subject: null },

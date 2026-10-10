@@ -23,6 +23,7 @@ import { CcPeriodIds, CcPeriodUnit, CcUnitPeriod } from './chat-consistency-peri
 import {
   CC_BATTERY_SET_PREFIX,
   CC_SUITE_SET_PREFIX,
+  CcAnalysisFreshness,
   CcAnalysisResult,
   CcBatteryRunRow,
   CcEndpointBrief,
@@ -200,6 +201,47 @@ export function ccCompareKindOf(setKey: string | null | undefined): CcCompareKin
   if (setKey?.startsWith(CC_BATTERY_SET_PREFIX)) return { kind: 'battery', text: 'Battery' };
   if (setKey?.startsWith(CC_SUITE_SET_PREFIX)) return { kind: 'suite', text: 'Suite' };
   return { kind: 'all', text: 'All suites' };
+}
+
+// --- Freshness ---
+
+/** What an out-of-date analysis is, as the notices' info tip says it. */
+export const CC_OUT_OF_DATE_RULE =
+  'An analysis is out of date when it was saved under an earlier analysis code version, or when its inputs changed '
+  + 'after it was saved. Saved analyses never change.';
+
+/** The out-of-date notice's closing advice. */
+export const CC_OUT_OF_DATE_ADVICE =
+  'Saved analyses never change. Analyze again for a current analysis with the same settings; this one stays in '
+  + 'Analysis history as a record.';
+
+/** The reason sentence of a changed input. */
+export const CC_INPUTS_CHANGED_SENTENCE = 'Its runs, grades, controls, annotations or prices changed after it was saved.';
+
+/** The reason sentence of an earlier analysis code version. */
+export function ccEarlierCodeSentence(savedVersion: number, currentVersion: number): string {
+  return `Saved under analysis code version ${savedVersion}; Overseer now analyzes under version ${currentVersion}.`;
+}
+
+/** Why an analysis is out of date, one sentence per reason; empty when it is current. */
+export function ccOutOfDateReasons(freshness: CcAnalysisFreshness | null | undefined): string[] {
+  if (!freshness?.outOfDate) return [];
+  const reasons: string[] = [];
+  if (freshness.earlierAnalysisCode) {
+    reasons.push(ccEarlierCodeSentence(freshness.analysisCodeVersion, freshness.currentAnalysisCodeVersion));
+  }
+  if (freshness.inputsChanged === true) reasons.push(CC_INPUTS_CHANGED_SENTENCE);
+  return reasons;
+}
+
+/**
+ * The quiet line of a current-code analysis whose inputs could not be checked; null when they were
+ * checked, when the code is earlier, or when the server gave no reason.
+ */
+export function ccInputsUncheckedText(freshness: CcAnalysisFreshness | null | undefined): string | null {
+  if (!freshness || freshness.earlierAnalysisCode || freshness.inputsChanged !== null) return null;
+  const note = freshness.inputsNote?.trim();
+  return note ? `Changes since saving could not be checked: ${note}` : null;
 }
 
 // --- Endpoint notes ---

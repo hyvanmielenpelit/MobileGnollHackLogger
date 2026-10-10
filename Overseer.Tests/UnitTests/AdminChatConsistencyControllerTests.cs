@@ -921,4 +921,55 @@ public class AdminChatConsistencyControllerTests
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Canceled, finished.Status);
         Assert.Equal(0, h.Provider.Calls);
     }
+
+    [Fact]
+    public async Task TheFreshnessEndpoint_AnswersWhetherTheAnalysisIsOutOfDate_And404ForAnUnknownOne()
+    {
+        await using var h = await ChatConsistencyReportHarness.CreateAsync(ChatConsistencyReportTestData.Result() with { AnalysisCodeVersion = 4 });
+        using var scopes = RegradeScopes();
+        var controller = h.Controller(scopes.GetRequiredService<IServiceScopeFactory>());
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = Assert.IsType<JsonResult>(await controller.GetFreshness(ChatConsistencyReportHarness.AnalysisId, ct));
+        var freshness = Assert.IsType<ChatConsistencyFreshness>(result.Value);
+        Assert.True(freshness.OutOfDate);
+        Assert.True(freshness.EarlierAnalysisCode);
+        Assert.Equal(4, freshness.AnalysisCodeVersion);
+        Assert.Null(freshness.InputsChanged);
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.Value, ChatConsistencyJson.Options));
+        Assert.True(json.RootElement.GetProperty("outOfDate").GetBoolean());
+        Assert.Equal(ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion, json.RootElement.GetProperty("currentAnalysisCodeVersion").GetInt32());
+
+        Assert.IsType<NotFoundResult>(await controller.GetFreshness(99, ct));
+    }
+
+    [Fact]
+    public async Task WritingReportsFromAnOutOfDateAnalysis_Answers409WithOutOfDate_UntilAcknowledged()
+    {
+        await using var h = await ChatConsistencyReportHarness.CreateAsync(ChatConsistencyReportTestData.Result() with { AnalysisCodeVersion = 4 });
+        using var scopes = RegradeScopes();
+        var controller = h.Controller(scopes.GetRequiredService<IServiceScopeFactory>());
+        var ct = TestContext.Current.CancellationToken;
+        var request = new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.Writer.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.ExecutiveSummary }
+        };
+
+        var refused = Assert.IsType<ObjectResult>(await controller.WriteReports(ChatConsistencyReportHarness.AnalysisId, request, ct));
+        Assert.Equal(StatusCodes.Status409Conflict, refused.StatusCode);
+        using (var json = JsonDocument.Parse(JsonSerializer.Serialize(refused.Value, refused.Value!.GetType(), Web)))
+        {
+            Assert.True(json.RootElement.GetProperty("outOfDate").GetBoolean());
+            Assert.StartsWith("Analysis #7 is out of date: ", json.RootElement.GetProperty("error").GetString());
+        }
+        Assert.Equal(0, h.Provider.Calls);
+
+        h.Provider.Replies.Enqueue(ChatConsistencyReportHarness.Reply(ChatConsistencyReportTestData.ValidOutput(BenchmarkReportAudience.ExecutiveSummary)));
+        request.AcknowledgeOutOfDate = true;
+        Assert.IsType<AcceptedResult>(await controller.WriteReports(ChatConsistencyReportHarness.AnalysisId, request, ct));
+        await h.Service().ChatConsistencyJobCompletion(ChatConsistencyReportHarness.AnalysisId);
+        Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(ct));
+    }
 }

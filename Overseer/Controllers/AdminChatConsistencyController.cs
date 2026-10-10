@@ -210,6 +210,25 @@ public class AdminChatConsistencyController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Whether a saved analysis is out of date: saved under earlier analysis code, or its inputs changed
+    /// since it was saved. Reads the stored runs again; saves nothing. 404 when there is none; 499 when the
+    /// client aborts.
+    /// </summary>
+    [HttpGet("analyses/{id:int}/freshness")]
+    public async Task<IActionResult> GetFreshness(int id, CancellationToken ct)
+    {
+        try
+        {
+            var freshness = await _analysis.CheckFreshnessAsync(id, ct);
+            return freshness == null ? NotFound() : Payload(freshness);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
     /// <summary>Deletes a saved analysis: 204; 404 when there is none; 409 with the refusal while report documents written from it exist; 499 when the client aborts.</summary>
     [HttpDelete("analyses/{id:int}")]
     public async Task<IActionResult> DeleteAnalysis(int id, CancellationToken ct)
@@ -255,7 +274,8 @@ public class AdminChatConsistencyController : ControllerBase
     /// and with the same-provider warning for an unacknowledged writer of the model's provider; 400 for a
     /// document that is not a chat consistency document, for the Provider Issue Report while it is not
     /// available (with the reason), for an unusable writer or the model under report and for a refused
-    /// endpoint; 429 at the spend cap; 499 when the client aborts.
+    /// endpoint; 409 with <c>outOfDate: true</c> for an out-of-date analysis without
+    /// <c>acknowledgeOutOfDate</c>; 429 at the spend cap; 499 when the client aborts.
     /// </summary>
     [HttpPost("analyses/{id:int}/report-documents")]
     public async Task<IActionResult> WriteReports(int id, [FromBody] WriteRunReportDocumentsRequest? request, CancellationToken ct)
@@ -266,7 +286,8 @@ public class AdminChatConsistencyController : ControllerBase
         try
         {
             return ReportResult(await _reports.WriteChatConsistencyDocumentsAsync(
-                id, request.WriterModelConfigurationId, request.Audiences, request.AcknowledgeSameProvider, userId, ct));
+                id, request.WriterModelConfigurationId, request.Audiences, request.AcknowledgeSameProvider, userId, ct,
+                request.AcknowledgeOutOfDate));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -507,6 +528,7 @@ public class AdminChatConsistencyController : ControllerBase
                 return NotFound();
         }
         if (result.SameProviderWarning != null) return StatusCode(result.StatusCode, result.SameProviderWarning);
+        if (result.OutOfDate) return StatusCode(result.StatusCode, new { error = result.Error, outOfDate = true });
         return StatusCode(result.StatusCode, new { error = result.Error });
     }
 

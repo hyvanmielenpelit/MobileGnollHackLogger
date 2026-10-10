@@ -326,6 +326,9 @@ public sealed record ChatConsistencyCalibrationVerdict(
     double? ConcisenessLevel,
     double? ReadabilityLevel);
 
+/// <summary>A battery run's Overall Index with its 95 % half-width, or the note saying why it has none.</summary>
+public sealed record ChatConsistencyUnitOverallIndex(double? Index, double? HalfWidth, string? IntervalNote, string? Note);
+
 /// <summary>
 /// The stored data one chat consistency analysis reads: the subject's runs in each period, the candidate
 /// control runs, the calibrations of those runs and of the anchor runs, the matching annotations, the
@@ -383,6 +386,9 @@ public sealed class ChatConsistencyEvidence
 
     /// <summary>Unit id → the unit's start: the battery run's <c>StartedAtUtc</c>, or the run's.</summary>
     public IReadOnlyDictionary<long, DateTime> UnitStartedAtUtc { get; init; } = new Dictionary<long, DateTime>();
+
+    /// <summary>In a battery set, analyzed battery run id → its Overall Index; empty otherwise. Descriptive; not part of the input fingerprint.</summary>
+    public IReadOnlyDictionary<long, ChatConsistencyUnitOverallIndex> UnitOverallIndexes { get; init; } = new Dictionary<long, ChatConsistencyUnitOverallIndex>();
 
     public IEnumerable<BenchmarkRun> TargetRuns => BaselineRuns.Concat(ComparisonRuns);
 
@@ -737,6 +743,9 @@ public class ChatConsistencyEvidenceBuilder
         var analyzedIds = baseline.Concat(comparison).Select(r => r.Id).ToHashSet();
         var analyzedUnitOf = unitOf.Where(p => analyzedIds.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value);
         var analyzedUnits = analyzedUnitOf.Values.ToHashSet();
+        var unitOverallIndexes = batterySet
+            ? await BatteryOverallIndexesAsync(batteries.Where(b => analyzedUnits.Contains(b.Row.Id)).ToList(), ct)
+            : new Dictionary<long, ChatConsistencyUnitOverallIndex>();
 
         return new ChatConsistencyEvidence
         {
@@ -758,7 +767,8 @@ public class ChatConsistencyEvidenceBuilder
             ComparisonSet = compared,
             UnitKind = batterySet ? ChatConsistencyComparisonSetKinds.BatteryRunUnit : ChatConsistencyComparisonSetKinds.RunUnit,
             UnitOf = analyzedUnitOf,
-            UnitStartedAtUtc = unitStarts.Where(p => analyzedUnits.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value)
+            UnitStartedAtUtc = unitStarts.Where(p => analyzedUnits.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value),
+            UnitOverallIndexes = unitOverallIndexes
         };
     }
 
@@ -1514,6 +1524,9 @@ public class ChatConsistencyEvidenceBuilder
     private const string StaleBatteryAnalysisNote = "The battery analysis was computed over other member runs. Recompute it from the battery report.";
     private const string NoOverallIndexNote = "The stored battery analysis has no Overall Index. Recompute it from the battery report.";
 
+    /// <summary>The interval note of an Overall Index whose half-width has no reproducibility part.</summary>
+    public const string QuestionSamplingOnlyNote = "question sampling only";
+
     /// <summary>
     /// The timeline point of <paramref name="state"/>: the measures pooled over its usable members' answers
     /// (<see cref="PooledPoint"/>), identified by the battery run and labeled with the battery's name and
@@ -1526,7 +1539,7 @@ public class ChatConsistencyEvidenceBuilder
         IReadOnlyDictionary<long, BenchmarkRun> memberHeaders,
         IReadOnlyList<BenchmarkAssessorCalibration> calibrations,
         ModelPricing? pricing,
-        (double? Index, string? Note) overall)
+        ChatConsistencyUnitOverallIndex overall)
     {
         var row = state.Row;
         var memberIds = state.MemberRunIds.ToList();
@@ -1567,7 +1580,9 @@ public class ChatConsistencyEvidenceBuilder
             IncompleteReason = state.IncompleteReason,
             MemberRunIds = memberIds,
             OverallIndex = overall.Index,
-            OverallIndexNote = overall.Note
+            OverallIndexNote = overall.Note,
+            OverallIndexHalfWidth = overall.HalfWidth,
+            OverallIndexIntervalNote = overall.IntervalNote
         };
     }
 
@@ -1577,7 +1592,7 @@ public class ChatConsistencyEvidenceBuilder
     /// when that analysis is current over the usable members on the axis and complete; an incomplete battery
     /// run has none. Two queries for all the battery runs.
     /// </summary>
-    private async Task<Dictionary<long, (double? Index, string? Note)>> BatteryOverallIndexesAsync(
+    private async Task<Dictionary<long, ChatConsistencyUnitOverallIndex>> BatteryOverallIndexesAsync(
         IReadOnlyList<BatteryRunState> states, CancellationToken ct)
     {
         var ids = states.Where(s => s.Complete).Select(s => s.Row.Id).Distinct().ToList();
@@ -1600,7 +1615,7 @@ public class ChatConsistencyEvidenceBuilder
             }
         }
 
-        var result = new Dictionary<long, (double? Index, string? Note)>();
+        var result = new Dictionary<long, ChatConsistencyUnitOverallIndex>();
         foreach (var state in states)
         {
             result[state.Row.Id] = OverallIndexOf(state, latest.GetValueOrDefault(state.Row.Id));
@@ -1610,14 +1625,17 @@ public class ChatConsistencyEvidenceBuilder
     }
 
     /// <summary>The Overall Index of <paramref name="state"/> from <paramref name="analysis"/>, its latest stored analysis, or why there is none.</summary>
-    private static (double? Index, string? Note) OverallIndexOf(BatteryRunState state, BenchmarkBatteryAnalysis? analysis)
+    private static ChatConsistencyUnitOverallIndex OverallIndexOf(BatteryRunState state, BenchmarkBatteryAnalysis? analysis)
     {
-        if (!state.Complete) return (null, "The battery run is incomplete (" + state.IncompleteReason + "), so it has no Overall Index.");
-        if (analysis == null) return (null, NoBatteryAnalysisNote);
-        if (BenchmarkBatteryAnalysisService.IsStale(state.MemberRunIds.ToList(), analysis)) return (null, StaleBatteryAnalysisNote);
+        if (!state.Complete) return new(null, null, null, "The battery run is incomplete (" + state.IncompleteReason + "), so it has no Overall Index.");
+        if (analysis == null) return new(null, null, null, NoBatteryAnalysisNote);
+        if (BenchmarkBatteryAnalysisService.IsStale(state.MemberRunIds.ToList(), analysis)) return new(null, null, null, StaleBatteryAnalysisNote);
 
         var overall = analysis.Complete ? BenchmarkBatteryAnalysisService.DeserializeResult(analysis)?.OverallIndex : null;
-        return overall == null ? (null, NoOverallIndexNote) : (overall.PointEstimate, null);
+        if (overall == null) return new(null, null, null, NoOverallIndexNote);
+
+        double? half = overall.CombinedHalfWidth is double h && double.IsFinite(h) ? h : null;
+        return new(overall.PointEstimate, half, half.HasValue && overall.ReproducibilityHalfWidth == null ? QuestionSamplingOnlyNote : null, null);
     }
 
     /// <summary>

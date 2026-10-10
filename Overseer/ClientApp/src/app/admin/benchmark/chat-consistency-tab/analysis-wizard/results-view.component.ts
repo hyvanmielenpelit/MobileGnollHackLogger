@@ -78,6 +78,7 @@ import {
   writeStoredCcResultsImageSettings
 } from '../results-image/results-image-settings';
 import { CcEndpointCardComponent } from './endpoint-card/endpoint-card.component';
+import { CcFreshnessNoticeComponent } from './freshness-notice/freshness-notice.component';
 import { CcNextRunsComponent } from './next-runs/next-runs.component';
 import { CcResultPeriodsComponent } from './result-periods/result-periods.component';
 import { CcVerdictBannerComponent } from './verdict-banner/verdict-banner.component';
@@ -134,7 +135,8 @@ function writeStoredResultsTab(tab: CcResultsTab): void {
  * in the analyzed span, the limitations, the data quality and the analysis's identity, each behind a
  * closed disclosure). Every panel is rendered once and hidden while another tab shows. Beside the tabs,
  * **Copy** and **Download** export the shown section as an image, and **Image settings** opens the
- * dialog that chooses what the images show and the file they are written as.
+ * dialog that chooses what the images show and the file they are written as. Above the panels,
+ * `app-cc-freshness-notice` says when the saved analysis is out of date.
  */
 @Component({
   selector: 'app-cc-results-view',
@@ -142,6 +144,7 @@ function writeStoredResultsTab(tab: CcResultsTab): void {
   imports: [
     CcEndpointCardComponent,
     CcEventListComponent,
+    CcFreshnessNoticeComponent,
     CcNextRunsComponent,
     CcResultPeriodsComponent,
     CcResultsImageDialogComponent,
@@ -171,6 +174,8 @@ export class CcResultsViewComponent implements OnInit, OnChanges, OnDestroy {
   @Input() annotations: readonly CcTaggedAnnotation[] = [];
 
   @Output() readonly repeatSetup = new EventEmitter<number>();
+  /** *Analyze again* on the out-of-date notice: the host shows Analyze with this analysis's settings. */
+  @Output() readonly analyzeAgain = new EventEmitter<void>();
   @Output() readonly openRunReport = new EventEmitter<number>();
   @Output() readonly openBatteryRunReport = new EventEmitter<number>();
 

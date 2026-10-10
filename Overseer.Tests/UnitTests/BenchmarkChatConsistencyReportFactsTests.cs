@@ -815,4 +815,157 @@ public class BenchmarkChatConsistencyReportFactsTests
 
         Assert.DoesNotContain("chatConsistency", json, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void WithoutCommonHours_ScopeHoursIsUnavailable_AndTimeOfDaySaysThePeriodsShareNone()
+    {
+        var result = Result() with { Scope = new ChatConsistencyScope { Text = "no common time stratum" } };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
+
+        var hours = Fact(sheet, "scope.hours");
+        Assert.False(hours.Available);
+        Assert.Equal(BenchmarkChatConsistencyReportFacts.NoSharedHoursReason, hours.UnavailableReason);
+        Assert.Equal("not assessable: the periods share no hours", Fact(sheet, "serving.timeOfDayAssessable").Display);
+        Assert.DoesNotContain(sheet.Facts, f => f.Display.Contains("no common time stratum", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheOutOfDateAcknowledgment_IsAFact_OnlyWhenTheJobRecordedIt()
+    {
+        var current = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
+        Assert.DoesNotContain(current.Facts, f => f.Key == "analysis.writtenOutOfDate");
+
+        var written = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary, null, "earlier analysis code (version 4) and changed inputs");
+        Assert.Equal("earlier analysis code (version 4) and changed inputs", Fact(written, "analysis.writtenOutOfDate").Display);
+    }
+
+    [Fact]
+    public void EachPeriodsHoursAndLevels_AreFacts_AndUnavailableOnAnEarlierAnalysis()
+    {
+        var result = Result() with
+        {
+            PeriodHours = new[]
+            {
+                new ChatConsistencyPeriodHours { Period = "baseline", Strata = new[] { "Weekday 04–08 UTC" }, Text = "weekdays 04–08 UTC" },
+                new ChatConsistencyPeriodHours { Period = "comparison", Strata = new[] { "Weekday 12–16 UTC" }, Text = "weekdays 12–16 UTC" }
+            },
+            PeriodLevels = new[]
+            {
+                new ChatConsistencyPeriodLevels
+                {
+                    Period = "baseline", AnswerCount = 36, NativeMeanQuality = 81.04, OverallIndex = 82.06, OverallIndexHalfWidth = 2.45,
+                    OverallIndexIntervalNote = "question sampling only", MedianTimeToFirstAnswerTextMs = 39_312, MedianStreamingRate = 61.24,
+                    MeanOutputTokensPerAnswer = 9044.4, MeanCostPerQuestionUsd = 0.00712, FailedAnswerCount = 0
+                },
+                new ChatConsistencyPeriodLevels { Period = "comparison", AnswerCount = 36, MeanCostPerQuestionUsd = 0.1, FailedAnswerCount = 1 }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal("weekdays 04–08 UTC", Fact(sheet, "period.baseline.hours").Display);
+        Assert.Equal("weekdays 12–16 UTC", Fact(sheet, "period.comparison.hours").Display);
+        Assert.Equal("82.1 (95 % interval 79.6–84.5, question sampling only)", Fact(sheet, "level.baseline.overallIndex").Display);
+        Assert.Equal("mean score 81.0 points", Fact(sheet, "level.baseline.quality").Display);
+        Assert.Equal("median 39.3 s", Fact(sheet, "level.baseline.timeToFirstAnswerText").Display);
+        Assert.Equal("median 61.2 tokens/s", Fact(sheet, "level.baseline.streamingRate").Display);
+        Assert.Equal("mean 9,044 output tokens per answer", Fact(sheet, "level.baseline.outputTokens").Display);
+        Assert.Equal("mean $0.0071 per question", Fact(sheet, "level.baseline.costPerQuestion").Display);
+        Assert.Equal("mean $0.10 per question", Fact(sheet, "level.comparison.costPerQuestion").Display);
+        Assert.Equal("0 of 36 answers", Fact(sheet, "level.baseline.failedAnswers").Display);
+        Assert.Equal("1 of 36 answers", Fact(sheet, "level.comparison.failedAnswers").Display);
+        Assert.False(Fact(sheet, "level.comparison.overallIndex").Available);
+
+        var earlier = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(BenchmarkChatConsistencyReportFacts.BeforeLevelsReason, Fact(earlier, "period.baseline.hours").UnavailableReason);
+        Assert.Equal(BenchmarkChatConsistencyReportFacts.BeforeLevelsReason, Fact(earlier, "level.comparison.quality").UnavailableReason);
+    }
+
+    [Fact]
+    public void TheEventGroups_FollowTheSharedFixture()
+    {
+        using var fixture = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(EventGroupsFixturePath()));
+        var root = fixture.RootElement;
+        var events = root.GetProperty("events").EnumerateArray().Select(e => new ChatConsistencyEventView
+        {
+            AtUtc = e.GetProperty("atUtc").GetDateTime().ToUniversalTime(),
+            Kind = e.GetProperty("kind").GetString()!,
+            Label = e.GetProperty("label").GetString()!,
+            From = e.GetProperty("from").GetString(),
+            To = e.GetProperty("to").GetString(),
+            RunId = e.GetProperty("runId").GetInt64(),
+            PreviousRunId = e.GetProperty("previousRunId").GetInt64(),
+            SubjectKey = e.GetProperty("subjectKey").GetString()!,
+            InTargetSeries = e.GetProperty("inTargetSeries").GetBoolean()
+        }).ToList();
+        var expected = root.GetProperty("events").EnumerateArray().Select(e => e.GetProperty("tag").GetString()).ToList();
+
+        var groups = BenchmarkChatConsistencyReportFacts.EventGroups(
+            events, root.GetProperty("baselineEndUtc").GetDateTime().ToUniversalTime(), root.GetProperty("comparisonStartUtc").GetDateTime().ToUniversalTime());
+
+        var tagOf = groups.SelectMany(g => g.Events.Select(e => (Event: e, g.Tag))).ToDictionary(x => x.Event, x => x.Tag);
+        Assert.Equal(expected, events.Select(e => tagOf[e]));
+    }
+
+    [Fact]
+    public void AnUpdateOfOneDay_IsDatedFromItsFirstToItsLastEvent_AndTagged()
+    {
+        var result = Result() with
+        {
+            Baseline = Result().Baseline with { EndUtc = Day1.AddDays(10).AddHours(12) },
+            Comparison = Result().Comparison with { StartUtc = Day1.AddDays(10).AddHours(13) },
+            Events = new[]
+            {
+                new ChatConsistencyEventView { AtUtc = Day1.AddDays(10).AddHours(14).AddMinutes(49), Kind = OverseerEventKinds.HarnessVersion, From = "53", To = "54", RunId = 98, PreviousRunId = 97, SubjectKey = "s", InTargetSeries = true },
+                new ChatConsistencyEventView { AtUtc = Day1.AddDays(10).AddHours(16), Kind = OverseerEventKinds.Wiki, From = "a", To = "b", RunId = 99, PreviousRunId = 98, SubjectKey = "s", InTargetSeries = true }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal(1, Fact(sheet, "eventGroups.count").Value!.GetValue<int>());
+        Assert.Equal("E1", Fact(sheet, "eventGroups.1.tag").Display);
+        Assert.Equal("2026-09-11 14:49 UTC", Fact(sheet, "eventGroups.1.at").Display);
+        Assert.Equal("2026-09-11 16:00 UTC", Fact(sheet, "eventGroups.1.lastAt").Display);
+    }
+
+    [Fact]
+    public void RobustnessSummaries_StateEndpointsSharingAStatusAndDetailTogether()
+    {
+        var result = Result() with
+        {
+            RobustnessChecks = new[]
+            {
+                new ChatConsistencyCheck { EndpointId = "P4", Name = "Leave-one-run-out stability", Status = ChatConsistencyCheckStatus.NotAssessable, Detail = "No decisive verdict to check." },
+                new ChatConsistencyCheck { EndpointId = "P5", Name = "Leave-one-run-out stability", Status = ChatConsistencyCheckStatus.NotAssessable, Detail = "No decisive verdict to check." },
+                new ChatConsistencyCheck { EndpointId = "P1", Name = "Leave-one-run-out stability", Status = ChatConsistencyCheckStatus.Failed, Detail = "Without run #10 the verdict does not hold." }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal("Not assessable for P4 and P5: no decisive verdict to check; failed for P1: without run #10 the verdict does not hold.",
+            Fact(sheet, "robustness.leaveOneRunOutStability.summary").Display);
+    }
+
+    [Fact]
+    public void ServedModelIDs_AreWrittenInCapitals()
+    {
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal("the served model IDs are the same in both periods", Fact(sheet, "identity.changed").Display);
+    }
+
+    /// <summary>The event-group fixture the client's report-chart spec reads too, from the repository root.</summary>
+    private static string EventGroupsFixturePath()
+    {
+        var directory = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (directory != null && !System.IO.File.Exists(System.IO.Path.Combine(directory.FullName, "MobileGnollHackLogger.slnx")))
+        {
+            directory = directory.Parent;
+        }
+        Assert.NotNull(directory);
+        return System.IO.Path.Combine(directory!.FullName, "Overseer", "ClientApp", "src", "app", "admin", "benchmark", "chat-consistency-tab", "cc-event-groups.fixture.json");
+    }
 }

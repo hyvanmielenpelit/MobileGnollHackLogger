@@ -303,6 +303,9 @@ public sealed record ChatConsistencyEndpointResult
     public bool Computed { get; init; }
     public string? NotComputedReason { get; init; }
 
+    /// <summary>Why the endpoint was not computed, one of <see cref="ChatConsistencyNotComputedKinds"/>; null when computed and before analysis code version 6.</summary>
+    public string? NotComputedKind { get; init; }
+
     /// <summary>Comparison minus baseline on the effect scale.</summary>
     public double? Estimate { get; init; }
 
@@ -354,6 +357,97 @@ public sealed record ChatConsistencyEndpointResult
     /// <summary>Observations outside the common strata, as a share (stratified endpoints).</summary>
     public double? StratumExcludedShare { get; init; }
     public IReadOnlyList<ChatConsistencyCheck> RobustnessChecks { get; init; } = Array.Empty<ChatConsistencyCheck>();
+}
+
+/// <summary>The values of <see cref="ChatConsistencyEndpointResult.NotComputedKind"/>.</summary>
+public static class ChatConsistencyNotComputedKinds
+{
+    /// <summary>The periods share no measurement segment on the endpoint's axis.</summary>
+    public const string MeasurementChanged = "measurementChanged";
+
+    /// <summary>The periods share no time-of-week stratum.</summary>
+    public const string NoCommonStratum = "noCommonStratum";
+
+    /// <summary>A period has no run with the call telemetry the endpoint needs.</summary>
+    public const string NoTelemetry = "noTelemetry";
+
+    /// <summary>No price card resolves.</summary>
+    public const string NoPricing = "noPricing";
+
+    /// <summary>No item has a value in both periods.</summary>
+    public const string TooFewPairs = "tooFewPairs";
+
+    public const string Other = "other";
+}
+
+/// <summary>The hours one period's analyzed answers started in.</summary>
+public sealed record ChatConsistencyPeriodHours
+{
+    /// <summary><c>baseline</c> or <c>comparison</c>.</summary>
+    public string Period { get; init; } = string.Empty;
+
+    /// <summary>The time-of-week strata, as <see cref="ChatConsistencyStatistics.StratumLabel"/> renders them, ascending.</summary>
+    public IReadOnlyList<string> Strata { get; init; } = Array.Empty<string>();
+
+    /// <summary>For example "weekdays 04–08 UTC"; "no timed answers" when there is none.</summary>
+    public string Text { get; init; } = string.Empty;
+}
+
+/// <summary>Descriptive levels of one period over its analyzed units; not a comparison.</summary>
+public sealed record ChatConsistencyPeriodLevels
+{
+    /// <summary><c>baseline</c> or <c>comparison</c>.</summary>
+    public string Period { get; init; } = string.Empty;
+    public int AnswerCount { get; init; }
+
+    /// <summary>The mean of the native per-answer quality scores.</summary>
+    public double? NativeMeanQuality { get; init; }
+
+    /// <summary>
+    /// The battery Overall Index when every unit is a battery run with a current stored battery analysis:
+    /// the unit's index, or the mean of the units' indexes.
+    /// </summary>
+    public double? OverallIndex { get; init; }
+
+    /// <summary>The 95 % half-width of <see cref="OverallIndex"/>; only with one unit.</summary>
+    public double? OverallIndexHalfWidth { get; init; }
+
+    /// <summary>"question sampling only" when the half-width rests on one round; else null.</summary>
+    public string? OverallIndexIntervalNote { get; init; }
+
+    /// <summary>The median time to first answer text over delivered answers with call telemetry.</summary>
+    public double? MedianTimeToFirstAnswerTextMs { get; init; }
+
+    /// <summary>The median answer streaming rate, tokens per second.</summary>
+    public double? MedianStreamingRate { get; init; }
+
+    /// <summary>The mean output tokens per delivered answer.</summary>
+    public double? MeanOutputTokensPerAnswer { get; init; }
+
+    /// <summary>The mean cost per delivered answer in US dollars at the analysis's price card.</summary>
+    public double? MeanCostPerQuestionUsd { get; init; }
+
+    /// <summary>Terminal failures among <see cref="AnswerCount"/>.</summary>
+    public int FailedAnswerCount { get; init; }
+}
+
+/// <summary>Whether a saved analysis is out of date, and why.</summary>
+public sealed record ChatConsistencyFreshness
+{
+    public int AnalysisId { get; init; }
+    public int AnalysisCodeVersion { get; init; }
+    public int CurrentAnalysisCodeVersion { get; init; }
+
+    /// <summary>Saved under an earlier analysis code version than the running Overseer's.</summary>
+    public bool EarlierAnalysisCode { get; init; }
+
+    /// <summary>The input fingerprint recomputed today differs from the stored one; null when not checked.</summary>
+    public bool? InputsChanged { get; init; }
+
+    /// <summary>Why <see cref="InputsChanged"/> is null; null when it was checked.</summary>
+    public string? InputsNote { get; init; }
+
+    public bool OutOfDate { get; init; }
 }
 
 /// <summary>One secondary result.</summary>
@@ -480,6 +574,12 @@ public sealed record ChatConsistencyMissingControlView
     public string Fingerprint { get; init; } = string.Empty;
     public string SuggestedText { get; init; } = string.Empty;
     public long TargetRunId { get; init; }
+
+    /// <summary>In a battery comparison, the battery run the note is about; its suites are <see cref="SuiteName"/>, joined.</summary>
+    public long? BatteryRunId { get; init; }
+
+    /// <summary>The target's Overseer build no longer runs, so no control run can be made under it.</summary>
+    public bool BuildReplaced { get; init; }
 }
 
 /// <summary>One control subject's own change on one endpoint, and the target's difference-in-differences against it.</summary>
@@ -789,6 +889,16 @@ public sealed record ChatConsistencyAnalysisResult
 
     /// <summary>The analyzed units of both periods, ordered by period, start, then id.</summary>
     public IReadOnlyList<ChatConsistencyUnitView> Units { get; init; } = Array.Empty<ChatConsistencyUnitView>();
+
+    /// <summary>The hours each period's answers started in, baseline first; null before analysis code version 6.</summary>
+    public IReadOnlyList<ChatConsistencyPeriodHours>? PeriodHours { get; init; }
+
+    /// <summary>Each period's descriptive levels, baseline first; null before analysis code version 6.</summary>
+    public IReadOnlyList<ChatConsistencyPeriodLevels>? PeriodLevels { get; init; }
+
+    /// <summary>The request as analyzed, which the freshness check repeats; null before analysis code version 6.</summary>
+    public ChatConsistencyAnalysisRequest? Request { get; init; }
+
     public string InputSha256 { get; init; } = string.Empty;
     public int AnalysisCodeVersion { get; init; }
 }
@@ -973,6 +1083,12 @@ public sealed record ChatConsistencyBatteryTimelinePoint : ChatConsistencyTimeli
 
     /// <summary>Why <see cref="OverallIndex"/> is null; null when it is set.</summary>
     public string? OverallIndexNote { get; init; }
+
+    /// <summary>The 95 % half-width of <see cref="OverallIndex"/> (item sampling and reproducibility combined); null with no index.</summary>
+    public double? OverallIndexHalfWidth { get; init; }
+
+    /// <summary>"question sampling only" when the half-width has no reproducibility part (one round); else null.</summary>
+    public string? OverallIndexIntervalNote { get; init; }
 }
 
 /// <summary>The subject's timeline over a range.</summary>

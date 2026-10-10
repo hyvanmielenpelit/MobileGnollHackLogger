@@ -20,7 +20,7 @@ import { TableState, anyOfFilter, customFilter } from '../../../../shared/data-t
 import { InfoTipComponent } from '../../../../shared/info-tip/info-tip.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../../utils/polyfills.util';
 import { formatUtcDate, formatUtcDateTime, plural, utcMillis } from '../chat-consistency-format';
-import { CcCompareKind, ccCompareKindOf } from '../chat-consistency-results';
+import { CcCompareKind, ccCompareKindOf, ccEarlierCodeSentence } from '../chat-consistency-results';
 import { CC_CURRENT_ANALYSIS_CODE_VERSION, CcAnalysisSummary, CcModelAxis } from '../chat-consistency.models';
 import { CcEndpointChipsComponent } from '../endpoint-chips/endpoint-chips.component';
 import { CcBadgedModel, CcModelBadgesComponent } from '../model-badges/model-badges.component';
@@ -336,7 +336,8 @@ export class CcAnalysisHistoryDialogComponent implements OnInit, OnDestroy {
   }
 
   earlierCodeText(analysis: CcAnalysisSummary): string {
-    return `Saved under analysis code version ${analysis.analysisCodeVersion}. Analyze again to apply version ${CC_CURRENT_ANALYSIS_CODE_VERSION}.`;
+    return `${ccEarlierCodeSentence(analysis.analysisCodeVersion, CC_CURRENT_ANALYSIS_CODE_VERSION)} `
+      + 'Open it and press Analyze again for a current analysis; this one stays as a record.';
   }
 
   reportsTag(analysis: CcAnalysisSummary): string {

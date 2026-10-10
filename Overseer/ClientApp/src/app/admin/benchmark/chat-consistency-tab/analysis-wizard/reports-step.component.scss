@@ -18,6 +18,11 @@
   margin: 0;
 }
 
+/* The out-of-date notice under the lead: the header column's own gap is 2 px. */
+.rp-identity {
+  --cc-fresh-gap: 0.5rem;
+}
+
 /* --- Documents: the rows of Model Comparison step 3's Documents of this comparison --- */
 
 .cc-rep-audiences {

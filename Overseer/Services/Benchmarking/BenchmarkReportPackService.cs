@@ -1412,6 +1412,9 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         public string WriterProvider { get; init; } = string.Empty;
         public string WriterModelId { get; init; } = string.Empty;
         public string? WriterThinkingLevel { get; init; }
+
+        /// <summary>The <c>analysis.writtenOutOfDate</c> fact of every document; null when the analysis was current.</summary>
+        public string? WrittenOutOfDate { get; init; }
         public ChatJobPhase Phase { get; set; } = ChatJobPhase.Queued;
         public BenchmarkRunReportDocumentsStatus Status { get; set; } = BenchmarkRunReportDocumentsStatus.Pending;
         public string? Message { get; set; }
@@ -1513,7 +1516,9 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// Established or Indicated (400, with the reason); a requested document already written (409), or
     /// with none requested, every one written (409); an unusable writer or the model under report (400);
     /// a writer of the model's provider, unacknowledged (409 with the warning); a refused endpoint (400);
-    /// the spend cap (429).
+    /// an out-of-date analysis (<see cref="ChatConsistencyAnalysisService.CheckFreshnessAsync"/>) without
+    /// <paramref name="acknowledgeOutOfDate"/> (409, <see cref="BenchmarkChatConsistencyReportResult{T}.OutOfDate"/>);
+    /// the spend cap (429). Written with the acknowledgment, every document carries <c>analysis.writtenOutOfDate</c>.
     /// </summary>
     public async Task<BenchmarkChatConsistencyReportResult<WriteRunReportDocumentsResponse>> WriteChatConsistencyDocumentsAsync(
         int analysisId,
@@ -1521,7 +1526,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         IReadOnlyCollection<BenchmarkReportAudience>? audiences,
         bool acknowledgeSameProvider,
         string? userId,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool acknowledgeOutOfDate = false)
     {
         var result = await LoadChatConsistencyAnalysisAsync(analysisId, ct);
         if (result == null) return new(StatusCodes.Status404NotFound);
@@ -1573,6 +1579,21 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             return new(StatusCodes.Status400BadRequest, Error: WriterEndpointRefusal(writer, endpointError));
         }
 
+        var freshness = await ChatConsistencyAnalysis().CheckFreshnessAsync(analysisId, ct);
+        string? writtenOutOfDate = null;
+        if (freshness is { OutOfDate: true })
+        {
+            if (!acknowledgeOutOfDate)
+            {
+                return new(StatusCodes.Status409Conflict,
+                    Error: "Analysis #" + analysisId.ToString(System.Globalization.CultureInfo.InvariantCulture) + " is out of date: "
+                        + OutOfDateReasons(freshness) + ". Analyze again, or confirm to write from it anyway.",
+                    OutOfDate: true);
+            }
+
+            writtenOutOfDate = WrittenOutOfDateText(freshness);
+        }
+
         var (canSpend, denialReason) = await guard.CanSpendAsync(ct: ct);
         if (!canSpend) return new(StatusCodes.Status429TooManyRequests, Error: denialReason ?? "The benchmark spend guard refused the reports.");
 
@@ -1613,8 +1634,10 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             Audiences = toWrite.ToList(),
             WriterProvider = writer.Provider ?? string.Empty,
             WriterModelId = writer.ModelId ?? string.Empty,
-            WriterThinkingLevel = writer.ThinkingLevel
+            WriterThinkingLevel = writer.ThinkingLevel,
+            WrittenOutOfDate = writtenOutOfDate
         };
+        if (writtenOutOfDate != null) job.AddLog("Writing from an out-of-date analysis, as confirmed: " + writtenOutOfDate + ".", "warning");
 
         var registry = ChatJobs;
         lock (registry.Lock)
@@ -1886,7 +1909,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             SetChatPhase(state, ChatJobPhase.Writing, BenchmarkRunReportDocumentsStatus.Writing);
             job.AddLog($"Writing the chat consistency documents of analysis #{state.AnalysisId.ToString(System.Globalization.CultureInfo.InvariantCulture)} with {job.WriterDisplayName}.");
 
-            await WriteChatConsistencyJobDocumentsAsync(job, result, job.Cts.Token);
+            await WriteChatConsistencyJobDocumentsAsync(job, result, state.WrittenOutOfDate, job.Cts.Token);
 
             var (status, message) = BenchmarkRunReportDocumentService.OutcomeOf(job);
             if (status == BenchmarkRunReportDocumentsStatus.Canceled) job.AddLog(message!, "warning");
@@ -1928,7 +1951,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// request ids), validation, one repair turn, drops, storage and usage rows. The job must already
     /// hold the report-pack slot; it ends Completed, CompletedWithErrors, Failed or Canceled.
     /// </summary>
-    private async Task WriteChatConsistencyJobDocumentsAsync(BenchmarkReportPackJob job, ChatConsistencyAnalysisResult result, CancellationToken ct)
+    private async Task WriteChatConsistencyJobDocumentsAsync(
+        BenchmarkReportPackJob job, ChatConsistencyAnalysisResult result, string? writtenOutOfDate, CancellationToken ct)
     {
         try
         {
@@ -1958,7 +1982,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 }
 
                 var sheet = BenchmarkChatConsistencyReportFacts.Build(result, row.Audience,
-                    row.Audience == BenchmarkReportAudience.ProviderIssueReport ? requestIds : null);
+                    row.Audience == BenchmarkReportAudience.ProviderIssueReport ? requestIds : null, writtenOutOfDate);
                 var prep = ChatConsistencyPreparation(sheet, targets, controls);
                 if (string.IsNullOrEmpty(row.SubjectKey)) row.SubjectKey = sheet.SubjectKey;
                 if (string.IsNullOrEmpty(row.SubjectLabel)) row.SubjectLabel = sheet.SubjectLabel;
@@ -2063,8 +2087,35 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
     /// <summary>The saved analysis with its id, as the chat consistency API returns it; null when there is none.</summary>
     private Task<ChatConsistencyAnalysisResult?> LoadChatConsistencyAnalysisAsync(int analysisId, CancellationToken ct)
-        => new ChatConsistencyAnalysisService(_db, new ChatConsistencyEvidenceBuilder(_db), NullLogger<ChatConsistencyAnalysisService>.Instance)
-            .GetAnalysisAsync(analysisId, ct);
+        => ChatConsistencyAnalysis().GetAnalysisAsync(analysisId, ct);
+
+    private ChatConsistencyAnalysisService ChatConsistencyAnalysis()
+        => new(_db, new ChatConsistencyEvidenceBuilder(_db, _pricingService), NullLogger<ChatConsistencyAnalysisService>.Instance);
+
+    /// <summary>The reasons of an out-of-date analysis, as the refusal and the documents' box state them.</summary>
+    public static string OutOfDateReasons(ChatConsistencyFreshness freshness)
+    {
+        var reasons = new List<string>();
+        if (freshness.EarlierAnalysisCode)
+        {
+            reasons.Add("it was saved under analysis code version " + freshness.AnalysisCodeVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + ", and Overseer now analyzes under version " + freshness.CurrentAnalysisCodeVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        if (freshness.InputsChanged == true) reasons.Add("its runs, grades, controls, annotations or prices changed after it was saved");
+        return string.Join("; and ", reasons);
+    }
+
+    /// <summary>The <c>analysis.writtenOutOfDate</c> fact: "earlier analysis code (version n)", "changed inputs", or both.</summary>
+    public static string WrittenOutOfDateText(ChatConsistencyFreshness freshness)
+    {
+        var parts = new List<string>();
+        if (freshness.EarlierAnalysisCode)
+        {
+            parts.Add("earlier analysis code (version " + freshness.AnalysisCodeVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
+        }
+        if (freshness.InputsChanged == true) parts.Add("changed inputs");
+        return string.Join(" and ", parts);
+    }
 
     /// <summary>
     /// The documents the analysis has no chat consistency document for, in
@@ -2132,7 +2183,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 /// refusal of any other status, and the same-provider warning of an unacknowledged writer (409).
 /// </summary>
 public sealed record BenchmarkChatConsistencyReportResult<T>(
-    int StatusCode, T? Value = null, string? Error = null, SameProviderWarningDto? SameProviderWarning = null)
+    int StatusCode, T? Value = null, string? Error = null, SameProviderWarningDto? SameProviderWarning = null, bool OutOfDate = false)
     where T : class;
 
 /// <summary>The run report estimate of a chat consistency analysis, with whether its Provider Issue Report can be written.</summary>

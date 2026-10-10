@@ -16,7 +16,7 @@
 ## Overall verdict
 
 - **Verdict:** The chat changed
-- **Answer streaming rate (P3) not computable:** No telemetry run in the baseline.
+- **Answer streaming rate not computable:** No telemetry run in the baseline.
 - **Sample:** Met: at least 2 runs on 2 days per period and 20 paired items
 - **Hours:** every result holds for weekdays 04–12 UTC only, the hours both periods share
 - **Controls:** 1 control model (A), identity withheld, run on the same suites in both periods; 1 missing-control note
@@ -35,7 +35,20 @@ The Overseer chat with Test Model is Degraded: quality degraded (indicated); tim
 
 *Not computable: Answer streaming rate; the overall verdict says why.*
 
-**Where the change came from.** The analysis attributes Quality (P1) to the provider's side, graded Indicated; Cost per answer (P5) to our change, graded Not established.
+**Where the change came from.** The analysis attributes Quality to the provider's side, graded Indicated. The analysis attributes Cost per answer to our change, graded Not established.
+
+**Where the chat stands**
+
+| Measure | Baseline | Comparison |
+|---|---|---|
+| Quality | mean score 82.4 points | mean score 78.1 points |
+| Time to first answer text | median 39.3 s | median 40.1 s |
+| Answer streaming rate | median 61.2 tokens/s | median 59.8 tokens/s |
+| Work per turn (output tokens per answer) | mean 9,044 output tokens per answer | mean 8,233 output tokens per answer |
+| Cost per question | mean $0.0071 per question | mean $0.0066 per question |
+| Failed answers | 0 of 40 answers | 1 of 40 answers |
+
+*Descriptive levels of each period, not a comparison: the verdicts above say what changed.*
 
 ## Is the Overseer chat with this model as good as before?
 
@@ -47,7 +60,7 @@ Players got answers of lower quality, by −4.2 index points. Cost per answer i
 
 ## Our changes and their effect
 
-Between the periods, Overseer was updated once, on 2026-09-11 at 00:00 UTC, before run #20: game snapshot: off → on. The control models' runs show one more update.
+Between the periods, Overseer was updated once: E1, 2026-09-11 00:00 UTC — game snapshot: off → on. The control models' runs show one more update.
 
 The Overseer edited its tool guides on 2026-09-11 00:00 UTC. Their effect is not established, graded Not established.
 
@@ -66,6 +79,8 @@ The analysis suggests one more run: Repeat the comparison runs during US busines
 ## How to read this
 
 - **What was measured.** The Overseer chat with Test Model: the model together with the chat system prompt, the tools, the knowledge corpora and the agent loop, run on the same benchmark suites in a baseline period and a later comparison period.
+- **The five measures.** *Quality* is the Intelligence Index of the graded answers; *time to first answer text* is how long a player waits before the answer starts; *answer streaming rate* is how fast it then appears; *work per turn* is the output tokens per answer; *cost per question* is US dollars per question at one price card.
+- **Grades.** *Established* means fit to publish; *Indicated*, a decisive result with a caveat; *Not established*, no finding.
 - **Verdicts.** *Equivalent* means the same as before within the endpoint's margin; *degraded* or *improved* a change beyond it; *inconclusive* that these runs cannot tell a change from no change, and the smallest detectable change says how large a change they could have missed. Only an Established result is fit to publish.
 - **Hours.** Every result holds for weekdays 04–12 UTC only, the hours both periods share. It says nothing about the hours outside them.
 
@@ -76,6 +91,6 @@ The analysis suggests one more run: Repeat the comparison runs during US busines
 
 ---
 
-*Document ID 41 · format version 1 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
+*Document ID 41 · format version 2 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
 
 *Figures and tables were computed by Overseer from the saved chat consistency analysis. The prose was written by Writer One from those figures and checked automatically for structure, permitted figures, word limits, control-model names, hype words, spelling, readable text and the claim rules on change, cause, intent, mechanism, public claims and hours; the checks do not verify the prose's interpretations.*

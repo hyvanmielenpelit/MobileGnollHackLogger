@@ -115,6 +115,37 @@ export const CC_DEFAULT_REPORT_CHART_SETTINGS: CcReportChartSettings = Object.fr
   layout: CC_DEFAULT_REPORT_CHART_LAYOUT
 });
 
+/** How many figures the Executive Summary carries by default. */
+const EXECUTIVE_DEFAULT_COUNT = 2;
+
+/** The figure's endpoint was not computed in the analysis; the overview, which has none, never is. */
+function endpointNotComputed(key: CcReportFigureKey, endpoints: readonly CcEndpointResult[] | null | undefined): boolean {
+  const id = CC_FIGURE_ENDPOINTS[CC_REPORT_FIGURES[key]];
+  const endpoint = id ? endpoints?.find(entry => entry.id === id) : undefined;
+  return !!endpoint && !endpoint.computed;
+}
+
+/**
+ * The default figures for an analysis: `CC_DEFAULT_REPORT_CHART_SELECTION`, but the Executive Summary
+ * takes the first two figures in document order whose endpoint the analysis computed, so with P1 and
+ * P2 both not computed it carries *Work* and *Runs and events*. Without endpoints, the plain defaults.
+ */
+export function ccDefaultReportChartSelection(endpoints: readonly CcEndpointResult[] | null | undefined): CcReportChartSelection {
+  if (!endpoints || !CC_DEFAULT_REPORT_CHART_SELECTION[ExecutiveSummary]!.some(key => endpointNotComputed(key, endpoints))) {
+    return CC_DEFAULT_REPORT_CHART_SELECTION;
+  }
+  const executive = CC_REPORT_FIGURE_KEYS.filter(key => !endpointNotComputed(key, endpoints)).slice(0, EXECUTIVE_DEFAULT_COUNT);
+  return Object.freeze({ ...CC_DEFAULT_REPORT_CHART_SELECTION, [ExecutiveSummary]: Object.freeze(executive) });
+}
+
+/** The default settings for an analysis: its default figures and the default layout. */
+export function ccDefaultReportChartSettings(endpoints: readonly CcEndpointResult[] | null | undefined): CcReportChartSettings {
+  const selection = ccDefaultReportChartSelection(endpoints);
+  return selection === CC_DEFAULT_REPORT_CHART_SELECTION
+    ? CC_DEFAULT_REPORT_CHART_SETTINGS
+    : Object.freeze({ selection, layout: CC_DEFAULT_REPORT_CHART_LAYOUT });
+}
+
 /** The four figures and four document types only, each figure once, in document order. */
 export function normalizeCcReportChartSelection(selection: unknown): CcReportChartSelection {
   return normalizePickerSelection(selection, CC_REPORT_FIGURE_KEYS, CC_REPORT_CHART_AUDIENCE_KEYS);
@@ -158,21 +189,25 @@ export const CC_REPORT_CHART_STORAGE_KEY = 'overseer.benchmark.chatConsistency.r
 
 const STORED_VERSION = 1;
 
-/** The record in localStorage; the defaults when absent, unreadable or of another version. */
-export function readStoredCcReportChartSettings(): CcReportChartSettings {
+/**
+ * The record in localStorage; when absent, unreadable or of another version, the defaults for an
+ * analysis with `endpoints` (`ccDefaultReportChartSettings`), the plain defaults without them.
+ */
+export function readStoredCcReportChartSettings(endpoints?: readonly CcEndpointResult[] | null): CcReportChartSettings {
+  const defaults = ccDefaultReportChartSettings(endpoints);
   try {
     const raw = localStorage.getItem(CC_REPORT_CHART_STORAGE_KEY);
-    if (!raw) return CC_DEFAULT_REPORT_CHART_SETTINGS;
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as { version?: unknown; selection?: unknown; layout?: unknown } | null;
-    if (!parsed || parsed.version !== STORED_VERSION) return CC_DEFAULT_REPORT_CHART_SETTINGS;
+    if (!parsed || parsed.version !== STORED_VERSION) return defaults;
     return {
       selection: parsed.selection && typeof parsed.selection === 'object'
         ? normalizeCcReportChartSelection(parsed.selection)
-        : CC_DEFAULT_REPORT_CHART_SELECTION,
+        : defaults.selection,
       layout: normalizeCcReportChartLayout(parsed.layout)
     };
   } catch {
-    return CC_DEFAULT_REPORT_CHART_SETTINGS;
+    return defaults;
   }
 }
 

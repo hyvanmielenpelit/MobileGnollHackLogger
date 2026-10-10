@@ -666,4 +666,29 @@ public class ChatConsistencyComparabilityTests
         var note = Assert.Single(matching.MissingControls);
         Assert.Contains("a provider other than OpenAI", note.SuggestedText);
     }
+
+    [Fact]
+    public void AMissingControlUnderAReplacedBuild_SaysNoControlRunCanBeMadeAnyMore()
+    {
+        var replaced = Run(10);
+        replaced.HarnessVersion = "53";
+        var current = Run(11);
+        current.HarnessVersion = "55";
+
+        var matching = ChatConsistencyComparability.MatchControlRuns(
+            new[] { new ChatConsistencyPeriod("baseline", new[] { replaced }), new ChatConsistencyPeriod("comparison", new[] { current }) },
+            Array.Empty<BenchmarkRun>(),
+            new[] { "Anthropic/claude-test" },
+            currentHarnessVersion: "55");
+
+        var gone = Assert.Single(matching.MissingControls, n => n.Period == "baseline");
+        Assert.True(gone.BuildReplaced);
+        Assert.Equal("53", gone.HarnessVersion);
+        Assert.Equal("No control run can be made for the baseline period any more: its Overseer build (harness 53) has been replaced. "
+            + "Make a control run beside the next checkpoint instead.", gone.SuggestedText);
+
+        var possible = Assert.Single(matching.MissingControls, n => n.Period == "comparison");
+        Assert.False(possible.BuildReplaced);
+        Assert.EndsWith("under the same Overseer build as run #11.", possible.SuggestedText);
+    }
 }

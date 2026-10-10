@@ -11,6 +11,7 @@ import {
   ccBatteryMemberRows,
   ccBatteryRunRows,
   ccComparisonSets,
+  ccOutOfDateFreshness,
   ccRunRows,
   chatConsistencyTestProviders,
   textOf
@@ -392,6 +393,37 @@ describe('CcWizardComponent', () => {
     expect(tab(6).getAttribute('aria-selected')).toBe('true');
     expect(document.activeElement).toBe(tab(6));
     expect(wizard.analysis!.step).toBe('documents');
+  });
+
+  it('takes Analyze again on an out-of-date analysis to step 3 with its settings restored, without analyzing', async () => {
+    chooseModel();
+    wizard.showResult(ccAnalysisResult());
+    await settle();
+    http.expectOne(`${CC_API}/analyses/7/freshness`).flush(ccOutOfDateFreshness());
+    await settle();
+
+    // Settings changed since the analysis was opened.
+    tab(3).click();
+    await settle();
+    wizard.analysis!.onBoundChange({ key: 'comparisonFirstId', unitId: 105 });
+    wizard.analysis!.name = 'Edited';
+    expect(wizard.analysis!.ids.comparisonFirstId).toBe(105);
+    tab(4).click();
+    await settle();
+
+    el.querySelector<HTMLButtonElement>('#cc-res-fresh-again')!.click();
+    await settle();
+    expect(wizard.step).toBe(3);
+    expect(tab(3).getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tab(3));
+    const analysis = wizard.analysis!;
+    expect(analysis.name).toBe('September check');
+    expect(analysis.preset).toBe('custom');
+    expect(analysis.ids).toEqual({ baselineFirstId: 101, baselineLastId: 103, comparisonFirstId: 104, comparisonLastId: 106 });
+    expect(analysis.result?.analysisId).toBe(7);
+    expect(analysis.analyzing).toBe(false);
+    expect(analyzeRequests().length).toBe(0);
+    expect(textOf(next())).toBe('Analyze');
   });
 
   it('runs Analyze, abandons it with Stop Analysis, and moves to Results once an analysis is saved', async () => {

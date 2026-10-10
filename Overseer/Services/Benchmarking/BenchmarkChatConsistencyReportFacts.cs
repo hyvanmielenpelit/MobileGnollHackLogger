@@ -20,16 +20,20 @@ using Overseer.Services.ChatConsistency;
 //
 //   analysis.id, .name, .inputSha256, .codeVersion, .savedAt, .relaxedPooling, .compared (code version 4 on, with a comparison set)
 //     analysis.inputSha256 stays on the sheet but never reaches the writer or a rendered block (WriterHidden)
+//   analysis.writtenOutOfDate   only when the writer started on an out-of-date analysis after the operator confirmed it
 //   subject.label, .provider, .modelId, .thinkingLevel, .serviceTier
 //   verdict.overall, .short, .quality, .headline, .reliabilityIncreases
 //   scope.hours, .excludedShare, .oneTimeStratum
 //   coverage.strata.count, coverage.strata.<n>, coverage.usBusinessHours, .outsideBusinessHours
-//   period.<baseline|comparison>.start, .end, .runs, .units, .unitNoun, .memberRuns, .days, .items, .answers, .legacyRuns, .suites
+//   period.<baseline|comparison>.start, .end, .runs, .units, .unitNoun, .memberRuns, .days, .items, .answers, .legacyRuns, .suites, .hours
+//   level.<baseline|comparison>.answers, .quality, .overallIndex, .timeToFirstAnswerText, .streamingRate, .outputTokens,
+//     .costPerQuestion, .failedAnswers   descriptive, unavailable before analysis code version 6
 //   sample.minimumUnits, .minimumDays, .minimumPairedItems, .met, .shortfall (only when not met)
 //   protocol.version, .label, .alpha, .overridden, protocol.margin.<P1..P5>
 //   n.targetRuns, n.controlRuns, n.answers
 //   endpoint.<P1..P5>.name, .verdict, .grade, .estimate, .percent (log scale), .ci95, .ci95Low, .ci95High,
-//     .ci90, .p, .adjustedP, .mde, .mdeNote, .runsForMargin, .runs, .items, .legacyProxy, .commonGrader, .minimumSampleMet
+//     .ci90, .p, .adjustedP, .mde, .mdeNote, .runsForMargin, .runs, .items, .legacyProxy, .commonGrader, .minimumSampleMet,
+//     .notComputedKind (not computed, analysis code version 6 on)
 //   quality.dimensions.<d>.*, quality.criticalErrors.*, flip.*   secondary results of the quality detail family
 //   quality.commonGrader
 //   grader.drift.count, grader.drift.<n>.anchorRun, .grader, .earliest, .latest, .drift, .items, .withinMargin
@@ -38,12 +42,14 @@ using Overseer.Services.ChatConsistency;
 //   secondary.<family>.<id>.*, secondary.<family>.note   every other secondary family
 //   events.count, events.<n>.at, .kind, .label, .change, .run, .previousRun, .series
 //     (sheets written before .change also stored the raw .from and .to; they never reach the writer)
-//   eventGroups.count, eventGroups.<n>.at, .run, .changes, .series   the events of one UTC day in one series
+//   eventGroups.count, eventGroups.<n>.tag, .at, .lastAt, .run, .changes, .series   the events of one UTC day, series,
+//     harness version and side of the period split (EventGroupKey), tagged E1, E2, … in time order
 //   controls.count, controls.<n>.model, .sameProvider, .runs, .periods   n is the control's letter, A = 1
-//   controls.missing.count, controls.missing.<n>.period, .suite, .suggestion, .targetRun
+//   controls.missing.count, controls.missing.<n>.period, .suite, .suggestion, .targetRun, .batteryRun, .buildReplaced
 //   did.count, did.<n>.endpoint, .model, .controlChange, .controlChangeCi95, .estimate, .ci95, .p,
 //     .includesZero, .separatesTarget, .movedSameWay, .items
-//   robustness.count, robustness.failed, robustness.<n>.endpoint, .name, .status, .detail
+//   robustness.count, robustness.failed, robustness.<n>.endpoint, .name, .status, .detail,
+//     robustness.<check>.summary   one sentence per check, endpoints sharing a status and detail named together
 //   identity.<period>.servedModels, .calls, identity.changed
 //   serving.<period>.tierMismatchCalls, .fallbackCalls, .speeds, serving.configurationDiffers,
 //     serving.timeOfDayAssessable
@@ -74,6 +80,12 @@ public sealed class BenchmarkChatConsistencyReportFactsInput
     /// kept. Read for the Provider Issue Report only.
     /// </summary>
     public IReadOnlyList<string>? SampleRequestIds { get; init; }
+
+    /// <summary>
+    /// Why the analysis was out of date when the writer started, as the job recorded it after the operator's
+    /// acknowledgment ("earlier analysis code (version 4)", "changed inputs" or both); null when it was current.
+    /// </summary>
+    public string? WrittenOutOfDate { get; init; }
 }
 
 /// <summary>
@@ -211,8 +223,12 @@ public static class BenchmarkChatConsistencyReportFacts
             .ToList();
 
     public static BenchmarkReportFactSheet Build(
-        ChatConsistencyAnalysisResult result, BenchmarkReportAudience audience, IReadOnlyList<string>? sampleRequestIds = null)
-        => Build(new BenchmarkChatConsistencyReportFactsInput { Result = result, Audience = audience, SampleRequestIds = sampleRequestIds });
+        ChatConsistencyAnalysisResult result, BenchmarkReportAudience audience, IReadOnlyList<string>? sampleRequestIds = null,
+        string? writtenOutOfDate = null)
+        => Build(new BenchmarkChatConsistencyReportFactsInput
+        {
+            Result = result, Audience = audience, SampleRequestIds = sampleRequestIds, WrittenOutOfDate = writtenOutOfDate
+        });
 
     public static BenchmarkReportFactSheet Build(BenchmarkChatConsistencyReportFactsInput input)
     {
@@ -233,12 +249,14 @@ public static class BenchmarkChatConsistencyReportFacts
         var facts = new BenchmarkReportFacts.FactList();
 
         AddAnalysis(facts, result);
+        if (!string.IsNullOrWhiteSpace(input.WrittenOutOfDate)) facts.Add("analysis.writtenOutOfDate", input.WrittenOutOfDate.Trim(), input.WrittenOutOfDate.Trim());
         AddSubject(facts, subject);
         AddVerdict(facts, result);
         AddScope(facts, result.Scope ?? new ChatConsistencyScope());
         AddCompared(facts, result);
         AddPeriod(facts, Baseline, result.Baseline ?? new ChatConsistencyPeriodSummary(), result);
         AddPeriod(facts, Comparison, result.Comparison ?? new ChatConsistencyPeriodSummary(), result);
+        AddLevels(facts, result);
         AddSample(facts, result);
         AddProtocol(facts, result);
         AddCounts(facts, result);
@@ -461,7 +479,8 @@ public static class BenchmarkChatConsistencyReportFacts
 
     private static void AddScope(BenchmarkReportFacts.FactList facts, ChatConsistencyScope scope)
     {
-        if (string.IsNullOrWhiteSpace(scope.Text)) facts.Unavailable("scope.hours", "The periods share no common time stratum.");
+        bool shared = scope.StrataIndexes.Count > 0 && !string.IsNullOrWhiteSpace(scope.Text);
+        if (!shared) facts.Unavailable("scope.hours", NoSharedHoursReason);
         else facts.Add("scope.hours", scope.Text, scope.Text);
 
         AddNumber(facts, "scope.excludedShare", scope.ExcludedShare, Share);
@@ -483,8 +502,13 @@ public static class BenchmarkChatConsistencyReportFacts
 
         facts.Add("serving.timeOfDayAssessable", scope.TimeOfDayAssessable, scope.TimeOfDayAssessable
             ? "assessable: the common hours include US business hours and other hours"
-            : "not assessable: the common hours do not include both US business hours and other hours");
+            : !shared
+                ? "not assessable: the periods share no hours"
+                : "not assessable: the common hours do not include both US business hours and other hours");
     }
+
+    /// <summary>Why <c>scope.hours</c> is unavailable: the periods share no time-of-week stratum.</summary>
+    public const string NoSharedHoursReason = "The periods ran at different hours: they share no time-of-week stratum.";
 
     /// <summary>The battery or suite compared within, as the analysis recorded it; null before analysis code version 4 and for a run-by-run analysis.</summary>
     public static ChatConsistencyComparedSet? ComparedSetOf(ChatConsistencyAnalysisResult result)
@@ -569,7 +593,74 @@ public static class BenchmarkChatConsistencyReportFacts
         facts.Add(p + "answers", period.AnswerCount, Inv(period.AnswerCount) + (period.AnswerCount == 1 ? " answer" : " answers"));
         facts.Add(p + "legacyRuns", period.LegacyRunCount, Inv(period.LegacyRunCount) + " of " + Runs(period.RunCount) + " without call telemetry");
         facts.Add(p + "suites", period.SuiteNames.Count, period.SuiteNames.Count == 0 ? "no suite" : string.Join(", ", period.SuiteNames));
+
+        var hours = result.PeriodHours?.FirstOrDefault(h => string.Equals(h.Period, name, StringComparison.Ordinal));
+        if (hours == null) facts.Unavailable(p + "hours", BeforeLevelsReason);
+        else facts.Add(p + "hours", hours.Strata.Count, hours.Text);
     }
+
+    /// <summary>Why a level or a period's hours are unavailable on an analysis saved before they were recorded.</summary>
+    public const string BeforeLevelsReason = "This analysis predates analysis code version 6, which records each period's hours and levels.";
+
+    /// <summary>
+    /// <c>level.&lt;period&gt;.&lt;measure&gt;</c>: each period's descriptive level of <c>answers</c>, <c>quality</c> (the
+    /// native mean), <c>overallIndex</c> (with its 95 % interval when recorded), <c>timeToFirstAnswerText</c>,
+    /// <c>streamingRate</c>, <c>outputTokens</c>, <c>costPerQuestion</c> and <c>failedAnswers</c>; unavailable with a
+    /// reason where the analysis has no value.
+    /// </summary>
+    private static void AddLevels(BenchmarkReportFacts.FactList facts, ChatConsistencyAnalysisResult result)
+    {
+        foreach (string period in new[] { Baseline, Comparison })
+        {
+            string p = "level." + period + ".";
+            var levels = result.PeriodLevels?.FirstOrDefault(l => string.Equals(l.Period, period, StringComparison.Ordinal));
+            if (levels == null)
+            {
+                foreach (string measure in LevelMeasures) facts.Unavailable(p + measure, BeforeLevelsReason);
+                continue;
+            }
+
+            facts.Add(p + "answers", levels.AnswerCount, Inv(levels.AnswerCount) + (levels.AnswerCount == 1 ? " answer" : " answers"));
+            Level(facts, p + "quality", levels.NativeMeanQuality, v => "mean score " + WithUnit(BenchmarkReportFormat.OneDecimal(v), "points"),"No answer of the " + period + " period was graded.");
+            if (levels.OverallIndex is double index && double.IsFinite(index))
+            {
+                string text = BenchmarkReportFormat.OneDecimal(index);
+                if (levels.OverallIndexHalfWidth is double half && double.IsFinite(half))
+                {
+                    text += " (95 % interval " + BenchmarkReportFormat.OneDecimal(index - half) + "–" + BenchmarkReportFormat.OneDecimal(index + half)
+                        + (string.IsNullOrWhiteSpace(levels.OverallIndexIntervalNote) ? string.Empty : ", " + levels.OverallIndexIntervalNote.Trim()) + ")";
+                }
+                facts.Add(p + "overallIndex", index, text);
+            }
+            else
+            {
+                facts.Unavailable(p + "overallIndex", result.UnitKind == ChatConsistencyComparisonSetKinds.BatteryRunUnit
+                    ? "Not every battery run of the " + period + " period has a current battery analysis with an Overall Index."
+                    : "The analysis compares runs, not battery runs, so it has no battery Overall Index.");
+            }
+            Level(facts, p + "timeToFirstAnswerText", levels.MedianTimeToFirstAnswerTextMs, v => "median " + Seconds(v), "No answer of the " + period + " period recorded call telemetry.");
+            Level(facts, p + "streamingRate", levels.MedianStreamingRate, v => "median " + WithUnit(BenchmarkReportFormat.OneDecimal(v), "tokens/s"), "No answer of the " + period + " period has a streaming rate.");
+            Level(facts, p + "outputTokens", levels.MeanOutputTokensPerAnswer, v => "mean " + WithUnit(BenchmarkReportFormat.Count(v), "output tokens per answer"), "No answer of the " + period + " period recorded output tokens.");
+            Level(facts, p + "costPerQuestion", levels.MeanCostPerQuestionUsd, v => "mean " + UsdPerQuestion(v), "No price card was available, so cost was not computed.");
+            facts.Add(p + "failedAnswers", levels.FailedAnswerCount, Inv(levels.FailedAnswerCount) + " of " + Inv(levels.AnswerCount)
+                + (levels.AnswerCount == 1 ? " answer" : " answers"));
+        }
+    }
+
+    private static readonly string[] LevelMeasures =
+    {
+        "answers", "quality", "overallIndex", "timeToFirstAnswerText", "streamingRate", "outputTokens", "costPerQuestion", "failedAnswers"
+    };
+
+    private static void Level(BenchmarkReportFacts.FactList facts, string key, double? value, Func<double, string> format, string reason)
+    {
+        if (value is double v && double.IsFinite(v)) facts.Add(key, v, format(v));
+        else facts.Unavailable(key, reason);
+    }
+
+    /// <summary>"$0.0071 per question": four decimals under a cent, else two.</summary>
+    private static string UsdPerQuestion(double usd)
+        => "$" + (Math.Abs(usd) < 0.01 ? usd.ToString("0.0000", CultureInfo.InvariantCulture) : usd.ToString("0.00", CultureInfo.InvariantCulture)) + " per question";
 
     /// <summary>
     /// The protocol's minimum sample for quality, work and cost (P1, P4, P5) against the analyzed units:
@@ -676,6 +767,7 @@ public static class BenchmarkChatConsistencyReportFacts
         string[] figures = log
             ? new[] { "estimate", "percent", "ci95", "ci95Low", "ci95High", "ci90", "p", "adjustedP", "mde", "runsForMargin" }
             : new[] { "estimate", "ci95", "ci95Low", "ci95High", "ci90", "p", "adjustedP", "mde", "runsForMargin" };
+        if (!e.Computed && !string.IsNullOrWhiteSpace(e.NotComputedKind)) facts.Add(p + "notComputedKind", e.NotComputedKind, e.NotComputedKind);
         if (!e.Computed || e.Estimate is not double estimate || !double.IsFinite(estimate))
         {
             string reason = !e.Computed ? e.NotComputedReason ?? "The endpoint was not computable." : "No estimate was recorded.";
@@ -895,34 +987,89 @@ public static class BenchmarkChatConsistencyReportFacts
     }
 
     /// <summary>
-    /// The events grouped into Overseer updates: one group per UTC day and series, in time order, its
-    /// time the earliest event's, its runs those the events were first seen at, and its changes the
-    /// events' <see cref="ChatConsistencyEventText.Describe"/>, joined with <c>; </c>.
+    /// The events grouped into Overseer updates (<see cref="EventGroups"/>), tagged E1, E2, … in time order:
+    /// each group's earliest and latest time, its runs those the events were first seen at, and its changes
+    /// the events' <see cref="ChatConsistencyEventText.Describe"/>, joined with <c>; </c>.
     /// </summary>
     private static void AddEventGroups(BenchmarkReportFacts.FactList facts, Context ctx)
     {
-        var groups = ctx.Result.Events
-            .GroupBy(e => (Day: e.AtUtc.Date, Series: e.InTargetSeries ? string.Empty : e.SubjectKey ?? string.Empty))
-            .Select(g => g.OrderBy(e => e.AtUtc).ThenBy(e => e.RunId).ToList())
-            .OrderBy(g => g[0].AtUtc)
-            .ThenBy(g => g[0].RunId)
-            .ThenBy(g => g[0].InTargetSeries ? 0 : 1)
-            .ToList();
+        var groups = EventGroups(ctx.Result.Events, ctx.Result.Baseline?.EndUtc, ctx.Result.Comparison?.StartUtc);
 
         facts.Add("eventGroups.count", groups.Count, groups.Count == 1 ? "1 Overseer update" : Inv(groups.Count) + " Overseer updates");
         for (int i = 0; i < groups.Count; i++)
         {
-            var group = groups[i];
+            var group = groups[i].Events;
             var first = group[0];
+            var last = group[^1];
             string p = "eventGroups." + Inv(i + 1) + ".";
             var runs = group.Select(e => e.RunId).Distinct().OrderBy(id => id).ToList();
             var changes = group.Select(e => ChatConsistencyEventText.Describe(e.Kind, e.From, e.To)).Distinct(StringComparer.Ordinal);
 
+            facts.Add(p + "tag", groups[i].Tag, groups[i].Tag);
             facts.Add(p + "at", Iso(first.AtUtc), When(first.AtUtc));
+            facts.Add(p + "lastAt", Iso(last.AtUtc), When(last.AtUtc));
             facts.Add(p + "run", runs[0], RunList(runs));
             facts.Text(p + "changes", string.Join("; ", changes));
             facts.Add(p + "series", first.InTargetSeries ? "target" : "control", first.InTargetSeries ? "the model under test" : ModelOf(ctx, first.SubjectKey));
         }
+    }
+
+    /// <summary>One Overseer update: its tag (<c>E1</c>, …) and its events, in time, then run order.</summary>
+    public sealed record EventGroup(string Tag, IReadOnlyList<ChatConsistencyEventView> Events);
+
+    /// <summary>
+    /// The events grouped into Overseer updates by <see cref="EventGroupKey"/>, ordered by their earliest event
+    /// (time, then run, the target series first) and tagged <c>E1</c>, <c>E2</c>, … in that order. The client's
+    /// report charts tag events the same way; a shared JSON fixture pins both.
+    /// </summary>
+    public static IReadOnlyList<EventGroup> EventGroups(
+        IReadOnlyList<ChatConsistencyEventView> events, DateTime? baselineEndUtc, DateTime? comparisonStartUtc)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+        return events
+            .GroupBy(e => EventGroupKey(e, HarnessOf(e, events), baselineEndUtc, comparisonStartUtc), StringComparer.Ordinal)
+            .Select(g => g.OrderBy(e => e.AtUtc).ThenBy(e => e.RunId).ToList())
+            .OrderBy(g => g[0].AtUtc)
+            .ThenBy(g => g[0].RunId)
+            .ThenBy(g => g[0].InTargetSeries ? 0 : 1)
+            .ThenBy(g => g[0].SubjectKey ?? string.Empty, StringComparer.Ordinal)
+            .Select((g, i) => new EventGroup("E" + Inv(i + 1), g))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The key one Overseer update's events share: the UTC day, the series (empty for the model under test,
+    /// else the control's subject key), the harness version of the event's run (<see cref="HarnessOf"/>) and the
+    /// side of the period split (<c>baseline</c> up to the baseline's end, <c>comparison</c> from the
+    /// comparison's start, else <c>between</c>), joined with <c>|</c>.
+    /// </summary>
+    public static string EventGroupKey(ChatConsistencyEventView e, string harness, DateTime? baselineEndUtc, DateTime? comparisonStartUtc)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+        string side = comparisonStartUtc is DateTime cs && e.AtUtc >= cs ? Comparison
+            : baselineEndUtc is DateTime be && e.AtUtc <= be ? Baseline
+            : "between";
+        string series = e.InTargetSeries ? string.Empty : e.SubjectKey ?? string.Empty;
+        return e.AtUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "|" + series + "|" + harness + "|" + side;
+    }
+
+    /// <summary>
+    /// The harness version of an event's run, from the harness events of its series: the <c>To</c> of the latest
+    /// one at or before it (by time, then run), else the <c>From</c> of the earliest one after it, else empty.
+    /// </summary>
+    public static string HarnessOf(ChatConsistencyEventView e, IReadOnlyList<ChatConsistencyEventView> events)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+        ArgumentNullException.ThrowIfNull(events);
+        var harness = events
+            .Where(x => x.Kind == OverseerEventKinds.HarnessVersion && x.InTargetSeries == e.InTargetSeries
+                        && (e.InTargetSeries || string.Equals(x.SubjectKey, e.SubjectKey, StringComparison.Ordinal)))
+            .OrderBy(x => x.AtUtc)
+            .ThenBy(x => x.RunId)
+            .ToList();
+        var atOrBefore = harness.LastOrDefault(x => x.AtUtc < e.AtUtc || (x.AtUtc == e.AtUtc && x.RunId <= e.RunId));
+        if (atOrBefore != null) return atOrBefore.To ?? string.Empty;
+        return harness.FirstOrDefault()?.From ?? string.Empty;
     }
 
     private static void AddControls(BenchmarkReportFacts.FactList facts, Context ctx, IReadOnlyList<ControlModel> controls)
@@ -956,6 +1103,8 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Add(p + "suite", m.SuiteName, m.SuiteName);
             facts.Add(p + "suggestion", suggestion, suggestion);
             facts.Add(p + "targetRun", m.TargetRunId, RunText(m.TargetRunId));
+            if (m.BatteryRunId is long battery) facts.Add(p + "batteryRun", battery, "battery run #" + Inv(battery));
+            if (m.BuildReplaced) facts.Add(p + "buildReplaced", true, "its Overseer build has been replaced, so no control run can be made under it");
         }
 
         var effects = (ctx.Result.Controls ?? new ChatConsistencyControls()).Effects;
@@ -1020,6 +1169,29 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Add(p + "status", status, status);
             if (!string.IsNullOrWhiteSpace(c.Detail)) facts.Text(p + "detail", ctx.Lettered(c.Detail));
         }
+
+        // robustness.<check>.summary: one clause per status and detail, naming every endpoint that shares them.
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var byName in checks.Where(c => !string.IsNullOrWhiteSpace(c.Name)).GroupBy(c => c.Name, StringComparer.Ordinal))
+        {
+            var clauses = byName
+                .GroupBy(c => (c.Status, Detail: (c.Detail ?? string.Empty).Trim()))
+                .Select(g =>
+                {
+                    var endpoints = g.Select(c => c.EndpointId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList();
+                    string status = g.Key.Status switch
+                    {
+                        ChatConsistencyCheckStatus.Passed => "passed",
+                        ChatConsistencyCheckStatus.Failed => "failed",
+                        _ => "not assessable"
+                    };
+                    string detail = g.Key.Detail.TrimEnd('.');
+                    return status + (endpoints.Count > 0 ? " for " + BenchmarkReportFormat.LetterList(endpoints) : string.Empty)
+                        + (detail.Length > 0 ? ": " + LowerFirst(ctx.Lettered(detail)) : string.Empty);
+                })
+                .ToList();
+            facts.Text("robustness." + Unique(KeyPart(LowerFirst(byName.Key)), used) + ".summary", UpperFirst(string.Join("; ", clauses)) + ".");
+        }
     }
 
     // --- Serving, waits, pricing -----------------------------------------------------------------
@@ -1033,7 +1205,7 @@ public static class BenchmarkChatConsistencyReportFacts
             (Comparison, served.Comparison, served.ComparisonCalls, served.ComparisonTierMismatchCalls, served.ComparisonFallbackCalls, served.ComparisonServedSpeeds)
         })
         {
-            if (models.Count == 0) facts.Unavailable("identity." + period + ".servedModels", "No served model id was recorded in the " + period + " period.");
+            if (models.Count == 0) facts.Unavailable("identity." + period + ".servedModels", "No served model ID was recorded in the " + period + " period.");
             else facts.Add("identity." + period + ".servedModels", models.Count,
                 string.Join(", ", models.Select(m => m.ModelId + " (" + Inv(m.CallCount) + (m.CallCount == 1 ? " call)" : " calls)"))));
             facts.Add("identity." + period + ".calls", calls, Inv(calls) + (calls == 1 ? " candidate call" : " candidate calls"));
@@ -1046,8 +1218,8 @@ public static class BenchmarkChatConsistencyReportFacts
 
         bool recorded = served.Baseline.Count > 0 && served.Comparison.Count > 0;
         facts.Add("identity.changed", served.Changed, served.Changed
-            ? "the served model ids differ between the periods"
-            : recorded ? "the served model ids are the same in both periods" : "not comparable: a period recorded no served model id");
+            ? "the served model IDs differ between the periods"
+            : recorded ? "the served model IDs are the same in both periods" : "not comparable: a period recorded no served model ID");
         facts.Add("serving.configurationDiffers", served.ServedConfigurationDiffers, served.ServedConfigurationDiffers
             ? "some calls were served at another tier than requested or by a fallback model"
             : "every call was served as requested");
@@ -1183,7 +1355,7 @@ public static class BenchmarkChatConsistencyReportFacts
         var sample = SampleOf(requestIds);
         facts.Add("requestIds.sample.count", sample.Count, sample.Count == 0
             ? "none recorded in the comparison period"
-            : Inv(sample.Count) + (sample.Count == 1 ? " request id" : " request ids"));
+            : Inv(sample.Count) + (sample.Count == 1 ? " request ID" : " request IDs"));
         for (int i = 0; i < sample.Count; i++) facts.Add("requestIds.sample." + Inv(i + 1), sample[i], sample[i]);
     }
 

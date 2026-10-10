@@ -90,8 +90,8 @@ public sealed class BenchmarkReportCleanResult
 /// C1 to C7 (rule numbers 22 to 28) and the readable-text rule C8 (rule 29) on top of the rules above.
 /// Its controls are the peers, so <c>{{peer:X}}</c> names one. C1, C2, C3, C4, the wording half of C6,
 /// the claim half of C7 and C8 read the headline and every paragraph, and a paragraph failing one is
-/// dropped like any other error. C5 is a warning on a whole slot. The other halves of C6 (the document cites
-/// <c>{{scope.hours}}</c>) and C7 (<c>ruledOut</c> cites every Overseer event) have nothing to drop,
+/// dropped like any other error. C5 is a warning on the whole document. The other halves of C6 (the document cites
+/// <c>{{scope.hours}}</c>, where the periods share any hours) and C7 (<c>ruledOut</c> cites every Overseer event) have nothing to drop,
 /// so after the repair turn they are recorded against the kept text without
 /// <see cref="BenchmarkReportValidationNote.Dropped"/>.</para>
 /// </summary>
@@ -227,10 +227,10 @@ public static class BenchmarkReportPackValidator
     /// <summary>C4: public-claim wording needs an Established grade token in its sentence.</summary>
     public const int ChatPublicClaimRule = 25;
 
-    /// <summary>C5: an inconclusive endpoint a slot cites needs its minimum detectable effect in that slot. A warning.</summary>
+    /// <summary>C5: an inconclusive endpoint the document cites needs its minimum detectable effect somewhere in the document. A warning.</summary>
     public const int ChatInconclusiveMdeRule = 26;
 
-    /// <summary>C6: all-hours wording needs a true time-of-day fact in its sentence, and every document cites the hours.</summary>
+    /// <summary>C6: all-hours wording needs a true time-of-day fact in its sentence, and every document cites the hours where the periods share any.</summary>
     public const int ChatHoursRule = 27;
 
     /// <summary>
@@ -642,6 +642,7 @@ public static class BenchmarkReportPackValidator
             }
         }
         CheckChatHoursCited(ctx, output.Headline, sections, notes);
+        CheckChatMdeCited(ctx, output.Headline, sections, notes);
 
         foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
@@ -881,6 +882,7 @@ public static class BenchmarkReportPackValidator
             }
         }
         CheckChatHoursCited(ctx, copy.Headline, copy.Sections, notes);
+        CheckChatMdeCited(ctx, copy.Headline, copy.Sections, notes);
 
         foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
@@ -1453,7 +1455,9 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, ChatHoursRule, location, claims.TimeOfDayAssessable
                 ? $"C6: Uses {Quoted(allHours)} without {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.TimeOfDayKey}}}}} in the same sentence: cite it there, or say that the result holds for {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey}}}}}."
-                : $"C6: Uses {Quoted(allHours)}, but the analysis cannot assess time of day: say that the result holds for {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey}}}}} only.");
+                : claims.HoursAvailable
+                    ? $"C6: Uses {Quoted(allHours)}, but the analysis cannot assess time of day: say that the result holds for {{{{{BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey}}}}} only."
+                    : $"C6: Uses {Quoted(allHours)}, but the periods ran at different hours: say so, citing {{{{period.baseline.hours}}}} and {{{{period.comparison.hours}}}}.");
         }
         if (modelServing.Count > 0)
         {
@@ -1496,16 +1500,6 @@ public static class BenchmarkReportPackValidator
 
         var cited = TokenRegex.Matches(text).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
 
-        var missingMde = ctx.Claims.InconclusiveEndpoints
-            .Where(id => cited.Any(t => t.StartsWith(BenchmarkReportPackPrompt.ChatClaimSupport.EndpointPrefix(id), StringComparison.Ordinal)))
-            .Where(id => !cited.Contains(BenchmarkReportPackPrompt.ChatClaimSupport.MdeKey(id)))
-            .ToList();
-        if (missingMde.Count > 0)
-        {
-            string keys = string.Join(", ", missingMde.Select(id => "{{" + BenchmarkReportPackPrompt.ChatClaimSupport.MdeKey(id) + "}}"));
-            Issue(notes, ChatInconclusiveMdeRule, location, $"C5: Cites the inconclusive endpoint{Plural(missingMde.Count)} {string.Join(", ", missingMde)} without {(missingMde.Count == 1 ? "its" : "their")} minimum detectable effect: cite {keys} in this section, so the reader knows how large a change the runs could have missed.");
-        }
-
         if (ctx.Spec.Audience == BenchmarkReportAudience.ProviderIssueReport
             && string.Equals(slot, BenchmarkReportSlots.RuledOut, StringComparison.Ordinal))
         {
@@ -1520,11 +1514,14 @@ public static class BenchmarkReportPackValidator
         }
     }
 
-    /// <summary>The half of rule C6 that wants every chat consistency document to cite the hours its result covers.</summary>
+    /// <summary>
+    /// The half of rule C6 that wants every chat consistency document to cite the hours its result covers,
+    /// where the periods share any (<see cref="BenchmarkReportPackPrompt.ChatClaimSupport.HoursAvailable"/>).
+    /// </summary>
     private static void CheckChatHoursCited(
         Context ctx, string? headline, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
     {
-        if (!ctx.ChatConsistency) return;
+        if (!ctx.ChatConsistency || !ctx.Claims.HoursAvailable) return;
 
         string hours = "{{" + BenchmarkReportPackPrompt.ChatClaimSupport.HoursKey + "}}";
         bool cited = (headline ?? string.Empty).Contains(hours, StringComparison.Ordinal)
@@ -1532,6 +1529,31 @@ public static class BenchmarkReportPackValidator
         if (!cited)
         {
             Issue(notes, ChatHoursRule, "sections", $"C6: The document never cites {hours}: every chat consistency result holds for the hours the two periods share, so state them at least once.");
+        }
+    }
+
+    /// <summary>
+    /// Rule C5, a warning, once per document: an inconclusive endpoint the document cites needs its minimum
+    /// detectable effect somewhere in the document (the headline or any required slot).
+    /// </summary>
+    private static void CheckChatMdeCited(
+        Context ctx, string? headline, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.ChatConsistency) return;
+
+        var cited = TokenRegex.Matches(headline ?? string.Empty)
+            .Concat(ctx.RequiredSlots.SelectMany(s => sections.TryGetValue(s, out string? text) ? TokenRegex.Matches(text ?? string.Empty) : Enumerable.Empty<Match>()))
+            .Select(m => m.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missingMde = ctx.Claims.InconclusiveEndpoints
+            .Where(id => cited.Any(t => t.StartsWith(BenchmarkReportPackPrompt.ChatClaimSupport.EndpointPrefix(id), StringComparison.Ordinal)))
+            .Where(id => !cited.Contains(BenchmarkReportPackPrompt.ChatClaimSupport.MdeKey(id)))
+            .ToList();
+        if (missingMde.Count > 0)
+        {
+            string keys = string.Join(", ", missingMde.Select(id => "{{" + BenchmarkReportPackPrompt.ChatClaimSupport.MdeKey(id) + "}}"));
+            Issue(notes, ChatInconclusiveMdeRule, "sections", $"C5: Cites the inconclusive endpoint{Plural(missingMde.Count)} {string.Join(", ", missingMde)} without {(missingMde.Count == 1 ? "its" : "their")} minimum detectable effect anywhere in the document: cite {keys} once, where the endpoint is first discussed, so the reader knows how large a change the runs could have missed.");
         }
     }
 

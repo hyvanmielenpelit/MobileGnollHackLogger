@@ -93,8 +93,8 @@ public static partial class BenchmarkReportPackRenderer
     private static string ChatBlockName(BenchmarkReportAudience audience, ChatBlock block) => block switch
     {
         ChatBlock.Verdicts => audience == BenchmarkReportAudience.ExecutiveSummary
-            ? "the verdict table with one sentence on where the change came from"
-            : "the verdict table with a note line per endpoint, the endpoints not computable and the secondary measures",
+            ? "the verdict table with one sentence on where the change came from, and where the chat stands in each period"
+            : "the verdict table with a note line per endpoint, the endpoints not computable, the secondary measures and where the chat stands in each period",
         ChatBlock.Events => audience == BenchmarkReportAudience.ExecutiveSummary
             ? "one sentence listing the Overseer updates"
             : "the table of Overseer updates",
@@ -150,6 +150,7 @@ public static partial class BenchmarkReportPackRenderer
         var attached = spec.RequiredSlots.SelectMany(slot => ChatBlocksOf(audience, slot)).ToHashSet();
 
         ChatTitleBlock(sb, ctx);
+        ChatOutOfDateBox(sb, ctx);
         ChatOverallVerdict(sb, ctx);
 
         Heading(sb, "## The result in one sentence");
@@ -199,6 +200,7 @@ public static partial class BenchmarkReportPackRenderer
                 if (heading) Heading(sb, "## Verdicts by endpoint");
                 if (executive) ChatExecutiveVerdictTable(sb, ctx);
                 else ChatVerdictTable(sb, ctx);
+                ChatLevelsTable(sb, ctx);
                 Figures(sb, ctx, BenchmarkReportChartAnchor.ChatConsistencyResults);
                 break;
             case ChatBlock.Events:
@@ -264,9 +266,53 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The outcome, each group of endpoints not computable with its reason, the sample against the
-    /// protocol's minimum, the hours and the control runs; outside the Executive Summary also the time
-    /// strata and the analysis's own headline. An established reliability increase is stated where there is one.
+    /// The reasons the document's analysis is out of date, decided when the document is rendered: saved
+    /// under an earlier analysis code version than <see cref="ChatConsistencyAnalysisCodeVersion"/>, or
+    /// written after the operator confirmed changed inputs (<c>analysis.writtenOutOfDate</c>). Empty when current.
+    /// </summary>
+    internal static List<string> ChatOutOfDateReasons(BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        var reasons = new List<string>();
+        int version = sheet.ChatConsistency?.AnalysisCodeVersion ?? 0;
+        if (version <= 0
+            && sheet.Facts.FirstOrDefault(f => f.Key == "analysis.codeVersion") is { Available: true, Value: JsonValue v }
+            && v.TryGetValue(out int stored))
+        {
+            version = stored;
+        }
+        if (version > 0 && version < ChatConsistencyAnalysisCodeVersion)
+        {
+            reasons.Add("it was saved under analysis code version " + Inv(version) + ", and Overseer now analyzes under version "
+                + Inv(ChatConsistencyAnalysisCodeVersion));
+        }
+
+        var written = sheet.Facts.FirstOrDefault(f => f.Key == "analysis.writtenOutOfDate");
+        if (written is { Available: true } && written.Display.Contains("changed inputs", StringComparison.Ordinal))
+        {
+            reasons.Add("its runs, grades, controls, annotations or prices changed after it was saved");
+        }
+        return reasons;
+    }
+
+    /// <summary>The analysis code version a chat consistency document is current against.</summary>
+    private static int ChatConsistencyAnalysisCodeVersion => global::Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion;
+
+    /// <summary>Under the title block, in every audience: the warning that the analysis is out of date, when it is.</summary>
+    private static void ChatOutOfDateBox(StringBuilder sb, Context ctx)
+    {
+        var reasons = ChatOutOfDateReasons(ctx.Sheet);
+        if (reasons.Count == 0) return;
+
+        Line(sb, "> **This document comes from an out-of-date analysis:** " + string.Join("; and ", reasons)
+            + ". Saved analyses never change; analyze the same periods again for a current result before relying on this document.");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// The outcome, each group of endpoints not computable with its reason (in plain words in the Executive
+    /// Summary), the sample against the protocol's minimum, the hours and the control runs; outside the
+    /// Executive Summary also the time strata. An established reliability increase is stated where there is one.
     /// </summary>
     private static void ChatOverallVerdict(StringBuilder sb, Context ctx)
     {
@@ -275,9 +321,9 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, "- **Verdict:** " + (IsAvailable(ctx, "verdict.short") ? D(ctx, "verdict.short") : D(ctx, "verdict.overall")));
 
-        foreach (var group in ChatNotComputableGroups(ctx))
+        foreach (var group in ChatNotComputableGroups(ctx, executive))
         {
-            Line(sb, "- **" + BenchmarkReportFormat.LetterList(group.Names) + " not computable:** " + OneLine(group.Reason));
+            Line(sb, "- **" + UpperFirst(BenchmarkReportFormat.LetterList(group.Names)) + " not computable:** " + OneLine(group.Reason));
         }
 
         if (Fact(ctx, "sample.met") is { Available: true } met)
@@ -294,11 +340,6 @@ public static partial class BenchmarkReportPackRenderer
         if (!executive)
         {
             Line(sb, "- **Time strata:** " + ChatStrataText(ctx));
-            string headline = ctx.Sheet.ChatConsistency?.Headline ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(headline))
-            {
-                Line(sb, "- **The analysis's headline:** " + OneLine(ctx.Anonymized ? headline : NamedLetters(ctx, headline)));
-            }
         }
 
         if (Fact(ctx, "verdict.reliabilityIncreases") is { Available: true, Value: JsonValue increases }
@@ -333,6 +374,7 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb, "| " + Cell(ChatEndpointPlainName(ctx, id)) + " | " + Cell(result) + " | " + Cell(ChatMeaning(ctx, id, verdict)) + " |");
             }
             Line(sb);
+            ChatOneUnitCaveat(sb, ctx);
         }
 
         var notComputable = ChatEndpointIds(ctx).Except(computed, StringComparer.Ordinal).ToList();
@@ -343,7 +385,72 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb);
         }
 
-        Line(sb, "**Where the change came from.** " + ChatAttributionSentence(ctx));
+        Line(sb, "**Where the change came from.** " + ChatAttributionSentence(ctx, plain: true));
+        Line(sb);
+    }
+
+    /// <summary>
+    /// Under an endpoint table, when a period has one unit: the intervals and smallest detectable changes
+    /// leave out run-to-run variation. Nothing on a sheet that does not count units.
+    /// </summary>
+    private static void ChatOneUnitCaveat(StringBuilder sb, Context ctx)
+    {
+        long? baseline = ChatNumber(ctx, "period.baseline.units");
+        long? comparison = ChatNumber(ctx, "period.comparison.units");
+        if (baseline != 1 && comparison != 1) return;
+
+        string unit = ChatValue(ctx, "period.baseline.unitNoun") ?? "run";
+        Line(sb, "*With one " + unit + " per period, the intervals and smallest detectable changes reflect question-to-question variation "
+            + "only; run-to-run variation is not included, so the true uncertainty is larger.*");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// "Where the chat stands": each period's descriptive level of quality, time to first answer text, answer
+    /// streaming rate, work per turn, cost per question and failed answers, a measure not comparable marked so;
+    /// nothing on a sheet without <c>level.*</c> facts.
+    /// </summary>
+    private static void ChatLevelsTable(StringBuilder sb, Context ctx)
+    {
+        bool Any(string measure) => IsAvailable(ctx, "level.baseline." + measure) || IsAvailable(ctx, "level.comparison." + measure);
+        if (!new[] { "quality", "overallIndex", "timeToFirstAnswerText", "streamingRate", "outputTokens", "costPerQuestion", "answers" }.Any(Any)) return;
+
+        string Value(string period, params string[] measures)
+        {
+            foreach (string measure in measures)
+            {
+                string key = "level." + period + "." + measure;
+                if (IsAvailable(ctx, key)) return (measure == "overallIndex" ? "Overall Index " : string.Empty) + D(ctx, key);
+            }
+            return NoValue;
+        }
+
+        string Measure(string name, string? endpoint)
+        {
+            string? kind = endpoint == null ? null : ChatValue(ctx, "endpoint." + endpoint + ".notComputedKind");
+            return kind is "measurementChanged" or "noCommonStratum" ? name + " (not comparable)" : name;
+        }
+
+        var rows = new List<(string Measure, string Baseline, string Comparison)>
+        {
+            (Measure("Quality", "P1"), Value("baseline", "overallIndex", "quality"), Value("comparison", "overallIndex", "quality")),
+            (Measure("Time to first answer text", "P2"), Value("baseline", "timeToFirstAnswerText"), Value("comparison", "timeToFirstAnswerText")),
+            (Measure("Answer streaming rate", "P3"), Value("baseline", "streamingRate"), Value("comparison", "streamingRate")),
+            (Measure("Work per turn (output tokens per answer)", "P4"), Value("baseline", "outputTokens"), Value("comparison", "outputTokens")),
+            (Measure("Cost per question", "P5"), Value("baseline", "costPerQuestion"), Value("comparison", "costPerQuestion")),
+            ("Failed answers", Value("baseline", "failedAnswers"), Value("comparison", "failedAnswers"))
+        };
+
+        Line(sb, "**Where the chat stands**");
+        Line(sb);
+        Line(sb, "| Measure | Baseline | Comparison |");
+        Line(sb, "|---|---|---|");
+        foreach (var (measure, baseline, comparison) in rows)
+        {
+            Line(sb, "| " + Cell(measure) + " | " + Cell(baseline) + " | " + Cell(comparison) + " |");
+        }
+        Line(sb);
+        Line(sb, "*Descriptive levels of each period, not a comparison: the verdicts above say what changed.*");
         Line(sb);
     }
 
@@ -403,6 +510,7 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb, "| " + Cell(ChatEndpointName(ctx, id)) + " | " + Cell(change) + " | " + Cell(margin) + " | " + Cell(verdict) + " | " + Cell(mde) + " |");
             }
             Line(sb);
+            ChatOneUnitCaveat(sb, ctx);
 
             bool pValues = ctx.Document.Audience != BenchmarkReportAudience.InternalBrief;
             var notes = computed
@@ -454,9 +562,26 @@ public static partial class BenchmarkReportPackRenderer
     private static void ChatSecondaryTable(StringBuilder sb, Context ctx)
     {
         var rows = new List<(string Measure, string Change, string Verdict)>();
-        foreach (string prefix in ChatSecondaryPrefixes(ctx))
+        var prefixes = ChatSecondaryPrefixes(ctx);
+
+        // Every reliability rate zero in both periods: one row instead of one per rate.
+        var reliability = prefixes.Where(p => p.StartsWith("reliability.", StringComparison.Ordinal)).ToList();
+        bool Zero(string key) => Fact(ctx, key) is { Available: true, Value: JsonValue v } && v.TryGetValue(out double d) && d == 0.0;
+        bool noFailures = reliability.Count > 0 && reliability.All(p => Zero(p + "baseline") && Zero(p + "comparison"));
+        bool failuresRowAdded = false;
+
+        foreach (string prefix in prefixes)
         {
             string measure = D(ctx, prefix + "name");
+            if (noFailures && prefix.StartsWith("reliability.", StringComparison.Ordinal))
+            {
+                if (failuresRowAdded) continue;
+                failuresRowAdded = true;
+                var names = reliability.Select(p => LowerFirstWord(D(ctx, p + "name"))).ToList();
+                rows.Add(("Failures of any kind", "none in either period (" + BenchmarkReportFormat.LetterList(names) + ")", "no established increase"));
+                continue;
+            }
+
             if (prefix.StartsWith("reliability.", StringComparison.Ordinal))
             {
                 string rate = IsAvailable(ctx, prefix + "baseline") && IsAvailable(ctx, prefix + "comparison")
@@ -471,7 +596,8 @@ public static partial class BenchmarkReportPackRenderer
 
             if (!IsAvailable(ctx, prefix + "estimate"))
             {
-                rows.Add((measure, NoValue, "not computable"));
+                string reason = Fact(ctx, prefix + "estimate") is { Available: false } missing ? OneLine(NotAvailableReason(missing)).TrimEnd('.') : string.Empty;
+                rows.Add((measure, NoValue, reason.Length == 0 || reason == "Not computable" ? "not computable" : "not computable: " + LowerFirstWord(reason)));
                 continue;
             }
 
@@ -486,7 +612,7 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, "Secondary measures:");
         Line(sb);
-        Line(sb, "| Measure | Change (95 % interval) | Verdict |");
+        Line(sb, "| Measure | Baseline → comparison, or change (95 % interval) | Verdict |");
         Line(sb, "|---|---|---|");
         foreach (var (measure, change, verdict) in rows)
         {
@@ -533,8 +659,8 @@ public static partial class BenchmarkReportPackRenderer
         }
         else
         {
-            var parts = target.Select(g => ChatWhen(g.When) + ", before " + g.Run + ": " + g.Changes).ToList();
-            sentence = "Between the periods, Overseer was updated " + Times(target.Count) + ", "
+            var parts = target.Select(g => g.Tag + ", " + ChatSpan(g) + " — " + g.Changes).ToList();
+            sentence = "Between the periods, Overseer was updated " + Times(target.Count) + ": "
                 + (parts.Count == 1 ? parts[0] : string.Join("; ", parts.Take(parts.Count - 1)) + "; and " + parts[^1]) + ".";
         }
         if (controls > 0)
@@ -555,13 +681,7 @@ public static partial class BenchmarkReportPackRenderer
         _ => Inv(count) + " times"
     };
 
-    /// <summary><c>on 2026-10-08 at 14:49 UTC</c> for a time printed <c>2026-10-08 14:49 UTC</c>; <c>on</c> and the text otherwise.</summary>
-    private static string ChatWhen(string when)
-        => Regex.IsMatch(when, @"^\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$", RegexOptions.CultureInvariant)
-            ? "on " + when[..10] + " at " + when[11..]
-            : "on " + when;
-
-    /// <summary>The Overseer updates as <c>When (UTC) · Run · What changed</c>, one row per update, a control model's series named.</summary>
+    /// <summary>The Overseer updates as <c>Event · When (UTC) · Run · What changed</c>, one row per update, a control model's series named.</summary>
     private static void ChatEventsTable(StringBuilder sb, Context ctx)
     {
         var groups = ChatEventGroups(ctx);
@@ -572,37 +692,56 @@ public static partial class BenchmarkReportPackRenderer
             return;
         }
 
-        Line(sb, "| When (UTC) | Run | What changed |");
-        Line(sb, "|---|---|---|");
+        Line(sb, "| Event | When (UTC) | Run | What changed |");
+        Line(sb, "|---|---|---|---|");
         foreach (var g in groups)
         {
-            string when = g.When.EndsWith(" UTC", StringComparison.Ordinal) ? g.When[..^4] : g.When;
             string changes = g.Target ? g.Changes : g.Changes + " (in the runs of " + g.Series + ")";
-            Line(sb, "| " + Cell(when) + " | " + Cell(g.Run) + " | " + Cell(UpperFirst(changes)) + " |");
+            Line(sb, "| " + Cell(g.Tag) + " | " + Cell(ChatSpan(g, withZone: false)) + " | " + Cell(g.Run) + " | " + Cell(UpperFirst(changes)) + " |");
         }
         Line(sb);
     }
 
-    /// <summary>One Overseer update: its time and first runs as printed, its changes in words, and its series.</summary>
-    private sealed record ChatEventGroup(string When, string Run, string Changes, string Series, bool Target);
+    /// <summary>
+    /// When an update happened: <c>2026-10-08 14:49 UTC</c>, or <c>2026-10-08 14:49–16:00 UTC</c> when its last
+    /// event came later (the date repeated on another day); without <c>UTC</c> for a column headed in it.
+    /// </summary>
+    private static string ChatSpan(ChatEventGroup g, bool withZone = true)
+    {
+        static string Bare(string when) => when.EndsWith(" UTC", StringComparison.Ordinal) ? when[..^4] : when;
+        string from = Bare(g.When);
+        string text = from;
+        if (g.LastWhen is string lastWhen && !string.Equals(Bare(lastWhen), from, StringComparison.Ordinal))
+        {
+            string to = Bare(lastWhen);
+            bool sameDay = from.Length >= 16 && to.Length >= 16 && string.Equals(from[..10], to[..10], StringComparison.Ordinal);
+            text = from + "–" + (sameDay ? to[11..] : to);
+        }
+        return withZone ? text + " UTC" : text;
+    }
+
+    /// <summary>One Overseer update: its tag, its first and last time and first runs as printed, its changes in words, and its series.</summary>
+    private sealed record ChatEventGroup(string Tag, string When, string? LastWhen, string Run, string Changes, string Series, bool Target);
 
     /// <summary>
-    /// The Overseer updates: from the sheet's <c>eventGroups.*</c>, or, on a sheet written before them,
-    /// grouped here from the stored events by UTC day and series, each change put in words from the
-    /// event's stored kind and raw values.
+    /// The Overseer updates: from the sheet's <c>eventGroups.*</c> (tagged E1, E2, … in order where a sheet
+    /// written before tags has none), or, on a sheet written before groups, grouped here from the stored
+    /// events by UTC day and series, each change put in words from the event's stored kind and raw values.
     /// </summary>
     private static List<ChatEventGroup> ChatEventGroups(Context ctx)
     {
         if (Fact(ctx, "eventGroups.count") != null)
         {
             return ChatIndexes(ctx, "eventGroups.", ".at")
-                .Select(n => "eventGroups." + Inv(n) + ".")
-                .Select(p => new ChatEventGroup(
-                    D(ctx, p + "at"),
-                    D(ctx, p + "run"),
-                    OneLine(D(ctx, p + "changes")),
-                    D(ctx, p + "series"),
-                    !string.Equals(ChatValue(ctx, p + "series"), "control", StringComparison.Ordinal)))
+                .Select((n, i) => (Prefix: "eventGroups." + Inv(n) + ".", Index: i))
+                .Select(x => new ChatEventGroup(
+                    IsAvailable(ctx, x.Prefix + "tag") ? D(ctx, x.Prefix + "tag") : "E" + Inv(x.Index + 1),
+                    D(ctx, x.Prefix + "at"),
+                    IsAvailable(ctx, x.Prefix + "lastAt") ? D(ctx, x.Prefix + "lastAt") : null,
+                    D(ctx, x.Prefix + "run"),
+                    OneLine(D(ctx, x.Prefix + "changes")),
+                    D(ctx, x.Prefix + "series"),
+                    !string.Equals(ChatValue(ctx, x.Prefix + "series"), "control", StringComparison.Ordinal)))
                 .ToList();
         }
 
@@ -623,8 +762,10 @@ public static partial class BenchmarkReportPackRenderer
         return events
             .GroupBy(e => (Day: e.At.Length >= 10 ? e.At[..10] : e.At, e.Target, e.Series))
             .Select(g => g.ToList())
-            .Select(g => new ChatEventGroup(
+            .Select((g, i) => new ChatEventGroup(
+                "E" + Inv(i + 1),
                 g[0].When,
+                null,
                 ChatRunsText(g.Select(e => e.Run).OfType<long>().ToList(), g[0].RunText),
                 string.Join("; ", g.Select(e => e.Change).Distinct(StringComparer.Ordinal)),
                 g[0].Series,
@@ -676,16 +817,33 @@ public static partial class BenchmarkReportPackRenderer
 
         var missing = ChatIndexes(ctx, "controls.missing.", ".period")
             .Select(n => "controls.missing." + Inv(n) + ".")
-            .Select(p => (Period: D(ctx, p + "period"), Suite: D(ctx, p + "suite"), Suggestion: ChatSuggestion(ctx, p + "suggestion")))
+            .Select(p => (
+                Period: D(ctx, p + "period"),
+                Unit: ChatMissingControlUnit(ctx, p),
+                Suggestion: OneLine(ChatSuggestion(ctx, p + "suggestion"))))
+            .Distinct()
+            .OrderBy(m => m.Period == "baseline" ? 0 : m.Period == "comparison" ? 1 : 2)
             .ToList();
         if (missing.Count == 0) return;
 
-        foreach (var period in missing.GroupBy(m => m.Period).OrderBy(g => g.Key == "baseline" ? 0 : g.Key == "comparison" ? 1 : 2))
+        string unitHeader = ChatValue(ctx, "period.baseline.unitNoun") == "battery run" ? "Battery run (suites)" : "Run (suite)";
+        Line(sb, "| Period | " + unitHeader + " | What to do |");
+        Line(sb, "|---|---|---|");
+        foreach (var (period, unit, suggestion) in missing)
         {
-            var notes = period.Select(m => OneLine(m.Suite) + ": " + OneLine(m.Suggestion).TrimEnd('.')).Distinct(StringComparer.Ordinal);
-            Line(sb, "- **" + UpperFirst(OneLine(period.Key)) + " period, no control:** " + string.Join("; ", notes) + ".");
+            Line(sb, "| " + Cell(UpperFirst(OneLine(period))) + " | " + Cell(unit) + " | " + Cell(suggestion) + " |");
         }
         Line(sb);
+    }
+
+    /// <summary>A missing-control note's unit: <c>Battery run #12 (suite A, suite B)</c>, or <c>Run #98 (suite A)</c>.</summary>
+    private static string ChatMissingControlUnit(Context ctx, string prefix)
+    {
+        string suite = IsAvailable(ctx, prefix + "suite") ? OneLine(D(ctx, prefix + "suite")) : string.Empty;
+        string unit = IsAvailable(ctx, prefix + "batteryRun")
+            ? UpperFirst(D(ctx, prefix + "batteryRun"))
+            : UpperFirst(D(ctx, prefix + "targetRun"));
+        return suite.Length == 0 ? unit : unit + " (" + suite + ")";
     }
 
     /// <summary>A suggestion as printed, without an <c>(instrument …)</c> note a stored sheet may still carry.</summary>
@@ -725,7 +883,7 @@ public static partial class BenchmarkReportPackRenderer
         if (attributions.Count == 1)
         {
             string p = "attribution." + Inv(attributions[0]) + ".";
-            Line(sb, OneLine(D(ctx, p + "label")) + ": the analysis attributes " + ChatAttributionClause(ctx, p) + ".");
+            Line(sb, OneLine(D(ctx, p + "label")) + ": " + LowerFirstWord(ChatAttributionStatement(ctx, p, plain: false)));
             Line(sb);
         }
         else
@@ -749,28 +907,41 @@ public static partial class BenchmarkReportPackRenderer
         if (evidence.Count > 0) Line(sb);
     }
 
-    /// <summary>The Executive Summary's one sentence on where the change came from.</summary>
-    private static string ChatAttributionSentence(Context ctx)
+    /// <summary>The Executive Summary's sentences on where the change came from; endpoint names without ids when <paramref name="plain"/>.</summary>
+    private static string ChatAttributionSentence(Context ctx, bool plain = false)
     {
         var attributions = ChatIndexes(ctx, "attribution.", ".label");
         if (attributions.Count == 0) return "The analysis recorded no attribution.";
-        return "The analysis attributes "
-            + string.Join("; ", attributions.Select(n => ChatAttributionClause(ctx, "attribution." + Inv(n) + "."))) + ".";
+        return string.Join(" ", attributions.Select(n => ChatAttributionStatement(ctx, "attribution." + Inv(n) + ".", plain)));
     }
 
-    /// <summary><c>Quality (P1) to the provider's side, graded Indicated</c>.</summary>
-    private static string ChatAttributionClause(Context ctx, string prefix)
-        => ChatEndpointList(ctx, prefix + "endpoints") + " to " + D(ctx, prefix + "side") + ", graded " + D(ctx, prefix + "grade");
+    /// <summary>
+    /// One attribution as a sentence: <c>The analysis attributes Quality (P1) to the provider's side, graded
+    /// Indicated.</c>, or for an undetermined side <c>The analysis cannot say where the change in Quality (P1)
+    /// came from (graded Not established).</c>
+    /// </summary>
+    private static string ChatAttributionStatement(Context ctx, string prefix, bool plain)
+    {
+        string endpoints = ChatEndpointList(ctx, prefix + "endpoints", plain);
+        if (string.Equals(ChatValue(ctx, prefix + "side"), "undetermined", StringComparison.Ordinal))
+        {
+            return "The analysis cannot say where the change in " + endpoints + " came from (graded " + D(ctx, prefix + "grade") + ").";
+        }
+        return "The analysis attributes " + endpoints + " to " + D(ctx, prefix + "side") + ", graded " + D(ctx, prefix + "grade") + ".";
+    }
 
-    /// <summary>An attribution's endpoints by name, <c>Quality (P1) and Cost per question (P5)</c>; <c>no endpoint</c> without one.</summary>
-    private static string ChatEndpointList(Context ctx, string key)
+    /// <summary>
+    /// An attribution's endpoints by name, <c>Quality (P1) and Cost per question (P5)</c>, without the ids when
+    /// <paramref name="plain"/>; <c>no endpoint</c> without one.
+    /// </summary>
+    private static string ChatEndpointList(Context ctx, string key, bool plain = false)
     {
         if (!IsAvailable(ctx, key)) return "no endpoint";
         var ids = D(ctx, key).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
         var known = ChatEndpointIds(ctx);
         return ids.Count == 0 || ids.Any(id => !known.Contains(id, StringComparer.Ordinal))
             ? D(ctx, key)
-            : BenchmarkReportFormat.LetterList(ids.Select(id => ChatEndpointName(ctx, id)).ToList());
+            : BenchmarkReportFormat.LetterList(ids.Select(id => plain ? ChatEndpointPlainName(ctx, id) : ChatEndpointName(ctx, id)).ToList());
     }
 
     /// <summary>
@@ -821,6 +992,10 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- **What was measured.** The Overseer chat with " + ctx.Sheet.SubjectLabel + ": the model together with the chat "
                 + "system prompt, the tools, the knowledge corpora and the agent loop, run on the same benchmark suites in a baseline "
                 + "period and a later comparison period.");
+            Line(sb, "- **The five measures.** *Quality* is the Intelligence Index of the graded answers; *time to first answer text* is how "
+                + "long a player waits before the answer starts; *answer streaming rate* is how fast it then appears; *work per turn* is the "
+                + "output tokens per answer; *cost per question* is US dollars per question at one price card.");
+            Line(sb, "- **Grades.** *Established* means fit to publish; *Indicated*, a decisive result with a caveat; *Not established*, no finding.");
             Line(sb, "- **Verdicts.** *Equivalent* means the same as before within the endpoint's margin; *degraded* or *improved* a "
                 + "change beyond it; *inconclusive* that these runs cannot tell a change from no change, and the smallest detectable "
                 + "change says how large a change they could have missed. Only an Established result is fit to publish.");
@@ -985,16 +1160,46 @@ public static partial class BenchmarkReportPackRenderer
             .Where(id => !string.Equals(ChatValue(ctx, "endpoint." + id + ".verdict"), "not computable", StringComparison.Ordinal))
             .ToList();
 
-    /// <summary>The endpoints not computable, grouped by their reason, in endpoint order.</summary>
-    private static List<(IReadOnlyList<string> Names, string Reason)> ChatNotComputableGroups(Context ctx)
+    /// <summary>
+    /// The endpoints not computable, grouped by their reason, in endpoint order. In <paramref name="plain"/>
+    /// words (the Executive Summary) the names carry no id and a reason of a known kind is put plainly
+    /// (<see cref="ChatPlainReason"/>).
+    /// </summary>
+    private static List<(IReadOnlyList<string> Names, string Reason)> ChatNotComputableGroups(Context ctx, bool plain = false)
     {
         var computed = ChatComputedEndpoints(ctx);
         return ChatEndpointIds(ctx)
             .Except(computed, StringComparer.Ordinal)
-            .Select(id => (Id: id, Reason: NotAvailableReason(Fact(ctx, "endpoint." + id + ".estimate"))))
+            .Select(id =>
+            {
+                string reason = NotAvailableReason(Fact(ctx, "endpoint." + id + ".estimate"));
+                return (Id: id, Reason: plain ? ChatPlainReason(ctx, id) ?? reason : reason);
+            })
             .GroupBy(e => e.Reason, StringComparer.Ordinal)
-            .Select(g => (Names: (IReadOnlyList<string>)g.Select(e => ChatEndpointName(ctx, e.Id)).ToList(), Reason: g.Key))
+            .Select(g => (Names: (IReadOnlyList<string>)g.Select(e => plain ? ChatEndpointPlainName(ctx, e.Id) : ChatEndpointName(ctx, e.Id)).ToList(), Reason: g.Key))
             .ToList();
+    }
+
+    /// <summary>
+    /// A not-computed reason in plain words, by the endpoint's <c>notComputedKind</c>: a grading change on
+    /// quality, or periods run at different hours; null for any other kind, and on a sheet without kinds.
+    /// </summary>
+    private static string? ChatPlainReason(Context ctx, string id)
+    {
+        string? kind = ChatValue(ctx, "endpoint." + id + ".notComputedKind");
+        if (kind == "measurementChanged" && id == "P1")
+        {
+            return "Quality cannot be compared yet: the way answers are graded changed between the periods. "
+                + "Re-grading both periods with one grader makes it comparable.";
+        }
+        if (kind == "noCommonStratum")
+        {
+            string baseline = IsAvailable(ctx, "period.baseline.hours") ? D(ctx, "period.baseline.hours") : "at other hours";
+            string comparison = IsAvailable(ctx, "period.comparison.hours") ? D(ctx, "period.comparison.hours") : "at other hours";
+            return "Speed cannot be compared: the baseline ran " + baseline + " and the comparison " + comparison
+                + ", and response times vary with the time of day.";
+        }
+        return null;
     }
 
     /// <summary><c>Quality (P1)</c>.</summary>
@@ -1072,31 +1277,37 @@ public static partial class BenchmarkReportPackRenderer
         return D(ctx, p + "start") + " to " + D(ctx, p + "end") + ", " + (IsAvailable(ctx, p + "units") ? D(ctx, p + "units") : D(ctx, p + "runs"));
     }
 
-    /// <summary>The hours the result holds for, or that the periods share none.</summary>
+    /// <summary>The hours the result holds for, or that the periods ran at different hours.</summary>
     private static string ChatHoursText(Context ctx)
         => IsAvailable(ctx, "scope.hours")
             ? D(ctx, "scope.hours")
-            : "none: the periods share no common time stratum";
+            : "none: the periods ran at different hours" + ChatPeriodHoursClause(ctx);
+
+    /// <summary><c> (baseline weekdays 04–08 UTC, comparison weekdays 12–16 UTC)</c>; empty on a sheet without the periods' hours.</summary>
+    private static string ChatPeriodHoursClause(Context ctx)
+        => IsAvailable(ctx, "period.baseline.hours") && IsAvailable(ctx, "period.comparison.hours")
+            ? " (baseline " + D(ctx, "period.baseline.hours") + ", comparison " + D(ctx, "period.comparison.hours") + ")"
+            : string.Empty;
 
     /// <summary>The overall verdict's hours point.</summary>
     private static string ChatScopeSentence(Context ctx)
         => IsAvailable(ctx, "scope.hours")
             ? "every result holds for " + D(ctx, "scope.hours") + " only, the hours both periods share"
-            : "the periods share no common time stratum, so no result is confined to hours both periods sampled";
+            : "the periods ran at different hours" + ChatPeriodHoursClause(ctx) + ", so they share no hours a result could be confined to";
 
     /// <summary>"How to read this"'s hours point.</summary>
     private static string ChatHoursSentence(Context ctx)
         => IsAvailable(ctx, "scope.hours")
             ? "Every result holds for " + D(ctx, "scope.hours") + " only, the hours both periods share. It says nothing about the hours outside them."
-            : "The periods share no common time stratum, so no result could be confined to hours both periods sampled, and the speed endpoints, which need one, could not be compared.";
+            : "The periods ran at different hours" + ChatPeriodHoursClause(ctx) + ". Response times vary with the time of day, so the speed measures could not be compared.";
 
-    /// <summary><c>2 strata (weekdays 04–08 UTC, weekdays 08–12 UTC); time of day not assessable: …</c>.</summary>
+    /// <summary><c>2 strata (weekdays 04–08 UTC, weekdays 08–12 UTC); time of day not assessable: …</c>; <c>none: …</c> without common strata.</summary>
     private static string ChatStrataText(Context ctx)
     {
         var strata = ChatIndexes(ctx, "coverage.strata.", string.Empty).Select(n => D(ctx, "coverage.strata." + Inv(n))).ToList();
+        if (strata.Count == 0) return "none: the periods share no hours";
         string count = IsAvailable(ctx, "coverage.strata.count") ? D(ctx, "coverage.strata.count") : Inv(strata.Count) + " strata";
-        return count + (strata.Count == 0 ? string.Empty : " (" + string.Join(", ", strata) + ")")
-            + "; time of day " + D(ctx, "serving.timeOfDayAssessable");
+        return count + " (" + string.Join(", ", strata) + "); time of day " + D(ctx, "serving.timeOfDayAssessable");
     }
 
     /// <summary>The overall verdict's controls point: the control models, or that no control run was made, and the missing controls.</summary>
@@ -1141,4 +1352,8 @@ public static partial class BenchmarkReportPackRenderer
 
     private static string UpperFirst(string text)
         => text.Length > 0 ? char.ToUpperInvariant(text[0]) + text[1..] : text;
+
+    /// <summary>The text with its first letter lowercased, unless it starts an acronym (<c>IDs</c>, <c>P1</c>).</summary>
+    private static string LowerFirstWord(string text)
+        => text.Length > 1 && char.IsUpper(text[0]) && !char.IsUpper(text[1]) && !char.IsDigit(text[1]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 }

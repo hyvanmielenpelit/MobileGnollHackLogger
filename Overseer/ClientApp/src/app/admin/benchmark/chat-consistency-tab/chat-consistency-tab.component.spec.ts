@@ -22,6 +22,7 @@ import {
   ccBatteryMemberRows,
   ccBatteryRunRows,
   ccComparisonSets,
+  ccFlushFreshness,
   ccNoComparisonSets,
   ccRunRows,
   ccTimeline,
@@ -82,6 +83,8 @@ describe('ChatConsistencyTabComponent', () => {
       });
       fixture.destroy();
     }
+    // Results and Write ask for a saved analysis's freshness; the specs here do not test the notice.
+    ccFlushFreshness(http);
     http.verify();
     clearStorage();
   });

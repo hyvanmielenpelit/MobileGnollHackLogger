@@ -1376,6 +1376,41 @@ public class BenchmarkReportPackPromptTests
 
     [Theory]
     [MemberData(nameof(ChatConsistencyAudiences))]
+    public void TheChatConsistencySystemPrompt_LimitsRepetition_AndAsksForTheHoursOnlyWhereThePeriodsShareAny(BenchmarkReportAudience audience)
+    {
+        string system = BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(audience);
+
+        Assert.Contains("REPETITION AND LENGTH:", system);
+        Assert.Contains("appears at most once in the whole document, and never inside parentheses", system);
+        Assert.Contains("Endpoints that share a status or a value get one sentence together", system);
+        Assert.Contains("State an inconclusive endpoint's minimum detectable effect once in the document", system);
+        Assert.Contains("prefer robustness.<check>.summary", system);
+        Assert.Contains("When {{verdict.short}} reads Not enough evidence yet, write at most two sentences per slot.", system);
+        Assert.Contains("Where {{scope.hours}} is available, every document cites it at least once.", system);
+        Assert.Contains("never write that a result holds within no stratum", system);
+        Assert.DoesNotContain("Every document cites {{scope.hours}} at least once.", system);
+    }
+
+    [Fact]
+    public void WithoutCommonHours_TheClaimSupportAsksForEachPeriodsHours_AndAShortDocumentWhenEvidenceIsLacking()
+    {
+        var baseResult = ChatConsistencyReportTestData.Result();
+        var result = baseResult with
+        {
+            Scope = new Overseer.Services.ChatConsistency.ChatConsistencyScope { Text = "no common time stratum" },
+            Endpoints = baseResult.Endpoints.Where(e => e.Id is "P3" or "P5").ToList()
+        };
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, ChatConsistencyReportTestData.Content()).UserMessage;
+
+        Assert.Contains("- Hours: scope.hours is unavailable because the periods ran at different hours; say so once in plain words, citing {{period.baseline.hours}} and {{period.comparison.hours}}.", message);
+        Assert.Contains("- Length: verdict.short reads Not enough evidence yet, so write at most two sentences per slot.", message);
+        Assert.DoesNotContain("every document cites {{scope.hours}}", message);
+    }
+
+    [Theory]
+    [MemberData(nameof(ChatConsistencyAudiences))]
     public void TheChatConsistencySystemPrompt_IsItsOwn_AndItsHashIsTheScopes(BenchmarkReportAudience audience)
     {
         string system = BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(audience);

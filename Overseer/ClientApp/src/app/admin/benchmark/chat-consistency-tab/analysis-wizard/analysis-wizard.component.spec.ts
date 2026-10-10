@@ -17,6 +17,7 @@ import {
   ccComparisonSets,
   ccEventPoints,
   ccEventTimeline,
+  ccFlushFreshness,
   ccRunRow,
   ccRunRows,
   ccTimeline,
@@ -81,6 +82,8 @@ describe('CcAnalysisWizardComponent', () => {
   });
 
   afterEach(() => {
+    // Results and Write ask for a saved analysis's freshness; the specs here do not test the notice.
+    ccFlushFreshness(http);
     http.verify();
     fixture.destroy();
     el.remove();
@@ -92,7 +95,7 @@ describe('CcAnalysisWizardComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Shows Results with a result; it asks the server for nothing. */
+  /** Shows Results with a result; it asks the server only for a saved one's freshness, which `afterEach` answers. */
   function goToResults(): void {
     setStep('results');
   }
@@ -1121,6 +1124,30 @@ describe('CcAnalysisWizardComponent', () => {
       goToResults();
       expect(el.querySelector('app-cc-results-view')).not.toBeNull();
       expect(textOf(el.querySelector('dd.cc-res-headline'))).toContain('Overseer chat with GPT-5 high');
+    });
+
+    it('restores the pooling and the protocol overrides the saved analysis was requested with', () => {
+      const base = ccAnalysisResult();
+      component.showResult({
+        ...base,
+        request: {
+          subjectModelKey: 'k',
+          baselineStartUtc: '2026-10-01T00:00:00Z',
+          baselineEndUtc: '2026-10-02T00:00:00Z',
+          comparisonStartUtc: '2026-10-03T00:00:00Z',
+          comparisonEndUtc: '2026-10-04T00:00:00Z',
+          relaxedPooling: true,
+          protocolOverrides: { margins: { p1: 4, p4: 0.2 }, alpha: 0.1 }
+        }
+      });
+
+      expect(component.relaxedPooling).toBe(true);
+      expect(component.marginOverrides).toEqual({ P1: '4', P4: '20' });
+      expect(component.alphaOverride).toBe('0.1');
+
+      component.showResult(ccAnalysisResult());
+      expect(component.marginOverrides).toEqual({});
+      expect(component.alphaOverride).toBe('');
     });
 
     it('shows the results without the reports, handing them every loaded run and the tagged annotations', () => {

@@ -34,9 +34,11 @@ endpoints (Protocol V1):
 P3 reads `CallTelemetryMeasures.AnswerStreamingRate`, which from harness 54 has no value for an answer
 whose final call's decode span is under 500 ms or whose rate is over 1,000 tokens/s — visible text that
 arrived in one burst after thinking, so the figure would measure delivery, not decoding. Analysis code
-version **3** (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`) applies those bounds, and the
-streaming-rate caveat counts the delivered answers left without a rate; an analysis saved under version
-2 keeps its stored result, so re-analyze before comparing a P3 verdict across the two.
+version 3 applies those bounds, and the streaming-rate caveat counts the delivered answers left without
+a rate; an analysis saved under version 2 keeps its stored result, so re-analyze before comparing a P3
+verdict across the two. Read the current analysis code version from
+`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`, never from this skill; what each version
+changed is listed in the method document's § 16.
 
 ## 2. Verdicts and Grades
 
@@ -53,7 +55,10 @@ streaming-rate caveat counts the delivered answers left without a rate; an analy
   battery run of two suites is one unit, never two, and the bootstrap and leave-one-out resample battery
   runs. A result is comparable only within one battery definition or one suite; a run-by-run analysis
   that pools suites carries a `mixedSuites` data-quality note.
-- An **inconclusive** endpoint is never "no change": cite its minimum detectable effect.
+- An **inconclusive** endpoint is never "no change": cite its minimum detectable effect. With one unit
+  in a period, an item-paired endpoint's MDE (P1, P4, P5) is the paired one over the per-item
+  differences, noted *"A floor: one unit per period, so run-to-run noise is not included."* — the true
+  uncertainty is larger, so never cite it as the run-to-run MDE.
 - P1 on native grades with neither a common grader nor an anchor fails *Grader stability*, so it is at
   most Indicated.
 
@@ -87,7 +92,11 @@ on the same suite. With an event in the span:
 
 A provider-side row needs the endpoint isolated: no event in the span, or a DiD separating the target.
 So **after any Overseer change worth attributing, one control run of another provider under the new
-build** is what turns R2 into an answer.
+build** is what turns R2 into an answer. Make it while that build still runs: once a period's build
+(its `HarnessVersion`) is no longer the running `BenchmarkAssessmentPrompt.HarnessVersion`, the
+missing-control note says no control run can be made for that period any more and asks for one beside
+the next checkpoint instead (`buildReplaced`). A battery comparison has one note per period per battery
+run, naming its suites.
 
 ## 5. The Scope: Hours
 
@@ -95,6 +104,9 @@ Runs sample the chat only at the hours they ran. Every verdict holds **within th
 (4-hour UTC blocks, weekday or weekend) both periods sampled, and every headline ends *"within
 \<scope\>"*, or *"; the periods share no common time stratum"* when they share none. *Load-independent* needs a common block inside US business hours (weekdays 14–22 UTC) and
 one outside them. Never write "slower" without the scope, and never generalize to hours no run covered.
+With no common stratum the speed endpoints are not computed (`noCommonStratum`): say the periods ran at
+different hours, give each period's own hours (`periodHours`), and never write "within no stratum". The
+next runs then ask for runs in the baseline's most-populated stratum in the comparison period.
 
 ## 6. Never Claim Intent
 
@@ -122,6 +134,13 @@ shows the newest saved analysis of any model, and every saved analysis is opened
 in the **Analysis History** dialog; one with report documents cannot be deleted until they are, and
 one saved under an earlier analysis code version is tagged *Earlier analysis code*. Change-point detection
 (`ChatConsistencyStatistics.Pelt`) exists but is not wired into the analysis or the timeline.
+
+**Out of date.** A saved analysis never changes; it is out of date when it was saved under **earlier
+analysis code**, or when its **inputs changed** since (its recomputed `InputSha256` differs: a re-grade,
+a re-run, a run finished, deleted or changed in status, a control, an annotation or the price card). To
+refresh it, press **Analyze again** for a new analysis; keep the old one as the record behind any
+document already shared, and delete only what you never need, its documents first
+(`ai-benchmark-chat-consistency.md` § 16.1).
 
 **The periods are run ranges, not dates.** Step 1 alone chooses the runs (or battery runs) the analysis
 uses; step 3, *Analyze*, splits them: each period is every step-1 unit from a chosen first run to a
@@ -197,6 +216,7 @@ Classify the new version from its changelog on `HarnessVersion` and `docs/overse
   in `Overseer/ClientApp/src/app/admin/benchmark/chat-consistency-tab/`.
 - Battery points: the timeline carries `ChatConsistencyTimeline.BatteryPoints`, one per battery run with
   its usable members pooled over the union of their answers and its quality the stored, current battery
-  analysis's Overall Index (none without one); with a battery compared, step 2 and the Results and
-  report charts draw them instead of the member runs.
+  analysis's Overall Index (none without one) with its 95 % half-width, drawn as a whisker that is that
+  battery run's own interval, never the interval of the change; with a battery compared, step 2 and the
+  Results and report charts draw them instead of the member runs.
 - Planning the runs: `server_benchmark_runbook` § *Checkpoint and control runs for chat consistency*.

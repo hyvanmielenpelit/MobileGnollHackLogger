@@ -4,9 +4,9 @@
   A resizable sidebar that writes the analysis's documents (each one written once: a written one with
   View and Delete, an unwritten one with its Write checkbox), with Update charts, the charts each
   document type carries, the writer and the estimate; and a main area with the job's progress, one
-  row per document, and its log and diagnostics. The
-  same-provider confirmation, the delete confirmation and the PDF viewer are nested in the wizard's
-  dialog and stop their own close and cancel events.
+  row per document, and its log and diagnostics. The header carries the analysis's out-of-date
+  notice. The same-provider and out-of-date confirmations, the delete confirmation and the PDF viewer
+  are nested in the wizard's dialog and stop their own close and cancel events.
 -->
 <app-run-report-frame layout="sidebar" sidebarLabel="New reports" mainLabel="Report progress"
                       [sidebarWidth]="sidebarWidth" (sidebarWidthChange)="onSidebarWidthChange($event)">
@@ -14,6 +14,9 @@
     <h4 class="gh-section-title rp-heading" id="cc-rep-heading" tabindex="-1">Write reports</h4>
     <p class="rp-subtitle">{{ subtitle }}</p>
     <p class="form-hint rp-lead">Write AI reports about this analysis. Each document is written once.</p>
+    <app-cc-freshness-notice idPrefix="cc-rep-fresh" [analysisId]="analysisId"
+                             (freshnessChange)="onFreshnessChange($event)"
+                             (analyzeAgain)="analyzeAgain.emit()"></app-cc-freshness-notice>
   </div>
 
   <!-- ===================================================================================
@@ -375,6 +378,38 @@
       <button type="button" class="btn-gh cc-rep-same-provider-confirm" (click)="confirmSameProvider()">
         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
         Write Anyway
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- OUT-OF-DATE CONFIRMATION: asked on every write from an out-of-date analysis, and on the server's 409. -->
+<dialog #outOfDateDialog class="gh-dialog cc-rep-confirm-dialog cc-rep-out-of-date-dialog" aria-labelledby="cc-rep-out-of-date-title"
+        (cancel)="stopNested($event)" (close)="stopNested($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="cc-rep-out-of-date-title">Write from an out-of-date analysis?</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <div class="alert alert-warning" role="note">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <div class="alert-content">
+          <p class="alert-body cc-rep-out-of-date-text">
+            @for (reason of outOfDateReasons; track $index) {
+              <span class="cc-rep-out-of-date-reason">{{ reason }}</span>{{ ' ' }}
+            }
+            <span>Every document will say so on its first page.</span>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cc-rep-out-of-date-cancel" (click)="cancelOutOfDate()">Cancel</button>
+      <button type="button" class="btn-gh cc-rep-out-of-date-confirm" (click)="confirmOutOfDate()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        Write anyway
       </button>
     </div>
   </div>

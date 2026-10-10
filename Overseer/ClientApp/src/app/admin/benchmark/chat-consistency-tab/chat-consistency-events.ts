@@ -2,7 +2,8 @@
  * The Chat Consistency events as the timeline presents them: Overseer events grouped into composite
  * events (one per UTC day and harness version), the served-model changes, the tagged annotations,
  * and the day-by-day event list. Pure and DOM-free; the charts and the event list read the same
- * groups and tags from here, so a tag means the same thing in both.
+ * groups and tags from here, so a tag means the same thing in both. The report charts group an
+ * analysis's events as its report documents do instead (`ccReportEventGroups`).
  */
 
 import { CcAnnotation, CcEvent, CcTimelinePoint } from './chat-consistency.models';
@@ -66,7 +67,7 @@ export interface CcEventChange {
 
 /** The Overseer events of one UTC day under one harness version. */
 export interface CcEventGroup {
-  /** `${day}|${harnessVersion ?? ''}`. */
+  /** `${day}|${harnessVersion ?? ''}`; a report group's is `${day}|${series}|${harness}|${side}` (`ccReportEventGroups`). */
   key: string;
   /** E1, E2 … in time order of `atUtc`. */
   tag: string;
@@ -170,6 +171,110 @@ export function groupOverseerEvents(
     };
   });
   return numbering && numbering.length > 0 ? retagFromReference(groups, numbering) : groups;
+}
+
+/** A UTC instant as epoch ms: a number as it is, a string parsed; NaN for none. */
+function instantMs(value: string | number | null | undefined): number {
+  if (typeof value === 'number') return value;
+  return utcMillis(value);
+}
+
+/**
+ * An analysis's own events grouped and tagged as its report documents number them, so a report chart's
+ * markers match the server's events table (`cc-event-groups.fixture.json` pins the two together). An
+ * event's group key is its UTC day, its series (empty for the target series, else its subject key),
+ * the harness it happened under and its side of the period split:
+ *
+ * - the harness is the `to` of the latest harness change of its series at or before it (an equal
+ *   instant counts when that change's run id is not after its own), else the `from` of the series'
+ *   earliest harness change, else empty;
+ * - the side is `comparison` from the comparison's start, else `baseline` up to the baseline's end,
+ *   else `between`.
+ *
+ * Each group's events are in time order, then run id; the groups are ordered by their first event's
+ * time, its run id, the target series first, then the subject key, and tagged `E1`… in that order.
+ * Events without a parsable time are left out.
+ */
+export function ccReportEventGroups(
+  events: readonly CcEvent[],
+  baselineEndUtc: string | number | null | undefined,
+  comparisonStartUtc: string | number | null | undefined
+): CcEventGroup[] {
+  const baselineEnd = instantMs(baselineEndUtc);
+  const comparisonStart = instantMs(comparisonStartUtc);
+  const timed = events
+    .map((event, index) => ({ event, index, at: utcMillis(event.atUtc) }))
+    .filter(entry => Number.isFinite(entry.at));
+  const byTimeThenRun = (a: { at: number; event: CcEvent; index: number }, b: { at: number; event: CcEvent; index: number }) =>
+    a.at - b.at || a.event.runId - b.event.runId || a.index - b.index;
+  const seriesOf = (event: CcEvent) => event.inTargetSeries ? '' : (event.subjectKey ?? '');
+
+  // The harness changes of each series, in time order, then run id.
+  const harnessChanges = new Map<string, typeof timed>();
+  for (const entry of timed.filter(e => e.event.kind === CC_HARNESS_EVENT_KIND).sort(byTimeThenRun)) {
+    const series = `${entry.event.inTargetSeries ? 'target' : 'other'}|${seriesOf(entry.event)}`;
+    harnessChanges.set(series, [...(harnessChanges.get(series) ?? []), entry]);
+  }
+  const harnessOf = (event: CcEvent, at: number): string => {
+    const changes = harnessChanges.get(`${event.inTargetSeries ? 'target' : 'other'}|${seriesOf(event)}`) ?? [];
+    let latest: (typeof timed)[number] | null = null;
+    for (const change of changes) {
+      if (change.at < at || (change.at === at && change.event.runId <= event.runId)) latest = change;
+    }
+    if (latest) return latest.event.to ?? '';
+    return changes.length > 0 ? changes[0].event.from ?? '' : '';
+  };
+  const sideOf = (at: number): string => {
+    if (Number.isFinite(comparisonStart) && at >= comparisonStart) return 'comparison';
+    if (Number.isFinite(baselineEnd) && at <= baselineEnd) return 'baseline';
+    return 'between';
+  };
+
+  const drafts = new Map<string, { key: string; harness: string; series: string; target: boolean; entries: typeof timed }>();
+  for (const entry of timed) {
+    const harness = harnessOf(entry.event, entry.at);
+    const series = seriesOf(entry.event);
+    const key = `${formatUtcDate(entry.at)}|${series}|${harness}|${sideOf(entry.at)}`;
+    let draft = drafts.get(key);
+    if (!draft) {
+      draft = { key, harness, series, target: entry.event.inTargetSeries, entries: [] };
+      drafts.set(key, draft);
+    }
+    draft.entries.push(entry);
+  }
+  const ordinal = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  const ordered = [...drafts.values()]
+    .map(draft => ({ ...draft, entries: [...draft.entries].sort(byTimeThenRun) }))
+    .sort((a, b) => a.entries[0].at - b.entries[0].at
+      || a.entries[0].event.runId - b.entries[0].event.runId
+      || Number(b.target) - Number(a.target)
+      || ordinal(a.series, b.series)
+      || ordinal(a.key, b.key));
+
+  return ordered.map((draft, i) => {
+    const groupEvents = draft.entries.map(entry => entry.event);
+    const harnessVersion = draft.harness === '' ? null : draft.harness;
+    const harnessEvent = groupEvents.find(event => event.kind === CC_HARNESS_EVENT_KIND) ?? null;
+    const harnessChange = harnessEvent ? { from: harnessEvent.from, to: harnessEvent.to } : null;
+    const kinds = [...new Set(groupEvents.map(event => event.kind))].sort(compareEventKinds);
+    return {
+      key: draft.key,
+      tag: `E${i + 1}`,
+      day: formatUtcDate(draft.entries[0].at),
+      atUtc: groupEvents[0].atUtc,
+      lastAtUtc: groupEvents[groupEvents.length - 1].atUtc,
+      harnessVersion,
+      harnessChange,
+      runIds: [...new Set(groupEvents.map(event => event.runId))].sort((a, b) => a - b),
+      title: groupTitle(harnessVersion, harnessChange),
+      changes: kinds.map(kind => ({
+        kind,
+        label: eventKindLabel(kind),
+        count: new Set(groupEvents.filter(event => event.kind === kind).map(event => event.runId)).size
+      })),
+      events: groupEvents
+    };
+  });
 }
 
 function eventTagNumber(tag: string): number {

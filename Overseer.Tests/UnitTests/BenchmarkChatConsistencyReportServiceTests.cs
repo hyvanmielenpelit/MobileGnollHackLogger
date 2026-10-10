@@ -67,7 +67,7 @@ public class BenchmarkChatConsistencyReportServiceTests
             Assert.Equal("Test Model", document.SubjectLabel);
             Assert.Equal("Overseer Chat Consistency Report: Test Model", document.Title);
             Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
-            Assert.Equal(1, document.ReportFormatVersion);
+            Assert.Equal(2, document.ReportFormatVersion);
             Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(document.Audience, BenchmarkReportScope.ChatConsistency), document.WriterPromptSha256);
             Assert.Equal(0, document.AnswerExcerptChars);
             Assert.Null(document.ComparisonId);
@@ -124,7 +124,7 @@ public class BenchmarkChatConsistencyReportServiceTests
         Assert.Equal(StatusCodes.Status202Accepted, start.StatusCode);
         Assert.Equal(2, h.Provider.Calls);
         string repair = h.Provider.Requests.ToArray()[1];
-        Assert.Contains("Every document cites {{scope.hours}} at least once.", repair);
+        Assert.Contains("Where {{scope.hours}} is available, cite it at least once", repair);
 
         var document = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(Ct));
         Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
@@ -285,8 +285,36 @@ public class BenchmarkChatConsistencyReportServiceTests
             BenchmarkReportPackPrompt.BuildRepairMessage(issues, BenchmarkReportScope.Model));
         Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: true),
             BenchmarkReportPackPrompt.BuildRepairMessage(issues, BenchmarkReportScope.Comparison));
-        Assert.Contains("Every document cites {{scope.hours}} at least once.",
+        Assert.Contains("Where {{scope.hours}} is available, cite it at least once",
             BenchmarkReportPackPrompt.BuildRepairMessage(issues, BenchmarkReportScope.ChatConsistency));
+    }
+
+    [Fact]
+    public async Task AnOutOfDateAnalysis_IsRefusedWithoutTheAcknowledgment_AndWrittenWithIt_EveryDocumentSayingSo()
+    {
+        var result = ChatConsistencyReportTestData.Result() with { AnalysisCodeVersion = 4 };
+        await using var h = await ChatConsistencyReportHarness.CreateAsync(result);
+        var service = h.Service();
+
+        var refused = await service.WriteChatConsistencyDocumentsAsync(
+            ChatConsistencyReportHarness.AnalysisId, h.Writer.Id, new[] { Es }, false, ChatConsistencyReportHarness.UserId, Ct);
+        Assert.Equal(StatusCodes.Status409Conflict, refused.StatusCode);
+        Assert.True(refused.OutOfDate);
+        Assert.Equal("Analysis #7 is out of date: it was saved under analysis code version 4, and Overseer now analyzes under version "
+            + ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + ". Analyze again, or confirm to write from it anyway.", refused.Error);
+        Assert.Equal(StatusCodes.Status204NoContent, (await service.GetChatConsistencyJobAsync(ChatConsistencyReportHarness.AnalysisId, Ct)).StatusCode);
+
+        h.Provider.Replies.Enqueue(ChatConsistencyReportHarness.Reply(ChatConsistencyReportTestData.ValidOutput(Es)));
+        var start = await service.WriteChatConsistencyDocumentsAsync(
+            ChatConsistencyReportHarness.AnalysisId, h.Writer.Id, new[] { Es }, false, ChatConsistencyReportHarness.UserId, Ct, acknowledgeOutOfDate: true);
+        await service.ChatConsistencyJobCompletion(ChatConsistencyReportHarness.AnalysisId);
+
+        Assert.Equal(StatusCodes.Status202Accepted, start.StatusCode);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(Ct));
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        Assert.Equal("earlier analysis code (version 4)", Assert.Single(sheet.Facts, f => f.Key == "analysis.writtenOutOfDate").Display);
+        Assert.Contains("This document comes from an out-of-date analysis", BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions()), StringComparison.Ordinal);
     }
 
     [Fact]

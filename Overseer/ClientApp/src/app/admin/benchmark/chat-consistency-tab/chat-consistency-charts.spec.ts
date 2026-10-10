@@ -12,12 +12,14 @@ import {
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
   CC_HEADER_LOGO_PX,
+  CC_INTERVAL_COLUMN,
   CC_PRINT_THEME,
   CC_REPORT_FIGURES,
   CC_SCREEN_THEME,
   CC_TAG_GAP,
   CC_TAG_MAX_ROWS,
   CC_TAG_ROW_HEIGHT,
+  CC_WORK_ENDPOINT_NOTE,
   CcChartDataset,
   CcChartPoint,
   CcChartStyle,
@@ -30,9 +32,13 @@ import {
   buildCcFigures,
   buildMarkers,
   ccAutoDecimalsText,
+  ccAxisTimeTicks,
   ccChartThemeFor,
   ccHeaderHeight,
+  ccIntervalText,
   ccNotComparableText,
+  ccPeriodBreak,
+  ccPeriodLabelPlacement,
   ccPlaceLabels,
   ccPointLabelFont,
   ccStepDecimals,
@@ -42,6 +48,7 @@ import {
   ccTimeTickLabel,
   ccTimeTicks,
   ccValueAxis,
+  ccWhiskerPlugin,
   costFigure,
   dominantCommonGrader,
   dominantServedModel,
@@ -145,10 +152,11 @@ describe('chat-consistency-charts', () => {
 
   it('draws output tokens and tool calls as two charts of one axis each', () => {
     const work = workFigure(input);
-    expect(work.title).toBe('Output tokens per answer');
+    expect(work.title).toBe('Work per turn (output tokens per answer)');
     expect(work.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tokens']);
     expect(work.config!.options.scales!['y1']).toBeUndefined();
-    expect(work.takeaway).toBe('Output tokens per answer were 1,200 in all 6 runs.');
+    // The points are means over each run's delivered answers.
+    expect(work.takeaway).toBe('Mean output tokens per answer were 1,200 in all 6 runs.');
     expect(work.table.columns).toEqual(['Run', 'Started', 'Output tokens per answer']);
 
     const tools = toolCallsFigure(input);
@@ -318,6 +326,24 @@ describe('chat-consistency-charts', () => {
       expect(ccTimeTickLabel(at('2026-10-01T00:00:00Z'), null, 90 * DAY, 500 * DAY)).toBe('2026-10');
     });
 
+    it('ticks a range under 48 hours in hours, with the date written once', () => {
+      // 30 hours over 600 px: three-hour steps, the next day's midnight without its date.
+      const short = ccAxisTimeTicks(at('2026-10-08T05:00:00Z'), at('2026-10-09T11:00:00Z'), 600);
+      expect(short.stepMs).toBe(3 * HOUR);
+      expect(short.values[0]).toBe(at('2026-10-08T06:00:00Z'));
+      const span = 30 * HOUR;
+      const labels = short.values.map((value, i) => ccTimeTickLabel(value, i > 0 ? short.values[i - 1] : null, short.stepMs, span));
+      expect(labels[0]).toBe('2026-10-08 06:00');
+      expect(labels.slice(1)).toEqual(['09:00', '12:00', '15:00', '18:00', '21:00', '00:00', '03:00', '06:00', '09:00']);
+      // A narrow axis still ticks in hours, never in days.
+      const narrow = ccAxisTimeTicks(at('2026-10-07T20:00:00Z'), at('2026-10-09T12:00:00Z'), 200);
+      expect(narrow.stepMs).toBe(12 * HOUR);
+      expect(ccTimeTickLabel(at('2026-10-09T00:00:00Z'), at('2026-10-08T12:00:00Z'), 12 * HOUR, 40 * HOUR)).toBe('00:00');
+      // From 48 hours on, each day's first tick carries its date, as before.
+      expect(ccAxisTimeTicks(at('2026-10-07T18:00:00Z'), at('2026-10-09T18:00:00Z'), 660))
+        .toEqual(ccTimeTicks(at('2026-10-07T18:00:00Z'), at('2026-10-09T18:00:00Z'), 6));
+    });
+
     it('builds the time axis from them', () => {
       const x = qualityFigure(input).config!.options.scales!['x'] as unknown as {
         afterBuildTicks: (scale: { min: number; max: number; width: number; ticks: { value: number }[] }) => void;
@@ -348,6 +374,93 @@ describe('chat-consistency-charts', () => {
       { startUtc: '2026-09-01T00:00:00Z', endUtc: '2026-09-14T23:59:59.999Z' },
       { startUtc: '2026-09-15T00:00:00Z', endUtc: 'bad' });
     expect(bands).toEqual([{ name: 'Baseline', start: at('2026-09-01T00:00:00Z'), end: at('2026-09-14T23:59:59.999Z') }]);
+  });
+
+  describe('with an analysis', () => {
+    // Runs 101–103 in the baseline, 104–106 in the comparison, which starts on 2026-09-15.
+    const bands = analysisBands(
+      { startUtc: '2026-09-01T00:00:00Z', endUtc: '2026-09-14T23:59:59.999Z' },
+      { startUtc: '2026-09-15T00:00:00Z', endUtc: '2026-10-01T23:59:59.999Z' });
+    const notComputed = (id: string, kind?: 'measurementChanged' | 'noCommonStratum' | 'tooFewPairs') =>
+      ccEndpoint(id, { computed: false, notComputedReason: 'Not comparable.', ...(kind ? { notComputedKind: kind } : {}) });
+    type SegmentOption = (ctx: { type: 'segment'; p0DataIndex: number; p1DataIndex: number; datasetIndex: number }) => unknown;
+    const segmentColors = (ds: CcChartDataset) => [0, 1, 2, 3, 4].map(i =>
+      ((ds.segment as unknown as Record<string, SegmentOption> | undefined)?.['borderColor'])?.(
+        { type: 'segment', p0DataIndex: i, p1DataIndex: i + 1, datasetIndex: 0 }));
+
+    it('joins no points of different periods where the measurement changed or no stratum is common', () => {
+      for (const kind of ['measurementChanged', 'noCommonStratum'] as const) {
+        const figureInput: CcFigureInput = { ...input, bands, endpoints: [notComputed('P1', kind), notComputed('P4', kind)] };
+        expect(ccPeriodBreak('quality', figureInput), kind).toBe(at('2026-09-15T00:00:00Z'));
+        // Only the segment from run 103 to run 104 crosses into the comparison.
+        const transparent = 'rgba(0, 0, 0, 0)';
+        expect(segmentColors(qualityFigure(figureInput).config!.data.datasets[0]), kind)
+          .toEqual([undefined, undefined, transparent, undefined, undefined]);
+        expect(segmentColors(workFigure(figureInput).config!.data.datasets[0]), kind)
+          .toEqual([undefined, undefined, transparent, undefined, undefined]);
+        // A run not in the analysis keeps its gray segments elsewhere.
+        const marked = qualityFigure({ ...figureInput, notAnalyzed: new Map([[105, 'left out in step 1']]) });
+        expect(segmentColors(marked.config!.data.datasets[0]), kind)
+          .toEqual([undefined, undefined, transparent, CC_SCREEN_THEME.muted, CC_SCREEN_THEME.muted]);
+      }
+    });
+
+    it('joins the periods as before for any other reason, a computed endpoint, or an analysis without the reason', () => {
+      const cases: CcFigureInput[] = [
+        { ...input, bands, endpoints: [notComputed('P1', 'tooFewPairs')] },
+        { ...input, bands, endpoints: [ccEndpoint('P1')] },
+        { ...input, bands, endpoints: [notComputed('P1')] },
+        { ...input, endpoints: [notComputed('P1', 'measurementChanged')] }
+      ];
+      for (const figureInput of cases) {
+        expect(ccPeriodBreak('quality', figureInput)).toBeNull();
+        expect(qualityFigure(figureInput).config!.data.datasets[0].segment).toBeUndefined();
+      }
+      // The overview and the reliability chart have no endpoint.
+      expect(ccPeriodBreak('timeline', { ...input, bands, endpoints: [notComputed('P1', 'measurementChanged')] })).toBeNull();
+    });
+
+    it('names the work figure\'s statistic, and says the endpoint pairs the questions while an analysis is shown', () => {
+      expect(CC_FIGURE_KEYS.find(entry => entry.key === 'work')!.title).toBe('Work per turn (output tokens per answer)');
+      expect(workFigure({ ...input, bands }).takeaway).toBe(`Mean output tokens per answer were 1,200 in all 6 runs. ${CC_WORK_ENDPOINT_NOTE}`);
+      expect(CC_WORK_ENDPOINT_NOTE)
+        .toBe('The endpoint compares the same questions in both periods, so its estimate can differ from these points.');
+      expect(workFigure({ ...input, endpoints: [ccEndpoint('P4')] }).takeaway).toContain(CC_WORK_ENDPOINT_NOTE);
+      expect(workFigure(input).takeaway).not.toContain(CC_WORK_ENDPOINT_NOTE);
+    });
+  });
+
+  describe('period names', () => {
+    const measure = (text: string) => text.length * 6;
+    const area = { left: 0, top: 0, right: 600, bottom: 300 };
+
+    it('writes the whole name where the band has room for it, and cuts it only where it has not', () => {
+      expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 172 }, area)).toEqual({
+        text: 'Comparison', box: { left: 106, top: 4, right: 166, bottom: 15 }
+      });
+      expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 150 }, area)!.text).toBe('Compa…');
+      expect(ccPeriodLabelPlacement('Comparison', measure, { left: 100, right: 110 }, area)).toBeNull();
+    });
+
+    it('takes the first corner clear of the tags and the points, then the first clear of the tags', () => {
+      const band = { left: 100, right: 400 };
+      const topLeftTag = { left: 100, top: 0, right: 180, bottom: 20 };
+      expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [topLeftTag])!.box)
+        .toEqual({ left: 346, top: 4, right: 394, bottom: 15 });
+      // Points under both top corners: the bottom left.
+      const points = [{ x: 120, y: 10 }, { x: 380, y: 10 }];
+      expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [], points)!.box)
+        .toEqual({ left: 106, top: 285, right: 154, bottom: 296 });
+      // A point under every corner: the first corner clear of the tags.
+      const everywhere = [{ x: 120, y: 10 }, { x: 380, y: 10 }, { x: 120, y: 290 }, { x: 380, y: 290 }];
+      expect(ccPeriodLabelPlacement('Baseline', measure, band, area, [topLeftTag], everywhere)!.box.left).toBe(346);
+    });
+
+    it('keeps the point labels clear of the names', () => {
+      const name = { left: 106, top: 4, right: 154, bottom: 15 };
+      expect(ccPlaceLabels([{ left: 120, top: 6, right: 140, bottom: 17 }, { left: 300, top: 6, right: 320, bottom: 17 }], area, [name]))
+        .toEqual([1]);
+    });
   });
 
   describe('figure keys and series ids', () => {
@@ -918,6 +1031,111 @@ describe('chat-consistency-charts', () => {
       expect(figure.table.rows.map(cells => cells[2])).toEqual(['79.00', '86.00']);
     });
 
+    describe('interval whiskers', () => {
+      // Battery run #12 has an interval resting on one round; #11 has none.
+      const whiskered: CcFigureInput = {
+        ...battery,
+        points: [
+          ccBatteryPoint(12, '2026-10-08T10:00:00Z', {
+            overallIndex: 86, memberRunIds: [303, 304], overallIndexHalfWidth: 2.4, overallIndexIntervalNote: 'question sampling only'
+          }),
+          ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 80, memberRunIds: [301, 302] })
+        ]
+      };
+      const yBounds = (figure: CcFigure) => figure.config!.options.scales!['y'] as unknown as { min: number; max: number };
+
+      it('draws a whisker only where a battery run has a half-width, in the axis range, with the interval column', () => {
+        const figure = qualityFigure(whiskered);
+        expect(figure.config!.plugins.map(p => p.id)).toEqual(['ccOverlay', 'ccWhiskers']);
+        expect(yBounds(figure).max).toBeGreaterThanOrEqual(88.4);
+        expect(figure.table.columns).toEqual(
+          ['Battery run', 'Started', 'Overall Intelligence Index', CC_INTERVAL_COLUMN, 'Note', 'Suites', 'Member runs']);
+        expect(CC_INTERVAL_COLUMN).toBe('95 % interval');
+        expect(figure.table.rows.map(cells => cells[3])).toEqual(['—', '83.6–88.4']);
+        expect(ccIntervalText(79.64, 84.51)).toBe('79.6–84.5');
+
+        // No half-width, no whisker, no column; a run is never whiskered.
+        expect(qualityFigure(battery).config!.plugins.map(p => p.id)).toEqual(['ccOverlay']);
+        expect(qualityFigure(battery).table.columns).not.toContain(CC_INTERVAL_COLUMN);
+        expect(qualityFigure(input).config!.plugins.map(p => p.id)).toEqual(['ccOverlay']);
+        // A hidden Overall Index draws no whisker.
+        const hidden = qualityFigure(whiskered, { hiddenSeries: new Set(['quality.overall']) });
+        expect(hidden.config).toBeNull();
+      });
+
+      it('says what the bars are, with question sampling only when every bar rests on it', () => {
+        expect(qualityFigure(whiskered).takeaway).toBe(
+          'The Overall Intelligence Index ranged from 80.0 to 86.0 across 2 battery runs; the latest battery run scored 86.0. '
+          + 'Bars show each battery run\'s 95 % interval for its own Overall Index (question sampling only); '
+          + 'they are not the interval of the change between the periods.');
+        const mixed = qualityFigure({
+          ...whiskered,
+          points: [whiskered.points[0], ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 80, overallIndexHalfWidth: 1.5 })]
+        });
+        expect(mixed.takeaway).toContain('Bars show each battery run\'s 95 % interval for its own Overall Index; they are not');
+        expect(qualityFigure(battery).takeaway).not.toContain('Bars show');
+      });
+
+      it('strokes each whisker and its caps in the series color, faded, between its ends', () => {
+        const calls: string[] = [];
+        const ctx = {
+          strokeStyle: '', lineWidth: 0, lineCap: '',
+          save: () => undefined, restore: () => undefined, setLineDash: () => undefined, beginPath: () => calls.push('begin'),
+          moveTo: (x: number, y: number) => calls.push(`M${x},${y}`), lineTo: (x: number, y: number) => calls.push(`L${x},${y}`),
+          stroke() { calls.push(`stroke ${this.strokeStyle}`); }
+        };
+        const chart = {
+          ctx,
+          chartArea: { left: 0, right: 1000, top: 0, bottom: 100 },
+          scales: { x: { getPixelForValue: (value: number) => value }, y: { getPixelForValue: (value: number) => 100 - value } }
+        };
+        const plugin = ccWhiskerPlugin([{ x: 500, low: 70, high: 90, runId: 12, seriesId: 'quality.overall' }], '#c98500', '#a1a1aa');
+        (plugin.beforeDatasetsDraw as unknown as (chart: unknown) => void)(chart);
+        expect(calls).toEqual(['begin', 'M500,10', 'L500,30', 'M496,10', 'L504,10', 'M496,30', 'L504,30', 'stroke rgba(201, 133, 0, 0.55)']);
+      });
+
+      describe('on a chart', () => {
+        let chart: Chart | null = null;
+        const written: { text: string; y: number }[] = [];
+
+        beforeAll(() => {
+          Chart.register(...APP_CHART_REGISTRABLES);
+        });
+
+        afterEach(() => {
+          const canvas = chart?.canvas;
+          chart?.destroy();
+          canvas?.remove();
+          chart = null;
+          written.length = 0;
+        });
+
+        it('keeps the point label clear of its whisker', () => {
+          const figure = qualityFigure(whiskered);
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = 320;
+          document.body.appendChild(canvas);
+          const ctx = canvas.getContext('2d')!;
+          const fillText = ctx.fillText.bind(ctx);
+          ctx.fillText = (text: string, x: number, y: number) => {
+            written.push({ text, y });
+            fillText(text, x, y);
+          };
+          chart = new Chart(canvas, {
+            ...figure.config!, options: { ...figure.config!.options, responsive: false, animation: false }
+          } as unknown as ChartConfiguration);
+          const y = chart.scales['y'];
+          const capTop = y.getPixelForValue(88.4);
+          const capBottom = y.getPixelForValue(83.6);
+          const label = written.find(entry => entry.text === '86.0')!;
+          expect(label).toBeDefined();
+          // Above the top cap, or below the bottom one: never across the whisker.
+          expect(label.y + 11 <= capTop || label.y >= capBottom).toBe(true);
+        });
+      });
+    });
+
     it('names the battery run of a served-model change', () => {
       const markers = buildMarkers([
         ccBatteryPoint(11, '2026-10-08T06:00:00Z', { servedModelIds: [{ modelId: 'a', callCount: 9 }] }),
@@ -1275,15 +1493,21 @@ describe('chat-consistency-charts', () => {
         return [area.left + 0.5, area.top + 0.5, area.right - area.left - 1, area.bottom - area.top - 1].join();
       };
 
-      it('draws the tags, the point labels and the wash as before, and no frame, without a style', () => {
+      it('draws the tags and the point labels as before, and no frame, without a style; no wash over an axis not from zero', () => {
         const drawn = mount(qualityFigure(input));
         expect(fontOf('A1')).toMatch(/^bold 10px /);
         expect(fontOf('73')).toMatch(/^600 11px /);
         const band = tagBand(drawn);
         expect(band.rows).toBeGreaterThan(0);
         expect(band.height).toBe(band.rows * CC_TAG_ROW_HEIGHT + CC_TAG_GAP);
-        expect(gradients).toBeGreaterThan(0);
+        // The Intelligence window starts above zero, so its area is not washed.
+        expect(gradients).toBe(0);
         expect(rects.some(rect => rect.args.join() === frameRect(drawn))).toBe(false);
+      });
+
+      it('washes the area of a single series whose axis starts at zero', () => {
+        mount(workFigure(input));
+        expect(gradients).toBeGreaterThan(0);
       });
 
       it('draws a given style’s tags, point labels and frame, and no wash', () => {

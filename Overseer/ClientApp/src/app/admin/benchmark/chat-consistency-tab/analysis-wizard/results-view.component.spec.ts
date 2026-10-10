@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpTestingController } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 
@@ -6,12 +7,15 @@ import { SystemService } from '../../../../services/system.service';
 import { groupOverseerEvents, taggedAnnotations } from '../chat-consistency-events';
 import { ccResultKeyFigures } from '../chat-consistency-results';
 import {
+  CC_API,
   ccAnalysisResult,
   ccAttribution,
   ccBatteryRunRows,
   ccEndpoint,
   ccEventAnnotations,
   ccEventPoints,
+  ccFreshness,
+  ccOutOfDateFreshness,
   ccOverseerEvents,
   ccRunRows,
   ccRunSelectionView,
@@ -19,7 +23,7 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
-import { CcAnalysisResult } from '../chat-consistency.models';
+import { CcAnalysisFreshness, CcAnalysisResult } from '../chat-consistency.models';
 import { CcResultsImageDialogComponent } from '../results-image/results-image-dialog.component';
 import { ccResultsImageIo } from '../results-image/results-image-export';
 import {
@@ -112,6 +116,51 @@ describe('CcResultsViewComponent', () => {
         'cc-res-export'
       ]);
       expect(bar.nextElementSibling?.matches('p.cc-res-export-status[role="status"]')).toBe(true);
+    });
+  });
+
+  describe('the out-of-date notice', () => {
+    /** Answers the pending freshness request of the shown analysis. */
+    function answerFreshness(freshness: CcAnalysisFreshness): void {
+      const http = TestBed.inject(HttpTestingController);
+      http.expectOne(`${CC_API}/analyses/${freshness.analysisId}/freshness`).flush(freshness);
+      fixture.detectChanges();
+    }
+
+    it('asks for the saved analysis\'s freshness and shows nothing while it is current', () => {
+      answerFreshness(ccFreshness());
+      expect(el.querySelector('.cc-fresh-notice')).toBeNull();
+      expect(el.querySelector('.cc-fresh-unchecked')).toBeNull();
+    });
+
+    it('shows the notice under the bar, over every section, and Analyze again asks the host', () => {
+      let requested = 0;
+      fixture.componentInstance.analyzeAgain.subscribe(() => requested++);
+      answerFreshness(ccOutOfDateFreshness());
+      const notice = el.querySelector<HTMLElement>(':scope > app-cc-freshness-notice .cc-fresh-notice')!;
+      expect(textOf(notice.querySelector('#cc-res-fresh-title'))).toBe('This analysis is out of date.');
+      expect(textOf(notice.querySelector('.cc-fresh-text'))).toContain(
+        'Saved under analysis code version 5; Overseer now analyzes under version 6.');
+      expect(panel('summary').contains(notice)).toBe(false);
+
+      notice.querySelector<HTMLButtonElement>('#cc-res-fresh-again')!.click();
+      expect(requested).toBe(1);
+    });
+
+    it('says quietly when the changes since saving could not be checked', () => {
+      answerFreshness(ccFreshness({ inputsChanged: null, inputsNote: 'A run of the analysis was deleted.' }));
+      expect(textOf(el.querySelector('.cc-fresh-unchecked')))
+        .toBe('Changes since saving could not be checked: A run of the analysis was deleted.');
+    });
+
+    it('asks again only when another analysis is shown', () => {
+      const http = TestBed.inject(HttpTestingController);
+      answerFreshness(ccFreshness());
+      show(ccAnalysisResult({ name: 'Renamed' }));
+      http.expectNone(`${CC_API}/analyses/7/freshness`);
+      show(ccAnalysisResult({ analysisId: 9 }));
+      answerFreshness(ccOutOfDateFreshness({ analysisId: 9 }));
+      expect(el.querySelector('.cc-fresh-notice')).not.toBeNull();
     });
   });
 

@@ -4,6 +4,7 @@ import { Observable, map } from 'rxjs';
 
 import { BenchmarkRunReportJobDto, WriteRunReportDocumentsResponse } from './admin-benchmark.service';
 import {
+  CcAnalysisFreshness,
   CcAnalysisRequest,
   CcAnalysisResult,
   CcAnalysisSummary,
@@ -107,6 +108,11 @@ export class AdminChatConsistencyService {
     return this.http.get<CcAnalysisResult>(`${CHAT_CONSISTENCY_ENDPOINT}/analyses/${id}`);
   }
 
+  /** Whether a saved analysis is out of date, and why; 404 for an unknown id. */
+  getAnalysisFreshness(id: number): Observable<CcAnalysisFreshness> {
+    return this.http.get<CcAnalysisFreshness>(`${CHAT_CONSISTENCY_ENDPOINT}/analyses/${id}/freshness`);
+  }
+
   /** 204; 409 `{ error }` while report documents written from the analysis exist. */
   deleteAnalysis(id: number): Observable<void> {
     return this.http.delete<void>(`${CHAT_CONSISTENCY_ENDPOINT}/analyses/${id}`);
@@ -171,8 +177,9 @@ export class AdminChatConsistencyService {
   }
 
   /**
-   * Starts writing the analysis's documents. 202 once queued; 400 / 409 `{ error }`, or 409 with a
-   * same-provider warning while it is not acknowledged.
+   * Starts writing the analysis's documents. 202 once queued; 400 / 409 `{ error }`, 409 with a
+   * same-provider warning while it is not acknowledged, or 409 `{ error, outOfDate: true }` for an
+   * out-of-date analysis without `acknowledgeOutOfDate`.
    */
   writeReports(analysisId: number, request: CcWriteReportsRequest): Observable<WriteRunReportDocumentsResponse> {
     return this.http.post<WriteRunReportDocumentsResponse>(`${CHAT_CONSISTENCY_ENDPOINT}/analyses/${analysisId}/report-documents`, request);

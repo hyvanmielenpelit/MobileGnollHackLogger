@@ -576,6 +576,32 @@ public class ChatConsistencyStatisticsTests
     }
 
     [Fact]
+    public void PairedMinimumDetectableEffect_UsesTheSpreadOfThePairedDifferences_AsAFloor()
+    {
+        // Differences 0, 1, 2, 3: SD sqrt(5/3), four pairs: 2.801585 * 1.290994 / 2 = 1.808404.
+        var result = ChatConsistencyStatistics.PairedMinimumDetectableEffect(new[] { 0.0, 1.0, 2.0, 3.0 })!;
+
+        Assert.True(result.CapNote);
+        Assert.Equal(MinimumDetectableEffectResult.PairedFloorNote, result.Note);
+        Assert.Equal(4, result.BaselineCount);
+        Assert.Equal(4, result.TreatmentCount);
+        Assert.Equal(Math.Sqrt(5.0 / 3.0), result.StandardDeviation, 12);
+        Assert.Equal(1.80840, result.Effect, 4);
+
+        // Item levels that differ widely do not enter: only the differences do.
+        var items = new[] { 1.0, 100.0, 1000.0, 10000.0 };
+        var unpaired = ChatConsistencyStatistics.MinimumDetectableEffect(Clusters(items), Clusters(items.Select((v, i) => v + i).ToArray()))!;
+        Assert.True(unpaired.Effect > 100 * result.Effect);
+    }
+
+    [Fact]
+    public void PairedMinimumDetectableEffect_NeedsTwoDifferences()
+    {
+        Assert.Null(ChatConsistencyStatistics.PairedMinimumDetectableEffect(new[] { 1.0 }));
+        Assert.Null(ChatConsistencyStatistics.PairedMinimumDetectableEffect(Array.Empty<double>()));
+    }
+
+    [Fact]
     public void DesignEffect_IsKishFormula()
     {
         Assert.Equal(1.9, ChatConsistencyStatistics.DesignEffect(10, 0.1), 12);

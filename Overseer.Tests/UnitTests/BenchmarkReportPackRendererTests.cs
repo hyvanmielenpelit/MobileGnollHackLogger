@@ -2730,19 +2730,121 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AChatConsistencyDocument_IsCurrentAtFormatVersion1_AndTheOtherScopesKeepTheirs()
+    public void AChatConsistencyDocument_IsCurrentAtFormatVersion2_AndTheOtherScopesKeepTheirs()
     {
-        Assert.Equal(1, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
-        Assert.Equal(1, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(2, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
+        Assert.Equal(2, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
         Assert.Equal(11, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
         Assert.Equal(12, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
         Assert.Equal(11, BenchmarkReportPackRenderer.ReportFormatVersion);
         Assert.Equal(12, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains(" · format version 1 · ", text);
+        Assert.Contains(" · format version 2 · ", text);
         Assert.Contains(" · controls named*", text);
-        Assert.Contains("- **Report format version:** 1\n", text);
+        Assert.Contains("- **Report format version:** 2\n", text);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    [InlineData(BenchmarkReportAudience.ProviderIssueReport)]
+    public void ADocumentOfAnAnalysisSavedUnderEarlierCode_PrintsTheOutOfDateBox_DecidedWhenRendered(BenchmarkReportAudience audience)
+    {
+        // A format-1 document stored before the box existed, from an analysis saved under code version 4.
+        var document = ChatConsistencyDocument(audience);
+        document.ReportFormatVersion = 1;
+        var result = ChatConsistencyReportTestData.Result() with { AnalysisCodeVersion = 4, PeriodHours = null, PeriodLevels = null };
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(
+            result, audience, audience == BenchmarkReportAudience.ProviderIssueReport ? ChatConsistencyReportTestData.RequestIds : null));
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full });
+
+        string current = Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion.ToString(CultureInfo.InvariantCulture);
+        Assert.Contains("> **This document comes from an out-of-date analysis:** it was saved under analysis code version 4, and Overseer now "
+            + "analyzes under version " + current + ". Saved analyses never change; analyze the same periods again for a current result before relying on this document.\n", text);
+        AssertInOrder(text.IndexOf("> **This document comes from", StringComparison.Ordinal), text.IndexOf("## Overall verdict", StringComparison.Ordinal));
+        Assert.DoesNotContain("**Where the chat stands**", text);
+    }
+
+    [Fact]
+    public void ADocumentWrittenAfterChangedInputsWereConfirmed_SaysSoInItsBox()
+    {
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ExecutiveSummary);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(
+            ChatConsistencyReportTestData.Result(), BenchmarkReportAudience.ExecutiveSummary, null, "changed inputs"));
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+
+        Assert.Contains("> **This document comes from an out-of-date analysis:** its runs, grades, controls, annotations or prices changed after it was saved. ", text);
+    }
+
+    [Fact]
+    public void WhereTheChatStands_ListsEachPeriodsLevels_AndMarksAMeasureThatIsNotComparable()
+    {
+        var baseResult = ChatConsistencyReportTestData.Result();
+        var result = baseResult with
+        {
+            Endpoints = baseResult.Endpoints.Select(e => e.Id == "P3"
+                ? e with { NotComputedKind = Overseer.Services.ChatConsistency.ChatConsistencyNotComputedKinds.NoCommonStratum }
+                : e).ToList()
+        };
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ExecutiveSummary);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary));
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+
+        Assert.Contains("**Where the chat stands**\n\n| Measure | Baseline | Comparison |\n", text);
+        Assert.Contains("| Quality | mean score 82.4 points | mean score 78.1 points |\n", text);
+        Assert.Contains("| Answer streaming rate (not comparable) | median 61.2 tokens/s | median 59.8 tokens/s |\n", text);
+        Assert.Contains("| Work per turn (output tokens per answer) | mean 9,044 output tokens per answer | mean 8,233 output tokens per answer |\n", text);
+        Assert.Contains("| Failed answers | 0 of 40 answers | 1 of 40 answers |\n", text);
+        Assert.Contains("*Descriptive levels of each period, not a comparison: the verdicts above say what changed.*\n", text);
+        Assert.Contains("- **Answer streaming rate not computable:** Speed cannot be compared: the baseline ran weekdays 04–12 UTC and the comparison weekdays 04–16 UTC, and response times vary with the time of day.\n", text);
+    }
+
+    [Fact]
+    public void OneUnitPerPeriod_PutsTheCaveatUnderTheEndpointTable()
+    {
+        var baseResult = ChatConsistencyReportTestData.Result();
+        var result = baseResult with
+        {
+            UnitKind = Overseer.Services.ChatConsistency.ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+            Units = new[]
+            {
+                new Overseer.Services.ChatConsistency.ChatConsistencyUnitView { UnitId = 11, Kind = "batteryRun", Period = "baseline", MemberRunIds = new long[] { 10, 11 } },
+                new Overseer.Services.ChatConsistency.ChatConsistencyUnitView { UnitId = 12, Kind = "batteryRun", Period = "comparison", MemberRunIds = new long[] { 20, 21 } }
+            }
+        };
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport));
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+
+        Assert.Contains("*With one battery run per period, the intervals and smallest detectable changes reflect question-to-question variation only; "
+            + "run-to-run variation is not included, so the true uncertainty is larger.*\n", text);
+        Assert.DoesNotContain("With one run per period", RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized));
+    }
+
+    [Fact]
+    public void ReliabilityRatesThatAreAllZero_ShareOneRow()
+    {
+        var baseResult = ChatConsistencyReportTestData.Result();
+        var zero = new[] { ("terminalFailures", "Terminal failures"), ("timeouts", "Timeouts"), ("http429", "429 responses") }
+            .Select(rate => new Overseer.Services.ChatConsistency.ChatConsistencyRateResult
+            {
+                Id = rate.Item1, Name = rate.Item2, Denominator = "answers",
+                BaselineCount = 0, BaselineTotal = 40, BaselineRate = 0, ComparisonCount = 0, ComparisonTotal = 40, ComparisonRate = 0, PValue = 1.0
+            }).ToList();
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(baseResult with { Reliability = zero }, BenchmarkReportAudience.TechnicalReport));
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+
+        Assert.Contains("| Measure | Baseline → comparison, or change (95 % interval) | Verdict |\n", text);
+        Assert.Contains("| Failures of any kind | none in either period (429 responses, terminal failures and timeouts) | no established increase |\n", text);
+        Assert.DoesNotContain("| Timeouts |", text);
     }
 
     [Theory]
@@ -2767,7 +2869,11 @@ public class BenchmarkReportPackRendererTests
         Assert.Equal(audience != BenchmarkReportAudience.InternalBrief, text.Contains("## How to read this\n", StringComparison.Ordinal));
 
         Assert.Contains("- **Verdict:** The chat changed\n", text);
-        Assert.Contains("- **Answer streaming rate (P3) not computable:** No telemetry run in the baseline.\n", text);
+        Assert.Contains(executive
+            ? "- **Answer streaming rate not computable:** No telemetry run in the baseline.\n"
+            : "- **Answer streaming rate (P3) not computable:** No telemetry run in the baseline.\n", text);
+        Assert.DoesNotContain("The analysis's headline", text);
+        Assert.DoesNotContain("out-of-date analysis", text);
         Assert.Contains("- **Sample:** Met: at least 2 runs on 2 days per period and 20 paired items\n", text);
         Assert.Contains("- **Hours:** every result holds for weekdays 04–12 UTC only, the hours both periods share\n", text);
         Assert.Contains("- **Controls:** 1 control model (A), identity withheld, run on the same suites in both periods; 1 missing-control note\n", text);
@@ -2778,8 +2884,12 @@ public class BenchmarkReportPackRendererTests
             Assert.Contains("| Quality | Degraded: \u22124.2\u00A0index points | Worse than before, beyond the margin of ±3\u00A0index points; graded Indicated |\n", text);
             Assert.Contains("| Cost per answer | Inconclusive: +3.1\u00A0% | Undecided: these runs could detect only a change of ±12.7\u00A0% or more |\n", text);
             Assert.Contains("*Not computable: Answer streaming rate; the overall verdict says why.*\n", text);
-            Assert.Contains("**Where the change came from.** The analysis attributes Quality (P1) to the provider's side, graded Indicated; Cost per answer (P5) to our change, graded Not established.\n", text);
-            Assert.Contains("Between the periods, Overseer was updated once, on 2026-09-11 at 00:00 UTC, before run #20: game snapshot: off → on. The control models' runs show one more update.\n", text);
+            Assert.Contains("**Where the change came from.** The analysis attributes Quality to the provider's side, graded Indicated. The analysis attributes Cost per answer to our change, graded Not established.\n", text);
+            Assert.Contains("Between the periods, Overseer was updated once: E1, 2026-09-11 00:00 UTC — game snapshot: off → on. The control models' runs show one more update.\n", text);
+            Assert.Contains("- **The five measures.** ", text);
+            Assert.Contains("- **Grades.** *Established* means fit to publish", text);
+            Assert.DoesNotContain("(P1)", text);
+            Assert.DoesNotContain("(P5)", text[..text.IndexOf("## Evaluation terms", StringComparison.Ordinal)]);
             Assert.DoesNotContain("## Reproducibility\n", text);
             Assert.DoesNotContain("## Control models\n", text);
             Assert.DoesNotContain("- **Time strata:** ", text);
@@ -2790,13 +2900,14 @@ public class BenchmarkReportPackRendererTests
             Assert.Contains("| Endpoint | Change (95 % interval) | Margin | Verdict and grade | Smallest detectable |\n", text);
             Assert.Contains("| Quality (P1) | \u22124.2\u00A0index points (\u22126.0 to \u22123.1\u00A0index points) | ±3\u00A0index points | Degraded, Indicated | ±2.5\u00A0index points |\n", text);
             Assert.Contains("- **Answer streaming rate (P3), not computable:** No telemetry run in the baseline.\n", text);
-            Assert.Contains("| When (UTC) | Run | What changed |\n", text);
-            Assert.Contains("| 2026-09-11 00:00 | run #20 | Game snapshot: off → on |\n", text);
-            Assert.Contains("| 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
+            Assert.Contains("| Event | When (UTC) | Run | What changed |\n", text);
+            Assert.Contains("| E1 | 2026-09-11 00:00 | run #20 | Game snapshot: off → on |\n", text);
+            Assert.Contains("| E2 | 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
             Assert.Contains("- **Model A:** 2 runs in the baseline and comparison; difference in differences Quality (P1) \u22124.0\u00A0index points (\u22126.1 to \u22122.0\u00A0index points)\n", text);
-            Assert.Contains("- **Comparison period, no control:** Core suite: Run Model A on Core suite under the build of run #21.\n", text);
+            Assert.Contains("| Period | Run (suite) | What to do |\n", text);
+            Assert.Contains("| Comparison | Run #21 (Core suite) | Run Model A on Core suite under the build of run #21. |\n", text);
             Assert.Contains("- **Time strata:** 2 strata (weekdays 04–08 UTC, weekdays 08–12 UTC); time of day not assessable: ", text);
-            Assert.Contains("- **Analysis code version:** 3\n", text);
+            Assert.Contains("- **Analysis code version:** " + Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion.ToString(CultureInfo.InvariantCulture) + "\n", text);
             Assert.Contains("- **Baseline:** runs #10 and #11\n", text);
             Assert.Contains("- **Comparison:** runs #20 and #21\n", text);
             Assert.Contains("- **Control runs:** #30, #31\n", text);
@@ -2880,8 +2991,8 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document,
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
 
-        Assert.Contains("| 2026-09-11 00:00 | run #20 | Game snapshot: off → on |\n", text);
-        Assert.Contains("| 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
+        Assert.Contains("| E1 | 2026-09-11 00:00 | run #20 | Game snapshot: off → on |\n", text);
+        Assert.Contains("| E2 | 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
         Assert.Contains("| Time to first answer text (P2) | +2.0 % (", text);
         Assert.Contains(" | ±12.7 % |", text);
         Assert.Contains("Analysis #7 ran on input not shown, after the earlier value.", text);

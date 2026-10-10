@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 
-import { CcAnalysisSummary } from '../chat-consistency.models';
+import { CC_CURRENT_ANALYSIS_CODE_VERSION, CcAnalysisSummary } from '../chat-consistency.models';
 import {
   CC_API,
   CC_BATTERY_SET_KEY,
@@ -27,7 +27,7 @@ const settle = (ms = 0): Promise<void> => new Promise<void>(resolve => setTimeou
 function threeAnalyses(): CcAnalysisSummary[] {
   return [
     ccAnalysisSummary(9, {
-      name: 'Suite check', createdAtUtc: '2026-10-09T10:00:00Z', analysisCodeVersion: 5,
+      name: 'Suite check', createdAtUtc: '2026-10-09T10:00:00Z', analysisCodeVersion: CC_CURRENT_ANALYSIS_CODE_VERSION,
       comparisonSetKey: 'suite:id:5', comparisonSetLabel: 'Board Suite'
     }),
     ccAnalysisSummary(8, {
@@ -42,7 +42,7 @@ function threeAnalyses(): CcAnalysisSummary[] {
         ccEndpointBrief('P4', { verdictLabel: 'inconclusive', grade: 'notEstablished' })
       ]
     }),
-    ccAnalysisSummary(7, { createdAtUtc: '2026-10-02T09:00:00Z', analysisCodeVersion: 5 })
+    ccAnalysisSummary(7, { createdAtUtc: '2026-10-02T09:00:00Z', analysisCodeVersion: CC_CURRENT_ANALYSIS_CODE_VERSION })
   ];
 }
 
@@ -139,7 +139,8 @@ describe('CcAnalysisHistoryDialogComponent', () => {
     expect(textOf(claude.querySelector('.cc-hist-tag-relaxed'))).toBe('Relaxed pooling');
     expect(textOf(claude.querySelector('.cc-hist-tag-earlier'))).toBe('Earlier analysis code');
     expect(textOf(claude.querySelector('#cc-hist-8-code-tip')))
-      .toBe('Saved under analysis code version 4. Analyze again to apply version 5.');
+      .toBe(`Saved under analysis code version 4; Overseer now analyzes under version ${CC_CURRENT_ANALYSIS_CODE_VERSION}. `
+        + 'Open it and press Analyze again for a current analysis; this one stays as a record.');
     const title = claude.querySelector<HTMLElement>('h4.cc-hist-title#cc-hist-8-title')!;
     expect(textOf(title)).toBe('Chat consistency: Claude 5.5 Haiku (xhigh)');
     expect(title.tabIndex).toBe(-1);

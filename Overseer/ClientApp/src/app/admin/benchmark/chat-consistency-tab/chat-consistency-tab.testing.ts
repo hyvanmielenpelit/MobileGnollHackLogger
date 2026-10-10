@@ -5,7 +5,7 @@
 
 import { EnvironmentProviders, Provider } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideCharts } from 'ng2-charts';
 
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
@@ -20,6 +20,8 @@ import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
+  CC_CURRENT_ANALYSIS_CODE_VERSION,
+  CcAnalysisFreshness,
   CcAnalysisResult,
   CcAnalysisSummary,
   CcAnnotation,
@@ -566,6 +568,43 @@ export function ccAnalysisResult(overrides: Partial<CcAnalysisResult> = {}): CcA
     analysisCodeVersion: 1,
     ...overrides
   };
+}
+
+/** The freshness of saved analysis 7: current, its inputs checked and unchanged, unless `overrides` says otherwise. */
+export function ccFreshness(overrides: Partial<CcAnalysisFreshness> = {}): CcAnalysisFreshness {
+  return {
+    analysisId: 7,
+    analysisCodeVersion: CC_CURRENT_ANALYSIS_CODE_VERSION,
+    currentAnalysisCodeVersion: CC_CURRENT_ANALYSIS_CODE_VERSION,
+    earlierAnalysisCode: false,
+    inputsChanged: false,
+    inputsNote: null,
+    outOfDate: false,
+    ...overrides
+  };
+}
+
+/**
+ * Answers every pending freshness request of a saved analysis as current, so `http.verify()` finds
+ * none; for specs that mount Results or Write without testing the notice.
+ */
+export function ccFlushFreshness(http: HttpTestingController): void {
+  for (const request of http.match(r => /\/analyses\/\d+\/freshness$/.test(r.url))) {
+    if (request.cancelled) continue;
+    const parts = request.request.url.split('/');
+    request.flush(ccFreshness({ analysisId: Number(parts[parts.length - 2]) }));
+  }
+}
+
+/**
+ * The freshness of an analysis saved under code version 5 whose inputs changed since: out of date for
+ * both reasons, against a current version of 6.
+ */
+export function ccOutOfDateFreshness(overrides: Partial<CcAnalysisFreshness> = {}): CcAnalysisFreshness {
+  return ccFreshness({
+    analysisCodeVersion: 5, currentAnalysisCodeVersion: 6, earlierAnalysisCode: true, inputsChanged: true, outOfDate: true,
+    ...overrides
+  });
 }
 
 /** One endpoint of a saved analysis's summary: equivalent unless `overrides` says otherwise. */

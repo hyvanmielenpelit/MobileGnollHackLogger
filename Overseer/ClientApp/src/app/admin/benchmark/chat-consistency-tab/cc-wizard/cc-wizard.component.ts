@@ -498,6 +498,19 @@ export class CcWizardComponent {
     this.cdr.markForCheck();
   }
 
+  /**
+   * *Analyze again* on an out-of-date analysis: its settings are restored as opening it from the
+   * history restores them, and step 3 shows, focused on its tab. Nothing is analyzed until Analyze.
+   */
+  onAnalyzeAgain(): void {
+    const analysis = this.analysis;
+    const result = analysis?.result;
+    if (!analysis || !result || this.analyzing) return;
+    analysis.showResult(result);
+    this.goToStep(3);
+    this.host.nativeElement.querySelector<HTMLElement>('#cc-step-tab-3')?.focus();
+  }
+
   /** The Write step's *See the documents*: step 6, focus on its tab. */
   onStepRequested(): void {
     this.goToStep(6);

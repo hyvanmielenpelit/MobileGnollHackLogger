@@ -10,6 +10,8 @@ import {
   CC_REPORT_CHART_PICKER_FIGURES,
   CC_REPORT_CHART_STORAGE_KEY,
   CcDocumentChartLayout,
+  ccDefaultReportChartSelection,
+  ccDefaultReportChartSettings,
   ccReportChartAnchor,
   ccReportChartNotes,
   ccReportDocumentChartLayout,
@@ -32,7 +34,7 @@ describe('chat-consistency-report-chart-settings', () => {
     it('lists the four figures, titled as the charts, in document order', () => {
       expect(CC_REPORT_CHART_PICKER_FIGURES.map(figure => figure.key)).toEqual(ALL);
       expect(CC_REPORT_CHART_PICKER_FIGURES.map(figure => figure.title))
-        .toEqual(['Intelligence per run', 'Time to first answer text', 'Output tokens per answer', 'Runs and events']);
+        .toEqual(['Intelligence per run', 'Time to first answer text', 'Work per turn (output tokens per answer)', 'Runs and events']);
     });
 
     it('places the measures after the verdicts and the overview after the events, but in the Executive Summary', () => {
@@ -87,6 +89,37 @@ describe('chat-consistency-report-chart-settings', () => {
         maxHeightPercent: 50
       });
       expect(Object.keys(CC_DEFAULT_REPORT_CHART_LAYOUT).map(Number)).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport]);
+    });
+
+    it('leaves out of the summary a figure whose endpoint the analysis could not compute', () => {
+      const computed = [ccEndpoint('P1'), ccEndpoint('P2'), ccEndpoint('P4')];
+      expect(ccDefaultReportChartSelection(computed)).toBe(CC_DEFAULT_REPORT_CHART_SELECTION);
+      expect(ccDefaultReportChartSelection(null)).toBe(CC_DEFAULT_REPORT_CHART_SELECTION);
+
+      const noQuality = ccDefaultReportChartSelection([ccEndpoint('P1', { computed: false }), ccEndpoint('P2'), ccEndpoint('P4')]);
+      expect(noQuality[ExecutiveSummary]).toEqual(['cc2-speed', 'cc3-work']);
+
+      const neither = ccDefaultReportChartSelection([
+        ccEndpoint('P1', { computed: false, notComputedKind: 'measurementChanged' }),
+        ccEndpoint('P2', { computed: false, notComputedKind: 'noCommonStratum' }),
+        ccEndpoint('P4')
+      ]);
+      expect(neither[ExecutiveSummary]).toEqual(['cc3-work', 'cc4-timeline']);
+      expect(CC_REPORT_CHART_PICKER_FIGURES.filter(figure => neither[ExecutiveSummary]!.includes(figure.key)).map(figure => figure.title))
+        .toEqual(['Work per turn (output tokens per answer)', 'Runs and events']);
+      // The other documents keep their defaults.
+      expect(neither[TechnicalReport]).toEqual(ALL);
+      expect(neither[InternalBrief]).toEqual(['cc1-quality', 'cc3-work']);
+      expect(neither[ProviderIssueReport]).toEqual(['cc2-speed', 'cc4-timeline']);
+    });
+
+    it('reads an analysis\'s defaults without a record, and the stored choices with one', () => {
+      const endpoints = [ccEndpoint('P1', { computed: false }), ccEndpoint('P2', { computed: false })];
+      expect(readStoredCcReportChartSettings(endpoints).selection[ExecutiveSummary]).toEqual(['cc3-work', 'cc4-timeline']);
+      expect(ccDefaultReportChartSettings(endpoints).layout).toBe(CC_DEFAULT_REPORT_CHART_LAYOUT);
+
+      storeCcReportChartSettings({ selection: CC_DEFAULT_REPORT_CHART_SELECTION, layout: CC_DEFAULT_REPORT_CHART_LAYOUT });
+      expect(readStoredCcReportChartSettings(endpoints).selection[ExecutiveSummary]).toEqual(['cc1-quality', 'cc2-speed']);
     });
   });
 

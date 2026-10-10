@@ -1617,6 +1617,9 @@ public class WriteRunReportDocumentsRequest
 
     /// <summary>The operator acknowledged that the writer shares the candidate's provider.</summary>
     public bool AcknowledgeSameProvider { get; set; }
+
+    /// <summary>The operator confirmed writing from an out-of-date chat consistency analysis; read by the chat consistency endpoint only.</summary>
+    public bool AcknowledgeOutOfDate { get; set; }
 }
 
 public class WriteRunReportDocumentsResponse

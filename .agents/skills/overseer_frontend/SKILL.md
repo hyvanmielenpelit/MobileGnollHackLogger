@@ -466,7 +466,10 @@ To find specific popups, look in the corresponding component's `.html` template:
         (one column under 36 rem of `cc-hist-cards`) holds the kicker *#N · saved … · Protocol V1* with
         the tags *N reports*, *Relaxed pooling* and *Earlier analysis code* (while
         `analysisCodeVersion < CC_CURRENT_ANALYSIS_CODE_VERSION`, with an `app-info-tip` *Saved under
-        analysis code version 4. Analyze again to apply version 5.*); the title
+        analysis code version {n}; Overseer now analyzes under version {m}. Open it and press Analyze
+        again for a current analysis; this one stays as a record.*; the history list never calls the
+        freshness endpoint — the Results and Write steps show the out-of-date notice
+        `app-cc-freshness-notice` with **Analyze again**); the title
         `h4.cc-hist-title#cc-hist-{id}-title[tabindex=-1]`; the model name, badges and compared set; the
         periods, headline and endpoint chips; and the actions `.btn-ghost` **Open** (*eye*, *Open
         analysis #N in the wizard*) and `.btn-ghost.btn-ghost-danger` **Delete** (*trash*),

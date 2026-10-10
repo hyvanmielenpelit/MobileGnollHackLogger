@@ -111,6 +111,18 @@ describe('AdminChatConsistencyService', () => {
     del.flush(null, { status: 204, statusText: 'No Content' });
   });
 
+  it('reads a saved analysis\'s freshness with GET analyses/{id}/freshness', () => {
+    let outOfDate: boolean | undefined;
+    service.getAnalysisFreshness(12).subscribe(freshness => outOfDate = freshness.outOfDate);
+    const req = http.expectOne(`${BASE}/analyses/12/freshness`);
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      analysisId: 12, analysisCodeVersion: 5, currentAnalysisCodeVersion: 6, earlierAnalysisCode: true,
+      inputsChanged: null, inputsNote: 'Saved before the request was stored.', outOfDate: true
+    });
+    expect(outOfDate).toBe(true);
+  });
+
   it('estimates a re-grade with the run ids and the assessor', () => {
     service.estimateRegrade([3, 4], 21).subscribe();
     const req = http.expectOne(`${BASE}/regrade/estimate`);
@@ -204,6 +216,13 @@ describe('AdminChatConsistencyService', () => {
     expect(write.request.method).toBe('POST');
     expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 4], acknowledgeSameProvider: true });
     write.flush({ runId: 7, status: 1 }, { status: 202, statusText: 'Accepted' });
+
+    service.writeReports(7, {
+      writerModelConfigurationId: 30, audiences: [BenchmarkReportAudience.ExecutiveSummary], acknowledgeOutOfDate: true
+    }).subscribe();
+    const acknowledged = http.expectOne(`${BASE}/analyses/7/report-documents`);
+    expect(acknowledged.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1], acknowledgeOutOfDate: true });
+    acknowledged.flush({ runId: 7, status: 1 }, { status: 202, statusText: 'Accepted' });
   });
 
   it('reads the report job, null on 204, and cancels it', () => {

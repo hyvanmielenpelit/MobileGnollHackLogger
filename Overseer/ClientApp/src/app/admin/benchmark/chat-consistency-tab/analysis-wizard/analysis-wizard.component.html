@@ -291,6 +291,7 @@
                            [eventNumbering]="eventGroups" [rows]="allRows" [batteryRows]="allBatteryRows"
                            [annotations]="taggedAnnotations"
                            (repeatSetup)="repeatSetup.emit($event)"
+                           (analyzeAgain)="analyzeAgain.emit()"
                            (openRunReport)="openRunReport.emit($event)"
                            (openBatteryRunReport)="openBatteryRunReport.emit($event)"></app-cc-results-view>
     }
@@ -305,6 +306,7 @@
                            [pickerEmptyHint]="pickerEmptyHint" [points]="points"
                            [batteryPoints]="batteryPoints" [eventNumbering]="eventGroups"
                            (documentsRequested)="onDocumentsRequested()"
+                           (analyzeAgain)="analyzeAgain.emit()"
                            (documentsChanged)="onReportsDocumentsChanged()"
                            (stateChange)="onReportsStateChange()"></app-cc-reports-step>
     }

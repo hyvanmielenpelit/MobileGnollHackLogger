@@ -21,6 +21,9 @@ import {
   ccBatteryPoint,
   ccConfig,
   ccEndpoint,
+  ccFlushFreshness,
+  ccFreshness,
+  ccOutOfDateFreshness,
   ccPoint,
   ccReportEstimate,
   ccReportJob,
@@ -29,6 +32,7 @@ import {
   chatConsistencyTestProviders,
   textOf
 } from '../chat-consistency-tab.testing';
+import { CcAnalysisFreshness } from '../chat-consistency.models';
 import {
   CC_ALL_WRITTEN_REASON,
   CC_ALL_WRITTEN_TEXT,
@@ -110,11 +114,14 @@ describe('CcReportsStepComponent', () => {
     const documents = http.expectOne(r => r.url === DOCUMENTS_URL);
     expect(documents.request.params.get('subject')).toBe('chat-consistency:7');
     documents.flush([]);
+    // The header's notice asks whether the analysis is out of date: it is current.
+    http.expectOne(`${CC_API}/analyses/7/freshness`).flush(ccFreshness());
     fixture.detectChanges();
   });
 
   afterEach(() => {
     el.querySelectorAll('dialog').forEach(dialog => dialog.open && dialog.close());
+    ccFlushFreshness(http);
     http.verify();
     fixture.destroy();
     vi.restoreAllMocks();
@@ -131,13 +138,13 @@ describe('CcReportsStepComponent', () => {
   const row = (audience: BenchmarkReportAudience) => el.querySelector<HTMLElement>(`li.cds-row[data-audience="${audience}"]`)!;
   const writeButton = () => el.querySelector<HTMLButtonElement>('.cc-rep-write-btn')!;
 
-  async function chooseWriter(): Promise<TestRequest> {
+  async function chooseWriter(analysisId = 7): Promise<TestRequest> {
     el.querySelector<HTMLButtonElement>('.cc-report-writer-model-selector .selector-trigger')!.click();
     fixture.detectChanges();
     el.querySelector<HTMLElement>('.cc-report-writer-model-selector [role="option"]')!.click();
     fixture.detectChanges();
     await settle();
-    const estimate = http.expectOne(`${CC_API}/analyses/7/report-documents/estimate`);
+    const estimate = http.expectOne(`${CC_API}/analyses/${analysisId}/report-documents/estimate`);
     expect(estimate.request.method).toBe('POST');
     return estimate;
   }
@@ -149,8 +156,8 @@ describe('CcReportsStepComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Shows another analysis, whose job request answers with `job`. */
-  function openAnalysis(job: ReturnType<typeof ccReportJob> | null): void {
+  /** Shows another analysis, whose job request answers with `job` and whose freshness with `freshness`. */
+  function openAnalysis(job: ReturnType<typeof ccReportJob> | null, freshness: CcAnalysisFreshness = ccFreshness({ analysisId: 8 })): void {
     fixture.componentRef.setInput('result', ccAnalysisResult({ analysisId: 8 }));
     fixture.detectChanges();
     const request = http.expectOne(`${CC_API}/analyses/8/report-documents/job`);
@@ -160,6 +167,7 @@ describe('CcReportsStepComponent', () => {
       request.flush(null, { status: 204, statusText: 'No Content' });
     }
     http.expectOne(r => r.url === DOCUMENTS_URL && r.params.get('subject') === 'chat-consistency:8').flush([]);
+    http.expectOne(`${CC_API}/analyses/8/freshness`).flush(freshness);
     fixture.detectChanges();
   }
 
@@ -330,6 +338,107 @@ describe('CcReportsStepComponent', () => {
     const write = http.expectOne(`${CC_API}/analyses/7/report-documents`);
     expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3], acknowledgeSameProvider: true });
     write.flush({ runId: 7, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+  });
+
+  describe('an out-of-date analysis', () => {
+    const outOfDateDialog = () => el.querySelector<HTMLDialogElement>('dialog.cc-rep-out-of-date-dialog')!;
+
+    it('shows no notice while the analysis is current', () => {
+      expect(el.querySelector('.cc-fresh-notice')).toBeNull();
+      expect(el.querySelector('.cc-fresh-unchecked')).toBeNull();
+    });
+
+    it('shows the notice in the header, and Analyze again asks the host for Analyze', () => {
+      let requested = 0;
+      component().analyzeAgain.subscribe(() => requested++);
+      openAnalysis(null, ccOutOfDateFreshness({ analysisId: 8 }));
+
+      const notice = el.querySelector<HTMLElement>('.rp-identity .cc-fresh-notice')!;
+      expect(textOf(notice.querySelector('.cc-fresh-title'))).toBe('This analysis is out of date.');
+      expect(textOf(notice.querySelector('.cc-fresh-text'))).toBe(
+        'Saved under analysis code version 5; Overseer now analyzes under version 6. '
+        + 'Its runs, grades, controls, annotations or prices changed after it was saved. '
+        + 'Saved analyses never change. Analyze again for a current analysis with the same settings; '
+        + 'this one stays in Analysis history as a record.');
+      notice.querySelector<HTMLButtonElement>('#cc-rep-fresh-again')!.click();
+      expect(requested).toBe(1);
+    });
+
+    it('asks before writing; Cancel sends nothing, Write anyway sends the acknowledgment', async () => {
+      openAnalysis(null, ccOutOfDateFreshness({ analysisId: 8, earlierAnalysisCode: false, analysisCodeVersion: 6 }));
+      const estimate = await chooseWriter(8);
+      estimate.flush(ccReportEstimate());
+      fixture.detectChanges();
+
+      writeButton().click();
+      fixture.detectChanges();
+      expect(outOfDateDialog().open).toBe(true);
+      expect(textOf(outOfDateDialog().querySelector('#cc-rep-out-of-date-title'))).toBe('Write from an out-of-date analysis?');
+      expect(textOf(outOfDateDialog().querySelector('.cc-rep-out-of-date-text'))).toBe(
+        'Its runs, grades, controls, annotations or prices changed after it was saved. Every document will say so on its first page.');
+      http.expectNone(`${CC_API}/analyses/8/report-documents`);
+
+      outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-cancel')!.click();
+      expect(outOfDateDialog().open).toBe(false);
+      http.expectNone(`${CC_API}/analyses/8/report-documents`);
+
+      writeButton().click();
+      fixture.detectChanges();
+      expect(outOfDateDialog().open).toBe(true);
+      expect(textOf(outOfDateDialog().querySelector('.cc-rep-out-of-date-confirm'))).toBe('Write anyway');
+      outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-confirm')!.click();
+      const write = http.expectOne(`${CC_API}/analyses/8/report-documents`);
+      expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3], acknowledgeOutOfDate: true });
+      write.flush({ runId: 8, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('asks both questions for a same-provider writer and sends both acknowledgments', async () => {
+      const sameProvider = ccConfig(31, { displayName: 'GPT writer', provider: 'OpenAI', modelId: 'gpt-4.1' });
+      fixture.componentRef.setInput('writerConfigs', [sameProvider]);
+      fixture.componentRef.setInput('writerOptions', toModelPickerOptions([sameProvider]));
+      openAnalysis(null, ccOutOfDateFreshness({ analysisId: 8 }));
+      const estimate = await chooseWriter(8);
+      estimate.flush(ccReportEstimate());
+      fixture.detectChanges();
+
+      writeButton().click();
+      fixture.detectChanges();
+      const sameProviderDialog = el.querySelector<HTMLDialogElement>('dialog.cc-rep-confirm-dialog')!;
+      expect(sameProviderDialog.open).toBe(true);
+      sameProviderDialog.querySelector<HTMLButtonElement>('.cc-rep-same-provider-confirm')!.click();
+      fixture.detectChanges();
+      expect(outOfDateDialog().open).toBe(true);
+      http.expectNone(`${CC_API}/analyses/8/report-documents`);
+
+      outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-confirm')!.click();
+      const write = http.expectOne(`${CC_API}/analyses/8/report-documents`);
+      expect(write.request.body).toEqual({
+        writerModelConfigurationId: 31, audiences: [1, 2, 3], acknowledgeSameProvider: true, acknowledgeOutOfDate: true
+      });
+      write.flush({ runId: 8, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('asks when the server refuses a write as out of date, with its reason, and retries with the acknowledgment', async () => {
+      const estimate = await chooseWriter();
+      estimate.flush(ccReportEstimate());
+      fixture.detectChanges();
+
+      writeButton().click();
+      http.expectOne(`${CC_API}/analyses/7/report-documents`).flush(
+        { error: 'Analysis #7 is out of date: changed inputs. Analyze again, or confirm to write from it anyway.', outOfDate: true },
+        { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+      expect(outOfDateDialog().open).toBe(true);
+      expect(el.querySelector('.cc-rep-write-error')).toBeNull();
+      expect(textOf(outOfDateDialog().querySelector('.cc-rep-out-of-date-text'))).toBe(
+        'Analysis #7 is out of date: changed inputs. Analyze again, or confirm to write from it anyway. '
+        + 'Every document will say so on its first page.');
+
+      outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-confirm')!.click();
+      const write = http.expectOne(`${CC_API}/analyses/7/report-documents`);
+      expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3], acknowledgeOutOfDate: true });
+      write.flush({ runId: 7, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+    });
   });
 
   it('shows a written document as Written, with View and Delete and no checkbox, and offers only the others', () => {
@@ -548,7 +657,7 @@ describe('CcReportsStepComponent', () => {
       expect(textOf(pill(ProviderIssueReport).querySelector('.visually-hidden'))).toBe(', not chosen in New reports');
 
       const titles = Array.from(picker().querySelectorAll('.rcp-figure-title')).map(title => textOf(title));
-      expect(titles).toEqual(['Intelligence per run', 'Time to first answer text', 'Output tokens per answer', 'Runs and events']);
+      expect(titles).toEqual(['Intelligence per run', 'Time to first answer text', 'Work per turn (output tokens per answer)', 'Runs and events']);
       const sections = () => Array.from(picker().querySelectorAll('.rcp-placement')).map(section => textOf(section));
       expect(sections()).toEqual(['Results', 'Results', 'Results', 'Results']);
       expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-cc1-quality-width`)!.value).toBe('half');
@@ -605,6 +714,24 @@ describe('CcReportsStepComponent', () => {
       expect(box(ExecutiveSummary, 'cc1-quality').getAttribute('aria-describedby')).toContain(note.id);
       expect(el.querySelector(`#cc-rep-charts-${ExecutiveSummary}-cc2-speed-note`)).toBeNull();
       expect(component().chartInput().endpoints).toEqual(component().result.endpoints);
+    });
+
+    it('defaults the Executive Summary to the figures the shown analysis computed, without stored choices', () => {
+      fixture.componentRef.setInput('result', ccAnalysisResult({
+        analysisId: 8,
+        endpoints: [
+          ccEndpoint('P1', { computed: false, notComputedKind: 'measurementChanged' }),
+          ccEndpoint('P2', { computed: false, notComputedKind: 'noCommonStratum' }),
+          ccEndpoint('P4')
+        ]
+      }));
+      fixture.detectChanges();
+      http.expectOne(`${CC_API}/analyses/8/report-documents/job`).flush(null, { status: 204, statusText: 'No Content' });
+      http.expectOne(r => r.url === DOCUMENTS_URL && r.params.get('subject') === 'chat-consistency:8').flush([]);
+      http.expectOne(`${CC_API}/analyses/8/freshness`).flush(ccFreshness({ analysisId: 8 }));
+      fixture.detectChanges();
+      expect(component().chartSettings.selection[ExecutiveSummary]).toEqual(['cc3-work', 'cc4-timeline']);
+      expect(textOf(pill(ExecutiveSummary).querySelector('.rcp-tab-count'))).toBe('2');
     });
 
     it('keeps Update charts aria-disabled, with its reason, while nothing is written, charts attach or a job writes', () => {

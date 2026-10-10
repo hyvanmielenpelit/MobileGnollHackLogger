@@ -23,8 +23,8 @@ Printed before every slot: the overall verdict (the outcome, the endpoints not c
 - issueSummary ("Summary"): At most 120 words: what we observed, in plain and neutral terms: the endpoints whose verdict shows a change, with their estimates and intervals, the hours observed and the provider-side attribution with its grade. Printed above it: the attribution; interpret them, never restate them.
 - affectedModel ("Affected model and configuration"): At most 80 words: the model and configuration: {{subject.label}}, {{subject.modelId}}, the thinking level and service tier, and the served model ids of each period.
 - timeline ("Timeline"): At most 150 words: the baseline and comparison periods with their dates and run days, and the dates of any annotations, as the facts give them.
-- measurements ("Measurements with intervals"): At most 200 words: each endpoint's estimate with its interval, verdict and grade, and the control models' own change. Measurements only, never an interpretation of the provider's systems. Printed above it: the verdict table with a note line per endpoint, the endpoints not computable and the secondary measures; interpret them, never restate them.
-- hoursObserved ("Hours observed"): At most 80 words: the hours the comparison covers ({{scope.hours}}), its strata and whether time of day can be assessed. Say plainly that the measurements hold for these hours only.
+- measurements ("Measurements with intervals"): At most 200 words: each endpoint's estimate with its interval, verdict and grade, and the control models' own change. Measurements only, never an interpretation of the provider's systems. Printed above it: the verdict table with a note line per endpoint, the endpoints not computable, the secondary measures and where the chat stands in each period; interpret them, never restate them.
+- hoursObserved ("Hours observed"): At most 80 words: the hours the comparison covers ({{scope.hours}}, or the hours each period ran when they share none), its strata and whether time of day can be assessed. Say plainly that the measurements hold for these hours only.
 - ruledOut ("What we ruled out (our changes, infrastructure)"): At most 200 words: what we checked on our side. List every Overseer event of the period, each with one of its events.<n> tokens as CLAIM SUPPORT lists them, then our own waits and retries, the served tier and fallbacks, and what the control models show, each as far as its facts and the attribution grades go. Printed above it: the table of Overseer updates and the control models and the periods without a control; interpret them, never restate them.
 - sampleRequestIds ("Sample request ids"): At most 60 words: one sentence saying that these are provider request ids from the comparison period, then a short bullet list with one requestIds.sample.<n> token per item. Where none is recorded, say so in one sentence.
 - providerRequest ("Request to the provider"): At most 100 words: a courteous and specific request: whether anything changed on the provider's side in the period that would account for the provider-side attribution, and what further data we can supply.
@@ -45,11 +45,18 @@ NUMBERS AND NAMES:
 - Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.
 - In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.
 
+REPETITION AND LENGTH:
+- A fact whose value is a sentence (limitation.*, limitation.dataQuality.*, robustness.<n>.detail, controls.missing.<n>.suggestion, nextRuns.<n>.reason and .suggestion, and any fact whose key ends in reason) appears at most once in the whole document, and never inside parentheses. After its one citation, refer to it in a few plain words.
+- Endpoints that share a status or a value get one sentence together, not one sentence each: for example, two endpoints that are not computable for the same reason.
+- State an inconclusive endpoint's minimum detectable effect once in the document, where you first discuss that endpoint.
+- For the robustness checks, prefer robustness.<check>.summary, which states every endpoint of one check in one sentence, to the robustness.<n>.* facts one by one.
+- When {{verdict.short}} reads Not enough evidence yet, write at most two sentences per slot. Do not restate which endpoints are not computable: the overall verdict already says so. Spend the words on what the runs do show and on which runs would give an answer.
+
 CLAIM DISCIPLINE (code checks every sentence; a paragraph that breaks a rule is removed):
 - Report the total change first: what changed for the Overseer chat with {{subject}} between the periods, endpoint by endpoint, each with its verdict and estimate tokens and its interval where it matters. Only then say what the attribution says about where the change came from.
-- Every document cites {{scope.hours}} at least once. Every result holds for those hours only, the hours both periods share; never widen it.
+- Where {{scope.hours}} is available, every document cites it at least once. Every result holds for those hours only, the hours both periods share; never widen it. Where it is unavailable, the periods ran at different hours: say so once, in plain words, citing {{period.baseline.hours}} and {{period.comparison.hours}}, and never write that a result holds within no stratum.
 - Change words (got slower, got faster, got worse, got better, became slower, became faster, became worse, became better, slower, faster, degraded, degradation, improved, regressed, dropped, rose, declined, slowdown, slowdowns, speedup, speedups, speed-up, slowed, sped up, worsened, deteriorated) appear only in a sentence that also cites a result showing a change: an endpoint.<P> token, a verdict token or an attribution token whose verdict is not inconclusive. CLAIM SUPPORT lists the tokens that qualify.
-- An inconclusive endpoint means the runs cannot tell a change from no change. Wherever you cite one, say that it is inconclusive and state its minimum detectable effect, {{endpoint.<P>.mde}}, in the same section: the smallest change these runs could have detected.
+- An inconclusive endpoint means the runs cannot tell a change from no change. Wherever you cite one, say that it is inconclusive; state its minimum detectable effect, {{endpoint.<P>.mde}}, the smallest change these runs could have detected, once in the document.
 - Causal connectives (because, due to, caused by, as a result of, led to, owing to, driven by, attributable to) appear only in a sentence that cites the attribution token they state. Never use them to explain the method; write two sentences instead.
 - Never claim intent (deliberately, deliberate, intentionally, intentional, on purpose, throttled, throttling, nerfed, nerfing, sabotage, sabotaged, cheating, cheated, secretly, quietly downgraded, silently downgraded): the analysis measures what changed, never why anyone changed it.
 - Never name a mechanism (quantized, quantization, quantised, quantisation, speculative decoding, hardware, batching) unless the sentence cites an annotation whose kind is ProviderConfirmedCause, as CLAIM SUPPORT lists them; then attribute it to the provider's statement.
@@ -108,7 +115,7 @@ PEERS (the control models; write {{peer:X}} to refer to one)
 - {{peer:A}}: its facts (values under FACTS): controls.1.model, controls.1.periods, controls.1.runs, controls.1.sameProvider
 
 FACTS (write {{key}} to place a figure; key = value as printed)
-analysis.codeVersion = 3
+analysis.codeVersion = 6
 analysis.id = #7
 analysis.name = Weekly check
 analysis.relaxedPooling = no pooling across a measurement change
@@ -212,6 +219,7 @@ endpoint.P3.legacyProxy = measured directly
 endpoint.P3.mde = unavailable: No telemetry run in the baseline.
 endpoint.P3.minimumSampleMet = not met
 endpoint.P3.name = Answer streaming rate
+endpoint.P3.notComputedKind = noTelemetry
 endpoint.P3.p = unavailable: No telemetry run in the baseline.
 endpoint.P3.percent = unavailable: No telemetry run in the baseline.
 endpoint.P3.runs = 0 runs in the baseline and 0 runs in the comparison
@@ -237,12 +245,16 @@ endpoint.P5.runsForMargin = 6 runs per period
 endpoint.P5.verdict = inconclusive
 eventGroups.1.at = 2026-09-11 00:00 UTC
 eventGroups.1.changes = game snapshot: off → on
+eventGroups.1.lastAt = 2026-09-11 00:00 UTC
 eventGroups.1.run = run #20
 eventGroups.1.series = the model under test
+eventGroups.1.tag = E1
 eventGroups.2.at = 2026-09-12 00:00 UTC
 eventGroups.2.changes = re-indexed: GnollHack wiki (812 → 815 files)
+eventGroups.2.lastAt = 2026-09-12 00:00 UTC
 eventGroups.2.run = run #31
 eventGroups.2.series = Model A
+eventGroups.2.tag = E2
 eventGroups.count = 2 Overseer updates
 events.1.at = 2026-09-11 00:00 UTC
 events.1.change = game snapshot: off → on
@@ -262,9 +274,25 @@ events.count = 2 Overseer events
 grader.drift.count = 0 anchor runs
 identity.baseline.calls = 120 candidate calls
 identity.baseline.servedModels = test-model-1-2026-08-01 (120 calls)
-identity.changed = the served model ids are the same in both periods
+identity.changed = the served model IDs are the same in both periods
 identity.comparison.calls = 118 candidate calls
 identity.comparison.servedModels = test-model-1-2026-08-01 (118 calls)
+level.baseline.answers = 40 answers
+level.baseline.costPerQuestion = mean $0.0071 per question
+level.baseline.failedAnswers = 0 of 40 answers
+level.baseline.outputTokens = mean 9,044 output tokens per answer
+level.baseline.overallIndex = unavailable: The analysis compares runs, not battery runs, so it has no battery Overall Index.
+level.baseline.quality = mean score 82.4 points
+level.baseline.streamingRate = median 61.2 tokens/s
+level.baseline.timeToFirstAnswerText = median 39.3 s
+level.comparison.answers = 40 answers
+level.comparison.costPerQuestion = mean $0.0066 per question
+level.comparison.failedAnswers = 1 of 40 answers
+level.comparison.outputTokens = mean 8,233 output tokens per answer
+level.comparison.overallIndex = unavailable: The analysis compares runs, not battery runs, so it has no battery Overall Index.
+level.comparison.quality = mean score 78.1 points
+level.comparison.streamingRate = median 59.8 tokens/s
+level.comparison.timeToFirstAnswerText = median 40.1 s
 limitation.1 = Only weekday mornings were sampled.
 limitation.count = 1 limitation
 limitation.dataQuality.count = 0 data-quality notes
@@ -286,6 +314,7 @@ ownWaits.comparison.share = 3.9 %
 period.baseline.answers = 40 answers
 period.baseline.days = 2 days: 2026-09-01, 2026-09-02
 period.baseline.end = 2026-09-08 00:00 UTC
+period.baseline.hours = weekdays 04–12 UTC
 period.baseline.items = 20 items
 period.baseline.legacyRuns = 0 of 2 runs without call telemetry
 period.baseline.memberRuns = runs #10 and #11
@@ -297,6 +326,7 @@ period.baseline.units = 2 runs
 period.comparison.answers = 40 answers
 period.comparison.days = 2 days: 2026-09-15, 2026-09-16
 period.comparison.end = 2026-09-22 00:00 UTC
+period.comparison.hours = weekdays 04–16 UTC
 period.comparison.items = 20 items
 period.comparison.legacyRuns = 0 of 2 runs without call telemetry
 period.comparison.memberRuns = runs #20 and #21
@@ -320,7 +350,7 @@ protocol.version = V1
 quality.commonGrader = unavailable: No common grader covered every compared run, so quality compares each run's own grades.
 requestIds.sample.1 = req-alpha
 requestIds.sample.2 = req-beta
-requestIds.sample.count = 2 request ids
+requestIds.sample.count = 2 request IDs
 robustness.count = 0 checks
 robustness.failed = 0 of 0 checks
 sample.met = met: at least 2 runs on 2 days per period and 20 paired items

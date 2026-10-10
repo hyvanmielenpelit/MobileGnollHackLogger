@@ -113,11 +113,16 @@ public class BenchmarkPdfRendererTests
 
         byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown, info, TestContext.Current.CancellationToken);
 
-        Assert.Equal(new[] { "Model", "Compared", "Baseline", "Comparison", "Controls", "Written" }, info.Facts.Select(f => f.Label));
+        Assert.Equal(new[] { "Model", "Compared", "Baseline", "Comparison", "Controls", "Hours", "Protocol", "Analysis code", "Written", "Provenance" },
+            info.Facts.Select(f => f.Label));
         Assert.Equal("Test Model (TestProvider, test-model-1)", info.Facts[0].Value);
         Assert.Equal("2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 2 runs", info.Facts[2].Value);
         Assert.Equal("1 model (A), identity withheld", info.Facts[4].Value);
-        Assert.Equal("2026-09-28 10:42 UTC by Writer One (Anthropic, writer-1)", info.Facts[5].Value);
+        Assert.Equal("weekdays 04–12 UTC", info.Facts[5].Value);
+        Assert.Equal("V1, α 0.05", info.Facts[6].Value);
+        Assert.Equal("version " + Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), info.Facts[7].Value);
+        Assert.Equal("2026-09-28 10:42 UTC by Writer One (Anthropic, writer-1)", info.Facts[8].Value);
+        Assert.StartsWith("Figures and tables computed by Overseer", info.Facts[9].Value, StringComparison.Ordinal);
         Assert.Equal("Chat consistency analysis #7 · Report for AI Researchers and Developers", info.FooterText);
 
         string text = AllText(pdf);
@@ -384,7 +389,7 @@ public class BenchmarkPdfRendererTests
         // The Markdown footer is left out; the cover states its facts once.
         Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
         Assert.DoesNotContain(Squash("rendered with format version"), text);
-        Assert.Contains(Squash("PDF layout 6"), text);
+        Assert.Contains(Squash("PDF layout 7"), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.
         Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
@@ -485,7 +490,7 @@ public class BenchmarkPdfRendererTests
         string second = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, changed));
         Assert.Contains("Source" + original[..16], first);
         Assert.Contains("Source" + altered[..16], second);
-        Assert.Contains("PDFlayout6", first);
+        Assert.Contains("PDFlayout7", first);
 
         // A chart with no marker is not drawn and leaves the hash alone.
         string unplaced = AllText(BenchmarkPdfRenderer.RenderMarkdown("Only text.\n", Info(), TestContext.Current.CancellationToken, charts));
@@ -669,9 +674,30 @@ public class BenchmarkPdfRendererTests
     // --- The last section ----------------------------------------------------------------------------
 
     [Fact]
-    public void TheLayoutVersion_IsSix()
+    public void TheLayoutVersion_IsSeven()
     {
-        Assert.Equal(6, BenchmarkPdfRenderer.LayoutVersion);
+        Assert.Equal(7, BenchmarkPdfRenderer.LayoutVersion);
+    }
+
+    [Fact]
+    public void AHeadingBeforeAShortTable_MovesWithTheTable_SoItNeverStandsAloneAtThePageFoot()
+    {
+        // Filler pushes the heading down the page, at every position near its foot in turn; the short
+        // table after it is kept on one page.
+        for (int filler = 30; filler <= 56; filler += 2)
+        {
+            var sb = new StringBuilder("# Heading\n\n");
+            for (int i = 0; i < filler; i++) sb.Append("Filler paragraph ").Append(i).Append(" with some words to take up a line.\n\n");
+            sb.Append("## Overseer events\n\n| Event | When | What changed |\n|---|---|---|\n");
+            for (int i = 0; i < 8; i++) sb.Append("| E").Append(i + 1).Append(" | 2026-10-08 | harness ").Append(i).Append(" |\n");
+
+            byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(sb.ToString(), Info(), TestContext.Current.CancellationToken);
+
+            using var reader = PdfDocument.Open(pdf);
+            var headingPage = reader.GetPages().Last(p => Squash(p.Text).Contains(Squash("Overseer events"), StringComparison.Ordinal));
+            Assert.True(Squash(headingPage.Text).Contains("E12026-10-08", StringComparison.Ordinal),
+                "With " + filler + " filler paragraphs the heading stands on a page without its table.");
+        }
     }
 
     [Fact]

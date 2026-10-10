@@ -680,8 +680,8 @@ numbered comparison prints its comparison (§ 15), and every per-model document 
 without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
 overlap)"*), whatever format it was written under.
 
-**Chat consistency format version 1** is the format of the chat consistency documents
-(`ChatConsistencyReportFormatVersion = 1`, § 16), numbered on its own: `CurrentFormatVersion(scope)`
+**Chat consistency format version 2** is the format of the chat consistency documents
+(`ChatConsistencyReportFormatVersion = 2`, § 16), numbered on its own: `CurrentFormatVersion(scope)`
 returns it for `ChatConsistency`, the document stores it, and its reproducibility section and Markdown
 footer print it; the PDF and Word covers of a chat consistency document have no *Generated format* row
 (§ 16).
@@ -1315,7 +1315,7 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 6* (*PDF layout 6* alone for a chat consistency
+  *Source {first 16 hex of the source hash} · PDF layout 7* (*PDF layout 7* alone for a chat consistency
   document, whose cover and footer carry no hash, § 16), and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
@@ -1379,6 +1379,9 @@ still reaches no model client, clock or configuration, and the architecture pins
   their excess; only when the header words alone do not fit do they shrink further, so a header word
   breaks mid-word only then. A table of at most 10 body rows (`ShortTableMaxBodyRows`) is kept on one page
   when it fits on one (`PreventPageBreak`), so a four-row table is no longer split.
+- **Headings before short tables** (*PDF layout 7*, 2026-10-10): a run of headings followed by a short
+  table (`IsShortTable`) is kept on one page together with it, so a heading never stays alone at a page
+  foot while its table moves to the next page.
 - **Wide tables** (*PDF layout 6*, 2026-10-06; `BenchmarkPdfMarkdownComposer.TableLayout`, shared with
   Word as `BenchmarkTableLayout`): every column's minimum is its longest word, header and body together,
   and when those do not fit across the text width these measures are taken in order until they do —
@@ -2793,7 +2796,7 @@ of runs, with no peers to rank against.
 | `SubjectKey` | `chat-consistency:<id>` (`BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix`) |
 | `ChatConsistencyAnalysisId` | the analysis, a `Restrict` foreign key: the analysis cannot be deleted while documents written from it exist (the API answers 409) |
 | `ComparisonKey`, `ComparisonId`, `CoveredEntryKeysJson` | null |
-| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **1** (§ 7) |
+| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **2** (§ 7) |
 
 The title is *Overseer Chat Consistency Report: \<model\>*. The sheet's subject block
 (`BenchmarkReportChatConsistencySubject`) carries the analysis id, name, headline, protocol label,
@@ -2827,6 +2830,7 @@ include it.
 ### The code-built blocks per audience
 
 Every document opens with the title (and, in the Markdown, the stamp and the front-matter list), the
+**out-of-date box** when the analysis is out of date (below), the
 **Overall verdict**, *The result in one sentence* (the writer's headline), then the blocks no slot
 takes, then the slots in order, each code-built block printed under the slot that discusses it
 (`ChatBlocksOf`) or in its default place, then *How to read this*, the limitations and reproducibility
@@ -2836,16 +2840,48 @@ than five columns; a table of one row becomes a sentence.
 
 | Block | Executive Summary | Researcher Report and Provider Issue Report | Internal Improvement Brief |
 |---|---|---|---|
-| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason, *Sample* (`sample.shortfall` when the minimum is not met: *1 battery run per period on 1 day; the minimum is 2 battery runs on 2 days per period and 20 paired items*), *Hours*, *Controls* | the same, plus *Time strata* and the analysis's own headline | as the Researcher Report |
-| Verdicts | *Measure · Result · What it means* for the computed endpoints, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Change (95 % interval) · Verdict* | as the Researcher Report, without the p-values in the note lines |
-| Overseer events | one sentence (*Between the periods, Overseer was updated once, on 2026-10-08 at 14:49 UTC, before run #98: harness 53 → 54; …*), a count when there are more than three, and how many more the control models' runs show | *When (UTC) · Run · What changed*, one row per update (`eventGroups.*`: one UTC day in one series), a control model's update naming its series | as the Researcher Report |
-| Control models | in the overall verdict | one bullet per control model with its runs, periods and difference-in-differences estimates, then one bullet per period without a control, its suggestions without an instrument note | as the Researcher Report |
+| Out-of-date box | under the title block when the analysis is out of date (below) | the same | the same |
+| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason in plain words (a grading change on quality, periods run at different hours), *Sample* (`sample.shortfall` when the minimum is not met: *1 battery run per period on 1 day; the minimum is 2 battery runs on 2 days per period and 20 paired items*), *Hours*, *Controls* | the same with the technical not-computable reasons, plus *Time strata* | as the Researcher Report |
+| Verdicts | *Measure · Result · What it means* for the computed endpoints, named without P1–P5 ids, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Baseline → comparison, or change (95 % interval) · Verdict* | as the Researcher Report, without the p-values in the note lines |
+| Where the chat stands | after the verdict table | the same | the same |
+| Overseer events | one sentence naming each update by its tag with its time and changes and no run ids (*Between the periods, Overseer was updated once: E1, 2026-10-08 14:49 UTC — harness 53 → 54.*), a count when there are more than three, and how many more the control models' runs show | *Event · When (UTC) · Run · What changed*, one row per update (`eventGroups.*`, below), the time reading from–to when the update's events span time, a control model's update naming its series | as the Researcher Report |
+| Control models | in the overall verdict | one bullet per control model with its runs, periods and difference-in-differences estimates, then the missing controls as a table, *Period · Battery run (suites) · What to do* (*Run (suite)* when the units are runs), its suggestions without an instrument note | as the Researcher Report |
 | Attribution | the sentence under the verdicts | one sentence for a single attribution, else *Endpoints · Side · Grade*; then each attribution's evidence | as the Researcher Report |
 | Robustness | — | *Check · P4 · P5*: one column per computed endpoint the checks ran on (at most four), then each check that did not pass with its detail (Researcher Report only) | — |
-| How to read this | three points: what was measured, the verdicts, the hours | the full list: what was measured, the endpoints, the verdicts, the evidence grades, the hours (the no-common-stratum wording when the periods share none), attribution, control models when there are any, and what is never inferred | — |
+| How to read this | what was measured, the five measures (quality, time to first answer text, answer streaming rate, work per turn, cost per question), the grades, the verdicts, the hours | the full list: what was measured, the endpoints, the verdicts, the evidence grades, the hours (the different-hours wording when the periods share none), attribution, control models when there are any, and what is never inferred | — |
 | Limitations | the analysis's data-quality notes only, and no section without one | every limitation and data-quality note | the data-quality notes only |
 | Reproducibility | — | analysis number, code version, protocol with overrides and alpha, *Saved*, the common grader, the price card, each period's battery runs with their member runs (or runs), the control runs and the report format version; **no hash** | as the Researcher Report, with the price card's source in place of its rates |
 | Evaluation terms | the distillation prohibition and the third-party content, *evaluated solely to check whether the Overseer chat with this model stays consistent over time* | the same | — |
+
+**The out-of-date box.** A document whose analysis is out of date (`ai-benchmark-chat-consistency.md`
+§ 16.1) prints, in every audience, directly under the title block: *This document comes from an
+out-of-date analysis: \<reasons\>. Saved analyses never change; analyze the same periods again for a
+current result before relying on this document.* The reasons, joined with *"; and "*, are *it was saved
+under analysis code version \<n\>, and Overseer now analyzes under version \<m\>* and *its runs, grades,
+controls, annotations or prices changed after it was saved*. The box is decided when the document is
+rendered: the first reason from the sheet's analysis code version against the current one, so a
+document written earlier shows it when downloaded again; the second from the fact
+`analysis.writtenOutOfDate` (*earlier analysis code (version n)*, *changed inputs*, or both joined with
+*and*), which the report job records when the writer started after the operator's acknowledgment
+(`acknowledgeOutOfDate`, § *Endpoints* below).
+
+**Where the chat stands** follows the verdict table in every audience: *Measure · Baseline · Comparison*
+for Quality (the battery Overall Index with its interval where recorded, else the mean score), Time to
+first answer text, Answer streaming rate, Work per turn (output tokens per answer), Cost per question and
+Failed answers, from the `level.*` facts. A measure whose endpoint was not computed for a measurement
+change or for lack of common hours is marked *(not comparable)*, and the table closes with *Descriptive
+levels of each period, not a comparison: the verdicts above say what changed.* A sheet without `level.*`
+facts prints no table.
+
+**Smaller rules of the blocks.** Under every endpoint table, when a period has one unit: *With one
+\<unit\> per period, the intervals and smallest detectable changes reflect question-to-question variation
+only; run-to-run variation is not included, so the true uncertainty is larger.* The secondary-measures
+table collapses reliability rates that are zero in both periods into one row, *Failures of any kind:
+none in either period (…)*, and a cell that cannot be computed gives its reason. The overall verdict does
+not repeat the analysis's headline. An attribution to an undetermined side reads *The analysis cannot
+say where the change in \<endpoints\> came from (graded \<grade\>).* With no common hours, the hours lines
+say that the periods ran at different hours and give each period's hours. The Executive Summary's
+code-built blocks name the endpoints without their P1–P5 ids.
 
 A document written before these blocks renders them from its stored facts too: its events are put in
 words from the stored kind and raw values (`ChatConsistencyEventText.Describe`), grouped by UTC day and
@@ -2861,15 +2897,17 @@ endpoints, the Established grades, the attributions, the provider-confirmed caus
 assessability and the hours — for a Provider Issue Report also the provider-side attributions, the
 Overseer events to list under `ruledOut` and the sample request ids. The fact families are `analysis.*`,
 `subject.*`, `verdict.*`, `scope.*`, `coverage.*`, `period.<baseline|comparison>.*`, `sample.*`,
-`protocol.*`, `n.*`, `endpoint.<P1…P5>.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`,
+`protocol.*`, `n.*`, `endpoint.<P1…P5>.*`, `level.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`,
 `tools.*`, `secondary.*`, `events.*`, `eventGroups.*`, `controls.*`, `controls.missing.*`, `did.*`, `robustness.*`, `identity.*`,
 `serving.*`, `ownWaits.*`, `pricing.*`, `annotation.*`, `attribution.*`, `limitation.*`, `nextRuns.*`
 and, for the Provider Issue Report, `requestIds.sample.*` (`BenchmarkChatConsistencyReportFacts`).
 
 The displays are written for a reader. Numbers print a minus as U+2212 and keep their unit on the line
 with a no-break space (U+00A0): *−7.6 %*, *38.7 s*. An MDE reads *±12.7 %*, with its caveat in
-`endpoint.<P>.mdeNote` (*one run per period: run-to-run noise not estimable*), and no estimate carries
-a *(log ratio …)* note. `verdict.short` is the outcome title (*Not enough evidence yet*);
+`endpoint.<P>.mdeNote` (*A floor: one unit per period, so run-to-run noise is not included.* for an
+item-paired endpoint from analysis code version 6, *one run per period: run-to-run noise not estimable*
+for a speed endpoint), and no estimate carries a *(log ratio …)* note. The served models are labeled
+with *IDs* in capitals, and per-question costs print with at least two decimals. `verdict.short` is the outcome title (*Not enough evidence yet*);
 `analysis.savedAt` the saved time. A period states its units (`period.<p>.units`, *1 battery run*, with
 `.unitNoun`) beside its member runs (`.memberRuns`), and the minimum sample is `sample.minimumUnits`,
 `.minimumDays`, `.minimumPairedItems`, `.met` and, when not met, `.shortfall` with real plurals.
@@ -2879,8 +2917,22 @@ its label (`ChatConsistencyEventText.Label`), and `events.<n>.change` its short 
 characters of a revision, *re-indexed: GnollHack wiki, GnollHack source code (file counts unchanged)*, *game snapshot: off
 → on* for the changed prompt options only, *tool iterations per question: 8 → 10*, *changed* for a
 system prompt or tool guides; never more than 120 characters, a hex run of twelve or more, or a `{`);
-`eventGroups.count` and `eventGroups.<n>.at`, `.run`, `.changes` and `.series` are the same events, one
-group per UTC day in one series. `events.<n>.from` and `.to` are no longer stated. **Facts kept from the
+`eventGroups.count` and `eventGroups.<n>.tag` (*E1*, *E2*, … in time order), `.at`, `.lastAt`, `.run`,
+`.changes` and `.series` are the same events grouped into updates
+(`BenchmarkChatConsistencyReportFacts.EventGroups`, keyed by `EventGroupKey`): by UTC day, series, the
+harness version of the event's run (from the series' harness events) and the side of the period split, so
+a group never spans the baseline and the comparison. The client's report charts tag their event markers
+the same way (`ccReportEventGroups`), and the shared fixture
+`Overseer/ClientApp/src/app/admin/benchmark/chat-consistency-tab/cc-event-groups.fixture.json` pins
+both. `events.<n>.from` and `.to` are no longer stated.
+
+Further facts: `analysis.writtenOutOfDate` (the out-of-date box above); `period.<p>.hours` (the hours
+each period ran at); `level.<p>.<answers|quality|overallIndex|timeToFirstAnswerText|streamingRate|outputTokens|costPerQuestion|failedAnswers>`
+(the descriptive levels, unavailable with a reason on an analysis saved before code version 6);
+`robustness.<check>.summary` (a check in one sentence); `endpoint.<P>.notComputedKind`;
+`controls.missing.<n>.batteryRun` and `.buildReplaced`. `scope.hours` is unavailable whenever the
+periods share no time-of-week stratum, and `serving.timeOfDayAssessable` then reads *not assessable:
+the periods share no hours*. **Facts kept from the
 writer** (`WriterHidden`): `analysis.inputSha256`, which stays on the sheet, and the raw
 `events.<n>.from` / `.to` an older sheet still carries; the writer's fact list leaves them out, and a
 token of one in older prose resolves to *not shown*, *the earlier value* or *the later value*.
@@ -2894,19 +2946,31 @@ slots and beside each slot, the code-built blocks printed above it (`ChatBlocksB
 no run id, rule id or hash; `asGoodAsBefore` leads with `{{verdict.short}}`; the Internal Improvement
 Brief's `actions` never acts on a secondary difference whose interval includes zero.
 
+A **REPETITION AND LENGTH** section holds the prose short: a sentence-valued fact (`limitation.*`, the
+data-quality notes, robustness details, missing-control suggestions, next-run reasons and suggestions,
+any `*.reason`) is cited at most once per document and never in parentheses; endpoints sharing a status
+or a value go in one sentence; an inconclusive endpoint's MDE is cited once per document, where it is
+first discussed; `robustness.<check>.summary` is preferred to the details; and with `verdict.short`
+*Not enough evidence yet*, a slot has at most two sentences. **The hours rule is conditional**: with
+`scope.hours` available every document cites it; without it the writer says once that the periods ran
+at different hours, citing `period.baseline.hours` and `period.comparison.hours`, and never writes
+*within no stratum*. CLAIM SUPPORT states which of the two applies.
+
 ### Validation
 
 Rules 22 to 29 (**C1** to **C8**, § 3) apply on top of the prose rules. C1 to C4, the first half of C6
 and the first half of C7 are checked sentence by sentence on the headline and every paragraph, and C8,
-*readable text*, on each whole string: a failing paragraph is dropped, a failing headline is fatal. C5 is a **warning**, checked over each slot's kept
-text. The second halves of C6 (*the document never cites `{{scope.hours}}`*) and C7 (*`ruledOut` misses
+*readable text*, on each whole string: a failing paragraph is dropped, a failing headline is fatal. C5 is a **warning**,
+satisfied when the inconclusive endpoint's MDE is cited anywhere in the document, and so checked once per
+document (location *sections*). The second halves of C6 (*the document never cites `{{scope.hours}}`*,
+which applies only while `scope.hours` is available) and C7 (*`ruledOut` misses
 an event*) cannot drop text; a note of either marks the document **Completed with warnings**.
 
 ### Figures
 
 | Key | Figure |
 |---|---|
-| `cc1-quality` | Intelligence per run (native, and common grader where one exists) |
+| `cc1-quality` | Intelligence per run (native, and common grader where one exists); a battery run's Overall Index with its own 95 % interval as a whisker, the caption saying the bars are each battery run's interval, not the interval of the change |
 | `cc2-speed` | Time to first answer text (telemetry; the legacy proxy hollow) |
 | `cc3-work` | Output tokens per answer |
 | `cc4-timeline` | Runs and events (telemetry and legacy runs; Overseer changes, annotations, served-model changes) |
@@ -2954,7 +3018,9 @@ through `PUT report-documents/{id}/charts` with its chart layout, `{ version: 1,
 widthShare, rowGroup }], maxHeightShare }`; two consecutive half-width figures at one anchor share a
 row. A document whose type has no figure chosen gets none, and loses the charts it had. Step 5's
 **Update charts** does the same for every written document of the analysis. The client's
-`CC_REPORT_CHART_VERSION` is 6, and its settings hash covers the choice and the layout. The defaults:
+`CC_REPORT_CHART_VERSION` is 7, and its settings hash covers the choice and the layout. A report chart
+tags its Overseer-event markers as the document's events table does (`ccReportFigureInput`, from the
+analysis's own events and its period split), whatever the timeline numbered them. The defaults:
 Executive Summary cc1, cc2; Researcher Report all four; Internal Improvement Brief cc1, cc3; Provider
 Issue Report cc2, cc4; cc1–cc3 half column and cc4 two-thirds; 8 pt labels; at most 50 % of the page
 tall; stored per browser in `localStorage['overseer.benchmark.chatConsistency.reportCharts']`
@@ -2974,27 +3040,36 @@ being `executive-summary`, `researcher-report`, `internal-brief` or `provider-is
 mirrors the stem (`reportDocumentFileStem`).
 
 **Cover and footer.** The PDF and Word covers of a chat consistency document carry the subject line
-*Chat consistency analysis #12 — name* (the name left out of an anonymized copy) and the facts
+*Chat consistency analysis #12 — name* (the name left out of an anonymized copy, and when it is the
+default name *Chat consistency: \<model\>*, which the title already says) and the facts
 *Model*, *Compared* (the battery or suite, else the suites), *Baseline* and *Comparison* (each with its
 dates and its battery runs or runs), *Controls* (as the naming allows, never by name in a Provider
-Issue Report) and *Written* (the time and the writer); the line under the facts reads *PDF layout 6*
+Issue Report), *Hours* (`scope.hours`, or *none: the periods ran at different hours*), *Protocol*
+(*\<protocol label\>, α \<alpha\>*), *Analysis code* (*version 6*, or *version 4 — out of date (current:
+6)*, or *version 6 — out of date (its inputs changed)*, decided when the document is rendered), *Written*
+(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 7*
 or *Word layout 2* without a source hash. The page footer reads the short classification, then *Chat
 consistency analysis #12 · Executive Summary · page 2 of 3* (`BenchmarkPdfDocumentInfo.FooterText`).
 The Word file still records the source hash in its *GnollBench Source SHA-256* custom property, as
-metadata only. Other scopes keep their cover and the *Source … · PDF layout 6* footer.
-`ChatConsistencyReportFormatVersion` stays 1.
+metadata only. Other scopes keep their cover and the *Source … · PDF layout 7* footer
+(`BenchmarkPdfRenderer.LayoutVersion` 7: a heading followed by a short table, at most 10 body rows,
+which is kept on one page, moves with the table instead of staying alone at a page foot).
+`ChatConsistencyReportFormatVersion` is 2.
 
 ### Endpoints
 
 Under `AdminChatConsistencyController` (`/api/admin/benchmark/chat-consistency`), in the run
-report-documents contract (`writerModelConfigurationId`, `audiences`, `acknowledgeSameProvider`; enums
-as numbers):
+report-documents contract (`writerModelConfigurationId`, `audiences`, `acknowledgeSameProvider`, and
+here `acknowledgeOutOfDate`; enums as numbers):
 
 - `POST analyses/{id}/report-documents/estimate` — the cost estimate with the Provider Issue Report's
   availability; no model call; 404, 400 for an audience outside the four, 499.
 - `POST analyses/{id}/report-documents` — 202 with the job (`runId` is the analysis id); 404; 409 while
-  its documents are being written, for a document already written, when every document exists, and for
-  an unacknowledged writer of the model's provider; 400 for an audience outside the four, an
+  its documents are being written, for a document already written, when every document exists, for
+  an unacknowledged writer of the model's provider, and for an out-of-date analysis without
+  `acknowledgeOutOfDate: true`, the last with `{ error, outOfDate: true }` and *"Analysis #\<id\> is out
+  of date: \<reasons\>. Analyze again, or confirm to write from it anyway."* (the freshness check is `GET
+  analyses/{id}/freshness`, `ai-benchmark-chat-consistency.md` § 16.1); 400 for an audience outside the four, an
   unavailable Provider Issue Report, an unusable writer or the model under report, and a refused
   endpoint; 429 at the spend guard. Usage rows use report-pack usage context 8.
 - `GET analyses/{id}/report-documents/job` — 200 with the job, 204 when this process knows none; jobs
@@ -3008,7 +3083,8 @@ endpoints (§ 9), listed with `subject=chat-consistency:<id>&origin=chatConsiste
 ### The client
 
 The Write step (step 5) of the Chat Consistency wizard writes and polls the documents, in the layout
-of Model Comparison's step 3, views and deletes each written one, chooses each document type's charts
+of Model Comparison's step 3, shows the analysis's out-of-date notice and asks *Write from an
+out-of-date analysis?* before writing from one, views and deletes each written one, chooses each document type's charts
 in *Charts in PDF and Word*, and redraws the charts of every written document with **Update charts**
 (§ *Figures* above); its Documents step (step 6)
 shows them in the Download Center panel with the context `{ kind: 'chatConsistency', analysisId }`,

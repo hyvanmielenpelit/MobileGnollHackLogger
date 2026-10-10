@@ -119,7 +119,7 @@ public static partial class BenchmarkReportPackRenderer
     public const int ComparisonReportFormatVersion = 12;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
-    public const int ChatConsistencyReportFormatVersion = 1;
+    public const int ChatConsistencyReportFormatVersion = 2;
 
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
     public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch

@@ -46,6 +46,10 @@
 </div>
 <p class="cc-res-export-status" role="status">{{ exportStatus }}</p>
 
+<!-- Whether the saved analysis is out of date, over every section. -->
+<app-cc-freshness-notice idPrefix="cc-res-fresh" [analysisId]="result.analysisId"
+                         (analyzeAgain)="analyzeAgain.emit()"></app-cc-freshness-notice>
+
 <!-- Summary: the verdict on the chat, then the key figures. -->
 <div class="cc-res-panel" role="tabpanel" id="cc-res-panel-summary" aria-labelledby="cc-res-tab-summary"
      tabindex="0" [hidden]="tab !== 'summary'">

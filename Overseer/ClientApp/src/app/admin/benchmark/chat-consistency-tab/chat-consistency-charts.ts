@@ -6,11 +6,15 @@
  *
  * Every chart is a line chart over a linear time axis in epoch milliseconds (no date adapter is
  * registered), with an overlay plugin that draws the header band (title, subject and the GnollBench
- * logo), the period bands, the area wash of a single-series chart, composite Overseer events,
- * annotations and served-model changes as labeled markers (their tags staggered in a band above the
- * plot), and the value of every point of a chart drawing at most two series (`ccPlaceLabels`). A
- * legacy latency proxy is drawn with hollow points and a dashed line, so it is told apart by shape as
- * well as by its legend label. Every dataset carries a stable series id (`seriesId`). Every value
+ * logo), the period bands and their names, the area wash of a single-series chart whose value axis
+ * starts at zero, composite Overseer events, annotations and served-model changes as labeled markers
+ * (their tags staggered in a band above the plot), and the value of every point of a chart drawing at
+ * most two series (`ccPlaceLabels`). A battery run's Overall Index carries its 95 % interval as a
+ * whisker (`ccWhiskerPlugin`). A line breaks between the periods where the analysis found them not
+ * comparable (`ccPeriodBreak`). A legacy latency proxy is drawn with hollow points and a dashed line,
+ * so it is told apart by shape as well as by its legend label. Every dataset carries a stable series
+ * id (`seriesId`); without notes of runs not in the analysis or a period break, it carries no
+ * scriptable options. Every value
  * axis follows its measure's `CcAxisPolicy` (`ccValueAxis`). A `CcChartStyle` sets the text sizes,
  * line and point sizes and the optional parts; without one the charts draw `CC_CHART_STYLE_DEFAULTS`.
  * A theme without a tooltip box draws a chart that never reacts to the pointer.
@@ -20,7 +24,7 @@
  *
  * Runs not in the analysis (`CcFigureInput.notAnalyzed`) are drawn as gray crosses joined by gray,
  * dotted segments, their value labels muted, and named in the caption, the tooltip and the data
- * table; without that map the datasets carry no scriptable options.
+ * table.
  */
 
 import { Chart, layouts } from 'chart.js';
@@ -288,6 +292,11 @@ export interface CcFigureInput {
   harnessPoints?: readonly CcTimelinePoint[];
   /** Composite events whose tags the markers reuse. */
   eventNumbering?: readonly CcEventGroup[];
+  /**
+   * Composite events already grouped and tagged, drawn as the event markers instead of grouping
+   * `events`: a report chart's (`ccReportEventGroups`). `harnessPoints` and `eventNumbering` then go unused.
+   */
+  eventGroups?: readonly CcEventGroup[];
   /** Point id → why the run or battery run is not in the analysis; absent or empty draws every point alike. */
   notAnalyzed?: ReadonlyMap<number, string>;
   /**
@@ -303,6 +312,8 @@ export interface CcEventContext {
   harnessPoints?: readonly CcTimelinePoint[];
   /** Composite events whose tags the event markers reuse. */
   numbering?: readonly CcEventGroup[];
+  /** Composite events already grouped and tagged; the events are not grouped again when present. */
+  groups?: readonly CcEventGroup[];
 }
 
 /** The header band's text; a null line is not drawn. */
@@ -376,7 +387,7 @@ export const CC_FIGURE_KEYS: readonly { readonly key: CcFigureKey; readonly titl
   { key: 'quality', title: 'Intelligence per run' },
   { key: 'ttfat', title: 'Time to first answer text' },
   { key: 'rate', title: 'Answer streaming rate' },
-  { key: 'work', title: 'Output tokens per answer' },
+  { key: 'work', title: 'Work per turn (output tokens per answer)' },
   { key: 'tools', title: 'Tool calls per answer' },
   { key: 'cost', title: 'Cost per question' },
   { key: 'reliability', title: 'Reliability' },
@@ -573,7 +584,7 @@ export function commonGraderQualityOf(point: CcTimelinePoint, snapshotId: number
  * annotations (`A1`…) and the runs whose dominant served model differs from the previous run's
  * (`S1`…), each kind numbered in time order. The filter drops markers and never renumbers them.
  * `context` can group the events by a wider set of points and take their tags from reference
- * composites; served-model changes are always over `points`.
+ * composites, or hand over composites already grouped; served-model changes are always over `points`.
  */
 export function buildMarkers(
   points: readonly CcTimelinePoint[],
@@ -586,7 +597,8 @@ export function buildMarkers(
   const shows = (kind: CcMarkerKind) => !filter || filter.kinds.has(kind);
 
   if (shows('event')) {
-    for (const group of groupOverseerEvents(events, context.harnessPoints ?? points, context.numbering)) {
+    const groups = context.groups ?? groupOverseerEvents(events, context.harnessPoints ?? points, context.numbering);
+    for (const group of groups) {
       if (eventGroupShown(group, filter)) {
         markers.push({ kind: 'event', x: utcMillis(group.atUtc), tag: group.tag, label: eventGroupLabel(group) });
       }
@@ -622,18 +634,24 @@ export interface CcTimeTicks {
   stepMs: number;
 }
 
+/** A time axis shorter than this is ticked in hours: `09:00`, the date written once. */
+export const CC_HOUR_TICKS_SPAN_MS = 2 * DAY_MS;
+
 /**
  * Tick values for a time axis from `min` to `max` (epoch ms): the smallest step of 1, 2, 3, 6 or 12
  * hours, 1, 2 or 7 days (weeks start on Monday), or 1, 3, 6 or 12 months (from the first of a month)
- * that keeps the ticks to `maxTicks`, aligned to UTC. Empty for an empty or unusable range.
+ * that keeps the ticks to `maxTicks`, aligned to UTC. With `maxStepMs`, no step longer than that is
+ * taken: the longest one allowed when none keeps to the limit. Empty for an empty or unusable range.
  */
-export function ccTimeTicks(min: number, max: number, maxTicks: number): CcTimeTicks {
+export function ccTimeTicks(min: number, max: number, maxTicks: number, maxStepMs?: number): CcTimeTicks {
   if (!Number.isFinite(min) || !Number.isFinite(max) || !(max > min)) return { values: [], stepMs: 0 };
   const limit = Math.max(2, Math.floor(maxTicks));
-  for (const step of FIXED_STEPS_MS) {
+  const steps = maxStepMs === undefined ? FIXED_STEPS_MS : FIXED_STEPS_MS.filter(step => step <= maxStepMs);
+  for (const [i, step] of steps.entries()) {
     const offset = step === 7 * DAY_MS ? MONDAY_OFFSET_MS : 0;
     const first = Math.ceil((min - offset) / step) * step + offset;
-    if (Math.floor((max - first) / step) + 1 <= limit) {
+    const last = maxStepMs !== undefined && i === steps.length - 1;
+    if (Math.floor((max - first) / step) + 1 <= limit || last) {
       const values: number[] = [];
       for (let value = first; value <= max; value += step) values.push(value);
       return { values, stepMs: step };
@@ -662,15 +680,17 @@ function pad2(value: number): string {
 
 /**
  * One time tick's label. Under a day's step: `06:00`, with the date (`2026-10-08 06:00`) on the first
- * tick of each day; otherwise `Oct 8` for a range under a year and `2026-10` beyond.
+ * tick only while the range is under `CC_HOUR_TICKS_SPAN_MS`, else on the first tick of each day;
+ * otherwise `Oct 8` for a range under a year and `2026-10` beyond.
  */
 export function ccTimeTickLabel(value: number, previous: number | null, stepMs: number, spanMs: number): string {
   const date = new Date(value);
   const day = `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
   if (stepMs > 0 && stepMs < DAY_MS) {
     const time = `${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`;
-    const newDay = previous === null || Math.floor(previous / DAY_MS) !== Math.floor(value / DAY_MS);
-    return newDay ? `${day} ${time}` : time;
+    const dated = previous === null
+      || (spanMs >= CC_HOUR_TICKS_SPAN_MS && Math.floor(previous / DAY_MS) !== Math.floor(value / DAY_MS));
+    return dated ? `${day} ${time}` : time;
   }
   if (spanMs < 365 * DAY_MS) return `${MONTH_NAMES[date.getUTCMonth()]} ${date.getUTCDate()}`;
   return day.slice(0, 7);
@@ -679,6 +699,16 @@ export function ccTimeTickLabel(value: number, previous: number | null, stepMs: 
 /** About one tick per 110 px of axis, between 2 and 8. */
 function maxTicksFor(width: number): number {
   return Math.max(2, Math.min(8, Math.floor((width > 0 ? width : 600) / 110)));
+}
+
+/** The ticks of a time axis: in hours of at most 12 under `CC_HOUR_TICKS_SPAN_MS`, whose labels are short. */
+export function ccAxisTimeTicks(min: number, max: number, width: number): CcTimeTicks {
+  if (max - min < CC_HOUR_TICKS_SPAN_MS) {
+    // `09:00` is about half as wide as `Oct 8`, so the ticks may sit twice as close.
+    const hourTicks = Math.max(2, Math.min(12, Math.floor((width > 0 ? width : 600) / 60)));
+    return ccTimeTicks(min, max, hourTicks, 12 * HOUR_MS);
+  }
+  return ccTimeTicks(min, max, maxTicksFor(width));
 }
 
 // --- The overlay plugin ---
@@ -916,6 +946,8 @@ export interface CcPointLabelSet {
   format: (value: number) => string;
   /** The labels prefer the space below their points: the second of two series. */
   below: boolean;
+  /** The value range a point's whisker covers, which its label keeps clear of; null or absent for none. */
+  reach?: (point: CcChartPoint) => { low: number; high: number } | null;
 }
 
 /** What the overlay plugin draws besides the bands and the markers. */
@@ -924,6 +956,8 @@ export interface CcOverlayDecor {
   logo?: FigureLogo | null;
   /** The dataset whose area is washed with its color; none when absent. */
   wash?: { datasetIndex: number; color: string } | null;
+  /** The instant (epoch ms) the lines and the wash break at between the periods; none when absent. */
+  breakAt?: number | null;
   pointLabels?: readonly CcPointLabelSet[];
   /** Point ids whose labels are muted: the points not in the analysis. */
   notAnalyzed?: ReadonlyMap<number, string> | null;
@@ -961,22 +995,79 @@ export function ccPointLabelFont(style: CcChartStyle = CC_CHART_STYLE_DEFAULTS):
   return { sizePx: style.valueLabelSizePx, weight: style.labelWeight, offsetPx: style.pointRadiusPx + POINT_LABEL_CLEARANCE };
 }
 
+/** Two boxes come within `POINT_LABEL_GAP` of each other. */
+function boxesMeet(a: CcLabelBox, b: CcLabelBox): boolean {
+  return a.left < b.right + POINT_LABEL_GAP && b.left < a.right + POINT_LABEL_GAP
+    && a.top < b.bottom + POINT_LABEL_GAP && b.top < a.bottom + POINT_LABEL_GAP;
+}
+
 /**
  * The point labels kept, as indices into `candidates`, which come in priority order: each box is kept
- * unless it leaves `area` or comes within `POINT_LABEL_GAP` of a box kept before it.
+ * unless it leaves `area`, or comes within `POINT_LABEL_GAP` of a box kept before it or of an obstacle
+ * (a period name).
  */
-export function ccPlaceLabels(candidates: readonly CcLabelBox[], area: CcLabelBox): number[] {
+export function ccPlaceLabels(candidates: readonly CcLabelBox[], area: CcLabelBox, obstacles: readonly CcLabelBox[] = []): number[] {
   const kept: number[] = [];
   candidates.forEach((box, i) => {
     if (box.left < area.left || box.right > area.right || box.top < area.top || box.bottom > area.bottom) return;
-    const overlaps = kept.some(k => {
-      const other = candidates[k];
-      return box.left < other.right + POINT_LABEL_GAP && other.left < box.right + POINT_LABEL_GAP
-        && box.top < other.bottom + POINT_LABEL_GAP && other.top < box.bottom + POINT_LABEL_GAP;
-    });
-    if (!overlaps) kept.push(i);
+    if (obstacles.some(obstacle => boxesMeet(box, obstacle))) return;
+    if (!kept.some(k => boxesMeet(box, candidates[k]))) kept.push(i);
   });
   return kept;
+}
+
+/** A period band's name as drawn: its text, cut to the band, and its box in canvas px. */
+export interface CcPeriodLabel {
+  text: string;
+  box: CcLabelBox;
+}
+
+/** The period names' text size, and their inset from the band's sides and the plot's top or bottom, in px. */
+export const CC_PERIOD_LABEL_PX = 11;
+const PERIOD_LABEL_INSET_X = 6;
+const PERIOD_LABEL_INSET_Y = 4;
+/** How near a point may come to a period name, in px: about a point's radius. */
+const PERIOD_LABEL_POINT_CLEARANCE = 5;
+
+/** `text` whole while it fits `width`, else cut with an ellipsis; empty when not even one letter does. */
+function fitMeasured(text: string, width: number, measure: (text: string) => number): string {
+  if (!(width > 0)) return '';
+  if (measure(text) <= width) return text;
+  let end = text.length;
+  while (end > 0 && measure(`${text.slice(0, end).trimEnd()}…`) > width) end--;
+  return end > 0 ? `${text.slice(0, end).trimEnd()}…` : '';
+}
+
+/**
+ * Where a period band's name goes, inside the band (`left`–`right`, clipped to the plot `area`): its
+ * top left, top right, bottom left or bottom right corner, the first that meets no obstacle (a marker
+ * tag) and covers no point; failing that, the first that meets no obstacle; failing that, the bottom
+ * left. The whole name while the band has room for it, else cut with an ellipsis; null when not even
+ * a letter fits. The point labels are then kept clear of it.
+ */
+export function ccPeriodLabelPlacement(
+  name: string,
+  measure: (text: string) => number,
+  band: { left: number; right: number },
+  area: CcLabelBox,
+  obstacles: readonly CcLabelBox[] = [],
+  points: readonly { x: number; y: number }[] = [],
+  sizePx: number = CC_PERIOD_LABEL_PX
+): CcPeriodLabel | null {
+  const text = fitMeasured(name, band.right - band.left - 2 * PERIOD_LABEL_INSET_X, measure);
+  if (!text) return null;
+  const width = measure(text);
+  const lefts = [band.left + PERIOD_LABEL_INSET_X, band.right - PERIOD_LABEL_INSET_X - width];
+  const tops = [area.top + PERIOD_LABEL_INSET_Y, area.bottom - PERIOD_LABEL_INSET_Y - sizePx];
+  const corners: CcLabelBox[] = [
+    [lefts[0], tops[0]], [lefts[1], tops[0]], [lefts[0], tops[1]], [lefts[1], tops[1]]
+  ].map(([left, top]) => ({ left, top, right: left + width, bottom: top + sizePx }));
+  const covers = (box: CcLabelBox, point: { x: number; y: number }) =>
+    point.x >= box.left - PERIOD_LABEL_POINT_CLEARANCE && point.x <= box.right + PERIOD_LABEL_POINT_CLEARANCE
+    && point.y >= box.top - PERIOD_LABEL_POINT_CLEARANCE && point.y <= box.bottom + PERIOD_LABEL_POINT_CLEARANCE;
+  const clear = corners.filter(box => !obstacles.some(obstacle => boxesMeet(box, obstacle)));
+  const box = clear.find(candidate => !points.some(point => covers(candidate, point))) ?? clear[0] ?? corners[2];
+  return { text, box };
 }
 
 interface PointLabel {
@@ -987,10 +1078,14 @@ interface PointLabel {
   muted: boolean;
 }
 
+/** The gap between a whisker's cap and the point label beyond it, in px. */
+const WHISKER_LABEL_GAP_PX = 3;
+
 /**
  * Each set's labels, ordered by priority: per set its latest, highest and lowest point, then every
- * other point left to right. A label sits above its point (below for a `below` set), and on the other
- * side where it would cross the plot's edge; it is kept inside the canvas horizontally.
+ * other point left to right. A label sits above its point (below for a `below` set), beyond the cap of
+ * the point's whisker where it has one, and on the other side where it would cross the plot's edge;
+ * it is kept inside the canvas horizontally.
  */
 function pointLabelCandidates(
   chart: Chart<'line'>,
@@ -1001,6 +1096,7 @@ function pointLabelCandidates(
   const { sizePx, offsetPx } = font;
   const area = chart.chartArea;
   const ctx = chart.ctx;
+  const yScale = chart.scales['y'];
   const first: PointLabel[] = [];
   const rest: PointLabel[] = [];
   for (const set of sets) {
@@ -1014,8 +1110,11 @@ function pointLabelCandidates(
       const text = set.format(point.y);
       const width = ctx.measureText(text).width;
       const left = Math.min(Math.max(element.x - width / 2, 1), chart.width - width - 1);
-      const aboveTop = element.y - offsetPx - sizePx;
-      const belowTop = element.y + offsetPx;
+      const reach = yScale ? set.reach?.(point) ?? null : null;
+      const capAbove = reach ? yScale!.getPixelForValue(reach.high) - WHISKER_LABEL_GAP_PX : Number.POSITIVE_INFINITY;
+      const capBelow = reach ? yScale!.getPixelForValue(reach.low) + WHISKER_LABEL_GAP_PX : Number.NEGATIVE_INFINITY;
+      const aboveTop = Math.min(element.y - offsetPx, capAbove) - sizePx;
+      const belowTop = Math.max(element.y + offsetPx, capBelow);
       let top = set.below ? belowTop : aboveTop;
       if (!set.below && aboveTop < area.top) top = belowTop;
       if (set.below && belowTop + sizePx > area.bottom) top = aboveTop;
@@ -1035,20 +1134,21 @@ function pointLabelCandidates(
   return [...first, ...rest.sort((a, b) => a.x - b.x)];
 }
 
-/** The kept point labels, each over a halo of the background so it reads across lines and fills. */
+/** The kept point labels, each over a halo of the background so it reads across lines and fills, clear of `obstacles`. */
 function drawPointLabels(
   chart: Chart<'line'>,
   sets: readonly CcPointLabelSet[],
   theme: CcChartTheme,
   notAnalyzed: ReadonlyMap<number, string> | null,
-  font: CcPointLabelFont
+  font: CcPointLabelFont,
+  obstacles: readonly CcLabelBox[] = []
 ): void {
   if (sets.length === 0) return;
   const ctx = chart.ctx;
   ctx.save();
   ctx.font = `${font.weight} ${font.sizePx}px ${theme.fontFamily}`;
   const candidates = pointLabelCandidates(chart, sets, notAnalyzed, font);
-  const kept = ccPlaceLabels(candidates.map(label => label.box), { left: 0, top: 0, right: chart.width, bottom: chart.height });
+  const kept = ccPlaceLabels(candidates.map(label => label.box), { left: 0, top: 0, right: chart.width, bottom: chart.height }, obstacles);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.lineJoin = 'round';
@@ -1071,8 +1171,11 @@ function withAlpha(color: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/** The drawn, non-skipped point elements of a dataset, split where a null leaves a gap. */
-function lineRuns(chart: Chart<'line'>, datasetIndex: number): { x: number; y: number }[][] {
+/**
+ * The drawn, non-skipped point elements of a dataset, split where a null leaves a gap and, with
+ * `breakPx`, between the points on either side of it.
+ */
+function lineRuns(chart: Chart<'line'>, datasetIndex: number, breakPx: number | null = null): { x: number; y: number }[][] {
   const meta = chart.getDatasetMeta(datasetIndex);
   if (!meta || meta.hidden) return [];
   const runs: { x: number; y: number }[][] = [];
@@ -1082,6 +1185,11 @@ function lineRuns(chart: Chart<'line'>, datasetIndex: number): { x: number; y: n
       if (current.length > 0) runs.push(current);
       current = [];
     } else {
+      const previous = current[current.length - 1];
+      if (previous && breakPx !== null && (previous.x < breakPx) !== (element.x < breakPx)) {
+        runs.push(current);
+        current = [];
+      }
       current.push({ x: element.x, y: element.y });
     }
   }
@@ -1089,16 +1197,31 @@ function lineRuns(chart: Chart<'line'>, datasetIndex: number): { x: number; y: n
   return runs;
 }
 
+/** The drawn, non-skipped point elements of every visible dataset, in canvas px. */
+function drawnPoints(chart: Chart<'line'>): { x: number; y: number }[] {
+  const points: { x: number; y: number }[] = [];
+  chart.data.datasets.forEach((_, index) => {
+    const meta = chart.getDatasetMeta(index);
+    if (!meta || meta.hidden || !chart.isDatasetVisible(index)) return;
+    for (const element of meta.data as unknown as { x: number; y: number; skip?: boolean }[]) {
+      if (!element.skip && Number.isFinite(element.x) && Number.isFinite(element.y)) points.push({ x: element.x, y: element.y });
+    }
+  });
+  return points;
+}
+
 /**
  * Draws the header band, the period bands and the area wash under the datasets, and the plot frame,
- * the markers and the point labels over them: a vertical line per marker and its tag in a small box
- * above the plot, the line dashed for an event, dotted for an annotation and dash-dotted for a
- * served-model change, its tag box filled for an event and outlined otherwise, so the kinds differ by
- * shape, not by color.
+ * the markers, the period names and the point labels over them: a vertical line per marker and its
+ * tag in a small box above the plot, the line dashed for an event, dotted for an annotation and
+ * dash-dotted for a served-model change, its tag box filled for an event and outlined otherwise, so
+ * the kinds differ by shape, not by color.
  *
  * The tags sit in a band of up to `CC_TAG_MAX_ROWS` rows between the legend and the plot, laid out
  * by `ccTagRows`; the band is sized from the markers within `range` (the x axis's bounds when null)
- * before drawing, so a crowded day never covers the data. Each line starts under its own tag.
+ * before drawing, so a crowded day never covers the data. Each line starts under its own tag. Each
+ * period's name takes a corner of its band clear of the tags (`ccPeriodLabelPlacement`), and the
+ * point labels keep clear of the names.
  */
 export function ccOverlayPlugin(
   markers: readonly CcChartMarker[],
@@ -1149,11 +1272,6 @@ export function ccOverlayPlugin(
         if (right <= left) continue;
         ctx.fillStyle = band.name === 'Baseline' ? theme.baselineBand : theme.comparisonBand;
         ctx.fillRect(left, area.top, right - left, area.bottom - area.top);
-        ctx.fillStyle = theme.muted;
-        ctx.font = `11px ${theme.fontFamily}`;
-        ctx.textBaseline = 'top';
-        ctx.textAlign = 'left';
-        ctx.fillText(band.name, left + 6, area.top + 4);
       }
       const wash = decor.wash;
       if (wash) {
@@ -1161,7 +1279,8 @@ export function ccOverlayPlugin(
         gradient.addColorStop(0, withAlpha(wash.color, 0.14));
         gradient.addColorStop(1, withAlpha(wash.color, 0));
         ctx.fillStyle = gradient;
-        for (const run of lineRuns(chart, wash.datasetIndex).filter(points => points.length > 1)) {
+        const breakPx = typeof decor.breakAt === 'number' ? x.getPixelForValue(decor.breakAt) : null;
+        for (const run of lineRuns(chart, wash.datasetIndex, breakPx).filter(points => points.length > 1)) {
           ctx.beginPath();
           ctx.moveTo(run[0].x, area.bottom);
           for (const point of run) ctx.lineTo(point.x, point.y);
@@ -1210,6 +1329,7 @@ export function ccOverlayPlugin(
       });
       ctx.setLineDash([]);
       ctx.lineWidth = 1;
+      const tagBoxes: CcLabelBox[] = [];
       placed.forEach(({ marker, px, width }, i) => {
         const top = tagTop(row[i]);
         const filled = marker.kind === 'event';
@@ -1219,9 +1339,112 @@ export function ccOverlayPlugin(
         ctx.strokeRect(px - width / 2, top, width, boxHeight);
         ctx.fillStyle = filled ? theme.background ?? theme.surface : color[marker.kind];
         ctx.fillText(marker.tag, px, top + boxHeight / 2);
+        tagBoxes.push({ left: px - width / 2, top, right: px + width / 2, bottom: top + boxHeight });
       });
       ctx.restore();
-      drawPointLabels(chart, decor.pointLabels ?? [], theme, decor.notAnalyzed ?? null, decor.labelFont ?? ccPointLabelFont());
+      const periodBoxes = drawPeriodLabels(chart, bands, theme, tagBoxes);
+      drawPointLabels(chart, decor.pointLabels ?? [], theme, decor.notAnalyzed ?? null, decor.labelFont ?? ccPointLabelFont(), periodBoxes);
+    }
+  };
+}
+
+/**
+ * Writes each period band's name where `ccPeriodLabelPlacement` puts it, over a halo of the background,
+ * and returns the boxes written, for the point labels to keep clear of.
+ */
+function drawPeriodLabels(
+  chart: Chart<'line'>,
+  bands: readonly CcPeriodBand[],
+  theme: CcChartTheme,
+  tagBoxes: readonly CcLabelBox[]
+): CcLabelBox[] {
+  const x = chart.scales['x'];
+  const area = chart.chartArea;
+  if (!x || !area || bands.length === 0) return [];
+  const { ctx } = chart;
+  ctx.save();
+  ctx.font = `${CC_PERIOD_LABEL_PX}px ${theme.fontFamily}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = theme.background ?? theme.surface;
+  ctx.fillStyle = theme.muted;
+  const points = drawnPoints(chart);
+  const plot: CcLabelBox = { left: area.left, top: area.top, right: area.right, bottom: area.bottom };
+  const written: CcLabelBox[] = [];
+  for (const band of bands) {
+    const left = Math.max(area.left, x.getPixelForValue(band.start));
+    const right = Math.min(area.right, x.getPixelForValue(band.end));
+    if (right <= left) continue;
+    const label = ccPeriodLabelPlacement(band.name, text => ctx.measureText(text).width, { left, right }, plot,
+      [...tagBoxes, ...written], points);
+    if (!label) continue;
+    ctx.strokeText(label.text, label.box.left, label.box.top);
+    ctx.fillText(label.text, label.box.left, label.box.top);
+    written.push(label.box);
+  }
+  ctx.restore();
+  return written;
+}
+
+/** A battery run's 95 % interval of its Overall Index, drawn as a whisker at its point. */
+export interface CcWhisker {
+  /** The point's time, epoch ms. */
+  x: number;
+  low: number;
+  high: number;
+  runId: number;
+  /** The series the whisker belongs to; drawn only while that series is. */
+  seriesId: string;
+}
+
+/** A whisker's stroke and its caps' half width in px, and its opacity against the series color. */
+const WHISKER_LINE_PX = 1.5;
+const WHISKER_CAP_PX = 4;
+const WHISKER_ALPHA = 0.55;
+
+/**
+ * Draws a vertical whisker with caps from `low` to `high` at each point of `whiskers`, in `color` at
+ * reduced opacity (`muted` for a point not in the analysis), under the datasets and clipped to the
+ * plot. Registered after `ccOverlayPlugin`, so the whiskers lie over the period bands.
+ */
+export function ccWhiskerPlugin(
+  whiskers: readonly CcWhisker[],
+  color: string,
+  muted: string,
+  notAnalyzed: ReadonlyMap<number, string> | null = null
+): Plugin<'line'> {
+  return {
+    id: 'ccWhiskers',
+    beforeDatasetsDraw(chart) {
+      const x = chart.scales['x'];
+      const y = chart.scales['y'];
+      const area = chart.chartArea;
+      if (!x || !y || !area) return;
+      const clamp = (value: number) => Math.min(area.bottom, Math.max(area.top, value));
+      const { ctx } = chart;
+      ctx.save();
+      ctx.lineWidth = WHISKER_LINE_PX;
+      ctx.setLineDash([]);
+      ctx.lineCap = 'butt';
+      for (const whisker of whiskers) {
+        const px = x.getPixelForValue(whisker.x);
+        if (!Number.isFinite(px) || px < area.left || px > area.right) continue;
+        const top = clamp(y.getPixelForValue(whisker.high));
+        const bottom = clamp(y.getPixelForValue(whisker.low));
+        if (!Number.isFinite(top) || !Number.isFinite(bottom)) continue;
+        ctx.strokeStyle = withAlpha(notAnalyzed?.has(whisker.runId) ? muted : color, WHISKER_ALPHA);
+        ctx.beginPath();
+        ctx.moveTo(px, top);
+        ctx.lineTo(px, bottom);
+        ctx.moveTo(px - WHISKER_CAP_PX, top);
+        ctx.lineTo(px + WHISKER_CAP_PX, top);
+        ctx.moveTo(px - WHISKER_CAP_PX, bottom);
+        ctx.lineTo(px + WHISKER_CAP_PX, bottom);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
   };
 }
@@ -1479,7 +1702,7 @@ function chartOptions(
         type: 'linear',
         ...(range ? { min: range.min, max: range.max } : {}),
         afterBuildTicks: (scale: Scale) => {
-          const ticks = ccTimeTicks(scale.min, scale.max, maxTicksFor(scale.width));
+          const ticks = ccAxisTimeTicks(scale.min, scale.max, scale.width);
           if (ticks.values.length > 0) scale.ticks = ticks.values.map(value => ({ value }));
         },
         ticks: {
@@ -1487,8 +1710,10 @@ function chartOptions(
           autoSkip: false,
           maxRotation: 0,
           callback(this: Scale, value: string | number, index: number, ticks: Tick[]) {
-            const step = ticks.length > 1 ? ticks[1].value - ticks[0].value : 0;
-            return ccTimeTickLabel(Number(value), index > 0 ? ticks[index - 1].value : null, step, this.max - this.min);
+            const span = this.max - this.min;
+            // A lone tick of a short range is still an hour.
+            const step = ticks.length > 1 ? ticks[1].value - ticks[0].value : span < CC_HOUR_TICKS_SPAN_MS ? HOUR_MS : 0;
+            return ccTimeTickLabel(Number(value), index > 0 ? ticks[index - 1].value : null, step, span);
           }
         },
         grid: { display: false },
@@ -1597,9 +1822,23 @@ function pointLook(spec: DatasetSpec, theme: CcChartTheme, draw: DatasetLook): P
   };
 }
 
-function dataset(spec: DatasetSpec, theme: CcChartTheme, draw: DatasetLook): CcChartDataset {
+/** A segment's line where it crosses the break between the periods: none. */
+const NO_LINE = 'rgba(0, 0, 0, 0)';
+
+/** The segment from point `p0DataIndex` to `p1DataIndex` of `data` crosses `breakAt`. */
+function crossesBreak(data: readonly CcChartPoint[], ctx: ScriptableLineSegmentContext, breakAt: number | null): boolean {
+  if (breakAt === null) return false;
+  const from = data[ctx.p0DataIndex];
+  const to = data[ctx.p1DataIndex];
+  return from !== undefined && to !== undefined && (from.x < breakAt) !== (to.x < breakAt);
+}
+
+function dataset(spec: DatasetSpec, theme: CcChartTheme, draw: DatasetLook, breakAt: number | null = null): CcChartDataset {
   const resting = pointLook(spec, theme, draw);
   return {
+    ...(breakAt === null ? {} : {
+      segment: { borderColor: (ctx: ScriptableLineSegmentContext) => crossesBreak(spec.data, ctx, breakAt) ? NO_LINE : undefined }
+    }),
     seriesId: spec.id,
     label: spec.label,
     data: spec.data,
@@ -1622,13 +1861,15 @@ function dataset(spec: DatasetSpec, theme: CcChartTheme, draw: DatasetLook): CcC
 /**
  * `dataset` with each point of `notAnalyzed` drawn as a gray, unfilled, rotated cross, and each
  * segment touching one gray and dotted; the other points keep the dataset's own look, and the other
- * segments its line. Without hover, a point keeps its resting radius under the pointer.
+ * segments its line. Without hover, a point keeps its resting radius under the pointer. A segment
+ * across `breakAt` is not drawn.
  */
 function markedDataset(
   spec: DatasetSpec,
   theme: CcChartTheme,
   notAnalyzed: ReadonlyMap<number, string>,
-  draw: DatasetLook
+  draw: DatasetLook,
+  breakAt: number | null = null
 ): CcChartDataset {
   const look = pointLook(spec, theme, draw);
   const crossRadius = scaledRadius(CROSS_RADIUS_PX, draw.style);
@@ -1646,7 +1887,8 @@ function markedDataset(
     pointRadius,
     ...(draw.hover ? {} : { pointHoverRadius: pointRadius }),
     segment: {
-      borderColor: (ctx: ScriptableLineSegmentContext) => segmentAt(ctx) ? theme.muted : undefined,
+      borderColor: (ctx: ScriptableLineSegmentContext) =>
+        crossesBreak(spec.data, ctx, breakAt) ? NO_LINE : segmentAt(ctx) ? theme.muted : undefined,
       borderDash: (ctx: ScriptableLineSegmentContext) => segmentAt(ctx) ? [2, 3] : undefined
     }
   };
@@ -1661,8 +1903,27 @@ function notAnalyzedOf(input: CcFigureInput): ReadonlyMap<number, string> | null
 interface ConfigStyle {
   /** The value at every point of each drawn dataset, while at most two are drawn. */
   pointLabels?: boolean;
-  /** The area under a lone, solid dataset washed with its color. */
+  /** The area under a lone, solid dataset washed with its color, while its value axis starts at zero. */
   wash?: boolean;
+  /** Where the lines break between the periods (`ccPeriodBreak`); none when null or absent. */
+  breakAt?: number | null;
+  /** Interval whiskers, drawn for the series drawn and taken into the value axis. */
+  whiskers?: readonly CcWhisker[];
+}
+
+/**
+ * Where a figure's lines break between the periods: the comparison's start, while the analysis could
+ * not compute the figure's endpoint because the measurement changed between the periods or they
+ * share no time-of-week stratum, and its period bands are drawn. Null otherwise, and for an analysis
+ * saved before the reason was recorded, whose lines join as before.
+ */
+export function ccPeriodBreak(key: CcFigureKey, input: CcFigureInput): number | null {
+  const id = CC_FIGURE_ENDPOINTS[key];
+  const endpoint = id ? input.endpoints?.find(entry => entry.id === id) : undefined;
+  if (!endpoint || endpoint.computed) return null;
+  if (endpoint.notComputedKind !== 'measurementChanged' && endpoint.notComputedKind !== 'noCommonStratum') return null;
+  const comparison = input.bands?.find(band => band.name === 'Comparison');
+  return comparison && Number.isFinite(comparison.start) ? comparison.start : null;
 }
 
 /** About 6.5 px a character for the 600-weight, 11 px point labels; in proportion at other sizes. */
@@ -1687,32 +1948,56 @@ function config(
   const notAnalyzed = notAnalyzedOf(input);
   const marks = notAnalyzed ? { notAnalyzed, looks: drawn.map(spec => pointLook(spec, theme, draw)) } : null;
 
+  const breakAt = style.breakAt ?? null;
+  const whiskers = (style.whiskers ?? []).filter(whisker => drawn.some(spec => spec.id === whisker.seriesId));
+  const reachOf = (spec: DatasetSpec) => {
+    const own = whiskers.filter(whisker => whisker.seriesId === spec.id);
+    return own.length === 0
+      ? undefined
+      : (point: CcChartPoint) => own.find(whisker => whisker.runId === point.runId && whisker.x === point.x) ?? null;
+  };
+
   const formatOf = (spec: DatasetSpec) => spec.format ?? y.format;
   const pointLabels: CcPointLabelSet[] = style.pointLabels && chartStyle.valueLabels && drawn.length <= 2
-    ? drawn.map((spec, datasetIndex) => ({ datasetIndex, format: formatOf(spec), below: datasetIndex === 1 }))
+    ? drawn.map((spec, datasetIndex) => {
+      const reach = reachOf(spec);
+      return { datasetIndex, format: formatOf(spec), below: datasetIndex === 1, ...(reach ? { reach } : {}) };
+    })
     : [];
   // Room for half the widest point label, centered on the last point, and a 4 px margin.
   const charPx = POINT_LABEL_CHAR_PX * chartStyle.valueLabelSizePx / POINT_LABEL_CHAR_SIZE_PX;
   const widest = Math.max(0, ...pointLabels.flatMap((set, i) =>
     valuesOf(drawn[i].data).map(value => set.format(value).length)));
   const paddingRight = Math.max(8, widest > 0 ? Math.ceil(widest * charPx / 2) + 4 : 0);
-  const wash = style.wash && chartStyle.areaWash && drawn.length === 1 && !drawn[0].hollow
+  // The bounds follow the drawn series and their whiskers, as the time range does.
+  const yAxis = y.policy
+    ? ccValueAxis([...drawn.flatMap(spec => valuesOf(spec.data)), ...whiskers.flatMap(whisker => [whisker.low, whisker.high])], y.policy)
+    : null;
+  // A wash fills down to the axis's foot, so it only reads as an amount where that foot is zero.
+  const wash = style.wash && chartStyle.areaWash && drawn.length === 1 && !drawn[0].hollow && yAxis !== null && yAxis.min === 0
     ? { datasetIndex: 0, color: drawn[0].color }
     : null;
-  // The bounds follow the drawn series, as the time range does.
-  const yAxis = y.policy ? ccValueAxis(drawn.flatMap(spec => valuesOf(spec.data)), y.policy) : null;
 
   const series = new Map(drawn.map(spec => [spec.id, { name: seriesShortLabel(spec.id), format: formatOf(spec) }]));
+  const plugins: Plugin<'line'>[] = [ccOverlayPlugin(markers, bands, theme, range, {
+    header: options.header ?? null, logo: options.logo ?? null, wash, breakAt, pointLabels, notAnalyzed,
+    labelFont: ccPointLabelFont(chartStyle), tagSizePx: chartStyle.markerTagSizePx, frame: chartStyle.plotFrame
+  })];
+  if (whiskers.length > 0) {
+    const color = drawn.find(spec => spec.id === whiskers[0].seriesId)?.color ?? theme.series[0];
+    plugins.push(ccWhiskerPlugin(whiskers, color, theme.muted, notAnalyzed));
+  }
   return {
     type: 'line',
-    data: { datasets: drawn.map(spec => notAnalyzed ? markedDataset(spec, theme, notAnalyzed, draw) : dataset(spec, theme, draw)) },
+    data: {
+      datasets: drawn.map(spec => notAnalyzed
+        ? markedDataset(spec, theme, notAnalyzed, draw, breakAt)
+        : dataset(spec, theme, draw, breakAt))
+    },
     options: chartOptions(theme, options.reducedMotion ?? false, range,
       { input, series, marks, colors: drawn.length > 1 }, y, yAxis, drawn.length > 1, paddingRight,
       chartStyle, options.style ? options.style.labelWeight : null),
-    plugins: [ccOverlayPlugin(markers, bands, theme, range, {
-      header: options.header ?? null, logo: options.logo ?? null, wash, pointLabels, notAnalyzed,
-      labelFont: ccPointLabelFont(chartStyle), tagSizePx: chartStyle.markerTagSizePx, frame: chartStyle.plotFrame
-    })]
+    plugins
   };
 }
 
@@ -1799,7 +2084,9 @@ function markersOf(points: readonly CcTimelinePoint[], input: CcFigureInput): Cc
 }
 
 function eventContextOf(input: CcFigureInput): CcEventContext {
-  return { harnessPoints: input.harnessPoints, numbering: input.eventNumbering };
+  return input.eventGroups
+    ? { groups: input.eventGroups }
+    : { harnessPoints: input.harnessPoints, numbering: input.eventNumbering };
 }
 
 /** `Intelligence per run.` or `Intelligence per battery run.`, the alt text's lead. */
@@ -1811,6 +2098,52 @@ function altLead(what: string, input: CcFigureInput): string {
 function noteReason(note: string): string {
   const sentence = note.split('. ')[0].replace(/\.$/, '').trim();
   return sentence.charAt(0).toLowerCase() + sentence.slice(1);
+}
+
+// --- Interval whiskers ---
+
+/** The data table's column of a battery run's 95 % interval. */
+export const CC_INTERVAL_COLUMN = '95 % interval';
+
+/** The interval cell of a point without one. */
+const NO_INTERVAL = '—';
+
+/** The interval note the server gives a half-width resting on one round. */
+const QUESTION_SAMPLING_ONLY = 'question sampling only';
+
+/** `79.6–84.5`: both ends to one decimal, joined by an en dash. */
+export function ccIntervalText(low: number, high: number): string {
+  return `${formatFixed(low, 1)}–${formatFixed(high, 1)}`;
+}
+
+/** The half-width of a battery point's Overall Index; null without a positive one. */
+function overallIndexHalfWidth(point: CcTimelinePoint): number | null {
+  const battery = batteryPointOf(point);
+  const half = battery ? ccNumber(battery.overallIndexHalfWidth ?? null) : null;
+  return half !== null && Number.isFinite(half) && half > 0 ? half : null;
+}
+
+/** A whisker per battery point with an Overall Index and its half-width, in `points` order. */
+function overallIndexWhiskers(points: readonly CcTimelinePoint[], primary: readonly CcChartPoint[], seriesId: string): CcWhisker[] {
+  return points.flatMap((point, i) => {
+    const index = primary[i].y;
+    const half = overallIndexHalfWidth(point);
+    return index === null || half === null ? [] : [{ x: primary[i].x, low: index - half, high: index + half, runId: point.runId, seriesId }];
+  });
+}
+
+/**
+ * The takeaway's sentence on the whiskers. *(question sampling only)* is added when every whiskered
+ * point's interval rests on question sampling alone, so the words never claim it of an interval that
+ * does not.
+ */
+function whiskerSentence(points: readonly CcTimelinePoint[], whiskers: readonly CcWhisker[]): string {
+  const ids = new Set(whiskers.map(whisker => whisker.runId));
+  const samplingOnly = points
+    .filter(point => ids.has(point.runId))
+    .every(point => batteryPointOf(point)?.overallIndexIntervalNote?.trim().toLowerCase() === QUESTION_SAMPLING_ONLY);
+  return `Bars show each battery run's 95 % interval for its own Overall Index${samplingOnly ? ' (question sampling only)' : ''}; `
+    + 'they are not the interval of the change between the periods.';
 }
 
 // --- The figures ---
@@ -1865,11 +2198,16 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
   if (grader && primaryValues.length > 0 && commonValues.length > 0) {
     takeaway += ` ${plural(commonValues.length, noun)} also ${commonValues.length === 1 ? 'has' : 'have'} a common-grader figure.`;
   }
+  // A battery run's 95 % interval of its own Overall Index, where its battery analysis gives one.
+  const whiskers = battery ? overallIndexWhiskers(points, primary, primaryId) : [];
+  if (whiskers.length > 0) takeaway += ` ${whiskerSentence(points, whiskers)}`;
   takeaway += notAnalyzedNote(input, [primary, common]);
 
   const datasets: DatasetSpec[] = [seriesSpec('quality', primaryId, primary, theme.series[0], { format: primaryFormat })];
   if (grader) datasets.push(seriesSpec('quality', 'quality.common', common, theme.series[1], { label: commonLabel, format: commonFormat }));
   const columns = [...leadColumns(input), battery ? 'Overall Intelligence Index' : 'Intelligence Index (native)'];
+  // The interval column only while a point has an interval, so a figure without one keeps its table.
+  if (whiskers.length > 0) columns.push(CC_INTERVAL_COLUMN);
   if (grader) columns.push(`Common grader (${grader.display})`);
   if (battery) columns.push('Note');
   return {
@@ -1879,11 +2217,15 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
     altText: `${altLead('Intelligence', input)} ${takeaway}`,
     config: config(datasets, input, markers, options,
       { title: 'Intelligence (0–100)', tick: numberTick, format: primaryFormat, policy: intelligencePolicy(options.zeroBaseline ?? false) },
-      { pointLabels: true, wash: true }),
+      { pointLabels: true, wash: true, breakAt: ccPeriodBreak('quality', input), whiskers }),
     table: finishTable({
       columns,
       rows: points.map((point, i) => {
         const cells = [primaryFormat(primary[i].y)];
+        if (whiskers.length > 0) {
+          const whisker = whiskers.find(entry => entry.runId === point.runId);
+          cells.push(whisker ? ccIntervalText(whisker.low, whisker.high) : NO_INTERVAL);
+        }
         if (grader) cells.push(commonFormat(common[i].y));
         if (battery) cells.push(batteryPointOf(point)?.overallIndexNote ?? '');
         return row(point, ...cells);
@@ -1932,7 +2274,7 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
       seriesSpec('ttfat', 'ttfat.telemetry', telemetry, theme.series[1]),
       seriesSpec('ttfat', 'ttfat.proxy', proxy, theme.series[2], { hollow: true })
     ], input, markers, options, { title: 'Median time', tick: msTick, format: ms, policy: ratioPolicy(1000) },
-    { pointLabels: true, wash: true }),
+    { pointLabels: true, wash: true, breakAt: ccPeriodBreak('ttfat', input) }),
     table: finishTable({
       columns: [...leadColumns(input), 'Time to first answer text', 'Legacy proxy', 'Measure'],
       rows: points.map((point, i) => row(point, ms(telemetry[i].y), ms(proxy[i].y),
@@ -1974,7 +2316,7 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
       seriesSpec('rate', 'rate.measured', measured, theme.series[3]),
       seriesSpec('rate', 'rate.estimated', estimated, theme.series[3], { hollow: true })
     ], input, markers, options, { title: 'Tokens per second', tick: numberTick, format: rate, policy: ratioPolicy(10) },
-    { pointLabels: true, wash: true }),
+    { pointLabels: true, wash: true, breakAt: ccPeriodBreak('rate', input) }),
     table: finishTable({
       columns: [...leadColumns(input), 'Streaming rate', 'Estimated'],
       rows: points.map(point => row(point, rate(point.medianStreamingRate), point.streamingRateEstimated ? 'Yes' : 'No'))
@@ -1983,7 +2325,14 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
   };
 }
 
-/** Output tokens per answer. */
+/** What the work figure's points are next to the analysis's P4, which pairs the same questions. */
+export const CC_WORK_ENDPOINT_NOTE =
+  'The endpoint compares the same questions in both periods, so its estimate can differ from these points.';
+
+/**
+ * Work per turn: each point's mean output tokens over its delivered answers. Shown with an analysis,
+ * the caption adds that the endpoint pairs the same questions, so the points are not its estimate.
+ */
 export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
   const points = sortedPoints(input.points);
@@ -1997,18 +2346,22 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
   if (values.length === 0) {
     takeaway = `No ${noun} in this range has an output-token figure.`;
   } else if (values.length === 1) {
-    takeaway = `Output tokens per answer were ${format(values[0])} in the one ${noun} of this range.`;
+    takeaway = `Mean output tokens per answer were ${format(values[0])} in the one ${noun} of this range.`;
   } else {
-    takeaway = `Output tokens per answer ${spanPhrase(values, format, noun, 'were')}.`;
+    takeaway = `Mean output tokens per answer ${spanPhrase(values, format, noun, 'were')}.`;
+  }
+  if (values.length > 0 && ((input.endpoints?.length ?? 0) > 0 || (input.bands?.length ?? 0) > 0)) {
+    takeaway += ` ${CC_WORK_ENDPOINT_NOTE}`;
   }
   takeaway += notAnalyzedNote(input, [tokens]);
   return {
     key: 'work',
     title: ccFigureTitle('work'),
     takeaway,
-    altText: `${altLead('Output tokens per answer', input)} ${takeaway}`,
+    altText: `${altLead('Mean output tokens per answer', input)} ${takeaway}`,
     config: config([seriesSpec('work', 'work.tokens', tokens, theme.series[4])], input, markers, options,
-      { title: 'Output tokens', tick: integerTick, format, policy: ratioPolicy(100) }, { pointLabels: true, wash: true }),
+      { title: 'Output tokens', tick: integerTick, format, policy: ratioPolicy(100) },
+      { pointLabels: true, wash: true, breakAt: ccPeriodBreak('work', input) }),
     table: finishTable({
       columns: [...leadColumns(input), 'Output tokens per answer'],
       rows: points.map((point, i) => row(point, format(tokens[i].y)))
@@ -2076,7 +2429,8 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
     takeaway,
     altText: `${altLead('Cost per question', input)} ${takeaway}`,
     config: config([seriesSpec('cost', 'cost.cost', cost, theme.series[5])], input, markers, options,
-      { title: 'USD per question', tick: usdTick, format: usd, policy: ratioPolicy(0.01) }, { pointLabels: true, wash: true }),
+      { title: 'USD per question', tick: usdTick, format: usd, policy: ratioPolicy(0.01) },
+      { pointLabels: true, wash: true, breakAt: ccPeriodBreak('cost', input) }),
     table: finishTable({
       columns: [...leadColumns(input), 'Cost per question'],
       rows: points.map((point, i) => row(point, usd(cost[i].y)))

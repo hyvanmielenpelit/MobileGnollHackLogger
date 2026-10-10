@@ -71,9 +71,10 @@ import {
   storeCcReportChartSettings
 } from '../chat-consistency-report-chart-settings';
 import { CcChartPublishResult, CcReportChartDocument, publishCcReportCharts } from '../chat-consistency-report-charts';
-import { ccModelBaseName } from '../chat-consistency-results';
+import { ccModelBaseName, ccOutOfDateReasons } from '../chat-consistency-results';
 import {
   CC_REPORT_AUDIENCES,
+  CcAnalysisFreshness,
   CcAnalysisResult,
   CcBatteryTimelinePoint,
   CcReportEstimate,
@@ -92,6 +93,7 @@ import {
   ccReportJobStats,
   ccReportJobSummary
 } from './cc-report-job-view';
+import { CcFreshnessNoticeComponent } from './freshness-notice/freshness-notice.component';
 
 /** The report job's poll interval, and the longest pause the back-off grows to. */
 export const CC_REPORT_POLL_MS = 3000;
@@ -166,6 +168,11 @@ function writeStoredSidebarWidth(width: number): void {
   }
 }
 
+/** The 409 body of a write refused because the analysis is out of date: `{ error, outOfDate: true }`. */
+function isOutOfDateRefusal(body: unknown): boolean {
+  return !!body && typeof body === 'object' && (body as { outOfDate?: unknown }).outOfDate === true;
+}
+
 /** A stored document as the chart publisher takes it. */
 function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChartDocument {
   return { id: doc.id, audience: doc.audience, chartCount: doc.chartCount ?? 0 };
@@ -177,9 +184,9 @@ function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChart
  * with its Write checkbox) and Update charts, the charts each document type carries
  * (`app-report-chart-picker`, remembered per browser), the report writer, its estimate and Write
  * Reports; and a main area that follows the job (the stage rail, the stat strip, one row per document,
- * the log and diagnostics, Cancel), then summarizes it. The same-provider confirmation, the delete
- * confirmation and the PDF viewer are nested in the wizard's dialog and stop their own close and
- * cancel events.
+ * the log and diagnostics, Cancel), then summarizes it. The header carries the out-of-date notice of
+ * the analysis. The same-provider and out-of-date confirmations, the delete confirmation and the PDF
+ * viewer are nested in the wizard's dialog and stop their own close and cancel events.
  *
  * When a job finishes, the documents without charts get the charts chosen for their type; Update
  * charts draws them again for every written document. Both set `chartState`, which the wizard's close
@@ -191,7 +198,7 @@ function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChart
   standalone: true,
   imports: [
     RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, PdfViewerDialogComponent, CcModelBadgesComponent,
-    ReportChartPickerComponent
+    ReportChartPickerComponent, CcFreshnessNoticeComponent
   ],
   templateUrl: './reports-step.component.html',
   styleUrls: ['./reports-step.component.scss'],
@@ -221,8 +228,11 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   @Output() readonly documentsChanged = new EventEmitter<void>();
   /** Whether a job runs or charts are attached changed, for the wizard's close guard and footer. */
   @Output() readonly stateChange = new EventEmitter<void>();
+  /** *Analyze again* on the out-of-date notice: the host shows Analyze with this analysis's settings. */
+  @Output() readonly analyzeAgain = new EventEmitter<void>();
 
   @ViewChild('sameProviderDialog') sameProviderDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('outOfDateDialog') outOfDateDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('deleteDialog') deleteDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('writeButton') writeButton?: ElementRef<HTMLButtonElement>;
   @ViewChild(PdfViewerDialogComponent) pdfViewer?: PdfViewerDialogComponent;
@@ -241,6 +251,14 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   writeSubmitting = false;
   writeError: string | null = null;
   confirmText = '';
+
+  /** The shown analysis's freshness; null until its notice has read it. */
+  freshness: CcAnalysisFreshness | null = null;
+  /** The reason sentences the out-of-date confirmation shows. */
+  outOfDateReasons: string[] = [];
+  /** What the operator confirmed for the write in progress; reset on every Write Reports. */
+  private acknowledgedSameProvider = false;
+  private acknowledgedOutOfDate = false;
 
   status: BenchmarkRunReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.NotRequested;
   statusMessage: string | null = null;
@@ -263,7 +281,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   readonly chartAudienceOptions = CC_REPORT_CHART_PICKER_AUDIENCES;
   readonly chartLayoutFields = CC_REPORT_CHART_LAYOUT_FIELDS;
   readonly chartColumnReason = CC_REPORT_CHART_COLUMN_DISABLED_REASON;
-  /** The figures and layout per document type, as last stored in this browser. */
+  /** The figures and layout per document type, as last stored in this browser, else the analysis's defaults. */
   chartSettings: CcReportChartSettings = readStoredCcReportChartSettings();
   private chartEnabledKey = '';
   private chartEnabledCache: readonly BenchmarkReportAudience[] = [];
@@ -343,6 +361,8 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   ngOnChanges(changes: SimpleChanges): void {
     const change = changes['result'];
     if (change && (change.firstChange || change.previousValue?.analysisId !== this.result.analysisId)) {
+      // Without stored choices, the defaults leave out what this analysis could not compute.
+      this.chartSettings = readStoredCcReportChartSettings(this.result.endpoints);
       this.reset();
       this.resumeJob();
       this.loadDocuments();
@@ -598,23 +618,57 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
 
   // --- Writing ---
 
+  /** The freshness of the shown analysis, as its notice read it. */
+  onFreshnessChange(freshness: CcAnalysisFreshness): void {
+    if (freshness.analysisId !== this.analysisId) return;
+    this.freshness = freshness;
+  }
+
+  /**
+   * Write Reports: asks about a same-provider writer, then about an out-of-date analysis, and sends
+   * the request carrying each acknowledgment given. Every press asks again.
+   */
   requestWrite(): void {
     if (this.writeDisabled || this.writeBlockedReason !== null) return;
+    this.acknowledgedSameProvider = false;
+    this.acknowledgedOutOfDate = false;
+    this.continueWrite();
+  }
+
+  /** The next confirmation still to ask, or the request once none is left. */
+  private continueWrite(): void {
     const warning = this.writerWarning;
-    if (warning) {
+    if (warning && !this.acknowledgedSameProvider) {
       this.openConfirm(warning);
       return;
     }
-    this.sendWrite(false);
+    if (this.freshness?.outOfDate && !this.acknowledgedOutOfDate) {
+      this.openOutOfDate(ccOutOfDateReasons(this.freshness));
+      return;
+    }
+    this.sendWrite(this.acknowledgedSameProvider, this.acknowledgedOutOfDate);
   }
 
   confirmSameProvider(): void {
     this.sameProviderDialog?.nativeElement.close();
-    this.sendWrite(true);
+    this.acknowledgedSameProvider = true;
+    this.continueWrite();
   }
 
   cancelSameProvider(): void {
     this.sameProviderDialog?.nativeElement.close();
+    this.writeButton?.nativeElement.focus();
+  }
+
+  /** *Write anyway* on the out-of-date confirmation. */
+  confirmOutOfDate(): void {
+    this.outOfDateDialog?.nativeElement.close();
+    this.acknowledgedOutOfDate = true;
+    this.continueWrite();
+  }
+
+  cancelOutOfDate(): void {
+    this.outOfDateDialog?.nativeElement.close();
     this.writeButton?.nativeElement.focus();
   }
 
@@ -625,7 +679,14 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     if (dialog && !dialog.open) dialog.showModal();
   }
 
-  private sendWrite(acknowledgeSameProvider: boolean): void {
+  private openOutOfDate(reasons: string[]): void {
+    this.outOfDateReasons = reasons;
+    this.cdr.detectChanges();
+    const dialog = this.outOfDateDialog?.nativeElement;
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  private sendWrite(acknowledgeSameProvider: boolean, acknowledgeOutOfDate: boolean): void {
     const analysisId = this.analysisId;
     const writerId = this.writerId;
     if (analysisId === null || writerId === null || this.writeSubmitting) return;
@@ -639,7 +700,8 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     this.writeSub = this.service.writeReports(analysisId, {
       writerModelConfigurationId: writerId,
       audiences: this.checkedAudiences,
-      ...(acknowledgeSameProvider ? { acknowledgeSameProvider: true } : {})
+      ...(acknowledgeSameProvider ? { acknowledgeSameProvider: true } : {}),
+      ...(acknowledgeOutOfDate ? { acknowledgeOutOfDate: true } : {})
     }).subscribe({
       next: response => {
         this.writeSubmitting = false;
@@ -660,6 +722,13 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
         if (err?.status === 409 && !acknowledgeSameProvider && isReportWriterSameProviderWarning(err.error)) {
           this.cdr.markForCheck();
           this.openConfirm(reportWriterWarningText(err.error.assessorModelDisplayName, err.error.provider));
+          return;
+        }
+        if (err?.status === 409 && !acknowledgeOutOfDate && isOutOfDateRefusal(err.error)) {
+          // The freshness was not loaded yet, or changed since: the reasons it gives, else the server's text.
+          const reasons = ccOutOfDateReasons(this.freshness);
+          this.cdr.markForCheck();
+          this.openOutOfDate(reasons.length > 0 ? reasons : [ccErrorText(err, 'The analysis is out of date.')]);
           return;
         }
         this.writeError = ccErrorText(err, 'The reports could not be requested.');
@@ -1196,6 +1265,10 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     this.lastPollError = null;
     this.copyStatus = '';
     this.copyError = null;
+    this.freshness = null;
+    this.outOfDateReasons = [];
+    this.acknowledgedSameProvider = false;
+    this.acknowledgedOutOfDate = false;
     this.checked.clear();
     for (const entry of CC_REPORT_AUDIENCES) {
       if (entry.audience !== BenchmarkReportAudience.ProviderIssueReport) this.checked.add(entry.audience);

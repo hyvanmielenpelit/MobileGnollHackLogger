@@ -115,6 +115,7 @@ public static class BenchmarkReportFactLabels
         ["analysis.codeVersion"] = "Analysis code version",
         ["analysis.relaxedPooling"] = "Relaxed pooling across a measurement change",
         ["analysis.compared"] = "Compared",
+        ["analysis.writtenOutOfDate"] = "Written from an out-of-date analysis",
         ["analysis.savedAt"] = "Analysis saved",
         ["verdict.overall"] = "Overall verdict on the chat",
         ["verdict.short"] = "Outcome in short",
@@ -293,6 +294,26 @@ public static class BenchmarkReportFactLabels
         ["latest"] = "latest re-grade",
         ["drift"] = "drift",
         ["withinMargin"] = "within the margin",
+        ["tag"] = "tag",
+        ["lastAt"] = "last time",
+        ["hours"] = "hours",
+        ["notComputedKind"] = "why not computed",
+        ["batteryRun"] = "battery run",
+        ["buildReplaced"] = "build replaced",
+        ["summary"] = "summary",
+    };
+
+    /// <summary>The <c>level.&lt;period&gt;.&lt;measure&gt;</c> measures of a chat consistency sheet.</summary>
+    private static readonly IReadOnlyDictionary<string, string> LevelMeasureNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["answers"] = "answers",
+        ["quality"] = "mean quality score",
+        ["overallIndex"] = "battery Overall Index",
+        ["timeToFirstAnswerText"] = "median time to first answer text",
+        ["streamingRate"] = "median answer streaming rate",
+        ["outputTokens"] = "mean output tokens per answer",
+        ["costPerQuestion"] = "mean cost per question",
+        ["failedAnswers"] = "failed answers",
     };
 
     /// <summary>
@@ -438,6 +459,16 @@ public static class BenchmarkReportFactLabels
                     _ => string.Empty
                 };
                 break;
+
+            // level.<baseline|comparison>.<measure>
+            case "level" when parts.Length == 3 && PeriodNames.TryGetValue(parts[1], out var levelPeriod) && LevelMeasureNames.TryGetValue(parts[2], out var measure):
+                label = levelPeriod + " period level: " + measure;
+                return true;
+
+            // robustness.<check>.summary
+            case "robustness" when parts.Length == 3 && parts[2] == "summary" && parts[1].Length > 0 && !IsIndex(parts[1]):
+                label = "Robustness check " + LowerFirst(Fallback(parts[1])) + ": summary";
+                return true;
 
             // coverage.strata.<n>
             case "coverage" when parts.Length == 3 && parts[1] == "strata" && IsIndex(parts[2]):

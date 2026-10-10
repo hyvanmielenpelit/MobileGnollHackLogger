@@ -231,7 +231,8 @@ internal static class ReportPackWriterTestData
 /// annotation 1 is a provider-confirmed cause, annotation 2 a provider statement; two Overseer events
 /// with realistic raw values (the prompt options turning the game snapshot on, in the model's series,
 /// and a corpus re-index, in the control's), and one missing control whose suggestion still carries
-/// the instrument note analyses saved before code version 5 stored.
+/// the instrument note analyses saved before code version 5 stored. It is saved under the current
+/// analysis code version, with each period's hours and levels.
 /// </summary>
 internal static class ChatConsistencyReportTestData
 {
@@ -326,8 +327,8 @@ internal static class ChatConsistencyReportTestData
             new ChatConsistencyEndpointResult
             {
                 Id = "P3", Name = "Answer streaming rate", Unit = "log ratio", Scale = ChatConsistencyEffectScale.LogRatio,
-                Computed = false, NotComputedReason = "No telemetry run in the baseline.", VerdictLabel = "not computable",
-                Grade = ChatConsistencyEvidenceGrade.NotEstablished
+                Computed = false, NotComputedReason = "No telemetry run in the baseline.", NotComputedKind = ChatConsistencyNotComputedKinds.NoTelemetry,
+                VerdictLabel = "not computable", Grade = ChatConsistencyEvidenceGrade.NotEstablished
             },
             new ChatConsistencyEndpointResult
             {
@@ -419,8 +420,26 @@ internal static class ChatConsistencyReportTestData
         {
             new ChatConsistencyNextRun { Kind = "stratum", Period = "comparison", EndpointId = "P5", Reason = "The cost change is inconclusive.", Suggestion = "Repeat the comparison runs during US business hours.", RepeatRunId = 21 }
         },
+        PeriodHours = new[]
+        {
+            new ChatConsistencyPeriodHours { Period = "baseline", Strata = new[] { "Weekday 04–08 UTC", "Weekday 08–12 UTC" }, Text = "weekdays 04–12 UTC" },
+            new ChatConsistencyPeriodHours { Period = "comparison", Strata = new[] { "Weekday 04–08 UTC", "Weekday 08–12 UTC", "Weekday 12–16 UTC" }, Text = "weekdays 04–16 UTC" }
+        },
+        PeriodLevels = new[]
+        {
+            new ChatConsistencyPeriodLevels
+            {
+                Period = "baseline", AnswerCount = 40, NativeMeanQuality = 82.4, MedianTimeToFirstAnswerTextMs = 39_300, MedianStreamingRate = 61.2,
+                MeanOutputTokensPerAnswer = 9044, MeanCostPerQuestionUsd = 0.0071, FailedAnswerCount = 0
+            },
+            new ChatConsistencyPeriodLevels
+            {
+                Period = "comparison", AnswerCount = 40, NativeMeanQuality = 78.1, MedianTimeToFirstAnswerTextMs = 40_100, MedianStreamingRate = 59.8,
+                MeanOutputTokensPerAnswer = 8233, MeanCostPerQuestionUsd = 0.0066, FailedAnswerCount = 1
+            }
+        },
         InputSha256 = string.Concat(Enumerable.Repeat("0123456789abcdef", 4)),
-        AnalysisCodeVersion = 3
+        AnalysisCodeVersion = ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion
     };
 
     /// <summary>The sample request ids a Provider Issue Report's sheet states.</summary>
@@ -2582,7 +2601,7 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
         string text = "Cost per answer is {{endpoint.P5.verdict}} at {{endpoint.P5.estimate}}.";
         var notes = ValidateChatSlot(Es, BenchmarkReportSlots.PlayerImpact, text);
 
-        var note = AssertChatRule(notes, BenchmarkReportPackValidator.ChatInconclusiveMdeRule, "C5", "sections.playerImpact", "{{endpoint.P5.mde}}");
+        var note = AssertChatRule(notes, BenchmarkReportPackValidator.ChatInconclusiveMdeRule, "C5", "sections", "{{endpoint.P5.mde}}");
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
 
         var output = ChatConsistencyReportTestData.ValidOutput(Es);
@@ -2590,6 +2609,39 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
         var cleaned = BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
         Assert.Equal(text, cleaned.Output.Sections[BenchmarkReportSlots.PlayerImpact]);
         Assert.False(Assert.Single(cleaned.Notes).Dropped);
+    }
+
+    [Fact]
+    public void C5_IsSatisfied_ByTheMdeCitedOnceAnywhereInTheDocument()
+    {
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.PlayerImpact] = "Cost per answer is {{endpoint.P5.verdict}} at {{endpoint.P5.estimate}}.";
+        output.Sections[BenchmarkReportSlots.ConfidenceAndScope] = "These runs could detect only a change of {{endpoint.P5.mde}} in cost, and time of day is {{serving.timeOfDayAssessable}}.";
+
+        var notes = BenchmarkReportPackValidator.Validate(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
+
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.ChatInconclusiveMdeRule);
+    }
+
+    [Fact]
+    public void C6_DoesNotAskForTheHours_WhenThePeriodsShareNone()
+    {
+        var result = ChatConsistencyReportTestData.Result() with
+        {
+            Scope = new ChatConsistencyScope { Text = "no common time stratum" }
+        };
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, Es);
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        foreach (string slot in output.Sections.Keys.ToList())
+        {
+            output.Sections[slot] = output.Sections[slot].Replace(" within {{scope.hours}}", string.Empty, StringComparison.Ordinal);
+        }
+        output.Headline = "The Overseer chat with {{subject}} is {{verdict.overall}}.";
+
+        var notes = BenchmarkReportPackValidator.Validate(Es, output, sheet, ChatConsistencyReportTestData.Content());
+
+        Assert.False(Assert.Single(sheet.Facts, f => f.Key == "scope.hours").Available);
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.ChatHoursRule);
     }
 
     [Fact]

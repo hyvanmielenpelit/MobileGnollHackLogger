@@ -158,6 +158,10 @@ export interface CcBatteryTimelinePoint extends CcTimelinePoint {
   /** The latest current battery analysis's Overall Index; null with `overallIndexNote` saying why. */
   overallIndex: CcNumber | null;
   overallIndexNote: string | null;
+  /** The 95 % half-width of `overallIndex`; null or absent when there is none. */
+  overallIndexHalfWidth?: CcNumber | null;
+  /** `question sampling only` when the half-width rests on one round; else null. */
+  overallIndexIntervalNote?: string | null;
 }
 
 export interface CcEvent {
@@ -493,6 +497,8 @@ export interface CcEndpointResult {
   direction: string;
   computed: boolean;
   notComputedReason: string | null;
+  /** Why the endpoint was not computed; null when computed, absent before analysis code version 6. */
+  notComputedKind?: CcNotComputedKind | null;
   estimate: CcNumber | null;
   estimatePercent: CcNumber | null;
   ci95: CcInterval | null;
@@ -604,6 +610,10 @@ export interface CcMissingControl {
   fingerprint: string;
   suggestedText: string;
   targetRunId: number;
+  /** In a battery comparison, the battery run the note is about. */
+  batteryRunId?: number | null;
+  /** The target's Overseer build no longer runs, so no control run can be made under it. */
+  buildReplaced?: boolean;
 }
 
 export interface CcControlEffect {
@@ -756,8 +766,58 @@ export interface CcAnalysisResult {
   unitKind?: CcUnitKind;
   /** The analyzed units of both periods; absent in older analyses. */
   units?: CcUnitView[];
+  /** The hours each period's answers started in, baseline first; null or absent before analysis code version 6. */
+  periodHours?: CcPeriodHours[] | null;
+  /** Each period's descriptive levels, baseline first; null or absent before analysis code version 6. */
+  periodLevels?: CcPeriodLevels[] | null;
+  /** The request as analyzed; null or absent before analysis code version 6. */
+  request?: CcAnalysisRequest | null;
   inputSha256: string;
   analysisCodeVersion: number;
+}
+
+/** Why an endpoint was not computed. */
+export type CcNotComputedKind =
+  'measurementChanged' | 'noCommonStratum' | 'noTelemetry' | 'noPricing' | 'tooFewPairs' | 'other';
+
+/** The hours one period's analyzed answers started in. */
+export interface CcPeriodHours {
+  period: 'baseline' | 'comparison';
+  /** The time-of-week strata, ascending. */
+  strata: string[];
+  /** For example `weekdays 04–08 UTC`; `no timed answers` when there is none. */
+  text: string;
+}
+
+/** Descriptive levels of one period over its analyzed units; not a comparison. */
+export interface CcPeriodLevels {
+  /** `baseline` or `comparison`. */
+  period: string;
+  answerCount: number;
+  nativeMeanQuality: CcNumber | null;
+  overallIndex: CcNumber | null;
+  overallIndexHalfWidth: CcNumber | null;
+  overallIndexIntervalNote: string | null;
+  medianTimeToFirstAnswerTextMs: CcNumber | null;
+  medianStreamingRate: CcNumber | null;
+  /** The mean output tokens per delivered answer. */
+  meanOutputTokensPerAnswer: CcNumber | null;
+  meanCostPerQuestionUsd: CcNumber | null;
+  failedAnswerCount: number;
+}
+
+/** Whether a saved analysis is out of date, and why (`GET analyses/{id}/freshness`). */
+export interface CcAnalysisFreshness {
+  analysisId: number;
+  analysisCodeVersion: number;
+  currentAnalysisCodeVersion: number;
+  /** Saved under an earlier analysis code version than the running Overseer's. */
+  earlierAnalysisCode: boolean;
+  /** The inputs recomputed today differ from the stored ones; null when not checked. */
+  inputsChanged: boolean | null;
+  /** Why `inputsChanged` is null; null when it was checked. */
+  inputsNote: string | null;
+  outOfDate: boolean;
 }
 
 /** A saved analysis's model as its summary names it. */
@@ -783,7 +843,7 @@ export interface CcEndpointBrief {
  * The analysis code version the server analyzes under now (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`).
  * A saved analysis below it was analyzed by earlier code.
  */
-export const CC_CURRENT_ANALYSIS_CODE_VERSION = 5;
+export const CC_CURRENT_ANALYSIS_CODE_VERSION = 6;
 
 export interface CcAnalysisSummary {
   id: number;
@@ -887,6 +947,8 @@ export const CC_REPORT_AUDIENCES: readonly { readonly audience: BenchmarkReportA
 /** The start body: the run report-writing request, with the Provider Issue Report among the audiences. */
 export interface CcWriteReportsRequest extends Omit<WriteRunReportDocumentsRequest, 'audiences'> {
   audiences?: BenchmarkReportAudience[];
+  /** Confirms writing from an out-of-date analysis; without it the server answers 409 with `outOfDate: true`. */
+  acknowledgeOutOfDate?: boolean;
 }
 
 export interface CcReportEstimateRequest {
