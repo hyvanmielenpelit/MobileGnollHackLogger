@@ -76,6 +76,68 @@ public class SystemConfigUsageGuardTests
     }
 
     [Fact]
+    public async Task ARunningRun_UsingTheConfigurationOnlyAsCoAssessor_Blocks()
+    {
+        _db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            SuiteName = "Sokoban basics",
+            Status = BenchmarkRunStatus.Running,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            CoAssessorModelConfigurationId = ConfigId
+        }));
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
+
+        Assert.Equal("run", blocker.Kind);
+        Assert.Equal(new[] { "co-assessor" }, blocker.Roles);
+    }
+
+    [Fact]
+    public async Task AnActiveSeries_NamingTheConfigurationOnlyAsCoAssessor_Blocks()
+    {
+        _db.BenchmarkRunSeries.Add(new BenchmarkRunSeries
+        {
+            SuiteName = "Sokoban basics",
+            Status = BenchmarkRunSeriesStatus.Running,
+            StartRequestJson = JsonSerializer.Serialize(new StartBenchmarkRunRequest
+            {
+                SuiteId = 1,
+                TestedModelConfigurationId = 1,
+                AssessorModelConfigurationId = 2,
+                CoAssessorModelConfigurationId = ConfigId
+            })
+        });
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
+
+        Assert.Equal("series", blocker.Kind);
+        Assert.Equal(new[] { "co-assessor" }, blocker.Roles);
+    }
+
+    [Fact]
+    public async Task ACompletedRun_UsingTheConfigurationAsCoAssessor_IsCountedAsHistory()
+    {
+        _db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            SuiteName = "Sokoban basics",
+            Status = BenchmarkRunStatus.Completed,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            CoAssessorModelConfigurationId = ConfigId
+        }));
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var config = new SystemAiApiConfiguration { Id = ConfigId, DisplayName = "Member B", Provider = "OpenAI", ModelId = "m" };
+
+        var check = await Guard().CheckDeletionAsync(config, TestContext.Current.CancellationToken);
+
+        Assert.True(check.CanDelete);
+        Assert.Equal(1, check.BenchmarkRunReferenceCount);
+    }
+
+    [Fact]
     public async Task ACompletedRun_DoesNotBlock_AndIsCountedAsHistory()
     {
         await AddRunAsync(BenchmarkRunStatus.Completed);

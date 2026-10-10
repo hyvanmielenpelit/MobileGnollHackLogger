@@ -92,28 +92,6 @@
     }
   },
   {
-    "prefixes": ["gemini-3.7-flash"],
-    "displayName": "Gemini 3.7 Flash",
-    "releaseDate": "2026-08-15",
-    "thinkingLevels": ["low", "medium", "high"],
-    "contextWindowSize": 1048576,
-    "maxOutputTokens": 65536,
-    "pricing": {
-      "inputPerMillion": 0.75,
-      "outputPerMillion": 3.75,
-      "cachedInputPerMillion": 0.075,
-      "asOf": "2026-09-06",
-      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 1.8 },
-      "scheduledChange": {
-        "effectiveFrom": "2027-01-01",
-        "inputPerMillion": 1.50,
-        "outputPerMillion": 7.50,
-        "cachedInputPerMillion": 0.15,
-        "note": "Promotional pricing through 2026-12-31"
-      }
-    }
-  },
-  {
     "prefixes": ["gemini-3.8-flash"],
     "displayName": "Gemini 3.8 Flash",
     "releaseDate": "2026-09-02",

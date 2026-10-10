@@ -421,6 +421,26 @@ public class BenchmarkRunReportDocumentServiceTests
     }
 
     [Fact]
+    public void WriterRefusal_RefusesARetiredWriter_ButNotACustomOrUncataloguedOne()
+    {
+        var guard = new BenchmarkComplianceGuard(new ConfigurationBuilder().Build(), null!);
+        var availability = new ModelAvailabilityService(new ModelMetadataService());
+        var retired = CheckConfig("Google", "gemini-3.7-flash");
+        retired.DisplayName = "Retired Writer";
+
+        const string expected = "Report writer: 'Retired Writer' uses gemini-3.7-flash, which was removed from the model catalog on 2026-10-10. "
+            + "Switch it to another model or keep it as a custom model in System Configs, then start again.";
+        Assert.Equal(expected, BenchmarkRunReportDocumentService.WriterRefusal(retired, CheckCandidate, guard, availability));
+        Assert.Equal(expected, BenchmarkRunReportDocumentService.WriterRefusal(retired, CheckCandidate, guard));
+
+        var custom = CheckConfig("Google", "gemini-3.7-flash");
+        custom.ModelCatalogMode = "custom";
+        Assert.Null(BenchmarkRunReportDocumentService.WriterRefusal(custom, CheckCandidate, guard, availability));
+        Assert.Null(BenchmarkRunReportDocumentService.WriterRefusal(CheckConfig("Google", "gemini-9.9-unknown"), CheckCandidate, guard, availability));
+        Assert.Null(BenchmarkRunReportDocumentService.WriterRefusal(CheckConfig("Google", "gemini-3.8-flash"), CheckCandidate, guard, availability));
+    }
+
+    [Fact]
     public void WriterWarning_WarnsForTheCandidatesProvider_Only()
     {
         var guard = new BenchmarkComplianceGuard(new ConfigurationBuilder().Build(), null!);

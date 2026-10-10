@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, AfterViewInit, EventEmitter, Output, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, EventEmitter, Output, inject, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { AdminService, SystemAiConfigDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto } from '../../services/admin.service';
@@ -12,11 +12,27 @@ import {
 import { AdminPageStore } from '../admin-page.store';
 import { AdminRateLimitsDialogComponent } from '../admin-dialogs/admin-rate-limits-dialog.component';
 import { refreshAnchorPositioning } from '../../utils/polyfills.util';
+import { ModelAvailabilityNoticeComponent } from '../../shared/model-availability/model-availability-notice.component';
+import { ModelResolutionDialogComponent } from '../../shared/model-resolution-dialog/model-resolution-dialog.component';
+import {
+  ModelResolutionResult, availabilityChip, availabilitySentence, needsAttention
+} from '../../shared/model-availability/model-availability';
+
+/** The badge beside a configuration's provider badge that says how it relates to the model catalog. */
+export interface ConfigAvailabilityBadge {
+  text: 'Removed' | 'Not in catalog' | 'Custom model';
+  cssClass: 'badge-warning' | 'badge-info' | 'badge-neutral';
+  icon: 'warning' | 'info' | 'custom';
+  tip: string;
+}
 
 /** The Admin page's System Configs tab: the system AI configurations, their filter, order and dialogs. */
 @Component({
   selector: 'app-admin-configs-tab',
-  imports: [CommonModule, AiModelFormComponent, ConfigAnalyticsComponent, ConfigFilterComponent, ProviderBadgeComponent, AdminRateLimitsDialogComponent],
+  imports: [
+    CommonModule, AiModelFormComponent, ConfigAnalyticsComponent, ConfigFilterComponent, ProviderBadgeComponent, AdminRateLimitsDialogComponent,
+    ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent
+  ],
   templateUrl: './admin-configs-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-configs-tab.component.scss'
@@ -24,6 +40,8 @@ import { refreshAnchorPositioning } from '../../utils/polyfills.util';
 export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewInit {
   private adminService = inject(AdminService);
   protected store = inject(AdminPageStore);
+  private cdr = inject(ChangeDetectorRef);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** A benchmark run the delete-config dialog asks the Benchmark tab to open. */
   @Output() openBenchmarkRun = new EventEmitter<number>();
@@ -31,8 +49,14 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
   @ViewChild('configDialog') configDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('analyticsDialog') analyticsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('deleteConfigDialog') deleteConfigDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild(ModelResolutionDialogComponent) resolutionDialog?: ModelResolutionDialogComponent;
+  @ViewChild('configsHeading') configsHeading?: ElementRef<HTMLElement>;
 
   private configsChangedSub?: Subscription;
+  private resolveRequestSub?: Subscription;
+
+  /** The configuration a resolution saved; focus moves on from its row once the dialog has closed. */
+  private focusAfterResolutionId: number | null = null;
 
   get configs(): SystemAiConfigDto[] {
     return this.store.configs;
@@ -124,10 +148,133 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
 
   ngAfterViewInit(): void {
     setTimeout(() => refreshAnchorPositioning(), 0);
+    this.openPendingResolve();
+    this.resolveRequestSub = this.store.resolveConfigRequested$.subscribe(() => this.openPendingResolve());
   }
 
   ngOnDestroy() {
     this.configsChangedSub?.unsubscribe();
+    this.resolveRequestSub?.unsubscribe();
+  }
+
+  configName(config: SystemAiConfigDto): string {
+    return config.displayName || config.modelId;
+  }
+
+  /** The model the availability sentence names: the retired catalog entry's name, else the model ID. */
+  availabilityModelName(config: SystemAiConfigDto): string {
+    return config.modelAvailability?.catalogDisplayName || config.modelId;
+  }
+
+  isFlagged(config: SystemAiConfigDto): boolean {
+    return needsAttention(config.modelAvailability);
+  }
+
+  resolveLabel(config: SystemAiConfigDto): string {
+    return `Resolve "${this.configName(config)}"`;
+  }
+
+  /** The configurations whose model needs attention, disabled ones included, retired ones first. */
+  get attentionConfigs(): SystemAiConfigDto[] {
+    const flagged = this.configs.filter(c => this.isFlagged(c));
+    return [
+      ...flagged.filter(c => c.modelAvailability?.status === 'retired'),
+      ...flagged.filter(c => c.modelAvailability?.status !== 'retired')
+    ];
+  }
+
+  /** Removed or Not in catalog for a model that needs attention, Custom model for a custom-mode row, else null. */
+  availabilityBadge(config: SystemAiConfigDto): ConfigAvailabilityBadge | null {
+    const chip = availabilityChip(config.modelAvailability);
+    if (chip) {
+      return {
+        text: chip.text,
+        cssClass: chip.tone === 'warning' ? 'badge-warning' : 'badge-info',
+        icon: chip.tone,
+        tip: availabilitySentence(config.modelAvailability, this.availabilityModelName(config), config.modelId)
+      };
+    }
+    if (config.modelCatalogMode === 'custom' || config.modelAvailability?.status === 'custom') {
+      return {
+        text: 'Custom model',
+        cssClass: 'badge-neutral',
+        icon: 'custom',
+        tip: 'Not checked against the model catalog; it uses its own limits and prices.'
+      };
+    }
+    return null;
+  }
+
+  // --- Model resolution ---
+  openResolve(config: SystemAiConfigDto): void {
+    const availability = config.modelAvailability;
+    if (!availability || !needsAttention(availability)) {
+      return;
+    }
+    this.focusAfterResolutionId = null;
+    this.resolutionDialog?.open({
+      id: config.id,
+      provider: config.provider,
+      modelId: config.modelId,
+      displayName: this.configName(config),
+      availability
+    });
+  }
+
+  /** Opens the dialog for the store's pending configuration and clears it; an unknown or settled one is dropped. */
+  private openPendingResolve(): void {
+    const id = this.store.pendingResolveConfigId;
+    if (id == null) {
+      return;
+    }
+    this.store.pendingResolveConfigId = null;
+    const config = this.configs.find(c => c.id === id);
+    if (config) {
+      this.openResolve(config);
+    }
+  }
+
+  onConfigResolved(result: ModelResolutionResult): void {
+    const updated = result.model as SystemAiConfigDto | null;
+    if (!updated) {
+      return;
+    }
+    const previous = this.configs.find(c => c.id === updated.id);
+    const name = this.configName(previous ?? updated);
+    const custom = updated.modelCatalogMode === 'custom' || updated.modelAvailability?.status === 'custom';
+    this.store.replaceConfig(updated);
+    this.store.showToast(custom ? `'${name}' is now a custom model.` : `'${name}' now uses ${updated.modelId}.`, 'success');
+    this.focusAfterResolutionId = updated.id;
+  }
+
+  /** Delete… in the resolution dialog hands over to the row's own delete flow. */
+  onResolutionDeleteRequested(id: number): void {
+    const config = this.configs.find(c => c.id === id);
+    if (config) {
+      this.requestDeleteConfig(config);
+    }
+  }
+
+  /**
+   * After a resolution, focus goes to the next flagged row's Resolve…, else to the resolved row's
+   * title, else to the section heading.
+   */
+  onResolutionClosed(): void {
+    const id = this.focusAfterResolutionId;
+    if (id == null) {
+      return;
+    }
+    this.focusAfterResolutionId = null;
+    this.cdr.detectChanges();
+
+    const root = this.host.nativeElement;
+    const flagged = this.visibleConfigs.filter(c => this.isFlagged(c));
+    const position = this.visibleConfigs.findIndex(c => c.id === id);
+    const next = flagged.find(c => this.visibleConfigs.indexOf(c) > position) ?? flagged[0];
+    const target = (next ? root.querySelector<HTMLElement>(`#config-resolve-${next.id}`) : null)
+      ?? root.querySelector<HTMLElement>(`#config-title-${id}`)
+      ?? this.configsHeading?.nativeElement;
+    target?.focus();
   }
 
   openAnalytics(config: SystemAiConfigDto) {

@@ -7,6 +7,9 @@ export interface SystemAlert {
   id: string;
   type: string;
   message: string;
+  /** An in-app path with an optional query, such as "/admin?tab=configs"; shown only with `linkText`. */
+  linkUrl?: string | null;
+  linkText?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })

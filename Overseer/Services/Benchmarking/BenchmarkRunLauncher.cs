@@ -91,14 +91,26 @@ public class BenchmarkRunLauncher
     private readonly BenchmarkComplianceGuard _complianceGuard;
     private readonly EndpointPolicy _endpointPolicy;
     private readonly ModelPricingService? _modelPricingService;
+    private readonly ModelAvailabilityService _modelAvailability;
 
+    private static readonly Lazy<ModelAvailabilityService> SharedModelAvailability =
+        new(() => new ModelAvailabilityService(new ModelMetadataService()));
+
+    /// <summary>
+    /// A catalog classifier over the embedded model catalogs, for callers without the registered
+    /// <see cref="ModelAvailabilityService"/>.
+    /// </summary>
+    internal static ModelAvailabilityService DefaultModelAvailability => SharedModelAvailability.Value;
+
+    /// <param name="modelAvailabilityService">Null uses <see cref="DefaultModelAvailability"/>.</param>
     public BenchmarkRunLauncher(
         ApplicationDbContext dbContext,
         BenchmarkService benchmarkService,
         BenchmarkRunManager runManager,
         BenchmarkComplianceGuard complianceGuard,
         EndpointPolicy endpointPolicy,
-        ModelPricingService? modelPricingService = null)
+        ModelPricingService? modelPricingService = null,
+        ModelAvailabilityService? modelAvailabilityService = null)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
@@ -106,6 +118,32 @@ public class BenchmarkRunLauncher
         _complianceGuard = complianceGuard;
         _endpointPolicy = endpointPolicy;
         _modelPricingService = modelPricingService;
+        _modelAvailability = modelAvailabilityService ?? DefaultModelAvailability;
+    }
+
+    /// <summary>
+    /// The refusal for a configuration whose model ID the catalog lists as retired, or null. A custom
+    /// catalog mode, a custom endpoint and a model the catalog does not know are all admitted.
+    /// </summary>
+    /// <param name="role">The role label the refusal starts with, such as "Assessor".</param>
+    public static string? RetiredModelRefusal(
+        string role, SystemAiApiConfiguration config, ModelAvailabilityService modelAvailability)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(modelAvailability);
+
+        var availability = modelAvailability.Evaluate(config.Provider, config.ModelId, config.ModelCatalogMode, config.BaseUrl);
+        if (availability.Kind != ModelAvailabilityStatus.Retired)
+        {
+            return null;
+        }
+
+        string name = string.IsNullOrWhiteSpace(config.DisplayName) ? config.ModelId : config.DisplayName;
+        string removed = string.IsNullOrWhiteSpace(availability.RetiredOn)
+            ? "which was removed from the model catalog"
+            : $"which was removed from the model catalog on {availability.RetiredOn}";
+        return $"{role}: '{name}' uses {config.ModelId}, {removed}. "
+            + "Switch it to another model or keep it as a custom model in System Configs, then start again.";
     }
 
     /// <summary>Everything the creation step needs, once the request has passed every check.</summary>
@@ -265,7 +303,8 @@ public class BenchmarkRunLauncher
             reportWriterConfig = await _dbContext.SystemAiApiConfigurations
                 .FindAsync(new object?[] { request.ReportWriterModelConfigurationId.Value }, ct);
 
-            string? writerRefusal = BenchmarkRunReportDocumentService.WriterRefusal(reportWriterConfig, testedConfig, _complianceGuard);
+            string? writerRefusal = BenchmarkRunReportDocumentService.WriterRefusal(
+                reportWriterConfig, testedConfig, _complianceGuard, _modelAvailability);
             if (writerRefusal != null)
             {
                 return (BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, writerRefusal), null);
@@ -301,6 +340,8 @@ public class BenchmarkRunLauncher
         }
 
         // Full validation, DNS included: the run records this endpoint and will call nothing else.
+        // A model the catalog lists as retired is refused after its endpoint check; the report
+        // writer's was already refused by WriterRefusal above.
         foreach (var (role, config) in new (string, SystemAiApiConfiguration?)[]
         {
             ("Tested model", testedConfig), ("Assessor", assessorConfig), ("Co-assessor", coAssessorConfig),
@@ -315,6 +356,12 @@ public class BenchmarkRunLauncher
                 return (BenchmarkRunLaunchResult.Fail(
                     BenchmarkRunLaunchOutcome.Invalid,
                     $"{role} configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpoint.Error}"), null);
+            }
+
+            string? retiredRefusal = RetiredModelRefusal(role, config, _modelAvailability);
+            if (retiredRefusal != null)
+            {
+                return (BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, retiredRefusal), null);
             }
         }
 

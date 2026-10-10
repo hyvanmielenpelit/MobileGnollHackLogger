@@ -32,7 +32,12 @@ public class SettingsController : ControllerBase
     private readonly Overseer.Services.Privacy.EphemeralSessionStore _ephemeralSessions;
     private readonly IEnumerable<IAiProvider> _aiProviders;
     private readonly ModelPricingService? _modelPricingService;
+    private ModelAvailabilityService? _modelAvailabilityService;
+    private ModelResolutionService? _modelResolutionService;
+    private ModelMetadataService? _fallbackMetadataService;
 
+    /// <param name="modelAvailabilityService">Built from <paramref name="modelMetadataService"/> on first use when null.</param>
+    /// <param name="modelResolutionService">Built from <paramref name="modelMetadataService"/> on first use when null.</param>
     public SettingsController(
         SettingsService settingsService,
         IHttpClientFactory httpClientFactory,
@@ -46,7 +51,9 @@ public class SettingsController : ControllerBase
         Overseer.Services.Privacy.AttachmentValidator attachmentValidator,
         Overseer.Services.Privacy.EphemeralSessionStore ephemeralSessions,
         IEnumerable<IAiProvider> aiProviders,
-        ModelPricingService? modelPricingService = null)
+        ModelPricingService? modelPricingService = null,
+        ModelAvailabilityService? modelAvailabilityService = null,
+        ModelResolutionService? modelResolutionService = null)
     {
         _settingsService = settingsService;
         _httpClientFactory = httpClientFactory;
@@ -61,7 +68,18 @@ public class SettingsController : ControllerBase
         _ephemeralSessions = ephemeralSessions;
         _aiProviders = aiProviders;
         _modelPricingService = modelPricingService;
+        _modelAvailabilityService = modelAvailabilityService;
+        _modelResolutionService = modelResolutionService;
     }
+
+    private ModelMetadataService CatalogMetadata =>
+        _modelMetadataService ?? (_fallbackMetadataService ??= new ModelMetadataService());
+
+    private ModelAvailabilityService AvailabilityService =>
+        _modelAvailabilityService ??= new ModelAvailabilityService(CatalogMetadata);
+
+    private ModelResolutionService ResolutionService =>
+        _modelResolutionService ??= new ModelResolutionService(CatalogMetadata);
 
     [HttpGet]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
@@ -686,6 +704,20 @@ public class SettingsController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
 
+        var (keyModeMap, keyPostureMap) = await GetKeyMapsAsync(userId);
+
+        var models = await _settingsService.GetUserModelsAsync(userId);
+        var dtos = models.Select(m => ToUserModelItem(m, keyModeMap, keyPostureMap)).ToList();
+
+        var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
+        dtos.AddRange(systemConfigs.Select(x => ToSystemModelItem(x.Config, x.ResolvedRole)));
+
+        return Ok(dtos);
+    }
+
+    /// <summary>Per provider of the user's API keys: its parallel execution mode and its declared posture.</summary>
+    private async Task<(Dictionary<string, int> KeyModes, Dictionary<string, string?> KeyPostures)> GetKeyMapsAsync(string userId)
+    {
         var apiKeysStatus = await _settingsService.GetApiKeysStatusAsync(userId);
         var keyModeMap = apiKeysStatus.ToDictionary(
             s => (string)((dynamic)s).Provider,
@@ -701,99 +733,110 @@ public class SettingsController : ControllerBase
             s => (string?)((dynamic)s).ConfidentialityPosture,
             StringComparer.OrdinalIgnoreCase);
 
-        var models = await _settingsService.GetUserModelsAsync(userId);
-        var dtos = models.Select(m => {
-            var resolvedPricing = _modelPricingService?.Resolve(m);
-            return new {
-                Id = m.Id,
-                Provider = m.Provider,
-                ModelId = m.ModelId,
-                DisplayName = (string?)m.DisplayName,
-                DisplayNameMode = (string?)m.DisplayNameMode,
-                ThinkingLevel = (string?)m.ThinkingLevel,
-                OrderIndex = m.OrderIndex,
-                MaxInputTokens = (int?)m.MaxInputTokens,
-                MaxOutputTokens = (int?)m.MaxOutputTokens,
-                ReasoningMode = m.ReasoningMode,
-                ReasoningSummary = m.ReasoningSummary,
-                ServiceTier = m.ServiceTier,
-                IsSystem = false,
-                ModelRole = 3,
-                ParallelExecutionMode = keyModeMap.TryGetValue(m.Provider, out var mode) ? mode : 2,
-                ConfidentialityPosture = keyPostureMap.TryGetValue(m.Provider, out var keyPosture) ? keyPosture : null,
-                PostureVerifiedUtc = (DateTime?)null,
-                DataRegion = (string?)null,
-                PricingMode = m.PricingMode,
-                InputPricePerMillion = m.InputPricePerMillion,
-                OutputPricePerMillion = m.OutputPricePerMillion,
-                CachedInputPricePerMillion = m.CachedInputPricePerMillion,
-                EffectiveInputPricePerMillion = resolvedPricing?.InputPerMillion,
-                EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
-                EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
-                PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
-                PricingAsOf = resolvedPricing?.AsOf,
-                // All null / false for a flat, unscheduled model, which is most of them. A custom price
-                // override is always flat by design, so these are null there too.
-                EffectiveLongContextThresholdTokens = resolvedPricing?.LongContext?.ThresholdInputTokens,
-                EffectiveLongContextInputPricePerMillion = resolvedPricing?.LongContext?.InputPerMillion,
-                EffectiveLongContextOutputPricePerMillion = resolvedPricing?.LongContext?.OutputPerMillion,
-                EffectiveServiceTierMultipliers = resolvedPricing?.ServiceTierMultipliers,
-                PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
-                PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
-                PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
-                PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
-                PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false
-            };
-        }).ToList();
+        return (keyModeMap, keyPostureMap);
+    }
 
-        var systemConfigs = await _settingsService.GetResolvedSystemModelsAsync(userId);
-        var sysDtos = systemConfigs.Select(x => {
-            var resolvedPricing = _modelPricingService?.Resolve(x.Config);
-            return new {
-                Id = x.Config.Id,
-                Provider = x.Config.Provider,
-                ModelId = x.Config.ModelId,
-                DisplayName = (string?)x.Config.DisplayName,
-                DisplayNameMode = (string?)x.Config.DisplayNameMode,
-                ThinkingLevel = (string?)x.Config.ThinkingLevel,
-                OrderIndex = x.Config.OrderIndex,
-                MaxInputTokens = (int?)x.Config.MaxInputTokens,
-                MaxOutputTokens = (int?)x.Config.MaxOutputTokens,
-                ReasoningMode = x.Config.ReasoningMode,
-                ReasoningSummary = x.Config.ReasoningSummary,
-                ServiceTier = x.Config.ServiceTier,
-                IsSystem = true,
-                ModelRole = x.ResolvedRole,
-                ParallelExecutionMode = (int)x.Config.ParallelExecutionMode,
-                ConfidentialityPosture = x.Config.ConfidentialityPosture,
-                PostureVerifiedUtc = x.Config.PostureVerifiedUtc,
-                DataRegion = x.Config.DataRegion,
-                PricingMode = x.Config.PricingMode,
-                InputPricePerMillion = x.Config.InputPricePerMillion,
-                OutputPricePerMillion = x.Config.OutputPricePerMillion,
-                CachedInputPricePerMillion = x.Config.CachedInputPricePerMillion,
-                EffectiveInputPricePerMillion = resolvedPricing?.InputPerMillion,
-                EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
-                EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
-                PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
-                PricingAsOf = resolvedPricing?.AsOf,
-                // All null / false for a flat, unscheduled model, which is most of them. A custom price
-                // override is always flat by design, so these are null there too.
-                EffectiveLongContextThresholdTokens = resolvedPricing?.LongContext?.ThresholdInputTokens,
-                EffectiveLongContextInputPricePerMillion = resolvedPricing?.LongContext?.InputPerMillion,
-                EffectiveLongContextOutputPricePerMillion = resolvedPricing?.LongContext?.OutputPerMillion,
-                EffectiveServiceTierMultipliers = resolvedPricing?.ServiceTierMultipliers,
-                PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
-                PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
-                PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
-                PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
-                PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false
-            };
-        });
+    /// <summary>A user's own model as GET usermodels lists it.</summary>
+    private object ToUserModelItem(
+        MobileGnollHackLogger.Data.UserAiModel m,
+        Dictionary<string, int> keyModeMap,
+        Dictionary<string, string?> keyPostureMap)
+    {
+        var resolvedPricing = _modelPricingService?.Resolve(m);
+        return new {
+            Id = m.Id,
+            Provider = m.Provider,
+            ModelId = m.ModelId,
+            DisplayName = (string?)m.DisplayName,
+            DisplayNameMode = (string?)m.DisplayNameMode,
+            ThinkingLevel = (string?)m.ThinkingLevel,
+            OrderIndex = m.OrderIndex,
+            MaxInputTokens = (int?)m.MaxInputTokens,
+            MaxOutputTokens = (int?)m.MaxOutputTokens,
+            ReasoningMode = m.ReasoningMode,
+            ReasoningSummary = m.ReasoningSummary,
+            ServiceTier = m.ServiceTier,
+            IsSystem = false,
+            ModelRole = 3,
+            ParallelExecutionMode = keyModeMap.TryGetValue(m.Provider, out var mode) ? mode : 2,
+            ConfidentialityPosture = keyPostureMap.TryGetValue(m.Provider, out var keyPosture) ? keyPosture : null,
+            PostureVerifiedUtc = (DateTime?)null,
+            DataRegion = (string?)null,
+            PricingMode = m.PricingMode,
+            InputPricePerMillion = m.InputPricePerMillion,
+            OutputPricePerMillion = m.OutputPricePerMillion,
+            CachedInputPricePerMillion = m.CachedInputPricePerMillion,
+            EffectiveInputPricePerMillion = resolvedPricing?.InputPerMillion,
+            EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
+            EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
+            PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
+            PricingAsOf = resolvedPricing?.AsOf,
+            // All null / false for a flat, unscheduled model, which is most of them. A custom price
+            // override is always flat by design, so these are null there too.
+            EffectiveLongContextThresholdTokens = resolvedPricing?.LongContext?.ThresholdInputTokens,
+            EffectiveLongContextInputPricePerMillion = resolvedPricing?.LongContext?.InputPerMillion,
+            EffectiveLongContextOutputPricePerMillion = resolvedPricing?.LongContext?.OutputPerMillion,
+            EffectiveServiceTierMultipliers = resolvedPricing?.ServiceTierMultipliers,
+            PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
+            PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
+            PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
+            PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
+            PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false,
+            ModelCatalogMode = ModelCatalogModes.Normalize(m.ModelCatalogMode),
+            ModelAvailability = SettingsService.WithRowSuggestion(
+                AvailabilityService.Evaluate(m.Provider, m.ModelId, m.ModelCatalogMode, baseUrl: null),
+                m.MaxInputTokens, m.MaxOutputTokens, resolvedPricing)
+        };
+    }
 
-        dtos.AddRange(sysDtos);
-
-        return Ok(dtos);
+    /// <summary>A system configuration available to the user, as GET usermodels lists it.</summary>
+    private object ToSystemModelItem(MobileGnollHackLogger.Data.SystemAiApiConfiguration config, int resolvedRole)
+    {
+        var resolvedPricing = _modelPricingService?.Resolve(config);
+        return new {
+            Id = config.Id,
+            Provider = config.Provider,
+            ModelId = config.ModelId,
+            DisplayName = (string?)config.DisplayName,
+            DisplayNameMode = (string?)config.DisplayNameMode,
+            ThinkingLevel = (string?)config.ThinkingLevel,
+            OrderIndex = config.OrderIndex,
+            MaxInputTokens = (int?)config.MaxInputTokens,
+            MaxOutputTokens = (int?)config.MaxOutputTokens,
+            ReasoningMode = config.ReasoningMode,
+            ReasoningSummary = config.ReasoningSummary,
+            ServiceTier = config.ServiceTier,
+            IsSystem = true,
+            ModelRole = resolvedRole,
+            ParallelExecutionMode = (int)config.ParallelExecutionMode,
+            ConfidentialityPosture = config.ConfidentialityPosture,
+            PostureVerifiedUtc = config.PostureVerifiedUtc,
+            DataRegion = config.DataRegion,
+            PricingMode = config.PricingMode,
+            InputPricePerMillion = config.InputPricePerMillion,
+            OutputPricePerMillion = config.OutputPricePerMillion,
+            CachedInputPricePerMillion = config.CachedInputPricePerMillion,
+            EffectiveInputPricePerMillion = resolvedPricing?.InputPerMillion,
+            EffectiveOutputPricePerMillion = resolvedPricing?.OutputPerMillion,
+            EffectiveCachedInputPricePerMillion = resolvedPricing?.CachedInputPerMillion,
+            PricingSource = resolvedPricing != null ? (resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog") : "unknown",
+            PricingAsOf = resolvedPricing?.AsOf,
+            // All null / false for a flat, unscheduled model, which is most of them. A custom price
+            // override is always flat by design, so these are null there too.
+            EffectiveLongContextThresholdTokens = resolvedPricing?.LongContext?.ThresholdInputTokens,
+            EffectiveLongContextInputPricePerMillion = resolvedPricing?.LongContext?.InputPerMillion,
+            EffectiveLongContextOutputPricePerMillion = resolvedPricing?.LongContext?.OutputPerMillion,
+            EffectiveServiceTierMultipliers = resolvedPricing?.ServiceTierMultipliers,
+            PricingScheduledChangeFrom = resolvedPricing?.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd"),
+            PricingScheduledChangeInputPricePerMillion = resolvedPricing?.ScheduledChange?.InputPerMillion,
+            PricingScheduledChangeOutputPricePerMillion = resolvedPricing?.ScheduledChange?.OutputPerMillion,
+            PricingScheduledChangeNote = resolvedPricing?.ScheduledChange?.Note,
+            PricingScheduleElapsed = resolvedPricing?.ScheduleElapsed ?? false,
+            ModelCatalogMode = ModelCatalogModes.Normalize(config.ModelCatalogMode),
+            ModelAvailability = SettingsService.WithRowSuggestion(
+                AvailabilityService.Evaluate(config.Provider, config.ModelId, config.ModelCatalogMode, config.BaseUrl),
+                config.MaxInputTokens, config.MaxOutputTokens, resolvedPricing)
+        };
     }
 
     [HttpPost("usermodels")]
@@ -882,6 +925,75 @@ public class SettingsController : ControllerBase
         );
         return Ok();
     }
+
+    /// <summary>
+    /// Switches the caller's own model to a catalog model, or keeps it as a custom model. A dry run
+    /// returns the changes and the row as it would be, and saves nothing.
+    /// </summary>
+    [HttpPost("usermodels/{id}/model-resolution")]
+    public async Task<IActionResult> ResolveUserModel(long id, [FromBody] ModelResolutionRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        var model = await _settingsService.GetUserModelAsync(userId, id);
+        if (model == null) return NotFound();
+
+        var outcome = ResolutionService.Resolve(ModelSettings.FromUserModel(model), request);
+        if (outcome.IsRefused) return BadRequest(new { message = outcome.Refusal });
+
+        var resolved = model;
+        if (request.DryRun)
+        {
+            resolved = CopyUserModel(model);
+            outcome.Updated!.ApplyTo(resolved);
+        }
+        else
+        {
+            await _settingsService.SaveUserModelSettingsAsync(model, outcome.Updated!);
+        }
+
+        var (keyModeMap, keyPostureMap) = await GetKeyMapsAsync(userId);
+        return Ok(new ModelResolutionResult
+        {
+            Changes = outcome.Changes.ToList(),
+            Model = ToUserModelItem(resolved, keyModeMap, keyPostureMap)
+        });
+    }
+
+    /// <summary>The catalog models of one provider a model can be switched to, newest release first.</summary>
+    [HttpGet("model-catalog/{provider}")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public IActionResult GetModelCatalog(string provider)
+    {
+        if (!TryMatchProvider(provider, out var matchedProvider, out var providerError))
+            return BadRequest(new { message = providerError });
+
+        return Ok(CatalogMetadata.GetCatalogTargets(matchedProvider));
+    }
+
+    /// <summary>An untracked copy of a user model, for a dry run to change.</summary>
+    private static MobileGnollHackLogger.Data.UserAiModel CopyUserModel(MobileGnollHackLogger.Data.UserAiModel model) => new()
+    {
+        Id = model.Id,
+        AspNetUserId = model.AspNetUserId,
+        Provider = model.Provider,
+        ModelId = model.ModelId,
+        DisplayName = model.DisplayName,
+        DisplayNameMode = model.DisplayNameMode,
+        ThinkingLevel = model.ThinkingLevel,
+        ReasoningMode = model.ReasoningMode,
+        ReasoningSummary = model.ReasoningSummary,
+        ServiceTier = model.ServiceTier,
+        MaxInputTokens = model.MaxInputTokens,
+        MaxOutputTokens = model.MaxOutputTokens,
+        PricingMode = model.PricingMode,
+        InputPricePerMillion = model.InputPricePerMillion,
+        OutputPricePerMillion = model.OutputPricePerMillion,
+        CachedInputPricePerMillion = model.CachedInputPricePerMillion,
+        ModelCatalogMode = model.ModelCatalogMode,
+        OrderIndex = model.OrderIndex
+    };
 
     [HttpDelete("usermodels/{id}")]
     public async Task<IActionResult> DeleteUserModel(long id)

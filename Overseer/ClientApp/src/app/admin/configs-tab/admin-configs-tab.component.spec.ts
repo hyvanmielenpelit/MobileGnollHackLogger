@@ -6,6 +6,9 @@ import { AdminService, SystemAiConfigDto, SystemConfigDeletionCheckDto, SystemCo
 import { createEmptyFilter } from '../config-filter/config-filter.model';
 import { AdminPageStore } from '../admin-page.store';
 import { buildSystemConfig, configureAdminTestBed } from '../admin.component.testing';
+import { By } from '@angular/platform-browser';
+import { ModelResolutionDialogComponent } from '../../shared/model-resolution-dialog/model-resolution-dialog.component';
+import { ModelAvailability, ModelResolutionResult } from '../../shared/model-availability/model-availability';
 
 describe('AdminConfigsTabComponent', () => {
   let component: AdminConfigsTabComponent;
@@ -416,6 +419,228 @@ describe('AdminConfigsTabComponent', () => {
 
       expect(vi.mocked(create).mock.lastCall![0].useDefaultApiKey).toBe(true);
       expect(vi.mocked(create).mock.lastCall![0].apiKey).toBeUndefined();
+    });
+  });
+
+  describe('model availability', () => {
+    const retired = (overrides: Partial<ModelAvailability> = {}): ModelAvailability => ({
+      status: 'retired', needsAttention: true, retiredOn: '2026-09-30', note: null, catalogDisplayName: null, ...overrides
+    });
+    const notInCatalog = (): ModelAvailability => ({ status: 'notInCatalog', needsAttention: true });
+    const available = (): ModelAvailability => ({ status: 'available', needsAttention: false });
+
+    const config = (
+      id: number, displayName: string, modelAvailability: ModelAvailability | undefined, overrides: Partial<SystemAiConfigDto> = {}
+    ): SystemAiConfigDto => buildSystemConfig({ id, displayName, modelId: `model-${id}`, orderIndex: id, modelAvailability, ...overrides });
+
+    const resolution = (model: SystemAiConfigDto): ModelResolutionResult => ({ changes: [], blockers: [], model });
+
+    const el = (): HTMLElement => fixture.nativeElement;
+    const banner = () => el().querySelector<HTMLElement>('.config-attention-banner');
+    const bannerButtons = () => Array.from(el().querySelectorAll<HTMLButtonElement>('.config-attention-resolve'));
+    const rows = () => Array.from(el().querySelectorAll<HTMLElement>('.model-item'));
+    const rowResolve = (id: number) => el().querySelector<HTMLButtonElement>(`#config-resolve-${id}`);
+    const dialog = (): ModelResolutionDialogComponent =>
+      fixture.debugElement.query(By.directive(ModelResolutionDialogComponent)).componentInstance;
+
+    let openSpy: Mock;
+
+    beforeEach(() => {
+      openSpy = vi.spyOn(ModelResolutionDialogComponent.prototype, 'open').mockReturnValue(undefined);
+    });
+
+    afterEach(() => {
+      openSpy.mockRestore();
+    });
+
+    it('summarizes the configurations that need attention in a status banner, retired ones first', () => {
+      store.setConfigs([config(1, 'Alpha', notInCatalog()), config(2, 'Beta', retired()), config(3, 'Gamma', available())]);
+      fixture.detectChanges();
+
+      const summary = banner()!;
+      expect(summary.getAttribute('role')).toBe('status');
+      expect(summary.classList).toContain('alert-warning');
+      expect(summary.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      expect(summary.querySelector('.alert-heading')!.textContent!.trim()).toBe('2 configurations need attention');
+      expect(summary.textContent).toContain('Their models are not in the model catalog. Switch, keep or delete each one.');
+      expect(bannerButtons().map(b => b.textContent!.trim())).toEqual(['Resolve "Beta"', 'Resolve "Alpha"']);
+      expect(bannerButtons().every(b => b.classList.contains('btn-ghost') && b.getAttribute('type') === 'button')).toBe(true);
+      expect(bannerButtons().every(b => b.getAttribute('aria-haspopup') === 'dialog')).toBe(true);
+    });
+
+    it('words the banner in the singular for one configuration, and flags a disabled one', () => {
+      store.setConfigs([config(1, 'Alpha', retired(), { isEnabled: false }), config(2, 'Beta', available())]);
+      fixture.detectChanges();
+
+      expect(banner()!.querySelector('.alert-heading')!.textContent!.trim()).toBe('1 configuration needs attention');
+      expect(banner()!.textContent).toContain('Its model is not in the model catalog.');
+      expect(rowResolve(1)).not.toBeNull();
+    });
+
+    it('shows no banner, badge or notice when every model is in the catalog', () => {
+      store.setConfigs([config(1, 'Alpha', available()), config(2, 'Beta', undefined)]);
+      fixture.detectChanges();
+
+      expect(banner()).toBeNull();
+      expect(el().querySelector('.config-availability-badge')).toBeNull();
+      expect(el().querySelector('app-model-availability-notice')).toBeNull();
+    });
+
+    it('flags a retired row with a Removed badge after the provider badge, a notice and a Resolve button', () => {
+      store.setConfigs([config(1, 'Alpha', retired({ catalogDisplayName: 'Claude Old' }))]);
+      fixture.detectChanges();
+
+      const badge = rows()[0].querySelector<HTMLElement>('.config-availability-badge')!;
+      expect(badge.classList).toContain('badge-availability');
+      expect(badge.classList).toContain('badge-warning');
+      expect(badge.textContent!.trim()).toBe('Removed');
+      expect(badge.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      expect(badge.hasAttribute('title')).toBe(false);
+      expect(badge.previousElementSibling!.tagName.toLowerCase()).toBe('app-provider-badge');
+      const tip = el().querySelector('#' + badge.getAttribute('interestfor'))!;
+      expect(tip.getAttribute('popover')).toBe('hint');
+      expect(tip.textContent).toContain('Claude Old was removed from the model catalog on September 30, 2026.');
+
+      const notice = rows()[0].querySelector('app-model-availability-notice .model-availability-notice')!;
+      expect(notice).not.toBeNull();
+      const resolve = rowResolve(1)!;
+      expect(notice.contains(resolve)).toBe(true);
+      expect(resolve.textContent!.trim()).toBe('Resolve…');
+      expect(resolve.getAttribute('aria-label')).toBe('Resolve "Alpha"');
+      expect(resolve.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(resolve.getAttribute('type')).toBe('button');
+      expect(resolve.classList).toContain('btn-ghost');
+    });
+
+    it('badges a model outside the catalog as Not in catalog and a custom-mode row as Custom model', () => {
+      store.setConfigs([
+        config(1, 'Alpha', notInCatalog()),
+        config(2, 'Beta', { status: 'custom', needsAttention: false }, { modelCatalogMode: 'custom' })
+      ]);
+      fixture.detectChanges();
+
+      const first = rows()[0].querySelector<HTMLElement>('.config-availability-badge')!;
+      expect(first.textContent!.trim()).toBe('Not in catalog');
+      expect(first.classList).toContain('badge-info');
+      expect(el().querySelector('#' + first.getAttribute('interestfor'))!.textContent)
+        .toContain("model-1 isn't in Overseer's model catalog");
+
+      const second = rows()[1].querySelector<HTMLElement>('.config-availability-badge')!;
+      expect(second.textContent!.trim()).toBe('Custom model');
+      expect(second.classList).toContain('badge-neutral');
+      expect(rows()[1].querySelector('app-model-availability-notice')).toBeNull();
+      expect(rowResolve(2)).toBeNull();
+    });
+
+    it('opens the system resolution dialog from the row and from the banner', () => {
+      store.setConfigs([config(1, 'Alpha', retired(), { provider: 'Anthropic' })]);
+      fixture.detectChanges();
+
+      expect(dialog().kind).toBe('system');
+      rowResolve(1)!.click();
+      expect(openSpy).toHaveBeenCalledWith({
+        id: 1, provider: 'Anthropic', modelId: 'model-1', displayName: 'Alpha', availability: retired()
+      });
+
+      bannerButtons()[0].click();
+      expect(openSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('replaces the resolved configuration in a new list and names the new model in a toast', () => {
+      const original = config(1, 'Alpha', retired());
+      store.setConfigs([original, config(2, 'Beta', available())]);
+      fixture.detectChanges();
+      const toast = vi.spyOn(store, 'showToast').mockReturnValue(undefined);
+      const before = store.configs;
+      const updated = { ...original, modelId: 'claude-new', modelAvailability: available() };
+
+      dialog().resolved.emit(resolution(updated));
+      fixture.detectChanges();
+
+      expect(store.configs).not.toBe(before);
+      expect(store.configs[0]).toBe(updated);
+      expect(store.configs[1].id).toBe(2);
+      expect(toast).toHaveBeenCalledWith("'Alpha' now uses claude-new.", 'success');
+      expect(banner()).toBeNull();
+      expect(rowResolve(1)).toBeNull();
+    });
+
+    it('says a configuration kept as a custom model is now one', () => {
+      const original = config(1, 'Alpha', notInCatalog());
+      store.setConfigs([original]);
+      fixture.detectChanges();
+      const toast = vi.spyOn(store, 'showToast').mockReturnValue(undefined);
+
+      dialog().resolved.emit(resolution({
+        ...original, modelCatalogMode: 'custom', modelAvailability: { status: 'custom', needsAttention: false }
+      }));
+
+      expect(toast).toHaveBeenCalledWith("'Alpha' is now a custom model.", 'success');
+    });
+
+    it('moves focus to the next flagged row, then to the resolved row\'s title, once the dialog closes', () => {
+      store.setConfigs([config(1, 'Alpha', retired()), config(2, 'Beta', notInCatalog()), config(3, 'Gamma', available())]);
+      fixture.detectChanges();
+
+      dialog().resolved.emit(resolution({ ...store.configs[0], modelId: 'new-1', modelAvailability: available() }));
+      dialog().closed.emit();
+      expect(document.activeElement).toBe(rowResolve(2));
+
+      dialog().resolved.emit(resolution({ ...store.configs[1], modelId: 'new-2', modelAvailability: available() }));
+      dialog().closed.emit();
+      expect(document.activeElement).toBe(el().querySelector('#config-title-2'));
+    });
+
+    it('leaves focus alone when the dialog closes without a resolution', () => {
+      store.setConfigs([config(1, 'Alpha', retired()), config(2, 'Beta', retired())]);
+      fixture.detectChanges();
+      rowResolve(1)!.focus();
+
+      dialog().closed.emit();
+
+      expect(document.activeElement).toBe(rowResolve(1));
+    });
+
+    it('hands Delete… over to the row\'s own delete flow', () => {
+      store.setConfigs([config(1, 'Alpha', retired())]);
+      fixture.detectChanges();
+      const requestDelete = vi.spyOn(component, 'requestDeleteConfig').mockReturnValue(undefined);
+
+      dialog().deleteRequested.emit(1);
+
+      expect(requestDelete).toHaveBeenCalledWith(store.configs[0]);
+    });
+
+    it('opens the dialog for the pending configuration once the tab is ready, then clears it', () => {
+      store.setConfigs([config(1, 'Alpha', retired()), config(2, 'Beta', notInCatalog())]);
+      store.pendingResolveConfigId = 2;
+
+      fixture.detectChanges();
+
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      expect(openSpy.mock.lastCall![0]).toEqual(expect.objectContaining({ id: 2, displayName: 'Beta' }));
+      expect(store.pendingResolveConfigId).toBeNull();
+    });
+
+    it('ignores and clears an unknown pending configuration', () => {
+      store.setConfigs([config(1, 'Alpha', retired())]);
+      store.pendingResolveConfigId = 99;
+
+      fixture.detectChanges();
+
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(store.pendingResolveConfigId).toBeNull();
+    });
+
+    it('opens the dialog for a configuration requested while the tab is showing', () => {
+      store.setConfigs([config(1, 'Alpha', retired())]);
+      fixture.detectChanges();
+      expect(openSpy).not.toHaveBeenCalled();
+
+      store.requestResolveConfig(1);
+
+      expect(openSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+      expect(store.pendingResolveConfigId).toBeNull();
     });
   });
 });

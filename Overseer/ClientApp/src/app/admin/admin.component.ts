@@ -61,30 +61,38 @@ export class AdminComponent implements OnInit, OnDestroy {
   private toastSub?: Subscription;
 
   /**
-   * Applies the `tab`, `subtab` and `suiteId` query parameters a link carries, then removes them
-   * from the address, so a reload or Back does not apply them again.
+   * Applies the `tab`, `subtab`, `suiteId` and `resolveConfig` query parameters a link carries, then
+   * removes them from the address, so a reload or Back does not apply them again. A valid
+   * `resolveConfig` selects the System Configs tab, which opens that configuration's resolution dialog.
    */
   applyNavigationParams(params: ParamMap): void {
-    if (!params.has('tab') && !params.has('subtab') && !params.has('suiteId')) {
+    if (!params.has('tab') && !params.has('subtab') && !params.has('suiteId') && !params.has('resolveConfig')) {
       return;
     }
     const tab = this.tabs.find(t => t.id === params.get('tab'))?.id;
     if (tab) {
       if (tab === 'benchmark') {
-        const rawSuiteId = params.get('suiteId');
-        const suiteId = rawSuiteId != null && /^\d+$/.test(rawSuiteId) && Number(rawSuiteId) > 0
-          ? Number(rawSuiteId)
-          : null;
+        const suiteId = AdminComponent.positiveId(params.get('suiteId'));
         this.pendingBenchmarkNavigation = { subTab: params.get('subtab'), suiteId };
       }
       this.selectTab(tab);
     }
+    const resolveConfigId = AdminComponent.positiveId(params.get('resolveConfig'));
+    if (resolveConfigId != null) {
+      this.store.requestResolveConfig(resolveConfigId);
+      this.selectTab('configs');
+    }
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { tab: null, subtab: null, suiteId: null },
+      queryParams: { tab: null, subtab: null, suiteId: null, resolveConfig: null },
       queryParamsHandling: 'merge',
       replaceUrl: true
     });
+  }
+
+  /** A positive whole-number query parameter, or null. */
+  private static positiveId(raw: string | null): number | null {
+    return raw != null && /^\d+$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
   }
 
   ngOnInit() {

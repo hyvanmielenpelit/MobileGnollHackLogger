@@ -127,6 +127,12 @@ public class SystemAiApiConfigurationDto
     public decimal? PricingScheduledChangeOutputPricePerMillion { get; set; }
     public string? PricingScheduledChangeNote { get; set; }
     public bool PricingScheduleElapsed { get; set; }
+
+    /// <summary>"catalog" or "custom"; a legacy null row reads as "catalog".</summary>
+    public string ModelCatalogMode { get; set; } = ModelCatalogModes.Catalog;
+
+    /// <summary>Whether the configuration still names a model the catalog offers.</summary>
+    public ModelAvailabilityDto? ModelAvailability { get; set; }
 }
 
 public class CreateSystemAiApiConfigurationRequest

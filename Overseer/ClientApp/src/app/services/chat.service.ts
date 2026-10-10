@@ -156,6 +156,8 @@ export interface ChatStreamEvent {
   type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge';
   data: string;
   seqNo?: number;
+  /** Set on some `error` events: `model_unavailable` when the provider no longer serves the chat's model. */
+  errorCode?: string;
 }
 
 /**

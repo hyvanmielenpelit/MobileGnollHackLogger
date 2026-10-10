@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import {
   AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY, RUN_REPORT_HEADER_STORAGE_KEY, RUN_REPORT_TAB_STORAGE_KEY
@@ -498,6 +499,8 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
       { provide: SystemService, useValue: systemServiceMock },
       // The AI Reports tab hosts the PDF viewer; the test runner never loads pdf.js.
       { provide: PDFJS_LOADER, useValue: () => Promise.reject(new Error('pdf.js is not loaded in specs')) },
+      // Resolve in System Configs navigates to the admin page; specs spy on Router.navigate.
+      provideRouter([]),
       provideHttpClient(),
       provideHttpClientTesting()
     ]
@@ -549,7 +552,8 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
       modelRole: 7,
       parallelExecutionMode: 2,
       apiKey: '',
-      note: null
+      note: null,
+      modelAvailability: { status: 'available', needsAttention: false }
     }
   ];
   fixture.detectChanges();

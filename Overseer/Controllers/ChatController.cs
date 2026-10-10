@@ -605,7 +605,7 @@ public class ChatController : ControllerBase
                         events = ongoing.AccumulatedEvents
                             .Where(e => showDebugLog || e.Type != "debug")
                             .OrderBy(e => e.SeqNo)
-                            .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
+                            .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo, errorCode = e.ErrorCode }).ToList()
                     };
                 }
             }
@@ -616,7 +616,7 @@ public class ChatController : ControllerBase
                     events = ongoing.AccumulatedEvents
                         .Where(e => showDebugLog || e.Type != "debug")
                         .OrderBy(e => e.SeqNo)
-                        .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
+                        .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo, errorCode = e.ErrorCode }).ToList()
                 };
             }
         }
@@ -775,7 +775,7 @@ public class ChatController : ControllerBase
                     events = ongoing.AccumulatedEvents
                         .Where(e => showDebugLog || e.Type != "debug")
                         .OrderBy(e => e.SeqNo)
-                        .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo }).ToList()
+                        .Select(e => new { type = e.Type, data = e.Data, seqNo = e.SeqNo, errorCode = e.ErrorCode }).ToList()
                 };
             }
         }

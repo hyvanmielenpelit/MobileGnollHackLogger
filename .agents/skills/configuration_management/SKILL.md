@@ -70,6 +70,12 @@ if (string.IsNullOrWhiteSpace(_configuration["MyDataPath"]))
 }
 ```
 
+#### Alerts with a link
+`SystemAlert` (`Overseer/Models/SystemAlert.cs`) has two optional properties, `LinkUrl` (an in-app route) and `LinkText`, both null by default. Set them together when the alert has a place to fix it; `app-admin-alerts` renders them as a link after the message. An alert without them is unchanged.
+
+#### Retired-model alerts
+`GetSystemAlerts()` also raises one `warning` per **retired model** (an entry in `Overseer/Services/ModelCatalogs/RetiredModels.json`) that at least one **enabled** system configuration still uses, classified by `ModelAvailabilityService.Evaluate`. Its id is `retired-model-{provider}-{firstPrefix}`, its message names the number of configurations, the model and its retirement date, and it links to `/admin?tab=configs` with the text *Review in System Configs*. A configuration in custom mode or on a custom endpoint does not count, and a model that is merely *not in the catalog* raises no alert. The alert clears once every such configuration is switched, kept as a custom model, disabled or deleted. See `docs/overseer/adding-ai-models.md` § *Retiring a Model*.
+
 ### 3. API & Frontend Alert Pipeline
 - **API Endpoint**: `AdminController.GetSystemAlerts([FromServices] ConfigHealthService configHealthService)` at `/api/admin/system-alerts` returns the active list of `SystemAlert` items.
 - **Frontend Service**: `AdminAlertService` (`Overseer/ClientApp/src/app/services/admin-alert.service.ts`) fetches system alerts periodically and on navigation events, publishing them through `alerts$`.

@@ -2,6 +2,12 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { ApiKeyVerification } from '../shared/key-verification/key-verification';
+import {
+  ModelAvailability,
+  ModelCatalogMode,
+  ModelResolutionRequest,
+  ModelResolutionResult
+} from '../shared/model-availability/model-availability';
 
 export interface UserDto {
   id: string;
@@ -132,6 +138,10 @@ export interface SystemAiConfigDto {
   baseUrl?: string | null;
   customHeadersJson?: string | null;
   apiVersion?: string | null;
+
+  /** Whether the model is still in the model catalog; absent from an older server. */
+  modelAvailability?: ModelAvailability;
+  modelCatalogMode?: ModelCatalogMode | null;
 }
 
 /** A system configuration named by a default key's status or deletion check. */
@@ -592,6 +602,15 @@ export class AdminService {
 
   getSystemConfigDeletionCheck(id: number): Observable<SystemConfigDeletionCheckDto> {
     return this.http.get<SystemConfigDeletionCheckDto>(`/api/admin/systemconfigs/${id}/deletion-check`);
+  }
+
+  /**
+   * Switches the configuration to a catalog model or keeps it as a custom one; `dryRun` only reports
+   * the changes and the blockers. A real switch blocked by live use fails with 409, whose
+   * `HttpErrorResponse.error` is `{ message, blockers }` (`ModelResolutionRefusal`).
+   */
+  resolveSystemConfig(id: number, request: ModelResolutionRequest): Observable<ModelResolutionResult<SystemAiConfigDto>> {
+    return this.http.post<ModelResolutionResult<SystemAiConfigDto>>(`/api/admin/systemconfigs/${id}/model-resolution`, request);
   }
 
   resetSystemConfig(id: number, counterName?: string): Observable<void> {

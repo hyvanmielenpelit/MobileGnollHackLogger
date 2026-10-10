@@ -50,7 +50,8 @@ public class AdminSystemAiConfigTests
             new Overseer.Services.Benchmarking.BenchmarkRubricCheckJobManager(),
             new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager(),
             new Overseer.Services.Benchmarking.BenchmarkReportPackJobManager());
-        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService);
+        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService,
+            new ModelAvailabilityService(metadataService), new ModelResolutionService(metadataService));
 
         return (controller, db, cryptoService);
     }
@@ -722,5 +723,258 @@ public class AdminSystemAiConfigTests
         Assert.True(updated.UseDefaultApiKey);
         Assert.Equal("Anthropic", updated.Provider);
         Assert.Equal(AnthropicDefaultKey, DecryptConfigKey(crypto, updated));
+    }
+
+    // -- Model availability and resolution ------------------------------------------------------
+
+    private static async Task<SystemAiApiConfiguration> AddGoogleConfigAsync(
+        ApplicationDbContext db, string modelId, string? catalogMode = ModelCatalogModes.Catalog, string? baseUrl = null, string displayName = "Gemini 3.7 Flash")
+    {
+        var config = new SystemAiApiConfiguration
+        {
+            DisplayName = displayName,
+            DisplayNameMode = DisplayNameModes.ModelName,
+            Provider = "Google",
+            ModelId = modelId,
+            ThinkingLevel = "high",
+            BaseUrl = baseUrl,
+            ModelCatalogMode = catalogMode,
+            IsEnabled = true,
+            ModelRole = 7
+        };
+        db.SystemAiApiConfigurations.Add(config);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return config;
+    }
+
+    private static UpdateSystemAiApiConfigurationRequest UpdateRequestFor(SystemAiApiConfiguration config, string modelId, string displayName) => new()
+    {
+        DisplayName = displayName,
+        DisplayNameMode = DisplayNameModes.Custom,
+        Provider = config.Provider,
+        ModelId = modelId,
+        IsEnabled = true,
+        ModelRole = 7
+    };
+
+    private static async Task<SystemAiApiConfiguration> ReloadAsync(ApplicationDbContext db, long id)
+    {
+        db.ChangeTracker.Clear();
+        return await db.SystemAiApiConfigurations.SingleAsync(c => c.Id == id, TestContext.Current.CancellationToken);
+    }
+
+    private static List<SystemConfigBlockerDto> BlockersOf(ConflictObjectResult conflict)
+        => Assert.IsType<List<SystemConfigBlockerDto>>(conflict.Value!.GetType().GetProperty("blockers")!.GetValue(conflict.Value));
+
+    [Fact]
+    public async Task GetSystemConfigs_CarriesTheCatalogModeAndModelAvailability()
+    {
+        var (controller, db, _) = CreateTestController();
+        var retired = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+        var gateway = await AddGoogleConfigAsync(db, "gemini-3.7-flash", baseUrl: "https://llm.example.com/v1", displayName: "Gateway");
+        var custom = await AddGoogleConfigAsync(db, "my-tuned-flash", ModelCatalogModes.Custom, displayName: "Tuned");
+        var legacy = await AddGoogleConfigAsync(db, "gemini-3.8-flash", catalogMode: null, displayName: "Legacy");
+
+        var configs = Assert.IsAssignableFrom<IEnumerable<SystemAiApiConfigurationDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetSystemConfigs()).Value).ToList();
+
+        var retiredDto = configs.Single(c => c.Id == retired.Id);
+        Assert.Equal("retired", retiredDto.ModelAvailability?.Status);
+        Assert.Equal("gemini-3.8-flash", retiredDto.ModelAvailability?.Replacement?.ModelId);
+        Assert.Equal("customEndpoint", configs.Single(c => c.Id == gateway.Id).ModelAvailability?.Status);
+
+        var customDto = configs.Single(c => c.Id == custom.Id);
+        Assert.Equal(ModelCatalogModes.Custom, customDto.ModelCatalogMode);
+        Assert.Equal("custom", customDto.ModelAvailability?.Status);
+        Assert.NotNull(customDto.ModelAvailability?.SuggestedCustom);
+
+        var legacyDto = configs.Single(c => c.Id == legacy.Id);
+        Assert.Equal(ModelCatalogModes.Catalog, legacyDto.ModelCatalogMode);
+        Assert.Equal("available", legacyDto.ModelAvailability?.Status);
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_DerivesCustomForAnUncataloguedId_AndCatalogForACataloguedOne()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+
+        foreach (var (name, modelId) in new[] { ("Uncatalogued", "my-tuned-flash"), ("Catalogued", "gemini-3.8-flash") })
+        {
+            Assert.IsType<OkObjectResult>(await controller.CreateSystemConfig(new CreateSystemAiApiConfigurationRequest
+            {
+                DisplayName = name,
+                Provider = "Google",
+                ModelId = modelId,
+                IsEnabled = true,
+                ModelRole = 7
+            }, ct));
+        }
+
+        Assert.Equal(ModelCatalogModes.Custom, (await db.SystemAiApiConfigurations.SingleAsync(c => c.DisplayName == "Uncatalogued", ct)).ModelCatalogMode);
+        Assert.Equal(ModelCatalogModes.Catalog, (await db.SystemAiApiConfigurations.SingleAsync(c => c.DisplayName == "Catalogued", ct)).ModelCatalogMode);
+    }
+
+    [Fact]
+    public async Task UpdateSystemConfig_ReDerivesTheCatalogModeOnlyWhenTheModelChanges()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+
+        Assert.IsType<OkResult>(await controller.UpdateSystemConfig(config.Id, UpdateRequestFor(config, "gemini-3.7-flash", "Renamed"), ct));
+        var renamed = await ReloadAsync(db, config.Id);
+        Assert.Equal("Renamed", renamed.DisplayName);
+        Assert.Equal(ModelCatalogModes.Catalog, renamed.ModelCatalogMode);
+
+        Assert.IsType<OkResult>(await controller.UpdateSystemConfig(config.Id, UpdateRequestFor(config, "my-tuned-flash", "Renamed"), ct));
+        Assert.Equal(ModelCatalogModes.Custom, (await ReloadAsync(db, config.Id)).ModelCatalogMode);
+
+        Assert.IsType<OkResult>(await controller.UpdateSystemConfig(config.Id, UpdateRequestFor(config, "gemini-3.8-flash", "Renamed"), ct));
+        Assert.Equal(ModelCatalogModes.Catalog, (await ReloadAsync(db, config.Id)).ModelCatalogMode);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_Switch_MovesTheConfigurationToTheCatalogModel()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = "gemini-3.8-flash" },
+            TestContext.Current.CancellationToken));
+
+        var result = Assert.IsType<ModelResolutionResult>(ok.Value);
+        Assert.Contains(result.Changes, c => c.Field == "Model" && c.To == "gemini-3.8-flash");
+        Assert.Empty(result.Blockers);
+        var dto = Assert.IsType<SystemAiApiConfigurationDto>(result.Model);
+        Assert.Equal("gemini-3.8-flash", dto.ModelId);
+        Assert.Equal("available", dto.ModelAvailability?.Status);
+
+        var saved = await ReloadAsync(db, config.Id);
+        Assert.Equal("gemini-3.8-flash", saved.ModelId);
+        Assert.Equal("Gemini 3.8 Flash", saved.DisplayName);
+        Assert.Equal(ModelCatalogModes.Catalog, saved.ModelCatalogMode);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_KeepCustom_SavesTheCustomLimitsAndPrices()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest
+            {
+                Action = ModelResolutionActions.KeepCustom,
+                MaxOutputTokens = 65536,
+                InputPricePerMillion = 0.75m,
+                OutputPricePerMillion = 3.75m
+            },
+            TestContext.Current.CancellationToken));
+
+        Assert.Equal("custom", Assert.IsType<SystemAiApiConfigurationDto>(Assert.IsType<ModelResolutionResult>(ok.Value).Model).ModelAvailability?.Status);
+
+        var saved = await ReloadAsync(db, config.Id);
+        Assert.Equal("gemini-3.7-flash", saved.ModelId);
+        Assert.Equal(ModelCatalogModes.Custom, saved.ModelCatalogMode);
+        Assert.Equal(65536, saved.MaxOutputTokens);
+        Assert.Equal(PricingModes.Custom, saved.PricingMode);
+        Assert.Equal(0.75m, saved.InputPricePerMillion);
+        Assert.Equal(3.75m, saved.OutputPricePerMillion);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_DryRun_ReturnsTheChangedConfiguration_AndSavesNothing()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = "gemini-3.8-flash", DryRun = true },
+            TestContext.Current.CancellationToken));
+
+        var result = Assert.IsType<ModelResolutionResult>(ok.Value);
+        Assert.Equal("gemini-3.8-flash", Assert.IsType<SystemAiApiConfigurationDto>(result.Model).ModelId);
+
+        var unchanged = await ReloadAsync(db, config.Id);
+        Assert.Equal("gemini-3.7-flash", unchanged.ModelId);
+        Assert.Equal("Gemini 3.7 Flash", unchanged.DisplayName);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_UnknownId_IsNotFound()
+    {
+        var (controller, _, _) = CreateTestController();
+
+        var result = await controller.ResolveSystemConfigModel(424242,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = "gemini-3.8-flash" },
+            TestContext.Current.CancellationToken);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_ATargetOutsideTheCatalog_IsABadRequest()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+
+        var result = await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = "gemini-9-ultra" },
+            TestContext.Current.CancellationToken);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var message = Assert.IsType<string>(badRequest.Value!.GetType().GetProperty("message")!.GetValue(badRequest.Value));
+        Assert.Contains("gemini-9-ultra", message);
+        Assert.Equal("gemini-3.7-flash", (await ReloadAsync(db, config.Id)).ModelId);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_SwitchWhileARunIsRunning_IsAConflictWithItsBlockers()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+        var run = await AddRunAsync(db, config.Id, BenchmarkRunStatus.Running);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = "gemini-3.8-flash" },
+            TestContext.Current.CancellationToken));
+
+        var blocker = Assert.Single(BlockersOf(conflict));
+        Assert.Equal(run.Id, blocker.RunId);
+        Assert.NotNull(conflict.Value!.GetType().GetProperty("message")!.GetValue(conflict.Value));
+        Assert.Equal("gemini-3.7-flash", (await ReloadAsync(db, config.Id)).ModelId);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_DryRunSwitchWhileARunIsRunning_ListsTheBlockers()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+        var run = await AddRunAsync(db, config.Id, BenchmarkRunStatus.Running);
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.Switch, TargetModelId = "gemini-3.8-flash", DryRun = true },
+            TestContext.Current.CancellationToken));
+
+        var blocker = Assert.Single(Assert.IsType<ModelResolutionResult>(ok.Value).Blockers);
+        Assert.Equal(run.Id, blocker.RunId);
+        Assert.Equal("gemini-3.7-flash", (await ReloadAsync(db, config.Id)).ModelId);
+    }
+
+    [Fact]
+    public async Task ResolveSystemConfigModel_KeepCustomWhileARunIsRunning_IsAllowed()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddGoogleConfigAsync(db, "gemini-3.7-flash");
+        await AddRunAsync(db, config.Id, BenchmarkRunStatus.Running);
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.ResolveSystemConfigModel(config.Id,
+            new ModelResolutionRequest { Action = ModelResolutionActions.KeepCustom },
+            TestContext.Current.CancellationToken));
+
+        Assert.Empty(Assert.IsType<ModelResolutionResult>(ok.Value).Blockers);
+        Assert.Equal(ModelCatalogModes.Custom, (await ReloadAsync(db, config.Id)).ModelCatalogMode);
     }
 }

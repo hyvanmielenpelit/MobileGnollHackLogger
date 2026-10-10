@@ -1,0 +1,18 @@
+[
+  {
+    "provider": "Google",
+    "prefixes": ["gemini-3.7-flash"],
+    "displayName": "Gemini 3.7 Flash",
+    "retiredOn": "2026-10-10",
+    "note": "Withdrawn from the Gemini API by Google.",
+    "replacement": "gemini-3.8-flash",
+    "lastKnown": {
+      "thinkingLevels": ["low", "medium", "high"],
+      "contextWindowSize": 1048576,
+      "maxOutputTokens": 65536,
+      "inputPerMillion": 0.75,
+      "outputPerMillion": 3.75,
+      "cachedInputPerMillion": 0.075
+    }
+  }
+]

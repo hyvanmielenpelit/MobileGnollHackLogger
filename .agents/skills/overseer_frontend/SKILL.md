@@ -118,6 +118,29 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `.rr-tab-flag`, `.rr-panel` with `.rr-panel-narrow` (48 rem) and `.rr-panel-medium` (60 rem), and the
   `.rr-figures*` key-figures grid and actions. They are in `styles.scss`; do not copy them back into
   either component.
+- **Model availability** (since 2026-10-10) — global, for a user model or system configuration
+  whose model was removed from or is not in the model catalog (`docs/overseer/adding-ai-models.md`
+  § *Retiring a Model*); never copied into a component:
+  - **`.status-badge.badge-availability`** — the row badge on the Models page and the System Configs
+    tab: *Removed* (`badge-warning`), *Not in catalog* (`badge-info`), *Custom model*
+    (`badge-neutral`), each a 12 px `aria-hidden` glyph before the word.
+  - **`.model-option-notice`** — the picker chip (`data-tone="warning"` or `"info"`), drawn by
+    `app-model-option-badges`; contract in [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md)
+    § 4e.
+  - **`.model-availability-notice`** — the inside of **`app-model-availability-notice`**
+    (`shared/model-availability/`, `OnPush`): an `.alert-compact`, amber `alert-warning` for a retired
+    model and blue `alert-info` for one not in the catalog, nothing otherwise. Inputs `availability`,
+    `modelName`, `modelId` (named by the not-in-catalog sentence), `variant` (`row` or `composer`,
+    reflected as `data-variant`), `live` (`status` or `alert`), `headingLevel`, `leadSentence`,
+    `extraText` and `announce`; the host's buttons are projected into `.alert-actions`, which hides
+    while empty. The sentence comes from `availabilitySentence()` in `model-availability.ts`, which
+    every surface uses. **Live-region rule:** the host takes its `role` only for a notice that appears
+    after the first render — the availability turning to needing attention on a later change, or a
+    host that creates the notice in response to a user action and sets `announce` — so a page that
+    loads with several flagged rows announces none of them.
+  - **`.gh-dialog.model-resolution-dialog`** — the frame of `app-model-resolution-dialog` (§ *Popups*
+    below): at most 40 rem wide, header and footer fixed, only `.mrd-body` scrolls; its parts are the
+    `mrd-` classes.
 - **`.settings-dialog.model-form-dialog`** is the near-full-screen frame of every dialog hosting
   `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
   `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It
@@ -322,6 +345,11 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#editConfigOverrideDialog`: Edit Config Override (`admin-dialogs/admin-config-override-dialog.component.html`)
   - `#rateLimitsDialog`: Rate Limits (`admin-dialogs/admin-rate-limits-dialog.component.html`)
   - `#analyticsDialog`: Analytics (`configs-tab/`)
+  - `app-model-resolution-dialog` (`kind="system"`, `configs-tab/`): *Resolve "{model}"* for a
+    configuration whose model was removed from or is not in the catalog, opened by a row's **Resolve…**
+    or by the `resolveConfig={id}` query parameter (`/admin?tab=configs&resolveConfig={id}`, the chat
+    composer's **Open System Configs**). Its **Delete…** emits `deleteRequested`, which starts the
+    tab's own delete flow. See the shared component below.
   - Not a dialog: the **Database** tab's report chart files (`database-tab/`). A stat box *Report Chart Files* after
     *Disk Attachments* reads *N documents · M files · X MB*, or *Not configured
     (Benchmark:ReportPack:ChartsDataLocation)*, and is absent when an older server sends no
@@ -355,6 +383,20 @@ To find specific popups, look in the corresponding component's `.html` template:
   label with an `interestfor` tooltip (*Checked <date>* and the stored message), no label while never
   checked, and **Verify Again** beside *Not verified*.
 
+- **Model Resolution Dialog (`shared/model-resolution-dialog/model-resolution-dialog.component.html`)** —
+  *Resolve "{model}"*, shared by the Models page, the chat composer (`kind="user"`) and the Admin
+  System Configs tab (`kind="system"`). A native `<dialog>` (`showModal()`, focus on its title),
+  `OnPush`. `open(subject)` takes `{ id, provider, modelId, displayName, availability }` and resets
+  every choice. A radio group chooses **Switch to another model** (a `<select>` of the provider's
+  catalog models from `GET api/settings/model-catalog/{provider}`, the replacement first, then newest
+  first, with a dry-run *What changes* preview and any *In use right now* blockers, which disable the
+  primary button), **Keep using it as a custom model** (limits and prices, prefilled from
+  `availability.suggestedCustom`, validated on blur and submit) or **Delete it** (when `allowDelete`).
+  Outputs: `resolved` (the `ModelResolutionResult` after a save; a user model the dialog deleted comes
+  as `deleted: true`, `isResolutionDeletion()`), `deleteRequested` (the system kind's **Delete…**, which
+  hands over to the host's own delete flow) and `closed` after every close. A 409 shows the refusal
+  and its blockers in the dialog.
+
 - **Chat Component (`chat.component.html`)**
   - `#deleteConfirmDialog`: Delete Confirm
   - `#imagePreviewDialog`: Image Preview
@@ -368,6 +410,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     badge in the composer's indicator strip.
   - `#ephemeralCloseDialog`: Delete Incognito Chat confirmation — opened by the strip's
     Delete chat button, and by the navigation guard when leaving an incognito chat with content.
+  - `app-model-resolution-dialog` (`kind="user"`): opened by **Resolve…** in the composer's model
+    notice (`app-model-availability-notice`, `variant="composer"`) when the selected model is the
+    user's own and was removed from or is not in the catalog.
 
 - **Admin Alerts Component (`admin-alerts.component.html`)**
   - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users.
@@ -378,6 +423,8 @@ To find specific popups, look in the corresponding component's `.html` template:
   - Both are near full screen (`settings-dialog model-form-dialog`); only the body of their
     `app-ai-model-form` scrolls.
   - `#deleteModelConfirmDialog`: Delete Model Confirm
+  - `app-model-resolution-dialog` (`kind="user"`): opened by **Resolve…** on a user model row that was
+    removed from or is not in the catalog.
 
 - **Settings Component (`settings.component.html`)**
   - `#confirmDialog`: Confirm

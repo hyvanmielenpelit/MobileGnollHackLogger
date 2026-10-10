@@ -209,6 +209,13 @@
           </select>
         </div>
 
+        @if (showAvailabilityNotice) {
+          <app-model-availability-notice class="mf-availability-notice" variant="row"
+                                         [availability]="availability"
+                                         [modelName]="availabilityModelName" [modelId]="initialData?.modelId"
+                                         [extraText]="availabilityExtraText"></app-model-availability-notice>
+        }
+
         @if (pickerModelSelect === 'custom') {
           <div class="form-group flex-col">
             <label>Model ID</label>

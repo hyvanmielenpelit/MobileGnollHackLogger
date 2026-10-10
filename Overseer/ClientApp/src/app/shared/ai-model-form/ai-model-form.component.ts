@@ -8,6 +8,8 @@ import {
   confidentialityPostureLabel
 } from '../../services/settings.service';
 import { AdminService, EndpointPolicySummaryDto } from '../../services/admin.service';
+import { ModelAvailability, needsAttention } from '../model-availability/model-availability';
+import { ModelAvailabilityNoticeComponent } from '../model-availability/model-availability-notice.component';
 
 export type DisplayNameMode = 'model_name' | 'model_id' | 'custom';
 
@@ -58,7 +60,7 @@ export interface AiModelFormResult {
 
 @Component({
     selector: 'app-ai-model-form',
-    imports: [CommonModule, FormsModule],
+    imports: [CommonModule, FormsModule, ModelAvailabilityNoticeComponent],
     templateUrl: './ai-model-form.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './ai-model-form.component.scss'
@@ -77,6 +79,19 @@ export class AiModelFormComponent implements OnInit, OnChanges {
   @Input() serverError: string | null = null;
   /** Admin only: provider → its default key, for the Default / Custom key choice. */
   @Input() defaultKeys: Record<string, DefaultKeyInfo> = {};
+  /** Edit mode: the edited row's catalog availability; a model that needs attention gets a notice. */
+  @Input() availability: ModelAvailability | null = null;
+
+  readonly availabilityExtraText = 'Pick a model in the list above to switch, or save as is to keep it flagged.';
+
+  get showAvailabilityNotice(): boolean {
+    return this.mode === 'edit' && needsAttention(this.availability);
+  }
+
+  /** The edited row's name as it was opened. */
+  get availabilityModelName(): string {
+    return this.initialData?.displayName || this.initialData?.modelId || '';
+  }
 
   @Output() save = new EventEmitter<AiModelFormResult>();
   @Output() cancel = new EventEmitter<void>();

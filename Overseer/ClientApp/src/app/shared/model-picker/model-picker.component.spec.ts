@@ -22,6 +22,13 @@ const MODELS: TestModel[] = [
   { id: 4, modelId: 'charlie-model', provider: 'Google' }
 ];
 
+const FLAGGED: TestModel[] = [
+  { id: 11, displayName: 'Old Flash', provider: 'Google', thinkingLevel: 'high',
+    modelAvailability: { status: 'retired', needsAttention: true, retiredOn: '2026-09-30' } },
+  { id: 12, displayName: 'Mystery', provider: 'OpenAI', modelAvailability: { status: 'notInCatalog', needsAttention: true } },
+  { id: 13, displayName: 'Fine', provider: 'Anthropic', modelAvailability: { status: 'available', needsAttention: false } }
+];
+
 /** Feeds every committed choice back into `selectedKey`, the way a real host does. */
 @Component({
   standalone: true,
@@ -39,6 +46,8 @@ const MODELS: TestModel[] = [
                         [options]="optionsB" [selectedKey]="null"></app-model-picker>
       <app-model-picker class="picker-c" variant="compact" label="Model C" [options]="optionsA"
                         [selectedKey]="1"></app-model-picker>
+      <app-model-picker class="picker-d" variant="compact" label="Model D" [narrowHidesBadges]="true"
+                        [options]="optionsD" [selectedKey]="11"></app-model-picker>
       <button type="button" class="outside">Outside</button>
     </div>
   `
@@ -48,6 +57,7 @@ class HostComponent {
   noneLabel: string | null = null;
   optionsA: ModelPickerOption<TestModel>[] = toModelPickerOptions(MODELS);
   optionsB: ModelPickerOption<TestModel>[] = [];
+  optionsD: ModelPickerOption<TestModel>[] = toModelPickerOptions(FLAGGED);
   selectedA: ModelPickerKey | null = null;
   disabledA = false;
   selections: ModelPickerSelection<TestModel>[] = [];
@@ -404,6 +414,66 @@ describe('ModelPickerComponent', () => {
       update({ selectedA: 1 });
       openByClick();
       expect(pickerA().querySelector('.model-option-tag')).toBeNull();
+    });
+  });
+
+  describe('availability chip', () => {
+    const chip = (scope: Element) => scope.querySelector<HTMLElement>('.model-option-notice');
+    const name = (el: Element) => el.textContent!.replace(/\s+/g, ' ').trim();
+
+    it('leads the badges of an option that needs attention, with its tone, glyph and hidden prefix', () => {
+      update({ optionsA: toModelPickerOptions(FLAGGED) });
+      openByClick();
+      const [old, mystery, fine] = options();
+
+      const removed = chip(old)!;
+      expect(removed.getAttribute('data-tone')).toBe('warning');
+      expect(removed.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+      expect(removed.querySelector('.visually-hidden')!.textContent).toBe('status: ');
+      expect(name(removed)).toBe('status: Removed');
+      const thinking = old.querySelector('.thinking-badge')!;
+      expect(removed.compareDocumentPosition(thinking) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(old.querySelector('.model-name')!.compareDocumentPosition(removed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      expect(chip(mystery)!.getAttribute('data-tone')).toBe('info');
+      expect(name(chip(mystery)!)).toBe('status: Not in catalog');
+      expect(chip(fine)).toBeNull();
+    });
+
+    it("is part of the option's accessible name", () => {
+      update({ optionsA: toModelPickerOptions(FLAGGED) });
+      openByClick();
+      const option = options()[0];
+      expect(option.hasAttribute('aria-label')).toBe(false);
+      expect(option.hasAttribute('aria-labelledby')).toBe(false);
+      const text = name(option);
+      expect(text.indexOf('Old Flash')).toBe(0);
+      expect(text.indexOf('status: Removed')).toBeGreaterThan(0);
+      expect(text.indexOf('thinking level High')).toBeGreaterThan(text.indexOf('status: Removed'));
+    });
+
+    it("shows on the trigger of a selected model, as part of the trigger's accessible name", () => {
+      update({ optionsA: toModelPickerOptions(FLAGGED), selectedA: 12 });
+      const button = trigger();
+      expect(chip(button)!.getAttribute('data-tone')).toBe('info');
+      expect(button.getAttribute('aria-labelledby')).toBe(`pickerALabel ${button.id}`);
+      expect(button.hasAttribute('aria-label')).toBe(false);
+      const text = name(button);
+      expect(text).toContain('Mystery');
+      expect(text.indexOf('status: Not in catalog')).toBeGreaterThan(text.indexOf('Mystery'));
+
+      update({ selectedA: 13 });
+      expect(chip(trigger())).toBeNull();
+    });
+
+    it('stays visible where narrowHidesBadges hides the provider badge', () => {
+      const picker = el.querySelector<HTMLElement>('.picker-d')!;
+      const button = trigger(picker);
+      expect(window.innerWidth).toBeLessThanOrEqual(992);
+      expect(getComputedStyle(button.querySelector('.provider-badge')!).display).toBe('none');
+      const notice = chip(button)!;
+      expect(getComputedStyle(notice).display).not.toBe('none');
+      expect(notice.getBoundingClientRect().width).toBeGreaterThan(0);
     });
   });
 

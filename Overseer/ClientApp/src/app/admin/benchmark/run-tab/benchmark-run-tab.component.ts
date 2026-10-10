@@ -1,6 +1,7 @@
-import { AfterViewInit, Component, ChangeDetectorRef, ViewChild, ElementRef, OnInit, inject } from '@angular/core';
+import { AfterViewInit, Component, ChangeDetectorRef, ViewChild, ElementRef, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import {
   AdminBenchmarkService,
   BenchmarkRunSummaryDto,
@@ -41,7 +42,8 @@ import {
   modelBatchFindingCode
 } from './model-batch-readiness/model-batch-readiness.component';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
-import { BenchmarkLauncherState } from '../state/benchmark-launcher.state';
+import { BenchmarkLauncherRole, BenchmarkLauncherState } from '../state/benchmark-launcher.state';
+import { formatCatalogDate } from '../../../shared/model-availability/model-availability';
 import { BenchmarkDifficultyJobService } from '../state/benchmark-difficulty-job.service';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import { batteryAwaitsPostRun, batteryPostRunWork } from '../batteries/battery.models';
@@ -99,6 +101,25 @@ const MODEL_BATCH_CHIP_NOTES: Readonly<Record<string, string>> = {
   'MB-W10': 'Same provider as the assessor'
 };
 
+/** The id of each role's availability line, `bm<Role>ModelAvailability`, beside its `bm<Role>ModelHint`. */
+const ROLE_AVAILABILITY_IDS: Readonly<Record<BenchmarkLauncherRole, string>> = {
+  tested: 'bmTestedModelAvailability',
+  assessor: 'bmAssessorModelAvailability',
+  coAssessor: 'bmCoAssessorModelAvailability',
+  secondOpinion: 'bmSecondOpinionModelAvailability',
+  claimVerifier: 'bmClaimVerifierModelAvailability',
+  reportWriter: 'bmReportWriterModelAvailability'
+};
+
+/** What a role's field says about its configuration's place in the model catalog. */
+export interface LauncherAvailabilityLine {
+  /** `retired` is a refusal that holds Start back; `notInCatalog` an advisory. */
+  status: 'retired' | 'notInCatalog';
+  text: string;
+  configId: number;
+  lineId: string;
+}
+
 /** The Run Benchmark sub-tab: the launcher, the active run, series, battery and model batch banners, and the start dialogs. */
 @Component({
   selector: 'app-benchmark-run-tab',
@@ -110,8 +131,9 @@ const MODEL_BATCH_CHIP_NOTES: Readonly<Record<string, string>> = {
   templateUrl: './benchmark-run-tab.component.html',
   styleUrls: ['./benchmark-run-tab.component.scss']
 })
-export class BenchmarkRunTabComponent implements OnInit, AfterViewInit {
+export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly router = inject(Router);
   private readonly viewSync = inject(BenchmarkViewSync);
   readonly bridge = inject(BenchmarkShellBridge);
   readonly workspace = inject(BenchmarkWorkspaceStore);
@@ -151,6 +173,46 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit {
 
   ngAfterViewInit(): void {
     this.focusBatchModelsIfPending();
+  }
+
+  ngOnDestroy(): void {
+    // The restore notes are shown on one visit of the Run Benchmark sub-tab only.
+    this.launcher.clearRestoreNotes();
+  }
+
+  /**
+   * The line under a role's picker while its selected configuration needs attention: a refusal for a
+   * model removed from the catalog, an advisory for a model the catalog does not list; else null.
+   */
+  roleAvailability(role: BenchmarkLauncherRole): LauncherAvailabilityLine | null {
+    const config = this.launcher.selectedConfigFor(role);
+    const availability = config?.modelAvailability;
+    if (!config || !availability) return null;
+    const modelId = config.modelId || config.displayName || `configuration #${config.id}`;
+    const lineId = ROLE_AVAILABILITY_IDS[role];
+    if (availability.status === 'retired') {
+      const name = config.displayName || config.modelId || `Configuration #${config.id}`;
+      const date = formatCatalogDate(availability.retiredOn);
+      const text = date
+        ? `${name} uses ${modelId}, which was removed from the model catalog on ${date}.`
+        : `${name} uses ${modelId}, which was removed from the model catalog.`;
+      return { status: 'retired', text, configId: config.id, lineId };
+    }
+    if (availability.status === 'notInCatalog') {
+      const text = `${modelId} isn't in the model catalog; its cost will be reported as unknown unless it has a custom price.`;
+      return { status: 'notInCatalog', text, configId: config.id, lineId };
+    }
+    return null;
+  }
+
+  /** `base` with the role's availability line added while it shows. */
+  describedWithAvailability(base: string, role: BenchmarkLauncherRole): string {
+    return this.roleAvailability(role) ? `${base} ${ROLE_AVAILABILITY_IDS[role]}` : base;
+  }
+
+  /** Resolve in System Configs: opens System Configs with the configuration's resolution dialog. */
+  resolveInSystemConfigs(configId: number): void {
+    void this.router.navigate(['/admin'], { queryParams: { tab: 'configs', resolveConfig: configId } });
   }
 
   /**
@@ -908,11 +970,16 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit {
       !!this.launcher.testedConfigId &&
       !!this.launcher.assessorConfigId &&
       !(this.monitor.activeRunDetail && formatStatus(this.monitor.activeRunDetail.status) === 'Running') &&
+      !this.launcher.retiredRoleRefusal() &&
       !this.panelLaunchRefusal &&
       !this.reportWriterLaunchRefusal;
   }
 
-  /** Names the first condition Start Benchmark is waiting on, for the button's aria-disabled hint. Empty once canStartRun is true. */
+  /**
+   * Names the first condition Start Benchmark is waiting on, for the button's aria-disabled hint. Empty
+   * once canStartRun is true. The target comes first, then the two required roles, then a role whose
+   * model left the catalog, then the panel and report writer refusals.
+   */
   get startBenchmarkHint(): string {
     if (this.launcher.isBatteryTarget) {
       if (this.batteryLaunchRefusal) {
@@ -925,6 +992,10 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit {
     }
     if (!this.launcher.testedConfigId || !this.launcher.assessorConfigId) {
       return 'Choose a model under test and an assessor.';
+    }
+    const retired = this.launcher.retiredRoleRefusal();
+    if (retired) {
+      return `${retired.label} uses a model removed from the catalog. Resolve it in System Configs or choose another model.`;
     }
     if (this.panelLaunchRefusal) {
       return this.panelLaunchRefusal;

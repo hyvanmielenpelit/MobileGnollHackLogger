@@ -195,6 +195,22 @@
     </div>
   </div>
 
+  <!-- Remembered selections the configurations no longer allowed, and what was chosen instead.
+       Always rendered, so the status is announced when it fills. -->
+  <div class="bm-restore-status" role="status">
+    @if (launcher.restoreNotes.length > 0) {
+      <div class="alert alert-info bm-restore-card">
+        <div class="alert-content">
+          <ul class="alert-body bm-restore-notes">
+            @for (note of launcher.restoreNotes; track $index) {
+              <li>{{ note }}</li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
+  </div>
+
   @if (monitor.runErrorMessage) {
     <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
       <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -263,7 +279,7 @@
       <label id="bmTestedModelLabel">Model Under Test</label>
       <div class="gh-field-row">
         <app-model-picker class="tested-model-selector"
-                          labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
+                          labelledBy="bmTestedModelLabel" [describedBy]="describedWithAvailability('bmTestedModelHint', 'tested')"
                           [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
                           [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.testedConfigId"
                           (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
@@ -271,6 +287,7 @@
           Answers every question. Speed Index is only comparable at the same thinking level.
         </app-info-tip>
       </div>
+      <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'tested' }"></ng-container>
     }
   </div>
 
@@ -286,6 +303,34 @@
         }
         <span>{{ line.title }}</span>
       </p>
+    }
+  </ng-template>
+
+  <!-- A role's configuration and the model catalog: a model removed from it is refused, with the way
+       to resolve it; a model it does not list is an advisory. The id joins the picker's description. -->
+  <ng-template #availabilityLine let-role>
+    @if (roleAvailability(role); as notice) {
+      @if (notice.status === 'retired') {
+        <div class="mt-10 bm-availability-refusal">
+          <p [id]="notice.lineId" class="gh-field-error">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ notice.text }}</span>
+          </p>
+          <button type="button" class="btn-ghost bm-availability-resolve" [attr.aria-describedby]="notice.lineId"
+                  (click)="resolveInSystemConfigs(notice.configId)">Resolve in System Configs</button>
+        </div>
+      } @else {
+        <div [id]="notice.lineId" class="alert alert-warning alert-compact mt-10 bm-availability-advisory" role="note">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-body">{{ notice.text }}</div>
+          </div>
+        </div>
+      }
     }
   </ng-template>
 
@@ -502,7 +547,7 @@
           <label id="bmAssessorModelLabel">Assessor</label>
           <div class="gh-field-row">
             <app-model-picker class="assessor-model-selector"
-                              labelledBy="bmAssessorModelLabel" [describedBy]="describedWithBatchLine('bmAssessorModelHint', 'assessor')"
+                              labelledBy="bmAssessorModelLabel" [describedBy]="describedWithBatchLine(describedWithAvailability('bmAssessorModelHint', 'assessor'), 'assessor')"
                               [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.assessorConfigId"
                               (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
@@ -515,6 +560,7 @@
               <p>More: How the graders work.</p>
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'assessor' }"></ng-container>
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'assessor' }"></ng-container>
 
           @if (showAssessorChangeAdvisory) {
@@ -537,7 +583,7 @@
           <label id="bmCoAssessorModelLabel">Co-Assessor <span class="field-optional">Optional</span></label>
           <div class="gh-field-row">
             <app-model-picker class="co-assessor-model-selector"
-                              labelledBy="bmCoAssessorModelLabel" [describedBy]="describedWithBatchLine('bmCoAssessorModelHint', 'coAssessor')"
+                              labelledBy="bmCoAssessorModelLabel" [describedBy]="describedWithBatchLine(describedWithAvailability('bmCoAssessorModelHint', 'coAssessor'), 'coAssessor')"
                               noneLabel="None — single assessor" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.coAssessorConfigId"
                               (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
@@ -551,6 +597,7 @@
               <p>More: How the graders work.</p>
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'coAssessor' }"></ng-container>
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'coAssessor' }"></ng-container>
 
           <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
@@ -589,7 +636,7 @@
           <div class="gh-field-row">
             <app-model-picker class="second-opinion-model-selector"
                               labelledBy="bmSecondOpinionModelLabel"
-                              [describedBy]="describedWithBatchLine(showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint', 'secondOpinion')"
+                              [describedBy]="describedWithBatchLine(describedWithAvailability(showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint', 'secondOpinion'), 'secondOpinion')"
                               [noneLabel]="launcher.isPanelLaunch ? 'None — no reference reader' : 'None — no second reader'" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.secondOpinionConfigId"
                               (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
@@ -617,6 +664,7 @@
               <strong>Same model as the assessor: it will mostly confirm its own verdict.</strong>
             </span>
           }
+          <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'secondOpinion' }"></ng-container>
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'secondOpinion' }"></ng-container>
 
           <!--
@@ -698,7 +746,7 @@
           <label id="bmClaimVerifierModelLabel">Claim Verifier <span class="field-optional">Optional</span></label>
           <div class="gh-field-row">
             <app-model-picker class="claim-verifier-model-selector"
-                              labelledBy="bmClaimVerifierModelLabel" [describedBy]="describedWithBatchLine('bmClaimVerifierModelHint', 'claimVerifier')"
+                              labelledBy="bmClaimVerifierModelLabel" [describedBy]="describedWithBatchLine(describedWithAvailability('bmClaimVerifierModelHint', 'claimVerifier'), 'claimVerifier')"
                               noneLabel="None — no claim verification" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.claimVerifierConfigId"
                               (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
@@ -714,6 +762,7 @@
               <p>More: How the graders work.</p>
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'claimVerifier' }"></ng-container>
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'claimVerifier' }"></ng-container>
 
           @if (showClaimVerifierCandidateAdvisory) {
@@ -749,7 +798,7 @@
           <div class="gh-field-row">
             <app-model-picker class="report-writer-model-selector"
                               labelledBy="bmReportWriterModelLabel"
-                              [describedBy]="describedWithBatchLine(reportWriterLaunchRefusal ? 'bmReportWriterModelHint bmReportWriterRefusal' : 'bmReportWriterModelHint', 'reportWriter')"
+                              [describedBy]="describedWithBatchLine(describedWithAvailability(reportWriterLaunchRefusal ? 'bmReportWriterModelHint bmReportWriterRefusal' : 'bmReportWriterModelHint', 'reportWriter'), 'reportWriter')"
                               noneLabel="None — no AI-written reports" [showPrice]="true"
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.reportWriterConfigId"
                               (selectionChange)="selectReportWriterModel($event.model)"></app-model-picker>
@@ -772,6 +821,7 @@
               }
             </app-info-tip>
           </div>
+          <ng-container *ngTemplateOutlet="availabilityLine; context: { $implicit: 'reportWriter' }"></ng-container>
           <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'reportWriter' }"></ng-container>
 
           <!-- The server's report-writer refusal, shown before Start so the run is never sent. -->

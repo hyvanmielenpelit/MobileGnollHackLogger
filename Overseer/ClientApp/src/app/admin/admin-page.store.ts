@@ -62,6 +62,12 @@ export class AdminPageStore {
   /** Set while a maintenance request is outstanding, so a re-entered Database tab still refuses a second one. */
   maintenanceInFlight = false;
 
+  /** A configuration a link asked the System Configs tab to resolve; cleared once the tab has read it. */
+  pendingResolveConfigId: number | null = null;
+
+  /** Emits when `pendingResolveConfigId` is set. */
+  readonly resolveConfigRequested$ = new Subject<void>();
+
   showToast(message: string, type: AdminToastType = 'success', title?: string): void {
     this.toast$.next({ message, type, title });
   }
@@ -95,13 +101,19 @@ export class AdminPageStore {
     this.configsChanged$.next();
   }
 
-  /** Replaces one configuration in place, keeping the list's identity and order. */
+  /** Replaces the configuration with the same id in a new list, keeping the order. */
   replaceConfig(updated: SystemAiConfigDto): void {
     const idx = this.configs.findIndex(c => c.id === updated.id);
     if (idx !== -1) {
-      this.configs[idx] = updated;
+      this.configs = this.configs.map(c => c.id === updated.id ? updated : c);
       this.configsChanged$.next();
     }
+  }
+
+  /** Asks the System Configs tab to open the model resolution dialog for a configuration. */
+  requestResolveConfig(id: number): void {
+    this.pendingResolveConfigId = id;
+    this.resolveConfigRequested$.next();
   }
 
   /** A failed load keeps the keys already shown. */

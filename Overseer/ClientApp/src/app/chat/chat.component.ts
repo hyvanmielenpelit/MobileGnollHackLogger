@@ -14,6 +14,9 @@ import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
+import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/model-availability-notice.component';
+import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
+import { ModelResolutionResult, isResolutionDeletion, needsAttention } from '../shared/model-availability/model-availability';
 import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { parseServerUtcDate } from '../utils/date.util';
@@ -54,7 +57,7 @@ export interface AttachmentExcerptNotice {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent, ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
@@ -217,6 +220,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('privateBadgeDialog') privateBadgeDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('ephemeralInfoDialog') ephemeralInfoDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
+  @ViewChild('modelResolutionDialog') modelResolutionDialog?: ModelResolutionDialogComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
 
@@ -458,7 +462,20 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   systemModels: import('../services/settings.service').UserAiModel[] = [];
   selectedModelKey: string | null = null;
   singleModelInfo: any = null;
-  
+
+  /** The id of the composer picker's trigger, which *Choose another model* focuses. */
+  readonly chatModelPickerTriggerId = 'chat-model-picker-trigger';
+  /** True after the user picks a model, so the composer notice for it is announced; never for a restored selection. */
+  announceModelNotice = false;
+  /** One-time line under the picker after a stored selection no longer resolved. */
+  restoredModelNote: string | null = null;
+  /** The friendly text of a `model_unavailable` error and the key of the model the turn was sent with. */
+  modelUnavailableNotice: { modelKey: string; message: string } | null = null;
+  /** The model key the turn in progress was sent with. */
+  private turnModelKey: string | null = null;
+  /** Whether the turn in progress reported an error; a turn that finishes without one clears `modelUnavailableNotice`. */
+  private currentTurnFailed = false;
+
   isRenamingTitle = false;
   renameTitleValue = '';
   renameError: string | null = null;
@@ -795,6 +812,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   selectModel(model: import('../services/settings.service').UserAiModel | undefined) {
     if (model && model.id !== undefined) {
       const key = (model.isSystem ? 's_' : 'u_') + model.id;
+      if (key !== this.selectedModelKey) {
+        this.modelUnavailableNotice = null;
+        this.announceModelNotice = true;
+      }
+      this.restoredModelNote = null;
       this.selectedModelKey = key;
       localStorage.setItem('overseer_chat_model_global', key);
       /* An ephemeral chat leaves no per-session key behind: it would name a chat that no
@@ -822,33 +844,209 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return undefined;
   }
 
+  /**
+   * Selects the session's stored model, else the global one, else the first model. A stored key
+   * that no longer resolves is removed, and the fallback is named in `restoredModelNote`.
+   */
   applySavedModelPreference() {
     if (this.userModels.length === 0 && this.systemModels.length === 0) return;
 
-    let targetKey: string | null = null;
+    let lostStoredModel = false;
+    let matchedModel: UserAiModel | undefined;
 
     if (this.currentSessionId !== null) {
-      const sessionPref = localStorage.getItem(`overseer_chat_model_session_${this.currentSessionId}`);
-      if (sessionPref) targetKey = sessionPref;
-    }
-
-    if (!targetKey || !this.findModelByKey(targetKey)) {
-      const globalPref = localStorage.getItem('overseer_chat_model_global');
-      if (globalPref) targetKey = globalPref;
-    }
-
-    const matchedModel = this.findModelByKey(targetKey);
-    if (matchedModel && matchedModel.id !== undefined) {
-      this.selectedModelKey = (matchedModel.isSystem ? 's_' : 'u_') + matchedModel.id;
-    } else {
-      if (this.userModels.length > 0 && this.userModels[0].id !== undefined) {
-        this.selectedModelKey = 'u_' + this.userModels[0].id;
-      } else if (this.systemModels.length > 0 && this.systemModels[0].id !== undefined) {
-        this.selectedModelKey = 's_' + this.systemModels[0].id;
-      } else {
-        this.selectedModelKey = null;
+      const sessionStorageKey = `overseer_chat_model_session_${this.currentSessionId}`;
+      const sessionPref = this.readStoredModelKey(sessionStorageKey);
+      matchedModel = this.findModelByKey(sessionPref);
+      if (sessionPref && !matchedModel) {
+        this.removeStoredModelKey(sessionStorageKey);
+        lostStoredModel = true;
       }
     }
+
+    if (!matchedModel) {
+      const globalPref = this.readStoredModelKey('overseer_chat_model_global');
+      matchedModel = this.findModelByKey(globalPref);
+      if (globalPref && !matchedModel) {
+        this.removeStoredModelKey('overseer_chat_model_global');
+        lostStoredModel = true;
+      }
+    }
+
+    let nextKey: string | null;
+    if (matchedModel && matchedModel.id !== undefined) {
+      nextKey = (matchedModel.isSystem ? 's_' : 'u_') + matchedModel.id;
+    } else if (this.userModels.length > 0 && this.userModels[0].id !== undefined) {
+      nextKey = 'u_' + this.userModels[0].id;
+    } else if (this.systemModels.length > 0 && this.systemModels[0].id !== undefined) {
+      nextKey = 's_' + this.systemModels[0].id;
+    } else {
+      nextKey = null;
+    }
+
+    if (nextKey !== this.selectedModelKey) {
+      this.announceModelNotice = false;
+      this.modelUnavailableNotice = null;
+    }
+    this.selectedModelKey = nextKey;
+
+    const selected = this.selectedModel;
+    if (lostStoredModel && selected) {
+      this.restoredModelNote = this.restoredSelectionText(selected);
+    }
+  }
+
+  private restoredSelectionText(model: UserAiModel): string {
+    return `The model you used last is no longer available, so ${this.chatModelLabel(model)} is selected.`;
+  }
+
+  dismissRestoredModelNote(): void {
+    this.restoredModelNote = null;
+  }
+
+  private readStoredModelKey(storageKey: string): string | null {
+    try {
+      return localStorage.getItem(storageKey);
+    } catch {
+      return null;
+    }
+  }
+
+  private removeStoredModelKey(storageKey: string): void {
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* Storage unavailable: the stale key stays and is skipped again next time. */
+    }
+  }
+
+  private chatModelLabel(model: UserAiModel | undefined): string {
+    return model?.displayName || model?.modelId || '';
+  }
+
+  /** Splits the served models into the chat's own and system lists, keeping only chat-role models. */
+  private setChatModels(models: UserAiModel[]): void {
+    this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+    this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
+    this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
+  }
+
+  get selectedModelNeedsAttention(): boolean {
+    return needsAttention(this.selectedModel?.modelAvailability);
+  }
+
+  /** The friendly error text of the last turn when it failed because the selected model is unavailable. */
+  get unansweredModelMessage(): string | null {
+    const notice = this.modelUnavailableNotice;
+    return notice && notice.modelKey === this.selectedModelKey ? notice.message : null;
+  }
+
+  get showComposerModelNotice(): boolean {
+    return !!this.selectedModel && (this.selectedModelNeedsAttention || this.unansweredModelMessage !== null);
+  }
+
+  get selectedModelName(): string {
+    return this.chatModelLabel(this.selectedModel);
+  }
+
+  get resolveModelLabel(): string {
+    return `Resolve "${this.selectedModelName}"`;
+  }
+
+  get canChooseAnotherModel(): boolean {
+    return this.userModels.length + this.systemModels.length > 1;
+  }
+
+  /** A selectable chat model, other than the selected one, that serves the selected model's catalog replacement. */
+  get replacementChatModel(): UserAiModel | null {
+    const current = this.selectedModel;
+    const targetId = current?.modelAvailability?.replacement?.modelId;
+    if (!current || !targetId) return null;
+    const provider = (current.provider || '').toLowerCase();
+    return [...this.userModels, ...this.systemModels].find(m =>
+      m !== current
+      && m.id !== undefined
+      && m.modelId === targetId
+      && (m.provider || '').toLowerCase() === provider
+      && !needsAttention(m.modelAvailability)) ?? null;
+  }
+
+  get replacementChatModelName(): string {
+    return this.chatModelLabel(this.replacementChatModel ?? undefined);
+  }
+
+  useReplacementModel(): void {
+    const replacement = this.replacementChatModel;
+    if (!replacement) return;
+    this.selectModel(replacement);
+    this.cdr.detectChanges();
+    this.focusChatModelControl();
+  }
+
+  /** Focuses the composer picker's trigger, or the prompt when there is no picker. */
+  focusChatModelControl(): void {
+    const trigger = document.getElementById(this.chatModelPickerTriggerId);
+    if (trigger) {
+      trigger.focus();
+      return;
+    }
+    this.promptInput?.nativeElement?.focus();
+  }
+
+  openModelResolution(): void {
+    const model = this.selectedModel;
+    if (!model || model.isSystem || model.id === undefined || !model.modelAvailability) return;
+    this.modelResolutionDialog?.open({
+      id: model.id,
+      provider: model.provider,
+      modelId: model.modelId,
+      displayName: this.chatModelLabel(model),
+      availability: model.modelAvailability
+    });
+  }
+
+  /**
+   * Reloads the models after the resolution dialog saved. A switched or kept model keeps its
+   * `u_<id>` selection; a deleted one falls back as a restored selection does.
+   */
+  onModelResolved(result: ModelResolutionResult): void {
+    const keptKey = this.selectedModelKey;
+    const deleted = isResolutionDeletion(result);
+    this.modelUnavailableNotice = null;
+    this.settingsService.getUserModels().subscribe({
+      next: models => {
+        this.setChatModels(models);
+        if (!this.hasModel) {
+          this.singleModelInfo = null;
+          this.selectedModelKey = null;
+        } else if (deleted) {
+          this.restoredModelNote = null;
+          this.applySavedModelPreference();
+          const selected = this.selectedModel;
+          if (!this.restoredModelNote && selected) {
+            this.restoredModelNote = this.restoredSelectionText(selected);
+          }
+        } else if (keptKey && this.findModelByKey(keptKey)) {
+          this.selectedModelKey = keptKey;
+        } else {
+          this.applySavedModelPreference();
+        }
+        this.cdr.detectChanges();
+        const active = document.activeElement;
+        if (!active || active === document.body || !active.isConnected) {
+          this.focusChatModelControl();
+        }
+      },
+      error: (err) => {
+        this.debugService.log(`[Overseer] Reloading models after a resolution failed: ${err?.message || err}`);
+      }
+    });
+  }
+
+  private resetModelTurnState(): void {
+    this.modelUnavailableNotice = null;
+    this.turnModelKey = null;
+    this.currentTurnFailed = false;
   }
 
   formatThinkingLevel(level: string | undefined): string {
@@ -1399,10 +1597,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             next: (models) => {
               const modelsDuration = performance.now() - tModels0;
               this.perfLog('Settings', `getUserModels received in ${modelsDuration.toFixed(1)}ms (${models.length} models)`);
-              this.userModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
-              this.systemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 1) === 1));
-              this.hasModel = this.userModels.length > 0 || this.systemModels.length > 0;
-              
+              this.setChatModels(models);
+
               if (this.hasModel) {
                 this.applySavedModelPreference();
               } else {
@@ -1850,6 +2046,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.handleExpiredEphemeralSession();
         return;
       }
+      this.currentTurnFailed = true;
+      /* The composer notice for the model the turn was sent with; the text also stays in the
+         reply below, as every error does. */
+      if (evt.errorCode === 'model_unavailable') {
+        const modelKey = this.turnModelKey ?? this.selectedModelKey;
+        if (modelKey) {
+          this.modelUnavailableNotice = {
+            modelKey,
+            message: typeof evt.data === 'string' && evt.data.trim() ? evt.data.trim() : 'This model is not available.'
+          };
+        }
+      }
       this.flushPendingChunkBuffer();
       this.currentStatusText = `Error: ${evt.data}`;
       this.debugService.log(`[Backend Error] ${evt.data}`);
@@ -1974,6 +2182,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       } catch(e) {}
     } else if (evt.type === 'done') {
       this.hasOngoingGeneration = false;
+      if (!this.currentTurnFailed) {
+        this.modelUnavailableNotice = null;
+      }
       this.debugService.log(`[Frontend] done received. hasRealContent=${this.hasRealContent}, streamingMessage.length=${this.streamingMessage.length}`);
       if (this.realContentTimeout) {
          clearTimeout(this.realContentTimeout);
@@ -2408,6 +2619,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.clientBridge.notifySessionChanged(null);
     this.lastSeenSeqNo = -1;
     this.messages = [];
+    this.resetModelTurnState();
     this.clearStreamingState();
     this.loadDraft();
     this.applySavedModelPreference();
@@ -2500,6 +2712,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionTotalCost = null;
     this.autoScrollEnabled = true;
     this.lastSeenSeqNo = -1;
+    this.resetModelTurnState();
     this.clearStreamingState();
     this.resetAvatarState();
 
@@ -3504,6 +3717,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (this.isStreaming) {
       return;
     }
+
+    this.currentTurnFailed = false;
+    this.turnModelKey = this.selectedModelKey;
 
     const attachmentsPayload = this.pendingAttachments.map(a => ({
       fileName: a.name,

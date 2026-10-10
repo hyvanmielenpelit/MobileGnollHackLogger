@@ -943,6 +943,16 @@ selected option, so the handler must be idempotent.
 - The badge row is its own component, `app-model-option-badges` (`shared/model-picker/`, host
   `display: contents`; inputs `model`, `showPrice`, `showParallel`, `narrowHidesBadges`), which the
   multi-model picker (§4e-3) renders too, so both pickers draw identical badges.
+- **The availability chip.** `ModelPickerModel.modelAvailability` (`ModelAvailability` from
+  `shared/model-availability/model-availability.ts`, the server's `modelAvailability`) marks a model
+  that needs attention. `app-model-option-badges` renders its chip, `.model-option-notice` (global),
+  **before every other badge**: *Removed* (`data-tone="warning"`, alert-triangle) for a retired model
+  and *Not in catalog* (`data-tone="info"`, info circle) for one the catalog does not describe, from
+  `availabilityChip()`; no chip for any other status. It is a 12 px `aria-hidden` glyph, a visually
+  hidden *status:* and the word — never a color alone — and appears in both the option and the
+  trigger, so it is part of both accessible names. **`narrowHidesBadges` never hides it**: it is the
+  one badge that warns. A host builds `modelAvailability` into its options; the picker never fetches
+  it.
 
 ### 4e-2. Multi-select picker: `app-multi-picker`
 

@@ -33,6 +33,22 @@
 
 .model-details {
 }
+
+// The page status line after a resolution; it takes no space while empty.
+.models-status {
+  margin: 0;
+  padding: 0 30px;
+  font-size: var(--text-body);
+
+  &.has-text {
+    margin-bottom: 16px;
+  }
+}
+
+.model-row-notice {
+  display: block;
+  margin-top: 8px;
+}
 .empty-state {
   text-align: center;
   padding: 3rem;

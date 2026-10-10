@@ -330,6 +330,8 @@ builder.Services.AddScoped<Overseer.Services.ChatRetentionService>();
 builder.Services.AddScoped<Overseer.Services.DatabaseStorageMetricsService>();
 builder.Services.AddHostedService<Overseer.Services.DatabaseMaintenanceBackgroundService>();
 builder.Services.AddSingleton<ModelMetadataService>();
+builder.Services.AddSingleton<ModelAvailabilityService>();
+builder.Services.AddSingleton<ModelResolutionService>();
 builder.Services.AddScoped<ModelPricingService>();
 builder.Services.AddSingleton<RecommendedModelService>();
 builder.Services.AddSignalR(options =>

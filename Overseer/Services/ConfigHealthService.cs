@@ -162,6 +162,58 @@ public class ConfigHealthService
             }
         }
 
+        /* Retired models: one alert per retired catalog entry that enabled configurations still
+           name. A custom-mode or custom-endpoint configuration is not retired, and a model the
+           catalog never described raises nothing here. */
+        if (_scopeFactory != null)
+        {
+            try
+            {
+                using var retiredScope = _scopeFactory.CreateScope();
+                var availability = retiredScope.ServiceProvider.GetRequiredService<ModelAvailabilityService>();
+                var metadata = retiredScope.ServiceProvider.GetRequiredService<ModelMetadataService>();
+                var dbContext = retiredScope.ServiceProvider
+                    .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+
+                var enabled = dbContext.SystemAiApiConfigurations
+                    .Where(c => c.IsEnabled)
+                    .Select(c => new { c.Provider, c.ModelId, c.ModelCatalogMode, c.BaseUrl })
+                    .ToList();
+
+                var retiredGroups = enabled
+                    .Where(c => availability.Evaluate(c.Provider, c.ModelId, c.ModelCatalogMode, c.BaseUrl).Kind
+                        == ModelAvailabilityStatus.Retired)
+                    .Select(c => metadata.GetRetiredEntry(c.Provider, c.ModelId))
+                    .Where(entry => entry != null && entry.Prefixes != null && entry.Prefixes.Count > 0)
+                    .GroupBy(entry => entry!)
+                    .OrderBy(g => g.Key.RetiredOn, StringComparer.Ordinal)
+                    .ThenBy(g => g.Key.DisplayName, StringComparer.Ordinal);
+
+                foreach (var group in retiredGroups)
+                {
+                    var entry = group.Key;
+                    int count = group.Count();
+                    string firstPrefix = entry.Prefixes[0];
+                    string subject = count == 1
+                        ? "1 system configuration uses"
+                        : $"{count} system configurations use";
+
+                    alerts.Add(new SystemAlert
+                    {
+                        Id = $"retired-model-{entry.Provider}-{firstPrefix}",
+                        Type = "warning",
+                        Message = $"{subject} {entry.DisplayName} ({firstPrefix}), which was removed from the model catalog on {entry.RetiredOn}.",
+                        LinkUrl = "/admin?tab=configs",
+                        LinkText = "Review in System Configs"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to evaluate retired model alerts in ConfigHealthService");
+            }
+        }
+
         // Database Storage Health Alert
         if (_scopeFactory != null)
         {

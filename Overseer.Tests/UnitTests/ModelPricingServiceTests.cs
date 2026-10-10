@@ -45,7 +45,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var result = service.ResolveDefault("Google", "gemini-3.7-flash-001");
+        var result = service.ResolveDefault("Google", "gemini-3.8-flash-001");
 
         Assert.NotNull(result);
         Assert.Equal(0.75m, result.InputPerMillion);
@@ -434,7 +434,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var result = service.ResolveDefault("Google", "gemini-3.7-flash", new DateOnly(2026, 12, 31));
+        var result = service.ResolveDefault("Google", "gemini-3.8-flash", new DateOnly(2026, 12, 31));
 
         Assert.NotNull(result);
         Assert.Equal(0.75m, result.InputPerMillion);
@@ -452,7 +452,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var result = service.ResolveDefault("Google", "gemini-3.7-flash", new DateOnly(year, month, day));
+        var result = service.ResolveDefault("Google", "gemini-3.8-flash", new DateOnly(year, month, day));
 
         Assert.NotNull(result);
         Assert.Equal(1.50m, result.InputPerMillion);
@@ -516,14 +516,14 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        // gemini-3.7-flash carries tier multipliers and a scheduled change in the catalog; a custom price
+        // gemini-3.8-flash carries tier multipliers and a scheduled change in the catalog; a custom price
         // replaces all of it, because both override entities store four flat rates and nothing else.
         var config = new SystemAiApiConfiguration
         {
             Id = 7,
             DisplayName = "Custom priced",
             Provider = "Google",
-            ModelId = "gemini-3.7-flash",
+            ModelId = "gemini-3.8-flash",
             PricingMode = "custom",
             InputPricePerMillion = 1.11m,
             OutputPricePerMillion = 2.22m

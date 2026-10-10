@@ -2145,6 +2145,37 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   color: #e0e0e0;
 }
 
+/* Under the composer's model picker: the one-time line naming the model selected in place of a
+   stored one that no longer exists. */
+.restored-model-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.restored-model-note-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #e0e0e0;
+}
+
+/* The composer's notice when the provider refused a model the catalog does not flag; the flagged
+   case is app-model-availability-notice, whose composer margin is global. */
+.alert.alert-compact.composer-unanswered-notice {
+  margin-bottom: 8px;
+}
+
+.composer-model-config-link {
+  text-decoration: none;
+}
+
 .ephemeral-dialog-note {
   font-size: 0.85rem;
   color: #b8b8b8;

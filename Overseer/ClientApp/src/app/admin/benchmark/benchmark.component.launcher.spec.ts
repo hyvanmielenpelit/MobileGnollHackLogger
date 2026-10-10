@@ -1,5 +1,6 @@
 import type { Mock, MockedObject } from "vitest";
-import { ComponentFixture, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
@@ -745,6 +746,116 @@ describe('AdminBenchmarkComponent', () => {
 
       ctx.launcher.reportWriterConfigId = null;
       expect(ctx.runTab().reportWriterLaunchRefusal).toBe('');
+    });
+  });
+
+  describe('models removed from the catalog', () => {
+    const retiredHint = 'uses a model removed from the catalog. Resolve it in System Configs or choose another model.';
+
+    function card(): HTMLElement {
+      return fixture.nativeElement.querySelector('.setup-card') as HTMLElement;
+    }
+
+    beforeEach(() => {
+      component.activeSubTab = 'run';
+      component.systemConfigs = [
+        component.systemConfigs[0],
+        {
+          ...component.systemConfigs[0], id: 2, displayName: 'Old Model', modelId: 'old-model-1', provider: 'OpenAI',
+          modelAvailability: { status: 'retired', needsAttention: true, retiredOn: '2026-09-30' }
+        },
+        {
+          ...component.systemConfigs[0], id: 3, displayName: 'Mystery Model', modelId: 'mystery-1', provider: 'Google',
+          modelAvailability: { status: 'notInCatalog', needsAttention: true }
+        }
+      ];
+      ctx.launcher.selectedSuiteId = 1;
+      ctx.launcher.testedConfigId = 1;
+      ctx.launcher.assessorConfigId = 1;
+      ctx.refresh();
+    });
+
+    it('shows the Removed chip on the Model Under Test picker', () => {
+      ctx.launcher.testedConfigId = 2;
+      ctx.refresh();
+
+      const chip = card().querySelector('.tested-model-selector .selector-trigger .model-option-notice') as HTMLElement;
+      expect(chip).toBeTruthy();
+      expect(chip.textContent).toContain('Removed');
+    });
+
+    it('refuses a retired Model Under Test under its picker and holds Start back with the hint', () => {
+      ctx.launcher.testedConfigId = 2;
+      ctx.refresh();
+
+      const line = card().querySelector('#bmTestedModelAvailability') as HTMLElement;
+      expect(line.classList).toContain('gh-field-error');
+      expect(line.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+      expect(line.textContent?.trim()).toBe('Old Model uses old-model-1, which was removed from the model catalog on September 30, 2026.');
+      expect(card().querySelector('.tested-model-selector .selector-trigger')!.getAttribute('aria-describedby'))
+        .toBe('bmTestedModelHint bmTestedModelAvailability');
+
+      expect(ctx.runTab().canStartRun).toBe(false);
+      expect(ctx.runTab().startBenchmarkHint).toBe(`Model Under Test ${retiredHint}`);
+      expect(card().querySelector('#startBenchmarkHint')?.textContent?.trim()).toBe(`Model Under Test ${retiredHint}`);
+    });
+
+    it('puts a retired grader ahead of the report writer refusal in the Start hint', () => {
+      ctx.launcher.assessorConfigId = 2;
+      ctx.launcher.reportWriterConfigId = 1;
+      ctx.refresh();
+
+      expect(ctx.runTab().reportWriterLaunchRefusal).not.toBe('');
+      expect(ctx.runTab().startBenchmarkHint).toBe(`Assessor ${retiredHint}`);
+      expect(card().querySelector('.assessor-model-selector .selector-trigger')!.getAttribute('aria-describedby'))
+        .toBe('bmAssessorModelHint bmAssessorModelAvailability');
+
+      ctx.launcher.assessorConfigId = 1;
+      expect(ctx.runTab().startBenchmarkHint).toBe(ctx.runTab().reportWriterLaunchRefusal);
+    });
+
+    it('opens the configuration\'s resolution in System Configs', () => {
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      ctx.launcher.claimVerifierConfigId = 2;
+      ctx.refresh();
+
+      const resolve = card().querySelector('.bm-availability-resolve') as HTMLButtonElement;
+      expect(resolve.textContent?.trim()).toBe('Resolve in System Configs');
+      expect(resolve.getAttribute('aria-describedby')).toBe('bmClaimVerifierModelAvailability');
+      resolve.click();
+
+      expect(navigate).toHaveBeenCalledWith(['/admin'], { queryParams: { tab: 'configs', resolveConfig: 2 } });
+    });
+
+    it('advises on a model the catalog does not list without holding Start back', () => {
+      ctx.launcher.claimVerifierConfigId = 3;
+      ctx.refresh();
+
+      const advisory = card().querySelector('#bmClaimVerifierModelAvailability') as HTMLElement;
+      expect(advisory.classList).toContain('alert-warning');
+      expect(advisory.classList).toContain('alert-compact');
+      expect(advisory.getAttribute('role')).toBe('note');
+      expect(advisory.querySelector('svg.alert-icon')?.getAttribute('aria-hidden')).toBe('true');
+      expect(advisory.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe('mystery-1 isn\'t in the model catalog; its cost will be reported as unknown unless it has a custom price.');
+      expect(card().querySelector('.bm-availability-resolve')).toBeNull();
+      expect(ctx.runTab().canStartRun).toBe(true);
+    });
+
+    it('shows a restore note once, in a polite status in the card', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, testedConfigId: 9, assessorConfigId: 1 }));
+      ctx.launcher.restoreRunSettings();
+      ctx.launcher.setDefaultModelSelections();
+      ctx.refresh();
+
+      const status = card().querySelector('.bm-restore-status') as HTMLElement;
+      expect(status.getAttribute('role')).toBe('status');
+      expect(status.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe('Model Under Test: the remembered configuration is no longer available, so Test Model was chosen.');
+
+      component.selectSubTab('history');
+      fixture.detectChanges();
+      expect(ctx.launcher.restoreNotes).toEqual([]);
     });
   });
 

@@ -968,7 +968,7 @@ public class AgentLoopRunnerTests
         new(ApiKeyUsage.Chat, Overseer.Services.Privacy.SessionRef.Persistent(7), "user-1", "TestUser");
 
     private static async Task<(List<ChatEvent> Events, List<ApiKeyFailureReport> Reports, int Calls, int ErrorLogs)> RunAgainstStatusAsync(
-        System.Net.HttpStatusCode status, string body, long? systemModelId, ApiKeyAlertContext? alertContext)
+        System.Net.HttpStatusCode status, string body, long? systemModelId, ApiKeyAlertContext? alertContext, string providerName = "OpenAI")
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -1001,7 +1001,7 @@ public class AgentLoopRunnerTests
         var clientBridge = new NullClientBridge();
         var handlers = new List<IToolHandler>();
         var handler = new StatusHttpMessageHandler(status, body);
-        var provider = new NamedMockAiProvider("OpenAI");
+        var provider = new NamedMockAiProvider(providerName);
 
         var runner = new AgentLoopRunner(
             new IAiProvider[] { provider },
@@ -1017,7 +1017,7 @@ public class AgentLoopRunnerTests
 
         var request = new AgentRunRequest
         {
-            ProviderName = "OpenAI",
+            ProviderName = providerName,
             ModelId = "mock-model",
             ApiKey = AlertTestApiKey,
             SystemModelId = systemModelId,
@@ -1111,5 +1111,37 @@ public class AgentLoopRunnerTests
 
         Assert.Empty(reports);
         Assert.Contains(events, e => e.Type == "error" && e.Data != null && e.Data.StartsWith("429 Rate Limited"));
+    }
+
+    private const string GoogleModelNotFoundBody =
+        "{\"error\":{\"code\":404,\"message\":\"models/mock-model is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.\",\"status\":\"NOT_FOUND\"}}";
+
+    [Fact]
+    public async Task RunAsync_Google404ModelNotFound_UserModel_YieldsOneModelUnavailableErrorWithoutRetry()
+    {
+        var (events, reports, calls, errorLogs) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.NotFound, GoogleModelNotFoundBody, systemModelId: null, ChatAlertContext(), providerName: "Google");
+
+        Assert.Equal(1, calls);
+        var error = Assert.Single(events, e => e.Type == "error");
+        Assert.Equal("model_unavailable", error.ErrorCode);
+        Assert.Equal("Google no longer serves the model mock-model. Choose another model, or update this model in Models.", error.Data);
+        Assert.Equal(GoogleModelNotFoundBody, error.Detail);
+        Assert.Empty(reports);
+        Assert.Equal(0, errorLogs);
+    }
+
+    [Fact]
+    public async Task RunAsync_Google404ModelNotFound_SystemModel_RecordsErrorAndPointsToAdministrator()
+    {
+        var (events, reports, calls, errorLogs) = await RunAgainstStatusAsync(
+            System.Net.HttpStatusCode.NotFound, GoogleModelNotFoundBody, AlertTestConfigId, ChatAlertContext(), providerName: "Google");
+
+        Assert.Equal(1, calls);
+        var error = Assert.Single(events, e => e.Type == "error");
+        Assert.Equal("model_unavailable", error.ErrorCode);
+        Assert.Equal("Google no longer serves the model mock-model. Choose another model; an administrator can update this configuration.", error.Data);
+        Assert.Empty(reports);
+        Assert.Equal(1, errorLogs);
     }
 }

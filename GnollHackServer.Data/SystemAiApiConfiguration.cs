@@ -48,6 +48,13 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     public decimal? OutputPricePerMillion { get; set; }
     public decimal? CachedInputPricePerMillion { get; set; }
 
+    /// <summary>
+    /// "catalog" | "custom"; null = legacy row, treated as "catalog". "custom" means the owner uses a model ID
+    /// the model catalog does not describe, with the row's own limits and prices, and Overseer does not flag it.
+    /// </summary>
+    [MaxLength(32)]
+    public string? ModelCatalogMode { get; set; }
+
     public int OrderIndex { get; set; }
     public bool IsEnabled { get; set; }
 

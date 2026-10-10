@@ -11,15 +11,43 @@ public class SettingsService
     private readonly ApplicationDbContext _dbContext;
     private readonly CryptoService _cryptoService;
     private readonly Overseer.Services.Privacy.ConfidentialityPostureService _confidentialityPosture;
+    private ModelAvailabilityService? _modelAvailability;
 
+    /// <param name="modelAvailability">Built from a fresh <see cref="ModelMetadataService"/> on first use when null.</param>
     public SettingsService(
         ApplicationDbContext dbContext,
         CryptoService cryptoService,
-        Overseer.Services.Privacy.ConfidentialityPostureService confidentialityPosture)
+        Overseer.Services.Privacy.ConfidentialityPostureService confidentialityPosture,
+        ModelAvailabilityService? modelAvailability = null)
     {
         _dbContext = dbContext;
         _cryptoService = cryptoService;
         _confidentialityPosture = confidentialityPosture;
+        _modelAvailability = modelAvailability;
+    }
+
+    private ModelAvailabilityService ModelAvailability =>
+        _modelAvailability ??= new ModelAvailabilityService(new ModelMetadataService());
+
+    /// <summary>
+    /// Prefills "Keep as custom model" from a row's own limits and effective prices, except on a retired
+    /// row, whose suggestion is the catalog card it had when it was retired.
+    /// </summary>
+    public static Overseer.Models.ModelAvailabilityDto WithRowSuggestion(
+        Overseer.Models.ModelAvailabilityDto availability, int? maxInputTokens, int? maxOutputTokens, ModelPricing? effectivePricing)
+    {
+        if (availability.Kind == Overseer.Models.ModelAvailabilityStatus.Retired)
+            return availability;
+
+        availability.SuggestedCustom = new Overseer.Models.SuggestedCustomDto
+        {
+            MaxInputTokens = maxInputTokens,
+            MaxOutputTokens = maxOutputTokens,
+            InputPricePerMillion = effectivePricing?.InputPerMillion,
+            OutputPricePerMillion = effectivePricing?.OutputPerMillion,
+            CachedInputPricePerMillion = effectivePricing?.CachedInputPerMillion
+        };
+        return availability;
     }
 
     public async Task<UserAiSettings?> GetSettingsAsync(string userId)
@@ -510,6 +538,7 @@ public class SettingsService
         var count = await _dbContext.UserAiModels.CountAsync(m => m.AspNetUserId == userId);
         model.AspNetUserId = userId;
         model.OrderIndex = count;
+        model.ModelCatalogMode = ModelAvailability.DeriveCatalogMode(model.Provider, model.ModelId);
         _dbContext.UserAiModels.Add(model);
         await _dbContext.SaveChangesAsync();
     }
@@ -519,8 +548,19 @@ public class SettingsService
         var model = await _dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == id && m.AspNetUserId == userId);
         if (model != null)
         {
+            var previousProvider = model.Provider;
+            var previousModelId = model.ModelId;
             if (!string.IsNullOrEmpty(modelId)) model.ModelId = modelId;
             if (!string.IsNullOrEmpty(provider)) model.Provider = provider;
+
+            /* Only a new model re-derives the catalog mode, so saving another field of a flagged row
+               does not resolve it. */
+            if (!string.Equals(model.ModelId, previousModelId, StringComparison.Ordinal)
+                || !string.Equals(model.Provider, previousProvider, StringComparison.Ordinal))
+            {
+                model.ModelCatalogMode = ModelAvailability.DeriveCatalogMode(model.Provider, model.ModelId);
+            }
+
             if (displayName != null) model.DisplayName = displayName;
             if (displayNameMode != null) model.DisplayNameMode = displayNameMode;
             // thinkingLevel can be explicitly null to clear it
@@ -541,6 +581,19 @@ public class SettingsService
             
             await _dbContext.SaveChangesAsync();
         }
+    }
+
+    /// <summary>The user's own model row, tracked, or null when it does not exist or belongs to someone else.</summary>
+    public Task<UserAiModel?> GetUserModelAsync(string userId, long id)
+    {
+        return _dbContext.UserAiModels.FirstOrDefaultAsync(m => m.Id == id && m.AspNetUserId == userId);
+    }
+
+    /// <summary>Writes a resolution's settings to a row from <see cref="GetUserModelAsync"/> and saves it.</summary>
+    public async Task SaveUserModelSettingsAsync(UserAiModel model, ModelSettings settings)
+    {
+        settings.ApplyTo(model);
+        await _dbContext.SaveChangesAsync();
     }
 
     public async Task DeleteUserModelAsync(string userId, long modelId)

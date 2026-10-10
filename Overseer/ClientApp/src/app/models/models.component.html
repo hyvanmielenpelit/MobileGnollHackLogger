@@ -1,6 +1,6 @@
 <div class="settings-container gh-main-container">
   <div class="header-row">
-    <h2>AI Models</h2>
+    <h2 id="models-heading" tabindex="-1">AI Models</h2>
     <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
   </div>
   <p class="settings-description">
@@ -10,6 +10,8 @@
   <div class="actions-header">
     <button class="btn-gh" (click)="openModelPicker()">Add Model</button>
   </div>
+
+  <p class="models-status" role="status" [class.has-text]="!!resolutionStatus">{{ resolutionStatus }}</p>
 
   @if (loading) {
     <div class="loading-state">
@@ -38,12 +40,13 @@
           </div>
           <div class="model-info">
             <div class="model-title">
-              <h3>{{ model.displayName || model.modelId }}</h3>
+              <h3 [id]="'user-model-name-' + model.id" tabindex="-1">{{ model.displayName || model.modelId }}</h3>
             </div>
             <div class="model-details">
               <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                 <span>{{ model.modelId }}</span>
                 <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                <ng-container *ngTemplateOutlet="availabilityBadge; context: { $implicit: model }"></ng-container>
                 <span class="posture-badge"
                       [class.posture-strong]="postureLevel(model) === 'strong'"
                       [class.posture-moderate]="postureLevel(model) === 'moderate'"
@@ -87,6 +90,15 @@
               }
               @if (formatPricingSchedule(model)) {
                 <div class="model-price-schedule" [class.elapsed]="model.pricingScheduleElapsed">{{ formatPricingSchedule(model) }}</div>
+              }
+              @if (needsAttention(model)) {
+                <app-model-availability-notice class="model-row-notice" variant="row"
+                                               [availability]="model.modelAvailability"
+                                               [modelName]="modelName(model)" [modelId]="model.modelId">
+                  <button type="button" class="btn-ghost model-resolve-btn" [id]="'resolve-model-' + model.id"
+                          aria-haspopup="dialog" [attr.aria-label]="resolveLabel(model)"
+                          (click)="openResolve(model)">Resolve…</button>
+                </app-model-availability-notice>
               }
             </div>
           </div>
@@ -133,6 +145,7 @@
                 <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                   <span>{{ model.modelId }}</span>
                   <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                  <ng-container *ngTemplateOutlet="availabilityBadge; context: { $implicit: model }"></ng-container>
                   <span class="posture-badge"
                         [class.posture-strong]="postureLevel(model) === 'strong'"
                         [class.posture-moderate]="postureLevel(model) === 'moderate'"
@@ -176,6 +189,12 @@
                 }
                 @if (formatPricingSchedule(model)) {
                   <div class="model-price-schedule" [class.elapsed]="model.pricingScheduleElapsed">{{ formatPricingSchedule(model) }}</div>
+                }
+                @if (needsAttention(model)) {
+                  <app-model-availability-notice class="model-row-notice" variant="row"
+                                                 [availability]="model.modelAvailability"
+                                                 [modelName]="modelName(model)" [modelId]="model.modelId"
+                                                 [extraText]="systemModelAttentionText"></app-model-availability-notice>
                 }
               </div>
             </div>
@@ -241,12 +260,31 @@
       [providers]="providers"
       [initialProvider]="editingModel.provider"
       [initialData]="editFormData"
+      [availability]="editingModel.modelAvailability ?? null"
       [saving]="saving"
       (save)="onEditSave($event)"
       (cancel)="closeEdit()">
     </app-ai-model-form>
   }
 </dialog>
+
+<app-model-resolution-dialog kind="user" (resolved)="onResolved($event)"></app-model-resolution-dialog>
+
+<!-- The availability badge beside a row's provider badge: Removed or Not in catalog with the
+     availability sentence as its tooltip, or Custom model. -->
+<ng-template #availabilityBadge let-model>
+  @if (availabilityChip(model); as chip) {
+    <span class="status-badge badge-availability"
+          [class.badge-warning]="chip.tone === 'warning'" [class.badge-info]="chip.tone === 'info'"
+          [attr.interestfor]="availabilityTipId(model)"
+          [attr.style]="'anchor-name: --' + availabilityTipId(model)"
+          tabindex="0">@if (chip.tone === 'warning') {<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>} @else {<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>}{{ chip.text }}</span>
+    <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="availabilityTipId(model)"
+         [attr.style]="'position-anchor: --' + availabilityTipId(model)">{{ availabilitySentence(model) }}</div>
+  } @else if (isCustomMode(model)) {
+    <span class="status-badge badge-availability badge-neutral"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>Custom model</span>
+  }
+</ng-template>
 
 <dialog #deleteModelConfirmDialog class="gh-dialog">
   <h3>Delete Model</h3>

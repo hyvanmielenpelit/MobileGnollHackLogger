@@ -1,16 +1,29 @@
 <div id="admin-alerts-popover" popover="manual" #popoverContainer class="admin-alerts-container">
-  @if (alerts$ | async; as alerts) {
-    @for (alert of alerts; track alert.id) {
-      <div class="admin-alert" [ngClass]="alert.type">
-        <div class="alert-content">
-          <strong>⚠️ Admin Alert:</strong> {{ alert.message }}
+  @if (views$ | async; as views) {
+    @for (view of views; track view.alert.id; let i = $index) {
+      <div class="admin-alert" [ngClass]="view.alert.type">
+        <div class="alert-content" [id]="'admin-alert-message-' + i">
+          <strong class="admin-alert-label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            Admin alert:
+          </strong>
+          {{ view.alert.message }}
+          @if (view.link) {
+            &ngsp;<a class="admin-alert-link" [routerLink]="view.link">{{ view.alert.linkText }}</a>
+          }
         </div>
-        <button class="dismiss-btn" (click)="dismiss(alert.id)" title="Dismiss Alert">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button type="button" class="dismiss-btn" aria-label="Dismiss alert"
+                [attr.aria-describedby]="'admin-alert-message-' + i"
+                [attr.interestfor]="'tip-dismiss-admin-alert-' + i"
+                [attr.style]="'anchor-name: --tip-dismiss-admin-alert-' + i"
+                (click)="dismiss(view.alert.id)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
+        <div popover="hint" class="gh-tooltip" [id]="'tip-dismiss-admin-alert-' + i"
+             [attr.style]="'position-anchor: --tip-dismiss-admin-alert-' + i">Dismiss alert</div>
       </div>
     }
   }

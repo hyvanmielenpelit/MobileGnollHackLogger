@@ -24,7 +24,12 @@ public class AdminController : ControllerBase
 
     private readonly Overseer.Services.Privacy.EndpointPolicy _endpointPolicy;
     private readonly SystemConfigUsageGuard _usageGuard;
+    private ModelAvailabilityService? _modelAvailabilityService;
+    private ModelResolutionService? _modelResolutionService;
+    private ModelMetadataService? _fallbackMetadataService;
 
+    /// <param name="modelAvailabilityService">Built from a fresh <see cref="ModelMetadataService"/> on first use when null.</param>
+    /// <param name="modelResolutionService">Built from a fresh <see cref="ModelMetadataService"/> on first use when null.</param>
     public AdminController(
         ApplicationDbContext dbContext,
         IConfiguration configuration,
@@ -33,7 +38,9 @@ public class AdminController : ControllerBase
         Overseer.Services.Providers.AiRequestGovernor governor,
         Overseer.Services.Privacy.EndpointPolicy endpointPolicy,
         SystemConfigUsageGuard usageGuard,
-        ModelPricingService? modelPricingService = null)
+        ModelPricingService? modelPricingService = null,
+        ModelAvailabilityService? modelAvailabilityService = null,
+        ModelResolutionService? modelResolutionService = null)
     {
         _dbContext = dbContext;
         _configuration = configuration;
@@ -43,7 +50,18 @@ public class AdminController : ControllerBase
         _endpointPolicy = endpointPolicy;
         _usageGuard = usageGuard;
         _modelPricingService = modelPricingService;
+        _modelAvailabilityService = modelAvailabilityService;
+        _modelResolutionService = modelResolutionService;
     }
+
+    private ModelMetadataService FallbackMetadata =>
+        _fallbackMetadataService ??= new ModelMetadataService();
+
+    private ModelAvailabilityService AvailabilityService =>
+        _modelAvailabilityService ??= new ModelAvailabilityService(FallbackMetadata);
+
+    private ModelResolutionService ResolutionService =>
+        _modelResolutionService ??= new ModelResolutionService(FallbackMetadata);
 
     private static readonly System.Collections.Generic.HashSet<string> AllowedCounters = new(System.StringComparer.OrdinalIgnoreCase)
     {
@@ -199,111 +217,118 @@ public class AdminController : ControllerBase
             .Select(g => new { ConfigId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.ConfigId, x => x.Count);
 
-        var configs = await _dbContext.SystemAiApiConfigurations
+        var entities = await _dbContext.SystemAiApiConfigurations
+            .AsNoTracking()
             .OrderBy(c => c.OrderIndex)
-            .Select(c => new SystemAiApiConfigurationDto
-            {
-                Id = c.Id,
-                DisplayName = c.DisplayName,
-                DisplayNameMode = c.DisplayNameMode,
-                Provider = c.Provider,
-                ModelId = c.ModelId,
-                ConfidentialityPosture = c.ConfidentialityPosture,
-                ConfidentialityNote = c.ConfidentialityNote,
-                PostureAgreementRef = c.PostureAgreementRef,
-                PostureVerifiedUtc = c.PostureVerifiedUtc,
-                DataRegion = c.DataRegion,
-                BaseUrl = c.BaseUrl,
-                CustomHeadersJson = c.CustomHeadersJson,
-                ApiVersion = c.ApiVersion,
-                ThinkingLevel = c.ThinkingLevel,
-                ReasoningMode = c.ReasoningMode,
-                ReasoningSummary = c.ReasoningSummary,
-                ServiceTier = c.ServiceTier,
-                MaxInputTokens = c.MaxInputTokens,
-                MaxOutputTokens = c.MaxOutputTokens,
-                OrderIndex = c.OrderIndex,
-                IsEnabled = c.IsEnabled,
-                HasApiKey = !string.IsNullOrEmpty(c.EncryptedApiKey),
-                UseDefaultApiKey = c.UseDefaultApiKey,
-                IsSystemWide = c.IsSystemWide,
-                MaxDailyChatRequests = c.MaxDailyChatRequests,
-                MaxMonthlyChatRequests = c.MaxMonthlyChatRequests,
-                MaxTotalChatRequests = c.MaxTotalChatRequests,
-                MaxDailyTitleRequests = c.MaxDailyTitleRequests,
-                MaxMonthlyTitleRequests = c.MaxMonthlyTitleRequests,
-                MaxTotalTitleRequests = c.MaxTotalTitleRequests,
-                MaxDailyChatTokens = c.MaxDailyChatTokens,
-                MaxMonthlyChatTokens = c.MaxMonthlyChatTokens,
-                MaxTotalChatTokens = c.MaxTotalChatTokens,
-                MaxDailyTitleTokens = c.MaxDailyTitleTokens,
-                MaxMonthlyTitleTokens = c.MaxMonthlyTitleTokens,
-                MaxTotalTitleTokens = c.MaxTotalTitleTokens,
-                DailyChatRequestsCount = c.DailyChatRequestsCount,
-                MonthlyChatRequestsCount = c.MonthlyChatRequestsCount,
-                TotalChatRequestsCount = c.TotalChatRequestsCount,
-                DailyTitleRequestsCount = c.DailyTitleRequestsCount,
-                MonthlyTitleRequestsCount = c.MonthlyTitleRequestsCount,
-                TotalTitleRequestsCount = c.TotalTitleRequestsCount,
-                DailyChatTokensCount = c.DailyChatTokensCount,
-                MonthlyChatTokensCount = c.MonthlyChatTokensCount,
-                TotalChatTokensCount = c.TotalChatTokensCount,
-                DailyTitleTokensCount = c.DailyTitleTokensCount,
-                MonthlyTitleTokensCount = c.MonthlyTitleTokensCount,
-                TotalTitleTokensCount = c.TotalTitleTokensCount,
-                ModelRole = c.ModelRole,
-                ParallelExecutionMode = (int)c.ParallelExecutionMode,
-                Note = c.Note,
-                PricingMode = c.PricingMode,
-                InputPricePerMillion = c.InputPricePerMillion,
-                OutputPricePerMillion = c.OutputPricePerMillion,
-                CachedInputPricePerMillion = c.CachedInputPricePerMillion
-            })
             .ToListAsync();
 
-        foreach (var c in configs)
-        {
-            c.UserAssignmentCount = userAssignmentCounts.GetValueOrDefault(c.Id, 0);
-            c.GroupAssignmentCount = groupAssignmentCounts.GetValueOrDefault(c.Id, 0);
+        var configs = entities
+            .Select(c => ToSystemConfigDto(
+                c,
+                userAssignmentCounts.GetValueOrDefault(c.Id, 0),
+                groupAssignmentCounts.GetValueOrDefault(c.Id, 0)))
+            .ToList();
 
-            if (_modelPricingService != null)
+        return Ok(configs);
+    }
+
+    /// <summary>A system configuration as the System Configs tab lists it, with its effective pricing and model availability.</summary>
+    private SystemAiApiConfigurationDto ToSystemConfigDto(SystemAiApiConfiguration c, int userAssignmentCount, int groupAssignmentCount)
+    {
+        var dto = new SystemAiApiConfigurationDto
+        {
+            Id = c.Id,
+            DisplayName = c.DisplayName,
+            DisplayNameMode = c.DisplayNameMode,
+            Provider = c.Provider,
+            ModelId = c.ModelId,
+            ConfidentialityPosture = c.ConfidentialityPosture,
+            ConfidentialityNote = c.ConfidentialityNote,
+            PostureAgreementRef = c.PostureAgreementRef,
+            PostureVerifiedUtc = c.PostureVerifiedUtc,
+            DataRegion = c.DataRegion,
+            BaseUrl = c.BaseUrl,
+            CustomHeadersJson = c.CustomHeadersJson,
+            ApiVersion = c.ApiVersion,
+            ThinkingLevel = c.ThinkingLevel,
+            ReasoningMode = c.ReasoningMode,
+            ReasoningSummary = c.ReasoningSummary,
+            ServiceTier = c.ServiceTier,
+            MaxInputTokens = c.MaxInputTokens,
+            MaxOutputTokens = c.MaxOutputTokens,
+            OrderIndex = c.OrderIndex,
+            IsEnabled = c.IsEnabled,
+            HasApiKey = !string.IsNullOrEmpty(c.EncryptedApiKey),
+            UseDefaultApiKey = c.UseDefaultApiKey,
+            IsSystemWide = c.IsSystemWide,
+            MaxDailyChatRequests = c.MaxDailyChatRequests,
+            MaxMonthlyChatRequests = c.MaxMonthlyChatRequests,
+            MaxTotalChatRequests = c.MaxTotalChatRequests,
+            MaxDailyTitleRequests = c.MaxDailyTitleRequests,
+            MaxMonthlyTitleRequests = c.MaxMonthlyTitleRequests,
+            MaxTotalTitleRequests = c.MaxTotalTitleRequests,
+            MaxDailyChatTokens = c.MaxDailyChatTokens,
+            MaxMonthlyChatTokens = c.MaxMonthlyChatTokens,
+            MaxTotalChatTokens = c.MaxTotalChatTokens,
+            MaxDailyTitleTokens = c.MaxDailyTitleTokens,
+            MaxMonthlyTitleTokens = c.MaxMonthlyTitleTokens,
+            MaxTotalTitleTokens = c.MaxTotalTitleTokens,
+            DailyChatRequestsCount = c.DailyChatRequestsCount,
+            MonthlyChatRequestsCount = c.MonthlyChatRequestsCount,
+            TotalChatRequestsCount = c.TotalChatRequestsCount,
+            DailyTitleRequestsCount = c.DailyTitleRequestsCount,
+            MonthlyTitleRequestsCount = c.MonthlyTitleRequestsCount,
+            TotalTitleRequestsCount = c.TotalTitleRequestsCount,
+            DailyChatTokensCount = c.DailyChatTokensCount,
+            MonthlyChatTokensCount = c.MonthlyChatTokensCount,
+            TotalChatTokensCount = c.TotalChatTokensCount,
+            DailyTitleTokensCount = c.DailyTitleTokensCount,
+            MonthlyTitleTokensCount = c.MonthlyTitleTokensCount,
+            TotalTitleTokensCount = c.TotalTitleTokensCount,
+            ModelRole = c.ModelRole,
+            ParallelExecutionMode = (int)c.ParallelExecutionMode,
+            Note = c.Note,
+            PricingMode = c.PricingMode,
+            InputPricePerMillion = c.InputPricePerMillion,
+            OutputPricePerMillion = c.OutputPricePerMillion,
+            CachedInputPricePerMillion = c.CachedInputPricePerMillion,
+            ModelCatalogMode = ModelCatalogModes.Normalize(c.ModelCatalogMode),
+            UserAssignmentCount = userAssignmentCount,
+            GroupAssignmentCount = groupAssignmentCount
+        };
+
+        ModelPricing? resolved = null;
+        if (_modelPricingService != null)
+        {
+            resolved = _modelPricingService.Resolve(c);
+            if (resolved != null)
             {
-                var tempConfig = new SystemAiApiConfiguration
-                {
-                    Id = c.Id,
-                    Provider = c.Provider,
-                    ModelId = c.ModelId,
-                    PricingMode = c.PricingMode,
-                    InputPricePerMillion = c.InputPricePerMillion,
-                    OutputPricePerMillion = c.OutputPricePerMillion,
-                    CachedInputPricePerMillion = c.CachedInputPricePerMillion
-                };
-                var resolved = _modelPricingService.Resolve(tempConfig);
-                if (resolved != null)
-                {
-                    c.EffectiveInputPricePerMillion = resolved.InputPerMillion;
-                    c.EffectiveOutputPricePerMillion = resolved.OutputPerMillion;
-                    c.EffectiveCachedInputPricePerMillion = resolved.CachedInputPerMillion;
-                    c.PricingSource = resolved.Source == ModelPricingSource.Custom ? "custom" : "catalog";
-                    c.PricingAsOf = resolved.AsOf;
-                    c.EffectiveLongContextThresholdTokens = resolved.LongContext?.ThresholdInputTokens;
-                    c.EffectiveLongContextInputPricePerMillion = resolved.LongContext?.InputPerMillion;
-                    c.EffectiveLongContextOutputPricePerMillion = resolved.LongContext?.OutputPerMillion;
-                    c.EffectiveServiceTierMultipliers = resolved.ServiceTierMultipliers;
-                    c.PricingScheduledChangeFrom = resolved.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd");
-                    c.PricingScheduledChangeInputPricePerMillion = resolved.ScheduledChange?.InputPerMillion;
-                    c.PricingScheduledChangeOutputPricePerMillion = resolved.ScheduledChange?.OutputPerMillion;
-                    c.PricingScheduledChangeNote = resolved.ScheduledChange?.Note;
-                    c.PricingScheduleElapsed = resolved.ScheduleElapsed;
-                }
-                else
-                {
-                    c.PricingSource = "unknown";
-                }
+                dto.EffectiveInputPricePerMillion = resolved.InputPerMillion;
+                dto.EffectiveOutputPricePerMillion = resolved.OutputPerMillion;
+                dto.EffectiveCachedInputPricePerMillion = resolved.CachedInputPerMillion;
+                dto.PricingSource = resolved.Source == ModelPricingSource.Custom ? "custom" : "catalog";
+                dto.PricingAsOf = resolved.AsOf;
+                dto.EffectiveLongContextThresholdTokens = resolved.LongContext?.ThresholdInputTokens;
+                dto.EffectiveLongContextInputPricePerMillion = resolved.LongContext?.InputPerMillion;
+                dto.EffectiveLongContextOutputPricePerMillion = resolved.LongContext?.OutputPerMillion;
+                dto.EffectiveServiceTierMultipliers = resolved.ServiceTierMultipliers;
+                dto.PricingScheduledChangeFrom = resolved.ScheduledChange?.EffectiveFrom.ToString("yyyy-MM-dd");
+                dto.PricingScheduledChangeInputPricePerMillion = resolved.ScheduledChange?.InputPerMillion;
+                dto.PricingScheduledChangeOutputPricePerMillion = resolved.ScheduledChange?.OutputPerMillion;
+                dto.PricingScheduledChangeNote = resolved.ScheduledChange?.Note;
+                dto.PricingScheduleElapsed = resolved.ScheduleElapsed;
+            }
+            else
+            {
+                dto.PricingSource = "unknown";
             }
         }
 
-        return Ok(configs);
+        dto.ModelAvailability = SettingsService.WithRowSuggestion(
+            AvailabilityService.Evaluate(c.Provider, c.ModelId, c.ModelCatalogMode, c.BaseUrl),
+            c.MaxInputTokens, c.MaxOutputTokens, resolved);
+
+        return dto;
     }
 
     /// <summary>
@@ -410,7 +435,8 @@ public class AdminController : ControllerBase
                 InputPricePerMillion = request.InputPricePerMillion,
                 OutputPricePerMillion = request.OutputPricePerMillion,
                 CachedInputPricePerMillion = request.CachedInputPricePerMillion,
-                UseDefaultApiKey = request.UseDefaultApiKey
+                UseDefaultApiKey = request.UseDefaultApiKey,
+                ModelCatalogMode = AvailabilityService.DeriveCatalogMode(request.Provider, request.ModelId)
             };
 
             if (request.UseDefaultApiKey)
@@ -476,11 +502,18 @@ public class AdminController : ControllerBase
             if (config == null) return NotFound();
 
             bool wasUsingDefaultKey = config.UseDefaultApiKey;
+            bool modelChanged = !string.Equals(config.Provider, request.Provider, StringComparison.Ordinal)
+                || !string.Equals(config.ModelId, request.ModelId, StringComparison.Ordinal);
 
             config.DisplayName = request.DisplayName;
             config.DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode);
             config.Provider = request.Provider;
             config.ModelId = request.ModelId;
+
+            /* Only a new model re-derives the catalog mode, so saving another field of a flagged
+               configuration does not resolve it. */
+            if (modelChanged)
+                config.ModelCatalogMode = AvailabilityService.DeriveCatalogMode(config.Provider, config.ModelId);
             config.ConfidentialityPosture = updatedPosture;
             config.ConfidentialityNote = request.ConfidentialityNote;
             config.PostureAgreementRef = request.PostureAgreementRef;
@@ -594,6 +627,68 @@ public class AdminController : ControllerBase
         
         await _dbContext.SaveChangesAsync();
         return Ok();
+    }
+
+    /// <summary>
+    /// Switches the configuration to a catalog model, or keeps it as a custom model. A switch is refused
+    /// while something is calling the configuration's model; a dry run lists those blockers instead and
+    /// saves nothing. Keeping a model as custom is never refused for use: a run has its prices snapshotted.
+    /// </summary>
+    [HttpPost("systemconfigs/{id}/model-resolution")]
+    public async Task<IActionResult> ResolveSystemConfigModel(
+        long id, [FromBody] ModelResolutionRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var config = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { id }, ct);
+            if (config == null) return NotFound();
+
+            var outcome = ResolutionService.Resolve(ModelSettings.FromSystemConfig(config), request);
+            if (outcome.IsRefused) return BadRequest(new { message = outcome.Refusal });
+
+            bool isSwitch = string.Equals(request.Action, ModelResolutionActions.Switch, StringComparison.OrdinalIgnoreCase);
+            var blockers = isSwitch
+                ? await _usageGuard.FindActiveUsesAsync(id, ct)
+                : new List<SystemConfigBlockerDto>();
+
+            SystemAiApiConfiguration resolved;
+            if (request.DryRun)
+            {
+                resolved = (SystemAiApiConfiguration)_dbContext.Entry(config).CurrentValues.ToObject();
+                outcome.Updated!.ApplyTo(resolved);
+            }
+            else
+            {
+                if (blockers.Count > 0)
+                {
+                    return Conflict(new
+                    {
+                        message = $"'{config.DisplayName}' is in use by a benchmark right now and cannot switch models until it finishes or is canceled.",
+                        blockers
+                    });
+                }
+
+                outcome.Updated!.ApplyTo(config);
+                await _dbContext.SaveChangesAsync(ct);
+                resolved = config;
+            }
+
+            int userAssignmentCount = await _dbContext.UserSystemAiApiConfigurations
+                .CountAsync(a => a.SystemAiApiConfigurationId == id, ct);
+            int groupAssignmentCount = await _dbContext.GroupSystemAiApiConfigurations
+                .CountAsync(a => a.SystemAiApiConfigurationId == id, ct);
+
+            return Ok(new ModelResolutionResult
+            {
+                Changes = outcome.Changes.ToList(),
+                Blockers = request.DryRun ? blockers : new List<SystemConfigBlockerDto>(),
+                Model = ToSystemConfigDto(resolved, userAssignmentCount, groupAssignmentCount)
+            });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>Whether the configuration can be deleted now, what is using it, and what a delete removes and keeps.</summary>

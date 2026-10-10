@@ -6,6 +6,7 @@ import { of } from 'rxjs';
 import { AiModelFormComponent, AiModelFormResult } from './ai-model-form.component';
 import { SettingsService, ApiModelDto } from '../../services/settings.service';
 import { AdminService, EndpointPolicySummaryDto } from '../../services/admin.service';
+import { ModelAvailability } from '../model-availability/model-availability';
 
 describe('AiModelFormComponent', () => {
   let component: AiModelFormComponent;
@@ -1234,6 +1235,53 @@ describe('AiModelFormComponent', () => {
 
       expect(defaultRadio()).toBeNull();
       expect(customRadio()).toBeNull();
+    });
+  });
+
+  describe('Catalog availability notice', () => {
+    const RETIRED: ModelAvailability = { status: 'retired', needsAttention: true, retiredOn: '2026-09-30' };
+    const el = () => fixture.nativeElement as HTMLElement;
+    const notice = () => el().querySelector('.mf-model app-model-availability-notice .model-availability-notice');
+    const text = (node: Element | null) => (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+    beforeEach(() => {
+      component.isAdmin = false;
+      component.initialData = { id: 1, provider: 'OpenAI', modelId: 'gpt-old', displayName: 'GPT Old' };
+    });
+
+    it('shows the notice in the Model area when an edited model is retired', () => {
+      component.mode = 'edit';
+      component.availability = RETIRED;
+      fixture.detectChanges();
+
+      expect(notice()).not.toBeNull();
+      expect(text(notice()!.querySelector('.man-sentence'))).toBe(
+        'GPT Old was removed from the model catalog on September 30, 2026. '
+        + 'Pick a model in the list above to switch, or save as is to keep it flagged.');
+    });
+
+    it('shows no notice without an availability that needs attention', () => {
+      component.mode = 'edit';
+      component.availability = { status: 'available', needsAttention: false };
+      fixture.detectChanges();
+
+      expect(notice()).toBeNull();
+    });
+
+    it('shows no notice when no availability is passed', () => {
+      component.mode = 'edit';
+      fixture.detectChanges();
+
+      expect(notice()).toBeNull();
+    });
+
+    it('shows no notice in add mode', () => {
+      component.mode = 'add';
+      component.initialData = undefined;
+      component.availability = RETIRED;
+      fixture.detectChanges();
+
+      expect(notice()).toBeNull();
     });
   });
 });

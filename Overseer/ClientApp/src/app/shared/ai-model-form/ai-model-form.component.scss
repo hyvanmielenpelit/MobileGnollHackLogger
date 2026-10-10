@@ -60,6 +60,10 @@
 .mf-settings { grid-area: settings; }
 .mf-advanced { grid-area: advanced; }
 
+.mf-availability-notice {
+  margin-bottom: 15px;
+}
+
 /* Model Properties and Configuration side by side where Settings is wide enough. */
 .mf-settings {
   display: grid;

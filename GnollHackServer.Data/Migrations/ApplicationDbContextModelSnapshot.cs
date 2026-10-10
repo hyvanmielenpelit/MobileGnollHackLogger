@@ -4201,6 +4201,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long?>("MaxTotalTitleTokens")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("ModelCatalogMode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<string>("ModelId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -4643,6 +4647,10 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<int?>("MaxOutputTokens")
                         .HasColumnType("int");
+
+                    b.Property<string>("ModelCatalogMode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<string>("ModelId")
                         .IsRequired()

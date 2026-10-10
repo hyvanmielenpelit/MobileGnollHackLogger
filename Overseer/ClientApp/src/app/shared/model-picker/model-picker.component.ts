@@ -17,6 +17,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ModelOptionBadgesComponent } from './model-option-badges.component';
+import type { ModelAvailability } from '../model-availability/model-availability';
 
 /** The fields a picker renders. Structural, so SystemAiConfigDto and UserAiModel both fit. */
 export interface ModelPickerModel {
@@ -28,6 +29,8 @@ export interface ModelPickerModel {
   parallelExecutionMode?: number | null;
   effectiveInputPricePerMillion?: number | null;
   effectiveOutputPricePerMillion?: number | null;
+  /** A model that needs attention gets a *Removed* or *Not in catalog* chip before its badges. */
+  modelAvailability?: ModelAvailability | null;
 }
 
 export type ModelPickerKey = string | number;

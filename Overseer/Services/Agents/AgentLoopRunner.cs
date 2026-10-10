@@ -1109,6 +1109,29 @@ public class AgentLoopRunner
                         yield break;
                     }
 
+                    // A withdrawn model does not come back by retrying.
+                    if (ModelNotFoundClassifier.IsModelNotFound(providerName, (int)response.StatusCode, errorBody, modelId))
+                    {
+                        record.ErrorKind ??= "model_not_found";
+                        if (systemModelId.HasValue)
+                        {
+                            using var errScope = _scopeFactory.CreateScope();
+                            var errService = errScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                            await errService.RecordErrorAsync(systemModelId.Value, $"404 Model Not Found ({modelId})");
+                        }
+                        string remedy = systemModelId.HasValue
+                            ? "Choose another model; an administrator can update this configuration."
+                            : "Choose another model, or update this model in Models.";
+                        yield return new ChatEvent
+                        {
+                            Type = "error",
+                            ErrorCode = "model_unavailable",
+                            Detail = boundedErrorBody,
+                            Data = $"{providerName} no longer serves the model {modelId}. {remedy}"
+                        };
+                        yield break;
+                    }
+
                     if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests) // 429
                     {
                         int maxRetries = _configuration.GetValue<int>("AiRateLimitSettings:Max429RetriesPerCall", 4);

@@ -2,6 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
 import { ApiKeyVerification } from '../shared/key-verification/key-verification';
+import {
+  CatalogTarget,
+  ModelAvailability,
+  ModelCatalogMode,
+  ModelResolutionRequest,
+  ModelResolutionResult
+} from '../shared/model-availability/model-availability';
 
 export interface ModelPricingDto {
   inputPerMillion: number;
@@ -204,6 +211,9 @@ export interface UserAiModel {
   postureVerifiedUtc?: string | null;
   /** Where inference runs. Always null for a user's own model, which runs on their own key. */
   dataRegion?: string | null;
+  /** Whether the model is still in the model catalog; absent from an older server. */
+  modelAvailability?: ModelAvailability;
+  modelCatalogMode?: ModelCatalogMode | null;
 }
 
 /** The provider-trust posture names, weakest to strongest. Persisted as the enum's string name. */
@@ -595,6 +605,16 @@ export class SettingsService {
 
   deleteUserModel(id: number) {
     return this.http.delete(`/api/settings/usermodels/${id}`);
+  }
+
+  /** Switches the model to a catalog model or keeps it as a custom one; `dryRun` only reports the changes. */
+  resolveUserModel(id: number, request: ModelResolutionRequest) {
+    return this.http.post<ModelResolutionResult<UserAiModel>>(`/api/settings/usermodels/${id}/model-resolution`, request);
+  }
+
+  /** The provider's catalog models a model can be switched to, newest first. */
+  getCatalogTargets(provider: string) {
+    return this.http.get<CatalogTarget[]>(`/api/settings/model-catalog/${encodeURIComponent(provider)}`);
   }
 
   reorderUserModels(orderedIds: number[]) {

@@ -139,11 +139,14 @@ public sealed class BenchmarkRunReportDocumentService
 
     /// <summary>
     /// Why the configuration cannot write the run's documents, or null when it can: an unusable
-    /// configuration or the model under test. A model of the same provider may write after an
-    /// acknowledgment (<see cref="WriterWarning"/>). The endpoint policy is the caller's to check.
+    /// configuration, the model under test, or a model the catalog lists as retired. A model of the
+    /// same provider may write after an acknowledgment (<see cref="WriterWarning"/>). The endpoint
+    /// policy is the caller's to check.
     /// </summary>
+    /// <param name="modelAvailability">Null uses <see cref="BenchmarkRunLauncher.DefaultModelAvailability"/>.</param>
     public static string? WriterRefusal(
-        SystemAiApiConfiguration? writer, SystemAiApiConfiguration candidate, BenchmarkComplianceGuard complianceGuard)
+        SystemAiApiConfiguration? writer, SystemAiApiConfiguration candidate, BenchmarkComplianceGuard complianceGuard,
+        ModelAvailabilityService? modelAvailability = null)
     {
         ArgumentNullException.ThrowIfNull(candidate);
         ArgumentNullException.ThrowIfNull(complianceGuard);
@@ -156,7 +159,8 @@ public sealed class BenchmarkRunReportDocumentService
         {
             return ModelUnderTestMessage;
         }
-        return null;
+        return BenchmarkRunLauncher.RetiredModelRefusal(
+            "Report writer", writer, modelAvailability ?? BenchmarkRunLauncher.DefaultModelAvailability);
     }
 
     /// <summary>

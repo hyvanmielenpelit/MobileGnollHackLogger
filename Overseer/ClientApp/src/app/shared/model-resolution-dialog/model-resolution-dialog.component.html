@@ -1,0 +1,162 @@
+<dialog #mrdDialog class="gh-dialog model-resolution-dialog" aria-labelledby="mrd-title" aria-describedby="mrd-summary"
+        (close)="onDialogClose()">
+  @if (subject; as s) {
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h3 #mrdHeading id="mrd-title" tabindex="-1">Resolve "{{ s.displayName }}"</h3>
+      </div>
+
+      <div class="mrd-body">
+        <p id="mrd-summary" class="mrd-summary">{{ summary }}</p>
+
+        <fieldset class="gh-choice mrd-choices">
+          <legend>What should happen to this model?</legend>
+
+          <div class="mrd-choice" [class.is-chosen]="choice === 'switch'">
+            <label class="gh-radio">
+              <input type="radio" [name]="radioName" value="switch" [checked]="choice === 'switch'"
+                     (change)="chooseAction('switch')">
+              Switch to another model
+            </label>
+            @if (choice === 'switch') {
+              <div class="mrd-choice-body">
+                <div class="mrd-field">
+                  <label class="mrd-label" [for]="uid + '-target'">Catalog model</label>
+                  @if (targetsLoading) {
+                    <p class="form-hint" role="status">Loading the catalog models…</p>
+                  } @else if (targetsError) {
+                    <p class="gh-field-error"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>{{ targetsError }}</p>
+                  } @else if (targets.length === 0) {
+                    <p class="form-hint">The catalog has no {{ s.provider }} model to switch to.</p>
+                  } @else {
+                    <select class="gh-input mrd-target" [id]="uid + '-target'"
+                            [attr.aria-invalid]="targetError ? 'true' : null"
+                            [attr.aria-describedby]="targetError ? uid + '-target-error' : null"
+                            (change)="onTargetChange($event)">
+                      @for (target of targets; track target.modelId) {
+                        <option [value]="target.modelId" [selected]="target.modelId === targetId">{{ targetLabel(target) }}</option>
+                      }
+                    </select>
+                  }
+                  @if (targetError) {
+                    <p class="gh-field-error" [id]="uid + '-target-error'"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>{{ targetError }}</p>
+                  }
+                </div>
+
+                @if (targetId) {
+                  <section class="mrd-preview" [attr.aria-labelledby]="uid + '-changes-title'">
+                    <h4 class="mrd-subheading" [id]="uid + '-changes-title'">What changes</h4>
+                    @if (previewLoading) {
+                      <p class="form-hint" role="status">Checking what changes…</p>
+                    } @else if (previewError) {
+                      <p class="gh-field-error"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>{{ previewError }}</p>
+                    } @else if (preview) {
+                      @if (preview.changes.length > 0) {
+                        <dl class="mrd-changes">
+                          @for (change of preview.changes; track $index) {
+                            <div class="mrd-change">
+                              <dt>{{ change.field }}</dt>
+                              <dd>
+                                <span class="mrd-from">{{ change.from || 'None' }}</span>&ngsp;<span class="mrd-arrow" aria-hidden="true">→</span><span class="visually-hidden"> to </span>
+                                <span class="mrd-to">{{ change.to || 'None' }}</span>
+                                @if (change.note) {
+                                  <span class="mrd-note">{{ change.note }}</span>
+                                }
+                              </dd>
+                            </div>
+                          }
+                        </dl>
+                      } @else {
+                        <p class="form-hint">Nothing else changes.</p>
+                      }
+                      @if (preview.blockers.length > 0) {
+                        <div class="alert alert-warning alert-compact mrd-blockers">
+                          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                          <div class="alert-content">
+                            <div class="alert-heading">In use right now</div>
+                            <ul class="alert-body mrd-blocker-list">
+                              @for (blocker of preview.blockers; track blocker.kind + blocker.id) {
+                                <li>{{ blockerText(blocker) }}</li>
+                              }
+                            </ul>
+                          </div>
+                        </div>
+                      }
+                    }
+                  </section>
+                }
+              </div>
+            }
+          </div>
+
+          <div class="mrd-choice" [class.is-chosen]="choice === 'keepCustom'">
+            <label class="gh-radio">
+              <input type="radio" [name]="radioName" value="keepCustom" [checked]="choice === 'keepCustom'"
+                     [attr.aria-describedby]="uid + '-keep-hint'" (change)="chooseAction('keepCustom')">
+              Keep using it as a custom model
+            </label>
+            <p class="form-hint mrd-choice-hint" [id]="uid + '-keep-hint'">{{ keepCustomHint }}</p>
+            @if (choice === 'keepCustom') {
+              <div class="mrd-choice-body mrd-fields">
+                @for (field of customFields; track field.key) {
+                  <div class="mrd-field">
+                    <label class="mrd-label" [for]="fieldId(field.key)">{{ field.label }}</label>
+                    <input type="text" class="gh-input" autocomplete="off"
+                           [id]="fieldId(field.key)" [attr.inputmode]="field.inputmode"
+                           [value]="values[field.key]"
+                           [attr.aria-invalid]="errors[field.key] ? 'true' : null"
+                           [attr.aria-describedby]="fieldDescribedBy(field.key)"
+                           (input)="onFieldInput(field.key, $event)" (blur)="onFieldBlur(field.key)">
+                    <p class="form-hint" [id]="fieldId(field.key) + '-hint'">{{ field.hint }}</p>
+                    @if (errors[field.key]; as error) {
+                      <p class="gh-field-error" [id]="fieldId(field.key) + '-error'"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>{{ error }}</p>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+
+          @if (allowDelete) {
+            <div class="mrd-choice" [class.is-chosen]="choice === 'delete'">
+              <label class="gh-radio">
+                <input type="radio" [name]="radioName" value="delete" [checked]="choice === 'delete'"
+                       [attr.aria-describedby]="uid + '-delete-hint'" (change)="chooseAction('delete')">
+                Delete it
+              </label>
+              <p class="form-hint mrd-choice-hint" [id]="uid + '-delete-hint'">{{ deleteHint }}</p>
+            </div>
+          }
+        </fieldset>
+
+        @if (submitError) {
+          <div class="alert alert-danger alert-compact mrd-error" role="alert">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <div class="alert-content">
+              <div class="alert-body">{{ submitError }}</div>
+              @if (submitBlockers.length > 0) {
+                <ul class="alert-body mrd-blocker-list">
+                  @for (blocker of submitBlockers; track blocker.kind + blocker.id) {
+                    <li>{{ blockerText(blocker) }}</li>
+                  }
+                </ul>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="dialog-actions">
+        @if (switchBlocked) {
+          <p class="gh-field-warning mrd-blocked-reason" [id]="uid + '-blocked'"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>This configuration is in use; try again when the work above finishes.</p>
+        }
+        <button type="button" class="btn-gh btn-gh-cancel mrd-cancel" (click)="close()">Cancel</button>
+        <button type="button" class="btn-gh mrd-primary" [class.btn-gh-delete]="choice === 'delete'"
+                [attr.aria-disabled]="primaryDisabled ? 'true' : null"
+                [attr.aria-busy]="busy ? 'true' : null"
+                [attr.aria-describedby]="switchBlocked ? uid + '-blocked' : null"
+                (click)="submit()">{{ primaryLabel }}</button>
+      </div>
+    </div>
+  }
+</dialog>

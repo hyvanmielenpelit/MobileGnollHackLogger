@@ -17,6 +17,7 @@ import {
   BenchmarkModelBatchProjectionDto,
   StartBenchmarkModelBatchRequest
 } from '../../../services/admin-benchmark.service';
+import { SystemAiConfigDto } from '../../../services/admin.service';
 import { Observable, Subject, Subscription, catchError, debounceTime, map, of, switchMap } from 'rxjs';
 import { BenchmarkLauncherRunMode, BenchmarkModelBatchOrderChoice, BenchmarkRunSettings } from '../benchmark.models';
 import { parsePromptOptions, refusalText } from '../benchmark-run-format';
@@ -28,6 +29,21 @@ import type { ModelBatchPrefill } from './benchmark-shell-bridge.service';
 export interface BenchmarkRunPrefillResult {
   runId: number;
   notes: string[];
+}
+
+/** A model role the launcher fills from a system configuration. */
+export type BenchmarkLauncherRole = 'tested' | 'assessor' | 'coAssessor' | 'secondOpinion' | 'claimVerifier' | 'reportWriter';
+
+/** The launcher's roles in the order its fields show them. */
+export const BENCHMARK_LAUNCHER_ROLES: readonly BenchmarkLauncherRole[] =
+  ['tested', 'assessor', 'coAssessor', 'secondOpinion', 'claimVerifier', 'reportWriter'];
+
+/** A selected role whose configuration uses a model removed from the model catalog. */
+export interface BenchmarkRetiredRole {
+  role: BenchmarkLauncherRole;
+  /** The role as its field is labeled: *Model Under Test*, *Assessor*, … */
+  label: string;
+  config: SystemAiConfigDto;
 }
 
 /** How long the launcher waits for the batch settings to settle before it asks the server to check them. */
@@ -302,45 +318,48 @@ export class BenchmarkLauncherState implements OnDestroy {
       // A remembered configuration wins over the first one, but only while it still qualifies:
       // benchmarkCapableConfigs filters on the Benchmark role bit, hasApiKey and isEnabled, so one that
       // was disabled or lost its key falls back rather than leaving a selection the server would reject.
+      // A configuration whose model left the catalog still qualifies and stays selected, so the
+      // launcher's refusal under its field explains it.
       const remembered = this.pendingRunSettings;
       const qualifies = (id: number | null | undefined): boolean =>
         id != null && benchmarkModels.some(m => m.id === id);
+      const fellBack: BenchmarkLauncherRole[] = [];
 
       if (qualifies(remembered?.testedConfigId)) {
         this.testedConfigId = remembered!.testedConfigId;
-      } else if (!this.testedConfigId || !benchmarkModels.some(m => m.id === this.testedConfigId)) {
-        this.testedConfigId = benchmarkModels[0].id;
+      } else {
+        if (remembered?.testedConfigId != null) fellBack.push('tested');
+        if (!this.testedConfigId || !benchmarkModels.some(m => m.id === this.testedConfigId)) {
+          this.testedConfigId = benchmarkModels[0].id;
+        }
       }
 
       if (qualifies(remembered?.assessorConfigId)) {
         this.assessorConfigId = remembered!.assessorConfigId;
-      } else if (!this.assessorConfigId || !benchmarkModels.some(m => m.id === this.assessorConfigId)) {
-        this.assessorConfigId = benchmarkModels[0].id;
+      } else {
+        if (remembered?.assessorConfigId != null) fellBack.push('assessor');
+        if (!this.assessorConfigId || !benchmarkModels.some(m => m.id === this.assessorConfigId)) {
+          this.assessorConfigId = benchmarkModels[0].id;
+        }
       }
 
       // The optional roles restore to null when their configuration no longer qualifies, which is the
       // same as "not selected" and is what the run request already means by a null id.
       if (remembered) {
-        if (remembered.coAssessorConfigId != null) {
-          this.coAssessorConfigId = qualifies(remembered.coAssessorConfigId)
-            ? remembered.coAssessorConfigId
-            : null;
-        }
-        if (remembered.secondOpinionConfigId != null) {
-          this.secondOpinionConfigId = qualifies(remembered.secondOpinionConfigId)
-            ? remembered.secondOpinionConfigId
-            : null;
-        }
-        if (remembered.claimVerifierConfigId != null) {
-          this.claimVerifierConfigId = qualifies(remembered.claimVerifierConfigId)
-            ? remembered.claimVerifierConfigId
-            : null;
-        }
-        if (remembered.reportWriterConfigId != null) {
-          this.reportWriterConfigId = qualifies(remembered.reportWriterConfigId)
-            ? remembered.reportWriterConfigId
-            : null;
-        }
+        const restoreOptional = (role: BenchmarkLauncherRole, id: number | null, assign: (value: number | null) => void): void => {
+          if (id == null) return;
+          if (qualifies(id)) {
+            assign(id);
+          } else {
+            assign(null);
+            fellBack.push(role);
+          }
+        };
+        restoreOptional('coAssessor', remembered.coAssessorConfigId, v => { this.coAssessorConfigId = v; });
+        restoreOptional('secondOpinion', remembered.secondOpinionConfigId, v => { this.secondOpinionConfigId = v; });
+        restoreOptional('claimVerifier', remembered.claimVerifierConfigId, v => { this.claimVerifierConfigId = v; });
+        restoreOptional('reportWriter', remembered.reportWriterConfigId, v => { this.reportWriterConfigId = v; });
+        this.restoreNotes = fellBack.map(role => this.restoreNote(role));
         // A batch model that no longer qualifies is dropped; the rest keep their choice and order.
         if (remembered.batchModelIds != null) {
           this.batchModelKeys = BenchmarkLauncherState.distinct(remembered.batchModelIds.filter(qualifies));
@@ -361,6 +380,70 @@ export class BenchmarkLauncherState implements OnDestroy {
       this.applyPendingPrefill();
       this.requestPreflight();
     }
+  }
+
+  /**
+   * One line per role whose remembered configuration was gone, disabled or no longer had the
+   * Benchmark role when the configurations arrived, naming what was chosen instead. Shown once in
+   * the New Benchmark Run card and never stored.
+   */
+  restoreNotes: string[] = [];
+
+  /** Hides the restore notes. */
+  clearRestoreNotes(): void {
+    this.restoreNotes = [];
+  }
+
+  private restoreNote(role: BenchmarkLauncherRole): string {
+    const config = this.selectedConfigFor(role);
+    const chosen = config ? (config.displayName || config.modelId || `configuration #${config.id}`) : 'none';
+    return `${this.roleLabel(role)}: the remembered configuration is no longer available, so ${chosen} was chosen.`;
+  }
+
+  /** The role as its launcher field is labeled. */
+  roleLabel(role: BenchmarkLauncherRole): string {
+    switch (role) {
+      case 'tested': return 'Model Under Test';
+      case 'assessor': return 'Assessor';
+      case 'coAssessor': return 'Co-Assessor';
+      case 'secondOpinion': return this.isPanelLaunch ? 'Reference Reader' : 'Second Reader';
+      case 'claimVerifier': return 'Claim Verifier';
+      case 'reportWriter': return 'Report Writer';
+    }
+  }
+
+  /** The configuration id selected for the role, or null. */
+  selectedConfigIdFor(role: BenchmarkLauncherRole): number | null {
+    switch (role) {
+      case 'tested': return this.testedConfigId;
+      case 'assessor': return this.assessorConfigId;
+      case 'coAssessor': return this.coAssessorConfigId;
+      case 'secondOpinion': return this.secondOpinionConfigId;
+      case 'claimVerifier': return this.claimVerifierConfigId;
+      case 'reportWriter': return this.reportWriterConfigId;
+    }
+  }
+
+  /** The benchmark-capable configuration selected for the role, or undefined. */
+  selectedConfigFor(role: BenchmarkLauncherRole): SystemAiConfigDto | undefined {
+    const id = this.selectedConfigIdFor(role);
+    return id == null ? undefined : this.workspace.benchmarkCapableConfigs.find(c => c.id === id);
+  }
+
+  /**
+   * The first selected role, in field order, whose configuration uses a model removed from the model
+   * catalog; null when there is none. A model batch's Model Under Test field is hidden, so batch mode
+   * checks the grading roles only. The server refuses such a run regardless.
+   */
+  retiredRoleRefusal(): BenchmarkRetiredRole | null {
+    for (const role of BENCHMARK_LAUNCHER_ROLES) {
+      if (role === 'tested' && this.isModelBatch) continue;
+      const config = this.selectedConfigFor(role);
+      if (config?.modelAvailability?.status === 'retired') {
+        return { role, label: this.roleLabel(role), config };
+      }
+    }
+    return null;
   }
 
   // --- Run setting recall ---
@@ -628,6 +711,8 @@ export class BenchmarkLauncherState implements OnDestroy {
     if (!run || !this.prefillReady) return;
     this.pendingPrefillRun = null;
     this.prefillResult = { runId: run.id, notes: this.applyRunSetup(run) };
+    // The run's setup replaces the restored selections the notes describe.
+    this.restoreNotes = [];
     this.persistRunSettings();
     this.loadLastAssessor();
     this.refreshReusePreview();

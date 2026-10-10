@@ -316,4 +316,140 @@ Overseer resolves pricing with the following precedence:
 
 **A custom override is a single flat rate.** It carries no long-context card, no service-tier multipliers and no schedule, and it replaces all of them: supporting the three would need a threshold, four more rates, a multiplier map and a date on both override entities, for a case nobody has. An operator who needs any of them sets the rate they want instead. The model form says so beneath the custom-pricing fields.
 
+---
+
+## Retiring a Model
+
+When a provider withdraws a model, **retire** it: delete its catalog entry **and** add an entry to the
+retired-models list. Like adding a model, this is a data change in two JSON files, followed by a
+rebuild.
+
+### 1. Record It in `RetiredModels.json`
+
+`Overseer/Services/ModelCatalogs/RetiredModels.json` is a flat JSON array, embedded by the same
+`Services\ModelCatalogs\*.json` glob as the catalogs and read by `ModelMetadataService`
+(`GetRetiredEntries`, `GetRetiredEntry`). Write the entry **before** deleting the catalog entry, because
+`lastKnown` is copied from it:
+
+```json
+{
+  "provider": "Google",
+  "prefixes": ["gemini-3.7-flash"],
+  "displayName": "Gemini 3.7 Flash",
+  "retiredOn": "2026-10-10",
+  "note": "Withdrawn from the Gemini API by Google.",
+  "replacement": "gemini-3.8-flash",
+  "lastKnown": {
+    "thinkingLevels": ["low", "medium", "high"],
+    "contextWindowSize": 1048576,
+    "maxOutputTokens": 65536,
+    "inputPerMillion": 0.75,
+    "outputPerMillion": 3.75,
+    "cachedInputPerMillion": 0.075
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `provider` | `Anthropic`, `Google` or `OpenAI`. |
+| `prefixes` | The deleted entry's prefixes. A retired prefix matches a model ID exactly or followed by a dated snapshot suffix (`gemini-3.7-flash-001`), never as a variant. |
+| `displayName` | The deleted entry's display name. The admin alert and the resolution dialog name the model by it. |
+| `retiredOn` | `yyyy-MM-dd`, the day the provider withdrew the model. |
+| `note` | Optional. One sentence appended to the notice users see. |
+| `replacement` | Optional. The model ID offered first when switching, and as **Use {replacement}** in chat. **It must be a catalogued model** (whitelisted); one that is not is never offered, and a test fails. |
+| `lastKnown` | The deleted entry's **base card**: its `thinkingLevels`, `contextWindowSize`, `maxOutputTokens`, and the `inputPerMillion`, `outputPerMillion` and `cachedInputPerMillion` of its `pricing` (not `longContext` or `scheduledChange`). Used **only** to prefill *Keep as custom model*; it is never runtime metadata or pricing. |
+
+**An active catalog entry always wins.** `GetRetiredEntry` returns nothing for an ID the catalog
+describes (exact, snapshot or variant), so a retired prefix can never hide a model that is still
+offered.
+
+### 2. Delete the Catalog Entry, Then Fix the Tests
+
+Delete the model's entry from its provider catalog and rebuild. Then update the **tests that used the
+retired ID as a catalogued model** — a whitelisting, metadata or pricing assertion about it — by
+moving them to the replacement. Other occurrences of the old ID in tests are opaque data (an ID stored
+on a fixture row, a string in a recorded run) and stay as they are.
+
+> **Deleting the entry without a retired entry is the wrong half.** The model then reads *Not in
+> catalog* instead of *Removed*: users see a blue advisory rather than the retirement date and the
+> replacement, administrators get no alert, and GnollBench does not refuse it.
+
+### How a Row Is Classified
+
+`UserAiModel` and `SystemAiApiConfiguration` carry `ModelCatalogMode`: `catalog`, `custom`, or null for
+a legacy row, which counts as `catalog`. The server derives it on create (`catalog` when the catalog
+describes the model ID, else `custom`) and on update only when the model ID or provider changes; the
+client never sends it. An existing row therefore stays in catalog mode when its model is retired.
+
+`ModelAvailabilityService.Evaluate` classifies a row; the first match wins:
+
+1. **Custom endpoint** — the row has a Base URL. A gateway or Azure deployment name is legitimately
+   uncatalogued.
+2. **Custom** — the row's mode is `custom`.
+3. **Available** — the catalog describes the model ID (`IsDescribedByCatalog`: exact, snapshot or variant).
+4. **Retired** — a retired prefix matches.
+5. **Not in catalog** — anything else.
+
+Retired and Not in catalog **need attention**; the API returns the result as `modelAvailability` on
+each row.
+
+### What Users and Administrators See
+
+- **Models page.** A flagged user model shows a *Removed* or *Not in catalog* badge, a notice and
+  **Resolve…**, which opens the resolution dialog; a custom-mode row shows *Custom model*. A flagged
+  system-provided model shows the notice and *An administrator needs to update this model. You can
+  choose another model in chat.* The model form shows the notice in edit mode.
+- **Chat.** The model picker shows the same chip. With a flagged model selected, a notice above the
+  input offers **Resolve…** (own model), **Use {replacement}**, **Choose another model** and, for an
+  administrator, **Open System Configs**. Chat never refuses to send to a flagged model, because
+  providers sometimes keep serving a withdrawn model for a grace period. When the provider answers
+  with a "model not found" 404 (`ModelNotFoundClassifier`: Google `error.status == NOT_FOUND`, OpenAI
+  `error.code == model_not_found`, Anthropic `error.type == not_found_error`, or a JSON 404 whose
+  message names the model ID), the turn ends with an `error` event whose `ErrorCode` is
+  `model_unavailable` and whose text says the provider no longer serves the model, without a retry; a
+  system model's failure is also written to the system AI error log. A remembered chat model that no
+  longer exists is forgotten, and a one-time note says which model was selected instead.
+- **Admin.** `ConfigHealthService` raises one warning per retired model used by enabled system
+  configurations (id `retired-model-{provider}-{firstPrefix}`), linking to **Review in System
+  Configs**. *Not in catalog* raises no alert. The System Configs tab lists every flagged configuration
+  in a summary banner and gives each row the badge, the notice and **Resolve…**;
+  `/admin?tab=configs&resolveConfig={id}` opens the dialog for one configuration.
+
+### The Three Resolutions
+
+The dialog (`app-model-resolution-dialog`) offers three choices:
+
+- **Switch** to another catalog model of the same provider, **in place**: the row keeps its id, so chat
+  selections, assignments, confidential trust and history attribution carry over. A dry-run preview
+  lists every change first. The thinking level and reasoning settings are adapted to what the target
+  supports, the limits are clamped to its ceilings, the display name follows the row's display-name
+  mode, and a custom price is kept with a note to check it.
+- **Keep as custom model**: the row switches to custom mode with its own limits and prices, prefilled
+  from `lastKnown` for a retired model. Replies fail once the provider stops serving it.
+- **Delete** the row.
+
+The endpoints are `POST api/settings/usermodels/{id}/model-resolution`,
+`POST api/admin/systemconfigs/{id}/model-resolution` and `GET api/settings/model-catalog/{provider}`
+(the switch targets, newest first). A non-dry-run switch of a system configuration in live use is
+refused with 409 and the same blockers as deletion (`SystemConfigUsageGuard`, which counts the
+co-assessor role too); keeping it as custom is not guarded.
+
+### What GnollBench Refuses
+
+The run launcher refuses a run when **any** of its roles — tested model, assessor, co-assessor, second
+or reference reader, claim verifier, report writer — uses a retired model
+(`BenchmarkRunLauncher.RetiredModelRefusal`); AI report writing refuses a retired report writer the same
+way. Custom-mode and Not-in-catalog models are admitted: a Not-in-catalog model gets an advisory that
+its cost is reported as unknown unless it has a custom price. The client disables **Start** with a hint
+and offers **Resolve in System Configs**. Other GnollBench jobs show the chip but are not refused.
+
+### Tests That Guard the List
+
+`ModelMetadataServiceTests` checks that the list loads, that no retired prefix equals or is shadowed
+by an active prefix of the same provider, that every `replacement` is whitelisted, that every
+`retiredOn` parses as `yyyy-MM-dd`, and that a retired prefix matches with and without a snapshot
+suffix but never an active model, a variant or another provider's model. A new retired entry is covered
+with no test change.
+
 

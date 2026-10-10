@@ -10,6 +10,7 @@ import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DefaultApiKey
 import { buildSystemConfig, spyAdminService } from './admin.component.testing';
 import { AdminUsersTabComponent } from './users-tab/admin-users-tab.component';
 import { AdminConfigsTabComponent } from './configs-tab/admin-configs-tab.component';
+import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
 
 describe('AdminComponent', () => {
   let component: AdminComponent;
@@ -252,7 +253,7 @@ describe('AdminComponent', () => {
     let navigateSpy: Mock;
 
     const removal = {
-      queryParams: { tab: null, subtab: null, suiteId: null },
+      queryParams: { tab: null, subtab: null, suiteId: null, resolveConfig: null },
       queryParamsHandling: 'merge',
       replaceUrl: true
     };
@@ -298,6 +299,33 @@ describe('AdminComponent', () => {
       expect(component.pendingBenchmarkNavigation).toBeNull();
     });
 
+    it('hands the System Configs tab the configuration to resolve and removes both parameters', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'configs', resolveConfig: '7' }));
+
+      expect(component.activeTab).toBe('configs');
+      expect(component.store.pendingResolveConfigId).toBe(7);
+      expect(navigateSpy).toHaveBeenCalledTimes(1);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    it('selects System Configs for a resolveConfig link without a tab parameter', () => {
+      component.applyNavigationParams(convertToParamMap({ resolveConfig: '12' }));
+
+      expect(component.activeTab).toBe('configs');
+      expect(component.store.pendingResolveConfigId).toBe(12);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    for (const raw of ['0', '-3', 'abc', '2.5', '']) {
+      it(`ignores resolveConfig="${raw}" and still removes the parameters`, () => {
+        component.applyNavigationParams(convertToParamMap({ resolveConfig: raw }));
+
+        expect(component.activeTab).toBe('users');
+        expect(component.store.pendingResolveConfigId).toBeNull();
+        expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+      });
+    }
+
     it('reads the parameters from the route on init', () => {
       TestBed.resetTestingModule();
       TestBed.configureTestingModule({
@@ -325,6 +353,40 @@ describe('AdminComponent', () => {
 
       expect(routed.componentInstance.activeTab).toBe('telemetry');
       routed.destroy();
+    });
+
+    it('opens the resolution dialog for a resolveConfig link once the configurations have loaded', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [AdminComponent],
+        providers: [
+          provideRouter([]),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ tab: 'configs', resolveConfig: '7' })) } }
+        ]
+      });
+      const service = TestBed.inject(AdminService);
+      spyAdminService(service);
+      (service.getSystemConfigs as Mock).mockReturnValue(of([buildSystemConfig({
+        id: 7, displayName: 'Old Claude', modelId: 'claude-old',
+        modelAvailability: { status: 'retired', needsAttention: true, retiredOn: '2026-09-30' }
+      })]));
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const open = vi.spyOn(ModelResolutionDialogComponent.prototype, 'open').mockReturnValue(undefined);
+
+      try {
+        const routed = TestBed.createComponent(AdminComponent);
+        routed.detectChanges();
+
+        expect(routed.componentInstance.activeTab).toBe('configs');
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(open.mock.lastCall![0]).toEqual(expect.objectContaining({ id: 7, displayName: 'Old Claude', modelId: 'claude-old' }));
+        expect(routed.componentInstance.store.pendingResolveConfigId).toBeNull();
+        routed.destroy();
+      } finally {
+        open.mockRestore();
+      }
     });
   });
 });

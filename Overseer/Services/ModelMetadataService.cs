@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Overseer.Models;
 
 namespace Overseer.Services;
 
@@ -14,6 +15,9 @@ public class ModelMetadataService
     private readonly Dictionary<string, List<ModelCatalogEntry>> _providerCatalogs = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<ModelMetadataService>? _logger;
     private readonly ConcurrentDictionary<string, byte> _warnedUnknownVersions = new(StringComparer.OrdinalIgnoreCase);
+    private List<RetiredModelEntry> _retiredEntries = new();
+
+    private const string RetiredModelsResourceName = "Overseer.Services.ModelCatalogs.RetiredModels.json";
 
     /// <summary>How a model ID relates to the catalog prefix it matched.</summary>
     private enum MatchKind
@@ -63,6 +67,31 @@ public class ModelMetadataService
 
             _providerCatalogs[provider] = entries;
         }
+
+        _retiredEntries = LoadRetiredEntries(assembly, serializerOptions);
+    }
+
+    /// <summary>The retired-models list, or an empty list when the resource is missing or malformed.</summary>
+    private List<RetiredModelEntry> LoadRetiredEntries(Assembly assembly, JsonSerializerOptions serializerOptions)
+    {
+        try
+        {
+            using var stream = assembly.GetManifestResourceStream(RetiredModelsResourceName);
+            if (stream == null)
+            {
+                _logger?.LogWarning("Embedded resource {ResourceName} is missing; no models are recognized as retired.", RetiredModelsResourceName);
+                return new List<RetiredModelEntry>();
+            }
+
+            using var reader = new StreamReader(stream);
+            var entries = JsonSerializer.Deserialize<List<RetiredModelEntry>>(reader.ReadToEnd(), serializerOptions);
+            return entries?.Where(e => e != null).ToList() ?? new List<RetiredModelEntry>();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Embedded resource {ResourceName} could not be read; no models are recognized as retired.", RetiredModelsResourceName);
+            return new List<RetiredModelEntry>();
+        }
     }
 
     /// <summary>
@@ -94,6 +123,71 @@ public class ModelMetadataService
         }
 
         return kind is MatchKind.Exact or MatchKind.Snapshot;
+    }
+
+    /// <summary>
+    /// Whether a catalog entry describes the model: an exact prefix, a snapshot or a variant — the same set
+    /// <see cref="GetMetadata"/> takes limits and pricing from. Wider than <see cref="IsWhitelisted"/>.
+    /// </summary>
+    public bool IsDescribedByCatalog(string provider, string modelId)
+    {
+        var (_, _, kind) = Match(provider, modelId);
+        return kind is MatchKind.Exact or MatchKind.Snapshot or MatchKind.Variant;
+    }
+
+    /// <summary>
+    /// The retired entry whose prefix equals the model ID or is followed by a snapshot suffix, or null.
+    /// Always null for a model the active catalog describes, so an active entry wins.
+    /// </summary>
+    public RetiredModelEntry? GetRetiredEntry(string provider, string modelId)
+    {
+        if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(modelId)
+            || IsDescribedByCatalog(provider, modelId))
+        {
+            return null;
+        }
+
+        foreach (var entry in _retiredEntries)
+        {
+            if (!string.Equals(entry.Provider, provider, StringComparison.OrdinalIgnoreCase) || entry.Prefixes == null)
+                continue;
+
+            foreach (var prefix in entry.Prefixes)
+            {
+                if (string.IsNullOrEmpty(prefix) || !modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (modelId.Length == prefix.Length)
+                    return entry;
+
+                if (modelId[prefix.Length] == '-' && IsSnapshot(modelId.Substring(prefix.Length + 1)))
+                    return entry;
+            }
+        }
+
+        return null;
+    }
+
+    public IReadOnlyList<RetiredModelEntry> GetRetiredEntries() => _retiredEntries;
+
+    /// <summary>The catalog entries of one provider as switch targets, newest release first.</summary>
+    public IReadOnlyList<CatalogTargetDto> GetCatalogTargets(string provider)
+    {
+        return GetCatalogEntries(provider)
+            .Where(e => e.Prefixes != null && e.Prefixes.Count > 0 && !string.IsNullOrEmpty(e.Prefixes[0]))
+            .OrderByDescending(e => e.ReleaseDate, StringComparer.Ordinal)
+            .Select(e => new CatalogTargetDto
+            {
+                ModelId = e.Prefixes[0],
+                DisplayName = e.DisplayName,
+                ReleaseDate = e.ReleaseDate,
+                ThinkingLevels = new List<string>(e.ThinkingLevels ?? new List<string>()),
+                ContextWindowSize = e.ContextWindowSize,
+                MaxOutputTokens = e.MaxOutputTokens,
+                InputPerMillion = e.Pricing?.InputPerMillion,
+                OutputPerMillion = e.Pricing?.OutputPerMillion
+            })
+            .ToList();
     }
 
     /// <summary>

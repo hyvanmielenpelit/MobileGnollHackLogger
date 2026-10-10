@@ -1,5 +1,5 @@
-import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
-
+import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy, Injector, afterNextRender } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import {
@@ -15,20 +15,46 @@ import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
+import {
+  AvailabilityChip,
+  ModelResolutionResult,
+  availabilityChip,
+  availabilitySentence,
+  isResolutionDeletion,
+  needsAttention
+} from '../shared/model-availability/model-availability';
+import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/model-availability-notice.component';
+import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
+
+/** The extra sentence under a system-provided model that needs attention. */
+export const SYSTEM_MODEL_ATTENTION_TEXT = 'An administrator needs to update this model. You can choose another model in chat.';
 
 @Component({
     selector: 'app-models',
-    imports: [FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent, ModelPickerComponent],
+    imports: [
+      NgTemplateOutlet, FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent, ModelPickerComponent,
+      ModelAvailabilityNoticeComponent, ModelResolutionDialogComponent
+    ],
     templateUrl: './models.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './models.component.scss'
 })
 export class ModelsComponent implements OnInit {
   settingsService = inject(SettingsService);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   @ViewChild('modelPickerDialog') modelPickerDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('editModelDialog') editModelDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('deleteModelConfirmDialog') deleteModelConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild(ModelResolutionDialogComponent) resolutionDialog?: ModelResolutionDialogComponent;
+
+  readonly systemModelAttentionText = SYSTEM_MODEL_ATTENTION_TEXT;
+
+  /** The user model the resolution dialog was opened for. */
+  resolvingModel: UserAiModel | null = null;
+  /** The page status line: what the last resolution did. */
+  resolutionStatus = '';
 
   userModels: UserAiModel[] = [];
   systemModels: UserAiModel[] = [];
@@ -77,7 +103,8 @@ export class ModelsComponent implements OnInit {
     });
   }
 
-  loadModels() {
+  /** `afterLoad` runs once the lists are replaced, before they render. */
+  loadModels(afterLoad?: () => void) {
     this.loading = true;
     this.settingsService.getUserModels().subscribe({
       next: (models) => {
@@ -89,6 +116,7 @@ export class ModelsComponent implements OnInit {
         // The anchor-positioning polyfill does not observe DOM mutations, and the trust
         // indicators' tooltips were behind the loading @if until this render.
         setTimeout(() => refreshAnchorPositioning(), 0);
+        afterLoad?.();
       },
       error: (err) => {
         console.error("Failed to load models", err);
@@ -113,18 +141,7 @@ export class ModelsComponent implements OnInit {
           this.titleModelSelection = null;
         }
         this.loadModels();
-        this.settingsService.getSettings().subscribe({
-          next: (settings) => {
-            if (settings.titleGenerationModelId) {
-              this.titleModelSelection = 'u_' + settings.titleGenerationModelId;
-            } else if (settings.titleGenerationSystemModelId) {
-              this.titleModelSelection = 's_' + settings.titleGenerationSystemModelId;
-            } else {
-              this.titleModelSelection = null;
-            }
-          },
-          error: () => {}
-        });
+        this.reloadTitleSelection();
         this.saving = false;
         this.deleteModelConfirmDialog.nativeElement.close();
       },
@@ -134,6 +151,111 @@ export class ModelsComponent implements OnInit {
         this.deleteModelConfirmDialog.nativeElement.close();
       }
     });
+  }
+
+  /** Re-reads the title-generation model, which the server moves off a deleted model. */
+  private reloadTitleSelection(): void {
+    this.settingsService.getSettings().subscribe({
+      next: (settings) => {
+        if (settings.titleGenerationModelId) {
+          this.titleModelSelection = 'u_' + settings.titleGenerationModelId;
+        } else if (settings.titleGenerationSystemModelId) {
+          this.titleModelSelection = 's_' + settings.titleGenerationSystemModelId;
+        } else {
+          this.titleModelSelection = null;
+        }
+      },
+      error: () => {}
+    });
+  }
+
+  // --- Catalog availability ---
+
+  modelName(model: UserAiModel): string {
+    return model.displayName || model.modelId;
+  }
+
+  needsAttention(model: UserAiModel): boolean {
+    return needsAttention(model.modelAvailability);
+  }
+
+  /** A model saved in custom mode: Overseer no longer checks it against the catalog. */
+  isCustomMode(model: UserAiModel): boolean {
+    return model.modelAvailability?.status === 'custom';
+  }
+
+  availabilityChip(model: UserAiModel): AvailabilityChip | null {
+    return availabilityChip(model.modelAvailability);
+  }
+
+  availabilitySentence(model: UserAiModel): string {
+    return availabilitySentence(model.modelAvailability, this.modelName(model), model.modelId);
+  }
+
+  /** Unique per row across both lists, like `postureTipId`. */
+  availabilityTipId(model: UserAiModel): string {
+    return `tip-availability-${model.isSystem ? 's' : 'u'}-${model.id}`;
+  }
+
+  resolveLabel(model: UserAiModel): string {
+    return `Resolve "${this.modelName(model)}"`;
+  }
+
+  openResolve(model: UserAiModel): void {
+    if (model.id == null || !model.modelAvailability) return;
+    this.resolvingModel = model;
+    this.resolutionDialog?.open({
+      id: model.id,
+      provider: model.provider,
+      modelId: model.modelId,
+      displayName: this.modelName(model),
+      availability: model.modelAvailability
+    });
+  }
+
+  /**
+   * Reloads the list, says what changed in the status line, and moves focus to the next flagged
+   * row's Resolve…, else the resolved row's name, else the page heading.
+   */
+  onResolved(result: ModelResolutionResult): void {
+    const subject = this.resolvingModel;
+    this.resolvingModel = null;
+    if (!subject) {
+      this.loadModels();
+      return;
+    }
+    const name = this.modelName(subject);
+    const index = this.userModels.findIndex(m => m.id === subject.id);
+    const deleted = isResolutionDeletion(result);
+    const resolved = result.model as UserAiModel | null;
+
+    if (deleted) {
+      this.resolutionStatus = `'${name}' was deleted.`;
+    } else if (resolved && (resolved.modelCatalogMode === 'custom' || resolved.modelAvailability?.status === 'custom')) {
+      this.resolutionStatus = `'${name}' is now a custom model.`;
+    } else {
+      const target = resolved
+        ? (resolved.displayNameMode === 'custom' ? resolved.modelId : (resolved.displayName || resolved.modelId))
+        : '';
+      this.resolutionStatus = target ? `'${name}' now uses ${target}.` : `'${name}' was updated.`;
+    }
+
+    this.loadModels(() => this.focusAfterResolution(subject.id!, index < 0 ? 0 : index));
+    if (deleted && this.titleModelSelection === 'u_' + subject.id) {
+      this.titleModelSelection = null;
+      this.reloadTitleSelection();
+    }
+  }
+
+  private focusAfterResolution(resolvedId: number, formerIndex: number): void {
+    const flagged = (m: UserAiModel) => m.id !== resolvedId && this.needsAttention(m);
+    const next = this.userModels.slice(formerIndex).find(flagged) ?? this.userModels.slice(0, formerIndex).find(flagged);
+    const selector = next
+      ? `#resolve-model-${next.id}`
+      : this.userModels.some(m => m.id === resolvedId) ? `#user-model-name-${resolvedId}` : '#models-heading';
+    afterNextRender(() => {
+      this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus();
+    }, { injector: this.injector });
   }
 
   moveUp(index: number) {

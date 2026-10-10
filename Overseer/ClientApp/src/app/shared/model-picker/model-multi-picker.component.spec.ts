@@ -145,6 +145,28 @@ describe('ModelMultiPickerComponent', () => {
     expect(options(multi)[1].getAttribute('aria-selected')).toBe('true');
   });
 
+  it('leads the badges of a model that needs attention with its chip, part of the option text', () => {
+    const flagged: TestModel = {
+      id: 3, displayName: 'Old Flash', provider: 'Google',
+      modelAvailability: { status: 'retired', needsAttention: true, retiredOn: '2026-09-30' }
+    };
+    host.options = [...OPTIONS, { key: 'run:3', model: flagged }];
+    host.select([]);
+    fixture.detectChanges();
+    const multi = part('.multi');
+    open(multi);
+
+    const option = options(multi)[3];
+    const chip = option.querySelector<HTMLElement>('.model-option-notice')!;
+    expect(chip.getAttribute('data-tone')).toBe('warning');
+    expect(chip.textContent!.replace(/\s+/g, ' ').trim()).toBe('status: Removed');
+    expect(chip.compareDocumentPosition(option.querySelector('.provider-badge')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(option.hasAttribute('aria-label')).toBe(false);
+    const text = option.textContent!.replace(/\s+/g, ' ');
+    expect(text.indexOf('status: Removed')).toBeGreaterThan(text.indexOf('Old Flash'));
+    expect(options(multi)[0].querySelector('.model-option-notice')).toBeNull();
+  });
+
   it('Escape closes the list and keeps the key from the parent', () => {
     const multi = part('.multi');
     open(multi);

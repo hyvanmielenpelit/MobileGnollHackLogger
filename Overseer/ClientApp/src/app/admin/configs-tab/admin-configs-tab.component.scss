@@ -23,6 +23,25 @@
   font-weight: 600;
 }
 
+// The summary of the configurations whose model needs attention, with one Resolve button each.
+.config-attention-banner {
+  .config-attention-body {
+    margin: 0;
+  }
+
+  .config-attention-list {
+    flex-wrap: wrap;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+}
+
+.config-availability-notice {
+  display: block;
+  margin-top: 8px;
+}
+
 .results-count {
   font-size: 0.85rem;
   color: #8b949e;

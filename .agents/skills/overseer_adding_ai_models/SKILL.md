@@ -235,6 +235,47 @@ There is no pricing configuration section. The conditional rate cards (`longCont
 `serviceTierMultipliers`, `scheduledChange`) are documented in
 `docs/overseer/adding-ai-models.md` § *Optional: Configure Token Pricing*.
 
+## Retiring a Model
+
+When a provider withdraws a model, it moves from its catalog to the **retired-models list**,
+`Overseer/Services/ModelCatalogs/RetiredModels.json` (a flat array of `RetiredModelEntry`,
+`Overseer/Services/RetiredModelEntry.cs`, embedded by the same `*.json` glob). What users, admins and
+GnollBench then do with it is in `docs/overseer/adding-ai-models.md` § *Retiring a Model*.
+
+Checklist:
+
+1. **Add the retired entry first**, at the end of `RetiredModels.json`, while the catalog entry still
+   exists to copy from:
+   - `provider` — `Anthropic`, `Google` or `OpenAI`.
+   - `prefixes`, `displayName` — the catalog entry's own.
+   - `retiredOn` — the withdrawal date, `yyyy-MM-dd`.
+   - `note` — optional, one sentence users see after the removal date.
+   - `replacement` — optional; **must be a catalogued (whitelisted) model ID** of the same provider.
+   - `lastKnown` — the entry's **base card**: `thinkingLevels`, `contextWindowSize`,
+     `maxOutputTokens`, and `pricing`'s `inputPerMillion`, `outputPerMillion` and
+     `cachedInputPerMillion` (not `longContext` or `scheduledChange`). It only prefills *Keep as custom
+     model*; it is never runtime metadata or pricing.
+2. **Delete the catalog entry.** Keep the file's encoding and LF line endings, and parse both files
+   after editing (§ Verification): a malformed `RetiredModels.json` is only logged as a warning and
+   read as an empty list, so nothing is retired.
+3. **Move tests that used the retired ID as a catalogued model** (whitelisting, metadata or pricing
+   assertions about it) to the replacement. Other occurrences of the old ID in tests are opaque data
+   and stay.
+4. **Rebuild and run the tests.** `ModelMetadataServiceTests` guards the list: it loads; no retired
+   prefix equals or is shadowed by an active prefix of the same provider; every `replacement` is
+   whitelisted; every `retiredOn` parses as `yyyy-MM-dd`; a retired prefix matches with and without a
+   snapshot suffix. No test change is needed for a new retired entry.
+
+An active catalog entry always wins: `GetRetiredEntry` returns null for any ID the catalog describes
+(`IsDescribedByCatalog`), so a retired prefix never hides an offered model. Matching is exact or
+exact-plus-snapshot only — a retired prefix has no `Variant` row.
+
+> [!WARNING]
+> **Deleting a catalog entry without adding a retired entry makes the model *Not in catalog*, not
+> *Removed*.** `ModelAvailabilityService.Evaluate` falls through to its last status: users see a blue
+> advisory with no retirement date and no replacement, `ConfigHealthService` raises **no** admin
+> alert, and the GnollBench launcher does **not** refuse it. Both halves, every time.
+
 ## What NOT to Do
 
 - **Do not edit `ModelMetadataService.cs`** to special-case a model. There are no per-model

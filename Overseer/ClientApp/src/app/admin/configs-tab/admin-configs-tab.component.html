@@ -1,10 +1,34 @@
 <div class="tab-header-row">
-  <h3 class="m-0">System AI Configurations</h3>
+  <h3 class="m-0" #configsHeading tabindex="-1">System AI Configurations</h3>
   <app-config-filter [filter]="configFilter"
                      [providers]="adminProviders"
                      (filterChange)="onConfigFilterChange($event)"></app-config-filter>
   <button class="btn-gh btn-gh-wide" (click)="openCreateConfig()">Create</button>
 </div>
+@let attention = attentionConfigs;
+@if (attention.length > 0) {
+  <div class="alert alert-warning config-attention-banner" role="status">
+    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    <div class="alert-content">
+      <h4 class="alert-heading">
+        {{ attention.length === 1 ? '1 configuration needs attention' : attention.length + ' configurations need attention' }}
+      </h4>
+      <p class="alert-body config-attention-body">
+        {{ attention.length === 1
+          ? 'Its model is not in the model catalog. Switch, keep or delete it.'
+          : 'Their models are not in the model catalog. Switch, keep or delete each one.' }}
+      </p>
+      <ul class="alert-actions config-attention-list">
+        @for (config of attention; track config.id) {
+          <li>
+            <button type="button" class="btn-ghost config-attention-resolve" aria-haspopup="dialog"
+                    (click)="openResolve(config)">{{ resolveLabel(config) }}</button>
+          </li>
+        }
+      </ul>
+    </div>
+  </div>
+}
 @if (configs.length > 0) {
   <p class="results-count" role="status" aria-live="polite">
     @if (isConfigFilterActive) {
@@ -45,7 +69,7 @@
              [attr.style]="'position-anchor: --tip-drag-config-' + config.id">Drag to reorder</div>
         <div class="model-info">
           <div class="model-title">
-            <h3>{{ config.displayName || config.modelId }}</h3>
+            <h3 [id]="'config-title-' + config.id" tabindex="-1">{{ config.displayName || config.modelId }}</h3>
           </div>
           <div class="model-details">
             @if (config.note) {
@@ -56,6 +80,27 @@
             <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
               <span>{{ config.modelId }}</span>
               <app-provider-badge [provider]="config.provider"></app-provider-badge>
+              @let availability = availabilityBadge(config);
+              @if (availability) {
+                <span class="status-badge badge-availability config-availability-badge" [ngClass]="availability.cssClass"
+                      [attr.interestfor]="'tip-availability-config-' + config.id"
+                      [attr.style]="'anchor-name: --tip-availability-config-' + config.id">
+                  @switch (availability.icon) {
+                    @case ('warning') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    }
+                    @case ('info') {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    }
+                    @default {
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+                    }
+                  }
+                  {{ availability.text }}
+                </span>
+                <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'tip-availability-config-' + config.id"
+                     [attr.style]="'position-anchor: --tip-availability-config-' + config.id">{{ availability.tip }}</div>
+              }
               @for (badge of modelRoleBadges(config.modelRole); track badge.label) {
                 <span class="status-badge" [ngClass]="badge.cssClass">{{ badge.label }}</span>
               }
@@ -111,6 +156,16 @@
             @if (formatPricingSchedule(config)) {
               <div class="model-price-schedule" [class.elapsed]="config.pricingScheduleElapsed">{{ formatPricingSchedule(config) }}</div>
             }
+            @if (isFlagged(config)) {
+              <app-model-availability-notice class="config-availability-notice" variant="row"
+                                             [availability]="config.modelAvailability"
+                                             [modelName]="availabilityModelName(config)"
+                                             [modelId]="config.modelId">
+                <button type="button" class="btn-ghost config-row-resolve" [id]="'config-resolve-' + config.id"
+                        aria-haspopup="dialog" [attr.aria-label]="resolveLabel(config)"
+                        (click)="openResolve(config)">Resolve…</button>
+              </app-model-availability-notice>
+            }
           </div>
         </div>
         <div class="model-actions">
@@ -147,6 +202,7 @@
       [providers]="adminProviders"
       [initialProvider]="editingConfig.provider"
       [initialData]="editingConfig"
+      [availability]="editingConfig.modelAvailability ?? null"
       [defaultKeys]="store.defaultKeysForForm"
       [saving]="savingConfig"
       [serverError]="configSaveError"
@@ -246,3 +302,8 @@
 </dialog>
 
 <app-admin-rate-limits-dialog #rateLimits></app-admin-rate-limits-dialog>
+
+<app-model-resolution-dialog kind="system"
+                             (resolved)="onConfigResolved($event)"
+                             (deleteRequested)="onResolutionDeleteRequested($event)"
+                             (closed)="onResolutionClosed()"></app-model-resolution-dialog>

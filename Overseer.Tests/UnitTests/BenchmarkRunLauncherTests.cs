@@ -139,7 +139,8 @@ public class BenchmarkRunLauncherTests
     /// A launcher over <paramref name="db"/>. The candidate is never executed by these tests, so the
     /// chat service and agent loop are null.
     /// </summary>
-    private static BenchmarkRunLauncher CreateLauncher(ApplicationDbContext db, BenchmarkRunManager runManager)
+    private static BenchmarkRunLauncher CreateLauncher(
+        ApplicationDbContext db, BenchmarkRunManager runManager, ModelAvailabilityService? modelAvailability = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -167,7 +168,9 @@ public class BenchmarkRunLauncherTests
             config,
             NullLogger<BenchmarkService>.Instance);
 
-        return new BenchmarkRunLauncher(db, benchmarkService, runManager, new BenchmarkComplianceGuard(config, db), endpointPolicy);
+        return new BenchmarkRunLauncher(
+            db, benchmarkService, runManager, new BenchmarkComplianceGuard(config, db), endpointPolicy,
+            modelAvailabilityService: modelAvailability);
     }
 
     /// <summary>A suite the launcher admits, two admissible configurations of two providers, and a battery run.</summary>
@@ -339,5 +342,106 @@ public class BenchmarkRunLauncherTests
         Assert.Equal("series:4", BenchmarkRunLauncher.OrchestratorOwnerFor(4, null));
         Assert.Equal("battery:12", BenchmarkRunLauncher.OrchestratorOwnerFor(null, member));
         Assert.Null(BenchmarkRunLauncher.OrchestratorOwnerFor(null, null));
+    }
+
+    // --- Retired catalog models --------------------------------------------------------------
+
+    private const long RoleConfigId = 3;
+    private const long PanelCoAssessorId = 4;
+
+    /// <summary>
+    /// Adds the configuration under test as id 3 (Google, the given model ID and catalog mode) and a
+    /// catalogued Google co-assessor as id 4 for the reference-reader panel.
+    /// </summary>
+    private static async Task SeedRoleConfigsAsync(ApplicationDbContext db, string modelId, string? catalogMode, CancellationToken ct)
+    {
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = RoleConfigId, Provider = "Google", ModelId = modelId, ModelCatalogMode = catalogMode,
+            DisplayName = "Role Model", IsEnabled = true, EncryptedApiKey = "encrypted-role-key", ModelRole = 4
+        });
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = PanelCoAssessorId, Provider = "Google", ModelId = "gemini-3.8-flash",
+            DisplayName = "Panel Co-assessor", IsEnabled = true, EncryptedApiKey = "encrypted-panel-key", ModelRole = 4
+        });
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>A request that puts configuration 3 in the role the label names.</summary>
+    private static StartBenchmarkRunRequest RoleRequest(long suiteId, string role)
+    {
+        var request = LaunchRequest(suiteId);
+        switch (role)
+        {
+            case "Tested model": request.TestedModelConfigurationId = RoleConfigId; break;
+            case "Assessor": request.AssessorModelConfigurationId = RoleConfigId; break;
+            case "Co-assessor": request.CoAssessorModelConfigurationId = RoleConfigId; break;
+            case "Second reader": request.SecondOpinionAssessorModelConfigurationId = RoleConfigId; break;
+            case "Reference reader":
+                request.CoAssessorModelConfigurationId = PanelCoAssessorId;
+                request.SecondOpinionAssessorModelConfigurationId = RoleConfigId;
+                break;
+            case "Claim verifier": request.ClaimVerifierModelConfigurationId = RoleConfigId; break;
+            case "Report writer": request.ReportWriterModelConfigurationId = RoleConfigId; break;
+            default: throw new ArgumentOutOfRangeException(nameof(role), role, null);
+        }
+        return request;
+    }
+
+    public static TheoryData<string> Roles => new()
+    {
+        "Tested model", "Assessor", "Co-assessor", "Second reader", "Reference reader", "Claim verifier", "Report writer"
+    };
+
+    [Theory]
+    [MemberData(nameof(Roles))]
+    public async Task ARetiredModel_IsRefusedInEveryRole(string role)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateDb(Guid.NewGuid().ToString());
+        var (suiteId, _) = await SeedAsync(db);
+        await SeedRoleConfigsAsync(db, "gemini-3.7-flash", null, ct);
+        var launcher = CreateLauncher(db, new BenchmarkRunManager(), new ModelAvailabilityService(new ModelMetadataService()));
+
+        var refusal = await launcher.ValidateRequestAsync(RoleRequest(suiteId, role), ct);
+
+        Assert.NotNull(refusal);
+        Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, refusal!.Outcome);
+        Assert.Equal(
+            $"{role}: 'Role Model' uses gemini-3.7-flash, which was removed from the model catalog on 2026-10-10. "
+            + "Switch it to another model or keep it as a custom model in System Configs, then start again.",
+            refusal.Error);
+
+        var launch = await launcher.CreateAndLaunchRunAsync(RoleRequest(suiteId, role), "user", ct: ct);
+        Assert.Equal(BenchmarkRunLaunchOutcome.Invalid, launch.Outcome);
+        Assert.Equal(refusal.Error, launch.Error);
+        Assert.Empty(await db.BenchmarkRuns.ToListAsync(ct));
+    }
+
+    [Theory]
+    [MemberData(nameof(Roles))]
+    public async Task ARetiredModelKeptAsCustom_OrAModelNotInTheCatalog_IsAccepted(string role)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var availability = new ModelAvailabilityService(new ModelMetadataService());
+
+        using (var db = CreateDb(Guid.NewGuid().ToString()))
+        {
+            var (suiteId, _) = await SeedAsync(db);
+            await SeedRoleConfigsAsync(db, "gemini-3.7-flash", "custom", ct);
+
+            Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), availability)
+                .ValidateRequestAsync(RoleRequest(suiteId, role), ct));
+        }
+
+        using (var db = CreateDb(Guid.NewGuid().ToString()))
+        {
+            var (suiteId, _) = await SeedAsync(db);
+            await SeedRoleConfigsAsync(db, "gemini-9.9-unknown", null, ct);
+
+            Assert.Null(await CreateLauncher(db, new BenchmarkRunManager(), availability)
+                .ValidateRequestAsync(RoleRequest(suiteId, role), ct));
+        }
     }
 }

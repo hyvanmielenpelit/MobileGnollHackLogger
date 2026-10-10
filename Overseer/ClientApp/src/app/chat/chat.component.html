@@ -672,7 +672,7 @@
             @if (hasModel) {
               @if ((userModels.length + systemModels.length) > 1) {
                 <app-model-picker class="model-selector-wrapper" variant="compact" [dropsUp]="true"
-                                  [narrowHidesBadges]="true" label="Chat model"
+                                  [narrowHidesBadges]="true" label="Chat model" [triggerId]="chatModelPickerTriggerId"
                                   [options]="composerModelOptions" [selectedKey]="selectedModelKey"
                                   [showParallel]="shouldRenderParallelBadge"
                                   (selectionChange)="selectModel($event.model ?? undefined)"></app-model-picker>
@@ -834,6 +834,47 @@
                    [attr.style]="'position-anchor: --tip-privacy-mode'">Privacy for this chat</div>
             }
           </div>
+          <!-- Always present, so the line is announced when it is filled in. -->
+          <div class="restored-model-note-region" role="status">
+            @if (restoredModelNote) {
+              <div class="restored-model-note">
+                <span class="restored-model-note-text">{{ restoredModelNote }}</span>
+                <button type="button" class="action-btn"
+                        (click)="dismissRestoredModelNote()"
+                        aria-label="Dismiss"
+                        interestfor="tip-dismiss-restored-model"
+                        [attr.style]="'anchor-name: --tip-dismiss-restored-model'">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <div popover="hint" id="tip-dismiss-restored-model" class="gh-tooltip"
+                     [attr.style]="'position-anchor: --tip-dismiss-restored-model'">Dismiss</div>
+              </div>
+            }
+          </div>
+          @if (showComposerModelNotice) {
+            @if (selectedModelNeedsAttention) {
+              <app-model-availability-notice class="composer-model-notice" variant="composer"
+                                             [availability]="selectedModel?.modelAvailability"
+                                             [modelName]="selectedModelName"
+                                             [modelId]="selectedModel?.modelId"
+                                             [live]="unansweredModelMessage !== null ? 'alert' : 'status'"
+                                             [announce]="unansweredModelMessage !== null || announceModelNotice"
+                                             [leadSentence]="unansweredModelMessage !== null ? 'Your last message was not answered.' : null">
+                <ng-container [ngTemplateOutlet]="composerModelActions"></ng-container>
+              </app-model-availability-notice>
+            } @else {
+              <!-- The model is not flagged, yet the provider refused it: the server's sentence says why. -->
+              <div class="alert alert-warning alert-compact model-availability-notice composer-unanswered-notice" role="alert">
+                <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                <div class="alert-content">
+                  <div class="alert-body">
+                    <p class="man-sentence">Your last message was not answered. {{ unansweredModelMessage }}</p>
+                  </div>
+                  <div class="alert-actions"><ng-container [ngTemplateOutlet]="composerModelActions"></ng-container></div>
+                </div>
+              </div>
+            }
+          }
           <div class="modern-input-container">
             <button type="button" class="icon-btn add-media-icon" (click)="triggerFileInput()"
                     [disabled]="pendingAttachments.length >= 5"
@@ -1401,6 +1442,36 @@
   (trashCountChange)="trashCount = $event"
   (restoreError)="showErrorToast($event, 'Cannot Restore Chat')">
 </app-trash-modal>
+
+<!-- The actions of the composer's model notice: Resolve for the user's own flagged model, the
+     catalog replacement when one of the chat models serves it, another choice for a system model
+     or an unflagged one, and for an administrator the system model's configuration. -->
+<ng-template #composerModelActions>
+  @if (selectedModel; as chatModel) {
+    @if (!chatModel.isSystem && selectedModelNeedsAttention) {
+      <button type="button" class="btn-ghost" aria-haspopup="dialog"
+              [attr.aria-label]="resolveModelLabel"
+              (click)="openModelResolution()">Resolve…</button>
+    }
+    @if (replacementChatModel) {
+      <button type="button" class="btn-ghost" (click)="useReplacementModel()">Use {{ replacementChatModelName }}</button>
+    }
+    @if (canChooseAnotherModel && (chatModel.isSystem || !selectedModelNeedsAttention)) {
+      <button type="button" class="btn-ghost" (click)="focusChatModelControl()">Choose another model</button>
+    }
+    @if (chatModel.isSystem) {
+      @if (authService.user$ | async; as user) {
+        @if (user.isAdmin) {
+          <a class="btn-ghost composer-model-config-link" routerLink="/admin"
+             [queryParams]="{ tab: 'configs', resolveConfig: chatModel.id }">Open System Configs</a>
+        }
+      }
+    }
+  }
+</ng-template>
+
+<app-model-resolution-dialog #modelResolutionDialog kind="user"
+                             (resolved)="onModelResolved($event)"></app-model-resolution-dialog>
 
 <!-- Hidden container to keep avatar bitmaps decoded in memory -->
 <div aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;">

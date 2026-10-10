@@ -53,12 +53,13 @@ public class SystemConfigUsageGuard
             .Where(r => r.Status == BenchmarkRunStatus.Running)
             .Where(r => r.TestedModelConfigurationId == configId
                 || r.AssessorModelConfigurationId == configId
+                || r.CoAssessorModelConfigurationId == configId
                 || r.SecondOpinionAssessorModelConfigurationId == configId
                 || r.ClaimVerifierModelConfigurationId == configId)
             .Select(r => new
             {
                 r.Id, r.SuiteName, r.StartedAtUtc,
-                r.TestedModelConfigurationId, r.AssessorModelConfigurationId,
+                r.TestedModelConfigurationId, r.AssessorModelConfigurationId, r.CoAssessorModelConfigurationId,
                 r.SecondOpinionAssessorModelConfigurationId, r.ClaimVerifierModelConfigurationId
             })
             .ToListAsync(ct);
@@ -71,7 +72,7 @@ public class SystemConfigUsageGuard
                 Id = r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 RunId = r.Id,
                 Label = $"Benchmark run #{r.Id} on suite '{r.SuiteName}'",
-                Roles = Roles(configId, r.TestedModelConfigurationId, r.AssessorModelConfigurationId,
+                Roles = Roles(configId, r.TestedModelConfigurationId, r.AssessorModelConfigurationId, r.CoAssessorModelConfigurationId,
                     r.SecondOpinionAssessorModelConfigurationId, r.ClaimVerifierModelConfigurationId),
                 StartedAtUtc = r.StartedAtUtc
             });
@@ -106,7 +107,7 @@ public class SystemConfigUsageGuard
                 Kind = "series",
                 Id = series.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Label = $"Benchmark series #{series.Id} on suite '{series.SuiteName}'",
-                Roles = Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId,
+                Roles = Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId, request.CoAssessorModelConfigurationId,
                     request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId),
                 StartedAtUtc = series.StartedAtUtc
             });
@@ -119,7 +120,7 @@ public class SystemConfigUsageGuard
                 Kind = "battery",
                 Id = batteryRun.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 Label = $"Battery run #{batteryRun.Id} of '{batteryRun.BatteryName}'",
-                Roles = Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId,
+                Roles = Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId, request.CoAssessorModelConfigurationId,
                     request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId),
                 StartedAtUtc = batteryRun.StartedAtUtc
             });
@@ -174,6 +175,7 @@ public class SystemConfigUsageGuard
             .IgnoreAutoIncludes()
             .CountAsync(r => r.TestedModelConfigurationId == id
                 || r.AssessorModelConfigurationId == id
+                || r.CoAssessorModelConfigurationId == id
                 || r.SecondOpinionAssessorModelConfigurationId == id
                 || r.ClaimVerifierModelConfigurationId == id, ct);
 
@@ -217,7 +219,7 @@ public class SystemConfigUsageGuard
                 continue;
             }
 
-            if (request != null && Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId,
+            if (request != null && Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId, request.CoAssessorModelConfigurationId,
                     request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId).Count > 0)
             {
                 naming.Add((s, request));
@@ -249,7 +251,7 @@ public class SystemConfigUsageGuard
                 continue;
             }
 
-            if (request != null && Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId,
+            if (request != null && Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId, request.CoAssessorModelConfigurationId,
                     request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId).Count > 0)
             {
                 naming.Add((b, request));
@@ -259,11 +261,12 @@ public class SystemConfigUsageGuard
         return naming;
     }
 
-    private static List<string> Roles(long configId, long? tested, long? assessor, long? secondOpinion, long? claimVerifier)
+    private static List<string> Roles(long configId, long? tested, long? assessor, long? coAssessor, long? secondOpinion, long? claimVerifier)
     {
         var roles = new List<string>();
         if (tested == configId) roles.Add("model under test");
         if (assessor == configId) roles.Add("assessor");
+        if (coAssessor == configId) roles.Add("co-assessor");
         if (secondOpinion == configId) roles.Add("second reader or reference reader");
         if (claimVerifier == configId) roles.Add("claim verifier");
         return roles;

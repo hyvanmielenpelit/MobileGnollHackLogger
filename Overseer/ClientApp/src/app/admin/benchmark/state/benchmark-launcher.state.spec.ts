@@ -267,6 +267,125 @@ describe('BenchmarkLauncherState: prefillFromRun', () => {
   });
 });
 
+describe('BenchmarkLauncherState: models removed from the catalog', () => {
+  let launcher: BenchmarkLauncherState;
+  let workspace: BenchmarkWorkspaceStore;
+
+  const retired = { status: 'retired', needsAttention: true, retiredOn: '2026-09-30' } as const;
+
+  const stored = (): any => JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY) ?? 'null');
+
+  beforeEach(() => {
+    clearRunSettings();
+    TestBed.configureTestingModule({
+      providers: [
+        BenchmarkLauncherState,
+        BenchmarkWorkspaceStore,
+        BenchmarkViewSync,
+        {
+          provide: AdminBenchmarkService,
+          useValue: { getLastAssessor: vi.fn(() => of({})), previewBatteryReuse: vi.fn(() => of(null)) }
+        }
+      ]
+    });
+    launcher = TestBed.inject(BenchmarkLauncherState);
+    workspace = TestBed.inject(BenchmarkWorkspaceStore);
+    workspace.setSystemConfigs([
+      config(1, 'Model One'),
+      config(2, 'Model Two', { provider: 'OpenAI', modelAvailability: retired }),
+      config(3, 'Model Three', { provider: 'Google', modelAvailability: retired }),
+      config(4, 'Model Four', { provider: 'Google', modelAvailability: { status: 'notInCatalog', needsAttention: true } })
+    ]);
+    launcher.testedConfigId = 1;
+    launcher.assessorConfigId = 1;
+  });
+
+  afterEach(clearRunSettings);
+
+  it('is null while no selected role uses a retired model', () => {
+    launcher.claimVerifierConfigId = 4;
+
+    expect(launcher.retiredRoleRefusal()).toBeNull();
+  });
+
+  it('names the first selected role in field order whose model was removed', () => {
+    launcher.reportWriterConfigId = 3;
+    launcher.claimVerifierConfigId = 2;
+
+    expect(launcher.retiredRoleRefusal()).toEqual({
+      role: 'claimVerifier', label: 'Claim Verifier', config: expect.objectContaining({ id: 2 })
+    });
+
+    launcher.testedConfigId = 3;
+    expect(launcher.retiredRoleRefusal()?.label).toBe('Model Under Test');
+  });
+
+  it('labels the second reader as the reference reader in a panel run', () => {
+    launcher.secondOpinionConfigId = 2;
+    expect(launcher.retiredRoleRefusal()?.label).toBe('Second Reader');
+
+    launcher.coAssessorConfigId = 1;
+    expect(launcher.retiredRoleRefusal()).toEqual(expect.objectContaining({ role: 'secondOpinion', label: 'Reference Reader' }));
+  });
+
+  it('leaves the hidden Model Under Test out in a model batch', () => {
+    launcher.testedConfigId = 2;
+    launcher.runMode = 'batch';
+
+    expect(launcher.retiredRoleRefusal()).toBeNull();
+  });
+
+  it('keeps a remembered retired configuration selected, with no restore note', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ testedConfigId: 2, assessorConfigId: 1, claimVerifierConfigId: 3 }));
+    launcher.testedConfigId = null;
+    launcher.assessorConfigId = null;
+
+    launcher.restoreRunSettings();
+    launcher.setDefaultModelSelections();
+
+    expect(launcher.testedConfigId).toBe(2);
+    expect(launcher.claimVerifierConfigId).toBe(3);
+    expect(launcher.restoreNotes).toEqual([]);
+    expect(launcher.retiredRoleRefusal()?.role).toBe('tested');
+  });
+
+  it('notes each remembered configuration that no longer qualifies and what was chosen instead', () => {
+    localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+      testedConfigId: 9, assessorConfigId: 1, coAssessorConfigId: 8, reportWriterConfigId: 4
+    }));
+    launcher.testedConfigId = null;
+    launcher.assessorConfigId = null;
+
+    launcher.restoreRunSettings();
+    launcher.setDefaultModelSelections();
+
+    expect(launcher.testedConfigId).toBe(1);
+    expect(launcher.coAssessorConfigId).toBeNull();
+    expect(launcher.reportWriterConfigId).toBe(4);
+    expect(launcher.restoreNotes).toEqual([
+      'Model Under Test: the remembered configuration is no longer available, so Model One was chosen.',
+      'Co-Assessor: the remembered configuration is no longer available, so none was chosen.'
+    ]);
+    expect(stored()).not.toHaveProperty('restoreNotes');
+
+    // A second pass over the same lists does not repeat a note.
+    launcher.setDefaultModelSelections();
+    expect(launcher.restoreNotes.length).toBe(2);
+
+    launcher.clearRestoreNotes();
+    expect(launcher.restoreNotes).toEqual([]);
+  });
+
+  it('notes nothing without remembered settings', () => {
+    launcher.testedConfigId = null;
+    launcher.restoreRunSettings();
+    launcher.setDefaultModelSelections();
+
+    expect(launcher.testedConfigId).toBe(1);
+    expect(launcher.restoreNotes).toEqual([]);
+  });
+});
+
 describe('BenchmarkLauncherState: model batches', () => {
   let launcher: BenchmarkLauncherState;
   let workspace: BenchmarkWorkspaceStore;
