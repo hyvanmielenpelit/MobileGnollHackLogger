@@ -1,5 +1,5 @@
 /* The card frame, header, facts and table layout are the global `bm-summary-card*` rules in
-   `styles.scss`, shared with the Chat Consistency launcher. Only this card's own cells are here. */
+   `styles.scss`; the Chat Consistency launcher shares only the facts list. This card's own cells are here. */
 
 :host {
   // The host is the launcher grid's child, so it takes the full row the card's frame asks for.

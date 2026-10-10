@@ -92,7 +92,9 @@ Harness-neutral, and the floor for any Overseer frontend work.
   multi-run progress rosters, and the run report's facts strip. It is global and is not copied into a
   component; the settings page's `.tier-badge` (the Tier 1–4 permission chips) is a different,
   component-local class. The key-figures images draw all four with the same colors (`BADGE_PALETTE`
-  in `run-report-frame/key-figures-image.ts`); change both together.
+  in `run-report-frame/key-figures-image.ts`), and so do the Chat Consistency Results images, whose
+  *Dark* palette uses `BADGE_PALETTE` and whose *Light* palette darkens it
+  (`chat-consistency-tab/results-image/results-image-palette.ts`); change them together.
 - **The run-report frame rules are global** since 2026-10-03, because the single-run report
   (`#runDetailDialog`) and the Battery Run Report share them: `.score-card` (with `.score-label`,
   `.score-value`, `.score-subvalue`, `.score-headline`, `.score-note`), `.rr-identity` / `.rr-emblem`,
@@ -131,9 +133,9 @@ Harness-neutral, and the floor for any Overseer frontend work.
     launcher grid between the hero and the library: `.bm-summary-card` with `-header`, `-eyebrow`,
     `-title`, `-meta` and `-actions` (a container query stacks the header below 36 rem), the facts list
     `.bm-summary-facts` with `.bm-summary-facts-note`, and the entries table `.bm-summary-table-wrap` /
-    `.bm-summary-table`. Shared by the Model Comparison *Last comparison* card
-    (`comparison-tab/comparison-summary-card/`) and the Chat Consistency *Current model* card
-    (`chat-consistency-tab/current-model-card/`).
+    `.bm-summary-table`. The card is the Model Comparison *Last comparison* card
+    (`comparison-tab/comparison-summary-card/`); the Chat Consistency *Latest analysis* card
+    (`chat-consistency-tab/latest-analysis-card/`) uses only the facts list `.bm-summary-facts`.
   - **`.cc-marker-tag`** (`.is-event`, `.is-annotation`, `.is-served`, which differ by border style as
     well as color) — the Chat Consistency marker pill, shared by the chart figure, the event list and the
     Analyze step's period-card markers and preview.
@@ -413,25 +415,79 @@ To find specific popups, look in the corresponding component's `.html` template:
     `overseer.benchmark.chatConsistency.batteryRuns.view`); `chat-consistency-scope.ts` keys the scope by
     unit id and unit kind, and `scopeKey` includes the set key. With no set the runs are not filtered and
     the request carries no `comparisonSet`. The parts, each in its own folder or file:
-    - **The launcher** (`chat-consistency-tab.component.*`): the hero with the gold `.btn-gh` **Open Chat
-      Consistency Wizard** (*compass*, `#cc-open-wizard`) and the non-exclusive
-      *How chat consistency works* disclosure listing `CC_WIZARD_STEPS` under the wizard's own titles
-      (open on the first visit, then as left, in `localStorage['overseer.benchmark.chatConsistency.launcher']`,
-      `{ version: 1, howItWorksOpen }`); then, while a model is chosen, the *Current model* summary card
-      (`current-model-card/`, `app-cc-current-model-card`, `.bm-summary-card`): the model with its
-      thinking, provider and tier badges (`model-badges/`, `app-cc-model-badges`, host `display:
-      contents`: `.thinking-badge`, `app-provider-badge` and the tier's `.config-badge`, each with a
-      visually hidden name; step 3's subject and preview render the same component, so the two cannot
-      drift), the facts *Runs*, *Dates* (with *· N runs in these dates*
-      unless *All dates*, a small spinner while the runs load), *In the analysis* (only while the
-      selection narrows them), *First run*, *Latest run*, *Suites* and *Latest analysis*, and the
-      `.btn-ghost` actions **Open latest run report** and **Open analysis #N**; its content comes from
-      the server's model axes and saved analyses, and the wizard owns the choice. Below it
-      `saved-analyses/` (`app-cc-saved-analyses`): a card
-      list with *Open* and *Delete*; a delete the server refuses with 409 (report documents exist) shows
-      its reason inside the dialog. **Open** fetches the analysis, switches the subject to its model,
-      opens the wizard and calls `CcWizardComponent.showResult`, which mounts the analysis component
-      before handing it the result and selects step 4.
+    - **The launcher** (`chat-consistency-tab.component.*`): three sections in
+      `section.bm-launcher.cc-launcher`, which is the size container (`container: cc-launcher /
+      inline-size`) around `div.cc-launcher-grid`: one column in reading order, and from 64 rem two
+      columns (`minmax(0, 1fr)` / `minmax(0, 1.4fr)`) with *New analysis* left, *Latest analysis* right
+      and the *Analysis history* bar full width below them.
+      - **New analysis** (`.bm-launcher-hero.cc-launcher-new`): `h3#cc-tab-heading`, a two-line lead, the
+        gold `.btn-gh` **Open Chat Consistency Wizard** (*compass*, `#cc-open-wizard`) and the
+        non-exclusive *How chat consistency works* disclosure listing `CC_WIZARD_STEPS` under the wizard's
+        own titles, with the *A verdict is only as current as the last run…* alert inside it (open on the
+        first visit, then as left, in `localStorage['overseer.benchmark.chatConsistency.launcher']`,
+        `{ version: 1, howItWorksOpen }`).
+      - **Latest analysis** (`latest-analysis-card/`, `app-cc-latest-analysis-card`, `section.cc-latest`
+        with a gold start accent): the newest saved analysis **of any model**, `analyses[0]` (`GET
+        analyses` is newest first). Inputs `summary`, `result`, `loading`, `error`, `opening`,
+        `openError`, `listLoading`, `listError`, `axes`; outputs `openAnalysis(id)` and
+        `openDocuments(id)`. It shows the eyebrow *Latest analysis*, `h4#cc-latest-title` *#N · name*, the
+        model badges (`model-badges/`, `app-cc-model-badges`, host `display: contents`:
+        `.thinking-badge`, `app-provider-badge` and the tier's `.config-badge`, each with a visually
+        hidden name; step 3's subject and preview render the same component, so they cannot drift) with
+        `.gh-tag.cc-kind-tag` (*Battery* / *Suite* / *All suites*, `ccCompareKindOf`) and the compared
+        set's label, the `ccOverallOutcome` line with its icon and detail, the endpoint chips, and the
+        facts (`dl.bm-summary-facts`) *Baseline* and *Comparison* (period swatch, dates, and the unit count
+        once the result is loaded), *Saved* (time and protocol) and *Reports* (*N report documents* or
+        *None yet*). Actions: the gold `.btn-gh` `#cc-latest-open` **Open Analysis #N** (the wizard on
+        step 4) and the `.btn-ghost` `#cc-latest-documents` **Documents (N)** (*file-with-arrow*, the
+        wizard on step 6), `aria-disabled` and described by *No report document has been written from
+        this analysis.* while N is 0. The outcome and the chips need the full result, so the tab fetches
+        `GET analyses/{id}` for `analyses[0]` once per distinct id (`syncLatest`, torn down in
+        `ngOnDestroy`; a freshly saved analysis is taken from the wizard without a fetch); while it
+        loads the card shows a `.dc-ring` with *Loading the verdicts…* in a polite status, and on error
+        *The verdicts of analysis #N could not be loaded.* With no saved analysis it reads *No analysis is
+        saved yet. Open the wizard, choose a model, and Analyze in step 3.*, with no actions.
+      - **Analysis history** (`section.cc-history-bar`): `h4` *Analysis history*, a `role="status"`
+        summary (*4 saved analyses of 2 models · the latest saved 2026-10-10 09:40 UTC · 5 report
+        documents*) and the `.btn-ghost` `#cc-open-history` **Open Analysis History** (*clock*,
+        `aria-haspopup="dialog"`), `aria-disabled` and described by the summary *No analysis is saved
+        yet.* while there is none.
+      - **The Analysis History dialog** (`analysis-history/`, `app-cc-analysis-history-dialog`,
+        `dialog.gh-dialog.cc-history-dialog`, `showModal()`, `closedby="any"` with the backdrop-click
+        fallback, the frame mixin `frame($width: 76rem)` of `admin/benchmark/_benchmark-dialog-frame.scss`):
+        a header with the GnollBench emblem, `h3#cc-history-title` *Chat Consistency Analysis History*
+        (`tabindex="-1"`, focused on open), a subtitle (*4 saved analyses · newest first*) and a close
+        `.btn-icon-action` with a *Close* hint; a footer with a text-only **Done** (`btn-gh
+        btn-gh-cancel`). The body is the sixth card list (`frontend_ui_controls` § 8h): `CardListState`
+        over `TableState<CcAnalysisSummary>`, `idPrefix 'cc-hist'`, batch 10, search over name, headline,
+        model and `#id`, **Sort by** *Newest first* / *Oldest first* / *Model (A–Z)*, facets *Model*,
+        *Provider*, *Compared* and *Reports* (*Has reports* / *No reports*); the search and Sort by show
+        with two or more analyses or while a filter is active. Each `article.cc-hist-card[data-analysis-id]`
+        (one column under 36 rem of `cc-hist-cards`) holds the kicker *#N · saved … · Protocol V1* with
+        the tags *N reports*, *Relaxed pooling* and *Earlier analysis code* (while
+        `analysisCodeVersion < CC_CURRENT_ANALYSIS_CODE_VERSION`, with an `app-info-tip` *Saved under
+        analysis code version 4. Analyze again to apply version 5.*); the title
+        `h4.cc-hist-title#cc-hist-{id}-title[tabindex=-1]`; the model name, badges and compared set; the
+        periods, headline and endpoint chips; and the actions `.btn-ghost` **Open** (*eye*, *Open
+        analysis #N in the wizard*) and `.btn-ghost.btn-ghost-danger` **Delete** (*trash*),
+        `aria-disabled` and described by *Delete its N report documents in step 6 first.* while
+        documents exist; the server's 409 still shows inside the confirmation. The confirmation is a
+        **sibling** `dialog.cc-delete-dialog` whose `close`, `cancel` and `click` stop at `stopNested`;
+        after a delete focus goes to the card now in the deleted one's place, else the previous one,
+        else `#cc-history-title`.
+      - **Endpoint chips** (`endpoint-chips/`, `app-cc-endpoint-chips`, inputs `endpoints` and `label`):
+        static `ul.cc-ep-chips > li.cc-ep-chip[data-status]`, each a status icon, the endpoint id and the
+        status word (the name visually hidden), never the icon alone. It reads a summary's
+        `CcEndpointBrief` through `ccEndpointBriefStatus`, which shares one verdict-to-status mapping
+        with `ccEndpointStatus`, or a full result's endpoints.
+      - **Opening a saved analysis**: `openAnalysis(id, step, origin)` fetches the analysis, switches the
+        subject to its model, opens the wizard and calls `CcWizardComponent.showResult`, which mounts the
+        analysis component before handing it the result and selects step 4; *Documents (N)* then moves
+        to step 6. **Open** in the history dialog keeps the dialog open while the analysis loads and
+        closes it when the analysis arrives, before the wizard opens, so two modals never stack; a
+        failed open keeps the dialog open with the error inside it. An error shows where the open
+        started (`openErrorFor('latest' | 'history')`). The remembered model still restores the wizard's
+        subject; the wizard owns the choice.
     - `cc-wizard/` (`app-cc-wizard`): the whole dialog content in the global `gh-wizard*` frame —
       header (`#cc-wizard-title`, a subtitle *model · N runs · dates*, plus *· N in the analysis* while
       the step-1 selection narrows the runs, the icon-only **Reload runs**
@@ -565,6 +621,12 @@ To find specific popups, look in the corresponding component's `.html` template:
       shows. Without `composed` it draws the live `BaseChartDirective` chart with its tooltip; nothing
       renders that branch now (Results has no charts, and the report charts are drawn off-screen for
       the documents), and only its own spec exercises it.
+      The takeaways are neutral: *ranged from A to B across N runs*, *was X in all N runs* (*in both
+      runs* for two), never *held*. A report chart (`chat-consistency-report-charts.ts`) passes the
+      analysis's `endpoints`, so a figure whose endpoint (`CC_FIGURE_ENDPOINTS`) is not computable opens
+      its caption and alt text with *Not comparable across the periods: {reason}.*
+      (`ccNotComparableText`), and `CcChartOptions.fitToData`, so its time axis spans the plotted points
+      and nearby markers padded by max(5 %, 30 min), with the period bands clipped to it.
       The figure puts the takeaway under the image, then the footer, and *Show data* as a single bordered
       list of rows, its summary counting them (`ccDataCards`, headings at `dataHeadingLevel`, 5 under
       the step's `h4`, 6 by default; a column in `CcFigureTable.lists`, *Member runs*, shows one item per
@@ -759,11 +821,24 @@ To find specific popups, look in the corresponding component's `.html` template:
       ` (<level>)` from the server's `displayName` when it is the subject's thinking level). The wizard
       binds `rows` to `allRows`, `batteryRows` to `allBatteryRows` and `annotations` to
       `taggedAnnotations`, since a saved analysis can name runs outside step 1's selection. Top to bottom:
-      - The tab row `.gh-tabs.gh-tabs-secondary.gh-tabs-wrap.cc-res-tabs` *Result sections*, the
-        component's first child (`CC_RESULTS_TABS`: `summary`, `verdicts`, `periods`, `attribution`,
-        `nextRuns`, `details`; tabs `#cc-res-tab-<id>`, panels `#cc-res-panel-<id>`, each rendered once
-        and `hidden`; the analysis wizard's `rovingTabIndex` copied; *Next runs* with a component-local
-        `.cc-res-tab-count` of its cards). The tab is stored in
+      - The bar `div.cc-res-bar`, the component's first child: the tab row
+        `.gh-tabs.gh-tabs-secondary.gh-tabs-wrap.cc-res-tabs` *Result sections* (`CC_RESULTS_TABS`:
+        `summary`, `verdicts`, `periods`, `attribution`, `nextRuns`, `details`; tabs
+        `#cc-res-tab-<id>`, panels `#cc-res-panel-<id>`, each rendered once and `hidden`; the analysis
+        wizard's `rovingTabIndex` copied; *Next runs* with a component-local `.cc-res-tab-count` of its
+        cards), then the export group `div.cc-res-export[role=group]` (*Export the {Section} section*,
+        right-aligned from a 40 rem `cc-results` container, wrapped under the tabs below it): the
+        icon-only `.action-btn` **Copy** (*copy*, `#cc-res-copy-btn`, *Copy the {Section} section of
+        analysis #N as an image*) and **Download** (*download*, `#cc-res-download-btn`, *… as a PNG
+        image* or *WebP*, following the setting), each with an `interestfor` hint, both `aria-disabled`
+        while an export runs (`exporting`; the handler refuses too), and the text-only `.btn-ghost`
+        **Image settings** (`aria-haspopup="dialog"`). After the bar, `p.cc-res-export-status[role=status]`
+        reports the outcome in the key-figures status texts (or *Nothing in the {Section} section is
+        selected; use Image settings.*, or the composer's refusal) and clears after `COPY_STATUS_MS`; it
+        takes no room while empty. The Overseer version for the image footer comes from
+        `SystemService.getVersion()` on the first export. **No panel shows a visible heading repeating
+        its tab name**: *Verdicts*, *Periods*, *Attribution*, *Details* and *Next runs* (`#cc-nr-title`)
+        are `h5.visually-hidden`, so the heading outline stays h4 → h5 → h6. The tab is stored in
         `overseer.benchmark.chatConsistency.results` (`CC_RESULTS_STORAGE_KEY`, `{ version: 2, tab }`,
         read by `readStoredResultsTab`, which ignores a version-1 record and falls back to *Summary*,
         every access in `try/catch`) and is not reset by another analysis. A banner chip selects
@@ -799,7 +874,9 @@ To find specific popups, look in the corresponding component's `.html` template:
         card id and anchor name prefixed `cc-res-pu` (`idBase`) instead of `cc-pu`, so it can share the
         document with step 3's list; its *Show run details* starts off on every visit.
       - *Attribution*: the decisive-change chips `.cc-attr-chip[data-verdict]`, the groups of
-        `CC_ATTRIBUTION_GROUPS` (`section.cc-attribution-group[data-side]`, cards with `.cc-grade-pill`
+        `CC_ATTRIBUTION_GROUPS` (defined in `results-image/results-image-blocks.ts` beside
+        `ccAttributionView`, and re-exported by the results view, as is `CC_UNANALYZED_REASONS`)
+        (`section.cc-attribution-group[data-side]`, cards with `.cc-grade-pill`
         and `.cc-marker-tag.is-event` references), the *Nothing is attributed to …* line, or the empty
         state.
       - *Next runs*: `next-runs/` (`app-cc-next-runs`, `[result]`, `[rows]`, emitting `repeatSetup`):
@@ -807,7 +884,9 @@ To find specific popups, look in the corresponding component's `.html` template:
         `article.cc-nr-card[data-kind][data-period]`, one per group, each run to repeat a text-only
         `.btn-ghost.cc-nr-repeat` *Set up from run #N* (named with the suite and *fills Run Benchmark,
         starts nothing*); a control card's server suggestion is behind a `.gh-disclosure` *Details*,
-        and a re-grade card points to step 3.
+        and a re-grade card points to step 3. The sections and the lead come from the exported pure
+        `ccNextRunSections(result, rows)` and `ccNextRunsLeadText(count)`, which the section image reads
+        too.
       - *Details*: closed, unremembered `details.gh-disclosure.cc-res-disclosure[data-section]` —
         `selection` (the **Run selection**, while `runSelection.recorded` or it lists unanalyzed runs: a
         `dl` of *Dates* (the label and its UTC bounds, an open one read as *the first run* / *the last
@@ -815,7 +894,56 @@ To find specific popups, look in the corresponding component's `.html` template:
         by reason in `CC_UNANALYZED_REASONS` order — `notSelected` reads *Not assigned to a period* —
         or *Every usable run of the model in the periods was analyzed.*; absent for a code-version-1
         analysis), `events` (`app-cc-event-list`, `idPrefix="cc-res-ev"`), `limitations`,
-        `dataQuality` and `about`, whose `dd.cc-res-headline` holds the server's `headline`.
+        `dataQuality` and `about`, whose `dd.cc-res-headline` holds the server's `headline`; *About this
+        analysis* shows the Input SHA-256 on screen only, never in an image.
+      - **Image settings** (`results-image/results-image-dialog.component.*`,
+        `app-cc-results-image-dialog`, hosted by the results view with `display: contents`): a nested
+        `dialog.gh-dialog.cc-rim-dialog`, `closedby="any"` with the backdrop-click fallback, whose own
+        `close`, `cancel` and `click` stop inside it so the wizard's handlers never see them; it calls
+        `ensureOverlayPolyfills()` and closes when the results view receives another result. Header
+        `h3#cc-rim-title` *Image settings* (focused on open) and a close `.btn-icon-action`; footer a
+        summary line (*Downloads a WebP, 3840 × 2160 px*, or *about … px* in fit mode, measured through
+        the host's `measureImage`) and a text-only **Done** (`btn-gh btn-gh-cancel`). Two columns from a
+        44 rem body. *What to show*: a `.gh-tabs` row of the six sections (`#cc-rim-tab-<id>`), opening on
+        the section the dialog was opened from, each panel a checklist with **All** / **None**
+        `.btn-link`s (visually hidden completions name the section) and a `role=status` *N of M
+        selected*; then *Image details* (*Header*, *Model line*, *Analysis line*, *Footer*, with All /
+        None and a count) and *Colors*, a `.gh-choice` radio group *Dark, as on screen* / *Light, for
+        print*. *Image file*: `app-export-format-section` (`idPrefix="cc-rim-fmt"`, PNG or WebP and the
+        WebP quality, note *Copy always places a PNG on the clipboard.*) and `app-export-size-section`
+        (`idPrefix="cc-rim-size"`, `allowFit` with *Fit the content*, `showTextSize`, `errorNoun="image"`,
+        `[refusal]` showing the composer's). The dialog is presentational: every change applies at once
+        and is emitted whole as `settingsChange`, which the host stores; exclusions of items the current
+        result lacks are kept. The items per section come from `ccResultsImageItems` — *Summary*: verdict
+        and detail, model and compared set, endpoint chips, scope and protocol, reliability notes (when
+        present), one per key figure; *Verdicts*: one per computed endpoint card, *Not computable
+        endpoints*, *What it means*, *Smallest detectable change*, *Compared*, *Warnings and notes*,
+        *More about details*; *Periods*: the two period cards and *Runs in the periods*; *Attribution*:
+        *Decisive changes*, *Attribution by side*, *Unattributed note*; *Next runs*: one per run card,
+        *Suggestions*, *Reasons*; *Details*: *Limitations*, *Data quality*, *Run selection* (when shown),
+        *Overseer events*, *Analysis identity* (number, saved, protocol and code version, never a hash).
+      - **The section images** (`chat-consistency-tab/results-image/`) are drawn from the analysis
+        result, never from the DOM, by a pure composer except the export module:
+        `results-image-settings.ts` (the settings type, defaults and storage), `results-image-blocks.ts`
+        (`ccResultsImageItems`, `ccResultsImageBlocks(section, result, context, include)`: typed blocks
+        built from the helpers the tabs render from — `ccOverallOutcome`, `ccEndpointStatus`,
+        `ccEstimateParts`, `ccIntervalGeometry`, `ccEndpointNotes`, `ccNotComputableGroups`,
+        `ccResultKeyFigures`, `ccNextRunSections` and the attribution and period views — every text
+        through `ccImageText`, which strips instrument notes and any hex token of 12 or more
+        characters), `results-image-layout.ts` (`composeResultsImageLayout`: fit mode lays out at
+        `CC_RESULTS_IMAGE_FIT_WIDTH` 1280 px with the height following the content; a box lays out at
+        its width and text size, scaling taller content down in steps to `CC_RESULTS_IMAGE_MIN_SCALE`
+        0.7, then refuses with *The {Section} section does not fit W × H px. Choose Fit the content, a
+        taller size, or include less.*; cards go two to a row from `CC_RESULTS_IMAGE_TWO_COLUMN_WIDTH`
+        1100 px; a bitmap over 16384 px per side is refused), `results-image-draw.ts` (the draw pass:
+        interval bars at `ccIntervalGeometry` positions, Feather status icons as `Path2D`),
+        `results-image-palette.ts` (*Dark* and *Light*) and `results-image-export.ts` (fonts by
+        `loadKeyFigureFonts`, the wide GnollBench logo, `encodeFigureImage`, `copyImageToClipboard`,
+        `saveFigureBlob`; a download in the chosen format with the WebP-to-PNG fallback detected, a copy
+        always PNG; file name `chat-consistency-{id}_{model}_{section}_{yyyyMMdd_HHmmss}.{ext}` through
+        `safeFileName`). The drawing helpers it shares with the run report's key-figures images
+        (`canvasFont`, `canvasLineHeight`, `drawLines`, `pathRoundedRect`, `drawCardBox`, `drawLogo`,
+        `drawFooter`) are in `run-report-frame/canvas-drawing.ts`.
 
       **Step 5, *Write*,** is `reports-step.component.*` (`app-cc-reports-step`, kept as the
       `@ViewChild`, headed `h4#cc-rep-heading` *Write reports*), in Model Comparison step 3's layout: `app-run-report-frame layout="sidebar"` with
@@ -831,19 +959,48 @@ To find specific popups, look in the corresponding component's `.html` template:
       Delete disabled while `deleteBusy` (`chartState === 'attaching'` or a job in progress), and **no
       checkbox**; an unwritten one with its *Write* checkbox, the set recomputed on every document load
       (every unwritten one checked, the Provider Issue Report only by hand once the estimate says it is
-      available). `allWritten` keeps *Write Reports* `aria-disabled` and focusable. Then the writer
+      available). `allWritten` keeps *Write Reports* `aria-disabled` and focusable. At the end of the
+      *Documents* fieldset the text-only `.btn-ghost` **Update charts** draws the charts of every
+      written document of the analysis again with the current choices and re-uploads them (a document
+      whose type has no chart chosen loses the charts it had); it is `aria-disabled` with a visible
+      reason (`#cc-rep-update-charts-reason`: *Reports are being written…*, *Charts are being drawn and
+      attached.*, *No document of this analysis is written yet.*) and reports in its own polite status
+      line. Then the `fieldset.gh-fieldset.cc-rep-charts-choice` *Charts in PDF and Word*: the shared
+      `app-report-chart-picker` (`idPrefix="cc-rep-charts"`, caption hidden) with the four figures
+      (`CC_REPORT_CHART_PICKER_FIGURES`: *cc1-quality*, *cc2-speed*, *cc3-work*, *cc4-timeline*, each
+      placed *Results*, or *Events* for cc4 outside the Executive Summary), the four document types
+      (`CC_REPORT_CHART_PICKER_AUDIENCES`, short labels *Executive*, *Researchers*, *Internal*,
+      *Provider*), a note on each figure whose endpoint the analysis could not compute
+      (`ccReportChartNotes`), the layout fields *label size* and *maximum height* only, and the column
+      reason *Not chosen in New reports.* Its enabled document types are those checked **and** those
+      already written, so Update charts can use their new choices. The pure
+      `chat-consistency-report-chart-settings.ts` holds the normalizers, the defaults (Executive
+      cc1, cc2; Researchers all four; Internal cc1, cc3; Provider cc2, cc4; cc1–cc3 *Half column*,
+      cc4 *Two-thirds column*; 8 pt labels; at most 50 % of the page; the light print theme, no heading,
+      no logo), the storage and `ccReportDocumentChartLayout`, which builds the layout the server
+      places a document's charts by (`{ version: 1, figures: [{ key, widthShare, rowGroup }],
+      maxHeightShare }`; two consecutive half-width figures at one anchor share a row). Then the writer
       picker with `CHAT_CONSISTENCY_REPORT_WRITER_ADVICE` (`run-ai-reports/report-writer-advice.ts`: the
       four documents and `REPORT_WRITER_ADVICE_CHAT_CONSISTENCY_SHARED`), the refusal or warning, the
       estimate (debounced by `CC_REPORT_ESTIMATE_DEBOUNCE_MS`) and *Write Reports* (*zap*), with the
-      same-provider dialog asked on every write and on the server's 409. The main area
-      (`#cc-rep-progress-heading`) follows the `BenchmarkRunReportJobDto` through the pure
+      same-provider dialog asked on every write and on the server's 409. The main area has no visible
+      heading (its accessible name is the frame's `mainLabel` *Report progress*): the job's phase is a
+      visually hidden polite `p.visually-hidden.cc-rep-status[role=status]`, shown visibly by the stage
+      rail. It follows the `BenchmarkRunReportJobDto` through the pure
       `analysis-wizard/cc-report-job-view.ts` (`ccReportJobStages`, `ccReportJobStats`,
       `ccReportJobRows`, `ccReportJobSummary`, `ccReportJobDiagnostics`, `ccReportDiagnosticsFileName`):
+      the job heading `h5#cc-rep-job-heading` (*Reports in progress* / *Last reports*),
       `.run-stage-rail`, `.run-stat-strip`, the document grid, *Log and diagnostics* with the icon-only
       Copy (*copy*) and Download (*file-with-arrow*) diagnostics, *Cancel Writing*, and once finished
-      the summary with *See the documents* (`documentsRequested`) and *Dismiss*. When a job ends, the
-      documents without charts get the charts drawn by `chat-consistency-report-charts.ts` and uploaded,
-      versioned by `CC_REPORT_CHART_VERSION` (`chartState`). It requests the job, then the documents,
+      the summary with *See the documents* (`documentsRequested`) and *Dismiss*, which moves focus to
+      `#cc-rep-new-heading`. When a job ends, the documents without charts get the charts chosen for
+      their type, drawn by `chat-consistency-report-charts.ts` (`publishCcReportCharts(service,
+      documents, input, settings)`): each figure is composed off-screen **per document at the width it
+      prints at** (`documentChartWidth`, `ccDocumentFigureBox`) at the chosen label size, in the print
+      theme with no heading, composed once per width and label size and shared, and uploaded with the
+      document's layout by `putReportDocumentCharts`; the settings hash covers
+      `CC_REPORT_CHART_VERSION` (6), the selection and the layout. Both a job's charts and Update charts
+      set `chartState`, which `closeBlocked` reads. It requests the job, then the documents,
       when it mounts or the analysis changes; `documentsChanged` fires after a job, a chart attachment or
       a delete, `stateChange` whenever a job starts or stops or `chartState` changes, and
       `reloadDocuments()` lists the documents again.
@@ -1790,6 +1947,20 @@ To find specific popups, look in the corresponding component's `.html` template:
     the researcher report, and Intelligence, Speed and Cost for the Internal Improvement Brief, and to
     `DEFAULT_DOCUMENT_CHART_LAYOUT` (*As in step 2*, full column, side by side, 8 pt, 60 %, no heading,
     no logo, *Light, for print*).
+    **It has two hosts**: Model Comparison (step 3 and the Download Center's *Update charts* dialog)
+    and the Chat Consistency Write step. Five optional inputs default to Model Comparison's exact
+    behavior, so its bindings and outputs are unchanged: `figures` (`ReportChartPickerFigure[]`:
+    `{ key, title, placement? }`, placement one section name or one per document type; default
+    `REPORT_PACK_PICKER_FIGURES`, placed by `scope`), `audienceOptions` (`{ audience, label, shortLabel
+    }[]`, default `REPORT_PACK_AUDIENCES`), `notes` (a note per figure key, shown under its section and
+    read with its checkbox; default `{}`), `layoutFields` (the *Layout* fields offered; default all
+    seven, `REPORT_CHART_LAYOUT_FIELDS`) and `columnDisabledReason` (default
+    `REPORT_CHART_COLUMN_DISABLED_REASON`). Inside the picker a figure key is any string; the types of
+    `report-charts.ts` are generic over the key (`ReportChartSelection<K>`,
+    `ReportChartLayoutSettings<K>`, `ReportChartDocumentLayout<K>`), Model Comparison's normalizers
+    still produce only its keys, and the generic normalizers `normalizePickerSelection`,
+    `normalizePickerDocumentLayout` and `normalizePickerLayoutSettings` are exported from the picker
+    file for a host with its own figures.
   - **Document charts** (`report-pack/report-charts.ts`): the figure keys and their placement labels per
     scope; **charts sized in points** — `documentChartLayout(widthPt, heightPt, labelPt)` (300 dpi,
     `BASE_LABEL_PX` 11, `layoutWidth = widthPt × 11 / labelPt`); `documentTextStyle`, which sets the bar
@@ -1940,14 +2111,25 @@ To find specific popups, look in the corresponding component's `.html` template:
       *Table image size* (`app-export-size-section` with *Fit the table*, id prefix
       `mc-table-image`, the *Fit the table* size shown as information in custom mode), the same
       *Image format* and a scope line. `app-export-size-section` and `app-export-format-section`
-      (`model-comparison/`) have three hosts: this tab, the key-figures chooser of the run report
-      dialogs, and the Chat Consistency Charts step's *Download* tab (id prefixes `cc-export` and
-      `cc-image-format`), which keeps its own storage keys —
-      `overseer.benchmark.chatConsistency.chartSize` for the chart size, beside
+      (`model-comparison/`) have four hosts: this tab, the key-figures chooser of the run report
+      dialogs, the Chat Consistency Charts step's *Download* tab (id prefixes `cc-export` and
+      `cc-image-format`), and the Chat Consistency Results step's *Image settings* dialog (id
+      prefixes `cc-rim-size` and `cc-rim-fmt`). Each keeps its own storage keys; Chat Consistency's
+      are `overseer.benchmark.chatConsistency.chartSize` for the chart size, beside
       `overseer.benchmark.chatConsistency.timeline` for the workspace layout and the format,
-      `overseer.benchmark.chatConsistency.analyze` for the Analyze step's workspace, and
-      `overseer.benchmark.chatConsistency.launcher` for the launcher — so a change in one never moves
-      another.
+      `overseer.benchmark.chatConsistency.analyze` for the Analyze step's workspace,
+      `overseer.benchmark.chatConsistency.launcher` for the launcher,
+      `overseer.benchmark.chatConsistency.resultsImage` for the Results images (`{ version: 1,
+      format, webpQuality, size, scheme, excluded: { [section]: string[] }, detailsExcluded }`;
+      exclusions rather than inclusions, so a new item is included; by default *More about details*,
+      *Runs in the periods* and the next runs' *Reasons* are off; *Fit the content* at 200 %),
+      `overseer.benchmark.chatConsistency.resultsImage.sections` for the open state of that dialog's
+      two file sections (`{ version: 1, format, size }`),
+      `overseer.benchmark.chatConsistency.reportCharts` for step 5's chart choices (`{ version: 1,
+      selection, layout }`) and `overseer.benchmark.chatConsistency.history.view` for the Analysis
+      History's Sort by (`{ version: 1, sort }`, `newest` / `oldest` / `model`) — so a change in one
+      never moves another. The Results images' settings are read fresh on every open, copy and
+      download, inside try/catch.
   - **Toolbar rows**, one per view, each ending in a right-aligned group of icon-only
     `.action-btn`s: *All charts* — zoom, then **Download all charts** (the *download-all* glyph,
     two arrows into one tray); *Single chart* — figure picker, zoom, **Copy** and **Download**;

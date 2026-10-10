@@ -65,6 +65,89 @@ public class BenchmarkPdfRendererTests
         Assert.Equal(BenchmarkPdfClassification.ProviderConfidential, info.Classification);
     }
 
+    /// <summary>A stored chat consistency document over <see cref="ChatConsistencyReportTestData"/>, with its valid writer output.</summary>
+    internal static BenchmarkReportDocument ChatConsistencyDocument(BenchmarkReportAudience audience)
+    {
+        var sheet = ChatConsistencyReportTestData.Sheet(audience);
+        return new BenchmarkReportDocument
+        {
+            Id = 41,
+            PackId = Guid.Parse("7c1e2d3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f"),
+            Audience = audience,
+            Origin = BenchmarkReportDocumentOrigin.ChatConsistencyReport,
+            Scope = BenchmarkReportScope.ChatConsistency,
+            ChatConsistencyAnalysisId = 7,
+            SubjectKey = sheet.SubjectKey,
+            SubjectLabel = sheet.SubjectLabel,
+            SubjectRunIdsJson = BenchmarkReportJson.Serialize(sheet.SubjectRunIds),
+            ComparisonRequestJson = "{}",
+            SuiteName = sheet.SuiteName,
+            WriterConfigId = 3,
+            WriterDisplayName = "Writer One",
+            WriterProvider = "Anthropic",
+            WriterModelId = "writer-1",
+            ReportFormatVersion = BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion,
+            WriterPromptSha256 = BenchmarkReportPackPrompt.PromptSha256(audience, BenchmarkReportScope.ChatConsistency),
+            FactsJson = BenchmarkReportJson.Serialize(sheet),
+            ContentJson = BenchmarkReportJson.Serialize(ChatConsistencyReportTestData.Content()),
+            WriterOutputJson = BenchmarkReportJson.Serialize(ChatConsistencyReportTestData.ValidOutput(audience)),
+            ValidationNotesJson = "[]",
+            Title = BenchmarkReportPackRenderer.BuildChatConsistencyTitle(sheet),
+            Status = BenchmarkReportDocumentStatus.Completed,
+            CreatedAtUtc = CreatedAt
+        };
+    }
+
+    [Fact]
+    public void AChatConsistencyPdf_KeepsItsMinusSigns_ItsCoverFacts_AndItsAnalysisFooter_WithoutAHash()
+    {
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
+        var options = new BenchmarkReportRenderOptions
+        {
+            Disclosure = BenchmarkReportDisclosure.Detailed,
+            PeerNaming = BenchmarkReportPeerNaming.Anonymized
+        };
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+        string markdown = BenchmarkReportPackRenderer.Render(document, options);
+        Assert.Contains("\u22124.2\u00A0index points", markdown);
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown, info, TestContext.Current.CancellationToken);
+
+        Assert.Equal(new[] { "Model", "Compared", "Baseline", "Comparison", "Controls", "Written" }, info.Facts.Select(f => f.Label));
+        Assert.Equal("Test Model (TestProvider, test-model-1)", info.Facts[0].Value);
+        Assert.Equal("2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 2 runs", info.Facts[2].Value);
+        Assert.Equal("1 model (A), identity withheld", info.Facts[4].Value);
+        Assert.Equal("2026-09-28 10:42 UTC by Writer One (Anthropic, writer-1)", info.Facts[5].Value);
+        Assert.Equal("Chat consistency analysis #7 · Report for AI Researchers and Developers", info.FooterText);
+
+        string text = AllText(pdf);
+        Assert.Contains("\u22124.2", text);
+        Assert.DoesNotContain("-4.2", text);
+        Assert.DoesNotContain("Source", text);
+        Assert.DoesNotContain(info.SourceSha256.Length >= 16 ? info.SourceSha256[..16] : "0123456789abcdef", text);
+
+        using var reader = PdfDocument.Open(pdf);
+        int pages = reader.NumberOfPages;
+        foreach (var page in reader.GetPages())
+        {
+            Assert.Contains(Squash("Chat consistency analysis #7 · Report for AI Researchers and Developers · page " + page.Number + " of " + pages), Squash(page.Text));
+        }
+    }
+
+    [Fact]
+    public void AnotherScopesPdf_KeepsItsSourceHashFooter()
+    {
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(BenchmarkReportPackRenderer.Render(document, options), info, TestContext.Current.CancellationToken);
+
+        Assert.Null(info.FooterText);
+        Assert.Contains("PDFlayout" + BenchmarkPdfRenderer.LayoutVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), AllText(pdf));
+        Assert.Contains("Source", AllText(pdf));
+    }
+
     [Fact]
     public void APdf_DeclaresPdfA3AndPdfUA1_AndCarriesAStructureTree()
     {

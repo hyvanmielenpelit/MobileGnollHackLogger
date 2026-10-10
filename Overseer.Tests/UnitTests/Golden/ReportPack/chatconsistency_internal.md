@@ -15,62 +15,67 @@
 
 ## Overall verdict
 
-- **Verdict:** Degraded: quality degraded (Indicated); time to first answer text equivalent (Established); answer streaming rate not computable; cost per answer inconclusive (Not established)
+- **Verdict:** The chat changed
+- **Answer streaming rate (P3) not computable:** No telemetry run in the baseline.
+- **Sample:** Met: at least 2 runs on 2 days per period and 20 paired items
+- **Hours:** every result holds for weekdays 04–12 UTC only, the hours both periods share
+- **Controls:** 1 control model (A), identity withheld, run on the same suites in both periods; 1 missing-control note
+- **Time strata:** 2 strata (weekdays 04–08 UTC, weekdays 08–12 UTC); time of day not assessable: the common hours do not include both US business hours and other hours
 - **The analysis's headline:** Overseer chat with Test Model: quality degraded; speed equivalent within weekdays 04–12 UTC
-- **Established reliability increases:** none established
-- **Hours:** weekdays 04–12 UTC
 
 ## The result in one sentence
 
-Quality of the Overseer chat with Test Model degraded by -4.2 index points within weekdays 04–12 UTC.
+Quality of the Overseer chat with Test Model degraded by −4.2 index points within weekdays 04–12 UTC.
 
 ## Verdicts by endpoint
 
-| Endpoint | Estimate | 95 % interval | Verdict | Grade | Minimum detectable effect |
-|---|---|---|---|---|---|
-| Quality (P1) | -4.2 index points | -6.0 index points to -3.1 index points | degraded | Indicated | 2.5 index points |
-| Time to first answer text (P2) | +2.0 % (log ratio +0.020) | -4.9 % to +9.4 % | equivalent | Established | 8.3 % |
-| Answer streaming rate (P3) | — | — | not computable | Not established | — |
-| Cost per answer (P5) | +3.1 % (log ratio +0.030) | -3.9 % to +10.5 % | inconclusive | Not established | 12.7 % |
+| Endpoint | Change (95 % interval) | Margin | Verdict and grade | Smallest detectable |
+|---|---|---|---|---|
+| Quality (P1) | −4.2 index points (−6.0 to −3.1 index points) | ±3 index points | Degraded, Indicated | ±2.5 index points |
+| Time to first answer text (P2) | +2.0 % (−4.9 to +9.4 %) | ±15 % | Equivalent, Established | ±8.3 % |
+| Cost per answer (P5) | +3.1 % (−3.9 to +10.5 %) | ±10 % | Inconclusive, Not established | ±12.7 % |
 
-- **Quality (P1):** Indicated: a comparison run lacks call telemetry
-- **Answer streaming rate (P3):** not available. No telemetry run in the baseline.
+- **Quality (P1):** 90 % interval −5.6 to −3.4 index points; a comparison run lacks call telemetry
+- **Time to first answer text (P2):** 90 % interval −3.9 to +8.3 %
+- **Cost per answer (P5):** 90 % interval −3.0 to +9.4 %
 
-*Each estimate is the comparison period against the baseline period: a difference in the endpoint's unit, or a change in percent for a ratio. The verdict is read against the endpoint's equivalence margin.*
+- **Answer streaming rate (P3), not computable:** No telemetry run in the baseline.
+
+*Each change is the comparison period against the baseline period: a difference in the endpoint's unit, or a change in percent for a ratio, read against the endpoint's equivalence margin.*
 
 ## Control models
 
-| Model | Runs | Periods | Difference in differences |
-|---|---|---|---|
-| Model A | 2 runs | baseline and comparison | Quality (P1): -4.0 index points (-6.1 index points to -2.0 index points) |
+- **Model A:** 2 runs in the baseline and comparison; difference in differences Quality (P1) −4.0 index points (−6.1 to −2.0 index points)
 
 *A control model's chat was run on the same suites in both periods. The difference in differences is the change of the model under test minus the control's own change.*
 
+- **Comparison period, no control:** Core suite: Run Model A on Core suite under the build of run #21.
+
 ## Where the change came from
 
-| Attribution | Side | Grade | Endpoints |
-|---|---|---|---|
-| Undeclared change of the model | the provider's side | Indicated | P1 |
-| Overseer change | our change | Not established | P5 |
+| Endpoints | Side | Grade |
+|---|---|---|
+| Quality (P1) | the provider's side | Indicated |
+| Cost per answer (P5) | our change | Not established |
 
 - **Undeclared change of the model:** Quality degraded for the model under test while Model A held steady.
 
 ## Findings for the chat
 
-Check the chat tools first: quality degraded by -4.2 index points within weekdays 04–12 UTC.
+Check the chat tools first: quality degraded by −4.2 index points within weekdays 04–12 UTC.
 
 ## Our changes that helped or hurt
 
-| Date | Kind | Change | From → to | Series | Run |
-|---|---|---|---|---|---|
-| 2026-09-11 00:00 UTC | toolGuides | tool guides edited on 2026-09-11 | abc123 → def456 | the model under test | run #20 (after run #11) |
-| 2026-09-12 00:00 UTC | systemPrompt | system prompt edited on 2026-09-12 | — | Model A | run #31 (after run #30) |
+| When (UTC) | Run | What changed |
+|---|---|---|
+| 2026-09-11 00:00 | run #20 | Game snapshot: off → on |
+| 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |
 
-The effect of tool guides edited on 2026-09-11 is not established, graded Not established.
+The effect of candidate prompt options changed on 2026-09-11 (run #20) is not established, graded Not established.
 
 ## Infrastructure issues
 
-Our own waits took 3.9 % of model time in the comparison period.
+Our own waits took 3.9 % of model time in the comparison period.
 
 ## Next runs
 
@@ -80,35 +85,20 @@ Run the suggested follow-up: Repeat the comparison runs during US business hours
 
 Prepare a Provider Issue Report on Undeclared change of the model, graded Indicated.
 
-## How to read this
-
-- **What was measured.** The Overseer chat with Test Model: the model together with the chat system prompt, the tools, the knowledge corpora and the agent loop. The same benchmark suites were run in a baseline period and a later comparison period, and each endpoint compares the two.
-- **The endpoints.** Quality (P1), Time to first answer text (P2), Answer streaming rate (P3) and Cost per answer (P5). Each estimate comes with its 95 % interval.
-- **Verdicts.** Each verdict is read against the endpoint's equivalence margin, set by the protocol: *equivalent* when the 90 % interval lies inside the margin; *degraded* or *improved* (*more work* or *less work* for an endpoint that counts work) when the 95 % interval lies wholly beyond the margin on one side; *changed, negligible* when the 95 % interval excludes zero but lies inside the margin; *inconclusive* otherwise, when the runs cannot tell a change from no change. The minimum detectable effect is the smallest change these runs could have detected.
-- **Evidence grades.** *Established*: a decisive verdict, every robustness check passed, the minimum sample met, telemetry-grade data and no pooling across a measurement change. *Indicated*: a decisive verdict with a failed robustness check, legacy data, pooling across a measurement change or a sample below the minimum. *Not established*: inconclusive, or nothing to support a claim. Only an Established result is fit to publish.
-- **Hours.** Every result holds for weekdays 04–12 UTC only, the hours both periods share. It says nothing about the hours outside them.
-- **Attribution.** The total change is reported first; the attribution then grades where it came from: our change, our infrastructure, the provider's side, or undetermined. An attribution never goes beyond its grade.
-- **Control models.** A change the model under test shares with a control model is told apart from a change of the model under test alone by the difference in differences.
-- **What is never inferred.** The analysis measures what changed. It never infers anyone's intent, and it names no mechanism unless the provider has confirmed one.
-
-## Limitations
-
-- Only weekday mornings were sampled.
-
 ## Reproducibility
 
 - **Analysis:** #7
-- **Input SHA-256:** `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
-- **Protocol:** V1; the published protocol, without overrides; alpha 0.05
 - **Analysis code version:** 3
-- **Baseline runs:** #10, #11
-- **Comparison runs:** #20, #21
-- **Control runs:** #30, #31
+- **Protocol:** V1; the published protocol, without overrides; alpha 0.05
+- **Common grader:** none. No common grader covered every compared run, so quality compares each run's own grades.
 - **Price card:** not available
+- **Baseline:** runs #10 and #11
+- **Comparison:** runs #20 and #21
+- **Control runs:** #30, #31
 - **Report format version:** 1
 
 ---
 
 *Document ID 41 · format version 1 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Full · controls anonymized*
 
-*Figures and tables were computed by Overseer from the saved chat consistency analysis. The prose was written by Writer One from those figures and checked automatically for structure, permitted figures, word limits, control-model names, hype words, spelling and the claim rules on change, cause, intent, mechanism, public claims and hours; the checks do not verify the prose's interpretations.*
+*Figures and tables were computed by Overseer from the saved chat consistency analysis. The prose was written by Writer One from those figures and checked automatically for structure, permitted figures, word limits, control-model names, hype words, spelling, readable text and the claim rules on change, cause, intent, mechanism, public claims and hours; the checks do not verify the prose's interpretations.*

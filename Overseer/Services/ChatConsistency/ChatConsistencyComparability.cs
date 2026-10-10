@@ -273,8 +273,8 @@ public sealed record ControlRunMatching(
 /// other subjects under the same Overseer build later attribute (<see cref="MatchControlRuns"/>).</para>
 ///
 /// <para>A series is one subject (<see cref="ModelAxisKey"/>), ordered by
-/// <see cref="BenchmarkRun.StartedAtUtc"/> and then by id. Runs of other subjects are separate series
-/// or controls, never neighbors.</para>
+/// <see cref="BenchmarkRun.StartedAtUtc"/> and then by id; for Overseer events, one subject on one
+/// suite. Runs of other subjects are separate series or controls, never neighbors.</para>
 /// </summary>
 public static class ChatConsistencyComparability
 {
@@ -599,27 +599,35 @@ public static class ChatConsistencyComparability
     // --- Overseer events --------------------------------------------------------------------
 
     /// <summary>
-    /// The Overseer changes in each subject's series, in time order: a change of
+    /// The Overseer changes per model and suite, in time order: a change of
     /// <see cref="BenchmarkRun.CandidateSystemPromptSha256"/>, <see cref="BenchmarkRun.ToolGuidesSha256"/>,
     /// <see cref="BenchmarkRun.KnowledgeBaseHeadSha"/>, <see cref="BenchmarkRun.WikiHeadSha"/>,
     /// <see cref="BenchmarkRun.SourceCodeHeadSha"/>, <see cref="BenchmarkRun.CorpusIndexFingerprintsJson"/>,
     /// the candidate prompt options (compared in canonical form), the four budget fields, or a harness
     /// version whose ledger impact includes <see cref="HarnessImpact.CandidateInput"/>.
     ///
-    /// <para>A null is "not recorded", never a value: a run that did not record a field neither
-    /// starts nor ends an event, and a change is detected against the subject's latest earlier run
-    /// that recorded the field. Events never exclude data.</para>
+    /// <para>A series is one subject on one suite (<see cref="ModelAxisKey"/> and the suite id, else its
+    /// name), so suites that alternate within a battery are never compared with each other. A null is
+    /// "not recorded", never a value: a run that did not record a field neither starts nor ends an
+    /// event, and a change is detected against the series' latest earlier run that recorded the field.
+    /// Events never exclude data.</para>
+    ///
+    /// <para>One change seen in several suites of a subject is one event: events with the same
+    /// subject, kind, <see cref="OverseerEvent.From"/> and <see cref="OverseerEvent.To"/> whose spans
+    /// overlap are merged into the earliest. A span runs from the previous run's start (exclusive) to
+    /// the run's start (inclusive).</para>
     /// </summary>
     public static IReadOnlyList<OverseerEvent> DetectOverseerEvents(IEnumerable<BenchmarkRun> runs)
     {
         ArgumentNullException.ThrowIfNull(runs);
 
+        var distinct = Distinct(runs).ToList();
         var events = new List<OverseerEvent>();
         var kindOrder = OverseerEventKinds.All
             .Select((kind, index) => (kind, index))
             .ToDictionary(p => p.kind, p => p.index, StringComparer.Ordinal);
 
-        foreach (var series in Series(runs))
+        foreach (var series in EventSeries(distinct))
         {
             var lastRecorded = new Dictionary<string, (string Value, long RunId)>(StringComparer.Ordinal);
             BenchmarkRun? lastHarnessRun = null;
@@ -661,11 +669,47 @@ public static class ChatConsistencyComparability
             }
         }
 
-        return events
+        var startOf = distinct.ToDictionary(r => r.Id, r => r.StartedAtUtc);
+
+        return MergeAcrossSuites(events, startOf)
             .OrderBy(e => e.AtUtc)
             .ThenBy(e => e.RunId)
             .ThenBy(e => kindOrder[e.Kind])
             .ToList();
+    }
+
+    /// <summary>
+    /// Events of one subject, kind and change, merged into the earliest of each group whose spans
+    /// overlap; a merged span grows to cover every event it absorbed.
+    /// </summary>
+    private static IEnumerable<OverseerEvent> MergeAcrossSuites(
+        IEnumerable<OverseerEvent> events, IReadOnlyDictionary<long, DateTime> startOf)
+    {
+        foreach (var group in events.GroupBy(x => (x.SubjectKey, x.Kind, x.From, x.To)))
+        {
+            var kept = new List<(OverseerEvent Event, DateTime After, DateTime Through)>();
+
+            foreach (var e in group.OrderBy(x => x.AtUtc).ThenBy(x => x.RunId))
+            {
+                DateTime after = startOf.TryGetValue(e.PreviousRunId, out var previousStart) ? previousStart : e.AtUtc;
+                DateTime through = e.AtUtc;
+
+                int index = kept.FindIndex(s => s.After < through && after < s.Through);
+                if (index < 0)
+                {
+                    kept.Add((e, after, through));
+                    continue;
+                }
+
+                var span = kept[index];
+                kept[index] = (
+                    span.Event,
+                    after < span.After ? after : span.After,
+                    through > span.Through ? through : span.Through);
+            }
+
+            foreach (var merged in kept) yield return merged.Event;
+        }
     }
 
     // --- Instrument fingerprint -------------------------------------------------------------
@@ -793,8 +837,7 @@ public static class ChatConsistencyComparability
 
         return "No control run for period " + period + ": make " + subject
             + " on suite " + suite
-            + " under the same Overseer build as run #" + Inv(target.Run.Id)
-            + " (instrument " + target.Fingerprint.Substring(0, 12) + ").";
+            + " under the same Overseer build as run #" + Inv(target.Run.Id) + ".";
     }
 
     // --- Shared helpers ---------------------------------------------------------------------
@@ -832,6 +875,21 @@ public static class ChatConsistencyComparability
             .OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g => new KeyValuePair<string, List<BenchmarkRun>>(
                 g.Key,
+                g.OrderBy(r => r.StartedAtUtc).ThenBy(r => r.Id).ToList()));
+    }
+
+    /// <summary>
+    /// Runs grouped by subject and suite, each ordered by start and id; keyed by the subject alone,
+    /// the series in ordinal order of subject and then suite.
+    /// </summary>
+    private static IEnumerable<KeyValuePair<string, List<BenchmarkRun>>> EventSeries(IEnumerable<BenchmarkRun> runs)
+    {
+        return Distinct(runs)
+            .GroupBy(r => (Subject: ModelAxisKey(r), Suite: SuiteIdentity(r)))
+            .OrderBy(g => g.Key.Subject, StringComparer.Ordinal)
+            .ThenBy(g => g.Key.Suite, StringComparer.Ordinal)
+            .Select(g => new KeyValuePair<string, List<BenchmarkRun>>(
+                g.Key.Subject,
                 g.OrderBy(r => r.StartedAtUtc).ThenBy(r => r.Id).ToList()));
     }
 

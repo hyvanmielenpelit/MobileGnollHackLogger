@@ -21,8 +21,11 @@ import {
 } from './chat-consistency-format';
 import { CcPeriodIds, CcPeriodUnit, CcUnitPeriod } from './chat-consistency-periods';
 import {
+  CC_BATTERY_SET_PREFIX,
+  CC_SUITE_SET_PREFIX,
   CcAnalysisResult,
   CcBatteryRunRow,
+  CcEndpointBrief,
   CcEndpointResult,
   CcRunRow,
   CcUnitView,
@@ -123,17 +126,17 @@ export const CC_ENDPOINT_STATUS_TEXT: Readonly<Record<CcEndpointStatus, string>>
 });
 
 /**
- * An endpoint's status: a degradation is `changed`, an improvement `improved`, an equivalence or a
- * negligible change `within`. Work per turn (`direction === 'work'`) has no better or worse, so both of
- * its changes are `changed`. A computed endpoint without a verdict reads as `inconclusive`.
+ * The one mapping from a verdict to a status: a degradation is `changed`, an improvement `improved`, an
+ * equivalence or a negligible change `within`. Work per turn has no better or worse, so both of its
+ * changes are `changed`. A computed endpoint without a verdict reads as `inconclusive`.
  */
-export function ccEndpointStatus(endpoint: CcEndpointResult): CcEndpointStatus {
-  if (!endpoint.computed) return 'notComputable';
-  switch (endpoint.verdict) {
+function statusOf(computed: boolean, verdict: CcVerdict | null, work: boolean): CcEndpointStatus {
+  if (!computed) return 'notComputable';
+  switch (verdict) {
     case 'changedDegraded':
       return 'changed';
     case 'changedImproved':
-      return endpoint.direction === 'work' ? 'changed' : 'improved';
+      return work ? 'changed' : 'improved';
     case 'equivalent':
     case 'changedNegligible':
       return 'within';
@@ -142,11 +145,61 @@ export function ccEndpointStatus(endpoint: CcEndpointResult): CcEndpointStatus {
   }
 }
 
+/** An endpoint's status, from its verdict and whether it is work per turn (`direction === 'work'`). */
+export function ccEndpointStatus(endpoint: CcEndpointResult): CcEndpointStatus {
+  return statusOf(endpoint.computed, endpoint.verdict, endpoint.direction === 'work');
+}
+
 /** The status word of an endpoint; a change in work per turn reads as the server's *More work* / *Less work*. */
 export function ccEndpointStatusText(endpoint: CcEndpointResult): string {
   const status = ccEndpointStatus(endpoint);
   if (status === 'changed' && endpoint.direction === 'work') return verdictText(endpoint.verdict, endpoint.verdictLabel);
   return CC_ENDPOINT_STATUS_TEXT[status];
+}
+
+/** The server's verdict labels (`ChatConsistencyAnalysisService.VerdictLabel`), read back as a verdict. */
+const VERDICT_OF_LABEL: Readonly<Record<string, { verdict: CcVerdict; work: boolean }>> = Object.freeze({
+  'degraded': { verdict: 'changedDegraded', work: false },
+  'improved': { verdict: 'changedImproved', work: false },
+  'more work': { verdict: 'changedDegraded', work: true },
+  'less work': { verdict: 'changedImproved', work: true },
+  'changed, negligible': { verdict: 'changedNegligible', work: false },
+  'equivalent': { verdict: 'equivalent', work: false },
+  'inconclusive': { verdict: 'inconclusive', work: false }
+});
+
+function verdictOfLabel(label: string | null | undefined): { verdict: CcVerdict; work: boolean } | null {
+  return VERDICT_OF_LABEL[(label ?? '').trim().toLowerCase()] ?? null;
+}
+
+/** A summary endpoint's status, by the same mapping as {@link ccEndpointStatus}; an unknown label reads as `inconclusive`. */
+export function ccEndpointBriefStatus(endpoint: CcEndpointBrief): CcEndpointStatus {
+  const read = verdictOfLabel(endpoint.verdictLabel);
+  return statusOf(endpoint.computed, read?.verdict ?? null, read?.work ?? false);
+}
+
+/** The status word of a summary endpoint; a change in work per turn reads as *More work* / *Less work*. */
+export function ccEndpointBriefStatusText(endpoint: CcEndpointBrief): string {
+  const status = ccEndpointBriefStatus(endpoint);
+  if (status === 'changed' && verdictOfLabel(endpoint.verdictLabel)?.work) return verdictText(null, endpoint.verdictLabel);
+  return CC_ENDPOINT_STATUS_TEXT[status];
+}
+
+// --- Compared set ---
+
+/** What a saved analysis compared, as the `cc-kind-tag` names it. */
+export interface CcCompareKind {
+  /** `battery`, `suite` or `all`: the tag's `data-kind`. */
+  kind: 'battery' | 'suite' | 'all';
+  /** `Battery`, `Suite` or `All suites`. */
+  text: string;
+}
+
+/** The compared set's kind from its key: a battery, a suite, or every suite run by run when there is none. */
+export function ccCompareKindOf(setKey: string | null | undefined): CcCompareKind {
+  if (setKey?.startsWith(CC_BATTERY_SET_PREFIX)) return { kind: 'battery', text: 'Battery' };
+  if (setKey?.startsWith(CC_SUITE_SET_PREFIX)) return { kind: 'suite', text: 'Suite' };
+  return { kind: 'all', text: 'All suites' };
 }
 
 // --- Endpoint notes ---

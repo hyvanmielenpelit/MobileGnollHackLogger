@@ -8,6 +8,7 @@ import { resolveFigureTheme } from '../model-comparison/figure-theme';
 import {
   CC_CHART_STYLE_DEFAULTS,
   CC_DECIMAL_CHOICES,
+  CC_FIGURE_ENDPOINTS,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
   CC_HEADER_LOGO_PX,
@@ -31,6 +32,7 @@ import {
   ccAutoDecimalsText,
   ccChartThemeFor,
   ccHeaderHeight,
+  ccNotComparableText,
   ccPlaceLabels,
   ccPointLabelFont,
   ccStepDecimals,
@@ -59,6 +61,7 @@ import {
   ccAnalysisResult,
   ccAnnotation,
   ccBatteryPoint,
+  ccEndpoint,
   ccEvent,
   ccEventAnnotations,
   ccEventPoints,
@@ -79,9 +82,9 @@ describe('chat-consistency-charts', () => {
   });
 
   describe('quality', () => {
-    it('captions a narrow range as held and labels the native grades', () => {
+    it('captions a narrow range as the range it is, never as held, and labels the native grades', () => {
       const figure = qualityFigure(input);
-      expect(figure.takeaway).toBe('The Intelligence Index held between 71 and 74 across 6 runs.');
+      expect(figure.takeaway).toBe('The Intelligence Index ranged from 71 to 74 across 6 runs.');
       expect(figure.config!.data.datasets.map(ds => ds.label)).toEqual(['Intelligence Index (native grades)']);
       expect(figure.table.columns).toEqual(['Run', 'Started', 'Intelligence Index (native)']);
       expect(figure.table.rows[0]).toEqual(['#101', '2026-09-01 08:00 UTC', '71']);
@@ -126,7 +129,7 @@ describe('chat-consistency-charts', () => {
       // Only run 103 has no telemetry time, so only it carries a proxy value.
       expect((proxy.data as CcChartPoint[]).filter(p => p.y !== null).map(p => p.runId)).toEqual([103]);
       expect(figure.takeaway).toBe(
-        'Median time to first answer text ranged from 2.4 s to 2.4 s across 5 telemetry runs. 1 legacy run is drawn hollow as the legacy proxy.');
+        'Median time to first answer text was 2.4 s in all 5 telemetry runs. 1 legacy run is drawn hollow as the legacy proxy.');
     });
 
     it('paints the print theme background under a hollow point', () => {
@@ -136,7 +139,7 @@ describe('chat-consistency-charts', () => {
 
     it('counts the runs without a streaming rate', () => {
       expect(streamingRateFigure(input).takeaway)
-        .toBe('The answer streaming rate ranged from 40.0 tok/s to 40.0 tok/s across 5 runs. 1 legacy run recorded no rate.');
+        .toBe('The answer streaming rate was 40.0 tok/s in all 5 runs. 1 legacy run recorded no rate.');
     });
   });
 
@@ -145,7 +148,7 @@ describe('chat-consistency-charts', () => {
     expect(work.title).toBe('Output tokens per answer');
     expect(work.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['work.tokens']);
     expect(work.config!.options.scales!['y1']).toBeUndefined();
-    expect(work.takeaway).toBe('Output tokens per answer ranged from 1,200 to 1,200 across 6 runs.');
+    expect(work.takeaway).toBe('Output tokens per answer were 1,200 in all 6 runs.');
     expect(work.table.columns).toEqual(['Run', 'Started', 'Output tokens per answer']);
 
     const tools = toolCallsFigure(input);
@@ -153,13 +156,13 @@ describe('chat-consistency-charts', () => {
     expect(tools.title).toBe('Tool calls per answer');
     expect(tools.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['tools.calls']);
     expect(tools.config!.options.scales!['y1']).toBeUndefined();
-    expect(tools.takeaway).toBe('Tool calls per answer ranged from 3.5 to 3.5 across 6 runs.');
+    expect(tools.takeaway).toBe('Tool calls per answer were 3.5 in all 6 runs.');
     expect(tools.table.rows[0]).toEqual(['#101', '2026-09-01 08:00 UTC', '3.5']);
     expect(CC_REPORT_FIGURES['cc3-work']).toBe('work');
   });
 
   it('captions cost at one price card', () => {
-    expect(costFigure(input).takeaway).toBe('Cost per question ranged from $0.015 to $0.015 across 6 runs, at one price card.');
+    expect(costFigure(input).takeaway).toBe('Cost per question was $0.015 in all 6 runs, at one price card.');
   });
 
   it('names the highest reliability rate and its run', () => {
@@ -683,16 +686,16 @@ describe('chat-consistency-charts', () => {
 
     it('counts the plotted runs not in the analysis in the takeaway and the alt text', () => {
       expect(qualityFigure(marked).takeaway)
-        .toBe('The Intelligence Index held between 71 and 74 across 6 runs. 2 runs not in the analysis are drawn as gray crosses.');
+        .toBe('The Intelligence Index ranged from 71 to 74 across 6 runs. 2 runs not in the analysis are drawn as gray crosses.');
       const one = qualityFigure({ ...input, notAnalyzed: new Map([[104, 'left out in step 1']]) });
-      expect(one.takeaway).toBe('The Intelligence Index held between 71 and 74 across 6 runs. 1 run not in the analysis is drawn as a gray cross.');
+      expect(one.takeaway).toBe('The Intelligence Index ranged from 71 to 74 across 6 runs. 1 run not in the analysis is drawn as a gray cross.');
       expect(one.altText).toBe(`Intelligence per run. ${one.takeaway}`);
 
       // Run 103 has no streaming rate, so the rate figure does not draw it; its legacy proxy is drawn.
       const legacy: CcFigureInput = { ...input, notAnalyzed: new Map([[103, 'after the last run']]) };
       expect(streamingRateFigure(legacy).takeaway).toBe(streamingRateFigure(input).takeaway);
       expect(timeToFirstAnswerFigure(legacy).takeaway).toBe(
-        'Median time to first answer text ranged from 2.4 s to 2.4 s across 5 telemetry runs. 1 legacy run is drawn hollow as the legacy proxy.'
+        'Median time to first answer text was 2.4 s in all 5 telemetry runs. 1 legacy run is drawn hollow as the legacy proxy.'
         + ' 1 run not in the analysis is drawn as a gray cross.');
       // A run outside the drawn points adds nothing.
       expect(qualityFigure({ ...input, notAnalyzed: new Map([[999, 'left out in step 1']]) }).takeaway)
@@ -873,7 +876,7 @@ describe('chat-consistency-charts', () => {
       expect(failing.takeaway).toBe('The highest rate was timeouts at 5.0 % in battery run #12, across 2 battery runs.');
     });
 
-    it('says the Overall Intelligence Index held at one value when both battery runs format alike', () => {
+    it('says the Overall Intelligence Index was one value when both battery runs format alike, never that it held', () => {
       const figure = qualityFigure({
         ...battery,
         points: [
@@ -881,7 +884,7 @@ describe('chat-consistency-charts', () => {
           ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 81.98 })
         ]
       });
-      expect(figure.takeaway).toBe('The Overall Intelligence Index held at 82.0 across 2 battery runs.');
+      expect(figure.takeaway).toBe('The Overall Intelligence Index was 82.0 in both battery runs.');
       const close = qualityFigure({
         ...battery,
         points: [
@@ -889,7 +892,12 @@ describe('chat-consistency-charts', () => {
           ccBatteryPoint(12, '2026-10-08T10:00:00Z', { overallIndex: 82.4 })
         ]
       });
-      expect(close.takeaway).toBe('The Overall Intelligence Index held between 82.0 and 82.4 across 2 battery runs.');
+      expect(close.takeaway).toBe('The Overall Intelligence Index ranged from 82.0 to 82.4 across 2 battery runs.');
+      const three = qualityFigure({
+        ...battery,
+        points: [11, 12, 13].map(id => ccBatteryPoint(id, `2026-10-08T${String(id - 5).padStart(2, '0')}:00:00Z`, { overallIndex: 82 }))
+      });
+      expect(three.takeaway).toBe('The Overall Intelligence Index was 82.0 in all 3 battery runs.');
     });
 
     it('lists each battery run\'s member runs with their suite names, in member order', () => {
@@ -955,7 +963,7 @@ describe('chat-consistency-charts', () => {
     it('writes Intelligence to the chosen decimals in the table, takeaway and tooltip', () => {
       const figure = qualityFigure(input, { decimals: { quality: 2 } });
       expect(figure.table.rows[0][2]).toBe('71.00');
-      expect(figure.takeaway).toBe('The Intelligence Index held between 71.00 and 74.00 across 6 runs.');
+      expect(figure.takeaway).toBe('The Intelligence Index ranged from 71.00 to 74.00 across 6 runs.');
       expect(figure.altText).toBe(`Intelligence per run. ${figure.takeaway}`);
       expect(String(label(figure)).endsWith('71.00')).toBe(true);
     });
@@ -1493,6 +1501,86 @@ describe('chat-consistency-charts', () => {
         expectTooltipFactsInTable(buildCcFigure(key, runs), runs);
         expectTooltipFactsInTable(buildCcFigure(key, batteries), batteries);
       }
+    });
+  });
+
+  describe('report charts', () => {
+    const HOUR_MS = 3_600_000;
+    /** Four runs on one day, inside periods that span two days. */
+    const oneDay: CcFigureInput = {
+      points: [
+        ccPoint(201, '2026-10-08T08:00:00Z'),
+        ccPoint(202, '2026-10-08T10:00:00Z'),
+        ccPoint(203, '2026-10-08T14:00:00Z'),
+        ccPoint(204, '2026-10-08T20:00:00Z')
+      ],
+      bands: analysisBands(
+        { startUtc: '2026-10-07T00:00:00Z', endUtc: '2026-10-08T12:00:00Z' },
+        { startUtc: '2026-10-08T12:00:00Z', endUtc: '2026-10-09T23:59:59Z' }
+      )
+    };
+    const xBounds = (figure: CcFigure) => {
+      const x = figure.config!.options.scales!['x'] as unknown as { min: number; max: number };
+      return { min: x.min, max: x.max };
+    };
+
+    it('fits the time axis to the plotted points, padded by the larger of 5 % and 30 minutes, not to the periods', () => {
+      const fitted = xBounds(qualityFigure(oneDay, { fitToData: true }));
+      const span = 12 * HOUR_MS;
+      expect(fitted.min).toBe(at('2026-10-08T08:00:00Z') - span * 0.05);
+      expect(fitted.max).toBe(at('2026-10-08T20:00:00Z') + span * 0.05);
+
+      // Without it, the axis spans the periods too.
+      const wide = xBounds(qualityFigure(oneDay));
+      expect(wide.min).toBeLessThan(at('2026-10-07T00:00:00Z'));
+      expect(wide.max).toBeGreaterThan(at('2026-10-09T23:00:00Z'));
+
+      const close: CcFigureInput = { points: [ccPoint(301, '2026-10-08T08:00:00Z'), ccPoint(302, '2026-10-08T09:00:00Z')] };
+      const padded = xBounds(workFigure(close, { fitToData: true }));
+      expect(padded.min).toBe(at('2026-10-08T07:30:00Z'));
+      expect(padded.max).toBe(at('2026-10-08T09:30:00Z'));
+    });
+
+    it('keeps a marker near the points inside the fitted axis', () => {
+      const withEvent: CcFigureInput = {
+        ...oneDay,
+        events: [ccEvent({ atUtc: '2026-10-08T12:00:00Z', runId: 203, previousRunId: 202 })]
+      };
+      const figure = timelineOverviewFigure(withEvent, { fitToData: true });
+      const bounds = xBounds(figure);
+      for (const marker of figure.markers) {
+        expect(marker.x).toBeGreaterThan(bounds.min);
+        expect(marker.x).toBeLessThan(bounds.max);
+      }
+    });
+
+    it('opens the caption of a figure whose endpoint was not computable with Not comparable and its reason', () => {
+      const endpoints = [
+        ccEndpoint('P1', { computed: false, notComputedReason: 'No common grader covers every run.' }),
+        ccEndpoint('P2'),
+        ccEndpoint('P4', { computed: false, notComputedReason: null })
+      ];
+      const quality = buildCcFigure('quality', { ...input, endpoints });
+      expect(quality.takeaway).toBe(
+        'Not comparable across the periods: no common grader covers every run. The Intelligence Index ranged from 71 to 74 across 6 runs.');
+      expect(quality.altText.startsWith('Not comparable across the periods: no common grader covers every run. ')).toBe(true);
+
+      expect(buildCcFigure('ttfat', { ...input, endpoints }).takeaway).toBe(buildCcFigure('ttfat', input).takeaway);
+      expect(buildCcFigure('work', { ...input, endpoints }).takeaway.startsWith(
+        'Not comparable across the periods: the analysis could not compute this measure. ')).toBe(true);
+      expect(buildCcFigure('timeline', { ...input, endpoints }).takeaway).toBe(buildCcFigure('timeline', input).takeaway);
+      // Without endpoints nothing is said.
+      expect(buildCcFigure('quality', input).takeaway).toBe('The Intelligence Index ranged from 71 to 74 across 6 runs.');
+    });
+
+    it('keeps an opening acronym of the reason in capitals', () => {
+      expect(ccNotComparableText('TTFT telemetry is missing in the baseline.'))
+        .toBe('Not comparable across the periods: TTFT telemetry is missing in the baseline.');
+      expect(ccNotComparableText('  ')).toBe('Not comparable across the periods: the analysis could not compute this measure.');
+    });
+
+    it('maps each report figure to the endpoint it plots', () => {
+      expect(CC_REPORT_FIGURE_KEYS.map(key => CC_FIGURE_ENDPOINTS[CC_REPORT_FIGURES[key]] ?? null)).toEqual(['P1', 'P2', 'P4', null]);
     });
   });
 });

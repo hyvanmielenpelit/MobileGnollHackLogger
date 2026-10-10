@@ -538,6 +538,44 @@ public class AdminChatConsistencyControllerTests
     }
 
     [Fact]
+    public async Task TheAnalysesListCarriesEachAnalysisSubjectAndEndpointVerdicts()
+    {
+        using var h = new Harness();
+        string key = Seed(h.Db);
+        var ct = CancellationToken.None;
+        var saved = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key), ct));
+
+        var list = ValueOf<IReadOnlyList<ChatConsistencyAnalysisSummary>>(await h.Controller.ListAnalyses(ct));
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(list, ChatConsistencyJson.Options));
+        var summary = Assert.Single(doc.RootElement.EnumerateArray().ToList());
+
+        var subject = summary.GetProperty("subject");
+        Assert.Equal(
+            new[] { "displayName", "provider", "modelId", "thinkingLevel", "serviceTier" },
+            subject.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(saved.Subject.DisplayName, subject.GetProperty("displayName").GetString());
+        Assert.Equal(saved.Subject.Provider, subject.GetProperty("provider").GetString());
+        Assert.Equal(saved.Subject.ModelId, subject.GetProperty("modelId").GetString());
+
+        var endpoints = summary.GetProperty("endpoints").EnumerateArray().ToList();
+        Assert.Equal(saved.Endpoints.Select(e => e.Id), endpoints.Select(e => e.GetProperty("id").GetString()));
+        foreach (var endpoint in endpoints)
+        {
+            Assert.Equal(
+                new[] { "id", "name", "computed", "verdictLabel", "grade" },
+                endpoint.EnumerateObject().Select(p => p.Name).ToArray());
+            Assert.Contains(endpoint.GetProperty("grade").GetString(), new[] { "established", "indicated", "notEstablished" });
+        }
+
+        var p1 = saved.Endpoints.Single(e => e.Id == ChatConsistencyEndpointIds.Quality);
+        var p1Json = endpoints.Single(e => e.GetProperty("id").GetString() == ChatConsistencyEndpointIds.Quality);
+        Assert.Equal(p1.Name, p1Json.GetProperty("name").GetString());
+        Assert.Equal(p1.Computed, p1Json.GetProperty("computed").GetBoolean());
+        Assert.Equal(p1.VerdictLabel, p1Json.GetProperty("verdictLabel").GetString());
+        Assert.Equal(JsonNamingPolicy.CamelCase.ConvertName(p1.Grade.ToString()), p1Json.GetProperty("grade").GetString());
+    }
+
+    [Fact]
     public async Task PostingAnAnalysisRefusesOverlappingPeriodsAndAMissingBody()
     {
         using var h = new Harness();

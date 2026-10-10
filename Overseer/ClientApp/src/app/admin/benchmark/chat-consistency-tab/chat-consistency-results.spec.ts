@@ -1,5 +1,8 @@
 import {
   CC_ENDPOINT_STATUS_TEXT,
+  ccCompareKindOf,
+  ccEndpointBriefStatus,
+  ccEndpointBriefStatusText,
   ccEndpointNotes,
   ccEndpointStatus,
   ccEndpointStatusText,
@@ -19,6 +22,7 @@ import {
   ccBatteryMemberRows,
   ccBatteryRunRows,
   ccEndpoint,
+  ccEndpointBrief,
   ccRunRows,
   ccSubjectWithLevel,
   ccUnitView
@@ -168,6 +172,47 @@ describe('chat consistency results', () => {
       expect(ccEndpointStatusText(ccEndpoint('P2', { verdict: 'changedDegraded' }))).toBe(CC_ENDPOINT_STATUS_TEXT.changed);
       expect(ccEndpointStatusText(ccEndpoint('P1'))).toBe('Within margin');
       expect(ccEndpointStatusText(notComputable('P1', 'No grades.'))).toBe('Not computable');
+    });
+  });
+
+  describe('ccEndpointBriefStatus', () => {
+    it('reads a summary endpoint as the full endpoint of the same verdict reads', () => {
+      const pairs: [Partial<CcEndpointResult>, string][] = [
+        [{ verdict: 'changedDegraded', verdictLabel: 'degraded' }, 'P2'],
+        [{ verdict: 'changedImproved', verdictLabel: 'improved' }, 'P2'],
+        [{ verdict: 'equivalent', verdictLabel: 'equivalent' }, 'P2'],
+        [{ verdict: 'changedNegligible', verdictLabel: 'changed, negligible' }, 'P2'],
+        [{ verdict: 'inconclusive', verdictLabel: 'inconclusive' }, 'P2'],
+        [{ verdict: 'changedDegraded', verdictLabel: 'more work' }, 'P4'],
+        [{ verdict: 'changedImproved', verdictLabel: 'less work' }, 'P4'],
+        [{ computed: false, verdict: null, verdictLabel: 'not computable' }, 'P1']
+      ];
+      for (const [overrides, id] of pairs) {
+        const full = ccEndpoint(id, overrides);
+        const brief = ccEndpointBrief(id, { computed: full.computed, verdictLabel: full.verdictLabel });
+        expect(ccEndpointBriefStatus(brief)).toBe(ccEndpointStatus(full));
+        expect(ccEndpointBriefStatusText(brief)).toBe(ccEndpointStatusText(full));
+      }
+    });
+
+    it('words a change in work per turn as the server does', () => {
+      expect(ccEndpointBriefStatusText(ccEndpointBrief('P4', { verdictLabel: 'more work' }))).toBe('More work');
+      expect(ccEndpointBriefStatusText(ccEndpointBrief('P4', { verdictLabel: 'less work' }))).toBe('Less work');
+    });
+
+    it('reads an unknown label as inconclusive, and a not-computed endpoint as not computable whatever its label', () => {
+      expect(ccEndpointBriefStatus(ccEndpointBrief('P2', { verdictLabel: 'something new' }))).toBe('inconclusive');
+      expect(ccEndpointBriefStatus(ccEndpointBrief('P2', { verdictLabel: '' }))).toBe('inconclusive');
+      expect(ccEndpointBriefStatus(ccEndpointBrief('P2', { computed: false, verdictLabel: 'equivalent' }))).toBe('notComputable');
+    });
+  });
+
+  describe('ccCompareKindOf', () => {
+    it('names a battery, a suite, and every suite when no set is compared', () => {
+      expect(ccCompareKindOf(`battery:${'c'.repeat(64)}`)).toEqual({ kind: 'battery', text: 'Battery' });
+      expect(ccCompareKindOf('suite:id:5')).toEqual({ kind: 'suite', text: 'Suite' });
+      expect(ccCompareKindOf(null)).toEqual({ kind: 'all', text: 'All suites' });
+      expect(ccCompareKindOf(undefined)).toEqual({ kind: 'all', text: 'All suites' });
     });
   });
 

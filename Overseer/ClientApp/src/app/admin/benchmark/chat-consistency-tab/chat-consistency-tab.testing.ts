@@ -27,6 +27,7 @@ import {
   CcBatteryRunRow,
   CcBatteryTimelinePoint,
   CcComparisonSets,
+  CcEndpointBrief,
   CcEndpointResult,
   CcEvent,
   CcModelAxis,
@@ -567,11 +568,32 @@ export function ccAnalysisResult(overrides: Partial<CcAnalysisResult> = {}): CcA
   };
 }
 
+/** One endpoint of a saved analysis's summary: equivalent unless `overrides` says otherwise. */
+export function ccEndpointBrief(id: string, overrides: Partial<CcEndpointBrief> = {}): CcEndpointBrief {
+  return {
+    id,
+    name: ENDPOINT_NAMES[id] ?? id,
+    computed: true,
+    verdictLabel: 'equivalent',
+    grade: 'established',
+    ...overrides
+  };
+}
+
+/** The summary of saved analysis `id` of GPT-5 high: run by run, the endpoints of {@link ccAnalysisResult}. */
 export function ccAnalysisSummary(id: number, overrides: Partial<CcAnalysisSummary> = {}): CcAnalysisSummary {
   return {
     id,
     name: `Analysis ${id}`,
     subjectModelKey: 'openai/gpt-5|high',
+    subject: { displayName: 'GPT-5 high', provider: 'OpenAI', modelId: 'gpt-5', thinkingLevel: 'high', serviceTier: null },
+    endpoints: [
+      ccEndpointBrief('P1'),
+      ccEndpointBrief('P2', { verdictLabel: 'degraded', grade: 'indicated' }),
+      ccEndpointBrief('P3'),
+      ccEndpointBrief('P4'),
+      ccEndpointBrief('P5')
+    ],
     baselineStartUtc: '2026-09-01T00:00:00Z',
     baselineEndUtc: '2026-09-14T23:59:59.999Z',
     comparisonStartUtc: '2026-09-15T00:00:00Z',

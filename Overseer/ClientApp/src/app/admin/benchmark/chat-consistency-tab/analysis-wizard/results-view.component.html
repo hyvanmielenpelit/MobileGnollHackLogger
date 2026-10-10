@@ -1,19 +1,50 @@
-<div class="gh-tabs gh-tabs-secondary gh-tabs-wrap cc-res-tabs" role="tablist" aria-label="Result sections">
-  @for (entry of tabs; track entry.id; let i = $index) {
-    <button type="button" role="tab" class="gh-tab"
-            [id]="'cc-res-tab-' + entry.id"
-            [attr.aria-controls]="'cc-res-panel-' + entry.id"
-            [attr.aria-selected]="tab === entry.id"
-            [attr.tabindex]="tab === entry.id ? 0 : -1"
-            (keydown)="onTabKeydown($event, i)"
-            (click)="selectTab(entry.id)">
-      {{ entry.label }}
-      @if (entry.id === 'nextRuns' && nextRunCardCount > 0) {
-        <span class="cc-res-tab-count">{{ nextRunCardCount }}<span class="visually-hidden"> {{ nextRunCardCount === 1 ? 'card' : 'cards' }}</span></span>
-      }
+<!-- The tab row, then the shown section's image export: Copy, Download and Image settings. -->
+<div class="cc-res-bar">
+  <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap cc-res-tabs" role="tablist" aria-label="Result sections">
+    @for (entry of tabs; track entry.id; let i = $index) {
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'cc-res-tab-' + entry.id"
+              [attr.aria-controls]="'cc-res-panel-' + entry.id"
+              [attr.aria-selected]="tab === entry.id"
+              [attr.tabindex]="tab === entry.id ? 0 : -1"
+              (keydown)="onTabKeydown($event, i)"
+              (click)="selectTab(entry.id)">
+        {{ entry.label }}
+        @if (entry.id === 'nextRuns' && nextRunCardCount > 0) {
+          <span class="cc-res-tab-count">{{ nextRunCardCount }}<span class="visually-hidden"> {{ nextRunCardCount === 1 ? 'card' : 'cards' }}</span></span>
+        }
+      </button>
+    }
+  </div>
+
+  <div class="cc-res-export" role="group" [attr.aria-label]="'Export the ' + tabLabel + ' section'">
+    <button type="button" class="action-btn cc-res-copy" id="cc-res-copy-btn"
+            [attr.aria-label]="'Copy the ' + tabLabel + ' section of ' + analysisName + ' as an image'"
+            [attr.aria-disabled]="exporting ? 'true' : null"
+            interestfor="cc-res-copy-tip" [attr.style]="'anchor-name: --cc-res-copy-tip'"
+            (click)="exportSection('copy')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
     </button>
-  }
+    <div popover="hint" class="gh-tooltip" id="cc-res-copy-tip"
+         [attr.style]="'position-anchor: --cc-res-copy-tip'">Copy the {{ tabLabel }} section as an image</div>
+    <button type="button" class="action-btn cc-res-download" id="cc-res-download-btn"
+            [attr.aria-label]="'Download the ' + tabLabel + ' section of ' + analysisName + ' as a ' + downloadFormat + ' image'"
+            [attr.aria-disabled]="exporting ? 'true' : null"
+            interestfor="cc-res-download-tip" [attr.style]="'anchor-name: --cc-res-download-tip'"
+            (click)="exportSection('download')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" id="cc-res-download-tip"
+         [attr.style]="'position-anchor: --cc-res-download-tip'">Download the {{ tabLabel }} section as {{ downloadFormat }}</div>
+    <button #imageSettingsTrigger type="button" class="btn-ghost cc-res-image-settings" id="cc-res-image-settings-btn"
+            aria-haspopup="dialog"
+            interestfor="cc-res-image-settings-tip" [attr.style]="'anchor-name: --cc-res-image-settings-tip'"
+            (click)="openImageSettings(imageSettingsTrigger)">Image settings</button>
+    <div popover="hint" class="gh-tooltip" id="cc-res-image-settings-tip"
+         [attr.style]="'position-anchor: --cc-res-image-settings-tip'">Choose what the section images show, their colors and their file</div>
+  </div>
 </div>
+<p class="cc-res-export-status" role="status">{{ exportStatus }}</p>
 
 <!-- Summary: the verdict on the chat, then the key figures. -->
 <div class="cc-res-panel" role="tabpanel" id="cc-res-panel-summary" aria-labelledby="cc-res-tab-summary"
@@ -40,7 +71,7 @@
 <!-- Verdicts: a card per computed endpoint, then the not-computable endpoints in one card. -->
 <div class="cc-res-panel" role="tabpanel" id="cc-res-panel-verdicts" aria-labelledby="cc-res-tab-verdicts"
      tabindex="0" [hidden]="tab !== 'verdicts'">
-  <h5 class="gh-section-title">Verdicts</h5>
+  <h5 class="visually-hidden">Verdicts</h5>
   <p class="cc-res-lead">Each endpoint compares the comparison period with the baseline against a margin fixed in advance.</p>
   @if (computedEndpoints.length > 0) {
     <div class="cc-res-endpoints">
@@ -74,7 +105,7 @@
 <!-- Periods: the stored periods and their units, read-only. -->
 <div class="cc-res-panel" role="tabpanel" id="cc-res-panel-periods" aria-labelledby="cc-res-tab-periods"
      tabindex="0" [hidden]="tab !== 'periods'">
-  <h5 class="gh-section-title">Periods</h5>
+  <h5 class="visually-hidden">Periods</h5>
   <p class="cc-res-lead">The baseline and comparison periods this analysis was computed over.</p>
   <app-cc-result-periods [result]="result" [rows]="rows" [batteryRows]="batteryRows" [points]="points"
                          [batteryPoints]="batteryPoints" [eventGroups]="eventNumbering" [annotations]="annotations"
@@ -85,7 +116,7 @@
 <!-- Attribution: the decisive changes, then the attributions by side. -->
 <div class="cc-res-panel" role="tabpanel" id="cc-res-panel-attribution" aria-labelledby="cc-res-tab-attribution"
      tabindex="0" [hidden]="tab !== 'attribution'">
-  <h5 class="gh-section-title">Attribution</h5>
+  <h5 class="visually-hidden">Attribution</h5>
   @if (attributionEmpty) {
     <p class="cc-res-empty">Nothing to attribute: no endpoint shows a decisive change.</p>
     @for (attribution of undeterminedAttributions; track $index) {
@@ -149,7 +180,7 @@
 <!-- Details: background for reading the verdicts, each part behind a closed disclosure. -->
 <div class="cc-res-panel" role="tabpanel" id="cc-res-panel-details" aria-labelledby="cc-res-tab-details"
      tabindex="0" [hidden]="tab !== 'details'">
-  <h5 class="gh-section-title">Details</h5>
+  <h5 class="visually-hidden">Details</h5>
   <p class="cc-res-lead">Background for reading the verdicts. Nothing here changes them.</p>
   <div class="cc-res-details">
     @if (runSelection; as selection) {
@@ -247,3 +278,6 @@
     </details>
   </div>
 </div>
+
+<!-- Nested in the wizard's dialog; its own events stop inside it. -->
+<app-cc-results-image-dialog [measureImage]="measureImage" (settingsChange)="onImageSettingsChange($event)" />

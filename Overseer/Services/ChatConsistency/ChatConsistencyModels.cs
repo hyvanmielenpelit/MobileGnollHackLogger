@@ -815,6 +815,32 @@ public sealed record ChatConsistencyAnalysisSummary
     /// <summary>From the stored result; null for a run-by-run analysis and for analysis code version 3 or earlier.</summary>
     public string? ComparisonSetKey { get; init; }
     public string? ComparisonSetLabel { get; init; }
+
+    /// <summary>The analyzed model, from the stored result; null when the result does not record it.</summary>
+    public ChatConsistencySubjectBrief? Subject { get; init; }
+
+    /// <summary>The endpoints' verdicts in result order, from the stored result; empty when it records none.</summary>
+    public IReadOnlyList<ChatConsistencyEndpointBrief> Endpoints { get; init; } = Array.Empty<ChatConsistencyEndpointBrief>();
+}
+
+/// <summary>The model of a saved analysis, as its list entry shows it.</summary>
+public sealed record ChatConsistencySubjectBrief
+{
+    public string DisplayName { get; init; } = string.Empty;
+    public string Provider { get; init; } = string.Empty;
+    public string ModelId { get; init; } = string.Empty;
+    public string? ThinkingLevel { get; init; }
+    public string? ServiceTier { get; init; }
+}
+
+/// <summary>One endpoint's verdict of a saved analysis, as its list entry shows it.</summary>
+public sealed record ChatConsistencyEndpointBrief
+{
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public bool Computed { get; init; }
+    public string VerdictLabel { get; init; } = string.Empty;
+    public ChatConsistencyEvidenceGrade Grade { get; init; } = ChatConsistencyEvidenceGrade.NotEstablished;
 }
 
 /// <summary>The outcome of a delete request.</summary>

@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { CcAnalysisResult, CcNextRun, CcRunRow } from '../../chat-consistency.models';
 import { ccAnalysisResult, ccRunRow, ccSubjectWithLevel, textOf } from '../../chat-consistency-tab.testing';
-import { CcNextRunsComponent } from './next-runs.component';
+import { CcNextRunsComponent, ccNextRunSections, ccNextRunsLeadText } from './next-runs.component';
 
 /** Runs 205 (Board Suite) and 206 (Wiki Suite), the targets of the control fixtures. */
 function targetRows(): CcRunRow[] {
@@ -69,8 +69,11 @@ describe('CcNextRunsComponent', () => {
   describe('head', () => {
     it('says how many runs would resolve the open questions: the repeat targets plus the re-grades', () => {
       renderBattery();
-      expect(textOf(el.querySelector('#cc-nr-title'))).toBe('Next runs');
-      expect(el.querySelector('#cc-nr-title')!.classList.contains('gh-section-title')).toBe(true);
+      const title = el.querySelector('#cc-nr-title')!;
+      expect(title.tagName).toBe('H5');
+      expect(textOf(title)).toBe('Next runs');
+      expect(title.classList.contains('visually-hidden')).toBe(true);
+      expect(title.classList.contains('gh-section-title')).toBe(false);
       // Two control targets, one stratum, one checkpoint, one re-grade.
       expect(textOf(el.querySelector('.cc-nr-lead'))).toBe('5 runs would resolve the open questions.');
       expect(el.querySelector('.cc-nr-empty')).toBeNull();
@@ -91,6 +94,13 @@ describe('CcNextRunsComponent', () => {
   });
 
   describe('sections', () => {
+    it('are the pure sections the Results image reads too', () => {
+      renderBattery();
+      const result = ccAnalysisResult({ subject: ccSubjectWithLevel(), nextRuns: batteryNextRuns() });
+      expect(ccNextRunSections(result, targetRows())).toEqual(component.sections);
+      expect(ccNextRunsLeadText(component.actionCount)).toBe(textOf(el.querySelector('.cc-nr-lead')));
+    });
+
     it('heads one section per kind present, in card order, the model by its base name', () => {
       renderBattery();
       const groups = Array.from(el.querySelectorAll<HTMLElement>('.cc-nr-group'));

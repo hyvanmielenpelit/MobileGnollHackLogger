@@ -17,9 +17,7 @@
 
 import {
   FIGURE_BACKGROUND,
-  FIGURE_FONT_STACK,
   FIGURE_MUTED_COLOR,
-  FIGURE_RULE_COLOR,
   FIGURE_TITLE_COLOR,
   FigureExportFormat,
   bitmapRefusal,
@@ -31,6 +29,15 @@ import {
 import type { ClipboardImageOutcome } from '../model-comparison/figure-export';
 import { FIT_RESOLUTION_ID, resolveSizeDensity, resolveSizeResolution, sizeErrors } from '../model-comparison/figure-size';
 import { safeFileName } from '../../../utils/download.util';
+import {
+  canvasFont as fontOf,
+  canvasLineHeight as lineHeight,
+  drawCardBox,
+  drawFooter,
+  drawLines,
+  drawLogo,
+  pathRoundedRect
+} from './canvas-drawing';
 import { KeyFiguresExportSettings, defaultKeyFiguresExportSettings } from './key-figures-export-settings';
 import { RunFactRow, runFactBadges } from './run-facts';
 
@@ -181,9 +188,7 @@ export const keyFiguresImageIo = {
 /** Device pixels per logical pixel in both images at the default density, 200 %. */
 export const KEY_FIGURES_IMAGE_SCALE = 2;
 
-/** Colors of the dialog's dark theme. */
-const CARD_FILL = '#161616';
-const CARD_BORDER = '#333';
+/** Colors of the dialog's dark theme; the card fill and border are `canvas-drawing.ts`'s defaults. */
 const LABEL_COLOR = '#888';
 const NOTE_COLOR = '#888';
 const VALUE_COLOR = '#eee';
@@ -790,10 +795,6 @@ export interface StripLayout {
   readonly placements: readonly StripPlacement[];
 }
 
-function lineHeight(size: number): number {
-  return Math.round(size * 1.4);
-}
-
 function blockHeight(lines: readonly string[], size: number): number {
   return lines.length * lineHeight(size);
 }
@@ -1242,10 +1243,6 @@ export function chooseCardImageLayout(
 // Drawing
 // -----------------------------------------------------------------------------------------------
 
-function fontOf(size: number, weight: string): string {
-  return `${weight} ${size}px ${FIGURE_FONT_STACK}`;
-}
-
 /** A unit after a figure in a caption: `14.3 s`, `850 ms`, `4 min`, `2 h`, `31 %`. */
 const FIGURE_UNIT = /(\d)[ \t]+(ms|s|min|h|%)(?=$|[\s.,;:)*·/])/g;
 
@@ -1303,50 +1300,6 @@ export async function loadKeyFigureFonts(): Promise<void> {
   }
   await Promise.all(['400', '600', '700', '800'].map(weight =>
     fonts.load(fontOf(16, weight)).catch(() => [])));
-}
-
-function drawLines(
-  context: CanvasRenderingContext2D,
-  lines: readonly string[],
-  x: number,
-  y: number,
-  size: number,
-  weight: string,
-  color: string
-): number {
-  context.font = fontOf(size, weight);
-  context.fillStyle = color;
-  const height = lineHeight(size);
-  for (const line of lines) {
-    // Centered in its line box, as the dialog's line-height centers it.
-    context.fillText(line, x, y + (height - size) / 2);
-    y += height;
-  }
-  return y;
-}
-
-function pathRoundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.lineTo(x + width - r, y);
-  context.arcTo(x + width, y, x + width, y + r, r);
-  context.lineTo(x + width, y + height - r);
-  context.arcTo(x + width, y + height, x + width - r, y + height, r);
-  context.lineTo(x + r, y + height);
-  context.arcTo(x, y + height, x, y + height - r, r);
-  context.lineTo(x, y + r);
-  context.arcTo(x, y, x + r, y, r);
-  context.closePath();
-}
-
-function drawCardBox(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
-  pathRoundedRect(context, x + 0.5, y + 0.5, width - 1, height - 1, radius);
-  context.fillStyle = CARD_FILL;
-  context.fill();
-  context.strokeStyle = CARD_BORDER;
-  context.lineWidth = 1;
-  context.stroke();
 }
 
 /** Draws a card's label, value and notes from `y`, left-aligned at `x` or centered on it. */
@@ -1428,25 +1381,6 @@ function drawFactRows(context: CanvasRenderingContext2D, layout: FactLayout, x: 
       lineTop += height;
     });
   }
-}
-
-function drawLogo(context: CanvasRenderingContext2D, logo: KeyFigureLogo, x: number, y: number, height: number): void {
-  const width = logo.width * height / logo.height;
-  context.drawImage(logo.image, x, y, width, height);
-}
-
-function drawFooter(context: CanvasRenderingContext2D, lines: readonly string[], x: number, y: number, width: number, ruleGap: number, size: number): void {
-  if (lines.length === 0) {
-    return;
-  }
-  context.strokeStyle = FIGURE_RULE_COLOR;
-  context.lineWidth = 1;
-  context.beginPath();
-  const ruleY = Math.round(y + ruleGap / 2) + 0.5;
-  context.moveTo(x, ruleY);
-  context.lineTo(x + width, ruleY);
-  context.stroke();
-  drawLines(context, lines, x, y + ruleGap, size, '400', FIGURE_MUTED_COLOR);
 }
 
 /**

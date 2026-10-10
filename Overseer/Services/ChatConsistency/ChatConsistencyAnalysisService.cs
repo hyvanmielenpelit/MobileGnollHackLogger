@@ -39,7 +39,7 @@ using Overseer.Services.Telemetry;
 public class ChatConsistencyAnalysisService
 {
     /// <summary>The version of this analysis code; stored with every analysis.</summary>
-    public const int CurrentAnalysisCodeVersion = 4;
+    public const int CurrentAnalysisCodeVersion = 5;
 
     private const int MaxNameLength = 200;
     private const int MaxSubjectKeyLength = 512;
@@ -155,20 +155,44 @@ public class ChatConsistencyAnalysisService
             string subjectKey = r.SubjectModelKey;
             string? setKey = null;
             string? setLabel = null;
+            ChatConsistencySubjectBrief? subject = null;
+            var endpoints = new List<ChatConsistencyEndpointBrief>();
             try
             {
                 using var doc = JsonDocument.Parse(r.ResultJson);
                 if (doc.RootElement.TryGetProperty("headline", out var h) && h.ValueKind == JsonValueKind.String) headline = h.GetString();
-                if (doc.RootElement.TryGetProperty("subject", out var s) && s.ValueKind == JsonValueKind.Object
-                    && s.TryGetProperty("key", out var k) && k.ValueKind == JsonValueKind.String)
+                if (doc.RootElement.TryGetProperty("subject", out var s) && s.ValueKind == JsonValueKind.Object)
                 {
-                    subjectKey = k.GetString() ?? subjectKey;
+                    if (s.TryGetProperty("key", out var k) && k.ValueKind == JsonValueKind.String) subjectKey = k.GetString() ?? subjectKey;
+                    subject = new ChatConsistencySubjectBrief
+                    {
+                        DisplayName = JsonString(s, "displayName") ?? string.Empty,
+                        Provider = JsonString(s, "provider") ?? string.Empty,
+                        ModelId = JsonString(s, "modelId") ?? string.Empty,
+                        ThinkingLevel = JsonString(s, "thinkingLevel"),
+                        ServiceTier = JsonString(s, "serviceTier")
+                    };
                 }
 
                 if (doc.RootElement.TryGetProperty("comparisonSet", out var set) && set.ValueKind == JsonValueKind.Object)
                 {
                     if (set.TryGetProperty("key", out var sk) && sk.ValueKind == JsonValueKind.String) setKey = sk.GetString();
                     if (set.TryGetProperty("label", out var sl) && sl.ValueKind == JsonValueKind.String) setLabel = sl.GetString();
+                }
+
+                if (doc.RootElement.TryGetProperty("endpoints", out var eps) && eps.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var e in eps.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object))
+                    {
+                        endpoints.Add(new ChatConsistencyEndpointBrief
+                        {
+                            Id = JsonString(e, "id") ?? string.Empty,
+                            Name = JsonString(e, "name") ?? string.Empty,
+                            Computed = e.TryGetProperty("computed", out var c) && c.ValueKind == JsonValueKind.True,
+                            VerdictLabel = JsonString(e, "verdictLabel") ?? string.Empty,
+                            Grade = JsonGrade(e)
+                        });
+                    }
                 }
             }
             catch (JsonException)
@@ -193,9 +217,39 @@ public class ChatConsistencyAnalysisService
                 CreatedAtUtc = ChatConsistencyMeasures.AsUtc(r.CreatedAtUtc),
                 ReportDocumentCount = documentCounts.TryGetValue(r.Id, out int n) ? n : 0,
                 ComparisonSetKey = setKey,
-                ComparisonSetLabel = setLabel
+                ComparisonSetLabel = setLabel,
+                Subject = subject,
+                Endpoints = endpoints
             };
         }).ToList();
+    }
+
+    /// <summary>The string property <paramref name="name"/> of <paramref name="element"/>; null when absent or not a string.</summary>
+    private static string? JsonString(JsonElement element, string name)
+        => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    /// <summary>
+    /// The <c>grade</c> of a stored endpoint, written as a camelCase name (<see cref="ChatConsistencyJson.Options"/>)
+    /// or a number; <see cref="ChatConsistencyEvidenceGrade.NotEstablished"/> when absent or unknown.
+    /// </summary>
+    private static ChatConsistencyEvidenceGrade JsonGrade(JsonElement endpoint)
+    {
+        if (!endpoint.TryGetProperty("grade", out var value)) return ChatConsistencyEvidenceGrade.NotEstablished;
+
+        if (value.ValueKind == JsonValueKind.String
+            && Enum.TryParse<ChatConsistencyEvidenceGrade>(value.GetString(), ignoreCase: true, out var named)
+            && Enum.IsDefined(named))
+        {
+            return named;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out int number)
+            && Enum.IsDefined(typeof(ChatConsistencyEvidenceGrade), number))
+        {
+            return (ChatConsistencyEvidenceGrade)number;
+        }
+
+        return ChatConsistencyEvidenceGrade.NotEstablished;
     }
 
     /// <summary>Deletes a saved analysis; refused while report documents written from it exist.</summary>
@@ -812,7 +866,7 @@ public class ChatConsistencyAnalysisService
                     .SelectMany(r => _assessment.SpeedExclusions.Where(x => x.RunId == r.Id && x.Axes.Contains(axis)).Select(x => "#" + Inv(r.Id) + ": " + x.Detail))
                     .ToList();
                 return (b, c, false, "No run of the " + period + " period is usable for " + endpointName.ToLowerInvariant()
-                    + (excluded.Count > 0 ? " (" + string.Join(" ", excluded) + ")" : string.Empty) + ".");
+                    + (excluded.Count > 0 ? Parenthesized(excluded) : string.Empty) + ".");
             }
 
             var sb = b.Select(r => Segment(r)!.Value).Distinct().ToList();
@@ -845,8 +899,8 @@ public class ChatConsistencyAnalysisService
                 .Select(x => x.Reason)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
-            return "The measurement of " + endpointName.ToLowerInvariant() + " changed between the periods ("
-                + string.Join(" ", reasons) + "). "
+            return "The measurement of " + endpointName.ToLowerInvariant() + " changed between the periods"
+                + Parenthesized(reasons) + ". "
                 + (axis == ChatConsistencyAxis.Quality
                     ? "Re-grade every compared run with one assessor (a common grader), or choose relaxed pooling."
                     : "Choose relaxed pooling to pool across the change.");
@@ -904,7 +958,7 @@ public class ChatConsistencyAnalysisService
                     .SelectMany(r => _assessment.SpeedExclusions.Where(x => x.RunId == r.Id && x.Axes.Contains(axis)).Select(x => "#" + Inv(r.Id) + ": " + x.Detail))
                     .ToList();
                 return (b, c, false, "No battery run of the " + period + " period is usable for " + endpointName.ToLowerInvariant()
-                    + (excluded.Count > 0 ? " (" + string.Join(" ", excluded) + ")" : string.Empty) + ".");
+                    + (excluded.Count > 0 ? Parenthesized(excluded) : string.Empty) + ".");
             }
 
             List<int> Segments(List<AnalysisUnit> units) => units.SelectMany(u => u.Members).Select(r => Segment(r)!.Value).Distinct().ToList();
@@ -1049,8 +1103,8 @@ public class ChatConsistencyAnalysisService
             bool daysOk = Days(b) >= _protocol.MinimumDaysPerPeriod && Days(c) >= _protocol.MinimumDaysPerPeriod;
             bool itemsOk = w.ItemCount >= _protocol.MinimumPairedItems;
             w.MinimumSampleMet = runsOk && daysOk && itemsOk;
-            w.MinimumSampleDetail = "baseline " + Inv(b.Count) + " " + UnitNoun + "(s) on " + Inv(Days(b)) + " day(s), comparison "
-                + Inv(c.Count) + " " + UnitNoun + "(s) on " + Inv(Days(c)) + " day(s), " + Inv(w.ItemCount) + " paired item(s); the minimum is "
+            w.MinimumSampleDetail = "baseline " + Plural(b.Count, UnitNoun) + " on " + Plural(Days(b), "day") + ", comparison "
+                + Plural(c.Count, UnitNoun) + " on " + Plural(Days(c), "day") + ", " + Plural(w.ItemCount, "paired item") + "; the minimum is "
                 + Inv(_protocol.MinimumRunsPerPeriod) + " " + UnitsNoun + " on " + Inv(_protocol.MinimumDaysPerPeriod) + " days per period and "
                 + Inv(_protocol.MinimumPairedItems) + " paired items.";
 
@@ -1226,7 +1280,7 @@ public class ChatConsistencyAnalysisService
             var compared = MembersOf(b.Concat(c)).SelectMany(r => r.Answers).ToList();
             int unmeasurable = compared.Count(a => ChatConsistencyMeasures.IsDelivered(a) && CallTelemetryMeasures.IsStreamingRateUnmeasurable(a));
             string? unmeasurableNote = unmeasurable > 0
-                ? $"{unmeasurable.ToString(CultureInfo.InvariantCulture)} delivered answer(s) have no rate: the visible text arrived in one burst after thinking "
+                ? Plural(unmeasurable, "delivered answer") + " " + Agree(unmeasurable, "has", "have") + " no rate: the visible text arrived in one burst after thinking "
                   + $"(a decode span under {CallTelemetryMeasures.MinMeasurableDecodeSpanMs.ToString(CultureInfo.InvariantCulture)} ms "
                   + $"or a rate over {CallTelemetryMeasures.MaxPlausibleTokensPerSecond.ToString("N0", CultureInfo.InvariantCulture)} tokens/s)."
                 : null;
@@ -1349,7 +1403,7 @@ public class ChatConsistencyAnalysisService
             var best = w.StratumRunCounts.OrderByDescending(p => Math.Min(p.Value.Baseline, p.Value.Comparison)).ThenBy(p => p.Key).First();
             w.MinimumSampleMet = w.StratumRunCounts.Values.Any(v => v.Baseline >= _protocol.MinimumSpeedRunsPerStratum && v.Comparison >= _protocol.MinimumSpeedRunsPerStratum);
             w.MinimumSampleDetail = "best common stratum " + ChatConsistencyStatistics.StratumLabel(best.Key) + ": baseline "
-                + Inv(best.Value.Baseline) + " " + UnitNoun + "(s), comparison " + Inv(best.Value.Comparison) + " " + UnitNoun + "(s); the minimum is "
+                + Plural(best.Value.Baseline, UnitNoun) + ", comparison " + Plural(best.Value.Comparison, UnitNoun) + "; the minimum is "
                 + Inv(_protocol.MinimumSpeedRunsPerStratum) + " " + UnitsNoun + " per period in at least one common stratum.";
 
             if (b.Count >= 2)
@@ -1567,8 +1621,8 @@ public class ChatConsistencyAnalysisService
             bool spread = ub.Count >= _protocol.MinimumRunsPerPeriod && uc.Count >= _protocol.MinimumRunsPerPeriod
                 && Days(ub) >= _protocol.MinimumDaysPerPeriod && Days(uc) >= _protocol.MinimumDaysPerPeriod;
             checks.Add(Check("Runs on separate days", spread ? ChatConsistencyCheckStatus.Passed : ChatConsistencyCheckStatus.Failed,
-                "Baseline " + Inv(ub.Count) + " " + UnitNoun + "(s) on " + Inv(Days(ub)) + " day(s); comparison "
-                + Inv(uc.Count) + " " + UnitNoun + "(s) on " + Inv(Days(uc)) + " day(s)."));
+                "Baseline " + Plural(ub.Count, UnitNoun) + " on " + Plural(Days(ub), "day") + "; comparison "
+                + Plural(uc.Count, UnitNoun) + " on " + Plural(Days(uc), "day") + "."));
 
             // Served tier.
             if (!w.TierDataPresent)
@@ -1584,7 +1638,7 @@ public class ChatConsistencyAnalysisService
                 bool? held = Holds(w, w.TierMatchEstimate);
                 checks.Add(Check("Served-tier match",
                     held == false ? ChatConsistencyCheckStatus.Failed : held == true ? ChatConsistencyCheckStatus.Passed : ChatConsistencyCheckStatus.NotAssessable,
-                    Inv(w.TierMismatchCount) + " answer(s) were served at another tier; restricted to matching answers the estimate is "
+                    Plural(w.TierMismatchCount, "answer") + " " + Agree(w.TierMismatchCount, "was", "were") + " served at another tier; restricted to matching answers the estimate is "
                     + Number(w.TierMatchEstimate) + "."));
             }
 
@@ -2143,8 +2197,8 @@ public class ChatConsistencyAnalysisService
                         Unit = "log ratio",
                         Estimate = Fin(w.StratumShifts[s]),
                         Method = "within-stratum Hodges–Lehmann shift",
-                        Note = "baseline " + Inv(w.StratumRunCounts[s].Baseline) + " " + UnitNoun + "(s), comparison "
-                            + Inv(w.StratumRunCounts[s].Comparison) + " " + UnitNoun + "(s)"
+                        Note = "baseline " + Plural(w.StratumRunCounts[s].Baseline, UnitNoun) + ", comparison "
+                            + Plural(w.StratumRunCounts[s].Comparison, UnitNoun)
                     });
                 }
 
@@ -2570,12 +2624,12 @@ public class ChatConsistencyAnalysisService
 
             if (pairing.RevisedQuestions.Count > 0)
             {
-                _dataQuality.Add(Note("revisedQuestions", Inv(pairing.RevisedQuestions.Count) + " question(s) were revised between the periods; their answers pair only within one revision."));
+                _dataQuality.Add(Note("revisedQuestions", Plural(pairing.RevisedQuestions.Count, "question") + " " + Agree(pairing.RevisedQuestions.Count, "was", "were") + " revised between the periods; their answers pair only within one revision."));
             }
 
             if (pairing.NullRevisionItems.Count > 0)
             {
-                _dataQuality.Add(Note("nullRevisions", Inv(pairing.NullRevisionItems.Count) + " item(s) have no recorded revision; they pair only with another unrecorded revision."));
+                _dataQuality.Add(Note("nullRevisions", Plural(pairing.NullRevisionItems.Count, "item") + " " + Agree(pairing.NullRevisionItems.Count, "has", "have") + " no recorded revision; they pair only with another unrecorded revision."));
             }
 
             int legacy = targets.Count(r => !r.CallTelemetryVersion.HasValue);
@@ -2589,7 +2643,7 @@ public class ChatConsistencyAnalysisService
             int estimated = targetAnswers.Count(a => _evidence.AnswerTimings.TryGetValue(a.Id, out var t) && t.Estimated);
             if (estimated > 0)
             {
-                _dataQuality.Add(Note("estimatedStarts", Inv(estimated) + " answer start time(s) were estimated from the run start and the answers' durations; they are used only for strata."));
+                _dataQuality.Add(Note("estimatedStarts", Plural(estimated, "answer start time") + " " + Agree(estimated, "was", "were") + " estimated from the run start and the answers' durations; they are used only for strata."));
             }
 
             int missing = targets.Where(r => r.CallTelemetryVersion.HasValue)
@@ -2597,7 +2651,7 @@ public class ChatConsistencyAnalysisService
                 .Count(a => CallTelemetryMeasures.TimeToFirstAnswerTextMs(a) == null);
             if (missing > 0)
             {
-                _dataQuality.Add(Note("missingTelemetry", Inv(missing) + " delivered answer(s) of telemetry runs have no time to first answer text."));
+                _dataQuality.Add(Note("missingTelemetry", Plural(missing, "delivered answer") + " of telemetry runs " + Agree(missing, "has", "have") + " no time to first answer text."));
             }
 
             foreach (var exclusion in _assessment.SpeedExclusions.Where(x => x.Reason == SpeedExclusionReason.ParallelQuestions && targets.Any(r => r.Id == x.RunId)))
@@ -2736,7 +2790,7 @@ public class ChatConsistencyAnalysisService
                                 Period = "comparison",
                                 EndpointId = id,
                                 Reason = w.Protocol.Name + " is below the minimum speed sample.",
-                                Suggestion = Inv(more) + " more " + UnitNoun + "(s) of " + subject + " on " + comparisonTarget + " starting in "
+                                Suggestion = Inv(more) + " more " + Agree(more, UnitNoun, UnitsNoun) + " of " + subject + " on " + comparisonTarget + " starting in "
                                     + ChatConsistencyStatistics.StratumLabel(best.Key) + " in the comparison period.",
                                 RepeatRunId = latestComparison.Id
                             });
@@ -2749,7 +2803,7 @@ public class ChatConsistencyAnalysisService
                                 Kind = "stratum",
                                 Period = "baseline",
                                 EndpointId = id,
-                                Reason = "The baseline has " + Inv(best.Value.Baseline) + " " + UnitNoun + "(s) in " + ChatConsistencyStatistics.StratumLabel(best.Key) + ".",
+                                Reason = "The baseline has " + Plural(best.Value.Baseline, UnitNoun) + " in " + ChatConsistencyStatistics.StratumLabel(best.Key) + ".",
                                 Suggestion = "Widen the baseline period to include more " + UnitsNoun + " of " + subject + " in " + ChatConsistencyStatistics.StratumLabel(best.Key) + ".",
                                 RepeatRunId = latestBaseline.Id
                             });
@@ -2767,7 +2821,7 @@ public class ChatConsistencyAnalysisService
                             Kind = "checkpoint",
                             Period = "comparison",
                             EndpointId = id,
-                            Reason = "The comparison has " + Inv(uc.Count) + " " + UnitNoun + "(s) on " + Inv(Days(uc)) + " day(s).",
+                            Reason = "The comparison has " + Plural(uc.Count, UnitNoun) + " on " + Plural(Days(uc), "day") + ".",
                             Suggestion = "1 more " + UnitNoun + " of " + subject + " on " + comparisonTarget + " on another day in the comparison period.",
                             RepeatRunId = latestComparison.Id
                         });
@@ -2780,7 +2834,7 @@ public class ChatConsistencyAnalysisService
                             Kind = "checkpoint",
                             Period = "baseline",
                             EndpointId = id,
-                            Reason = "The baseline has " + Inv(ub.Count) + " " + UnitNoun + "(s) on " + Inv(Days(ub)) + " day(s).",
+                            Reason = "The baseline has " + Plural(ub.Count, UnitNoun) + " on " + Plural(Days(ub), "day") + ".",
                             Suggestion = "Widen the baseline period to include " + UnitsNoun + " of " + subject + " on another day.",
                             RepeatRunId = latestBaseline.Id
                         });
@@ -2793,7 +2847,7 @@ public class ChatConsistencyAnalysisService
                             Kind = "checkpoint",
                             Period = "comparison",
                             EndpointId = id,
-                            Reason = "Only " + Inv(w.ItemCount) + " item(s) are paired.",
+                            Reason = "Only " + Plural(w.ItemCount, "item") + " " + Agree(w.ItemCount, "is", "are") + " paired.",
                             Suggestion = "A run of " + subject + " on a suite sharing at least " + Inv(_protocol.MinimumPairedItems) + " items with the baseline.",
                             RepeatRunId = latestBaseline.Id
                         });
@@ -2814,7 +2868,7 @@ public class ChatConsistencyAnalysisService
                             EndpointId = id,
                             Reason = w.Protocol.Name + " is inconclusive; the minimum detectable effect is " + Number(mde.Effect) + " against a margin of " + w.Protocol.MarginText + ".",
                             Suggestion = "About " + Inv(needed) + " " + UnitsNoun + " per period would bring the minimum detectable effect to the margin: "
-                                + Inv(more) + " more " + UnitNoun + "(s) of " + subject + " on " + comparisonTarget + " on separate days in the comparison period.",
+                                + Inv(more) + " more " + Agree(more, UnitNoun, UnitsNoun) + " of " + subject + " on " + comparisonTarget + " on separate days in the comparison period.",
                             RepeatRunId = latestComparison.Id
                         });
                     }
@@ -2872,7 +2926,7 @@ public class ChatConsistencyAnalysisService
                 + "; speed " + speed
                 + "; work " + V(E(ChatConsistencyEndpointIds.Work))
                 + "; cost " + V(E(ChatConsistencyEndpointIds.Cost))
-                + " within " + scope.Text;
+                + (scope.StrataIndexes.Count == 0 ? "; the periods share no common time stratum" : " within " + scope.Text);
             if (increases.Count > 0) headline += "; reliability: " + string.Join(", ", increases) + " (established)";
             return headline;
         }
@@ -3158,6 +3212,15 @@ public class ChatConsistencyAnalysisService
     private static ChatConsistencyNote Note(string kind, string text) => new() { Kind = kind, Text = text };
 
     private static string Inv(long value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>"1 day", "2 days": the count and the noun, plural unless the count is one.</summary>
+    private static string Plural(long count, string noun) => Inv(count) + " " + noun + (count == 1 ? string.Empty : "s");
+
+    /// <summary>" (a. b)": the texts joined by spaces in parentheses, without the last one's terminal period.</summary>
+    private static string Parenthesized(IEnumerable<string> texts) => " (" + string.Join(" ", texts).TrimEnd().TrimEnd('.') + ")";
+
+    /// <summary><paramref name="singular"/> for a count of one, else <paramref name="plural"/>.</summary>
+    private static string Agree(long count, string singular, string plural) => count == 1 ? singular : plural;
 }
 
 /// <summary>

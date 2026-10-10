@@ -2,8 +2,9 @@
   STEP 5 OF THE CHAT CONSISTENCY WIZARD: WRITE
 
   A resizable sidebar that writes the analysis's documents (each one written once: a written one with
-  View and Delete, an unwritten one with its Write checkbox), with the writer and the estimate; and a
-  main area with the job's progress, one row per document, and its log and diagnostics. The
+  View and Delete, an unwritten one with its Write checkbox), with Update charts, the charts each
+  document type carries, the writer and the estimate; and a main area with the job's progress, one
+  row per document, and its log and diagnostics. The
   same-provider confirmation, the delete confirmation and the PDF viewer are nested in the wizard's
   dialog and stop their own close and cancel events.
 -->
@@ -86,6 +87,30 @@
       @if (deleteBusy && documents.length > 0) {
         <p id="cc-rep-delete-busy" class="rp-note cc-rep-delete-busy">{{ deleteBusyReason }}</p>
       }
+      <!-- Update charts draws every written document's charts again with the choices below. It stays
+           focusable while it cannot run, aria-disabled with its reason shown. -->
+      <div class="cc-rep-update-charts">
+        <button type="button" class="btn-ghost cc-rep-update-charts-btn"
+                [attr.aria-disabled]="updateChartsBlockedReason ? 'true' : null"
+                [attr.aria-describedby]="updateChartsBlockedReason ? 'cc-rep-update-charts-reason' : null"
+                (click)="updateCharts()">Update charts</button>
+        @if (updateChartsBlockedReason; as reason) {
+          <p id="cc-rep-update-charts-reason" class="rp-note cc-rep-update-charts-reason">{{ reason }}</p>
+        }
+        <p class="rp-note cc-rep-update-charts-status" role="status" aria-live="polite"
+           [class.gh-field-error]="chartOrigin === 'update' && chartState === 'failed'">{{ updateChartsStatus }}</p>
+      </div>
+    </fieldset>
+
+    <fieldset class="gh-fieldset cc-rep-charts-choice">
+      <legend>Charts in PDF and Word</legend>
+      <app-report-chart-picker idPrefix="cc-rep-charts" caption="Charts in PDF and Word" [captionVisible]="false"
+                               [figures]="chartFigures" [audienceOptions]="chartAudienceOptions"
+                               [selection]="chartSettings.selection" [layout]="chartSettings.layout"
+                               [enabledAudiences]="chartEnabledAudiences" [notes]="chartNotes"
+                               [layoutFields]="chartLayoutFields" [columnDisabledReason]="chartColumnReason"
+                               (selectionChange)="onChartSelectionChange($event)"
+                               (layoutChange)="onChartLayoutChange($event)"></app-report-chart-picker>
     </fieldset>
 
     <div class="form-group rp-field cc-rep-writer">
@@ -159,16 +184,15 @@
        MAIN: THE JOB
        =================================================================================== -->
   <div runReportMain class="rp-main">
-    <h5 class="rp-subsection-title rp-progress-heading" id="cc-rep-progress-heading" tabindex="-1">Report progress</h5>
-
-    <!-- One polite live line, in place before a job exists; it changes with the job's phase only. -->
-    <p class="rp-job-status cc-rep-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
+    <!-- One polite live line for assistive technology, in place before a job exists; it changes with
+         the job's phase only, which the stage rail shows. -->
+    <p class="visually-hidden cc-rep-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
 
     @if (!showJob) {
       <p class="form-hint rp-idle-note">No report is being written. Choose the documents and a writer, then Write Reports.</p>
     } @else {
       <section class="rp-job" [class.is-finished]="jobFinished" aria-labelledby="cc-rep-job-heading">
-        <h6 id="cc-rep-job-heading" class="rp-job-title">{{ jobFinished ? 'Last reports' : 'Reports in progress' }}</h6>
+        <h5 id="cc-rep-job-heading" class="rp-job-title">{{ jobFinished ? 'Last reports' : 'Reports in progress' }}</h5>
         @if (jobFinished) {
           <div class="rp-job-summary-row">
             <p class="rp-job-summary">{{ jobSummary }}</p>
@@ -260,7 +284,7 @@
           </div>
         }
 
-        @if (chartMessage) {
+        @if (chartMessage && chartOrigin === 'job') {
           <p class="rp-note cc-rep-charts" [class.gh-field-error]="chartState === 'failed'">{{ chartMessage }}</p>
         }
 

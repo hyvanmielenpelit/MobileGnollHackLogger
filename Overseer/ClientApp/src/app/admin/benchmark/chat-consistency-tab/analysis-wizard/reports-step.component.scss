@@ -2,7 +2,7 @@
 
 /* Step 5 of the Chat Consistency wizard. The frame fills the step and owns the sidebar, the resizer
    and the main column. .run-stage-rail, .run-stat-strip, .job-status-chip, .gh-fieldset, .gh-tag,
-   .gh-disclosure, .gh-field-error, .gh-estimate-panel, .action-btn, .gh-tooltip, the shared
+   .gh-disclosure, .gh-field-error, .gh-estimate-panel, .action-btn, .btn-ghost, .gh-tooltip, the shared
    report-step .rp- rules and the document-row .cds- rules come from styles.scss. */
 
 :host {
@@ -38,6 +38,27 @@
 
 .cc-rep-provider-reason {
   margin: 0;
+}
+
+/* Update charts, under the written documents: the button, its reason, and its outcome. */
+.cc-rep-update-charts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+
+  .rp-note {
+    margin: 0;
+  }
+}
+
+/* --- Charts in PDF and Word --- */
+
+.cc-rep-charts-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
 }
 
 /* --- Writer --- */

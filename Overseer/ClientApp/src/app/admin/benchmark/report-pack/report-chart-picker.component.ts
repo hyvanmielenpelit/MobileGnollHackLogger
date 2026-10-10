@@ -22,6 +22,7 @@ import {
   formatPoints,
   normalizeChartLayoutSettings,
   normalizeChartSelection,
+  normalizeDocumentChartLayout,
   reportChartPlacementLabel
 } from './report-charts';
 
@@ -35,10 +36,38 @@ export interface ReportChartPickerColumn {
 
 /** One row of the picker: a figure, and why the comparison cannot draw it when it cannot. */
 export interface ReportChartPickerRow {
-  readonly key: ReportChartFigureKey;
+  readonly key: string;
   readonly title: string;
   readonly unavailableReason: string | null;
 }
+
+/** A figure the picker lists, in placement order. */
+export interface ReportChartPickerFigure<K extends string = string> {
+  readonly key: K;
+  readonly title: string;
+  /**
+   * The section the figure lands in: one name for every document type, or one per type. Absent
+   * takes the Report Pack's placement for the picker's scope.
+   */
+  readonly placement?: string | Readonly<Partial<Record<BenchmarkReportAudience, string>>>;
+}
+
+/** A document type the picker can show: its full name and the segment's short one. */
+export interface ReportChartPickerAudienceOption {
+  readonly audience: BenchmarkReportAudience;
+  readonly label: string;
+  readonly shortLabel: string;
+}
+
+/** The fields of a document type's *Layout* disclosure. */
+export type ReportChartLayoutField = 'orientation' | 'sideBySide' | 'labelPt' | 'maxHeightPercent' | 'heading' | 'logo' | 'theme';
+
+export const REPORT_CHART_LAYOUT_FIELDS: readonly ReportChartLayoutField[] =
+  ['orientation', 'sideBySide', 'labelPt', 'maxHeightPercent', 'heading', 'logo', 'theme'];
+
+/** The Report Pack's figures, placed by `reportChartPlacementLabel`: the picker's figures by default. */
+export const REPORT_PACK_PICKER_FIGURES: readonly ReportChartPickerFigure<ReportChartFigureKey>[] =
+  REPORT_CHART_FIGURES.map(figure => ({ key: figure.key, title: figure.title }));
 
 /** Why a column is unavailable: its document type is not checked under Documents of this comparison. */
 export const REPORT_CHART_COLUMN_DISABLED_REASON = 'Not checked under Documents of this comparison';
@@ -55,6 +84,72 @@ export interface ReportChartLayoutRefusal {
 }
 
 /**
+ * A selection over the figures `keys` and the document types `audiences`: deduplicated, in the
+ * order of `keys`, unknown keys and document types dropped. A type present with no figures stays,
+ * as none.
+ */
+export function normalizePickerSelection<K extends string>(
+  selection: unknown,
+  keys: readonly K[],
+  audiences: readonly BenchmarkReportAudience[]
+): ReportChartSelection<K> {
+  const normalized: Partial<Record<BenchmarkReportAudience, readonly K[]>> = {};
+  if (!selection || typeof selection !== 'object') {
+    return normalized;
+  }
+  const source = selection as Record<string | number, unknown>;
+  for (const audience of audiences) {
+    const stored = source[audience];
+    if (!Array.isArray(stored)) {
+      continue;
+    }
+    const known = new Set(stored.filter((key): key is string => typeof key === 'string'));
+    normalized[audience] = keys.filter(key => known.has(key));
+  }
+  return normalized;
+}
+
+/**
+ * One document type's layout over the figures `keys`: every field checked as the Report Pack's are,
+ * and the widths of `keys` kept where they are not full column and fit the label size.
+ */
+export function normalizePickerDocumentLayout<K extends string>(value: unknown, keys: readonly K[]): ReportChartDocumentLayout<K> {
+  const base = normalizeDocumentChartLayout(value);
+  const source = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  const stored = (source['widths'] && typeof source['widths'] === 'object' ? source['widths'] : {}) as Record<string, unknown>;
+  const widths: Partial<Record<K, ReportChartWidth>> = {};
+  for (const key of keys) {
+    const width = stored[key];
+    if ((width === 'twoThirds' || width === 'half') && documentChartRefusal(width, base.labelPt) === null) {
+      widths[key] = width;
+    }
+  }
+  return { ...base, widths };
+}
+
+/** The layout of each of `audiences` the source holds, normalized over `keys`; a missing type stays missing. */
+export function normalizePickerLayoutSettings<K extends string>(
+  layout: unknown,
+  keys: readonly K[],
+  audiences: readonly BenchmarkReportAudience[]
+): ReportChartLayoutSettings<K> {
+  const source = (layout && typeof layout === 'object' ? layout : {}) as Record<string | number, unknown>;
+  const normalized: Partial<Record<BenchmarkReportAudience, ReportChartDocumentLayout<K>>> = {};
+  for (const audience of audiences) {
+    if (source[audience] !== undefined) {
+      normalized[audience] = normalizePickerDocumentLayout(source[audience], keys);
+    }
+  }
+  return normalized;
+}
+
+/** `Not chosen in New reports.` → `not chosen in New reports`, for the segment's status. */
+function statusPhrase(reason: string): string {
+  const text = reason.trim().replace(/\.$/, '');
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+/**
  * Which charts each document type carries into its PDF and Word copies: a segmented tab row of the
  * document types, each with its count, over the selected document's figures, one checkbox each with
  * the section it lands in. One document type shows its figures alone. A document type not being
@@ -63,9 +158,15 @@ export interface ReportChartLayoutRefusal {
  *
  * Given a `layout`, each figure also gets its width, and each document type a *Layout* disclosure
  * with the orientation, side by side, label size, maximum height, heading, logo and theme of its
- * charts. A combination the composer would refuse is offered `aria-disabled`, its reason listed in
- * the disclosure; choosing it keeps the current value and says why. The host owns the selection, the layout and
- * their storage.
+ * charts, or the subset `layoutFields` names. A combination the composer would refuse is offered
+ * `aria-disabled`, its reason listed in the disclosure; choosing it keeps the current value and says
+ * why. The host owns the selection, the layout and their storage.
+ *
+ * The figures, the document types and their labels default to the Report Pack's. A host with figures
+ * of its own passes them (`figures`) with its document types (`audienceOptions`); the picker then
+ * keeps only those keys and types. Inside the picker a figure key is any string; the outputs keep the
+ * Report Pack's types, so its hosts bind unchanged, and a host with its own figures reads them as
+ * `ReportChartSelection<string>` and `ReportChartLayoutSettings<string>`.
  */
 @Component({
   selector: 'app-report-chart-picker',
@@ -79,24 +180,72 @@ export class ReportChartPickerComponent {
 
   /** The selection shown; the picker keeps its own copy until the host sets a new one. */
   @Input()
-  set selection(value: ReportChartSelection) {
-    this.current = normalizeChartSelection(value ?? {});
+  set selection(value: ReportChartSelection<string>) {
+    this.hostSelection = value ?? {};
+    this.current = this.normalizeSelection(this.hostSelection);
   }
-  get selection(): ReportChartSelection {
+  get selection(): ReportChartSelection<string> {
     return this.current;
   }
 
-  /** The document types shown, in this order. */
-  @Input() audiences: readonly BenchmarkReportAudience[] = REPORT_PACK_AUDIENCES.map(option => option.audience);
+  /** The figures listed, in placement order; the Report Pack's by default. */
+  @Input()
+  set figures(value: readonly ReportChartPickerFigure[]) {
+    this.figureList = value ?? REPORT_PACK_PICKER_FIGURES;
+    this.renormalize();
+  }
+  get figures(): readonly ReportChartPickerFigure[] {
+    return this.figureList;
+  }
 
-  /** The document types enabled: those checked. */
-  @Input() enabledAudiences: readonly BenchmarkReportAudience[] = REPORT_PACK_AUDIENCES.map(option => option.audience);
+  /** The document types the picker knows, with their labels; the Report Pack's by default. */
+  @Input()
+  set audienceOptions(value: readonly ReportChartPickerAudienceOption[]) {
+    this.audienceOptionList = value ?? REPORT_PACK_AUDIENCES;
+    this.renormalize();
+  }
+  get audienceOptions(): readonly ReportChartPickerAudienceOption[] {
+    return this.audienceOptionList;
+  }
 
-  /** The figure keys the comparison can draw. */
-  @Input() available: readonly string[] = REPORT_CHART_FIGURES.map(figure => figure.key);
+  /** The document types shown, in this order; every one of `audienceOptions` by default. */
+  @Input()
+  set audiences(value: readonly BenchmarkReportAudience[]) {
+    this.audienceList = value ?? null;
+  }
+  get audiences(): readonly BenchmarkReportAudience[] {
+    return this.audienceList ?? this.audienceOptionList.map(option => option.audience);
+  }
+
+  /** The document types enabled: those checked; every one of `audienceOptions` by default. */
+  @Input()
+  set enabledAudiences(value: readonly BenchmarkReportAudience[]) {
+    this.enabledList = value ?? null;
+  }
+  get enabledAudiences(): readonly BenchmarkReportAudience[] {
+    return this.enabledList ?? this.audienceOptionList.map(option => option.audience);
+  }
+
+  /** The figure keys the comparison can draw; every figure by default. */
+  @Input()
+  set available(value: readonly string[]) {
+    this.availableKeys = value ?? null;
+  }
+  get available(): readonly string[] {
+    return this.availableKeys ?? this.figureList.map(figure => figure.key);
+  }
 
   /** A reason per figure key the comparison cannot draw, in place of the default one. */
   @Input() unavailableReasons: Readonly<Record<string, string>> = {};
+
+  /** A note per figure key, shown under its section and read with its checkbox. */
+  @Input() notes: Readonly<Record<string, string>> = {};
+
+  /** Why a document type that is not enabled cannot be changed. */
+  @Input() columnDisabledReason = REPORT_CHART_COLUMN_DISABLED_REASON;
+
+  /** The fields the *Layout* disclosure offers; every one by default. */
+  @Input() layoutFields: readonly ReportChartLayoutField[] = REPORT_CHART_LAYOUT_FIELDS;
 
   @Input() idPrefix = 'rcp';
 
@@ -110,26 +259,26 @@ export class ReportChartPickerComponent {
    * keeps its own copy until the host sets a new one.
    */
   @Input()
-  set layout(value: ReportChartLayoutSettings | null) {
-    this.currentLayout = value ? normalizeChartLayoutSettings(value) : null;
+  set layout(value: ReportChartLayoutSettings<string> | null) {
+    this.hostLayout = value ?? null;
+    this.currentLayout = this.normalizeLayout(this.hostLayout);
   }
-  get layout(): ReportChartLayoutSettings | null {
+  get layout(): ReportChartLayoutSettings<string> | null {
     return this.currentLayout;
   }
 
   /** Whose placements the figures show: a per-model document's, or a comparison-scope one's. */
   @Input() scope: ReportChartScope = 'model';
 
-  /** Every change, normalized. */
+  /** Every change, normalized; keyed by `figures`' keys, the Report Pack's by default. */
   @Output() readonly selectionChange = new EventEmitter<ReportChartSelection>();
 
-  /** Every layout change, normalized. */
+  /** Every layout change, normalized; keyed by `figures`' keys, the Report Pack's by default. */
   @Output() readonly layoutChange = new EventEmitter<ReportChartLayoutSettings>();
 
   /** The document type shown, whenever the admin chooses another. */
   @Output() readonly activeAudienceChange = new EventEmitter<BenchmarkReportAudience>();
 
-  readonly columnDisabledReason = REPORT_CHART_COLUMN_DISABLED_REASON;
   readonly widthOptions = REPORT_CHART_WIDTHS;
   readonly orientationOptions = REPORT_CHART_ORIENTATIONS;
   readonly labelSizes = REPORT_CHART_LABEL_SIZES_PT;
@@ -137,9 +286,24 @@ export class ReportChartPickerComponent {
   readonly headingOptions = REPORT_CHART_HEADINGS;
   readonly themeOptions = REPORT_CHART_THEMES;
 
-  private current: ReportChartSelection = {};
+  private figureList: readonly ReportChartPickerFigure<string>[] = REPORT_PACK_PICKER_FIGURES;
 
-  private currentLayout: ReportChartLayoutSettings | null = null;
+  private audienceOptionList: readonly ReportChartPickerAudienceOption[] = REPORT_PACK_AUDIENCES;
+
+  private audienceList: readonly BenchmarkReportAudience[] | null = null;
+
+  private enabledList: readonly BenchmarkReportAudience[] | null = null;
+
+  private availableKeys: readonly string[] | null = null;
+
+  /** The host's selection and layout as given, normalized again when the figures or document types change. */
+  private hostSelection: ReportChartSelection<string> = {};
+
+  private hostLayout: ReportChartLayoutSettings<string> | null = null;
+
+  private current: ReportChartSelection<string> = {};
+
+  private currentLayout: ReportChartLayoutSettings<string> | null = null;
 
   /** The segment chosen; component state only, never stored. */
   private activeAudience: BenchmarkReportAudience | null = null;
@@ -148,19 +312,23 @@ export class ReportChartPickerComponent {
   private refusedChoice: { readonly fieldId: string; readonly text: string } | null = null;
 
   get columns(): ReportChartPickerColumn[] {
-    return this.audiences.map(audience => ({
-      audience,
-      label: audienceLabel(audience),
-      shortLabel: audienceShortLabel(audience),
-      enabled: this.enabledAudiences.includes(audience)
-    }));
+    return this.audiences.map(audience => {
+      const option = this.audienceOptionList.find(entry => entry.audience === audience);
+      return {
+        audience,
+        label: option?.label ?? audienceLabel(audience),
+        shortLabel: option?.shortLabel ?? audienceShortLabel(audience),
+        enabled: this.enabledAudiences.includes(audience)
+      };
+    });
   }
 
   get rows(): ReportChartPickerRow[] {
-    return REPORT_CHART_FIGURES.map(figure => ({
+    const available = this.available;
+    return this.figureList.map(figure => ({
       key: figure.key,
       title: figure.title,
-      unavailableReason: this.available.includes(figure.key)
+      unavailableReason: available.includes(figure.key)
         ? null
         : (this.unavailableReasons[figure.key] || defaultChartUnavailableReason(figure.key))
     }));
@@ -230,15 +398,24 @@ export class ReportChartPickerComponent {
     return this.rows.filter(row => row.unavailableReason === null).length;
   }
 
-  /** The segment's status for assistive technology: `, 2 of 7 charts`. */
+  /** The segment's status for assistive technology: `, 2 of 7 charts`, or why it cannot be changed. */
   tabStatus(column: ReportChartPickerColumn): string {
     return column.enabled
       ? `, ${this.selectedCount(column)} of ${this.drawableCount()} charts`
-      : ', not checked under Documents of this comparison';
+      : `, ${statusPhrase(this.columnDisabledReason)}`;
   }
 
-  placement(audience: BenchmarkReportAudience, key: ReportChartFigureKey): string {
-    return reportChartPlacementLabel(audience, key, this.scope);
+  placement(audience: BenchmarkReportAudience, key: string): string {
+    const placement = this.figureList.find(figure => figure.key === key)?.placement;
+    if (placement === undefined) {
+      return reportChartPlacementLabel(audience, key as ReportChartFigureKey, this.scope);
+    }
+    return typeof placement === 'string' ? placement : (placement[audience] ?? '');
+  }
+
+  /** The host's note on a figure, or ''. */
+  note(row: ReportChartPickerRow): string {
+    return this.notes[row.key] ?? '';
   }
 
   /** Checked when selected and drawable; a figure the comparison cannot draw reads unchecked. */
@@ -267,9 +444,12 @@ export class ReportChartPickerComponent {
     return `${this.idPrefix}-${column.audience}-${row.key}`;
   }
 
-  /** The cell's placement, then whichever reasons hold it back. */
+  /** The cell's placement, its note, then whichever reasons hold it back. */
   cellDescribedBy(column: ReportChartPickerColumn, row: ReportChartPickerRow): string {
     const ids = [`${this.cellId(column, row)}-placement`];
+    if (this.note(row)) {
+      ids.push(`${this.cellId(column, row)}-note`);
+    }
     if (row.unavailableReason !== null) {
       ids.push(this.rowReasonId(row));
     }
@@ -316,14 +496,48 @@ export class ReportChartPickerComponent {
     this.commit(column.audience, []);
   }
 
-  private commit(audience: BenchmarkReportAudience, keys: ReportChartFigureKey[]): void {
-    this.current = normalizeChartSelection({ ...this.current, [audience]: keys });
-    this.selectionChange.emit(this.current);
+  private commit(audience: BenchmarkReportAudience, keys: string[]): void {
+    this.current = this.normalizeSelection({ ...this.current, [audience]: keys });
+    this.hostSelection = this.current;
+    this.selectionChange.emit(this.current as ReportChartSelection);
+  }
+
+  // --- Figures and document types ---
+
+  /** The host passed figures of its own, which the Report Pack's normalizers would drop. */
+  private get ownFigures(): boolean {
+    return this.figureList !== REPORT_PACK_PICKER_FIGURES;
+  }
+
+  private normalizeSelection(value: ReportChartSelection<string>): ReportChartSelection<string> {
+    return this.ownFigures
+      ? normalizePickerSelection(value, this.figureList.map(figure => figure.key), this.audienceOptionList.map(option => option.audience))
+      : normalizeChartSelection(value as ReportChartSelection);
+  }
+
+  private normalizeLayout(value: ReportChartLayoutSettings<string> | null): ReportChartLayoutSettings<string> | null {
+    if (!value) {
+      return null;
+    }
+    return this.ownFigures
+      ? normalizePickerLayoutSettings(value, this.figureList.map(figure => figure.key), this.audienceOptionList.map(option => option.audience))
+      : normalizeChartLayoutSettings(value as ReportChartLayoutSettings) as ReportChartLayoutSettings<string>;
+  }
+
+  /** The host's selection and layout, normalized for the figures and document types now given. */
+  private renormalize(): void {
+    this.current = this.normalizeSelection(this.hostSelection);
+    this.currentLayout = this.normalizeLayout(this.hostLayout);
   }
 
   // --- Layout ---
 
-  layoutOf(column: ReportChartPickerColumn): ReportChartDocumentLayout {
+  /** Whether the *Layout* disclosure offers this field. */
+  showsField(field: ReportChartLayoutField): boolean {
+    return this.layoutFields.includes(field);
+  }
+
+  layoutOf(column: ReportChartPickerColumn): ReportChartDocumentLayout<string> {
     return documentChartLayoutFor(this.currentLayout, column.audience);
   }
 
@@ -350,7 +564,9 @@ export class ReportChartPickerComponent {
         refusals.push({ id: this.widthReasonId(column, option.value), text: `${option.label}: ${text}` });
       }
     }
-    const refusedSizes = this.labelSizes.filter(size => this.labelSizeRefusal(column, size) !== null);
+    const refusedSizes = this.showsField('labelPt')
+      ? this.labelSizes.filter(size => this.labelSizeRefusal(column, size) !== null)
+      : [];
     if (refusedSizes.length > 0) {
       const sizes = refusedSizes.map(size => formatPoints(size)).join(', ');
       refusals.push({ id: this.labelReasonId(column), text: `${sizes} pt: ${this.labelSizeRefusal(column, refusedSizes[0])}` });
@@ -439,19 +655,20 @@ export class ReportChartPickerComponent {
   /** A select whose every option can be chosen: orientation, maximum height, heading and theme. */
   onLayoutSelect(event: Event, column: ReportChartPickerColumn, field: 'orientation' | 'maxHeightPercent' | 'heading' | 'theme'): void {
     const value = (event.target as HTMLSelectElement).value;
-    this.commitLayout(column, { [field]: field === 'maxHeightPercent' ? Number(value) : value } as Partial<ReportChartDocumentLayout>);
+    this.commitLayout(column, { [field]: field === 'maxHeightPercent' ? Number(value) : value } as Partial<ReportChartDocumentLayout<string>>);
   }
 
   onLayoutToggle(event: Event, column: ReportChartPickerColumn, field: 'sideBySide' | 'logo'): void {
-    this.commitLayout(column, { [field]: (event.target as HTMLInputElement).checked } as Partial<ReportChartDocumentLayout>);
+    this.commitLayout(column, { [field]: (event.target as HTMLInputElement).checked } as Partial<ReportChartDocumentLayout<string>>);
   }
 
-  private commitLayout(column: ReportChartPickerColumn, patch: Partial<ReportChartDocumentLayout>): void {
+  private commitLayout(column: ReportChartPickerColumn, patch: Partial<ReportChartDocumentLayout<string>>): void {
     this.refusedChoice = null;
-    this.currentLayout = normalizeChartLayoutSettings({
+    this.currentLayout = this.normalizeLayout({
       ...(this.currentLayout ?? {}),
       [column.audience]: { ...this.layoutOf(column), ...patch }
     });
-    this.layoutChange.emit(this.currentLayout);
+    this.hostLayout = this.currentLayout;
+    this.layoutChange.emit(this.currentLayout as ReportChartLayoutSettings);
   }
 }

@@ -1,82 +1,93 @@
 <!--
-  The launcher, not the task. The model, the timeline, the analysis and its reports live in a
-  four-step wizard in a full-screen dialog; this panel says what the view does, opens the wizard,
-  names the current model and lists the saved analyses.
+  The launcher, not the task: three sections in one grid. *New analysis* says what the view does and
+  opens the six-step wizard in a full-screen dialog; *Latest analysis* shows the newest saved analysis
+  of any model; *Analysis history* opens every saved analysis in the Analysis History dialog.
 -->
 <section class="bm-launcher cc-launcher" aria-labelledby="cc-tab-heading">
-  <div class="bm-launcher-hero">
-    <h3 id="cc-tab-heading">Chat Consistency</h3>
-    <p class="bm-launcher-lead">
-      Whether the Overseer chat with one model stayed the same over time: quality, speed, work, cost and reliability,
-      run by run, and a pre-declared comparison of two periods that says what changed and on whose side.
-    </p>
+  <div class="cc-launcher-grid">
+    <div class="bm-launcher-hero cc-launcher-new">
+      <h3 id="cc-tab-heading">Chat Consistency</h3>
+      <p class="bm-launcher-lead">
+        Whether the Overseer chat with one model stayed the same over time: quality, speed, work, cost and reliability,
+        compared between two periods.
+      </p>
 
-    <div class="bm-launcher-actions">
-      <button type="button" class="btn-gh" id="cc-open-wizard" (click)="openWizard()">
-        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
-        Open Chat Consistency Wizard
-      </button>
-    </div>
+      <div class="bm-launcher-actions">
+        <button type="button" class="btn-gh" id="cc-open-wizard" (click)="openWizard()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+          Open Chat Consistency Wizard
+        </button>
+      </div>
 
-    <!-- Non-exclusive (no name), so it never closes another disclosure. Open on the first visit,
-         then as the operator last left it. -->
-    <details class="gh-disclosure bm-launcher-howto cc-launcher-howto"
-             [open]="howItWorksOpen ?? false"
-             (toggle)="onHowItWorksToggle($event)">
-      <summary>How chat consistency works</summary>
-      <div class="gh-disclosure-body">
-        <!-- A static list, not `.gh-steps`, which is a live stepper. The titles are the wizard's own. -->
-        <ol class="bm-launcher-steps">
-          @for (s of wizardSteps; track s.step) {
-            <li>
-              <span class="bm-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
-              <span><strong>{{ s.title }}</strong> — {{ s.summary }}</span>
-            </li>
-          }
-        </ol>
+      <!-- Non-exclusive (no name), so it never closes another disclosure. Open on the first visit,
+           then as the operator last left it. -->
+      <details class="gh-disclosure bm-launcher-howto cc-launcher-howto"
+               [open]="howItWorksOpen ?? false"
+               (toggle)="onHowItWorksToggle($event)">
+        <summary>How chat consistency works</summary>
+        <div class="gh-disclosure-body">
+          <!-- A static list, not `.gh-steps`, which is a live stepper. The titles are the wizard's own. -->
+          <ol class="bm-launcher-steps">
+            @for (s of wizardSteps; track s.step) {
+              <li>
+                <span class="bm-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
+                <span><strong>{{ s.title }}</strong> — {{ s.summary }}</span>
+              </li>
+            }
+          </ol>
 
-        <div class="alert alert-info" role="note">
-          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-          <div class="alert-content">
-            <div class="alert-body">
-              A verdict is only as current as the last run someone made: GnollBench is run by hand and is
-              not a monitoring service.
+          <div class="alert alert-info" role="note">
+            <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-body">
+                A verdict is only as current as the last run someone made: GnollBench is run by hand and is
+                not a monitoring service.
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </details>
-  </div>
+      </details>
+    </div>
 
-  <!-- Only while a model is chosen. A read-out, not a control: the wizard owns the choice. -->
-  @if (selectedAxis; as axis) {
-    <app-cc-current-model-card [axis]="axis" [rangeText]="currentDatesText"
-                               [compareLabel]="compareSet?.label ?? null" [unitKind]="unitKind"
-                               [runsInRange]="runsInRange" [runsInAnalysis]="runsInAnalysis"
-                               [latestAnalysis]="latestAnalysis" [loading]="subjectLoading"
-                               (openRunReport)="openRunReport($event)"
-                               (openAnalysis)="openAnalysis($event)"></app-cc-current-model-card>
-  }
+    <!-- The newest saved analysis of any model, with its own gold Open Analysis #N. -->
+    <app-cc-latest-analysis-card class="cc-launcher-latest"
+                                 [summary]="latestAnalysis" [result]="latestResult"
+                                 [loading]="latestLoading" [error]="latestError"
+                                 [opening]="latestAnalysis !== null && openingId === latestAnalysis.id"
+                                 [openError]="openErrorFor('latest')"
+                                 [listLoading]="analysesLoading" [listError]="analysesError" [axes]="axes"
+                                 (openAnalysis)="openAnalysis($event)"
+                                 (openDocuments)="openDocuments($event)"></app-cc-latest-analysis-card>
 
-  <!-- The saved analyses component carries its own `h4#cc-saved-title` heading. Open shows an
-       analysis in the wizard, on its results. -->
-  <div class="bm-launcher-library cc-launcher-library">
-    @if (openError) {
-      <p class="gh-field-error cc-open-error" role="alert">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        <span>{{ openError }}</span>
-      </p>
-    }
-    <app-cc-saved-analyses [analyses]="analyses" [axes]="axes" [loading]="analysesLoading" [error]="analysesError"
-                           [openingId]="openingId"
-                           (open)="openAnalysis($event)" (deleted)="onAnalysisDeleted($event)"></app-cc-saved-analyses>
+    <section class="cc-history-bar" aria-labelledby="cc-history-bar-title">
+      <h4 id="cc-history-bar-title" class="cc-history-bar-title">Analysis history</h4>
+      <p class="cc-history-bar-summary" id="cc-history-bar-summary" role="status">{{ historySummary }}</p>
+      @if (analysesError) {
+        <p class="gh-field-error cc-history-bar-error">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ analysesError }}</span>
+        </p>
+      }
+      <button type="button" class="btn-ghost cc-open-history" id="cc-open-history" aria-haspopup="dialog"
+              [attr.aria-disabled]="analyses.length === 0 ? 'true' : null"
+              [attr.aria-describedby]="analyses.length === 0 ? 'cc-history-bar-summary' : null"
+              (click)="openHistory()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+        Open Analysis History
+      </button>
+    </section>
   </div>
 </section>
+
+<!-- Every saved analysis as a card list. Open closes it before the wizard opens. -->
+<app-cc-analysis-history-dialog [analyses]="analyses" [axes]="axes" [loading]="analysesLoading" [error]="analysesError"
+                                [openingId]="openingId" [openError]="openErrorFor('history')"
+                                (open)="onHistoryOpen($event)" (deleted)="onAnalysisDeleted($event)"></app-cc-analysis-history-dialog>
 
 <!--
   THE CHAT CONSISTENCY WIZARD

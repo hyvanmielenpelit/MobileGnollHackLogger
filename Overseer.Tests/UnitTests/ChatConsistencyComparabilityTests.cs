@@ -18,6 +18,7 @@ public class ChatConsistencyComparabilityTests
     private const string PromptSha = "e9b3e9a7c4d1b8f0a2e6c9d3b7f1a4e8c2d6b0f9a3e7c1d5b9f3a7e1c5d9b3f7";
     private const string GuidesSha = "f59d8b30a1c7e4d2b6f0a8c3e9d5b1f7a3c9e5d1b7f3a9c5e1d7b3f9a5c1e7d3";
     private const string OtherGuidesSha = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9";
+    private const string OtherPromptSha = "7c2e9a4f1b8d3e6a0c5f9b2d7e4a1c8f3b6d0e9a5c2f7b4d1e8a3c6f0b9d5e2a";
     private const string KnowledgeSha = "576ca574b2e8d0f6a4c2e8d4b0f6a2c8";
 
     private static readonly DateTime T0 = new(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -402,6 +403,98 @@ public class ChatConsistencyComparabilityTests
         Assert.Empty(ChatConsistencyComparability.DetectOverseerEvents(new[] { first, second }));
     }
 
+    /// <summary>
+    /// Runs 1–4 of one model alternating between two suites, A, B, A, B, as the members of a battery
+    /// do: suite B runs with another system prompt and with the prompt option on.
+    /// </summary>
+    private static BenchmarkRun[] AlternatingSuites()
+    {
+        var runs = new[] { Run(1), Run(2), Run(3), Run(4) };
+        foreach (var run in new[] { runs[1], runs[3] })
+        {
+            run.BenchmarkSuiteId = 8;
+            run.BenchmarkSuiteIdUsed = 8;
+            run.SuiteName = "Snapshot Suite";
+            run.CandidateSystemPromptSha256 = OtherPromptSha;
+            run.CandidatePromptOptionsJson = "{\"verboseMode\":true}";
+        }
+
+        return runs;
+    }
+
+    [Fact]
+    public void SuitesAlternatingInABatteryAreNoEventAndAHarnessBumpIsOne()
+    {
+        var runs = AlternatingSuites();
+        runs[0].HarnessVersion = "51";
+        runs[1].HarnessVersion = "51";
+        runs[2].HarnessVersion = "52";
+        runs[3].HarnessVersion = "52";
+
+        var events = ChatConsistencyComparability.DetectOverseerEvents(runs);
+
+        var change = Assert.Single(events);
+        Assert.Equal(OverseerEventKinds.HarnessVersion, change.Kind);
+        Assert.Equal("51", change.From);
+        Assert.Equal("52", change.To);
+        Assert.Equal(3, change.RunId);
+        Assert.Equal(1, change.PreviousRunId);
+        Assert.Equal(ChatConsistencyComparability.ModelAxisKey(runs[0]), change.SubjectKey);
+    }
+
+    [Fact]
+    public void SuitesAlternatingInABatteryWithoutAChangeAreNoEvent()
+    {
+        Assert.Empty(ChatConsistencyComparability.DetectOverseerEvents(AlternatingSuites()));
+    }
+
+    [Fact]
+    public void AChangeSeenInBothSuitesIsOneEventDatedByTheEarliest()
+    {
+        var runs = AlternatingSuites();
+        runs[2].ToolGuidesSha256 = OtherGuidesSha;
+        runs[3].ToolGuidesSha256 = OtherGuidesSha;
+
+        var change = Assert.Single(ChatConsistencyComparability.DetectOverseerEvents(runs.OrderByDescending(r => r.Id)));
+
+        Assert.Equal(OverseerEventKinds.ToolGuides, change.Kind);
+        Assert.Equal(GuidesSha, change.From);
+        Assert.Equal(OtherGuidesSha, change.To);
+        Assert.Equal(3, change.RunId);
+        Assert.Equal(1, change.PreviousRunId);
+        Assert.Equal(runs[2].StartedAtUtc, change.AtUtc);
+    }
+
+    [Fact]
+    public void TheSameChangeRecurringAfterARevertIsTwoEvents()
+    {
+        var runs = new[] { Run(1), Run(2), Run(3), Run(4) };
+        runs[1].ToolGuidesSha256 = OtherGuidesSha;
+        runs[3].ToolGuidesSha256 = OtherGuidesSha;
+
+        var events = ChatConsistencyComparability.DetectOverseerEvents(runs);
+
+        Assert.Equal(3, events.Count);
+        Assert.Equal(new long[] { 2, 3, 4 }, events.Select(e => e.RunId));
+        Assert.Equal(2, events.Count(e => e.From == GuidesSha && e.To == OtherGuidesSha));
+    }
+
+    [Fact]
+    public void ChangesOfTwoModelsAreNotMerged()
+    {
+        var a1 = Run(1);
+        var b2 = Run(2, provider: "Anthropic", modelId: "claude-test");
+        var a3 = Run(3);
+        var b4 = Run(4, provider: "Anthropic", modelId: "claude-test");
+        a3.ToolGuidesSha256 = OtherGuidesSha;
+        b4.ToolGuidesSha256 = OtherGuidesSha;
+
+        var events = ChatConsistencyComparability.DetectOverseerEvents(new[] { a1, b2, a3, b4 });
+
+        Assert.Equal(new long[] { 3, 4 }, events.Select(e => e.RunId));
+        Assert.NotEqual(events[0].SubjectKey, events[1].SubjectKey);
+    }
+
     // --- Items -------------------------------------------------------------------------------
 
     [Fact]
@@ -559,7 +652,8 @@ public class ChatConsistencyComparabilityTests
         Assert.Contains("Anthropic/claude-test", note.SuggestedText);
         Assert.DoesNotContain("gpt-other", note.SuggestedText);
         Assert.Contains("Core Suite", note.SuggestedText);
-        Assert.Contains("#10", note.SuggestedText);
+        Assert.EndsWith("under the same Overseer build as run #10.", note.SuggestedText);
+        Assert.DoesNotContain("instrument", note.SuggestedText);
     }
 
     [Fact]

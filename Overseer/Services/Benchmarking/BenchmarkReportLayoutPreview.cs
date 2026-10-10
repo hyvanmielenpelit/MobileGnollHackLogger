@@ -261,7 +261,7 @@ public static class BenchmarkReportLayoutPreview
     {
         ArgumentNullException.ThrowIfNull(document);
         var options = Options(document.Audience, naming, charts ?? Array.Empty<BenchmarkReportRenderChart>());
-        string markdown = BenchmarkReportPackRenderer.Render(document, options);
+        string markdown = BenchmarkReportPackRenderer.Render(document, options, chartLayoutPresent: layout != null);
         return BenchmarkPdfRenderer.RenderMarkdown(markdown, Info(document, options, paper), ct, options.Charts, layout);
     }
 

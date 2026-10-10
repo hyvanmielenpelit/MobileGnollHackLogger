@@ -6,9 +6,86 @@
   min-width: 0;
 }
 
-// The launcher's layout is the global `bm-launcher*` rules in `styles.scss`; the wizard's frame is
-// the global `gh-wizard*` rules.
+// The hero's look is the global `bm-launcher*` rules in `styles.scss`; the wizard's frame is the
+// global `gh-wizard*` rules. The launcher is a size container, so its three sections lay out by its
+// own width: one column in reading order, or New analysis beside Latest analysis from 64 rem with
+// Analysis history as a slim row under both.
+.cc-launcher {
+  container: cc-launcher / inline-size;
+}
 
-.cc-open-error {
+.cc-launcher-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "new"
+    "latest"
+    "history";
+  gap: 20px;
+  min-width: 0;
+}
+
+// Outranks the global hero's full-row `grid-column`.
+.cc-launcher-new {
+  grid-area: new;
+  min-width: 0;
+}
+
+.cc-launcher-latest {
+  grid-area: latest;
+}
+
+.cc-history-bar {
+  grid-area: history;
+}
+
+@container cc-launcher (min-width: 64rem) {
+  .cc-launcher-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    grid-template-areas:
+      "new     latest"
+      "history history";
+    align-items: stretch;
+  }
+}
+
+// --- Analysis history ---
+
+// The heading, the summary and the button on one row, wrapping where the row is narrow.
+.cc-history-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  min-width: 0;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.cc-history-bar-title {
   margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  color: var(--primary-color);
+}
+
+.cc-history-bar-summary {
+  flex: 1 1 18rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-history-bar-error {
+  flex-basis: 100%;
+  order: 1;
+  margin: 0;
+}
+
+.cc-open-history {
+  margin-inline-start: auto;
 }

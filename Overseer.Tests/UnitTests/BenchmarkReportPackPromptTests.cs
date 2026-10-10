@@ -1401,6 +1401,58 @@ public class BenchmarkReportPackPromptTests
         Assert.Equal(audience == BenchmarkReportAudience.ProviderIssueReport, system.Contains("Under ruledOut, list every Overseer event", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [MemberData(nameof(ChatConsistencyAudiences))]
+    public void TheChatConsistencySystemPrompt_NamesTheCanonicalTerms_AndTheBlocksEachSlotMustNotRestate(BenchmarkReportAudience audience)
+    {
+        string system = BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(audience);
+
+        Assert.Contains("P1 Quality, P2 Time to first answer text, P3 Answer streaming rate, P4 Work per turn and P5 Cost per question", system);
+        Assert.Contains("count in battery runs", system);
+        Assert.Contains("GnollBench runs are made by hand", system);
+        Assert.Contains("Printed before every slot: the overall verdict", system);
+        Assert.Contains("interpret them, never restate them", system);
+        Assert.DoesNotContain(" watch it", system);
+        Assert.Equal(audience == BenchmarkReportAudience.ExecutiveSummary, system.Contains("This Executive Summary never cites a run id, a rule id or a hash", StringComparison.Ordinal));
+
+        switch (audience)
+        {
+            case BenchmarkReportAudience.ExecutiveSummary:
+                Assert.Contains("Lead with {{verdict.short}}", system);
+                Assert.Contains("state the shortfall with {{sample.shortfall}}", system);
+                Assert.Contains("- ourChanges (\"Our changes and their effect\"): ", system);
+                Assert.Contains("Printed above it: one sentence listing the Overseer updates; interpret them, never restate them.", system);
+                break;
+            case BenchmarkReportAudience.TechnicalReport:
+                Assert.Contains("Printed above it: the table of Overseer updates", system);
+                Assert.Contains("Printed above it: the robustness table", system);
+                Assert.Contains("Never cite a hash.", system);
+                break;
+            case BenchmarkReportAudience.InternalBrief:
+                Assert.Contains("Never recommend acting on a secondary difference whose 95 % interval includes zero.", system);
+                Assert.Contains("the first action is to re-grade every compared run with one common grader", system);
+                Assert.Contains("state the shortfall with {{sample.shortfall}}", system);
+                break;
+        }
+    }
+
+    [Fact]
+    public void AChatConsistencyUserMessage_KeepsTheInputHashFromTheWriter()
+    {
+        foreach (var audience in BenchmarkReportSlots.ChatConsistencyAudiences)
+        {
+            string message = ChatConsistencyPrompt(audience).UserMessage;
+
+            Assert.DoesNotContain("analysis.inputSha256", message, StringComparison.Ordinal);
+            Assert.DoesNotContain("0123456789abcdef", message, StringComparison.Ordinal);
+            Assert.DoesNotContain("instrument", message, StringComparison.Ordinal);
+            Assert.DoesNotContain("{\"", message, StringComparison.Ordinal);
+            Assert.Contains("events.1.change = game snapshot: off → on\n", message);
+            Assert.Contains("eventGroups.count = 2 Overseer updates\n", message);
+            Assert.Contains("verdict.short = The chat changed\n", message);
+        }
+    }
+
     [Fact]
     public void ChatConsistencyPromptSha256_DiffersPerAudience()
     {

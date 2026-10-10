@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { of } from 'rxjs';
 
+import { SystemService } from '../../../../services/system.service';
 import { groupOverseerEvents, taggedAnnotations } from '../chat-consistency-events';
 import { ccResultKeyFigures } from '../chat-consistency-results';
 import {
@@ -18,6 +20,13 @@ import {
   textOf
 } from '../chat-consistency-tab.testing';
 import { CcAnalysisResult } from '../chat-consistency.models';
+import { CcResultsImageDialogComponent } from '../results-image/results-image-dialog.component';
+import { ccResultsImageIo } from '../results-image/results-image-export';
+import {
+  CC_RESULTS_IMAGE_SECTIONS_STORAGE_KEY,
+  CC_RESULTS_IMAGE_STORAGE_KEY,
+  readStoredCcResultsImageSettings
+} from '../results-image/results-image-settings';
 import { CcEndpointCardComponent } from './endpoint-card/endpoint-card.component';
 import { CcNextRunsComponent } from './next-runs/next-runs.component';
 import { CcResultPeriodsComponent } from './result-periods/result-periods.component';
@@ -58,7 +67,7 @@ describe('CcResultsViewComponent', () => {
     fixture.detectChanges();
   }
 
-  const tabButtons = () => Array.from(el.querySelectorAll<HTMLButtonElement>(':scope > .cc-res-tabs > [role="tab"]'));
+  const tabButtons = () => Array.from(el.querySelectorAll<HTMLButtonElement>(':scope > .cc-res-bar > .cc-res-tabs > [role="tab"]'));
   const tabButton = (id: string) => el.querySelector<HTMLButtonElement>(`#cc-res-tab-${id}`)!;
   const panel = (id: string) => el.querySelector<HTMLElement>(`#cc-res-panel-${id}`)!;
   const selectedTab = () => tabButtons().find(tab => tab.getAttribute('aria-selected') === 'true')?.id;
@@ -71,21 +80,38 @@ describe('CcResultsViewComponent', () => {
 
   beforeEach(async () => {
     localStorage.removeItem(CC_RESULTS_STORAGE_KEY);
+    localStorage.removeItem(CC_RESULTS_IMAGE_STORAGE_KEY);
+    localStorage.removeItem(CC_RESULTS_IMAGE_SECTIONS_STORAGE_KEY);
     await TestBed.configureTestingModule({
       imports: [CcResultsViewComponent],
-      providers: chatConsistencyTestProviders()
+      providers: [
+        ...chatConsistencyTestProviders(),
+        { provide: SystemService, useValue: { getVersion: () => of('9.9.9') } }
+      ]
     }).compileComponents();
     create();
   });
 
   afterEach(() => {
+    for (const dialog of Array.from(document.querySelectorAll('dialog[open]')) as HTMLDialogElement[]) {
+      dialog.close();
+    }
     teardown();
+    vi.restoreAllMocks();
     localStorage.removeItem(CC_RESULTS_STORAGE_KEY);
+    localStorage.removeItem(CC_RESULTS_IMAGE_STORAGE_KEY);
+    localStorage.removeItem(CC_RESULTS_IMAGE_SECTIONS_STORAGE_KEY);
   });
 
   describe('the shell', () => {
-    it('leads with the tab row', () => {
-      expect(el.firstElementChild?.classList).toContain('cc-res-tabs');
+    it('leads with the bar, which holds the tab row and then the export group', () => {
+      const bar = el.firstElementChild as HTMLElement;
+      expect(bar.classList).toContain('cc-res-bar');
+      expect(Array.from(bar.children).map(child => child.className)).toEqual([
+        'gh-tabs gh-tabs-secondary gh-tabs-wrap cc-res-tabs',
+        'cc-res-export'
+      ]);
+      expect(bar.nextElementSibling?.matches('p.cc-res-export-status[role="status"]')).toBe(true);
     });
   });
 
@@ -133,7 +159,7 @@ describe('CcResultsViewComponent', () => {
 
   describe('the tabs', () => {
     it('are a text-only tab row Result sections: Summary, Verdicts, Periods, Attribution, Next runs and Details', () => {
-      const list = el.querySelector<HTMLElement>(':scope > .cc-res-tabs')!;
+      const list = el.querySelector<HTMLElement>(':scope > .cc-res-bar > .cc-res-tabs')!;
       expect(list.getAttribute('role')).toBe('tablist');
       expect(list.classList).toContain('gh-tabs');
       expect(list.classList).toContain('gh-tabs-secondary');
@@ -263,8 +289,9 @@ describe('CcResultsViewComponent', () => {
       ]
     });
 
-    it('has a section title and the lead', () => {
-      expect(textOf(panel('verdicts').querySelector('h5.gh-section-title'))).toBe('Verdicts');
+    it('has a visually hidden heading, for the heading outline only, and the lead', () => {
+      expect(panel('verdicts').querySelector('.gh-section-title')).toBeNull();
+      expect(textOf(panel('verdicts').querySelector('h5.visually-hidden'))).toBe('Verdicts');
       expect(textOf(panel('verdicts').querySelector('.cc-res-lead')))
         .toBe('Each endpoint compares the comparison period with the baseline against a margin fixed in advance.');
     });
@@ -400,7 +427,8 @@ describe('CcResultsViewComponent', () => {
     const groups = () => Array.from(panel('attribution').querySelectorAll<HTMLElement>('.cc-attribution-group'));
 
     it('names the decisive changes, then a card per side with attributions, and the sides without', () => {
-      expect(textOf(panel('attribution').querySelector('h5.gh-section-title'))).toBe('Attribution');
+      expect(panel('attribution').querySelector('.gh-section-title')).toBeNull();
+      expect(textOf(panel('attribution').querySelector('h5.visually-hidden'))).toBe('Attribution');
       expect(textOf(panel('attribution').querySelector('.cc-attr-changes-label'))).toBe('Changes to attribute');
       const chips = Array.from(panel('attribution').querySelectorAll<HTMLElement>('.cc-attr-chips > li'));
       expect(chips.map(chip => textOf(chip))).toEqual(['Time to first answer text Degraded']);
@@ -483,8 +511,9 @@ describe('CcResultsViewComponent', () => {
     const disclosure = (section: string) =>
       panel('details').querySelector<HTMLDetailsElement>(`:scope > .cc-res-details > details[data-section="${section}"]`)!;
 
-    it('has a section title, the lead and closed disclosures with plain-text summaries and counts', () => {
-      expect(textOf(panel('details').querySelector('h5.gh-section-title'))).toBe('Details');
+    it('has a visually hidden heading, the lead and closed disclosures with plain-text summaries and counts', () => {
+      expect(panel('details').querySelector('.gh-section-title')).toBeNull();
+      expect(textOf(panel('details').querySelector('h5.visually-hidden'))).toBe('Details');
       expect(textOf(panel('details').querySelector('.cc-res-lead'))).toBe('Background for reading the verdicts. Nothing here changes them.');
       expect(disclosures().map(d => textOf(d.querySelector('summary'))))
         .toEqual(['Events in the analyzed span (1)', 'Limitations (1)', 'Data quality (1)', 'About this analysis']);
@@ -647,6 +676,124 @@ describe('CcResultsViewComponent', () => {
           'Outside the compared set: #106 (comparison)'
         ]);
       });
+    });
+  });
+
+  describe('the section images', () => {
+    const copyButton = () => el.querySelector<HTMLButtonElement>('.cc-res-export > button.action-btn.cc-res-copy')!;
+    const downloadButton = () => el.querySelector<HTMLButtonElement>('.cc-res-export > button.action-btn.cc-res-download')!;
+    const settingsButton = () => el.querySelector<HTMLButtonElement>('.cc-res-export > button.btn-ghost.cc-res-image-settings')!;
+    const status = () => textOf(el.querySelector('p.cc-res-export-status'));
+    const imageDialog = () => fixture.debugElement.query(By.directive(CcResultsImageDialogComponent)).componentInstance as CcResultsImageDialogComponent;
+    const dialogElement = () => el.querySelector<HTMLDialogElement>('app-cc-results-image-dialog dialog')!;
+
+    beforeEach(() => {
+      vi.spyOn(ccResultsImageIo, 'loadImage').mockImplementation(() => Promise.reject(new Error('404')));
+      vi.spyOn(ccResultsImageIo, 'now').mockReturnValue(new Date(2026, 9, 10, 9, 45, 12));
+    });
+
+    it('hides the headings of Verdicts, Periods, Attribution and Details, keeping them in the outline', () => {
+      for (const id of ['verdicts', 'periods', 'attribution', 'details']) {
+        const heading = panel(id).querySelector<HTMLElement>(':scope > h5')!;
+        expect(heading.classList).toContain('visually-hidden');
+        expect(heading.classList).not.toContain('gh-section-title');
+      }
+      expect(textOf(panel('periods').querySelector(':scope > h5'))).toBe('Periods');
+    });
+
+    it('names Copy, Download and Image settings after the shown section, each with a tooltip', () => {
+      const group = el.querySelector<HTMLElement>('.cc-res-export')!;
+      expect(group.getAttribute('role')).toBe('group');
+      expect(group.getAttribute('aria-label')).toBe('Export the Summary section');
+      expect(copyButton().getAttribute('aria-label')).toBe('Copy the Summary section of analysis #7 as an image');
+      expect(downloadButton().getAttribute('aria-label')).toBe('Download the Summary section of analysis #7 as a PNG image');
+      expect(copyButton().getAttribute('interestfor')).toBe('cc-res-copy-tip');
+      expect(copyButton().getAttribute('style')).toContain('anchor-name: --cc-res-copy-tip');
+      expect(textOf(el.querySelector('#cc-res-copy-tip'))).toBe('Copy the Summary section as an image');
+      expect(textOf(el.querySelector('#cc-res-download-tip'))).toBe('Download the Summary section as PNG');
+      expect(el.querySelector('#cc-res-download-tip')!.getAttribute('popover')).toBe('hint');
+      for (const button of [copyButton(), downloadButton()]) {
+        expect(button.getAttribute('type')).toBe('button');
+        expect(button.hasAttribute('title')).toBe(false);
+        expect(button.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+        expect(textOf(button)).toBe('');
+      }
+      expect(textOf(settingsButton())).toBe('Image settings');
+      expect(settingsButton().getAttribute('aria-haspopup')).toBe('dialog');
+      expect(settingsButton().querySelector('svg')).toBeNull();
+
+      tabButton('nextRuns').click();
+      fixture.detectChanges();
+      expect(group.getAttribute('aria-label')).toBe('Export the Next runs section');
+      expect(copyButton().getAttribute('aria-label')).toBe('Copy the Next runs section of analysis #7 as an image');
+    });
+
+    it('downloads the shown section and announces it', async () => {
+      const save = vi.spyOn(ccResultsImageIo, 'save').mockReturnValue(undefined);
+      tabButton('verdicts').click();
+      fixture.detectChanges();
+      downloadButton().click();
+      await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1), { timeout: 5000 });
+      const [blob, fileName] = vi.mocked(save).mock.lastCall!;
+      expect(blob.type).toBe('image/png');
+      expect(fileName).toBe('chat-consistency-7_gpt-5-high_verdicts_20261010_094512.png');
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(status()).toBe('Image downloaded.');
+      }, { timeout: 5000 });
+      expect(el.querySelector('p.cc-res-export-status')!.getAttribute('role')).toBe('status');
+    });
+
+    it('marks both buttons aria-disabled while an export runs, and refuses another', async () => {
+      let finish: (outcome: 'copied') => void = () => undefined;
+      const copy = vi.spyOn(ccResultsImageIo, 'copy').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+      const save = vi.spyOn(ccResultsImageIo, 'save').mockReturnValue(undefined);
+      copyButton().click();
+      fixture.detectChanges();
+      expect(copyButton().getAttribute('aria-disabled')).toBe('true');
+      expect(downloadButton().getAttribute('aria-disabled')).toBe('true');
+
+      downloadButton().click();
+      await vi.waitFor(() => expect(copy).toHaveBeenCalledTimes(1), { timeout: 5000 });
+      expect(vi.mocked(copy).mock.lastCall![0].type).toBe('image/png');
+      finish('copied');
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(status()).toBe('Summary section copied as an image.');
+      }, { timeout: 5000 });
+      expect(save).not.toHaveBeenCalled();
+      expect(copyButton().hasAttribute('aria-disabled')).toBe(false);
+      expect(downloadButton().hasAttribute('aria-disabled')).toBe(false);
+    });
+
+    it('opens Image settings on the shown section, with the items of this result', () => {
+      tabButton('attribution').click();
+      fixture.detectChanges();
+      settingsButton().click();
+      fixture.detectChanges();
+      expect(dialogElement().open).toBe(true);
+      expect(imageDialog().section).toBe('attribution');
+      expect(el.querySelector('#cc-rim-tab-attribution')!.getAttribute('aria-selected')).toBe('true');
+      expect(imageDialog().items.verdicts.map(item => item.key)).toContain('endpoint-P2');
+      expect(imageDialog().items.attribution.map(item => item.key)).toEqual(['changes', 'groups', 'unattributed']);
+    });
+
+    it('stores a change made in the dialog, and names the new format on Download', () => {
+      settingsButton().click();
+      fixture.detectChanges();
+      (el.querySelector('#cc-rim-fmt-format-webp') as HTMLInputElement).click();
+      fixture.detectChanges();
+      expect(readStoredCcResultsImageSettings().format).toBe('webp');
+      expect(downloadButton().getAttribute('aria-label')).toBe('Download the Summary section of analysis #7 as a WebP image');
+      expect(textOf(el.querySelector('#cc-res-download-tip'))).toBe('Download the Summary section as WebP');
+    });
+
+    it('closes Image settings when the analysis shows another result', () => {
+      settingsButton().click();
+      fixture.detectChanges();
+      expect(dialogElement().open).toBe(true);
+      show(ccAnalysisResult({ analysisId: 8 }));
+      expect(dialogElement().open).toBe(false);
     });
   });
 });

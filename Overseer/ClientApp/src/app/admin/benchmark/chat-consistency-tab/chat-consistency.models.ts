@@ -760,10 +760,39 @@ export interface CcAnalysisResult {
   analysisCodeVersion: number;
 }
 
+/** A saved analysis's model as its summary names it. */
+export interface CcSummarySubject {
+  displayName: string;
+  provider: string;
+  modelId: string;
+  thinkingLevel: string | null;
+  serviceTier: string | null;
+}
+
+/** One primary endpoint's verdict as a saved analysis's summary carries it. */
+export interface CcEndpointBrief {
+  id: string;
+  name: string;
+  computed: boolean;
+  /** The server's verdict label: `degraded`, `more work`, `changed, negligible`, `inconclusive`, `not computable`… */
+  verdictLabel: string;
+  grade: CcGrade;
+}
+
+/**
+ * The analysis code version the server analyzes under now (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`).
+ * A saved analysis below it was analyzed by earlier code.
+ */
+export const CC_CURRENT_ANALYSIS_CODE_VERSION = 5;
+
 export interface CcAnalysisSummary {
   id: number;
   name: string;
   subjectModelKey: string;
+  /** Null when the stored result does not name its model; absent from an older server. */
+  subject?: CcSummarySubject | null;
+  /** The primary endpoints in protocol order; empty or absent when the stored result lacks them. */
+  endpoints?: CcEndpointBrief[];
   baselineStartUtc: string;
   baselineEndUtc: string;
   comparisonStartUtc: string;

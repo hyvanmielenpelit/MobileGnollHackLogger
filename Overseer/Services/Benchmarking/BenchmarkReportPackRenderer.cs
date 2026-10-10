@@ -222,6 +222,14 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     public static string Render(BenchmarkReportDocument document, BenchmarkReportRenderOptions options)
+        => Render(document, options, chartLayoutPresent: false);
+
+    /// <summary>
+    /// As <see cref="Render(BenchmarkReportDocument, BenchmarkReportRenderOptions)"/>; <paramref name="chartLayoutPresent"/>
+    /// says that the document's stored chart set has a layout, which places a chat consistency document's
+    /// figures by <see cref="BenchmarkReportChartPlacement"/>'s current table instead of its legacy one.
+    /// </summary>
+    public static string Render(BenchmarkReportDocument document, BenchmarkReportRenderOptions options, bool chartLayoutPresent)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(options);
@@ -241,7 +249,8 @@ public static partial class BenchmarkReportPackRenderer
             Writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson),
             Notes = string.IsNullOrWhiteSpace(document.ValidationNotesJson)
                 ? new List<BenchmarkReportValidationNote>()
-                : BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson)
+                : BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson),
+            ChartLayoutPresent = chartLayoutPresent
         };
         BenchmarkReportFacts.NormalizeSupportLabels(ctx.Sheet);
 
@@ -2362,14 +2371,22 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// Writer prose with its tokens resolved: <c>{{subject}}</c>, <c>{{peer:X}}</c> and <c>{{fact.key}}</c>;
-    /// on a comparison-scope sheet <c>{{model:X}}</c> as a peer's.
+    /// on a comparison-scope sheet <c>{{model:X}}</c> as a peer's. A resolved value that ends in a period,
+    /// followed by the prose's own period, prints one.
     /// </summary>
     private static string Prose(Context ctx, string? text)
-        => Regex.Replace(Normalize(text), TokenPattern, match => Resolve(ctx, match), RegexOptions.CultureInvariant);
+        => Regex.Replace(Normalize(text), TokenPattern + @"(\.)?", match =>
+        {
+            string resolved = Resolve(ctx, match);
+            if (!match.Groups[2].Success) return resolved;
+            return resolved.EndsWith('.') ? resolved : resolved + ".";
+        }, RegexOptions.CultureInvariant);
 
+    /// <summary>The token's value; the token itself, as written, when it names nothing.</summary>
     private static string Resolve(Context ctx, Match match)
     {
         string token = match.Groups[1].Value.Trim();
+        string unresolved = "{{" + match.Groups[1].Value + "}}";
 
         if (string.Equals(token, "subject", StringComparison.Ordinal)) return ctx.Sheet.SubjectLabel;
 
@@ -2377,12 +2394,23 @@ public static partial class BenchmarkReportPackRenderer
         {
             string letter = token[(token.IndexOf(':') + 1)..].Trim();
             var peer = ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, letter, StringComparison.Ordinal));
-            if (peer == null) return match.Value;
+            if (peer == null) return unresolved;
             return ProseName(ctx, peer);
         }
 
-        return Fact(ctx, token) is { } fact ? Shown(ctx, fact) : match.Value;
+        if (ctx.ChatConsistency && BenchmarkChatConsistencyReportFacts.WriterHidden(token)) return HiddenFactText(token);
+        if (Fact(ctx, token) is not { } fact) return unresolved;
+        return ctx.ChatConsistency ? BenchmarkChatConsistencyReportFacts.WithoutInstrument(Shown(ctx, fact)) : Shown(ctx, fact);
     }
+
+    /// <summary>
+    /// What older chat consistency prose prints for a fact now kept from the writer: the earlier or later
+    /// value of an event's raw <c>from</c> and <c>to</c>, and <c>not shown</c> for the input hash.
+    /// </summary>
+    private static string HiddenFactText(string token)
+        => token.EndsWith(".from", StringComparison.Ordinal) ? "the earlier value"
+            : token.EndsWith(".to", StringComparison.Ordinal) ? "the later value"
+            : "not shown";
 
     /// <summary>A peer as prose names it: its label when named, <c>Model A</c> when anonymized.</summary>
     private static string ProseName(Context ctx, BenchmarkReportPeer peer)
@@ -2393,7 +2421,7 @@ public static partial class BenchmarkReportPackRenderer
     /// <see cref="BenchmarkReportRenderOptions.Charts"/> placed at <paramref name="anchor"/> in this
     /// audience, in placement order; nothing without charts or in a stand-alone document. A chat
     /// consistency document plots the model under test over time, so it carries its charts with or
-    /// without control models.
+    /// without control models, placed by the legacy table while its chart set has no layout.
     /// </summary>
     private static void Figures(StringBuilder sb, Context ctx, BenchmarkReportChartAnchor anchor)
     {
@@ -2403,7 +2431,8 @@ public static partial class BenchmarkReportPackRenderer
         var scope = ctx.ChatConsistency ? BenchmarkReportScope.ChatConsistency
             : ctx.Comparison ? BenchmarkReportScope.Comparison
             : BenchmarkReportScope.Model;
-        foreach (string key in BenchmarkReportChartPlacement.KeysAt(ctx.Document.Audience, anchor, scope))
+        bool legacy = ctx.ChatConsistency && !ctx.ChartLayoutPresent;
+        foreach (string key in BenchmarkReportChartPlacement.KeysAt(ctx.Document.Audience, anchor, scope, legacy))
         {
             if (!charts.Any(c => c != null && string.Equals(c.FigureKey, key, StringComparison.Ordinal))) continue;
 
@@ -2499,6 +2528,9 @@ public static partial class BenchmarkReportPackRenderer
         public required BenchmarkReportContentSnapshot Content { get; init; }
         public required BenchmarkReportWriterOutput Writer { get; init; }
         public required List<BenchmarkReportValidationNote> Notes { get; init; }
+
+        /// <summary>The document's stored chart set has a layout; without one a chat consistency document places its figures by the legacy table.</summary>
+        public bool ChartLayoutPresent { get; init; }
 
         /// <summary>Peers print by letter: as the options ask, and always in a chat consistency Provider Issue Report.</summary>
         public bool Anonymized => Options.PeerNaming == BenchmarkReportPeerNaming.Anonymized

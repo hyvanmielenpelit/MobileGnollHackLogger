@@ -91,78 +91,91 @@ export class CcNextRunsComponent implements OnChanges {
     if (changes['result'] || changes['rows']) {
       const groups = ccNextRunGroups(this.result, this.rows);
       this.actionCount = ccNextRunActionCount(groups);
-      this.sections = this.buildSections(groups);
+      this.sections = nextRunSections(this.result, groups);
     }
   }
 
   /** `6 runs would resolve the open questions.` */
   get leadText(): string {
-    return `${plural(this.actionCount, 'run')} would resolve the open questions.`;
+    return ccNextRunsLeadText(this.actionCount);
   }
 
   get provider(): string {
     return this.result.subject.provider;
   }
+}
 
-  private buildSections(groups: readonly CcNextRunGroup[]): CcNextRunSection[] {
-    // Ids by position: the kind and period are server strings.
-    const sections: CcNextRunSection[] = [];
-    for (const group of groups) {
-      let index = sections.findIndex(entry => entry.kind === group.kind);
-      if (index < 0) {
-        index = sections.length;
-        sections.push({
-          kind: group.kind,
-          headingId: `cc-nr-${index}-title`,
-          heading: this.sectionHeading(group),
-          lead: group.kind === 'control' ? CONTROL_LEAD : '',
-          cards: []
-        });
-      }
-      const section = sections[index];
-      section.cards.push(this.cardView(group, `cc-nr-${index}-${section.cards.length}-title`));
+/** `6 runs would resolve the open questions.` */
+export function ccNextRunsLeadText(actionCount: number): string {
+  return `${plural(actionCount, 'run')} would resolve the open questions.`;
+}
+
+/**
+ * The server's next runs as the *Next runs* tab shows them: one section per kind present, each holding
+ * a card per period. The tab and its image read the same sections.
+ */
+export function ccNextRunSections(result: CcAnalysisResult, rows: readonly CcRunRow[]): CcNextRunSection[] {
+  return nextRunSections(result, ccNextRunGroups(result, rows));
+}
+
+function nextRunSections(result: CcAnalysisResult, groups: readonly CcNextRunGroup[]): CcNextRunSection[] {
+  // Ids by position: the kind and period are server strings.
+  const sections: CcNextRunSection[] = [];
+  for (const group of groups) {
+    let index = sections.findIndex(entry => entry.kind === group.kind);
+    if (index < 0) {
+      index = sections.length;
+      sections.push({
+        kind: group.kind,
+        headingId: `cc-nr-${index}-title`,
+        heading: sectionHeading(result, group),
+        lead: group.kind === 'control' ? CONTROL_LEAD : '',
+        cards: []
+      });
     }
-    return sections;
+    const section = sections[index];
+    section.cards.push(cardView(group, `cc-nr-${index}-${section.cards.length}-title`));
   }
+  return sections;
+}
 
-  private sectionHeading(group: CcNextRunGroup): string {
-    switch (group.kind) {
-      case 'checkpoint':
-        return `More runs of ${ccModelBaseName(this.result.subject.displayName, this.result.subject.thinkingLevel)}`;
-      case 'stratum':
-        return 'Runs at another time of day';
-      case 'control':
-        return 'Control runs';
-      case 'regrade':
-        return 'Re-grades';
-      default:
-        return group.title;
-    }
+function sectionHeading(result: CcAnalysisResult, group: CcNextRunGroup): string {
+  switch (group.kind) {
+    case 'checkpoint':
+      return `More runs of ${ccModelBaseName(result.subject.displayName, result.subject.thinkingLevel)}`;
+    case 'stratum':
+      return 'Runs at another time of day';
+    case 'control':
+      return 'Control runs';
+    case 'regrade':
+      return 'Re-grades';
+    default:
+      return group.title;
   }
+}
 
-  private cardView(group: CcNextRunGroup, titleId: string): CcNextRunCardView {
-    const control = group.kind === 'control';
-    const suites = group.targets.map(target => target.suiteName).filter((name): name is string => !!name);
-    return {
-      key: group.key,
-      kind: group.kind,
-      period: group.period,
-      periodText: periodText(group.period),
-      titleId,
-      title: CARD_TITLES[group.kind] ?? group.title,
-      endpointIds: group.endpointIds,
-      reasons: group.reasons,
-      suggestions: group.suggestions,
-      targets: group.kind === 'regrade' ? [] : group.targets.map(target => ({
-        runId: target.runId,
-        text: `Set up from run #${target.runId}`,
-        label: `Set up from run #${target.runId}'s setup${target.suiteName ? ` (${target.suiteName})` : ''}`
-          + ' — fills Run Benchmark, starts nothing'
-      })),
-      suitesText: control ? (suites.length > 0 ? [...new Set(suites)].join(', ') : NO_VALUE) : '',
-      buildText: control
-        ? (group.targets.length > 0 ? group.targets.map(target => `run #${target.runId}`).join(', ') : NO_VALUE)
-        : ''
-    };
-  }
+function cardView(group: CcNextRunGroup, titleId: string): CcNextRunCardView {
+  const control = group.kind === 'control';
+  const suites = group.targets.map(target => target.suiteName).filter((name): name is string => !!name);
+  return {
+    key: group.key,
+    kind: group.kind,
+    period: group.period,
+    periodText: periodText(group.period),
+    titleId,
+    title: CARD_TITLES[group.kind] ?? group.title,
+    endpointIds: group.endpointIds,
+    reasons: group.reasons,
+    suggestions: group.suggestions,
+    targets: group.kind === 'regrade' ? [] : group.targets.map(target => ({
+      runId: target.runId,
+      text: `Set up from run #${target.runId}`,
+      label: `Set up from run #${target.runId}'s setup${target.suiteName ? ` (${target.suiteName})` : ''}`
+        + ' — fills Run Benchmark, starts nothing'
+    })),
+    suitesText: control ? (suites.length > 0 ? [...new Set(suites)].join(', ') : NO_VALUE) : '',
+    buildText: control
+      ? (group.targets.length > 0 ? group.targets.map(target => `run #${target.runId}`).join(', ') : NO_VALUE)
+      : ''
+  };
 }

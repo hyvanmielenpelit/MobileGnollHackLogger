@@ -1,0 +1,99 @@
+<!--
+  The largest section of the launcher, with a gold start accent like the verdict banner's. Named by the
+  eyebrow and the title. &ngsp; keeps the spaces between inline parts that flex layouts separate only visually.
+-->
+<section class="cc-latest" aria-labelledby="cc-latest-eyebrow cc-latest-title">
+  <p id="cc-latest-eyebrow" class="cc-latest-eyebrow">Latest analysis</p>
+
+  @if (summary; as s) {
+    <h4 id="cc-latest-title" class="cc-latest-title">{{ title }}</h4>
+
+    <div class="cc-latest-subject">
+      @if (badges; as model) {
+        <app-cc-model-badges [model]="model" />&ngsp;
+      }
+      <span class="cc-latest-compared"><span class="gh-tag cc-kind-tag" [attr.data-kind]="compareKind.kind">{{ compareKind.text }}</span>@if (s.comparisonSetLabel) {&ngsp;<span class="cc-latest-compared-label">{{ s.comparisonSetLabel }}</span>}</span>
+    </div>
+
+    @if (shownResult; as result) {
+      @if (outcome; as o) {
+        <p class="cc-latest-outcome" [attr.data-outcome]="o.kind">
+          @switch (o.kind) {
+            @case ('noChange') {
+              <svg class="cc-latest-outcome-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            }
+            @case ('changed') {
+              <svg class="cc-latest-outcome-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            }
+            @default {
+              <svg class="cc-latest-outcome-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            }
+          }
+          <span class="cc-latest-outcome-title">{{ o.title }}</span>
+          @if (o.detail) {
+            <span class="cc-latest-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+            <span class="cc-latest-outcome-detail">{{ o.detail }}</span>
+          }
+        </p>
+      }
+      <app-cc-endpoint-chips [endpoints]="result.endpoints" [label]="'Endpoints of analysis #' + s.id" />
+    } @else if (error) {
+      <p class="gh-field-error cc-latest-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ error }}</span>
+      </p>
+    }
+    <!-- Polite, and empty once the verdicts are shown. -->
+    <p class="cc-latest-status" role="status">
+      @if (loading && !shownResult && !error) {
+        <svg class="dc-ring cc-latest-ring" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+          <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+          <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+        </svg>
+        <span>Loading the verdicts…</span>
+      }
+    </p>
+
+    <dl class="bm-summary-facts cc-latest-facts">
+      @for (fact of periods; track fact.period) {
+        <div [attr.data-fact]="fact.period">
+          <dt><span class="cc-latest-swatch" [attr.data-period]="fact.period" aria-hidden="true"></span>{{ fact.label }}</dt>
+          <dd>{{ fact.dates }}@if (fact.units) {&ngsp;<span class="cc-latest-units">· {{ fact.units }}</span>}</dd>
+        </div>
+      }
+      <div data-fact="saved"><dt>Saved</dt><dd><time [attr.datetime]="s.createdAtUtc">{{ savedText }}</time></dd></div>
+      <div data-fact="reports"><dt>Reports</dt><dd>{{ reportsText }}</dd></div>
+    </dl>
+
+    @if (openError) {
+      <p class="gh-field-error cc-latest-open-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ openError }}</span>
+      </p>
+    }
+
+    <div class="cc-latest-actions" role="group" [attr.aria-label]="'Actions for analysis #' + s.id">
+      <button type="button" class="btn-gh cc-latest-open" id="cc-latest-open"
+              [attr.aria-busy]="opening ? 'true' : null" (click)="onOpen()">Open Analysis #{{ s.id }}</button>
+      <button type="button" class="btn-ghost cc-latest-documents" id="cc-latest-documents"
+              [attr.aria-disabled]="documentCount === 0 ? 'true' : null"
+              [attr.aria-describedby]="documentCount === 0 ? 'cc-latest-documents-reason' : null"
+              (click)="onDocuments()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+        Documents ({{ documentCount }})
+      </button>
+      @if (documentCount === 0) {
+        <p class="cc-latest-reason" id="cc-latest-documents-reason">{{ noDocumentsReason }}</p>
+      }
+    </div>
+  } @else if (listLoading) {
+    <p class="cc-latest-empty" role="status">Loading the saved analyses…</p>
+  } @else if (listError) {
+    <p class="gh-field-error cc-latest-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ listError }}</span>
+    </p>
+  } @else {
+    <p class="cc-latest-empty">No analysis is saved yet. Open the wizard, choose a model, and Analyze in step 3.</p>
+  }
+</section>

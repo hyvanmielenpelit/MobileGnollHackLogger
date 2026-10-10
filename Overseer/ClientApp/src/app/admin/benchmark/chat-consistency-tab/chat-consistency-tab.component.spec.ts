@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
+import { CC_HISTORY_VIEW_STORAGE_KEY } from './analysis-history/analysis-history-dialog.component';
 import {
   CC_LAUNCHER_STORAGE_KEY,
   CC_LEAVE_REFUSAL,
@@ -11,7 +12,7 @@ import {
 } from './chat-consistency-tab.component';
 import { endOfUtcDay, startOfUtcDay } from './chat-consistency-format';
 import { CC_EMPTY_BATTERY_SCOPE } from './chat-consistency-scope';
-import { CcBatteryRunRow, CcComparisonSets, CcRunRow } from './chat-consistency.models';
+import { CcAnalysisSummary, CcBatteryRunRow, CcComparisonSets, CcRunRow } from './chat-consistency.models';
 import {
   CC_API,
   CC_BATTERY_SET_KEY,
@@ -33,7 +34,7 @@ import { CC_CHART_SIZE_STORAGE_KEY, CC_TIMELINE_STORAGE_KEY } from './timeline-w
 /** Every Chat Consistency storage key, cleared around each test. */
 const STORAGE_KEYS = [
   CC_LAUNCHER_STORAGE_KEY, CC_SUBJECT_STORAGE_KEY, CC_TIMELINE_STORAGE_KEY, CC_CHART_SIZE_STORAGE_KEY,
-  CC_RUNS_VIEW_STORAGE_KEY, CC_BATTERY_RUNS_VIEW_STORAGE_KEY
+  CC_RUNS_VIEW_STORAGE_KEY, CC_BATTERY_RUNS_VIEW_STORAGE_KEY, CC_HISTORY_VIEW_STORAGE_KEY
 ];
 
 const FIGURE_ORDER = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability', 'timeline'];
@@ -87,13 +88,21 @@ describe('ChatConsistencyTabComponent', () => {
 
   // --- Helpers ---
 
-  /** Creates the tab and answers its model and saved-analysis requests. */
-  function createTab(): void {
+  /**
+   * Creates the tab and answers its model and saved-analysis requests, and the Latest analysis card's
+   * request for the newest analysis's result.
+   */
+  function createTab(analyses: CcAnalysisSummary[] = [ccAnalysisSummary(7)]): void {
     fixture = TestBed.createComponent(ChatConsistencyTabComponent);
     el = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
     http.expectOne(`${CC_API}/models`).flush([ccAxis(), ccAxis({ key: 'empty', displayName: 'No runs', runCount: 0 })]);
-    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(7)]);
+    http.expectOne(`${CC_API}/analyses`).flush(analyses);
+    if (analyses.length > 0) {
+      const latest = http.expectOne(`${CC_API}/analyses/${analyses[0].id}`);
+      expect(latest.request.method).toBe('GET');
+      latest.flush(ccAnalysisResult({ analysisId: analyses[0].id }));
+    }
     fixture.detectChanges();
   }
 
@@ -154,15 +163,14 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
   }
 
-  /** The Current model card's facts, as `[term, value]` pairs. */
-  function currentFacts(): string[][] {
-    return Array.from(el.querySelectorAll('.cc-current-card dl.bm-summary-facts > div'))
-      .map(row => [textOf(row.querySelector('dt')), textOf(row.querySelector('dd'))]);
-  }
+  const latestCard = (): HTMLElement => el.querySelector<HTMLElement>('app-cc-latest-analysis-card')!;
+  const historyDialog = (): HTMLDialogElement => el.querySelector<HTMLDialogElement>('dialog.cc-history-dialog')!;
+  const historyCard = (id: number): HTMLElement =>
+    historyDialog().querySelector<HTMLElement>(`.cc-hist-card[data-analysis-id="${id}"]`)!;
 
-  /** The value of one Current model fact, or null when the card does not show it. */
-  function currentFact(term: string): string | null {
-    return currentFacts().find(([dt]) => dt === term)?.[1] ?? null;
+  function openHistory(): void {
+    el.querySelector<HTMLButtonElement>('#cc-open-history')!.click();
+    fixture.detectChanges();
   }
 
   /** The stored subject record, parsed, or null. */
@@ -173,18 +181,22 @@ describe('ChatConsistencyTabComponent', () => {
 
   // --- Launcher ---
 
-  it('renders the launcher: heading, lead, the wizard button, How chat consistency works and the saved analyses', () => {
+  it('renders the launcher: New analysis, Latest analysis and Analysis history, in reading order', () => {
     createTab();
 
     expect(textOf(el.querySelector('h3#cc-tab-heading'))).toBe('Chat Consistency');
-    expect(el.querySelector('section.cc-launcher')!.getAttribute('aria-labelledby')).toBe('cc-tab-heading');
+    const launcher = el.querySelector('section.cc-launcher')!;
+    expect(launcher.getAttribute('aria-labelledby')).toBe('cc-tab-heading');
+    const sections = Array.from(launcher.querySelector('.cc-launcher-grid')!.children);
+    expect(sections.map(section => section.classList.contains('cc-launcher-new') ? 'new' : section.tagName.toLowerCase()))
+      .toEqual(['new', 'app-cc-latest-analysis-card', 'section']);
+    expect(sections[2].classList).toContain('cc-history-bar');
+
     expect(textOf(el.querySelector('.bm-launcher-lead'))).toContain('Whether the Overseer chat with one model stayed the same over time');
     const open = el.querySelector<HTMLButtonElement>('#cc-open-wizard')!;
     expect(textOf(open)).toBe('Open Chat Consistency Wizard');
     expect(open.type).toBe('button');
     expect(open.classList).toContain('btn-gh');
-    // No model is chosen yet.
-    expect(el.querySelector('.cc-current-card')).toBeNull();
 
     // Open on the first visit, and recorded closed for the next one.
     expect(howTo().open).toBe(true);
@@ -195,17 +207,83 @@ describe('ChatConsistencyTabComponent', () => {
       .toContain('A verdict is only as current as the last run someone made: GnollBench is run by hand and is not a monitoring service.');
     expect(JSON.parse(localStorage.getItem(CC_LAUNCHER_STORAGE_KEY)!)).toEqual({ version: 1, howItWorksOpen: false });
 
-    // The saved-analyses component carries the one Saved analyses heading.
-    expect(el.querySelectorAll('#cc-saved-title').length).toBe(1);
-    expect(Array.from(el.querySelectorAll('h3, h4, h5')).filter(heading => textOf(heading) === 'Saved analyses').length).toBe(1);
-    const card = el.querySelector('.cc-analysis-card[data-analysis-id="7"]')!;
-    expect(textOf(card.querySelector('.cc-analysis-title'))).toBe('Analysis 7');
-    expect(textOf(card)).toContain('GPT-5 high');
+    // The newest analysis of any model, with its verdicts from the fetched result and its own gold button.
+    expect(textOf(latestCard().querySelector('#cc-latest-title'))).toBe('#7 · Analysis 7');
+    expect(textOf(latestCard().querySelector('.cc-latest-outcome-title'))).toBe('The chat changed');
+    expect(latestCard().querySelectorAll('.cc-ep-chip').length).toBe(5);
+    expect(textOf(latestCard().querySelector('#cc-latest-open'))).toBe('Open Analysis #7');
+    expect(Array.from(launcher.querySelectorAll('.btn-gh')).map(button => button.id)).toEqual(['cc-open-wizard', 'cc-latest-open']);
+
+    const bar = el.querySelector('section.cc-history-bar')!;
+    expect(bar.getAttribute('aria-labelledby')).toBe('cc-history-bar-title');
+    expect(textOf(bar.querySelector('h4#cc-history-bar-title'))).toBe('Analysis history');
+    expect(bar.querySelector('#cc-history-bar-summary')!.getAttribute('role')).toBe('status');
+    expect(textOf(bar.querySelector('#cc-history-bar-summary')))
+      .toBe('1 saved analysis of 1 model · the latest saved 2026-10-02 09:00 UTC · no report documents');
+    const history = el.querySelector<HTMLButtonElement>('#cc-open-history')!;
+    expect(textOf(history)).toBe('Open Analysis History');
+    expect(history.classList).toContain('btn-ghost');
+    expect(history.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(history.hasAttribute('aria-disabled')).toBe(false);
+    expect(historyDialog().open).toBe(false);
 
     // The wizard exists only once it is opened.
     expect(dialog().open).toBe(false);
     expect(dialog().getAttribute('aria-labelledby')).toBe('cc-wizard-title');
     expect(dialog().querySelector('app-cc-wizard')).toBeNull();
+  });
+
+  it('says no analysis is saved yet, and refuses Analysis History with that reason', () => {
+    createTab([]);
+
+    expect(textOf(latestCard().querySelector('.cc-latest-empty')))
+      .toBe('No analysis is saved yet. Open the wizard, choose a model, and Analyze in step 3.');
+    expect(latestCard().querySelector('button')).toBeNull();
+    expect(textOf(el.querySelector('#cc-history-bar-summary'))).toBe('No analysis is saved yet.');
+    const history = el.querySelector<HTMLButtonElement>('#cc-open-history')!;
+    expect(history.getAttribute('aria-disabled')).toBe('true');
+    expect(history.getAttribute('aria-describedby')).toBe('cc-history-bar-summary');
+    history.click();
+    fixture.detectChanges();
+    expect(historyDialog().open).toBe(false);
+  });
+
+  it('counts the saved analyses, their models and their report documents in the history bar', () => {
+    createTab([
+      ccAnalysisSummary(9, { createdAtUtc: '2026-10-10T09:40:00Z', subjectModelKey: 'anthropic/claude', reportDocumentCount: 3 }),
+      ccAnalysisSummary(8, { reportDocumentCount: 2 }),
+      ccAnalysisSummary(7)
+    ]);
+    expect(textOf(el.querySelector('#cc-history-bar-summary')))
+      .toBe('3 saved analyses of 2 models · the latest saved 2026-10-10 09:40 UTC · 5 report documents');
+    expect(textOf(latestCard().querySelector('#cc-latest-title'))).toBe('#9 · Analysis 9');
+  });
+
+  it('says when the verdicts of the latest analysis could not be loaded', () => {
+    fixture = TestBed.createComponent(ChatConsistencyTabComponent);
+    el = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+    http.expectOne(`${CC_API}/models`).flush([ccAxis()]);
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(7)]);
+    fixture.detectChanges();
+    expect(textOf(latestCard().querySelector('.cc-latest-status'))).toBe('Loading the verdicts…');
+
+    http.expectOne(`${CC_API}/analyses/7`).flush({ error: 'Boom.' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(textOf(latestCard().querySelector('.cc-latest-error'))).toBe('The verdicts of analysis #7 could not be loaded.');
+    expect(textOf(latestCard().querySelector('#cc-latest-open'))).toBe('Open Analysis #7');
+  });
+
+  it('takes a newly saved analysis as the latest without fetching it again', () => {
+    createTab();
+    const tab = fixture.componentInstance;
+    tab.onAnalysisSaved(ccAnalysisResult({ analysisId: 9, name: 'October check' }));
+    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(9, { name: 'October check' }), ccAnalysisSummary(7)]);
+    fixture.detectChanges();
+    http.expectNone(`${CC_API}/analyses/9`);
+    expect(tab.latestResult?.analysisId).toBe(9);
+    expect(textOf(latestCard().querySelector('#cc-latest-title'))).toBe('#9 · October check');
+    expect(textOf(latestCard().querySelector('.cc-latest-outcome-title'))).toBe('The chat changed');
   });
 
   it('keeps How chat consistency works as the operator left it', async () => {
@@ -247,7 +325,7 @@ describe('ChatConsistencyTabComponent', () => {
     expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('Choose a model, then follow the steps');
   });
 
-  it('loads the timeline and the runs when a model is chosen in the wizard, and shows it in the Current model card', () => {
+  it('loads the timeline and the runs when a model is chosen in the wizard, and remembers the model', () => {
     createTab();
     openWizard();
     chooseModelInWizard();
@@ -259,21 +337,9 @@ describe('ChatConsistencyTabComponent', () => {
     expect(step.querySelector('.cc-run-card')!.getAttribute('data-run-id')).toBe('106');
     expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · All dates');
 
-    // The card is the launcher's own grid child, after the hero and before the saved analyses.
-    const card = el.querySelector<HTMLElement>('section.bm-summary-card.cc-current-card')!;
-    expect(card.parentElement!.tagName).toBe('APP-CC-CURRENT-MODEL-CARD');
-    expect(card.parentElement!.previousElementSibling!.classList).toContain('bm-launcher-hero');
-    expect(card.parentElement!.nextElementSibling!.classList).toContain('bm-launcher-library');
-    expect(textOf(card.querySelector('.bm-summary-card-eyebrow'))).toBe('Current model');
-    expect(textOf(card.querySelector('#cc-current-name'))).toBe('GPT-5 high');
-    expect(currentFacts()).toEqual([
-      ['Runs', '6 runs · 4 with call telemetry'],
-      ['Dates', 'All dates'],
-      ['First run', '2026-09-01'],
-      ['Latest run', '#106 · 2026-10-01'],
-      ['Suites', 'Board Suite'],
-      ['Latest analysis', '#7 · Analysis 7 · saved 2026-10-02 Overseer chat with GPT-5 high: quality equivalent']
-    ]);
+    // The launcher shows the newest analysis of any model, whichever model the wizard has chosen.
+    expect(textOf(latestCard().querySelector('#cc-latest-title'))).toBe('#7 · Analysis 7');
+    expect(el.querySelector('.cc-current-card')).toBeNull();
     expect(storedSubject()).toEqual({
       version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null }, compare: null
     });
@@ -283,7 +349,7 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
     const figures = Array.from(dialog().querySelectorAll('app-cc-timeline-workspace figure.cc-figure'));
     expect(figures.map(entry => entry.getAttribute('data-figure'))).toEqual(FIGURE_ORDER);
-    expect(textOf(figures[0].querySelector('.cc-figure-takeaway'))).toBe('The Intelligence Index held between 71 and 74 across 6 runs.');
+    expect(textOf(figures[0].querySelector('.cc-figure-takeaway'))).toBe('The Intelligence Index ranged from 71 to 74 across 6 runs.');
   });
 
   /** Chooses a preset in step 1's Dates select. */
@@ -328,8 +394,6 @@ describe('ChatConsistencyTabComponent', () => {
 
       choosePreset('7d');
       expect(answerSubject()).toEqual({ from: '2026-09-30T12:00:00.000Z', to: null });
-      expect(currentFact('Dates')).toBe('Last 7 days · 6 runs in these dates');
-      expect(currentFact('Runs')).toBe('6 runs · 4 with call telemetry');
       expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · Last 7 days');
 
       vi.setSystemTime(new Date('2026-10-07T15:30:00Z'));
@@ -384,8 +448,8 @@ describe('ChatConsistencyTabComponent', () => {
       expect(tab.selectedKey).toBe('openai/gpt-5|high');
       expect(tab.range).toEqual({ preset: '7d', fromDay: '', toDay: '', anchorUtc: '2026-10-07T12:00:00.000Z' });
       expect(answerSubject()).toEqual({ from: '2026-09-30T12:00:00.000Z', to: null });
-      expect(textOf(el.querySelector('.cc-current-card #cc-current-name'))).toBe('GPT-5 high');
-      expect(currentFact('Dates')).toBe('Last 7 days · 6 runs in these dates');
+      expect(tab.rows.length).toBe(6);
+      expect(tab.timeline).not.toBeNull();
     });
   });
 
@@ -398,7 +462,7 @@ describe('ChatConsistencyTabComponent', () => {
         createTab();
         expect(fixture.componentInstance.selectedKey).toBeNull();
         expect(localStorage.getItem(CC_SUBJECT_STORAGE_KEY)).toBeNull();
-        expect(el.querySelector('.cc-current-card')).toBeNull();
+        http.expectNone(r => r.url === `${CC_API}/timeline`);
         fixture.destroy();
       }
     });
@@ -409,7 +473,7 @@ describe('ChatConsistencyTabComponent', () => {
       createTab();
       expect(fixture.componentInstance.selectedKey).toBeNull();
       expect(localStorage.getItem(CC_SUBJECT_STORAGE_KEY)).toBe(record);
-      expect(el.querySelector('.cc-current-card')).toBeNull();
+      http.expectNone(r => r.url === `${CC_API}/timeline`);
     });
 
     it('ignores a malformed record', () => {
@@ -430,7 +494,7 @@ describe('ChatConsistencyTabComponent', () => {
     });
   });
 
-  it('counts the runs in the analysis in the Current model card, and clears the selection for a new model or a saved analysis', () => {
+  it('counts the runs in the analysis in the wizard subtitle, and clears the selection for a new model or a saved analysis', () => {
     createTab();
     openWizard();
     chooseModelInWizard();
@@ -439,7 +503,6 @@ describe('ChatConsistencyTabComponent', () => {
     dialog().querySelector<HTMLInputElement>('#cc-run-104-include')!.click();
     fixture.detectChanges();
     expect([...tab.scope.leftOut]).toEqual([104]);
-    expect(currentFact('In the analysis')).toBe('5 runs');
     expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · All dates · 5 in the analysis');
 
     // A reload that no longer lists the left-out run drops it, and says so.
@@ -448,13 +511,13 @@ describe('ChatConsistencyTabComponent', () => {
     answerSubject(ccRunRows().filter(row => row.runId !== 104));
     expect(tab.scope.leftOut.size).toBe(0);
     expect(textOf(dialog().querySelector('.cc-tl-announcement'))).toBe('Left-out run #104 is no longer listed and was dropped from the selection.');
-    // Step 1 no longer narrows the runs, so the card leaves the fact out.
-    expect(currentFact('In the analysis')).toBeNull();
+    // Step 1 no longer narrows the runs, so the subtitle leaves the count out.
+    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).not.toContain('in the analysis');
 
     dialog().querySelector<HTMLInputElement>('#cc-run-105-include')!.click();
     fixture.detectChanges();
     expect(tab.scope.leftOut.size).toBe(1);
-    el.querySelector<HTMLButtonElement>('.cc-analysis-card[data-analysis-id="7"] .cc-analysis-open')!.click();
+    el.querySelector<HTMLButtonElement>('#cc-latest-open')!.click();
     fixture.detectChanges();
     http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
     fixture.detectChanges();
@@ -492,7 +555,7 @@ describe('ChatConsistencyTabComponent', () => {
     http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(ccNoComparisonSets());
     http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush([]);
     fixture.detectChanges();
-    expect(currentFact('Dates')).toBe('From 2026-09-10 · 6 runs in these dates');
+    expect(fixture.componentInstance.range).toEqual({ preset: 'custom', fromDay: '2026-09-10', toDay: '', anchorUtc: null });
 
     const to = dialog().querySelector<HTMLInputElement>('#cc-tl-to')!;
     to.value = '2026-09-30';
@@ -508,15 +571,16 @@ describe('ChatConsistencyTabComponent', () => {
     http.expectOne(r => r.url === `${CC_API}/comparison-sets`).flush(ccNoComparisonSets());
     http.expectOne(r => r.url === `${CC_API}/battery-runs`).flush([]);
     fixture.detectChanges();
-    expect(currentFact('Dates')).toBe('2026-09-10 to 2026-09-30 · 6 runs in these dates');
-    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · 2026-09-10 to 2026-09-30');  });
+    expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · 6 runs · 2026-09-10 to 2026-09-30');
+  });
 
-  it('opens a saved analysis in the wizard on Results, switching to its model', () => {
+  it('opens the latest analysis in the wizard on Results, switching to its model', () => {
     createTab();
-    const open = el.querySelector<HTMLButtonElement>('.cc-analysis-card[data-analysis-id="7"] .cc-analysis-open')!;
-    expect(open.getAttribute('aria-label')).toBe('Open Analysis 7');
+    const open = el.querySelector<HTMLButtonElement>('#cc-latest-open')!;
+    expect(textOf(open)).toBe('Open Analysis #7');
     open.click();
     fixture.detectChanges();
+    expect(open.getAttribute('aria-busy')).toBe('true');
 
     http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
     fixture.detectChanges();
@@ -537,7 +601,105 @@ describe('ChatConsistencyTabComponent', () => {
     const wizard = fixture.componentInstance.wizard!;
     expect(wizard.step).toBe(4);
     expect(wizard.analysis!.result?.analysisId).toBe(7);
-    expect(textOf(el.querySelector('.cc-current-card #cc-current-name'))).toBe('GPT-5 high');
+    expect(fixture.componentInstance.selectedKey).toBe('openai/gpt-5|high');
+    expect(el.querySelector('#cc-latest-open')!.hasAttribute('aria-busy')).toBe(false);
+  });
+
+  it('opens the latest analysis on its documents, step 6, from the Latest analysis card', () => {
+    createTab([ccAnalysisSummary(7, { reportDocumentCount: 3 })]);
+    const documents = el.querySelector<HTMLButtonElement>('#cc-latest-documents')!;
+    expect(textOf(documents)).toBe('Documents (3)');
+    documents.click();
+    fixture.detectChanges();
+
+    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
+    fixture.detectChanges();
+    flushSubject();
+    expect(dialog().open).toBe(true);
+    expect(fixture.componentInstance.wizard!.step).toBe(6);
+    // Step 6 reads the analysis's documents; those requests are its own specs' subject.
+    http.match(() => true);
+  });
+
+  it('shows an open error in the Latest analysis card when the open starts there', () => {
+    createTab();
+    el.querySelector<HTMLButtonElement>('#cc-latest-open')!.click();
+    http.expectOne(`${CC_API}/analyses/7`).flush({ error: 'Analysis 7 was not found.' }, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+
+    expect(dialog().open).toBe(false);
+    const error = latestCard().querySelector('.cc-latest-open-error')!;
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(textOf(error)).toBe('Analysis 7 was not found.');
+    expect(historyDialog().querySelector('.cc-hist-open-error')).toBeNull();
+  });
+
+  // --- Analysis History ---
+
+  it('opens a saved analysis from Analysis History, closing the dialog before the wizard opens', () => {
+    createTab([ccAnalysisSummary(8, { name: 'October check' }), ccAnalysisSummary(7)]);
+    openHistory();
+    expect(historyDialog().open).toBe(true);
+    expect(document.activeElement?.id).toBe('cc-history-title');
+    expect(Array.from(historyDialog().querySelectorAll('.cc-hist-card')).map(card => card.getAttribute('data-analysis-id')))
+      .toEqual(['8', '7']);
+
+    const wizardOpenAtHistoryClose: boolean[] = [];
+    const history = historyDialog();
+    const nativeClose = history.close.bind(history);
+    vi.spyOn(history, 'close').mockImplementation((value?: string) => {
+      wizardOpenAtHistoryClose.push(dialog().open);
+      nativeClose(value);
+    });
+
+    historyCard(7).querySelector<HTMLButtonElement>('.cc-hist-open')!.click();
+    fixture.detectChanges();
+    // The dialog stays until the analysis arrives, busy on the card that asked.
+    expect(history.open).toBe(true);
+    expect(historyCard(7).querySelector('.cc-hist-open')!.getAttribute('aria-busy')).toBe('true');
+
+    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
+    fixture.detectChanges();
+    expect(wizardOpenAtHistoryClose).toEqual([false]);
+    expect(history.open).toBe(false);
+    expect(dialog().open).toBe(true);
+    flushSubject();
+    expect(fixture.componentInstance.wizard!.step).toBe(4);
+  });
+
+  it('shows an open error in Analysis History when the open starts there, and keeps the dialog open', () => {
+    createTab([ccAnalysisSummary(8), ccAnalysisSummary(7)]);
+    openHistory();
+    historyCard(7).querySelector<HTMLButtonElement>('.cc-hist-open')!.click();
+    http.expectOne(`${CC_API}/analyses/7`).flush({ error: 'Analysis 7 was not found.' }, { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+
+    expect(historyDialog().open).toBe(true);
+    expect(dialog().open).toBe(false);
+    expect(textOf(historyDialog().querySelector('.cc-hist-open-error'))).toBe('Analysis 7 was not found.');
+    expect(latestCard().querySelector('.cc-latest-open-error')).toBeNull();
+  });
+
+  it('removes an analysis deleted in Analysis History, and the Latest analysis card moves to the next newest', () => {
+    createTab([ccAnalysisSummary(8, { name: 'October check' }), ccAnalysisSummary(7)]);
+    openHistory();
+    historyCard(8).querySelector<HTMLButtonElement>('.cc-hist-delete')!.click();
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('dialog.cc-delete-dialog .cc-delete-confirm')!.click();
+    const del = http.expectOne(`${CC_API}/analyses/8`);
+    expect(del.request.method).toBe('DELETE');
+    del.flush(null, { status: 204, statusText: 'No Content' });
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.analyses.map(analysis => analysis.id)).toEqual([7]);
+    expect(historyDialog().open).toBe(true);
+    expect(historyCard(8)).toBeNull();
+    expect(document.activeElement?.id).toBe('cc-hist-7-title');
+    expect(textOf(latestCard().querySelector('.cc-latest-status'))).toBe('Loading the verdicts…');
+    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
+    fixture.detectChanges();
+    expect(textOf(latestCard().querySelector('#cc-latest-title'))).toBe('#7 · Analysis 7');
+    expect(textOf(el.querySelector('#cc-history-bar-summary'))).toContain('1 saved analysis of 1 model');
   });
 
   it('ignores a close event that is not the wizard dialog\'s, and reads the saved analyses again after a real close', async () => {
@@ -556,7 +718,9 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
     http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(7), ccAnalysisSummary(8)]);
     fixture.detectChanges();
-    expect(el.querySelectorAll('.cc-analysis-card').length).toBe(2);
+    expect(textOf(el.querySelector('#cc-history-bar-summary'))).toContain('2 saved analyses of 1 model');
+    // The newest is still analysis 7, whose result the Latest analysis card already holds.
+    http.expectNone(`${CC_API}/analyses/7`);
 
     // Reopening keeps the mounted wizard.
     const wizard = fixture.componentInstance.wizard;
@@ -719,7 +883,7 @@ describe('ChatConsistencyTabComponent', () => {
     delete (wizard as unknown as { closeBlocked?: boolean }).closeBlocked;
   });
 
-  it('opens the latest run report and the latest analysis from the Current model card', async () => {
+  it('opens the latest analysis from the launcher after the wizard was closed', async () => {
     createTab();
     openWizard();
     chooseModelInWizard();
@@ -729,15 +893,10 @@ describe('ChatConsistencyTabComponent', () => {
     fixture.detectChanges();
     http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(7)]);
     fixture.detectChanges();
-    const report = vi.spyOn(bridge, 'viewRunDetail').mockImplementation(() => undefined);
-    const card = el.querySelector<HTMLElement>('.cc-current-card')!;
 
-    card.querySelector<HTMLButtonElement>('.cc-current-open-report')!.click();
-    expect(report).toHaveBeenCalledWith(106);
-
-    const openAnalysis = card.querySelector<HTMLButtonElement>('.cc-current-open-analysis')!;
-    expect(textOf(openAnalysis)).toBe('Open analysis #7');
-    openAnalysis.click();
+    const open = el.querySelector<HTMLButtonElement>('#cc-latest-open')!;
+    expect(textOf(open)).toBe('Open Analysis #7');
+    open.click();
     fixture.detectChanges();
     http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
     fixture.detectChanges();
@@ -745,41 +904,25 @@ describe('ChatConsistencyTabComponent', () => {
     expect(fixture.componentInstance.wizard!.step).toBe(4);
   });
 
-  // --- Saved analyses ---
-
-  it('shows the 409 refusal in the delete confirmation and keeps the analysis', () => {
+  it('empties the launcher when the only saved analysis is deleted in Analysis History', () => {
     createTab();
-    const card = el.querySelector<HTMLElement>('.cc-analysis-card[data-analysis-id="7"]')!;
-    card.querySelector<HTMLButtonElement>('.cc-analysis-delete')!.click();
+    openHistory();
+    historyCard(7).querySelector<HTMLButtonElement>('.cc-hist-delete')!.click();
     fixture.detectChanges();
     const confirm = el.querySelector<HTMLDialogElement>('dialog.cc-delete-dialog')!;
     expect(confirm.open).toBe(true);
     expect(textOf(confirm.querySelector('h3'))).toBe('Delete Analysis 7?');
-
     confirm.querySelector<HTMLButtonElement>('.cc-delete-confirm')!.click();
-    const del = http.expectOne(`${CC_API}/analyses/7`);
-    expect(del.request.method).toBe('DELETE');
-    del.flush({ error: 'Report documents were written from this analysis. Delete them first.' }, { status: 409, statusText: 'Conflict' });
-    fixture.detectChanges();
-
-    expect(confirm.open).toBe(true);
-    const error = confirm.querySelector('.cc-delete-error')!;
-    expect(error.getAttribute('role')).toBe('alert');
-    expect(textOf(error)).toBe('Report documents were written from this analysis. Delete them first.');
-    expect(el.querySelector('.cc-analysis-card[data-analysis-id="7"]')).not.toBeNull();
-  });
-
-  it('removes a deleted analysis from the list', () => {
-    createTab();
-    el.querySelector<HTMLButtonElement>('.cc-analysis-card[data-analysis-id="7"] .cc-analysis-delete')!.click();
-    fixture.detectChanges();
-    el.querySelector<HTMLButtonElement>('dialog.cc-delete-dialog .cc-delete-confirm')!.click();
     http.expectOne(`${CC_API}/analyses/7`).flush(null, { status: 204, statusText: 'No Content' });
     fixture.detectChanges();
 
-    expect(el.querySelector<HTMLDialogElement>('dialog.cc-delete-dialog')!.open).toBe(false);
-    expect(el.querySelector('.cc-analysis-card')).toBeNull();
-    expect(textOf(el.querySelector('.cc-saved-empty'))).toContain('No analysis is saved yet.');
+    expect(confirm.open).toBe(false);
+    expect(historyCard(7)).toBeNull();
+    // With no card left, focus goes to the dialog's title.
+    expect(document.activeElement?.id).toBe('cc-history-title');
+    expect(textOf(latestCard().querySelector('.cc-latest-empty'))).toContain('No analysis is saved yet.');
+    expect(fixture.componentInstance.latestResult).toBeNull();
+    expect(el.querySelector('#cc-open-history')!.getAttribute('aria-disabled')).toBe('true');
   });
 
   // --- Comparison sets ---
@@ -793,7 +936,7 @@ describe('ChatConsistencyTabComponent', () => {
       fixture.detectChanges();
     }
 
-    it('compares within the server\'s default set, lists its battery runs and names it in the header and the card', () => {
+    it('compares within the server\'s default set, lists its battery runs and names it in the header', () => {
       createTab();
       openWizard();
       chooseModelInWizard(batterySubject());
@@ -806,7 +949,7 @@ describe('ChatConsistencyTabComponent', () => {
       expect(cards).toEqual(['12', '11']);
       expect(dialog().querySelector('.cc-run-card:not(.cc-battery-card)')).toBeNull();
       expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toBe('GPT-5 high · Two initial suites (revision 1) · 2 battery runs · All dates');
-      expect(currentFact('Compared')).toBe('Two initial suites (revision 1)');
+      expect(tab.compareSet?.label).toBe('Two initial suites (revision 1)');
       expect(storedSubject()).toEqual({
         version: 2, modelKey: 'openai/gpt-5|high', range: { preset: 'all', fromDay: '', toDay: '', anchorUtc: null },
         compare: { kind: 'battery', key: CC_BATTERY_SET_KEY }
@@ -822,7 +965,7 @@ describe('ChatConsistencyTabComponent', () => {
       dialog().querySelector<HTMLInputElement>('#cc-brun-11-include')!.click();
       fixture.detectChanges();
       expect([...tab.scope.leftOut]).toEqual([11]);
-      expect(currentFact('In the analysis')).toBe('1 battery run');
+      expect(textOf(dialog().querySelector('.cc-wizard-subtitle'))).toContain('· 1 in the analysis');
 
       chooseSet('suite:id:5');
       http.expectNone(r => r.url === `${CC_API}/runs`);
@@ -848,7 +991,7 @@ describe('ChatConsistencyTabComponent', () => {
       createTab();
       flushSubject(batterySubject());
       expect(fixture.componentInstance.compareKey).toBe('suite:id:6');
-      expect(currentFact('Compared')).toBe('Wiki Suite');
+      expect(fixture.componentInstance.compareSet?.label).toBe('Wiki Suite');
       fixture.destroy();
 
       localStorage.setItem(CC_SUBJECT_STORAGE_KEY, JSON.stringify({
@@ -871,20 +1014,21 @@ describe('ChatConsistencyTabComponent', () => {
       expect(fixture.componentInstance.compareKey).toBe(CC_BATTERY_SET_KEY);
     });
 
-    it('names each saved analysis\'s compared set, and nothing for one without', () => {
-      fixture = TestBed.createComponent(ChatConsistencyTabComponent);
-      el = fixture.nativeElement as HTMLElement;
-      fixture.detectChanges();
-      http.expectOne(`${CC_API}/models`).flush([ccAxis()]);
-      http.expectOne(`${CC_API}/analyses`).flush([
-        ccAnalysisSummary(7),
-        ccAnalysisSummary(8, { comparisonSetKey: CC_BATTERY_SET_KEY, comparisonSetLabel: 'Two initial suites (revision 1)' })
+    it('names each saved analysis\'s compared set, and All suites for one without', () => {
+      createTab([
+        ccAnalysisSummary(8, { comparisonSetKey: CC_BATTERY_SET_KEY, comparisonSetLabel: 'Two initial suites (revision 1)' }),
+        ccAnalysisSummary(7)
       ]);
-      fixture.detectChanges();
-      expect(el.querySelector('.cc-analysis-card[data-analysis-id="7"] .cc-analysis-compared')).toBeNull();
-      const compared = el.querySelector('.cc-analysis-card[data-analysis-id="8"] .cc-analysis-compared')!;
-      expect(textOf(compared.querySelector('dt'))).toBe('Compared');
-      expect(textOf(compared.querySelector('dd'))).toBe('Two initial suites (revision 1)');
+      const subject = latestCard().querySelector('.cc-latest-subject')!;
+      expect(textOf(subject.querySelector('.cc-kind-tag'))).toBe('Battery');
+      expect(subject.querySelector('.cc-kind-tag')!.getAttribute('data-kind')).toBe('battery');
+      expect(textOf(subject.querySelector('.cc-latest-compared-label'))).toBe('Two initial suites (revision 1)');
+
+      openHistory();
+      expect(textOf(historyCard(8).querySelector('.cc-kind-tag'))).toBe('Battery');
+      expect(textOf(historyCard(8).querySelector('.cc-hist-compared-label'))).toBe('Two initial suites (revision 1)');
+      expect(textOf(historyCard(7).querySelector('.cc-kind-tag'))).toBe('All suites');
+      expect(historyCard(7).querySelector('.cc-hist-compared-label')).toBeNull();
     });
 
     it('opens a battery run report and a member\'s run report through the shell', () => {

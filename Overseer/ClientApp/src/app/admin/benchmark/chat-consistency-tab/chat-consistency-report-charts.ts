@@ -1,35 +1,57 @@
 /**
  * The charts attached to a chat consistency analysis's AI-written documents: the figures of
- * `chat-consistency-charts.ts` drawn offscreen in the print theme, encoded as PNG and uploaded with
+ * `chat-consistency-charts.ts` chosen for each document type in step 5, each composed off-screen at
+ * the width it prints at in that document, with its labels at the chosen size in points, in the
+ * print theme and with no heading; encoded as PNG and uploaded with the document's chart layout by
  * `PUT report-documents/{id}/charts`, the Report Pack's chart endpoint, keyed `cc1-quality`,
  * `cc2-speed`, `cc3-work` and `cc4-timeline`.
  */
 
 import { firstValueFrom } from 'rxjs';
 
-import { AdminBenchmarkService, ReportDocumentChartUpload } from '../../../services/admin-benchmark.service';
-import { FigureExportLayout, OffscreenPlotConfig, encodeFigureImage, renderPlotOffscreen } from '../model-comparison/figure-export';
-import { FigureLogo, ensureFigureLogo, figureLogoAspect } from '../model-comparison/figure-logo';
-import { canonicalJson } from '../report-pack/report-charts';
-import { CC_HEADER_LOGO_PX, CC_PRINT_THEME, CC_REPORT_FIGURES, CcFigureInput, buildCcFigure } from './chat-consistency-charts';
+import { AdminBenchmarkService, ReportDocumentChartUpload, BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
+import {
+  FigureExportRequest,
+  FigureExportResolution,
+  OffscreenPlotConfig,
+  composeFigureImage,
+  encodeFigureImage,
+  renderPlotOffscreen,
+  resolveFigureLayout
+} from '../model-comparison/figure-export';
+import { DEFAULT_APPEARANCE_STYLE } from '../model-comparison/figure-style';
+import { resolveFigureTheme } from '../model-comparison/figure-theme';
+import {
+  BASE_LABEL_PX,
+  DOCUMENT_CHART_COLUMN_PT,
+  DOCUMENT_CHART_DPI,
+  DOCUMENT_MIN_CONTENT_WIDTH,
+  DOCUMENT_MIN_PLOT_HEIGHT,
+  DocumentChartLayout,
+  ReportChartWidth,
+  canonicalJson,
+  documentChartLayout,
+  documentChartRefusal,
+  documentChartWidth,
+  documentFigureLayout,
+  printFigureAppearance
+} from '../report-pack/report-charts';
+import { CC_PRINT_THEME, CC_REPORT_FIGURES, CcFigureInput, buildCcFigure, ccFigureTitle } from './chat-consistency-charts';
+import {
+  CcDocumentChartLayout,
+  CcReportChartSettings,
+  ccDocumentChartLayoutFor,
+  ccReportDocumentChartLayout,
+  normalizeCcReportChartLayout,
+  normalizeCcReportChartSelection
+} from './chat-consistency-report-chart-settings';
 import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from './chat-consistency.models';
 
-/** A 16:9 plot, written at twice its layout size. */
-export const CC_REPORT_CHART_LAYOUT: FigureExportLayout = Object.freeze({
-  layoutWidth: 1200,
-  layoutHeight: 675,
-  plotWidth: 1200,
-  plotHeight: 675,
-  density: 2,
-  pixelWidth: 2400,
-  pixelHeight: 1350
-});
-
 /** Bumped whenever the drawing changes, so the settings hash tells old charts from new ones. */
-export const CC_REPORT_CHART_VERSION = 5;
+export const CC_REPORT_CHART_VERSION = 6;
 
-/** SHA-256 of the drawing settings, 64 lowercase hex characters; throws outside a secure context. */
-export async function ccReportChartSettingsHash(): Promise<string> {
+/** SHA-256 of the drawing settings, the chart choices and their layout, 64 lowercase hex characters; throws outside a secure context. */
+export async function ccReportChartSettingsHash(settings: CcReportChartSettings): Promise<string> {
   const subtle = typeof crypto !== 'undefined' ? crypto.subtle : undefined;
   if (!subtle) {
     throw new Error('SHA-256 is not available: crypto.subtle needs a secure context.');
@@ -39,7 +61,12 @@ export async function ccReportChartSettingsHash(): Promise<string> {
     version: CC_REPORT_CHART_VERSION,
     figures: [...CC_REPORT_FIGURE_KEYS],
     theme: 'print',
-    layout: { width: CC_REPORT_CHART_LAYOUT.layoutWidth, height: CC_REPORT_CHART_LAYOUT.layoutHeight, density: CC_REPORT_CHART_LAYOUT.density }
+    columnPt: DOCUMENT_CHART_COLUMN_PT,
+    dpi: DOCUMENT_CHART_DPI,
+    baseLabelPx: BASE_LABEL_PX,
+    format: 'png',
+    selection: normalizeCcReportChartSelection(settings.selection),
+    layout: normalizeCcReportChartLayout(settings.layout)
   };
   const digest = await subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(input)));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -55,34 +82,84 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-/** The wide GnollBench logo at the header band's height; null when it does not load. */
-export async function ccReportLogo(): Promise<FigureLogo | null> {
-  const image = await ensureFigureLogo('wide');
-  return image ? { image, aspectRatio: figureLogoAspect('wide'), heightPx: CC_HEADER_LOGO_PX } : null;
+/** Model Comparison's *Light, for print*, which frames every chat consistency document chart. */
+const DOCUMENT_THEME = resolveFigureTheme(printFigureAppearance(DEFAULT_APPEARANCE_STYLE));
+
+/** The chart inside the frame: the print palette and font, on the frame's ground. */
+const DOCUMENT_CHART_THEME = Object.freeze({ ...CC_PRINT_THEME, background: null });
+
+/** What a document chart draws around the plot: nothing but the frame's padding, the document captions it. */
+export type CcDocumentChartSource = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
+
+export function ccDocumentChartSource(): CcDocumentChartSource {
+  return {
+    chrome: { title: '', badges: [], detail: '', key: [], highlight: '', notes: [] },
+    footer: { suite: '', computedAt: '' },
+    theme: DOCUMENT_THEME,
+    logo: null,
+    minContentWidth: DOCUMENT_MIN_CONTENT_WIDTH
+  };
+}
+
+function documentResolution(box: DocumentChartLayout): FigureExportResolution {
+  return { id: 'document', label: 'Document', widthPx: box.pxWidth, heightPx: box.pxHeight, group: 'Document' };
 }
 
 /**
- * One figure as an upload, or null when it has nothing to draw or the drawing fails. The header band
- * carries the logo alone: the document prints the title and caption itself. The logo is loaded here
- * unless `logo` is given.
+ * A document figure's box, as Model Comparison's: its width's aspect, made taller where the frame
+ * would leave the plot less than {@link DOCUMENT_MIN_PLOT_HEIGHT}. The frame is measured on a probe
+ * three widths tall; a probe the composer refuses leaves the aspect's box for the real call to refuse.
+ */
+export function ccDocumentFigureBox(key: CcReportFigureKey, width: ReportChartWidth, labelPt: number, source: CcDocumentChartSource): DocumentChartLayout {
+  const box = documentFigureLayout(key, width, labelPt);
+  const probe = documentChartLayout(box.widthPt, box.widthPt * 3, labelPt);
+  const probed = resolveFigureLayout(source, documentResolution(probe), 1, probe.textScale).layout;
+  if (!probed) {
+    return box;
+  }
+  const chromeHeight = probed.layoutHeight - probed.plotHeight;
+  return documentFigureLayout(key, width, labelPt, DOCUMENT_CHART_COLUMN_PT, chromeHeight + DOCUMENT_MIN_PLOT_HEIGHT);
+}
+
+/**
+ * One figure as a document of `layout` prints it: at its width of the text column at 300 dpi, its
+ * axis labels at the layout's size in points (the charts' 11 px axis text is {@link BASE_LABEL_PX}),
+ * the time axis fitted to the plotted points, in the print theme. Null when the figure has nothing to
+ * draw; throws when its width does not fit or it cannot be composed.
  */
 export async function composeCcReportChart(
   key: CcReportFigureKey,
   input: CcFigureInput,
   settingsHash: string,
-  logo?: FigureLogo | null
+  layout: CcDocumentChartLayout
 ): Promise<ReportDocumentChartUpload | null> {
+  const title = ccFigureTitle(CC_REPORT_FIGURES[key]);
+  const width = documentChartWidth(layout, key);
+  const refusal = documentChartRefusal(width, layout.labelPt);
+  if (refusal) {
+    throw new Error(`${title} cannot be drawn: ${refusal}`);
+  }
   const figure = buildCcFigure(CC_REPORT_FIGURES[key], input, {
-    theme: CC_PRINT_THEME,
+    theme: DOCUMENT_CHART_THEME,
     reducedMotion: true,
     header: { title: null, subject: null },
-    logo: logo === undefined ? await ccReportLogo() : logo
+    logo: null,
+    fitToData: true
   });
   if (!figure.config) return null;
+  const source = ccDocumentChartSource();
+  const box = ccDocumentFigureBox(key, width, layout.labelPt, source);
+  const resolved = resolveFigureLayout(source, documentResolution(box), 1, box.textScale);
+  if (!resolved.layout) {
+    throw new Error(`${title} cannot be drawn: ${resolved.refusal ?? 'it does not fit a document chart.'}`);
+  }
   // The figure's line configuration, erased to the union the offscreen renderer takes.
-  const plot = await renderPlotOffscreen(figure.config as unknown as OffscreenPlotConfig, CC_REPORT_CHART_LAYOUT);
-  if (!plot) return null;
-  const { blob } = await encodeFigureImage(plot, 'png');
+  const plot = await renderPlotOffscreen(figure.config as unknown as OffscreenPlotConfig, resolved.layout);
+  if (!plot) {
+    throw new Error(`${title} could not be composed: its chart could not be built.`);
+  }
+  const canvas = composeFigureImage({ ...source, canvas: plot, format: 'png', layout: resolved.layout });
+  const { blob } = await encodeFigureImage(canvas, 'png');
   return {
     figureKey: key,
     naming: 'named',
@@ -94,41 +171,91 @@ export async function composeCcReportChart(
   };
 }
 
+/** A written document to chart; `chartCount` tells whether it has charts a choice of none removes. */
+export interface CcReportChartDocument {
+  readonly id: number;
+  readonly audience: BenchmarkReportAudience;
+  readonly chartCount?: number;
+}
+
 export interface CcChartPublishResult {
   /** Documents that received charts, with the number attached. */
   published: { documentId: number; chartCount: number }[];
   failed: { documentId: number; message: string }[];
+  /** Documents with no chart chosen for their type: nothing was drawn, and charts they had were removed. */
+  withoutCharts: number[];
 }
 
-/** Draws the four figures once and attaches them to each document. A failed upload does not stop the others. */
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  const body = (error as { error?: unknown })?.error;
+  if (typeof body === 'string' && body.trim()) return body.trim();
+  if (body && typeof (body as { error?: unknown }).error === 'string') return (body as { error: string }).error;
+  return fallback;
+}
+
+/**
+ * Draws each document's chosen figures for its type's layout and attaches them with that layout,
+ * one document at a time. A figure is composed once per width and label size and shared by the
+ * documents that print it alike. A figure with nothing to draw is left out; a document whose every
+ * figure is left out or fails, or whose upload fails, is recorded as failed and the others go on. A
+ * document with no figure chosen gets none, and loses the charts it had.
+ */
 export async function publishCcReportCharts(
   service: AdminBenchmarkService,
-  documentIds: readonly number[],
-  input: CcFigureInput
+  documents: readonly CcReportChartDocument[],
+  input: CcFigureInput,
+  settings: CcReportChartSettings
 ): Promise<CcChartPublishResult> {
-  const result: CcChartPublishResult = { published: [], failed: [] };
-  if (documentIds.length === 0) return result;
-  const settingsHash = await ccReportChartSettingsHash();
-  const logo = await ccReportLogo();
-  const uploads: ReportDocumentChartUpload[] = [];
-  for (const key of CC_REPORT_FIGURE_KEYS) {
-    const upload = await composeCcReportChart(key, input, settingsHash, logo);
-    if (upload) uploads.push(upload);
-  }
-  if (uploads.length === 0) {
-    for (const documentId of documentIds) result.failed.push({ documentId, message: 'No chart could be drawn.' });
-    return result;
-  }
-  for (const documentId of documentIds) {
+  const result: CcChartPublishResult = { published: [], failed: [], withoutCharts: [] };
+  if (documents.length === 0) return result;
+  const selection = normalizeCcReportChartSelection(settings.selection);
+  const layouts = normalizeCcReportChartLayout(settings.layout);
+  const settingsHash = await ccReportChartSettingsHash({ selection, layout: layouts });
+  const composed = new Map<string, Promise<ReportDocumentChartUpload | null>>();
+
+  for (const doc of documents) {
+    const keys = selection[doc.audience] ?? [];
+    if (keys.length === 0) {
+      if ((doc.chartCount ?? 0) > 0) {
+        try {
+          await firstValueFrom(service.deleteReportDocumentCharts(doc.id));
+        } catch (error) {
+          result.failed.push({ documentId: doc.id, message: errorMessage(error, 'The charts could not be removed.') });
+          continue;
+        }
+      }
+      result.withoutCharts.push(doc.id);
+      continue;
+    }
+
+    const layout = ccDocumentChartLayoutFor(layouts, doc.audience);
+    const uploads: ReportDocumentChartUpload[] = [];
+    const errors: string[] = [];
+    for (const key of keys) {
+      const cacheKey = `${key}|${documentChartWidth(layout, key)}|${layout.labelPt}`;
+      let pending = composed.get(cacheKey);
+      if (!pending) {
+        pending = composeCcReportChart(key, input, settingsHash, layout);
+        composed.set(cacheKey, pending);
+      }
+      try {
+        const upload = await pending;
+        if (upload) uploads.push(upload);
+      } catch (error) {
+        errors.push(errorMessage(error, 'The chart could not be drawn.'));
+      }
+    }
+    if (uploads.length === 0) {
+      result.failed.push({ documentId: doc.id, message: errors[0] ?? 'No chart could be drawn.' });
+      continue;
+    }
     try {
-      const summary = await firstValueFrom(service.putReportDocumentCharts(documentId, uploads));
-      result.published.push({ documentId, chartCount: summary?.chartCount ?? uploads.length });
+      const placement = ccReportDocumentChartLayout(doc.audience, uploads.map(upload => upload.figureKey), layout);
+      const summary = await firstValueFrom(service.putReportDocumentCharts(doc.id, uploads, placement));
+      result.published.push({ documentId: doc.id, chartCount: summary?.chartCount ?? uploads.length });
     } catch (error) {
-      const body = (error as { error?: unknown })?.error;
-      const message = typeof body === 'string' ? body
-        : body && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error
-          : 'The charts could not be attached.';
-      result.failed.push({ documentId, message });
+      result.failed.push({ documentId: doc.id, message: errorMessage(error, 'The charts could not be attached.') });
     }
   }
   return result;

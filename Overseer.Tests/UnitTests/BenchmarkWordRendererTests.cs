@@ -334,6 +334,38 @@ public class BenchmarkWordRendererTests
         });
     }
 
+    [Fact]
+    public void AChatConsistencyDocument_PrintsItsCoverFacts_AndItsAnalysisFooter_WithoutTheSourceHash()
+    {
+        var document = BenchmarkPdfRendererTests.ChatConsistencyDocument(BenchmarkReportAudience.ExecutiveSummary);
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(BenchmarkReportPackRenderer.Render(document, options), info, TestContext.Current.CancellationToken);
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var main = package.MainDocumentPart!;
+        string body = TextOf(main.Document!.Body!);
+        foreach (string label in new[] { "Model", "Compared", "Baseline", "Comparison", "Controls", "Written" })
+        {
+            Assert.Contains(label, body, StringComparison.Ordinal);
+        }
+        Assert.Contains("\u22124.2", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Source ", body, StringComparison.Ordinal);
+        Assert.Contains("Word layout 2", body, StringComparison.Ordinal);
+
+        Assert.All(main.FooterParts, footer =>
+        {
+            string text = TextOf(footer.Footer!);
+            Assert.Contains("Chat consistency analysis #7 · Executive Summary · page ", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("Source ", text, StringComparison.Ordinal);
+            var instructions = footer.Footer!.Descendants<W.SimpleField>().Select(f => f.Instruction!.Value!.Trim()).ToList();
+            Assert.Contains("PAGE", instructions);
+            Assert.Contains("NUMPAGES", instructions);
+        });
+    }
+
     [Theory]
     [InlineData(BenchmarkPdfClassification.Internal, true)]
     [InlineData(BenchmarkPdfClassification.ProviderConfidential, false)]

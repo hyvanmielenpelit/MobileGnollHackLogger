@@ -115,7 +115,15 @@ public static class BenchmarkReportFactLabels
         ["analysis.codeVersion"] = "Analysis code version",
         ["analysis.relaxedPooling"] = "Relaxed pooling across a measurement change",
         ["analysis.compared"] = "Compared",
+        ["analysis.savedAt"] = "Analysis saved",
         ["verdict.overall"] = "Overall verdict on the chat",
+        ["verdict.short"] = "Outcome in short",
+        ["sample.minimumUnits"] = "Minimum units per period",
+        ["sample.minimumDays"] = "Minimum days per period",
+        ["sample.minimumPairedItems"] = "Minimum paired items",
+        ["sample.met"] = "Minimum sample",
+        ["sample.shortfall"] = "Shortfall from the minimum sample",
+        ["eventGroups.count"] = "Overseer updates",
         ["verdict.quality"] = "Verdict on quality",
         ["verdict.headline"] = "Analysis headline",
         ["verdict.reliabilityIncreases"] = "Established reliability increases",
@@ -218,6 +226,7 @@ public static class BenchmarkReportFactLabels
         ["verdict"] = "verdict",
         ["grade"] = "evidence grade",
         ["mde"] = "minimum detectable effect",
+        ["mdeNote"] = "note on the minimum detectable effect",
         ["runsForMargin"] = "runs per period to reach the margin",
         ["legacyProxy"] = "legacy proxy",
         ["commonGrader"] = "common grader",
@@ -228,6 +237,8 @@ public static class BenchmarkReportFactLabels
         ["label"] = "description",
         ["from"] = "from",
         ["to"] = "to",
+        ["change"] = "what changed",
+        ["changes"] = "what changed",
         ["run"] = "run",
         ["previousRun"] = "previous run",
         ["series"] = "series",
@@ -268,6 +279,9 @@ public static class BenchmarkReportFactLabels
         ["start"] = "start",
         ["end"] = "end",
         ["days"] = "days",
+        ["units"] = "units compared",
+        ["unitNoun"] = "unit",
+        ["memberRuns"] = "member runs",
         ["answers"] = "answers",
         ["legacyRuns"] = "runs without call telemetry",
         ["suites"] = "suites",
@@ -468,10 +482,11 @@ public static class BenchmarkReportFactLabels
 
             // events.<n>.<suffix>, did.<n>.<suffix>, robustness.<n>.<suffix>, annotation.<n>.<suffix>,
             // attribution.<n>.<suffix>, nextRuns.<n>.<suffix>
-            case "events" or "did" or "robustness" or "annotation" or "attribution" or "nextRuns" when parts.Length == 3 && IsIndex(parts[1]):
+            case "events" or "eventGroups" or "did" or "robustness" or "annotation" or "attribution" or "nextRuns" when parts.Length == 3 && IsIndex(parts[1]):
                 head = parts[0] switch
                 {
                     "events" => "Overseer event ",
+                    "eventGroups" => "Overseer update ",
                     "did" => "Difference in differences ",
                     "robustness" => "Robustness check ",
                     "annotation" => "Annotation ",

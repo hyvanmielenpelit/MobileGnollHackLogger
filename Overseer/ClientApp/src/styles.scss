@@ -6343,8 +6343,9 @@ progress.job-progress {
 }
 
 /* A summary card: a full-width row of the launcher grid between the hero and the library, with a
-   header (eyebrow, title, meta line and actions), a facts list and an entries table. Shared by the
-   Model Comparison *Last comparison* card and the Chat Consistency *Current model* card. */
+   header (eyebrow, title, meta line and actions), a facts list and an entries table. The card is
+   Model Comparison's *Last comparison*; the Chat Consistency *Latest analysis* card uses only the
+   facts list. */
 .bm-summary-card {
   grid-column: 1 / -1;
   container-type: inline-size;

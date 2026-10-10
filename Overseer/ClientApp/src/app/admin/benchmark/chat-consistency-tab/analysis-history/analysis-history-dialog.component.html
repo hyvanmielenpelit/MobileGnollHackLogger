@@ -1,0 +1,240 @@
+<!--
+  Light dismiss: closedby="any", with a backdrop-click fallback where it is unsupported. Open closes this
+  dialog before the wizard opens, so two modals never stack. &ngsp; keeps the spaces between inline parts
+  that flex layouts separate only visually.
+-->
+<dialog #historyDialog class="gh-dialog cc-history-dialog" aria-labelledby="cc-history-title" closedby="any"
+        (click)="onDialogClick($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="cc-history-title-row">
+        <!-- Decorative: the title beside it names the dialog. -->
+        <img class="gnollbench-emblem cc-history-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
+        <div class="dialog-title-group">
+          <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+          <h3 #historyTitle id="cc-history-title" tabindex="-1">Chat Consistency Analysis History</h3>
+          <p class="dialog-subtitle cc-history-subtitle">{{ subtitle }}</p>
+        </div>
+      </div>
+      <button type="button" class="btn-icon-action cc-history-close" aria-label="Close analysis history"
+              [attr.interestfor]="'cc-history-close-tip'" [attr.style]="'anchor-name: --cc-history-close-tip'"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="cc-history-close-tip" [attr.style]="'position-anchor: --cc-history-close-tip'">Close</div>
+    </div>
+
+    <div class="dialog-body cc-history-body">
+      <div class="cc-history-list-head">
+        <!-- The list's one polite live region. -->
+        <p class="gh-list-status cc-hist-status" id="cc-hist-status" role="status">{{ listStatus }}</p>
+      </div>
+
+      @if (openError) {
+        <p class="gh-field-error cc-hist-open-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ openError }}</span>
+        </p>
+      }
+
+      @if (error) {
+        <p class="gh-field-error cc-hist-error">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ error }}</span>
+        </p>
+      } @else if (!loading && analyses.length === 0) {
+        <p class="cc-hist-empty">No analysis is saved yet. Open the wizard, choose a model, and Analyze in step 3.</p>
+      } @else if (analyses.length > 0) {
+        @if (showFilterBar) {
+          <!-- Search, Sort by, the facets and the active filters. -->
+          <div class="gh-filter-bar cc-hist-filter-bar">
+            <div class="gh-filter-bar-row">
+              <div class="gh-search-field cc-hist-search">
+                <label class="visually-hidden" for="cc-hist-search">Search saved analyses</label>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="search" class="gh-input" id="cc-hist-search" autocomplete="off"
+                       placeholder="Search name, headline, model or #id"
+                       [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+              </div>
+              <div class="cc-hist-sort">
+                <label class="cc-hist-sort-label" for="cc-hist-sort">Sort by</label>
+                <select class="gh-input cc-hist-sort-select" id="cc-hist-sort" (change)="onSortChange($event)">
+                  @for (sort of sorts; track sort.id) {
+                    <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            @if (facets.length > 0) {
+              <div class="gh-facet-row cc-hist-facet-row">
+                @for (facet of facets; track facet.column) {
+                  <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                    [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="analyses"
+                                    (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
+                }
+              </div>
+            }
+
+            @if (chips.length > 0) {
+              <div class="gh-filter-bar-row cc-hist-chips-row">
+                <ul class="gh-filter-chips cc-hist-chips" role="list" aria-label="Active filters">
+                  @for (chip of chips; track chip.key) {
+                    <li>
+                      <button type="button" class="gh-filter-chip"
+                              [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                              (click)="removeChip(chip)">
+                        <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                        <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </li>
+                  }
+                </ul>
+                <button type="button" class="gh-filter-clear cc-hist-clear-filters" (click)="clearFilters()">Clear all</button>
+              </div>
+            }
+          </div>
+        }
+
+        @if (noMatches) {
+          <p class="cc-hist-no-matches">No saved analyses match these filters.
+            <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
+          </p>
+        } @else {
+          <ul class="cc-hist-cards" role="list" aria-labelledby="cc-history-title">
+            @for (analysis of cards; track analysis.id) {
+              <li class="cc-hist-item">
+                <article class="cc-hist-card" [attr.data-analysis-id]="analysis.id"
+                         [attr.aria-labelledby]="'cc-hist-' + analysis.id + '-title'">
+                  <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+                  <div class="cc-hist-kicker">
+                    <span class="cc-hist-id">#{{ analysis.id }}</span>
+                    <span class="cc-hist-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span>saved <time [attr.datetime]="analysis.createdAtUtc">{{ savedText(analysis) }}</time></span>
+                    <span class="cc-hist-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span>Protocol {{ analysis.protocolVersion }}</span>
+                    @if (analysis.reportDocumentCount > 0) {
+                      <span class="gh-tag cc-hist-tag cc-hist-tag-reports">{{ reportsTag(analysis) }}</span>
+                    }
+                    @if (analysis.relaxedPooling) {
+                      <span class="gh-tag cc-hist-tag cc-hist-tag-relaxed">Relaxed pooling</span>
+                    }
+                    @if (isEarlierCode(analysis)) {
+                      <span class="cc-hist-earlier">
+                        <span class="gh-tag cc-hist-tag cc-hist-tag-earlier">Earlier analysis code</span>
+                        <app-info-tip [tipId]="'cc-hist-' + analysis.id + '-code-tip'"
+                                      [subject]="'the earlier analysis code of analysis #' + analysis.id">{{ earlierCodeText(analysis) }}</app-info-tip>
+                      </span>
+                    }
+                  </div>
+
+                  <!-- Focused after Show more and after a delete. -->
+                  <h4 class="cc-hist-title" [id]="'cc-hist-' + analysis.id + '-title'" tabindex="-1">{{ title(analysis) }}</h4>
+
+                  <div class="cc-hist-subject">
+                    <span class="cc-hist-model">{{ modelName(analysis) }}</span>
+                    @if (badgesOf(analysis); as model) {
+                      &ngsp;<app-cc-model-badges [model]="model" />
+                    }
+                    &ngsp;<span class="gh-tag cc-kind-tag" [attr.data-kind]="compareKind(analysis).kind">{{ compareKind(analysis).text }}</span>
+                    @if (analysis.comparisonSetLabel) {
+                      &ngsp;<span class="cc-hist-compared-label">{{ analysis.comparisonSetLabel }}</span>
+                    }
+                  </div>
+
+                  <div class="cc-hist-periods">
+                    <dl class="cc-hist-period-facts">
+                      <div data-period="baseline">
+                        <dt><span class="cc-hist-swatch" data-period="baseline" aria-hidden="true"></span>Baseline</dt>
+                        <dd>{{ periodText(analysis.baselineStartUtc, analysis.baselineEndUtc) }}</dd>
+                      </div>
+                      <div data-period="comparison">
+                        <dt><span class="cc-hist-swatch" data-period="comparison" aria-hidden="true"></span>Comparison</dt>
+                        <dd>{{ periodText(analysis.comparisonStartUtc, analysis.comparisonEndUtc) }}</dd>
+                      </div>
+                    </dl>
+                    @if (analysis.headline) {
+                      <p class="cc-hist-headline">{{ analysis.headline }}</p>
+                    }
+                    <app-cc-endpoint-chips [endpoints]="analysis.endpoints" [label]="'Endpoints of analysis #' + analysis.id" />
+                  </div>
+
+                  <div class="cc-hist-actions" role="group" [attr.aria-label]="'Actions for analysis #' + analysis.id">
+                    <button type="button" class="btn-ghost cc-hist-open"
+                            [attr.aria-label]="'Open analysis #' + analysis.id + ' in the wizard'"
+                            [attr.aria-busy]="openingId === analysis.id ? 'true' : null"
+                            (click)="onOpen(analysis)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      Open
+                    </button>
+                    <button #deleteButton type="button" class="btn-ghost btn-ghost-danger cc-hist-delete"
+                            [attr.aria-label]="'Delete analysis #' + analysis.id"
+                            [attr.aria-disabled]="analysis.reportDocumentCount > 0 ? 'true' : null"
+                            [attr.aria-describedby]="analysis.reportDocumentCount > 0 ? 'cc-hist-' + analysis.id + '-delete-reason' : null"
+                            (click)="requestDelete(analysis, deleteButton)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                      Delete
+                    </button>
+                    @if (analysis.reportDocumentCount > 0) {
+                      <p class="cc-hist-delete-reason" [id]="'cc-hist-' + analysis.id + '-delete-reason'">{{ blockedReason(analysis) }}</p>
+                    }
+                  </div>
+                </article>
+              </li>
+            }
+          </ul>
+
+          @if (remainingCount > 0) {
+            <div class="gh-load-more cc-hist-load-more">
+              <button type="button" class="btn-ghost cc-hist-show-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+              @if (remainingCount > list.batch) {
+                <button type="button" class="gh-filter-clear cc-hist-show-all" (click)="showAll()">Show all {{ matchingCount }}</button>
+              }
+            </div>
+          }
+        }
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cc-history-done" (click)="close()">Done</button>
+    </div>
+  </div>
+</dialog>
+
+<!--
+  The delete confirmation, a modal above the history dialog. A sibling rather than a child, so the
+  frame's rules for the history dialog's own header, body and footer do not reach it; its close,
+  cancel and click still stop here.
+-->
+<dialog #deleteDialog class="gh-dialog cc-delete-dialog" aria-labelledby="cc-delete-title"
+        (cancel)="stopNested($event)" (close)="stopNested($event)" (click)="stopNested($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="cc-delete-title">Delete {{ deleteTarget ? title(deleteTarget) : 'the analysis' }}?</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <p>The saved analysis and its result are removed permanently. The runs it analyzed are kept.</p>
+      @if (deleteError) {
+        <p class="gh-field-error cc-delete-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ deleteError }}</span>
+        </p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel cc-delete-keep" (click)="cancelDelete()">Keep It</button>
+      <button type="button" class="btn-gh btn-gh-delete cc-delete-confirm" [disabled]="deleting"
+              [attr.aria-busy]="deleting ? 'true' : null" (click)="confirmDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Delete
+      </button>
+    </div>
+  </div>
+</dialog>

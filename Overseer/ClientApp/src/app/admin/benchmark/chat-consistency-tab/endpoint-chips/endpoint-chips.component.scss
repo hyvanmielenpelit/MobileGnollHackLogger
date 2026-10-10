@@ -1,0 +1,63 @@
+// The verdict banner's chip colors, compact and without its button states.
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.cc-ep-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// The status is a word, an icon and the tier's colors; Not computable is neutral with a dashed border.
+.cc-ep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--nav-color) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nav-color) 4%, transparent);
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--nav-color);
+  white-space: nowrap;
+
+  > svg {
+    flex: none;
+  }
+
+  &[data-status="within"],
+  &[data-status="improved"] {
+    border-color: var(--score-high-border);
+    background: var(--score-high-bg);
+    color: var(--score-high-ink);
+  }
+
+  &[data-status="changed"] {
+    border-color: var(--score-mid-border);
+    background: var(--score-mid-bg);
+    color: var(--score-mid-ink);
+  }
+
+  &[data-status="notComputable"] {
+    border-style: dashed;
+  }
+}
+
+.cc-ep-chip-id {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+@media (forced-colors: active) {
+  .cc-ep-chip,
+  .cc-ep-chip[data-status] {
+    border-color: CanvasText;
+  }
+}

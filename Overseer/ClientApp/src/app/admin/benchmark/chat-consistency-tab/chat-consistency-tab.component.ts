@@ -16,14 +16,14 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
+import { CcAnalysisHistoryDialogComponent } from './analysis-history/analysis-history-dialog.component';
 import { CC_WIZARD_STEPS, CcWizardComponent, CcWizardStep } from './cc-wizard/cc-wizard.component';
-import { utcMillis } from './chat-consistency-format';
+import { formatUtcDateTime, plural } from './chat-consistency-format';
 import {
   CC_ALL_DATES,
   CC_RANGE_PRESETS,
   CcDateRange,
   ccAnchorRange,
-  ccDateRangeText,
   ccRangeBounds
 } from './chat-consistency-range';
 import {
@@ -34,7 +34,6 @@ import {
   comparisonSetUnits,
   pruneScope,
   scopeIsDefault,
-  scopeRuns,
   setUnitKind
 } from './chat-consistency-scope';
 import {
@@ -49,8 +48,7 @@ import {
   CcTimeline,
   CcUnitKind
 } from './chat-consistency.models';
-import { CcCurrentModelCardComponent } from './current-model-card/current-model-card.component';
-import { CcSavedAnalysesComponent } from './saved-analyses/saved-analyses.component';
+import { CcLatestAnalysisCardComponent } from './latest-analysis-card/latest-analysis-card.component';
 
 /** Where the launcher's *How chat consistency works* state is kept, per browser. */
 export const CC_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.chatConsistency.launcher';
@@ -82,10 +80,14 @@ export const CC_SET_CHANGE_NOTE = 'The selection in step 1 was cleared because a
 export const CC_LEAVE_REFUSAL =
   'Chat Consistency is exporting charts or attaching report charts. Wait for it to finish, then try again.';
 
+/** Where an open of a saved analysis was started, so its error shows there. */
+type CcOpenOrigin = 'latest' | 'history';
+
 /**
  * The Chat Consistency sub-tab: whether the Overseer chat with one model stayed the same over time.
- * A launcher page — what the view does, the current model, how it works and the saved analyses —
- * opens the six-step wizard in a full-screen dialog.
+ * A launcher page of three sections — *New analysis* (what the view does, how it works, the wizard),
+ * *Latest analysis* and *Analysis history* — opens the six-step wizard in a full-screen dialog, and
+ * the saved analyses in the Analysis History dialog.
  *
  * It owns the subject, the date range and their data, and performs the run actions the wizard asks
  * for: anchors through the API, *Repeat this run's setup* and *Open run report* through the shell.
@@ -93,7 +95,7 @@ export const CC_LEAVE_REFUSAL =
 @Component({
   selector: 'app-chat-consistency-tab',
   standalone: true,
-  imports: [CcWizardComponent, CcCurrentModelCardComponent, CcSavedAnalysesComponent],
+  imports: [CcWizardComponent, CcLatestAnalysisCardComponent, CcAnalysisHistoryDialogComponent],
   templateUrl: './chat-consistency-tab.component.html',
   styleUrls: ['./chat-consistency-tab.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -106,6 +108,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   @ViewChild('wizardDialog') wizardDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild(CcWizardComponent) wizard?: CcWizardComponent;
+  @ViewChild(CcAnalysisHistoryDialogComponent) historyDialog?: CcAnalysisHistoryDialogComponent;
 
   /** The wizard's steps, which the launcher lists under the same titles as the wizard's step tabs. */
   readonly wizardSteps = CC_WIZARD_STEPS;
@@ -144,16 +147,27 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
   anchorError: string | null = null;
   announcement = '';
 
+  /** Newest first, as the server lists them; the wizard's *Confirm on later data* reads them too. */
   analyses: CcAnalysisSummary[] = [];
   analysesLoading = false;
   analysesError: string | null = null;
   openingId: number | null = null;
   openError: string | null = null;
+  /** Where the open under way, or the failed one `openError` describes, was started. */
+  openOrigin: CcOpenOrigin | null = null;
+
+  /** The full result of the newest saved analysis, fetched once per distinct id. */
+  latestResult: CcAnalysisResult | null = null;
+  latestLoading = false;
+  latestError: string | null = null;
+  /** The id `latestResult` is, or is being fetched, for. */
+  private latestId: number | null = null;
 
   private axesSub: Subscription | null = null;
   private subjectSub: Subscription | null = null;
   private analysesSub: Subscription | null = null;
   private openSub: Subscription | null = null;
+  private latestSub: Subscription | null = null;
   private readonly anchorSubs = new Map<number, Subscription>();
   private releaseLeaveGuard: (() => void) | null = null;
   private destroyed = false;
@@ -181,13 +195,9 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     // A sub-tab switch must not leave a modal behind.
     const dialog = this.wizardDialog?.nativeElement;
     if (dialog?.open) dialog.close();
-    for (const sub of [this.axesSub, this.subjectSub, this.analysesSub, this.openSub, ...this.anchorSubs.values()]) {
+    for (const sub of [this.axesSub, this.subjectSub, this.analysesSub, this.openSub, this.latestSub, ...this.anchorSubs.values()]) {
       sub?.unsubscribe();
     }
-  }
-
-  get selectedAxis(): CcModelAxis | null {
-    return this.axes.find(axis => axis.key === this.selectedKey) ?? null;
   }
 
   /** The compared set, once the sets are loaded and offer it. */
@@ -205,32 +215,75 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     return comparisonSetUnits(this.rows, this.batteryRows, this.compareSet?.key);
   }
 
-  // --- The Current model card ---
+  // --- Latest analysis and Analysis history ---
 
-  get currentDatesText(): string {
-    return ccDateRangeText(this.range);
-  }
-
-  /** The runs in the chosen dates; null over every date, or before the timeline is loaded. */
-  get runsInRange(): number | null {
-    return this.range.preset !== 'all' && this.timeline ? this.timeline.points.length : null;
-  }
-
-  /** The units the analysis uses; null when step 1 does not narrow them. */
-  get runsInAnalysis(): number | null {
-    return scopeIsDefault(this.scope) ? null : scopeRuns(this.units(), this.scope).length;
-  }
-
-  /** The newest saved analysis of the current model. */
+  /** The newest saved analysis of any model: the server lists them newest first. */
   get latestAnalysis(): CcAnalysisSummary | null {
-    const key = this.selectedKey;
-    if (!key) return null;
-    let latest: CcAnalysisSummary | null = null;
-    for (const analysis of this.analyses) {
-      if (analysis.subjectModelKey !== key) continue;
-      if (!latest || utcMillis(analysis.createdAtUtc) > utcMillis(latest.createdAtUtc)) latest = analysis;
+    return this.analyses[0] ?? null;
+  }
+
+  /** `4 saved analyses of 2 models · the latest saved 2026-10-10 09:40 UTC · 5 report documents`. */
+  get historySummary(): string {
+    if (this.analysesLoading && this.analyses.length === 0) return 'Loading the saved analyses…';
+    if (this.analysesError) return '';
+    const count = this.analyses.length;
+    if (count === 0) return 'No analysis is saved yet.';
+    const models = new Set(this.analyses.map(analysis => analysis.subjectModelKey)).size;
+    const documents = this.analyses.reduce((sum, analysis) => sum + analysis.reportDocumentCount, 0);
+    return [
+      `${plural(count, 'saved analysis', 'saved analyses')} of ${plural(models, 'model')}`,
+      `the latest saved ${formatUtcDateTime(this.analyses[0].createdAtUtc)}`,
+      documents > 0 ? plural(documents, 'report document') : 'no report documents'
+    ].join(' · ');
+  }
+
+  /** Opens the Analysis History dialog; refused while no analysis is saved. */
+  openHistory(): void {
+    if (this.analyses.length === 0) return;
+    if (this.openOrigin === 'history' && this.openingId === null) {
+      // An error from an earlier open in the dialog no longer applies.
+      this.openError = null;
+      this.openOrigin = null;
     }
-    return latest;
+    this.historyDialog?.show();
+  }
+
+  /** Open in the dialog: the dialog closes once the analysis arrives, before the wizard opens. */
+  onHistoryOpen(id: number): void {
+    this.openAnalysis(id, 4, 'history');
+  }
+
+  /** The wizard on the analysis's documents, step 6, once its result is shown. */
+  openDocuments(id: number): void {
+    this.openAnalysis(id, 6, 'latest');
+  }
+
+  /**
+   * The full result of the newest saved analysis, for the Latest analysis card's outcome and chips:
+   * fetched when that id changes, and never twice for one id.
+   */
+  private syncLatest(): void {
+    const id = this.analyses[0]?.id ?? null;
+    if (id === this.latestId) return;
+    this.latestSub?.unsubscribe();
+    this.latestSub = null;
+    this.latestId = id;
+    this.latestResult = null;
+    this.latestError = null;
+    this.latestLoading = id !== null;
+    if (id === null) return;
+    this.latestSub = this.service.getAnalysis(id).subscribe({
+      next: result => {
+        this.latestLoading = false;
+        this.latestResult = result;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.latestLoading = false;
+        this.latestError = `The verdicts of analysis #${id} could not be loaded.`;
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   // --- How chat consistency works ---
@@ -473,7 +526,8 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     this.analysesSub = this.service.listAnalyses().subscribe({
       next: analyses => {
         this.analysesLoading = false;
-        this.analyses = analyses;
+        this.analyses = Array.isArray(analyses) ? analyses : [];
+        this.syncLatest();
         this.cdr.markForCheck();
       },
       error: err => {
@@ -652,25 +706,38 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
 
   // --- Analyses ---
 
+  /** The saved result is the newest analysis's, so the Latest analysis card needs no fetch of it. */
   onAnalysisSaved(result: CcAnalysisResult): void {
+    if (result.analysisId !== null) {
+      this.latestSub?.unsubscribe();
+      this.latestSub = null;
+      this.latestId = result.analysisId;
+      this.latestResult = result;
+      this.latestLoading = false;
+      this.latestError = null;
+    }
     this.loadAnalyses();
     this.announcement = result.analysisId !== null ? `Analysis #${result.analysisId} was saved.` : '';
     this.cdr.markForCheck();
   }
 
   /**
-   * Opens a saved analysis in the wizard on its results, switching the subject to its model and step 1
-   * to its compared set first. The step-1 run selection is cleared, since the analysis carries its own
-   * record of the runs it used.
+   * Opens a saved analysis in the wizard on its results, or on its documents (step 6), switching the
+   * subject to its model and step 1 to its compared set first. The step-1 run selection is cleared,
+   * since the analysis carries its own record of the runs it used. The Analysis History dialog closes
+   * before the wizard opens, so two modals never stack; an error shows where the open was started.
    */
-  openAnalysis(id: number): void {
+  openAnalysis(id: number, step: 4 | 6 = 4, origin: CcOpenOrigin = 'latest'): void {
     this.openingId = id;
     this.openError = null;
+    this.openOrigin = origin;
     this.cdr.markForCheck();
     this.openSub?.unsubscribe();
     this.openSub = this.service.getAnalysis(id).subscribe({
       next: result => {
         this.openingId = null;
+        this.openOrigin = null;
+        this.historyDialog?.close();
         const hadSelection = !scopeIsDefault(this.scope);
         if (result.subject.key && result.subject.key !== this.selectedKey) {
           this.selectModel(result.subject.key);
@@ -697,6 +764,7 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
         // Renders the wizard with the new subject before the result is handed to it.
         this.openWizard();
         this.wizard?.showResult(result);
+        if (step === 6) this.wizard?.goToStep(6);
         this.cdr.markForCheck();
       },
       error: err => {
@@ -707,8 +775,14 @@ export class ChatConsistencyTabComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** The open error, where the open was started. */
+  openErrorFor(origin: CcOpenOrigin): string | null {
+    return this.openOrigin === origin ? this.openError : null;
+  }
+
   onAnalysisDeleted(id: number): void {
     this.analyses = this.analyses.filter(analysis => analysis.id !== id);
+    this.syncLatest();
     this.cdr.markForCheck();
   }
 

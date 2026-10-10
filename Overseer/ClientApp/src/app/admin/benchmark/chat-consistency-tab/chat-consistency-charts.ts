@@ -46,6 +46,7 @@ import {
   CcAnalysisResult,
   CcAnnotation,
   CcBatteryTimelinePoint,
+  CcEndpointResult,
   CcEvent,
   CcReportFigureKey,
   CcTimelinePoint,
@@ -289,6 +290,11 @@ export interface CcFigureInput {
   eventNumbering?: readonly CcEventGroup[];
   /** Point id → why the run or battery run is not in the analysis; absent or empty draws every point alike. */
   notAnalyzed?: ReadonlyMap<number, string>;
+  /**
+   * The analysis's endpoints, for a report chart: a figure whose endpoint (`CC_FIGURE_ENDPOINTS`) is
+   * not computable opens its caption with *Not comparable across the periods*. Absent says nothing.
+   */
+  endpoints?: readonly CcEndpointResult[];
 }
 
 /** How `buildMarkers` groups and numbers the events, beyond the drawn points. */
@@ -327,6 +333,12 @@ export interface CcChartOptions {
   decimals?: CcDecimalPlaces;
   /** The sizes and optional parts; absent draws `CC_CHART_STYLE_DEFAULTS`. */
   style?: CcChartStyle;
+  /**
+   * The time axis spans the plotted points and the markers near them, padded by 5 % of that span or
+   * 30 minutes, whichever is more; the period bands are clipped to it rather than widening it.
+   * Absent spans the bands too, padded by 3 % or 12 hours.
+   */
+  fitToData?: boolean;
 }
 
 /** The chart-drawing part of a timeline figure's style, and the weight of the point labels and the legend. */
@@ -438,6 +450,27 @@ export const CC_REPORT_FIGURES: Readonly<Record<CcReportFigureKey, CcFigureKey>>
   'cc3-work': 'work',
   'cc4-timeline': 'timeline'
 });
+
+/** The analysis endpoint each figure plots; the reliability chart and the overview plot none. */
+export const CC_FIGURE_ENDPOINTS: Readonly<Partial<Record<CcFigureKey, string>>> = Object.freeze({
+  quality: 'P1',
+  ttfat: 'P2',
+  rate: 'P3',
+  work: 'P4',
+  cost: 'P5'
+});
+
+/**
+ * `Not comparable across the periods: no common grader covers every run.`, the caption's opening for
+ * a figure whose endpoint the analysis could not compute.
+ */
+export function ccNotComparableText(reason: string | null | undefined): string {
+  const text = (reason ?? '').trim().replace(/\.+$/, '');
+  if (!text) return 'Not comparable across the periods: the analysis could not compute this measure.';
+  // An opening acronym (`TTFT`, `P2`) keeps its case.
+  const phrase = /^[A-Z][A-Z0-9]/.test(text) ? text : text.charAt(0).toLowerCase() + text.slice(1);
+  return `Not comparable across the periods: ${phrase}.`;
+}
 
 // --- Units ---
 
@@ -1338,11 +1371,19 @@ interface AxisSpec {
   policy: CcAxisPolicy | null;
 }
 
-function xRange(series: readonly CcChartPoint[][], markers: readonly CcChartMarker[], bands: readonly CcPeriodBand[]):
-  { min: number; max: number } | null {
+/**
+ * The time axis: the plotted points, the period bands unless `fitToData`, and the markers within a
+ * week of them, padded on both sides.
+ */
+function xRange(
+  series: readonly CcChartPoint[][],
+  markers: readonly CcChartMarker[],
+  bands: readonly CcPeriodBand[],
+  fitToData = false
+): { min: number; max: number } | null {
   const xs = [
     ...series.flat().filter(point => point.y !== null).map(point => point.x),
-    ...bands.flatMap(band => [band.start, band.end])
+    ...(fitToData ? [] : bands.flatMap(band => [band.start, band.end]))
   ].filter(Number.isFinite);
   if (xs.length === 0) return null;
   let min = Math.min(...xs);
@@ -1353,7 +1394,9 @@ function xRange(series: readonly CcChartPoint[][], markers: readonly CcChartMark
       max = Math.max(max, marker.x);
     }
   }
-  const pad = Math.max((max - min) * 0.03, 12 * 3_600_000);
+  const pad = fitToData
+    ? Math.max((max - min) * 0.05, 30 * 60_000)
+    : Math.max((max - min) * 0.03, 12 * 3_600_000);
   return { min: min - pad, max: max + pad };
 }
 
@@ -1640,7 +1683,7 @@ function config(
   const drawn = datasets.filter(spec => !options.hiddenSeries?.has(spec.id) && spec.data.some(point => point.y !== null));
   if (drawn.length === 0) return null;
   const bands = input.bands ?? [];
-  const range = xRange(drawn.map(spec => spec.data), markers, bands);
+  const range = xRange(drawn.map(spec => spec.data), markers, bands, options.fitToData ?? false);
   const notAnalyzed = notAnalyzedOf(input);
   const marks = notAnalyzed ? { notAnalyzed, looks: drawn.map(spec => pointLook(spec, theme, draw)) } : null;
 
@@ -1730,6 +1773,17 @@ function rangeText(values: readonly number[], format: (value: number) => string)
   return { min: format(Math.min(...values)), max: format(Math.max(...values)) };
 }
 
+/**
+ * `ranged from 81.7 to 82.0 across 4 runs`, or `was 82.0 in all 4 runs` (`in both runs` for two)
+ * where every value formats alike: what the points show, never a judgment such as *held*. `verb`
+ * agrees with the measure's name: `were` for *Output tokens per answer*.
+ */
+function spanPhrase(values: readonly number[], format: (value: number) => string, noun: string, verb = 'was'): string {
+  const { min, max } = rangeText(values, format);
+  if (min !== max) return `ranged from ${min} to ${max} across ${plural(values.length, noun)}`;
+  return values.length === 2 ? `${verb} ${min} in both ${noun}s` : `${verb} ${min} in all ${plural(values.length, noun)}`;
+}
+
 /** The first two columns of a figure's table: the unit and its start. */
 function leadColumns(input: CcFigureInput): string[] {
   return [capitalized(nounOf(input)), 'Started'];
@@ -1796,13 +1850,10 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
   } else if (values.length === 1) {
     takeaway = `${which} was ${format(values[0])} in the one ${noun} of this range.`;
   } else {
-    const { min, max } = rangeText(values, format);
     const spread = Math.max(...values) - Math.min(...values);
-    takeaway = min === max
-      ? `${which} held at ${min} across ${plural(values.length, noun)}.`
-      : spread <= 3
-        ? `${which} held between ${min} and ${max} across ${plural(values.length, noun)}.`
-        : `${which} ranged from ${min} to ${max} across ${plural(values.length, noun)}; the latest ${noun} scored ${format(values[values.length - 1])}.`;
+    takeaway = spread <= 3
+      ? `${which} ${spanPhrase(values, format, noun)}.`
+      : `${which} ${spanPhrase(values, format, noun)}; the latest ${noun} scored ${format(values[values.length - 1])}.`;
   }
   if (battery) {
     const missing = points.map(batteryPointOf).filter(point => point !== null && ccNumber(point.overallIndex) === null);
@@ -1860,13 +1911,13 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
   if (telemetryValues.length === 0 && proxyValues.length === 0) {
     takeaway = `No ${noun} in this range has a latency figure.`;
   } else if (telemetryValues.length === 0) {
-    const { min, max } = rangeText(proxyValues, ms);
-    takeaway = `Only the legacy proxy is available: model time per answer ranged from ${min} to ${max} across ${plural(proxyValues.length, noun)}.`;
+    takeaway = proxyValues.length === 1
+      ? `Only the legacy proxy is available: model time per answer was ${ms(proxyValues[0])} in the one ${noun}.`
+      : `Only the legacy proxy is available: model time per answer ${spanPhrase(proxyValues, ms, noun)}.`;
   } else {
-    const { min, max } = rangeText(telemetryValues, ms);
     takeaway = telemetryValues.length === 1
-      ? `Median time to first answer text was ${min} in the one telemetry ${noun}.`
-      : `Median time to first answer text ranged from ${min} to ${max} across ${plural(telemetryValues.length, `telemetry ${noun}`)}.`;
+      ? `Median time to first answer text was ${ms(telemetryValues[0])} in the one telemetry ${noun}.`
+      : `Median time to first answer text ${spanPhrase(telemetryValues, ms, `telemetry ${noun}`)}.`;
     if (proxyValues.length > 0) {
       takeaway += ` ${plural(proxyValues.length, `legacy ${noun}`)} ${proxyValues.length === 1 ? 'is' : 'are'} drawn hollow as the legacy proxy.`;
     }
@@ -1908,10 +1959,9 @@ export function streamingRateFigure(input: CcFigureInput, options: CcChartOption
   if (values.length === 0) {
     takeaway = `No ${noun} in this range has a streaming rate; legacy ${noun}s did not record one.`;
   } else {
-    const { min, max } = rangeText(values, rate);
     takeaway = values.length === 1
-      ? `The answer streaming rate was ${min} in the one ${noun} that recorded it.`
-      : `The answer streaming rate ranged from ${min} to ${max} across ${plural(values.length, noun)}.`;
+      ? `The answer streaming rate was ${rate(values[0])} in the one ${noun} that recorded it.`
+      : `The answer streaming rate ${spanPhrase(values, rate, noun)}.`;
     if (legacy > 0) takeaway += ` ${plural(legacy, `legacy ${noun}`)} recorded no rate.`;
   }
   takeaway += notAnalyzedNote(input, [measured, estimated]);
@@ -1949,8 +1999,7 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
   } else if (values.length === 1) {
     takeaway = `Output tokens per answer were ${format(values[0])} in the one ${noun} of this range.`;
   } else {
-    const { min, max } = rangeText(values, format);
-    takeaway = `Output tokens per answer ranged from ${min} to ${max} across ${plural(values.length, noun)}.`;
+    takeaway = `Output tokens per answer ${spanPhrase(values, format, noun, 'were')}.`;
   }
   takeaway += notAnalyzedNote(input, [tokens]);
   return {
@@ -1984,8 +2033,7 @@ export function toolCallsFigure(input: CcFigureInput, options: CcChartOptions = 
   } else if (values.length === 1) {
     takeaway = `Tool calls per answer were ${format(values[0])} in the one ${noun} of this range.`;
   } else {
-    const { min, max } = rangeText(values, format);
-    takeaway = `Tool calls per answer ranged from ${min} to ${max} across ${plural(values.length, noun)}.`;
+    takeaway = `Tool calls per answer ${spanPhrase(values, format, noun, 'were')}.`;
   }
   takeaway += notAnalyzedNote(input, [calls]);
   return {
@@ -2019,8 +2067,7 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
   } else if (values.length === 1) {
     takeaway = `Cost per question was ${usd(values[0])} in the one ${noun} of this range.`;
   } else {
-    const { min, max } = rangeText(values, usd);
-    takeaway = `Cost per question ranged from ${min} to ${max} across ${plural(values.length, noun)}, at one price card.`;
+    takeaway = `Cost per question ${spanPhrase(values, usd, noun)}, at one price card.`;
   }
   takeaway += notAnalyzedNote(input, [cost]);
   return {
@@ -2142,8 +2189,12 @@ export function buildCcFigures(input: CcFigureInput, options: CcChartOptions = {
   return CC_FIGURE_KEYS.map(entry => buildCcFigure(entry.key, input, options));
 }
 
-/** One figure by key. */
+/** One figure by key; with the input's endpoints, a figure whose endpoint is not computable says so first. */
 export function buildCcFigure(key: CcFigureKey, input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
+  return withComparability(figureOf(key, input, options), input);
+}
+
+function figureOf(key: CcFigureKey, input: CcFigureInput, options: CcChartOptions): CcFigure {
   switch (key) {
     case 'quality': return qualityFigure(input, options);
     case 'ttfat': return timeToFirstAnswerFigure(input, options);
@@ -2154,6 +2205,18 @@ export function buildCcFigure(key: CcFigureKey, input: CcFigureInput, options: C
     case 'reliability': return reliabilityFigure(input, options);
     default: return timelineOverviewFigure(input, options);
   }
+}
+
+/**
+ * The figure with its caption and alt text opened by `ccNotComparableText` when its endpoint is in
+ * the input's endpoints and not computed; unchanged otherwise.
+ */
+function withComparability(figure: CcFigure, input: CcFigureInput): CcFigure {
+  const id = CC_FIGURE_ENDPOINTS[figure.key];
+  const endpoint = id ? input.endpoints?.find(entry => entry.id === id) : undefined;
+  if (!endpoint || endpoint.computed) return figure;
+  const lead = ccNotComparableText(endpoint.notComputedReason);
+  return { ...figure, takeaway: `${lead} ${figure.takeaway}`, altText: `${lead} ${figure.altText}` };
 }
 
 /** The viewer asked for reduced motion; the on-screen charts then draw without animation. */

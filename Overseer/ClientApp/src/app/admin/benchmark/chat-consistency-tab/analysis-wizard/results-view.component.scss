@@ -1,5 +1,5 @@
 // The key figures are the global run-report `rr-figures` / `score-card`, the tab row the global
-// `gh-tabs`; the attribution groups follow the results' own width, not the viewport's.
+// `gh-tabs`; the export bar and the attribution groups follow the results' own width, not the viewport's.
 :host {
   display: flex;
   flex-direction: column;
@@ -12,6 +12,59 @@
 
 .cc-res-figures {
   margin: 0;
+}
+
+// --- The tab row and the section's image export ---
+
+// The tabs take the row; from 40 rem the export group ends it, below that it wraps under the tabs.
+.cc-res-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  min-width: 0;
+}
+
+.cc-res-tabs {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.cc-res-export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+@container cc-results (width >= 40rem) {
+  .cc-res-tabs {
+    flex-basis: 0;
+  }
+
+  .cc-res-export {
+    margin-inline-start: auto;
+  }
+}
+
+.cc-res-export-status {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+
+  // Empty, it stays a live region but takes no room in the column.
+  &:empty {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+// The dialog's host takes no box, so a closed dialog adds no gap to the column.
+app-cc-results-image-dialog {
+  display: contents;
 }
 
 .cc-res-tab-count {
@@ -39,10 +92,6 @@
   &:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: 4px;
-  }
-
-  > .gh-section-title {
-    margin: 0;
   }
 }
 

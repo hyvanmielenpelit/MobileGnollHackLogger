@@ -489,7 +489,9 @@ public class BenchmarkReportRenderService
     /// As <see cref="RenderAsync"/>, with the stored row the Markdown was rendered from, which the
     /// PDF download takes its title block and metadata from. The row carries its
     /// <see cref="BenchmarkReportDocument.Comparison"/>, so the Markdown, the cover, the running header
-    /// and the file name print the comparison's number and its name as it is now.
+    /// and the file name print the comparison's number and its name as it is now. A chat consistency
+    /// document rendered with charts places them by its chart layout when the stored set has one
+    /// (<see cref="ReadRenderLayout"/>), and by the legacy placement otherwise.
     /// </summary>
     public async Task<(string? Markdown, BenchmarkReportDocument? Document, bool NotFound, string? Refusal)> RenderWithDocumentAsync(
         long id, BenchmarkReportRenderOptions options, CancellationToken ct)
@@ -507,7 +509,10 @@ public class BenchmarkReportRenderService
                 $"The {AudienceName(d.Audience)} does not render at {options.Disclosure} disclosure.");
         }
 
-        return (BenchmarkReportPackRenderer.Render(d, options), d, false, null);
+        bool chartLayoutPresent = d.Scope == BenchmarkReportScope.ChatConsistency
+                                  && options.Charts is { Count: > 0 }
+                                  && ReadRenderLayout(d.Id) != null;
+        return (BenchmarkReportPackRenderer.Render(d, options, chartLayoutPresent), d, false, null);
     }
 
     /// <summary>

@@ -60,7 +60,7 @@ describe('CcChartFigureComponent', () => {
     const takeaway = el.querySelector('.cc-figure-takeaway')!;
     expect(takeaway.tagName).toBe('P');
     expect(takeaway.id).toBe('fig-takeaway');
-    expect(textOf(takeaway)).toBe('The Intelligence Index held between 71 and 74 across 6 runs.');
+    expect(textOf(takeaway)).toBe('The Intelligence Index ranged from 71 to 74 across 6 runs.');
     expect(takeaway.previousElementSibling!.classList).toContain('cc-chart-box');
     expect(el.querySelector('figcaption .cc-figure-takeaway')).toBeNull();
     expect(textOf(el.querySelector('figcaption'))).toBe('Intelligence per run');

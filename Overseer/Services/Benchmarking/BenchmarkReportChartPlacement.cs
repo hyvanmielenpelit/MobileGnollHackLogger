@@ -127,9 +127,27 @@ public static class BenchmarkReportChartPlacement
             [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat(BenchmarkReportChartAnchor.ModelsCompared, 7).ToArray(),
         };
 
-    // The anchor of each chat consistency figure per audience, in the order of ChatConsistencyFigureKeys;
-    // null where the audience does not draw it.
+    // The anchor of each chat consistency figure per audience, in the order of ChatConsistencyFigureKeys.
+    // Every audience may draw every figure the client chose for it: the first three after the verdict
+    // table, the timeline after the events table, and in the Executive Summary, which prints no events
+    // table, after the verdict table too.
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> ChatConsistencyAnchors =
+        new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]>
+        {
+            [BenchmarkReportAudience.ExecutiveSummary] = new BenchmarkReportChartAnchor?[]
+            {
+                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults,
+                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults
+            },
+            [BenchmarkReportAudience.TechnicalReport] = ChatResultsThenEvents(),
+            [BenchmarkReportAudience.InternalBrief] = ChatResultsThenEvents(),
+            [BenchmarkReportAudience.ProviderIssueReport] = ChatResultsThenEvents(),
+        };
+
+    // The per-audience placement of a chat consistency document whose stored chart set has no layout:
+    // every chart set uploaded before the client chose figures per document. Null where the audience
+    // does not draw the figure.
+    private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> LegacyChatConsistencyAnchors =
         new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]>
         {
             [BenchmarkReportAudience.ExecutiveSummary] = new BenchmarkReportChartAnchor?[]
@@ -151,6 +169,12 @@ public static class BenchmarkReportChartPlacement
             },
         };
 
+    private static BenchmarkReportChartAnchor?[] ChatResultsThenEvents() => new BenchmarkReportChartAnchor?[]
+    {
+        BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults,
+        BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyEvents
+    };
+
     /// <summary>Whether <paramref name="figureKey"/> is one of <see cref="AllFigureKeys"/>, compared ordinally.</summary>
     public static bool IsKnown(string? figureKey)
         => figureKey != null && AllFigureKeys.Contains(figureKey, StringComparer.Ordinal);
@@ -162,11 +186,14 @@ public static class BenchmarkReportChartPlacement
     /// <summary>
     /// Where a figure is drawn in a document of <paramref name="audience"/> and <paramref name="scope"/>;
     /// null for an unknown key or audience, and for a figure the scope or audience does not draw.
+    /// <paramref name="legacy"/> reads a chat consistency document's placement from its legacy table,
+    /// for a chart set stored without a layout; other scopes have one table.
     /// </summary>
-    public static BenchmarkReportChartAnchor? AnchorOf(BenchmarkReportAudience audience, string? figureKey, BenchmarkReportScope scope)
+    public static BenchmarkReportChartAnchor? AnchorOf(
+        BenchmarkReportAudience audience, string? figureKey, BenchmarkReportScope scope, bool legacy = false)
     {
         if (figureKey == null) return null;
-        var (keys, table) = TableOf(scope);
+        var (keys, table) = TableOf(scope, legacy);
         int index = IndexOf(keys, figureKey);
         if (index < 0 || !table.TryGetValue(audience, out var anchors)) return null;
         return anchors[index];
@@ -176,19 +203,24 @@ public static class BenchmarkReportChartPlacement
     public static IReadOnlyList<string> KeysAt(BenchmarkReportAudience audience, BenchmarkReportChartAnchor anchor)
         => KeysAt(audience, anchor, BenchmarkReportScope.Model);
 
-    /// <summary>The figure keys drawn at <paramref name="anchor"/> in a document of <paramref name="audience"/> and <paramref name="scope"/>, in placement order.</summary>
-    public static IReadOnlyList<string> KeysAt(BenchmarkReportAudience audience, BenchmarkReportChartAnchor anchor, BenchmarkReportScope scope)
+    /// <summary>
+    /// The figure keys drawn at <paramref name="anchor"/> in a document of <paramref name="audience"/> and
+    /// <paramref name="scope"/>, in placement order; <paramref name="legacy"/> as in <see cref="AnchorOf(BenchmarkReportAudience, string?, BenchmarkReportScope, bool)"/>.
+    /// </summary>
+    public static IReadOnlyList<string> KeysAt(
+        BenchmarkReportAudience audience, BenchmarkReportChartAnchor anchor, BenchmarkReportScope scope, bool legacy = false)
     {
-        var (keys, table) = TableOf(scope);
+        var (keys, table) = TableOf(scope, legacy);
         if (!table.TryGetValue(audience, out var anchors)) return Array.Empty<string>();
         return keys.Where((_, i) => anchors[i] == anchor).ToList();
     }
 
     /// <summary>The figure keys a document of <paramref name="scope"/> can carry, and their anchors per audience.</summary>
-    private static (IReadOnlyList<string> Keys, IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> Table) TableOf(BenchmarkReportScope scope)
+    private static (IReadOnlyList<string> Keys, IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> Table) TableOf(
+        BenchmarkReportScope scope, bool legacy)
         => scope switch
         {
-            BenchmarkReportScope.ChatConsistency => (ChatConsistencyFigureKeys, ChatConsistencyAnchors),
+            BenchmarkReportScope.ChatConsistency => (ChatConsistencyFigureKeys, legacy ? LegacyChatConsistencyAnchors : ChatConsistencyAnchors),
             BenchmarkReportScope.Comparison => (FigureKeys, NullableComparisonAnchors),
             _ => (FigureKeys, NullableAnchors)
         };

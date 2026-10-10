@@ -228,7 +228,10 @@ internal static class ReportPackWriterTestData
 /// discipline tests and the chat consistency prompt goldens. Quality (P1) degraded, graded Indicated;
 /// time to first answer text (P2) is equivalent, graded Established; P3 is not computable; cost per
 /// answer (P5) is inconclusive. Attribution 1 is on the provider's side, attribution 2 on ours;
-/// annotation 1 is a provider-confirmed cause, annotation 2 a provider statement; two Overseer events.
+/// annotation 1 is a provider-confirmed cause, annotation 2 a provider statement; two Overseer events
+/// with realistic raw values (the prompt options turning the game snapshot on, in the model's series,
+/// and a corpus re-index, in the control's), and one missing control whose suggestion still carries
+/// the instrument note analyses saved before code version 5 stored.
 /// </summary>
 internal static class ChatConsistencyReportTestData
 {
@@ -237,6 +240,19 @@ internal static class ChatConsistencyReportTestData
     public const string ControlProvider = "OtherProvider";
 
     private static readonly DateTime Day1 = new(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>Event 1's raw values: the candidate prompt options before and after the game snapshot was turned on.</summary>
+    public static readonly string PromptOptionsBefore = new BenchmarkCandidatePromptOptions().ToCanonicalJson();
+    public static readonly string PromptOptionsAfter = new BenchmarkCandidatePromptOptions { HasGameSnapshot = true }.ToCanonicalJson();
+
+    /// <summary>Event 2's raw values: a corpus index fingerprint before and after the GnollHack wiki was re-indexed with three more files.</summary>
+    public static readonly string CorpusIndexBefore = CorpusIndex(string.Concat(Enumerable.Repeat("a1b2", 16)), 812);
+    public static readonly string CorpusIndexAfter = CorpusIndex(string.Concat(Enumerable.Repeat("c3d4", 16)), 815);
+
+    private static string CorpusIndex(string wikiSha256, int wikiFiles)
+        => "{\"gnollhackWiki\":{\"sha256\":\"" + wikiSha256 + "\",\"fileCount\":" + wikiFiles + ",\"indexedAtUtc\":\"2026-09-10T08:00:00.000Z\"},"
+           + "\"gnollhackSource\":{\"sha256\":\"" + string.Concat(Enumerable.Repeat("e5f6", 16)) + "\",\"fileCount\":1204,\"indexedAtUtc\":\"2026-09-10T08:00:00.000Z\"},"
+           + "\"knowledgeBase\":null,\"nethackWiki\":null,\"nethackSource\":null}";
 
     public static ChatConsistencyAnalysisResult Result(bool timeOfDayAssessable = false) => new()
     {
@@ -325,8 +341,17 @@ internal static class ChatConsistencyReportTestData
         },
         Events = new[]
         {
-            new ChatConsistencyEventView { AtUtc = Day1.AddDays(10), Kind = "toolGuides", Label = "tool guides edited on 2026-09-11", From = "abc123", To = "def456", RunId = 20, PreviousRunId = 11, SubjectKey = "provider=TestProvider;model=test-model-1", InTargetSeries = true },
-            new ChatConsistencyEventView { AtUtc = Day1.AddDays(11), Kind = "systemPrompt", Label = "system prompt edited on 2026-09-12", RunId = 31, PreviousRunId = 30, SubjectKey = ControlKey }
+            new ChatConsistencyEventView
+            {
+                AtUtc = Day1.AddDays(10), Kind = OverseerEventKinds.CandidatePromptOptions, Label = "candidate prompt options changed on 2026-09-11 (run #20)",
+                From = PromptOptionsBefore, To = PromptOptionsAfter, RunId = 20, PreviousRunId = 11,
+                SubjectKey = "provider=TestProvider;model=test-model-1", InTargetSeries = true
+            },
+            new ChatConsistencyEventView
+            {
+                AtUtc = Day1.AddDays(11), Kind = OverseerEventKinds.CorpusIndex, Label = "corpus index changed on 2026-09-12 (run #31)",
+                From = CorpusIndexBefore, To = CorpusIndexAfter, RunId = 31, PreviousRunId = 30, SubjectKey = ControlKey
+            }
         },
         Controls = new ChatConsistencyControls
         {
@@ -334,6 +359,14 @@ internal static class ChatConsistencyReportTestData
             {
                 new ChatConsistencyControlMatchView { Period = "baseline", TargetRunId = 10, ControlRunId = 30, ControlSubjectKey = ControlKey, PairedItemCount = 20 },
                 new ChatConsistencyControlMatchView { Period = "comparison", TargetRunId = 20, ControlRunId = 31, ControlSubjectKey = ControlKey, PairedItemCount = 20 }
+            },
+            MissingControls = new[]
+            {
+                new ChatConsistencyMissingControlView
+                {
+                    Period = "comparison", SuiteName = "Core suite", Fingerprint = "f1", TargetRunId = 21,
+                    SuggestedText = "Run " + ControlName + " on Core suite under the build of run #21 (instrument " + string.Concat(Enumerable.Repeat("3b9", 4)) + ")."
+                }
             },
             Effects = new[]
             {
@@ -425,7 +458,7 @@ internal static class ChatConsistencyReportTestData
                 s[BenchmarkReportSlots.Attribution] = "The analysis places the quality change on the provider's side, graded {{attribution.1.grade}} under {{attribution.1.rule}}.";
                 s[BenchmarkReportSlots.Robustness] = "The analysis ran {{robustness.count}}, and {{robustness.failed}} failed.";
                 s[BenchmarkReportSlots.Limitations] = "The analysis records one limitation: {{limitation.1}}";
-                s[BenchmarkReportSlots.Reproducibility] = "Analysis {{analysis.id}} used code version {{analysis.codeVersion}} on input {{analysis.inputSha256}}.";
+                s[BenchmarkReportSlots.Reproducibility] = "Analysis {{analysis.id}} used code version {{analysis.codeVersion}} under {{protocol.label}}.";
                 break;
 
             case BenchmarkReportAudience.InternalBrief:
@@ -2403,8 +2436,8 @@ public class BenchmarkReportPackComparisonValidatorTests
 }
 
 /// <summary>
-/// The chat consistency scope: its slots and word caps, and the claim discipline of rules C1 to C7,
-/// each with a passing and a failing case; a per-model document is unaffected by them.
+/// The chat consistency scope: its slots and word caps, the claim discipline of rules C1 to C7 and the
+/// readable-text rule C8, each with a passing and a failing case; a per-model document is unaffected by them.
 /// </summary>
 public class BenchmarkReportPackChatConsistencyValidatorTests
 {
@@ -2632,6 +2665,48 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
 
         // Another document's slots need no event list.
         Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, "One Overseer event matters here: {{events.1.label}}."));
+    }
+
+    [Theory]
+    [InlineData("The chat is monitored within {{scope.hours}}.", "monitored")]
+    [InlineData("GnollBench keeps monitoring the chat.", "monitoring")]
+    public void C2_MonitoringWording_IsAnError(string text, string phrase)
+    {
+        var note = AssertChatRule(ValidateAsGoodAsBefore(text), BenchmarkReportPackValidator.ChatIntentMechanismRule, "C2", AsGoodAsBeforeP1, "\"" + phrase + "\"");
+        Assert.Contains("made by hand", note.Message, StringComparison.Ordinal);
+        Assert.Equal(new[] { "monitor", "monitors", "monitored", "monitoring" }, BenchmarkReportPackValidator.ChatMonitoringWords);
+    }
+
+    [Theory]
+    [InlineData("The wiki moved to revision a8fa85a4bb80dc4e.", "a8fa85a4bb80dc4e")]
+    [InlineData("The options went from {\"hasGameSnapshot\":false to on.", "{\"")]
+    [InlineData("The CandidateSystemPromptSha256 field moved.", "CandidateSystemPromptSha256")]
+    [InlineData("The corpus moved, recorded as CorpusIndexFingerprintsJson.", "CorpusIndexFingerprintsJson")]
+    [InlineData("The input was {{analysis.inputSha256}}.", "{{analysis.inputSha256}}")]
+    public void C8_HashesJsonAndInternalFieldNames_AreErrors(string text, string token)
+    {
+        var notes = ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, text + " Within {{scope.hours}}.")
+            .Where(n => n.Rule == BenchmarkReportPackValidator.ChatReadableTextRule)
+            .ToList();
+
+        var note = Assert.Single(notes);
+        Assert.Equal("sections.overseerEvents[p1]", note.Location);
+        Assert.StartsWith("C8: ", note.Message, StringComparison.Ordinal);
+        Assert.Contains(token, note.Message, StringComparison.Ordinal);
+        Assert.False(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+    }
+
+    [Fact]
+    public void C8_ReadableEventTokens_Pass_AndAHashInTheHeadline_IsFatal()
+    {
+        Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents,
+            "Two Overseer updates fall between the periods: {{eventGroups.1.changes}} and {{events.2.change}}."));
+
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Headline = "The Overseer chat with {{subject}} is {{verdict.overall}} at revision a8fa85a4bb80dc4e within {{scope.hours}}.";
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
+        Assert.True(cleaned.Fatal);
+        Assert.Contains(cleaned.Notes, n => n.Rule == BenchmarkReportPackValidator.ChatReadableTextRule && n.Location == "headline");
     }
 
     [Fact]

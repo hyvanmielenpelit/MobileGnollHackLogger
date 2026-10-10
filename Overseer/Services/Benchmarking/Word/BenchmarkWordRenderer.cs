@@ -404,13 +404,15 @@ public static class BenchmarkWordRenderer
             }
         };
 
+        // With a footer text of its own, the document prints it at the right tab, "· page X of Y" after it.
+        bool own = !string.IsNullOrWhiteSpace(info.FooterText);
         var paragraph = new Paragraph(
             Writer.Properties(WordStyles.Footer),
             classification,
             new Run(new TabChar()),
-            new Run(Writer.TextOf(SourceText(info))),
+            new Run(Writer.TextOf(own ? string.Empty : SourceText(info))),
             new Run(new TabChar()),
-            new Run(Writer.TextOf("Page ")),
+            new Run(Writer.TextOf(own ? info.FooterText + " · page " : "Page ")),
             new SimpleField(new Run(new Text("1"))) { Instruction = " PAGE " },
             new Run(Writer.TextOf(" of ")),
             new SimpleField(new Run(new Text("1"))) { Instruction = " NUMPAGES " });
@@ -486,8 +488,11 @@ public static class BenchmarkWordRenderer
         return paragraph;
     }
 
+    /// <summary>The source hash and layout version; the layout version alone for a document with its own footer text.</summary>
     private static string SourceText(BenchmarkPdfDocumentInfo info)
-        => $"Source {ShortHash(info.SourceSha256)} · Word layout {LayoutVersion.ToString(CultureInfo.InvariantCulture)}";
+        => string.IsNullOrWhiteSpace(info.FooterText)
+            ? $"Source {ShortHash(info.SourceSha256)} · Word layout {LayoutVersion.ToString(CultureInfo.InvariantCulture)}"
+            : $"Word layout {LayoutVersion.ToString(CultureInfo.InvariantCulture)}";
 
     private static string ShortHash(string sha256) => sha256.Length > 16 ? sha256[..16] : sha256;
 

@@ -6,12 +6,18 @@ import {
   EventEmitter,
   Input,
   OnChanges,
+  OnDestroy,
+  OnInit,
   Output,
   SimpleChanges,
+  ViewChild,
   inject
 } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
-import { refreshAnchorPositioning } from '../../../../utils/polyfills.util';
+import { SystemService } from '../../../../services/system.service';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../../utils/polyfills.util';
+import { COPY_STATUS_MS } from '../../benchmark.models';
 import { analysisChartPoints, prefersReducedMotion } from '../chat-consistency-charts';
 import {
   CcEventDay,
@@ -21,12 +27,10 @@ import {
   groupOverseerEvents,
   servedModelChanges
 } from '../chat-consistency-events';
-import { formatUtcDateTime, gradeText, verdictText } from '../chat-consistency-format';
+import { formatUtcDateTime, gradeText } from '../chat-consistency-format';
 import {
-  CcEndpointStatus,
   CcNotComputableGroup,
   CcResultKeyFigure,
-  ccEndpointStatus,
   ccNextRunGroups,
   ccNotComputableGroups,
   ccResultKeyFigures
@@ -39,33 +43,47 @@ import {
   CcEndpointResult,
   CcRunRow,
   CcRunSelectionView,
-  CcTimelinePoint,
-  CcUnanalyzedReason,
-  CcVerdict
+  CcTimelinePoint
 } from '../chat-consistency.models';
 import { CcEventListComponent } from '../event-list/cc-event-list.component';
+import {
+  CcAttributionGroupView,
+  CcDecisiveChange,
+  CcResultsImageContext,
+  ccAttributionView,
+  ccComputedEndpoints,
+  ccRangeBoundsText,
+  ccResultsImageItems,
+  ccRunMark,
+  ccRunSelectionMarks,
+  ccShownRunSelection,
+  ccUnanalyzedGroups
+} from '../results-image/results-image-blocks';
+import {
+  CcResultsImageDialogComponent,
+  CcResultsImageItems,
+  CcResultsImageMeasurer
+} from '../results-image/results-image-dialog.component';
+import {
+  CcResultsImageAction,
+  CcResultsImageRequest,
+  exportResultsImage,
+  measureResultsImage
+} from '../results-image/results-image-export';
+import {
+  CC_RESULTS_IMAGE_SECTIONS,
+  CcResultsImageSettings,
+  ccResultsImageFormatLabel,
+  readStoredCcResultsImageSettings,
+  writeStoredCcResultsImageSettings
+} from '../results-image/results-image-settings';
 import { CcEndpointCardComponent } from './endpoint-card/endpoint-card.component';
 import { CcNextRunsComponent } from './next-runs/next-runs.component';
 import { CcResultPeriodsComponent } from './result-periods/result-periods.component';
 import { CcVerdictBannerComponent } from './verdict-banner/verdict-banner.component';
 
-/** The attribution groups, in the order the results show them. */
-export const CC_ATTRIBUTION_GROUPS: readonly { readonly side: string; readonly title: string }[] = [
-  { side: 'ours', title: 'Our changes' },
-  { side: 'provider', title: 'Provider' },
-  { side: 'infrastructure', title: 'Infrastructure' },
-  { side: 'undetermined', title: 'Undetermined' }
-];
-
-/** Why a usable run in the periods was not analyzed, in the order the server classifies it. */
-export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReason; readonly label: string }[] = [
-  { reason: 'leftOut', label: 'Left out in step 1' },
-  { reason: 'outsideDateRange', label: 'Outside the step-1 dates' },
-  { reason: 'beforeFirstRun', label: 'Before the first run' },
-  { reason: 'afterLastRun', label: 'After the last run' },
-  { reason: 'notSelected', label: 'Not assigned to a period' },
-  { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
-];
+export { CC_ATTRIBUTION_GROUPS, CC_UNANALYZED_REASONS } from '../results-image/results-image-blocks';
+export type { CcAttributionGroupView, CcDecisiveChange } from '../results-image/results-image-blocks';
 
 export type CcResultsTab = 'summary' | 'verdicts' | 'periods' | 'attribution' | 'nextRuns' | 'details';
 
@@ -109,51 +127,14 @@ function writeStoredResultsTab(tab: CcResultsTab): void {
   }
 }
 
-/** The order of the computed endpoint cards: changes first, inconclusive last. */
-const STATUS_ORDER: Readonly<Record<CcEndpointStatus, number>> = {
-  changed: 0,
-  improved: 1,
-  within: 2,
-  inconclusive: 3,
-  notComputable: 4
-};
-
-const DECISIVE_VERDICTS: readonly CcVerdict[] = ['changedDegraded', 'changedImproved'];
-
-/** The sides an attribution names, as the line about the sides without one reads them. */
-const ATTRIBUTED_SIDE_NAMES: readonly { readonly side: string; readonly name: string }[] = [
-  { side: 'ours', name: 'our changes' },
-  { side: 'provider', name: 'the provider' },
-  { side: 'infrastructure', name: 'infrastructure' }
-];
-
-/** A decisive change the attribution explains. */
-export interface CcDecisiveChange {
-  id: string;
-  name: string;
-  verdict: CcVerdict;
-  verdictText: string;
-}
-
-/** The attributions of one side. */
-export interface CcAttributionGroupView {
-  side: string;
-  title: string;
-  attributions: CcAttributionResult[];
-}
-
-/** `a`, `a or b`, `a, b or c`. */
-function orList(items: readonly string[]): string {
-  if (items.length <= 1) return items.join('');
-  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
-}
-
 /**
  * The Results step of the analysis, in the tabs *Summary* (the verdict banner and the key figures),
  * *Verdicts* (a card per computed endpoint, the not-computable endpoints in one card), *Periods* (the stored
  * periods and their units), *Attribution*, *Next runs* and *Details* (the run selection, the events
  * in the analyzed span, the limitations, the data quality and the analysis's identity, each behind a
- * closed disclosure). Every panel is rendered once and hidden while another tab shows.
+ * closed disclosure). Every panel is rendered once and hidden while another tab shows. Beside the tabs,
+ * **Copy** and **Download** export the shown section as an image, and **Image settings** opens the
+ * dialog that chooses what the images show and the file they are written as.
  */
 @Component({
   selector: 'app-cc-results-view',
@@ -163,15 +144,17 @@ function orList(items: readonly string[]): string {
     CcEventListComponent,
     CcNextRunsComponent,
     CcResultPeriodsComponent,
+    CcResultsImageDialogComponent,
     CcVerdictBannerComponent
   ],
   templateUrl: './results-view.component.html',
   styleUrls: ['./results-view.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class CcResultsViewComponent implements OnChanges {
+export class CcResultsViewComponent implements OnInit, OnChanges, OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly systemService = inject(SystemService);
 
   @Input({ required: true }) result!: CcAnalysisResult;
   /** The subject's timeline points; the event list keeps the analysis's runs. */
@@ -191,6 +174,8 @@ export class CcResultsViewComponent implements OnChanges {
   @Output() readonly openRunReport = new EventEmitter<number>();
   @Output() readonly openBatteryRunReport = new EventEmitter<number>();
 
+  @ViewChild(CcResultsImageDialogComponent) imageDialog?: CcResultsImageDialogComponent;
+
   readonly tabs = CC_RESULTS_TABS;
   tab: CcResultsTab = readStoredResultsTab();
 
@@ -202,7 +187,7 @@ export class CcResultsViewComponent implements OnChanges {
   /** The next-run cards the *Next runs* tab shows. */
   nextRunCardCount = 0;
   decisiveChanges: CcDecisiveChange[] = [];
-  /** The sides with attributions, in {@link CC_ATTRIBUTION_GROUPS} order. */
+  /** The sides with attributions, in `CC_ATTRIBUTION_GROUPS` order. */
   attributionGroups: CcAttributionGroupView[] = [];
   /** Nothing decisive and nothing attributed beyond *Undetermined*. */
   attributionEmpty = false;
@@ -211,6 +196,21 @@ export class CcResultsViewComponent implements OnChanges {
   /** The composite events, annotations and served-model changes of the analysis, by day. */
   eventDays: CcEventDay[] = [];
   eventCount = 0;
+
+  /** A copy or download is being composed; both buttons refuse another. */
+  exporting = false;
+  /** The last export's outcome, cleared after `COPY_STATUS_MS`. */
+  exportStatus = '';
+  /** `PNG` or `WebP`, the format a download writes; refreshed on every open, change and export. */
+  downloadFormat: 'PNG' | 'WebP' = ccResultsImageFormatLabel(readStoredCcResultsImageSettings().format);
+
+  /** The footer's Overseer build, fetched on the first export. */
+  private overseerVersion: string | null = null;
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  ngOnInit(): void {
+    ensureOverlayPolyfills();
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['result'] || changes['rows']) {
@@ -227,43 +227,29 @@ export class CcResultsViewComponent implements OnChanges {
         this.result.annotations, servedModelChanges(points));
       this.eventCount = this.eventDays.reduce((sum, day) => sum + day.items.length, 0);
     }
+    if (changes['result'] && !changes['result'].firstChange) {
+      // The dialog's item lists belong to the result it was opened on.
+      this.imageDialog?.close();
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.clearStatusTimer();
   }
 
   private buildVerdicts(): void {
     const endpoints = this.result.endpoints;
-    this.computedEndpoints = endpoints
-      .filter(endpoint => endpoint.computed)
-      .map(endpoint => ({ endpoint, rank: STATUS_ORDER[ccEndpointStatus(endpoint)] }))
-      .sort((a, b) => a.rank - b.rank || a.endpoint.id.localeCompare(b.endpoint.id, undefined, { numeric: true }))
-      .map(entry => entry.endpoint);
+    this.computedEndpoints = ccComputedEndpoints(this.result);
     this.notComputableGroups = ccNotComputableGroups(endpoints);
     this.notComputableCount = endpoints.filter(endpoint => !endpoint.computed).length;
   }
 
   private buildAttribution(): void {
-    const byId = new Map(this.result.endpoints.map(endpoint => [endpoint.id, endpoint] as const));
-    const decisive: CcDecisiveChange[] = [];
-    for (const change of this.result.attribution.totalChanges) {
-      const endpoint = byId.get(change.endpointId);
-      if (!endpoint?.verdict || !DECISIVE_VERDICTS.includes(endpoint.verdict)) continue;
-      if (decisive.some(entry => entry.id === endpoint.id)) continue;
-      decisive.push({
-        id: endpoint.id,
-        name: change.name || endpoint.name,
-        verdict: endpoint.verdict,
-        verdictText: verdictText(endpoint.verdict, endpoint.verdictLabel)
-      });
-    }
-    this.decisiveChanges = decisive;
-    this.attributionGroups = CC_ATTRIBUTION_GROUPS
-      .map(group => ({ side: group.side, title: group.title, attributions: this.attributionsOf(group.side) }))
-      .filter(group => group.attributions.length > 0);
-    const attributed = this.result.attribution.attributions.some(attribution => attribution.side !== 'undetermined');
-    this.attributionEmpty = decisive.length === 0 && !attributed;
-    const missing = ATTRIBUTED_SIDE_NAMES
-      .filter(entry => !this.attributionGroups.some(group => group.side === entry.side))
-      .map(entry => entry.name);
-    this.unattributedText = missing.length > 0 ? `Nothing is attributed to ${orList(missing)}.` : '';
+    const view = ccAttributionView(this.result);
+    this.decisiveChanges = view.decisiveChanges;
+    this.attributionGroups = view.groups;
+    this.attributionEmpty = view.empty;
+    this.unattributedText = view.unattributedText;
   }
 
   attributionsOf(side: string): CcAttributionResult[] {
@@ -341,20 +327,97 @@ export class CcResultsViewComponent implements OnChanges {
     return (requested + count) % count;
   }
 
+  // --- Section images ---
+
+  /** The shown tab's name: `Next runs`. */
+  get tabLabel(): string {
+    return this.tabs.find(entry => entry.id === this.tab)?.label ?? 'Summary';
+  }
+
+  /** `analysis #4`, or `this analysis` before it is saved. */
+  get analysisName(): string {
+    return this.result.analysisId !== null ? `analysis #${this.result.analysisId}` : 'this analysis';
+  }
+
+  /** Measures the next image of a section for the dialog's summary, at the settings it is given. */
+  readonly measureImage: CcResultsImageMeasurer = (settings, section) => measureResultsImage(this.imageRequest(section, settings));
+
+  /**
+   * Copies or downloads the shown section as an image, with the settings read from storage now, and
+   * announces the outcome. Refuses while another export runs.
+   */
+  async exportSection(action: CcResultsImageAction): Promise<void> {
+    if (this.exporting) return;
+    this.exporting = true;
+    this.cdr.markForCheck();
+    try {
+      if (this.overseerVersion === null) {
+        this.overseerVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
+      }
+      const settings = readStoredCcResultsImageSettings();
+      this.downloadFormat = ccResultsImageFormatLabel(settings.format);
+      this.announce(await exportResultsImage(action, this.imageRequest(this.tab, settings)));
+    } finally {
+      this.exporting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Opens Image settings on the shown section, with every section's items from this result. */
+  openImageSettings(opener: HTMLElement): void {
+    const context = this.imageContext();
+    const items = {} as Record<CcResultsTab, ReturnType<typeof ccResultsImageItems>>;
+    for (const section of CC_RESULTS_IMAGE_SECTIONS) {
+      items[section] = ccResultsImageItems(section, this.result, context);
+    }
+    const settings = readStoredCcResultsImageSettings();
+    this.downloadFormat = ccResultsImageFormatLabel(settings.format);
+    this.imageDialog?.open(this.tab, items as CcResultsImageItems, settings, opener);
+    this.cdr.markForCheck();
+  }
+
+  onImageSettingsChange(settings: CcResultsImageSettings): void {
+    writeStoredCcResultsImageSettings(settings);
+    this.downloadFormat = ccResultsImageFormatLabel(settings.format);
+    this.cdr.markForCheck();
+  }
+
+  private imageContext(): CcResultsImageContext {
+    return { rows: this.rows, batteryRows: this.batteryRows, eventDays: this.eventDays };
+  }
+
+  private imageRequest(section: CcResultsTab, settings: CcResultsImageSettings): CcResultsImageRequest {
+    return { section, result: this.result, context: this.imageContext(), overseerVersion: this.overseerVersion, settings };
+  }
+
+  private announce(message: string): void {
+    this.clearStatusTimer();
+    this.exportStatus = message;
+    this.statusTimer = setTimeout(() => {
+      this.exportStatus = '';
+      this.statusTimer = null;
+      this.cdr.markForCheck();
+    }, COPY_STATUS_MS);
+    this.cdr.markForCheck();
+  }
+
+  private clearStatusTimer(): void {
+    if (this.statusTimer !== null) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = null;
+    }
+  }
+
   // --- Run selection ---
 
   /** The recorded run selection; null for an analysis saved before it was recorded, with nothing to show. */
   get runSelection(): CcRunSelectionView | null {
-    const selection = this.result.runSelection;
-    return selection && (selection.recorded || selection.unanalyzedRuns.length > 0) ? selection : null;
+    return ccShownRunSelection(this.result);
   }
 
   /** `2026-09-01 00:00 UTC to the last run`, the UTC bounds of the step-1 dates; empty when both are open. */
   rangeBoundsText(selection: CcRunSelectionView): string {
-    if (!selection.rangeFromUtc && !selection.rangeToUtc) return '';
-    const from = selection.rangeFromUtc ? formatUtcDateTime(selection.rangeFromUtc) : 'the first run';
-    const to = selection.rangeToUtc ? formatUtcDateTime(selection.rangeToUtc) : 'the last run';
-    return `${from} to ${to}`;
+    return ccRangeBoundsText(selection);
   }
 
   /** The analysis counted battery runs: its marks and left-out ids are battery runs'. */
@@ -371,21 +434,19 @@ export class CcResultsViewComponent implements OnChanges {
 
   /** `#102`, or `battery run #12` in a battery analysis; `none` without a mark. */
   runMark(runId: number | null | undefined): string {
-    if (runId === null || runId === undefined) return 'none';
-    return this.batteryAnalysis ? `battery run #${runId}` : `#${runId}`;
+    return ccRunMark(this.result, runId);
   }
 
   firstMark(selection: CcRunSelectionView): string {
-    return this.runMark(this.batteryAnalysis ? selection.firstBatteryRunId : selection.firstRunId);
+    return ccRunSelectionMarks(this.result, selection).first;
   }
 
   lastMark(selection: CcRunSelectionView): string {
-    return this.runMark(this.batteryAnalysis ? selection.lastBatteryRunId : selection.lastRunId);
+    return ccRunSelectionMarks(this.result, selection).last;
   }
 
   leftOutText(selection: CcRunSelectionView): string {
-    const ids = this.batteryAnalysis ? selection.leftOutBatteryRunIds ?? [] : selection.leftOutRunIds;
-    return ids.length > 0 ? ids.map(id => this.runMark(id)).join(', ') : 'none';
+    return ccRunSelectionMarks(this.result, selection).leftOut;
   }
 
   /**
@@ -393,17 +454,6 @@ export class CcResultsViewComponent implements OnChanges {
    * with the battery run a reason applies to: `#98 (baseline, battery run #12)`.
    */
   unanalyzedGroups(selection: CcRunSelectionView): { reason: string; label: string; runs: string }[] {
-    return CC_UNANALYZED_REASONS
-      .map(({ reason, label }) => ({
-        reason,
-        label,
-        runs: selection.unanalyzedRuns
-          .filter(run => run.reason === reason)
-          .map(run => run.batteryRunId !== null && run.batteryRunId !== undefined
-            ? `#${run.runId} (${run.period}, battery run #${run.batteryRunId})`
-            : `#${run.runId} (${run.period})`)
-          .join(', ')
-      }))
-      .filter(group => group.runs !== '');
+    return ccUnanalyzedGroups(selection);
   }
 }

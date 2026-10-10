@@ -87,10 +87,10 @@ public sealed class BenchmarkReportCleanResult
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
-/// C1 to C7 (rule numbers 22 to 28) on top of the rules above. Its controls are the peers, so
-/// <c>{{peer:X}}</c> names one. C1, C2, C3, C4, the wording half of C6 and the claim half of C7 read
-/// each sentence of the headline and of every paragraph, and a paragraph failing one is dropped like
-/// any other error. C5 is a warning on a whole slot. The other halves of C6 (the document cites
+/// C1 to C7 (rule numbers 22 to 28) and the readable-text rule C8 (rule 29) on top of the rules above.
+/// Its controls are the peers, so <c>{{peer:X}}</c> names one. C1, C2, C3, C4, the wording half of C6,
+/// the claim half of C7 and C8 read the headline and every paragraph, and a paragraph failing one is
+/// dropped like any other error. C5 is a warning on a whole slot. The other halves of C6 (the document cites
 /// <c>{{scope.hours}}</c>) and C7 (<c>ruledOut</c> cites every Overseer event) have nothing to drop,
 /// so after the repair turn they are recorded against the kept text without
 /// <see cref="BenchmarkReportValidationNote.Dropped"/>.</para>
@@ -239,6 +239,14 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public const int ChatProviderReportRule = 28;
 
+    /// <summary>
+    /// C8: readable text. A chat consistency headline or paragraph holds no run of twelve or more hex
+    /// digits, no JSON (<c>{"</c>), no <see cref="global::Overseer.Services.ChatConsistency.OverseerEventKinds"/>
+    /// identifier, and cites no fact kept from the writer
+    /// (<see cref="BenchmarkChatConsistencyReportFacts.WriterHidden"/>).
+    /// </summary>
+    public const int ChatReadableTextRule = 29;
+
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule
@@ -312,6 +320,15 @@ public static class BenchmarkReportPackValidator
     public static readonly IReadOnlyList<string> ChatMechanismWords = new[]
     {
         "quantized", "quantization", "quantised", "quantisation", "speculative decoding", "hardware", "batching"
+    };
+
+    /// <summary>
+    /// C2's monitoring vocabulary, matched as whole words, ignoring case: GnollBench runs are made by
+    /// hand, so nothing monitors the chat, and no annotation lets a sentence say so.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ChatMonitoringWords = new[]
+    {
+        "monitor", "monitors", "monitored", "monitoring"
     };
 
     /// <summary>C3's causal connectives, matched as whole phrases, ignoring case.</summary>
@@ -439,6 +456,15 @@ public static class BenchmarkReportPackValidator
     private static readonly Regex ChatPublicClaimRegex = PhraseRegex(ChatPublicClaimWords, @"(?<!(?<![\p{L}\p{N}])(?:not|never)\s+(?:yet\s+)?)");
     private static readonly Regex ChatAllHoursRegex = PhraseRegex(ChatAllHoursWords);
     private static readonly Regex ChatModelServingRegex = PhraseRegex(ChatModelServingTerms);
+    private static readonly Regex ChatMonitoringRegex = PhraseRegex(ChatMonitoringWords);
+
+    /// <summary>C8: a run of twelve or more hex digits, as a hash or a revision prints.</summary>
+    private static readonly Regex HexRunRegex = new("[0-9a-fA-F]{12,}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>C8: every <see cref="global::Overseer.Services.ChatConsistency.OverseerEventKinds"/> identifier, as a whole word.</summary>
+    private static readonly Regex EventKindRegex = new(
+        @"(?<![\p{L}\p{N}_])(?:" + string.Join("|", global::Overseer.Services.ChatConsistency.OverseerEventKinds.All.Select(Regex.Escape)) + @")(?![\p{L}\p{N}_])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Whole words and phrases of <paramref name="phrases"/>, ignoring case, longest first; a space or
@@ -1358,9 +1384,9 @@ public static class BenchmarkReportPackValidator
 
     /// <summary>
     /// Rules C1, C2, C3, C4, the wording half of C6 and, in a Provider Issue Report, the claim half of
-    /// C7, sentence by sentence, on one prose string of a chat consistency sheet; every other sheet is
-    /// not checked. <paramref name="slot"/> is null for the headline. Each rule gives one note per
-    /// string, naming every offending phrase.
+    /// C7, sentence by sentence, then C8, on one prose string of a chat consistency sheet; every other
+    /// sheet is not checked. <paramref name="slot"/> is null for the headline. Each rule gives one note
+    /// per string, naming every offending phrase.
     /// </summary>
     private static void CheckChatClaims(
         Context ctx, string? slot, string text, string location, List<BenchmarkReportValidationNote> notes)
@@ -1376,11 +1402,13 @@ public static class BenchmarkReportPackValidator
         var publicClaim = new List<string>();
         var allHours = new List<string>();
         var modelServing = new List<string>();
+        var monitoring = new List<string>();
 
         foreach (var (plain, tokens) in TokenSentences(text))
         {
             if (!tokens.Any(claims.SupportsChange)) change.AddRange(Phrases(ChatChangeRegex, plain));
             if (!tokens.Any(claims.IsProviderConfirmedCause)) intent.AddRange(Phrases(ChatIntentMechanismRegex, plain));
+            monitoring.AddRange(Phrases(ChatMonitoringRegex, plain));
             if (!tokens.Any(claims.IsAttribution)) causal.AddRange(Phrases(ChatCausalRegex, plain));
             if (!tokens.Any(claims.IsEstablished))
             {
@@ -1409,6 +1437,10 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, ChatIntentMechanismRule, location, $"C2: Uses {Quoted(intent)}: the analysis measures what changed, never why or how anyone changed it. Describe the measured change instead; a mechanism may be named only in a sentence that cites an annotation.<n> token whose kind is ProviderConfirmedCause.");
         }
+        if (monitoring.Count > 0)
+        {
+            Issue(notes, ChatIntentMechanismRule, location, $"C2: Uses {Quoted(monitoring)}: GnollBench is not a monitoring service. Its runs are made by hand, so say that the runs check or measure the chat, and say which runs to make.");
+        }
         if (causal.Count > 0)
         {
             Issue(notes, ChatCausalClaimRule, location, $"C3: Uses the causal connective {Quoted(causal)} without an attribution token in the same sentence: state a cause only as the analysis attributes it, citing its attribution.<n> token, or write two sentences instead.");
@@ -1427,6 +1459,30 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, ChatProviderReportRule, location, $"C7: Makes a claim about the model or its serving ({Quoted(modelServing)}) without a provider-side attribution in the same sentence: cite an attribution.<n> token whose side is the provider, or describe what was measured of the Overseer chat instead.");
         }
+
+        CheckChatReadable(text, location, notes);
+    }
+
+    /// <summary>
+    /// Rule C8 on one prose string of a chat consistency sheet: no hex run of twelve or more digits, no
+    /// JSON, no <see cref="global::Overseer.Services.ChatConsistency.OverseerEventKinds"/> identifier, and no
+    /// token of a fact kept from the writer; one note naming every offending token.
+    /// </summary>
+    private static void CheckChatReadable(string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        string plain = TokenRegex.Replace(text, " ");
+        var found = new List<string>();
+        found.AddRange(TokenRegex.Matches(text)
+            .Where(m => BenchmarkChatConsistencyReportFacts.WriterHidden(m.Groups[1].Value.Trim()))
+            .Select(m => m.Value));
+        found.AddRange(HexRunRegex.Matches(plain).Select(m => m.Value));
+        if (plain.Contains("{\"", StringComparison.Ordinal)) found.Add("{\"");
+        found.AddRange(EventKindRegex.Matches(plain).Select(m => m.Value));
+        if (found.Count == 0) return;
+
+        Issue(notes, ChatReadableTextRule, location, $"C8: Contains \"{string.Join("\", \"", found.Distinct(StringComparer.Ordinal))}\": "
+            + "write for a reader, without hashes, hex revisions, JSON or internal field names. Describe the change in plain words, "
+            + "such as a new harness version or an updated wiki, and cite the readable fact tokens, such as events.<n>.change.");
     }
 
     /// <summary>
@@ -2113,7 +2169,7 @@ public static class BenchmarkReportPackValidator
         /// <summary>The sheet is a comparison-scope sheet: models are <c>{{model:X}}</c>, and there is no subject.</summary>
         public bool Comparison { get; }
 
-        /// <summary>The sheet is a chat consistency sheet: rules C1 to C7 apply.</summary>
+        /// <summary>The sheet is a chat consistency sheet: rules C1 to C8 apply.</summary>
         public bool ChatConsistency { get; }
 
         /// <summary>The document scope the sheet describes.</summary>

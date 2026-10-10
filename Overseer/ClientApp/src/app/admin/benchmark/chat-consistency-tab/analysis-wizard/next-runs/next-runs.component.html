@@ -1,9 +1,10 @@
 <!--
-  The head, then one section per kind present, each a grid of cards, one per period. &ngsp; keeps the
-  spaces between inline parts that flex layouts separate only visually.
+  The head, then one section per kind present, each a grid of cards, one per period. The tab names the
+  panel, so its heading is for the heading outline only. &ngsp; keeps the spaces between inline parts
+  that flex layouts separate only visually.
 -->
 <div class="cc-nr-head">
-  <h5 id="cc-nr-title" class="gh-section-title">Next runs</h5>
+  <h5 id="cc-nr-title" class="visually-hidden">Next runs</h5>
   @if (sections.length > 0) {
     <p class="cc-nr-lead">{{ leadText }}</p>
   } @else {

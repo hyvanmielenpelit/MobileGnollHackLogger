@@ -196,18 +196,18 @@ you already read the label, it is noise; drop it.
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run, **Continue — <reason>** (the battery and series progress dialogs) | "This begins now", and it reinforces the consequence of a button that starts real work |
-| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center, on each written row of the Model Comparison wizard's step 3 *Documents of this comparison*, and on the run report's AI Reports tab, and the **Delete** of its confirmation), **Delete** a saved Chat Consistency analysis (`.btn-ghost.btn-ghost-danger`, each Analysis History card, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | pencil (Feather *edit-3*) | **Edit** (a battery card's actions), **Rename comparison** (icon-only `.action-btn` beside *Comparison #N — name* in the Model Comparison wizard's header; opens the nested rename dialog) | "Change this thing's text in place" — it edits a name or a definition and runs nothing |
 | refresh / rotate | Refresh, Re-run failed questions, Re-run question, Re-assess question, **Re-run** (the run report's popover trigger, followed by a chevron state indicator), the icon-only **Recompute** of the Model Comparison, the icon-only **Reload runs** (the Chat Consistency wizard's header, steps 1 and 2) | "This runs again" — the circular-arrow convention is universal; the repair verbs that use it are in §4g |
 | flask | **Try another assessor (does not change the score)** (`.btn-ghost`, each question of the run report) | "An experiment": it records another assessor's verdict beside the score and changes nothing, so it must not look like the repairs beside it |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card) | "A file arrives on your disk" |
-| download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Charts step) | "This one image arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Write step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card), **Documents (N)** (`.btn-ghost`, the Chat Consistency launcher's *Latest analysis*; opens the wizard on step 6, *Documents*) | "A file arrives on your disk" |
+| download (one arrow into a tray) | Download one chart (Model Comparison; each tile and the *Single chart* toolbar of the Chat Consistency wizard's Charts step), **Download** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs) | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts (the *All charts* toolbar of Model Comparison and of the Chat Consistency Charts step) | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
-| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Write step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Charts step) | "Copies to the clipboard" — nothing is saved to disk |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Write step), **Copy** a chart (icon-only, each tile and the *Single chart* toolbar of the Chat Consistency Charts step), **Copy** a Results section as an image (icon-only, the export group beside the Chat Consistency Results tabs) | "Copies to the clipboard" — nothing is saved to disk |
 | maximize (Feather: four corner brackets) | **Fit to screen** (*Single chart*, and *All charts* of the Chat Consistency Charts step) and **Fit height** (*All charts* of Model Comparison), icon-only | "Fit the view to the space" — the zoom that makes the chart fill the view |
 | fit-width (a two-headed horizontal arrow: Feather geometry `<polyline points="7 8 3 12 7 16">`, `<polyline points="17 8 21 12 17 16">`, `<line x1="3" y1="12" x2="21" y2="12">`) | **Fit width** (icon-only, the *All charts* toolbar of the Chat Consistency Charts step) | "Stretch to the width" — the one fit that fills across only, told apart from *maximize*, which fits the height or the whole chart |
-| eye | Open in Single view (Model Comparison and each Chat Consistency Charts step tile), the Chat Consistency Charts step's **Single chart** view tab, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer) | "Look at it here" — shows content without changing or downloading it |
+| eye | Open in Single view (Model Comparison and each Chat Consistency Charts step tile), the Chat Consistency Charts step's **Single chart** view tab, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center and each written row of the Model Comparison wizard's step 3; opens the PDF viewer), **Preview layout** (`.btn-gh`, beside **Generate** in step 3's sidebar, opening a §4f popover of the three document types; each opens the layout preview PDF in the viewer), **Open** a saved Chat Consistency analysis (`.btn-ghost`, each Analysis History card; opens it in the wizard) | "Look at it here" — shows content without changing or downloading it |
 | more (three dots in a row) | **More actions** (icon-only, each Report Pack row of the Download Center in the Model Comparison wizard's Documents step; opens a §4f action popover with *Update charts* and *Remove charts*) | "More actions are behind this" — the row keeps its frequent actions as visible icon buttons and puts the rarer, worded ones in the popover |
 | external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
@@ -216,7 +216,8 @@ you already read the label, it is noise; drop it.
 | zap | Generate Questions, **Generate** (the Model Comparison wizard's Write step) and its **Write Anyway** confirmation, **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
-| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard), **Open Chat Consistency Wizard** (the Chat Consistency launcher) | A guided route through several steps: the wizard finds the way, the admin follows it |
+| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard), **Open Chat Consistency Wizard** (the Chat Consistency launcher's *New analysis*; the launcher's other gold button, **Open Analysis #N**, is text-only) | A guided route through several steps: the wizard finds the way, the admin follows it |
+| clock (Feather *clock*: a circle and two hands, the glyph the Run History sub-tab shows) | **Open Analysis History** (`.btn-ghost`, the Chat Consistency launcher's *Analysis history* bar; opens the Analysis History dialog) | "History": the saved records of earlier work, listed by when they were made |
 | award (a medal over two ribbon tails) | **Leaderboard** (`.btn-ghost`, first in each battery card's actions on the Multi-Suite tab) | "Rankings": it opens the ranked results of the battery's definition |
 | columns (two columns side by side) | **Paired tests** (the Model Comparison wizard's fifth step-2 view tab) | Two models side by side, compared on the same questions |
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
@@ -439,7 +440,8 @@ anyway (marks the group cross-condition)* are text-only.*
 
 *Changed 2026-10-07 (Chat Consistency wizard): the Chat Consistency tab became a launcher page and a
 six-step wizard in a full-screen dialog. The launcher's **Open Chat Consistency Wizard** takes*
-compass*, like Open Comparison Wizard, and is the page's only `.btn-gh`. The wizard's header adds an
+compass*, like Open Comparison Wizard, and was then the page's only `.btn-gh` (the 2026-10-10
+launcher entry below adds a second, **Open Analysis #N**). The wizard's header adds an
 icon-only **Reload runs** (*rotate*, steps 1 and 2, `aria-disabled` while the runs load or no model is
 chosen) beside the close `.btn-icon-action`. The Timeline step reuses Model Comparison's step-2
 controls: the view tabs **All charts** (*grid*) and **Single chart** (*eye*); each All-charts tile's
@@ -508,6 +510,22 @@ diagnostics** take* copy *and* file-with-arrow*, as on Model Comparison's step 3
 · 2. Charts · 3. Analyze · 4. Results · 5. Write · 6. Documents*, and its Results open on a first
 tab, *Summary*, holding the verdict banner and the key figures that sat above its tab row; the Model
 Comparison wizard's step 3 is *Write*. No glyph changed.*
+
+*Changed 2026-10-10 (Chat Consistency results export, documents and launcher): the launcher has three
+sections, *New analysis*, *Latest analysis* and *Analysis history*, and two `.btn-gh`, each the
+primary action of its own section: **Open Chat Consistency Wizard** (*compass*) and the text-only
+**Open Analysis #N** of the *Latest analysis* card. That card's **Documents (N)** is a `.btn-ghost`
+with* file-with-arrow*, `aria-disabled` with its visible reason while no document is written. One
+glyph is new, *clock*, on the `.btn-ghost` **Open Analysis History**: the glyph the Run History
+sub-tab already shows, meaning "history". The saved analyses moved into the Analysis History dialog,
+the sixth §8h card list, whose cards take a text **Open** with* eye *and a **Delete** with* trash
+*(`.btn-ghost-danger`, `aria-disabled` and described by its reason while report documents exist); its
+endpoint chips, like the latest card's, are static status icons beside a word. The Results step's tab
+row is followed by an export group: icon-only **Copy** (*copy*) and **Download** (*download*) of the
+shown section as an image, each with an `interestfor` hint and `aria-disabled` while an export runs,
+and a text-only `.btn-ghost` **Image settings**, whose dialog's six section tabs are a `.gh-tabs` row
+and whose **All** / **None** are `.btn-link`s. The Write step's **Update charts** is a text-only
+`.btn-ghost`, `aria-disabled` with a visible reason.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1719,7 +1737,8 @@ The Download Center's documents (`app-download-center-panel`) are the first card
 History** (`history-tab/`, `#bm-panel-history`) is the second; the **Multi-Suite** tab's battery
 definitions (`app-benchmark-batteries`) are the third; the **Chat Consistency wizard's step 1 runs**
 (`app-cc-model-step`, 2026-10-07) are the fourth; the **Chat Consistency wizard's step 3 period
-cards** (`app-cc-period-units`, 2026-10-09) are the fifth. Use one **when every row is a
+cards** (`app-cc-period-units`, 2026-10-09) are the fifth; the **Chat Consistency Analysis History
+dialog** (`app-cc-analysis-history-dialog`, 2026-10-10) is the sixth. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1797,7 +1816,9 @@ because its `idPrefix` is an input), Run History as `historyList`, the batteries
 (`idPrefix: 'cc-runs'`, `overseer.benchmark.chatConsistency.runs.view`) and its battery runs as a second
 `CardListState` (`idPrefix: 'cc-bruns'`, `overseer.benchmark.chatConsistency.batteryRuns.view`). The
 fifth, step 3's period cards, has no filter bar, sort or batching, so the class has nothing to hold
-there and is not used (below). **A further card list that filters uses it too, rather than
+there and is not used (below). The sixth, the Chat Consistency Analysis History, uses it as `list`
+(`idPrefix: 'cc-hist'`, batch 10, `overseer.benchmark.chatConsistency.history.view`, facets *Model*,
+*Provider*, *Compared* and *Reports*). **A further card list that filters uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
@@ -2020,6 +2041,39 @@ contiguous range of cards:
   `h5#cc-res-units-title` (*Runs in the periods*), every id and anchor name starting `cc-res-pu`
   instead of `cc-pu` so the two lists can share the document. There *Show run details* starts off on
   every visit and is not stored.
+
+**The Chat Consistency Analysis History** is the sixth list (2026-10-10), the body of a modal
+`dialog.gh-dialog.cc-history-dialog` (`analysis-history/`, `app-cc-analysis-history-dialog`) opened by
+the launcher's **Open Analysis History**. It shows a card list **inside a dialog**, with a delete that
+needs its own confirmation:
+
+- **The frame**: `showModal()`, `closedby="any"` with the backdrop-click fallback, the
+  `_benchmark-dialog-frame.scss` frame (76 rem); `h3#cc-history-title` (*Chat Consistency Analysis
+  History*, `tabindex="-1"`) is focused on open so the close button's hint does not open by itself; a
+  subtitle *4 saved analyses · newest first*; a text-only **Done** in the footer.
+- **The list**: `ul.cc-hist-cards[role=list]` labelled by the dialog title, newest first by default.
+  `CardListState` over `TableState<CcAnalysisSummary>` (`idPrefix 'cc-hist'`, batch 10); search over
+  name, headline, model and `#id`; **Sort by** *Newest first* / *Oldest first* / *Model (A–Z)*; facets
+  *Model*, *Provider*, *Compared* (*Battery* / *Suite* / *All suites*) and *Reports* (*Has reports* /
+  *No reports*). The filter bar shows with two analyses or more, or while a filter is still active; one
+  analysis needs no search. **Show N more** / **Show all N** follow the rules above.
+- **The card** `article.cc-hist-card[data-analysis-id]` is five rows: the kicker (*#4 · saved … ·
+  Protocol V1*, then the tags *3 reports*, *Relaxed pooling* and a dashed *Earlier analysis code* with an
+  `app-info-tip` naming the version it was saved under), the title `h4.cc-hist-title#cc-hist-{id}-title
+  [tabindex=-1]`, the model with its badges and compared set, the periods with the headline and the
+  static endpoint chips, and the actions group *Actions for analysis #4*. The grid collapses to one
+  column below 36 rem of the `cc-hist-cards` container.
+- **The actions**: **Open** (`.btn-ghost`, *eye*, *Open analysis #4 in the wizard*, `aria-busy` while
+  it loads) and **Delete** (`.btn-ghost.btn-ghost-danger`, *trash*). Delete stays focusable but is
+  `aria-disabled` and described by a visible line (*Delete its 3 report documents in step 6 first.*)
+  while documents exist; the server's 409 stays handled inside the confirmation as a fallback.
+- **Open never stacks two modals**: the dialog stays open while the analysis loads and closes when it
+  arrives, before the wizard opens; a failed open keeps it open with the error inside.
+- **The delete confirmation is a sibling `<dialog>`**, not a child, so the frame's rules for the
+  history dialog's header, body and footer do not reach it; its `close`, `cancel` and `click` stop at
+  `stopNested`. *Keep It* returns focus to the Delete pressed. After a delete the status line announces
+  it, and focus goes to the title of the card now in the deleted one's place, else the previous card,
+  else the dialog title.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

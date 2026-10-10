@@ -1,7 +1,15 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
-import { ReportChartPickerComponent } from './report-chart-picker.component';
+import {
+  REPORT_CHART_COLUMN_DISABLED_REASON,
+  REPORT_CHART_LAYOUT_FIELDS,
+  REPORT_PACK_PICKER_FIGURES,
+  ReportChartPickerAudienceOption,
+  ReportChartPickerComponent,
+  ReportChartPickerFigure
+} from './report-chart-picker.component';
+import { REPORT_PACK_AUDIENCES } from './report-document-format';
 import {
   DEFAULT_CHART_LAYOUT_SETTINGS,
   DEFAULT_CHART_SELECTION,
@@ -510,5 +518,131 @@ describe('ReportChartPickerComponent', () => {
     const details = q('details.rcp-layout')!;
     expect(getComputedStyle(details).marginBlockStart).toBe('16px');
     expect(details.querySelector('.rcp-layout-actions')).toBeNull();
+  });
+
+  it('defaults to the Report Pack\'s figures, document types, reason and every layout field, with no notes', () => {
+    const picker = fixture.componentInstance;
+    expect(picker.figures).toBe(REPORT_PACK_PICKER_FIGURES);
+    expect(picker.figures.map(figure => figure.key)).toEqual(ALL_KEYS);
+    expect(picker.audienceOptions).toBe(REPORT_PACK_AUDIENCES);
+    expect(picker.audiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
+    expect(picker.columnDisabledReason).toBe(REPORT_CHART_COLUMN_DISABLED_REASON);
+    expect(picker.layoutFields).toEqual(REPORT_CHART_LAYOUT_FIELDS);
+    expect(picker.notes).toEqual({});
+    expect(q('.rcp-note')).toBeNull();
+  });
+
+  describe('with figures and document types of its own', () => {
+    const { ProviderIssueReport } = BenchmarkReportAudience;
+    const FIGURES: ReportChartPickerFigure[] = [
+      { key: 'x1', title: 'First figure', placement: 'Results' },
+      { key: 'x2', title: 'Second figure', placement: { [ExecutiveSummary]: 'Results', [ProviderIssueReport]: 'Events' } }
+    ];
+    const AUDIENCES: ReportChartPickerAudienceOption[] = [
+      { audience: ExecutiveSummary, label: 'Executive Summary', shortLabel: 'Executive' },
+      { audience: ProviderIssueReport, label: 'Provider Issue Report', shortLabel: 'Provider' }
+    ];
+    let own: ComponentFixture<ReportChartPickerComponent>;
+    let ownHost: HTMLElement;
+    let ownSelections: ReportChartSelection<string>[];
+    let ownLayouts: ReportChartLayoutSettings<string>[];
+
+    beforeEach(() => {
+      own = TestBed.createComponent(ReportChartPickerComponent);
+      ownHost = own.nativeElement as HTMLElement;
+      ownSelections = [];
+      ownLayouts = [];
+      own.componentInstance.selectionChange.subscribe(selection => ownSelections.push(selection));
+      own.componentInstance.layoutChange.subscribe(layout => ownLayouts.push(layout));
+      own.componentRef.setInput('idPrefix', 'own');
+      own.componentRef.setInput('selection', {
+        [ExecutiveSummary]: ['x2', 'p1a-quality', 'x1', 'x2'], [ProviderIssueReport]: ['x2'], [TechnicalReport]: ['x1']
+      });
+      own.componentRef.setInput('figures', FIGURES);
+      own.componentRef.setInput('audienceOptions', AUDIENCES);
+      own.detectChanges();
+    });
+
+    afterEach(() => own.destroy());
+
+    const ownQ = <T extends HTMLElement = HTMLElement>(selector: string): T | null => ownHost.querySelector<T>(selector);
+    const ownSelect = (audience: BenchmarkReportAudience): void => {
+      ownQ<HTMLButtonElement>(`#own-tab-${audience}`)!.click();
+      own.detectChanges();
+    };
+    const ownChoose = (element: HTMLSelectElement, value: string): void => {
+      element.value = value;
+      element.dispatchEvent(new Event('change'));
+      own.detectChanges();
+    };
+
+    it('lists its figures for its document types, with each figure\'s section per document type, every figure drawable', () => {
+      const tabs = Array.from(ownHost.querySelectorAll<HTMLElement>('[role="tab"]'));
+      expect(tabs.map(t => text(t.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Provider']);
+      expect(tabs.map(t => text(t.querySelector('.rcp-tab-count')))).toEqual(['2', '1']);
+      expect(Array.from(ownHost.querySelectorAll('.rcp-figure-title')).map(title => text(title))).toEqual(['First figure', 'Second figure']);
+      expect(Array.from(ownHost.querySelectorAll('.rcp-placement')).map(section => text(section))).toEqual(['Results', 'Results']);
+      expect(ownQ('.rcp-row .rcp-reason')).toBeNull();
+      expect(ownQ<HTMLInputElement>(`#own-${ExecutiveSummary}-x1`)!.getAttribute('aria-label')).toBe('Include First figure in the Executive Summary');
+
+      ownSelect(ProviderIssueReport);
+      expect(Array.from(ownHost.querySelectorAll('.rcp-placement')).map(section => text(section))).toEqual(['Results', 'Events']);
+      expect(text(ownQ('.rcp-panel-title'))).toBe('Provider Issue Report');
+    });
+
+    it('keeps only its own keys and document types, in its figures\' order', () => {
+      expect(own.componentInstance.selection).toEqual({ [ExecutiveSummary]: ['x1', 'x2'], [ProviderIssueReport]: ['x2'] });
+      ownQ<HTMLInputElement>(`#own-${ExecutiveSummary}-x1`)!.click();
+      own.detectChanges();
+      expect(ownSelections).toEqual([{ [ExecutiveSummary]: ['x2'], [ProviderIssueReport]: ['x2'] }]);
+
+      ownQ<HTMLButtonElement>(`.rcp-all[data-audience="${ExecutiveSummary}"]`)!.click();
+      own.detectChanges();
+      expect(ownSelections[1][ExecutiveSummary]).toEqual(['x1', 'x2']);
+    });
+
+    it('shows a note under a figure and reads it with its checkbox', () => {
+      own.componentRef.setInput('notes', { x2: 'P1 was not computable in this analysis.' });
+      own.detectChanges();
+      const note = ownQ(`#own-${ExecutiveSummary}-x2-note`)!;
+      expect(note.classList).toContain('rcp-note');
+      expect(text(note)).toBe('P1 was not computable in this analysis.');
+      expect(ownQ<HTMLInputElement>(`#own-${ExecutiveSummary}-x2`)!.getAttribute('aria-describedby'))
+        .toBe(`own-${ExecutiveSummary}-x2-placement own-${ExecutiveSummary}-x2-note`);
+      expect(ownQ(`#own-${ExecutiveSummary}-x1-note`)).toBeNull();
+    });
+
+    it('says its own reason for a document type that is not enabled', () => {
+      own.componentRef.setInput('enabledAudiences', [ExecutiveSummary]);
+      own.componentRef.setInput('columnDisabledReason', 'Not chosen in New reports.');
+      own.detectChanges();
+      expect(text(ownQ(`#own-tab-${ProviderIssueReport} .visually-hidden`))).toBe(', not chosen in New reports');
+      ownSelect(ProviderIssueReport);
+      expect(text(ownQ(`#own-col-${ProviderIssueReport}-reason`))).toBe('Not chosen in New reports.');
+      expect(ownQ<HTMLInputElement>(`#own-${ProviderIssueReport}-x2`)!.getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('offers only the layout fields asked for, and keeps its own figures\' widths', () => {
+      own.componentRef.setInput('layoutFields', ['labelPt', 'maxHeightPercent']);
+      own.componentRef.setInput('layout', {
+        [ExecutiveSummary]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { x1: 'half', 'p1a-quality': 'half' }, maxHeightPercent: 50 },
+        [ProviderIssueReport]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { x2: 'twoThirds' } }
+      });
+      own.detectChanges();
+
+      expect(ownQ<HTMLSelectElement>(`#own-${ExecutiveSummary}-x1-width`)!.value).toBe('half');
+      expect(ownQ<HTMLSelectElement>(`#own-${ExecutiveSummary}-x2-width`)!.value).toBe('full');
+      expect(ownQ<HTMLSelectElement>(`#own-${ExecutiveSummary}-label`)).not.toBeNull();
+      expect(ownQ<HTMLSelectElement>(`#own-${ExecutiveSummary}-maxHeight`)!.value).toBe('50');
+      for (const field of ['orientation', 'sideBySide', 'heading', 'logo', 'theme']) {
+        expect(ownQ(`#own-${ExecutiveSummary}-${field}`), field).toBeNull();
+      }
+
+      ownChoose(ownQ<HTMLSelectElement>(`#own-${ExecutiveSummary}-maxHeight`)!, '40');
+      expect(ownLayouts.length).toBe(1);
+      expect(ownLayouts[0][ExecutiveSummary]).toEqual({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { x1: 'half' }, maxHeightPercent: 40 });
+      expect(ownLayouts[0][ProviderIssueReport]!.widths).toEqual({ x2: 'twoThirds' });
+      expect(ownLayouts[0][TechnicalReport]).toBeUndefined();
+    });
   });
 });

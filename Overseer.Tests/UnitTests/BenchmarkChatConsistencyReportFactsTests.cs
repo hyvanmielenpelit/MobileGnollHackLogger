@@ -335,12 +335,13 @@ public class BenchmarkChatConsistencyReportFactsTests
 
         var overall = Fact(sheet, "verdict.overall");
         Assert.Equal("degraded", overall.Value!.GetValue<string>());
-        Assert.StartsWith("Degraded: quality degraded (Indicated)", overall.Display);
+        Assert.StartsWith("Degraded: quality degraded (indicated)", overall.Display);
+        Assert.Equal("The chat changed", Fact(sheet, "verdict.short").Display);
 
         Assert.Equal("weekdays 04–12 UTC", Fact(sheet, "scope.hours").Display);
         Assert.Equal("degraded (Indicated)", Fact(sheet, "verdict.quality").Display);
         Assert.False(Fact(sheet, "serving.timeOfDayAssessable").Value!.GetValue<bool>());
-        Assert.Equal("12.5 %", Fact(sheet, "scope.excludedShare").Display);
+        Assert.Equal("12.5\u00A0%", Fact(sheet, "scope.excludedShare").Display);
     }
 
     [Fact]
@@ -348,11 +349,16 @@ public class BenchmarkChatConsistencyReportFactsTests
     {
         var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
 
-        Assert.Equal("-4.2 index points", Fact(sheet, "endpoint.P1.estimate").Display);
-        Assert.Equal("-6.0 index points to -3.1 index points", Fact(sheet, "endpoint.P1.ci95").Display);
+        Assert.Equal("\u22124.2\u00A0index points", Fact(sheet, "endpoint.P1.estimate").Display);
+        Assert.Equal("\u22126.0 to \u22123.1\u00A0index points", Fact(sheet, "endpoint.P1.ci95").Display);
+        Assert.Equal("±2.5\u00A0index points", Fact(sheet, "endpoint.P1.mde").Display);
         Assert.Equal("0.016", Fact(sheet, "endpoint.P1.adjustedP").Display);
         Assert.DoesNotContain(sheet.Facts, f => f.Key == "endpoint.P1.percent");
-        Assert.Equal("+2.0 %", Fact(sheet, "endpoint.P2.percent").Display);
+        Assert.Equal("+2.0\u00A0%", Fact(sheet, "endpoint.P2.percent").Display);
+        Assert.Equal("+2.0\u00A0%", Fact(sheet, "endpoint.P2.estimate").Display);
+        Assert.Equal("±8.3\u00A0%", Fact(sheet, "endpoint.P2.mde").Display);
+        Assert.DoesNotContain(sheet.Facts, f => f.Display.Contains("log ratio", StringComparison.Ordinal));
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("endpoint.", StringComparison.Ordinal) && f.Display.Contains('-'));
 
         var p3 = Fact(sheet, "endpoint.P3.estimate");
         Assert.False(p3.Available);
@@ -610,6 +616,196 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Throws<ArgumentOutOfRangeException>(() => BenchmarkReportSlots.For(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportScope.Comparison));
         Assert.False(modelSheet.IsChatConsistency);
         Assert.False(comparisonSheet.IsChatConsistency);
+    }
+
+    [Fact]
+    public void Events_AreInWords_GroupedIntoUpdates_AndNeverCarryTheirRawValues()
+    {
+        var result = Result() with
+        {
+            Events = new[]
+            {
+                new ChatConsistencyEventView
+                {
+                    AtUtc = Day1.AddDays(10).AddHours(14).AddMinutes(49), Kind = OverseerEventKinds.HarnessVersion, Label = "harness changed candidate input on 2026-09-11 (run #98)",
+                    From = "53", To = "54", RunId = 98, PreviousRunId = 97, SubjectKey = "provider=TestProvider;model=test-model-1", InTargetSeries = true
+                },
+                new ChatConsistencyEventView
+                {
+                    AtUtc = Day1.AddDays(10).AddHours(14).AddMinutes(49), Kind = OverseerEventKinds.Wiki, Label = "wiki updated on 2026-09-11 (run #98)",
+                    From = "a8fa85a" + new string('0', 33), To = "4bb80dc" + new string('1', 33), RunId = 98, PreviousRunId = 97,
+                    SubjectKey = "provider=TestProvider;model=test-model-1", InTargetSeries = true
+                },
+                new ChatConsistencyEventView
+                {
+                    AtUtc = Day1.AddDays(10).AddHours(15), Kind = OverseerEventKinds.CandidatePromptOptions, Label = "candidate prompt options changed on 2026-09-11 (run #99)",
+                    From = "{\"hasGameSnapshot\":false,\"verboseMode\":false}", To = "{\"hasGameSnapshot\":true,\"verboseMode\":false}", RunId = 99, PreviousRunId = 97,
+                    SubjectKey = "provider=TestProvider;model=test-model-1", InTargetSeries = true
+                },
+                new ChatConsistencyEventView
+                {
+                    AtUtc = Day1.AddDays(11), Kind = OverseerEventKinds.CandidateSystemPrompt, Label = "system prompt changed on 2026-09-12 (run #31)",
+                    From = new string('a', 64), To = new string('b', 64), RunId = 31, PreviousRunId = 30, SubjectKey = ControlKey
+                }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal(OverseerEventKinds.Wiki, Fact(sheet, "events.2.kind").Value!.GetValue<string>());
+        Assert.Equal("Wiki revision", Fact(sheet, "events.2.kind").Display);
+        Assert.Equal("harness 53 → 54", Fact(sheet, "events.1.change").Display);
+        Assert.Equal("wiki revision a8fa85a → 4bb80dc", Fact(sheet, "events.2.change").Display);
+        Assert.Equal("game snapshot: off → on", Fact(sheet, "events.3.change").Display);
+        Assert.Equal("system prompt changed", Fact(sheet, "events.4.change").Display);
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("events.", StringComparison.Ordinal) && (f.Key.EndsWith(".from", StringComparison.Ordinal) || f.Key.EndsWith(".to", StringComparison.Ordinal)));
+
+        Assert.Equal(2, Fact(sheet, "eventGroups.count").Value!.GetValue<int>());
+        Assert.Equal("2026-09-11 14:49 UTC", Fact(sheet, "eventGroups.1.at").Display);
+        Assert.Equal("runs #98 and #99", Fact(sheet, "eventGroups.1.run").Display);
+        Assert.Equal("harness 53 → 54; wiki revision a8fa85a → 4bb80dc; game snapshot: off → on", Fact(sheet, "eventGroups.1.changes").Display);
+        Assert.Equal("the model under test", Fact(sheet, "eventGroups.1.series").Display);
+        Assert.Equal("Model A", Fact(sheet, "eventGroups.2.series").Display);
+
+        Assert.DoesNotContain(sheet.Facts, f => !BenchmarkChatConsistencyReportFacts.WriterHidden(f.Key)
+            && (f.Display.Contains('{') || System.Text.RegularExpressions.Regex.IsMatch(f.Display, "[0-9a-f]{12,}")));
+    }
+
+    [Theory]
+    [InlineData(OverseerEventKinds.CorpusIndex, "{not json", "{}", "changed")]
+    [InlineData(OverseerEventKinds.CandidatePromptOptions, "[1]", "{\"hasGameSnapshot\":true}", "changed")]
+    [InlineData(OverseerEventKinds.Wiki, "0123456789abcdef0123456789abcdef", "a8fa85a4bb80dc4e5f6a7b8c9d0e1f2a3b4c5d6e", "wiki revision 0123456 → a8fa85a")]
+    [InlineData(OverseerEventKinds.ToolIterationCaps, "{\"Simple\":8,\"Intermediate\":8,\"Advanced\":8}", "{\"Simple\":10,\"Intermediate\":10,\"Advanced\":10}", "tool iterations per question: 8 → 10")]
+    [InlineData(OverseerEventKinds.QuestionTimeouts, "{\"Simple\":300,\"Intermediate\":300,\"Advanced\":300}", "{\"Simple\":300,\"Intermediate\":300,\"Advanced\":600}", "question timeout (Advanced): 300 → 600\u00A0s")]
+    [InlineData(OverseerEventKinds.MaxToolCallsPerQuestion, "12", "16", "12 → 16")]
+    [InlineData(OverseerEventKinds.HarnessVersion, "53", "54 (re-run 55)", "harness 53 → 54 (re-run 55)")]
+    [InlineData(OverseerEventKinds.ToolGuides, "aaaa", "bbbb", "changed")]
+    [InlineData("SomethingNewSha256", "0123456789abcdef0123", "fedcba9876543210fedc", "changed")]
+    [InlineData(OverseerEventKinds.CorpusIndex, "{\"gnollhackWiki\":{\"sha256\":\"a\",\"fileCount\":5,\"indexedAtUtc\":\"x\"}}", "{\"gnollhackWiki\":{\"sha256\":\"a\",\"fileCount\":5,\"indexedAtUtc\":\"y\"}}", "re-indexed, contents unchanged")]
+    public void AnEventChange_ReadsAsAShortBeforeAndAfter_OrChanged(string kind, string from, string to, string expected)
+    {
+        string change = ChatConsistencyEventText.Change(kind, from, to);
+
+        Assert.Equal(expected, change);
+        Assert.True(change.Length <= ChatConsistencyEventText.MaxChars);
+        Assert.DoesNotContain("{", change, StringComparison.Ordinal);
+        Assert.DoesNotMatch("[0-9a-fA-F]{12,}", change);
+    }
+
+    [Fact]
+    public void AnEventChange_IsCutToItsLimit_AndALabelNeverIsAnIdentifier()
+    {
+        var options = Enumerable.Range(1, 30).Select(i => "\"option" + i.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\":");
+        string before = "{" + string.Join(",", options.Select(o => o + "false")) + "}";
+        string after = "{" + string.Join(",", options.Select(o => o + "true")) + "}";
+
+        string change = ChatConsistencyEventText.Change(OverseerEventKinds.CandidatePromptOptions, before, after);
+
+        Assert.Equal(ChatConsistencyEventText.MaxChars, change.Length);
+        Assert.EndsWith("…", change, StringComparison.Ordinal);
+        Assert.Equal("Corpus index", ChatConsistencyEventText.Label(OverseerEventKinds.CorpusIndex));
+        Assert.Equal("Something new", ChatConsistencyEventText.Label("SomethingNewSha256"));
+        Assert.Equal("tool calls per question: 12 → 16", ChatConsistencyEventText.Describe(OverseerEventKinds.MaxToolCallsPerQuestion, "12", "16"));
+        Assert.Equal("tool guides changed", ChatConsistencyEventText.Describe(OverseerEventKinds.ToolGuides, "a", "b"));
+        Assert.All(OverseerEventKinds.All, kind => Assert.DoesNotContain(kind, ChatConsistencyEventText.Label(kind), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheInputHash_StaysOnTheSheet_ButIsHiddenFromTheWriter()
+    {
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal(string.Concat(Enumerable.Repeat("0123456789abcdef", 4)), Fact(sheet, BenchmarkChatConsistencyReportFacts.InputSha256Key).Value!.GetValue<string>());
+        Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden("analysis.inputSha256"));
+        Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden("events.3.from"));
+        Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden("events.12.to"));
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden("events.3.change"));
+        Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden("analysis.id"));
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
+        Assert.DoesNotContain("analysis.inputSha256", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("0123456789abcdef", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnitsAndTheMinimumSample_AreStatedInBatteryRuns()
+    {
+        var battery = Result() with
+        {
+            ComparisonSet = new ChatConsistencyComparedSet { Kind = ChatConsistencyComparisonSetKinds.Battery, Key = "battery:abc", Label = "Two initial suites (revision 1)" },
+            UnitKind = ChatConsistencyComparisonSetKinds.BatteryRunUnit,
+            Units = new[] { Unit(101, "baseline", 10, 11), Unit(102, "comparison", 20, 21) },
+            Baseline = Result().Baseline with { Days = new[] { "2026-09-01" } },
+            Comparison = Result().Comparison with { Days = new[] { "2026-09-15" } }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(battery, BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(1, Fact(sheet, "period.baseline.units").Value!.GetValue<int>());
+        Assert.Equal("1 battery run", Fact(sheet, "period.baseline.units").Display);
+        Assert.Equal("battery run", Fact(sheet, "period.comparison.unitNoun").Display);
+        Assert.Equal("battery run #101 (runs #10 and #11)", Fact(sheet, "period.baseline.memberRuns").Display);
+        Assert.Equal("2 battery runs per period", Fact(sheet, "sample.minimumUnits").Display);
+        Assert.Equal("2 days per period", Fact(sheet, "sample.minimumDays").Display);
+        Assert.Equal("20 paired items", Fact(sheet, "sample.minimumPairedItems").Display);
+        Assert.False(Fact(sheet, "sample.met").Value!.GetValue<bool>());
+        Assert.Equal("1 battery run per period on 1 day; the minimum is 2 battery runs on 2 days per period and 20 paired items",
+            Fact(sheet, "sample.shortfall").Display);
+
+        // Two runs per period on two days meet the minimum, and the shortfall is then unavailable.
+        var runs = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
+        Assert.True(Fact(runs, "sample.met").Value!.GetValue<bool>());
+        Assert.False(Fact(runs, "sample.shortfall").Available);
+        Assert.Equal("2 runs", Fact(runs, "period.baseline.units").Display);
+        Assert.Equal("runs #10 and #11", Fact(runs, "period.baseline.memberRuns").Display);
+    }
+
+    [Fact]
+    public void TheMdeNote_TheMissingControlLabel_AndTheInstrumentNote_ReadAsWords()
+    {
+        var baseResult = Result();
+        var result = baseResult with
+        {
+            Endpoints = baseResult.Endpoints.Select(e => e.Id == "P1"
+                ? e with { MinimumDetectableEffectNote = "one run per period: run-to-run noise not estimable" }
+                : e).ToList(),
+            Controls = baseResult.Controls with
+            {
+                MissingControls = new[]
+                {
+                    new ChatConsistencyMissingControlView { Period = "comparison", SuiteName = "Core suite", Fingerprint = "f1", TargetRunId = 21,
+                        SuggestedText = "Run " + ControlName + " on Core suite as run #21 (instrument 39113903b9b2)." },
+                    new ChatConsistencyMissingControlView { Period = "baseline", SuiteName = "Core suite", Fingerprint = "f1", TargetRunId = 11,
+                        SuggestedText = "Run " + ControlName + " on Core suite as run #11." }
+                }
+            }
+        };
+
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.InternalBrief);
+
+        Assert.Equal("one run per period: run-to-run noise not estimable", Fact(sheet, "endpoint.P1.mdeNote").Display);
+        Assert.DoesNotContain(sheet.Facts, f => f.Key == "endpoint.P2.mdeNote");
+        Assert.Equal("2 missing-control notes", Fact(sheet, "controls.missing.count").Display);
+        Assert.Equal("Run Model A on Core suite as run #21.", Fact(sheet, "controls.missing.1.suggestion").Display);
+        Assert.Equal("Run Model A on Core suite as run #21.", BenchmarkChatConsistencyReportFacts.WithoutInstrument("Run Model A on Core suite as run #21 (instrument 39113903b9b2)."));
+    }
+
+    [Theory]
+    [InlineData(new[] { "degraded", "equivalent" }, "The chat changed")]
+    [InlineData(new[] { "equivalent", "changed, negligible" }, "No meaningful change")]
+    [InlineData(new[] { "equivalent", "not computable" }, "No change on the computed endpoints")]
+    [InlineData(new[] { "inconclusive", "equivalent" }, "Not enough evidence yet")]
+    [InlineData(new[] { "not computable", "not computable" }, "Nothing could be computed")]
+    public void TheOutcomeTitle_FollowsTheResultsTab(string[] verdicts, string title)
+    {
+        var endpoints = verdicts.Select((v, i) => new ChatConsistencyEndpointResult
+        {
+            Id = "P" + (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Computed = v != "not computable",
+            VerdictLabel = v
+        }).ToList();
+
+        Assert.Equal(title, BenchmarkChatConsistencyReportFacts.OutcomeTitle(endpoints));
     }
 
     [Fact]

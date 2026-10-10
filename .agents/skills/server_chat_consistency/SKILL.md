@@ -66,6 +66,15 @@ streaming-rate caveat counts the delivered answers left without a rate; an analy
 - An **Overseer change** (system prompt, tool guides, corpora, prompt options, budgets, a harness
   version with `CandidateInput`) **never excludes data**. It is a dated **event** that control runs
   attribute.
+- **Events are detected per model and suite** (`ChatConsistencyComparability.DetectOverseerEvents`),
+  so the member suites of a battery, which alternate run by run, are never compared with each other:
+  a difference *between suites* (a prompt option one suite sets, a per-suite prompt hash) is not an
+  Overseer change. One change seen in several suites is one event: events with the same model, kind,
+  before and after values whose spans overlap (from the previous run's start, exclusive, to the run's
+  start, inclusive; a merged span grows) are merged into the earliest. Analysis code version **5**
+  applies this. An analysis saved under version 4 or earlier keeps its stored events, which in a
+  battery comparison can be suite alternation rather than changes; re-analyze it before citing an
+  event.
 
 ## 4. Sides, and Why Control Runs Matter
 
@@ -84,7 +93,7 @@ build** is what turns R2 into an answer.
 
 Runs sample the chat only at the hours they ran. Every verdict holds **within the common time strata**
 (4-hour UTC blocks, weekday or weekend) both periods sampled, and every headline ends *"within
-\<scope\>"*. *Load-independent* needs a common block inside US business hours (weekdays 14–22 UTC) and
+\<scope\>"*, or *"; the periods share no common time stratum"* when they share none. *Load-independent* needs a common block inside US business hours (weekdays 14–22 UTC) and
 one outside them. Never write "slower" without the scope, and never generalize to hours no run covered.
 
 ## 6. Never Claim Intent
@@ -108,7 +117,10 @@ when the operator confirms.
 Choosing periods after looking at the timeline is **detection**. Confirm a change on data that did not
 exist when it was found: the wizard's **Confirm on later data** preset takes the step-1 units that
 started inside the last saved analysis's baseline window against those started after the moment it was
-saved (`createdAtUtc`, an instant, not the next whole day). Change-point detection
+saved (`createdAtUtc`, an instant, not the next whole day). The launcher's *Latest analysis* card
+shows the newest saved analysis of any model, and every saved analysis is opened, filtered or deleted
+in the **Analysis History** dialog; one with report documents cannot be deleted until they are, and
+one saved under an earlier analysis code version is tagged *Earlier analysis code*. Change-point detection
 (`ChatConsistencyStatistics.Pelt`) exists but is not wired into the analysis or the timeline.
 
 **The periods are run ranges, not dates.** Step 1 alone chooses the runs (or battery runs) the analysis

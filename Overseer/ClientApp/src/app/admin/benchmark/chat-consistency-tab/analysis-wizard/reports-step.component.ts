@@ -37,6 +37,8 @@ import { downloadTextFile } from '../../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../../utils/polyfills.util';
 import { rememberedPdfPaper, reportDocumentFileStem } from '../../download-center/download-center-panel.component';
 import { reportDisclosureInfo } from '../../report-disclosure-guide';
+import { ReportChartPickerComponent } from '../../report-pack/report-chart-picker.component';
+import { ReportChartLayoutSettings, ReportChartSelection } from '../../report-pack/report-charts';
 import { disclosureLabel, documentStatusLabel, formatCostUsd } from '../../report-pack/report-document-format';
 import { RunReportFrameComponent } from '../../run-report-frame/run-report-frame.component';
 import {
@@ -55,7 +57,20 @@ import { formatUtcSeconds } from '../../run-ai-reports/run-report-writing-diagno
 import { CcFigureInput, analysisBands, analysisChartPoints } from '../chat-consistency-charts';
 import { CcEventGroup } from '../chat-consistency-events';
 import { formatUsd } from '../chat-consistency-format';
-import { publishCcReportCharts } from '../chat-consistency-report-charts';
+import {
+  CC_REPORT_CHART_AUDIENCE_KEYS,
+  CC_REPORT_CHART_COLUMN_DISABLED_REASON,
+  CC_REPORT_CHART_LAYOUT_FIELDS,
+  CC_REPORT_CHART_PICKER_AUDIENCES,
+  CC_REPORT_CHART_PICKER_FIGURES,
+  CcReportChartSettings,
+  ccReportChartNotes,
+  normalizeCcReportChartLayout,
+  normalizeCcReportChartSelection,
+  readStoredCcReportChartSettings,
+  storeCcReportChartSettings
+} from '../chat-consistency-report-chart-settings';
+import { CcChartPublishResult, CcReportChartDocument, publishCcReportCharts } from '../chat-consistency-report-charts';
 import { ccModelBaseName } from '../chat-consistency-results';
 import {
   CC_REPORT_AUDIENCES,
@@ -101,6 +116,11 @@ export const CC_ALL_WRITTEN_REASON = 'Every document of this analysis is written
 /** Why Delete is unavailable while a job runs or charts are attached. */
 export const CC_DELETE_BUSY_REASON = 'Wait for the reports and their charts to finish.';
 
+/** Why Update charts is unavailable: reports are being written, charts are being attached, or nothing is written. */
+export const CC_UPDATE_CHARTS_WRITING_REASON = 'Reports are being written. Update the charts once they finish.';
+export const CC_UPDATE_CHARTS_ATTACHING_REASON = 'Charts are being drawn and attached.';
+export const CC_UPDATE_CHARTS_NONE_REASON = 'No document of this analysis is written yet.';
+
 /** The clipboard and file side effects of the step, held in an object so a spec can observe them. */
 export const ccReportIo = {
   copy: (text: string): Promise<boolean> => copyToClipboard(text),
@@ -108,6 +128,9 @@ export const ccReportIo = {
 };
 
 type ChartState = 'idle' | 'attaching' | 'done' | 'failed';
+
+/** What drew the charts last: a finished job, or Update charts. */
+type ChartOrigin = 'job' | 'update';
 
 interface EstimateRequest {
   key: string;
@@ -143,22 +166,33 @@ function writeStoredSidebarWidth(width: number): void {
   }
 }
 
+/** A stored document as the chart publisher takes it. */
+function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChartDocument {
+  return { id: doc.id, audience: doc.audience, chartCount: doc.chartCount ?? 0 };
+}
+
 /**
  * Step 5 of the Chat Consistency wizard, *Reports*, in Model Comparison step 3's layout: a resizable
  * sidebar with the analysis's four documents (a written one with View and Delete, an unwritten one
- * with its Write checkbox), the report writer, its estimate and Write Reports; and a main area that
- * follows the job (the stage rail, the stat strip, one row per document, the log and diagnostics,
- * Cancel), then summarizes it. The same-provider confirmation, the delete confirmation and the PDF
- * viewer are nested in the wizard's dialog and stop their own close and cancel events.
+ * with its Write checkbox) and Update charts, the charts each document type carries
+ * (`app-report-chart-picker`, remembered per browser), the report writer, its estimate and Write
+ * Reports; and a main area that follows the job (the stage rail, the stat strip, one row per document,
+ * the log and diagnostics, Cancel), then summarizes it. The same-provider confirmation, the delete
+ * confirmation and the PDF viewer are nested in the wizard's dialog and stop their own close and
+ * cancel events.
  *
- * When a job finishes, the documents without charts get the analysis's charts (`chartState`, which
- * the wizard's close guard reads). Polling and the one-second clock go on while the step is hidden
- * and stop in `ngOnDestroy`; a new analysis resets the step and finds its running job again.
+ * When a job finishes, the documents without charts get the charts chosen for their type; Update
+ * charts draws them again for every written document. Both set `chartState`, which the wizard's close
+ * guard reads. Polling and the one-second clock go on while the step is hidden and stop in
+ * `ngOnDestroy`; a new analysis resets the step and finds its running job again.
  */
 @Component({
   selector: 'app-cc-reports-step',
   standalone: true,
-  imports: [RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, PdfViewerDialogComponent, CcModelBadgesComponent],
+  imports: [
+    RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, PdfViewerDialogComponent, CcModelBadgesComponent,
+    ReportChartPickerComponent
+  ],
   templateUrl: './reports-step.component.html',
   styleUrls: ['./reports-step.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -222,6 +256,19 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
 
   chartState: ChartState = 'idle';
   chartMessage = '';
+  chartOrigin: ChartOrigin = 'job';
+
+  // --- Charts in PDF and Word ---
+  readonly chartFigures = CC_REPORT_CHART_PICKER_FIGURES;
+  readonly chartAudienceOptions = CC_REPORT_CHART_PICKER_AUDIENCES;
+  readonly chartLayoutFields = CC_REPORT_CHART_LAYOUT_FIELDS;
+  readonly chartColumnReason = CC_REPORT_CHART_COLUMN_DISABLED_REASON;
+  /** The figures and layout per document type, as last stored in this browser. */
+  chartSettings: CcReportChartSettings = readStoredCcReportChartSettings();
+  private chartEnabledKey = '';
+  private chartEnabledCache: readonly BenchmarkReportAudience[] = [];
+  private chartNotesResult: CcAnalysisResult | null = null;
+  private chartNotesCache: Readonly<Record<string, string>> = {};
 
   /** The analysis's stored documents, as the list last answered. */
   documents: BenchmarkReportDocumentListItemDto[] = [];
@@ -403,6 +450,63 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
 
   get checkedAudiences(): BenchmarkReportAudience[] {
     return CC_REPORT_AUDIENCES.map(entry => entry.audience).filter(audience => this.checked.has(audience));
+  }
+
+  // --- Charts in PDF and Word ---
+
+  /**
+   * The document types whose charts can be chosen: those checked to be written, and those written,
+   * whose charts Update charts draws. Memoized, so the picker sees a new list only when it changes.
+   */
+  get chartEnabledAudiences(): readonly BenchmarkReportAudience[] {
+    const enabled = CC_REPORT_CHART_AUDIENCE_KEYS.filter(audience => this.checked.has(audience) || this.written.has(audience));
+    const key = enabled.join(',');
+    if (key !== this.chartEnabledKey) {
+      this.chartEnabledKey = key;
+      this.chartEnabledCache = enabled;
+    }
+    return this.chartEnabledCache;
+  }
+
+  /** The picker's note on each figure whose endpoint the analysis could not compute; memoized per analysis result. */
+  get chartNotes(): Readonly<Record<string, string>> {
+    if (this.result !== this.chartNotesResult) {
+      this.chartNotesResult = this.result ?? null;
+      this.chartNotesCache = ccReportChartNotes(this.result?.endpoints);
+    }
+    return this.chartNotesCache;
+  }
+
+  onChartSelectionChange(selection: ReportChartSelection<string>): void {
+    this.chartSettings = { ...this.chartSettings, selection: normalizeCcReportChartSelection(selection) };
+    storeCcReportChartSettings(this.chartSettings);
+    this.cdr.markForCheck();
+  }
+
+  onChartLayoutChange(layout: ReportChartLayoutSettings<string>): void {
+    this.chartSettings = { ...this.chartSettings, layout: normalizeCcReportChartLayout(layout) };
+    storeCcReportChartSettings(this.chartSettings);
+    this.cdr.markForCheck();
+  }
+
+  /** Why Update charts is unavailable, or null. */
+  get updateChartsBlockedReason(): string | null {
+    if (this.jobInProgress) return CC_UPDATE_CHARTS_WRITING_REASON;
+    if (this.chartState === 'attaching') return CC_UPDATE_CHARTS_ATTACHING_REASON;
+    if (this.documents.length === 0) return CC_UPDATE_CHARTS_NONE_REASON;
+    return null;
+  }
+
+  /** Update charts' outcome, in the sidebar's live line; the job card shows a finished job's. */
+  get updateChartsStatus(): string {
+    return this.chartOrigin === 'update' ? this.chartMessage : '';
+  }
+
+  /** Update charts: every written document of the analysis gets the charts now chosen for its type. */
+  updateCharts(): void {
+    const analysisId = this.analysisId;
+    if (analysisId === null || this.updateChartsBlockedReason !== null) return;
+    void this.attachCharts(analysisId, this.documents.map(chartDocumentOf), 'update');
   }
 
   // --- Writer ---
@@ -595,7 +699,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     if (this.jobInProgress) return;
     this.dismissed = true;
     this.cdr.markForCheck();
-    this.host.nativeElement.querySelector<HTMLElement>('#cc-rep-progress-heading')?.focus();
+    this.host.nativeElement.querySelector<HTMLElement>('#cc-rep-new-heading')?.focus();
   }
 
   /** A nested dialog's close or cancel event, stopped so it never reaches the wizard's dialog. */
@@ -897,14 +1001,14 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
 
   /** The job ended: the documents are listed again, and those without charts get them. */
   private onFinished(analysisId: number): void {
-    this.loadDocuments(documentIds => {
+    this.loadDocuments(uncharted => {
       this.documentsChanged.emit();
-      if (documentIds.length > 0) void this.attachCharts(analysisId, documentIds);
+      if (uncharted.length > 0) void this.attachCharts(analysisId, uncharted.map(chartDocumentOf), 'job');
     });
   }
 
   /** Lists the analysis's documents; the Write checkboxes are recomputed from what is written. */
-  private loadDocuments(after?: (uncharted: number[]) => void): void {
+  private loadDocuments(after?: (uncharted: BenchmarkReportDocumentListItemDto[]) => void): void {
     const analysisId = this.analysisId;
     if (analysisId === null) return;
     this.documentsSub?.unsubscribe();
@@ -913,7 +1017,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
         if (this.analysisId !== analysisId) return;
         this.applyDocuments(documents ?? []);
         this.cdr.markForCheck();
-        after?.(this.documents.filter(doc => (doc.chartCount ?? 0) === 0).map(doc => doc.id));
+        after?.(this.documents.filter(doc => (doc.chartCount ?? 0) === 0));
       },
       error: () => {
         this.applyDocuments([]);
@@ -943,7 +1047,8 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   /**
    * What the attached charts draw: the analyzed units (battery runs in a battery analysis, runs
    * otherwise), the analysis's events and annotations, its period bands, every timeline point for the
-   * events' harness lookup, and the timeline's E numbers.
+   * events' harness lookup, the timeline's E numbers, and the endpoints, whose not computable ones
+   * the captions name.
    */
   chartInput(): CcFigureInput {
     const { points, unitKind } = analysisChartPoints(this.result, this.points, this.batteryPoints);
@@ -954,25 +1059,38 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
       annotations: this.result.annotations,
       bands: analysisBands(this.result.baseline, this.result.comparison),
       harnessPoints: this.points,
-      eventNumbering: this.eventNumbering
+      eventNumbering: this.eventNumbering,
+      endpoints: this.result.endpoints
     };
   }
 
-  private async attachCharts(analysisId: number, documentIds: number[]): Promise<void> {
+  /** Draws and attaches the charts chosen for each document's type: after a job, or for Update charts. */
+  private async attachCharts(analysisId: number, documents: CcReportChartDocument[], origin: ChartOrigin): Promise<void> {
     const generation = ++this.chartsGeneration;
+    const count = documents.length;
+    const noun = (n: number) => (n === 1 ? 'document' : 'documents');
     this.chartState = 'attaching';
-    this.chartMessage = `Attaching charts to ${documentIds.length} ${documentIds.length === 1 ? 'document' : 'documents'}…`;
+    this.chartOrigin = origin;
+    this.chartMessage = origin === 'update'
+      ? `Updating the charts of ${count} ${noun(count)}…`
+      : `Attaching charts to ${count} ${noun(count)}…`;
     this.syncState();
     this.cdr.markForCheck();
     try {
-      const outcome = await publishCcReportCharts(this.benchmarkService, documentIds, this.chartInput());
+      const outcome = await publishCcReportCharts(this.benchmarkService, documents, this.chartInput(), this.chartSettings);
       if (generation !== this.chartsGeneration || this.analysisId !== analysisId) return;
+      this.applyChartCounts(outcome);
       if (outcome.failed.length === 0) {
+        const published = outcome.published.length;
+        const without = outcome.withoutCharts.length;
         this.chartState = 'done';
-        this.chartMessage = `Charts attached to ${outcome.published.length} ${outcome.published.length === 1 ? 'document' : 'documents'}.`;
+        this.chartMessage = (origin === 'update'
+          ? `Charts updated on ${published} ${noun(published)}.`
+          : `Charts attached to ${published} ${noun(published)}.`)
+          + (without > 0 ? ` ${without} ${without === 1 ? 'document has' : 'documents have'} no chart chosen.` : '');
       } else {
         this.chartState = 'failed';
-        this.chartMessage = `Charts could not be attached to ${outcome.failed.length} of ${documentIds.length} documents: ${outcome.failed[0].message}`;
+        this.chartMessage = `Charts could not be attached to ${outcome.failed.length} of ${count} ${noun(count)}: ${outcome.failed[0].message}`;
       }
       this.documentsChanged.emit();
     } catch (error) {
@@ -982,6 +1100,22 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     }
     this.syncState();
     this.cdr.markForCheck();
+  }
+
+  /**
+   * The listed documents with the chart counts a publish left them, so a later Update charts knows
+   * which have charts to remove; the Write checkboxes are left as they are.
+   */
+  private applyChartCounts(outcome: CcChartPublishResult): void {
+    const counts = new Map<number, number>(outcome.published.map(entry => [entry.documentId, entry.chartCount]));
+    for (const id of outcome.withoutCharts) counts.set(id, 0);
+    if (counts.size === 0) return;
+    const patch = (doc: BenchmarkReportDocumentListItemDto) => {
+      const chartCount = counts.get(doc.id);
+      return chartCount === undefined ? doc : { ...doc, chartCount };
+    };
+    this.documents = this.documents.map(patch);
+    this.written = new Map([...this.written].map(([audience, doc]) => [audience, patch(doc)]));
   }
 
   /**
@@ -1048,6 +1182,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     this.cancelError = null;
     this.chartState = 'idle';
     this.chartMessage = '';
+    this.chartOrigin = 'job';
     this.documents = [];
     this.written = new Map();
     this.deleteTarget = null;

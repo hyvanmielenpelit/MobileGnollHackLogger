@@ -323,7 +323,7 @@ whether that member shares the subject's provider.
 
 `BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules, and a comparison-wide
 document against rule 21 too, with rules 2, 10 and 16 read for its tokens (§ 15); a chat consistency
-document is checked against rules 22 to 28 (C1 to C7, § 16) as well. Each failure is a
+document is checked against rules 22 to 29 (C1 to C8, § 16) as well. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message. Rule 20 is not a check on the writer: it is the note a battery
 subject's preparation records when it left question detail out of the prompt (§ 14).
@@ -352,12 +352,13 @@ subject's preparation records when it left question detail out of the prompt (§
 | 20 | *Not a writer check.* A battery subject's prompt exceeded `Benchmark:ReportPack:BatteryMaxPromptChars`, so the full detail of the questions it names was left out and only their rows were given (`BenchmarkBatteryReportFacts.PromptBudgetRule`, location `prompt`, § 14). Recorded before the writer call, stored with the document and logged as a warning; it neither drops anything nor marks the document *Completed with warnings* |
 | 21 | A comparison-wide document's `models` list has an entry for every covered model (`ModelCoverageRule`, § 15). A warning, kept after the repair turn like rules 12 to 19 |
 | 22 | **C1**, chat consistency only (§ 16): a sentence with a change word (`ChatChangeWords`) holds a token that supports a change — a changed endpoint, verdict or attribution, a control DiD whose interval excludes zero, an established reliability increase, or a rejected secondary estimate (`ChatChangeClaimRule`). An error: the paragraph is dropped |
-| 23 | **C2**, chat consistency only: an intent word (`ChatIntentWords`) or mechanism word (`ChatMechanismWords`) needs a *ProviderConfirmedCause* annotation token in the sentence (`ChatIntentMechanismRule`). An error |
+| 23 | **C2**, chat consistency only: an intent word (`ChatIntentWords`) or mechanism word (`ChatMechanismWords`) needs a *ProviderConfirmedCause* annotation token in the sentence (`ChatIntentMechanismRule`); and a monitoring word (`ChatMonitoringWords`: *monitor, monitors, monitored, monitoring*, whole words ignoring case) is refused outright, with no annotation that allows it, since GnollBench runs are made by hand. An error |
 | 24 | **C3**, chat consistency only: a causal connective (`ChatCausalConnectives`) needs an attribution token in the sentence (`ChatCausalClaimRule`). An error |
 | 25 | **C4**, chat consistency only: a public-claim word (`ChatPublicClaimWords`: *publishable, established, confirmed, proven, definitively, conclusively, we can state*) needs an Established grade token; not counted after *not*, *never*, *not yet* or a hyphen, and *confirmed* is allowed with a provider-confirmed cause token (`ChatPublicClaimRule`). An error |
 | 26 | **C5**, chat consistency only: a slot that cites an inconclusive endpoint also cites its `{{endpoint.<P>.mde}}` (`ChatInconclusiveMdeRule`). A **warning**, checked over the slot's kept text |
 | 27 | **C6**, chat consistency only: an all-hours word (`ChatAllHoursWords`) needs `{{serving.timeOfDayAssessable}}` in the sentence and that fact true; and the document cites `{{scope.hours}}` somewhere (`ChatHoursRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 | 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
+| 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
@@ -681,8 +682,9 @@ overlap)"*), whatever format it was written under.
 
 **Chat consistency format version 1** is the format of the chat consistency documents
 (`ChatConsistencyReportFormatVersion = 1`, § 16), numbered on its own: `CurrentFormatVersion(scope)`
-returns it for `ChatConsistency`, the document stores it, its reproducibility section and footer print
-it, and the PDF cover shows it as *Generated format*.
+returns it for `ChatConsistency`, the document stores it, and its reproducibility section and Markdown
+footer print it; the PDF and Word covers of a chat consistency document have no *Generated format* row
+(§ 16).
 
 **Writer prompt revision (2026-10-06, no format version change)** comes from the review of the
 Comparison #2 report pack. It changes the writer prompt of every scope, and so reaches documents
@@ -1313,7 +1315,8 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 6*, and a classification banner — amber
+  *Source {first 16 hex of the source hash} · PDF layout 6* (*PDF layout 6* alone for a chat consistency
+  document, whose cover and footer carry no hash, § 16), and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
   *"{Suite} · run #68 · compared with 4 models"* (*group #N* for a group subject); a stand-alone one
@@ -1338,7 +1341,9 @@ still reaches no model client, clock or configuration, and the architecture pins
 - **Every page**: from page 2 a running header with the emblem, *GnollBench · {kind}* and, at its right,
   *Comparison #12 — <name>* (*Comparison #12* in an anonymized copy) kept to one line with an ellipsis,
   or the subject line for a document without a numbered comparison;
-  a footer with the short classification, the source hash and layout version, and *Page X of Y*; for
+  a footer with the short classification, the source hash and layout version, and *Page X of Y* — for a
+  chat consistency document (`BenchmarkPdfDocumentInfo.FooterText`) the classification, then *Chat
+  consistency analysis #4 · Executive Summary · page X of Y*; for
   internal documents a diagonal *INTERNAL* watermark. Header, footer and watermark are artifacts, skipped
   by screen readers.
 - **Content**: `#`–`###` headings are bookmarks; tables repeat their header row on every page, never
@@ -1423,7 +1428,8 @@ never by string templating. It is static and stateless like the PDF renderer, so
   in a *Source Line* paragraph below the table, and the moved *Topic* column as a merged second row under
   each body row, kept with it and striped with it.
 - **Page 1** mirrors the PDF: the wide logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex} · Word layout 2* and the classification banner; the subject line, the facts table
+  *Source {first 16 hex} · Word layout 2* (*Word layout 2* alone for a chat consistency document) and
+  the classification banner; the subject line, the facts table
   and the banner text come from the same document information as the PDF's, so they change with the
   PDF's cover. The source hash follows the PDF's rule, charts included. The table of contents follows
   under the PDF's rule, as a real `TOC` field pre-filled with links to the `##` sections and marked for
@@ -1432,7 +1438,8 @@ never by string templating. It is static and stateless like the PDF renderer, so
   PDF header's text (a comparison heading cut with an ellipsis to the characters half the text width
   holds); a footer
   with the short classification, the source hash and layout version, and *Page X of Y* as `PAGE` and
-  `NUMPAGES` fields; for internal documents Word's own *INTERNAL* text watermark, which *Design →
+  `NUMPAGES` fields — for a chat consistency document the PDF's footer text, *Chat consistency analysis
+  #4 · Executive Summary · page X of Y*, at the right tab; for internal documents Word's own *INTERNAL* text watermark, which *Design →
   Watermark → Remove Watermark* removes.
 - **Fonts**: Source Sans 3 and Source Code Pro are embedded the way Word's *Embed fonts in the file* does
   (ECMA-376 obfuscated font parts, not subset), so the document looks and edits the same without them
@@ -2140,7 +2147,8 @@ Several figures at one anchor appear in the order of the first table. A comparis
 own anchors (§ 15); the picker shows each figure's section for the scope being written. A chat
 consistency document has four figures of its own, `cc1-quality` … `cc4-timeline`, kept in
 `BenchmarkReportChartPlacement.ChatConsistencyFigureKeys` apart from `FigureKeys` (`AllFigureKeys`
-joins both); they are not chosen in a picker (§ 16).
+joins both); they are chosen per document type in the same picker, on the Chat Consistency wizard's
+step 5, with its own figures, document types and defaults (§ 16).
 
 **Markers.** The renderer writes a line `[[figure:<key>]]`, with a blank line before and after, at each
 anchor for each chart it is given (`BenchmarkReportRenderOptions.Charts`), and only for a document with
@@ -2185,6 +2193,12 @@ Report for AI Researchers and Developers; and Intelligence, Speed and Cost for t
 Brief. The last selection and every document type's layout are remembered per browser in
 `localStorage['overseer.benchmark.reportCharts']` (**version 2**, `{ selection, layout }`); a stored
 version 1 keeps its selection and takes the default layout.
+
+The picker is shared with the Chat Consistency Write step. Its optional inputs — `figures` (each with
+its title and its section, one name or one per document type), `audienceOptions` (the document types
+and their labels), `notes` (a note per figure), `layoutFields` (the *Layout* settings offered) and
+`columnDisabledReason` — default to exactly the Model Comparison behavior above, so Model Comparison's
+bindings and stored settings are unchanged; § 16 gives the Chat Consistency values.
 
 ### How a chart is drawn
 
@@ -2784,7 +2798,8 @@ of runs, with no peers to rank against.
 The title is *Overseer Chat Consistency Report: \<model\>*. The sheet's subject block
 (`BenchmarkReportChatConsistencySubject`) carries the analysis id, name, headline, protocol label,
 `InputSha256`, analysis code version, the baseline, comparison and control run ids, and whether a
-Provider Issue Report is available.
+Provider Issue Report is available. The input hash is kept for the record only: no rendered block, no
+cover and no footer prints it, and the writer never receives it.
 
 ### Audiences and slots
 
@@ -2809,6 +2824,35 @@ the model's provider.*, and its `sampleRequestIds` slot draws on at most 10 requ
 comparison period's candidate calls. Report Pack's own audience list (`REPORT_PACK_AUDIENCES`) does not
 include it.
 
+### The code-built blocks per audience
+
+Every document opens with the title (and, in the Markdown, the stamp and the front-matter list), the
+**Overall verdict**, *The result in one sentence* (the writer's headline), then the blocks no slot
+takes, then the slots in order, each code-built block printed under the slot that discusses it
+(`ChatBlocksOf`) or in its default place, then *How to read this*, the limitations and reproducibility
+list where no slot took them, *Removed content*, and *Evaluation terms* (not in the Internal
+Improvement Brief). **No block prints a hash, JSON or an internal field name**, and no table is wider
+than five columns; a table of one row becomes a sentence.
+
+| Block | Executive Summary | Researcher Report and Provider Issue Report | Internal Improvement Brief |
+|---|---|---|---|
+| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason, *Sample* (`sample.shortfall` when the minimum is not met: *1 battery run per period on 1 day; the minimum is 2 battery runs on 2 days per period and 20 paired items*), *Hours*, *Controls* | the same, plus *Time strata* and the analysis's own headline | as the Researcher Report |
+| Verdicts | *Measure · Result · What it means* for the computed endpoints, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Change (95 % interval) · Verdict* | as the Researcher Report, without the p-values in the note lines |
+| Overseer events | one sentence (*Between the periods, Overseer was updated once, on 2026-10-08 at 14:49 UTC, before run #98: harness 53 → 54; …*), a count when there are more than three, and how many more the control models' runs show | *When (UTC) · Run · What changed*, one row per update (`eventGroups.*`: one UTC day in one series), a control model's update naming its series | as the Researcher Report |
+| Control models | in the overall verdict | one bullet per control model with its runs, periods and difference-in-differences estimates, then one bullet per period without a control, its suggestions without an instrument note | as the Researcher Report |
+| Attribution | the sentence under the verdicts | one sentence for a single attribution, else *Endpoints · Side · Grade*; then each attribution's evidence | as the Researcher Report |
+| Robustness | — | *Check · P4 · P5*: one column per computed endpoint the checks ran on (at most four), then each check that did not pass with its detail (Researcher Report only) | — |
+| How to read this | three points: what was measured, the verdicts, the hours | the full list: what was measured, the endpoints, the verdicts, the evidence grades, the hours (the no-common-stratum wording when the periods share none), attribution, control models when there are any, and what is never inferred | — |
+| Limitations | the analysis's data-quality notes only, and no section without one | every limitation and data-quality note | the data-quality notes only |
+| Reproducibility | — | analysis number, code version, protocol with overrides and alpha, *Saved*, the common grader, the price card, each period's battery runs with their member runs (or runs), the control runs and the report format version; **no hash** | as the Researcher Report, with the price card's source in place of its rates |
+| Evaluation terms | the distillation prohibition and the third-party content, *evaluated solely to check whether the Overseer chat with this model stays consistent over time* | the same | — |
+
+A document written before these blocks renders them from its stored facts too: its events are put in
+words from the stored kind and raw values (`ChatConsistencyEventText.Describe`), grouped by UTC day and
+series; its control suggestions lose their *(instrument …)* note; a figure display loses its *(log
+ratio …)* note and an MDE display gains its ±. Its writer prose keeps the wording it was written with.
+A substituted fact that ends in a period, followed by the prose's own period, prints one (`Prose`).
+
 ### Facts and claim support
 
 The writer gets a SUBJECT block, PEERS (the controls as `{{peer:X}}`), every fact as
@@ -2816,17 +2860,45 @@ The writer gets a SUBJECT block, PEERS (the controls as `{{peer:X}}`), every fac
 endpoints, the Established grades, the attributions, the provider-confirmed causes, the time-of-day
 assessability and the hours — for a Provider Issue Report also the provider-side attributions, the
 Overseer events to list under `ruledOut` and the sample request ids. The fact families are `analysis.*`,
-`subject.*`, `verdict.*`, `scope.*`, `coverage.*`, `period.<baseline|comparison>.*`, `protocol.*`,
-`n.*`, `endpoint.<P1…P5>.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`, `tools.*`,
-`secondary.*`, `events.*`, `controls.*`, `controls.missing.*`, `did.*`, `robustness.*`, `identity.*`,
+`subject.*`, `verdict.*`, `scope.*`, `coverage.*`, `period.<baseline|comparison>.*`, `sample.*`,
+`protocol.*`, `n.*`, `endpoint.<P1…P5>.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`,
+`tools.*`, `secondary.*`, `events.*`, `eventGroups.*`, `controls.*`, `controls.missing.*`, `did.*`, `robustness.*`, `identity.*`,
 `serving.*`, `ownWaits.*`, `pricing.*`, `annotation.*`, `attribution.*`, `limitation.*`, `nextRuns.*`
 and, for the Provider Issue Report, `requestIds.sample.*` (`BenchmarkChatConsistencyReportFacts`).
 
+The displays are written for a reader. Numbers print a minus as U+2212 and keep their unit on the line
+with a no-break space (U+00A0): *−7.6 %*, *38.7 s*. An MDE reads *±12.7 %*, with its caveat in
+`endpoint.<P>.mdeNote` (*one run per period: run-to-run noise not estimable*), and no estimate carries
+a *(log ratio …)* note. `verdict.short` is the outcome title (*Not enough evidence yet*);
+`analysis.savedAt` the saved time. A period states its units (`period.<p>.units`, *1 battery run*, with
+`.unitNoun`) beside its member runs (`.memberRuns`), and the minimum sample is `sample.minimumUnits`,
+`.minimumDays`, `.minimumPairedItems`, `.met` and, when not met, `.shortfall` with real plurals.
+`controls.missing.count` reads *N missing-control notes*. An Overseer event's `events.<n>.kind` displays
+its label (`ChatConsistencyEventText.Label`), and `events.<n>.change` its short before → after
+(`ChatConsistencyEventText.Change`: *harness 53 → 54*, *wiki revision a8fa85a → 4bb80dc* with seven
+characters of a revision, *re-indexed: GnollHack wiki, GnollHack source code (file counts unchanged)*, *game snapshot: off
+→ on* for the changed prompt options only, *tool iterations per question: 8 → 10*, *changed* for a
+system prompt or tool guides; never more than 120 characters, a hex run of twelve or more, or a `{`);
+`eventGroups.count` and `eventGroups.<n>.at`, `.run`, `.changes` and `.series` are the same events, one
+group per UTC day in one series. `events.<n>.from` and `.to` are no longer stated. **Facts kept from the
+writer** (`WriterHidden`): `analysis.inputSha256`, which stays on the sheet, and the raw
+`events.<n>.from` / `.to` an older sheet still carries; the writer's fact list leaves them out, and a
+token of one in older prose resolves to *not shown*, *the earlier value* or *the later value*.
+
+The writer prompt names the canonical endpoint names (P1 Quality, P2 Time to first answer text, P3
+Answer streaming rate, P4 Work per turn, P5 Cost per question) and forbids any other; counts in battery
+runs where the analysis compares battery runs; asks for the sample shortfall where the minimum is not
+met; says that GnollBench runs are made by hand, never *monitored* or *watched*; and lists, before the
+slots and beside each slot, the code-built blocks printed above it (`ChatBlocksBeforeSlotsText`,
+`ChatBlocksAboveText`) with the rule *interpret them, never restate them*. The Executive Summary cites
+no run id, rule id or hash; `asGoodAsBefore` leads with `{{verdict.short}}`; the Internal Improvement
+Brief's `actions` never acts on a secondary difference whose interval includes zero.
+
 ### Validation
 
-Rules 22 to 28 (**C1** to **C7**, § 3) apply on top of the prose rules. C1 to C4, the first half of C6
-and the first half of C7 are checked sentence by sentence on the headline and every paragraph: a failing
-paragraph is dropped, a failing headline is fatal. C5 is a **warning**, checked over each slot's kept
+Rules 22 to 29 (**C1** to **C8**, § 3) apply on top of the prose rules. C1 to C4, the first half of C6
+and the first half of C7 are checked sentence by sentence on the headline and every paragraph, and C8,
+*readable text*, on each whole string: a failing paragraph is dropped, a failing headline is fatal. C5 is a **warning**, checked over each slot's kept
 text. The second halves of C6 (*the document never cites `{{scope.hours}}`*) and C7 (*`ruledOut` misses
 an event*) cannot drop text; a note of either marks the document **Completed with warnings**.
 
@@ -2840,22 +2912,58 @@ an event*) cannot drop text; a note of either marks the document **Completed wit
 | `cc4-timeline` | Runs and events (telemetry and legacy runs; Overseer changes, annotations, served-model changes) |
 
 Two anchors: `ChatConsistencyResults` (13), after the verdict table, and `ChatConsistencyEvents` (14),
-after the events table.
+after the events table. **Every document type may carry every figure**; which ones it carries is
+chosen per document type on the wizard's step 5, and the server places what it is given
+(`BenchmarkReportChartPlacement.ChatConsistencyAnchors`):
 
-| Document | Figures |
+| Document | cc1, cc2, cc3 | cc4 |
+|---|---|---|
+| Executive Summary | after the verdict table | after the verdict table (it prints no events table) |
+| Report for AI Researchers and Developers, Internal Improvement Brief, Provider Issue Report | after the verdict table | after the events table |
+
+The verdict table sits under *Results by endpoint* in the researcher report and under *Measurements with
+intervals* in the Provider Issue Report, the events table under *Overseer events* and *What we ruled
+out* respectively, and, in the Internal Improvement Brief, under *Our changes that helped or hurt*;
+elsewhere under the default headings *Verdicts by endpoint* and *Overseer updates between the
+periods*. In the Executive Summary the events sentence stands under *Our changes and their effect*.
+
+**The legacy placement.** A document whose stored chart set has **no layout** — every chart set
+uploaded before the figures were chosen per document — is placed by the earlier per-audience table,
+`LegacyChatConsistencyAnchors`, so it renders as it did until its charts are drawn again:
+
+| Document | Figures (legacy) |
 |---|---|
 | Executive Summary | cc1, cc2 after the verdict table |
 | Report for AI Researchers and Developers | cc1, cc2, cc3 after the verdict table; cc4 after the events table |
 | Internal Improvement Brief | cc1, cc3 after the verdict table |
 | Provider Issue Report | cc2 after the verdict table; cc4 after the events table |
 
-The verdict table sits under *Results by endpoint* in the researcher report and under *Measurements with
-intervals* in the Provider Issue Report, the events table under *Overseer events* and *What we ruled
-out* respectively; elsewhere under the default headings *Verdicts by endpoint* and *Overseer events
-between the periods*. The client draws the four PNGs when the writing job ends
-(`chat-consistency-report-charts.ts`, print theme, 1200 × 675 at density 2) and uploads the named
-variant only through `PUT report-documents/{id}/charts`; this scope is exempt from the stand-alone
-refusal and always renders the named variant.
+The render service passes whether the chart set has a layout (`ReadRenderLayout`) into the renderer
+(`BenchmarkReportPackRenderer.Render(document, options, chartLayoutPresent)`, the renderer's
+`Context.ChartLayoutPresent`), and `KeysAt(audience, anchor, scope, legacy)` reads the legacy table
+when it has none; the layout preview (`BenchmarkReportLayoutPreview`) passes it the same way.
+
+**The client draws each document's charts at the width it prints at.** When the writing job ends, the
+documents without charts get the figures chosen for their type (`chat-consistency-report-charts.ts`,
+`publishCcReportCharts`): each figure is composed off-screen with Model Comparison's document sizing
+(`documentChartWidth`, `documentFigureLayout`, 300 dpi, the chosen label size in points), in the print
+theme with no heading and no logo, its time axis fitted to the plotted runs (`fitToData`), and its
+caption opening *Not comparable across the periods: {reason}.* when its endpoint is not computable. A
+figure drawn alike for several documents is composed once. Each document's PNGs are uploaded named
+through `PUT report-documents/{id}/charts` with its chart layout, `{ version: 1, figures: [{ key,
+widthShare, rowGroup }], maxHeightShare }`; two consecutive half-width figures at one anchor share a
+row. A document whose type has no figure chosen gets none, and loses the charts it had. Step 5's
+**Update charts** does the same for every written document of the analysis. The client's
+`CC_REPORT_CHART_VERSION` is 6, and its settings hash covers the choice and the layout. The defaults:
+Executive Summary cc1, cc2; Researcher Report all four; Internal Improvement Brief cc1, cc3; Provider
+Issue Report cc2, cc4; cc1–cc3 half column and cc4 two-thirds; 8 pt labels; at most 50 % of the page
+tall; stored per browser in `localStorage['overseer.benchmark.chatConsistency.reportCharts']`
+(`{ version: 1, selection, layout }`). In the picker the figures are *Intelligence per run*, *Time to
+first answer text*, *Output tokens per answer* and *Runs and events*, placed *Results* or *Events*; the
+document types *Executive*, *Researchers*, *Internal* and *Provider*; a not computable endpoint's
+figure carries a note; the *Layout* disclosure offers only the label size and the maximum height; and
+a document type neither checked nor already written reads *Not chosen in New reports.* This scope is
+exempt from the stand-alone refusal and always renders the named variant.
 
 ### File names
 
@@ -2863,8 +2971,18 @@ refusal and always renders the named variant.
 `chat-consistency-<analysis id>_<model slug>_<kind>_<disclosure>_<peers>[_INTERNAL].<pdf|docx>`, the kind
 being `executive-summary`, `researcher-report`, `internal-brief` or `provider-issue-report`, for example
 `chat-consistency-12_<model slug>_provider-issue-report_summary_anonymized.pdf`. The Download Center
-mirrors the stem (`reportDocumentFileStem`). The PDF cover lists the analysis, model, both periods, the
-hours, the control models, the protocol and the generated format.
+mirrors the stem (`reportDocumentFileStem`).
+
+**Cover and footer.** The PDF and Word covers of a chat consistency document carry the subject line
+*Chat consistency analysis #12 — name* (the name left out of an anonymized copy) and the facts
+*Model*, *Compared* (the battery or suite, else the suites), *Baseline* and *Comparison* (each with its
+dates and its battery runs or runs), *Controls* (as the naming allows, never by name in a Provider
+Issue Report) and *Written* (the time and the writer); the line under the facts reads *PDF layout 6*
+or *Word layout 2* without a source hash. The page footer reads the short classification, then *Chat
+consistency analysis #12 · Executive Summary · page 2 of 3* (`BenchmarkPdfDocumentInfo.FooterText`).
+The Word file still records the source hash in its *GnollBench Source SHA-256* custom property, as
+metadata only. Other scopes keep their cover and the *Source … · PDF layout 6* footer.
+`ChatConsistencyReportFormatVersion` stays 1.
 
 ### Endpoints
 
@@ -2890,7 +3008,9 @@ endpoints (§ 9), listed with `subject=chat-consistency:<id>&origin=chatConsiste
 ### The client
 
 The Write step (step 5) of the Chat Consistency wizard writes and polls the documents, in the layout
-of Model Comparison's step 3, and views and deletes each written one; its Documents step (step 6)
+of Model Comparison's step 3, views and deletes each written one, chooses each document type's charts
+in *Charts in PDF and Word*, and redraws the charts of every written document with **Update charts**
+(§ *Figures* above); its Documents step (step 6)
 shows them in the Download Center panel with the context `{ kind: 'chatConsistency', analysisId }`,
 where they can be viewed, downloaded and deleted too, and which lists them again when the host bumps
 its `reloadToken`. The Download Center dialog still titles that context *Chat consistency documents*,

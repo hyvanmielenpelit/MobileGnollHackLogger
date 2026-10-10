@@ -60,6 +60,9 @@
               <span class="rcp-cell-text">
                 <span class="rcp-figure-title">{{ row.title }}</span>
                 <span class="rcp-placement" [id]="cellId(column, row) + '-placement'">{{ placement(column.audience, row.key) }}</span>
+                @if (note(row); as noteText) {
+                  <span class="rcp-note" [id]="cellId(column, row) + '-note'">{{ noteText }}</span>
+                }
                 @if (row.unavailableReason !== null) {
                   <span class="rcp-reason" [id]="rowReasonId(row)">{{ row.unavailableReason }}</span>
                 }
@@ -88,66 +91,80 @@
         <details class="gh-disclosure rcp-layout" [attr.data-audience]="column.audience">
           <summary>Layout<span class="visually-hidden"> of the charts in the {{ column.label }}</span></summary>
           <div class="gh-disclosure-body rcp-layout-body">
-            <div class="rcp-field">
-              <label [for]="layoutFieldId(column, 'orientation')">Bar orientation</label>
-              <select class="gh-input" [id]="layoutFieldId(column, 'orientation')"
-                      (change)="onLayoutSelect($event, column, 'orientation')">
-                @for (option of orientationOptions; track option.value) {
-                  <option [value]="option.value" [selected]="layoutOf(column).orientation === option.value">{{ option.label }}</option>
+            @if (showsField('orientation')) {
+              <div class="rcp-field">
+                <label [for]="layoutFieldId(column, 'orientation')">Bar orientation</label>
+                <select class="gh-input" [id]="layoutFieldId(column, 'orientation')"
+                        (change)="onLayoutSelect($event, column, 'orientation')">
+                  @for (option of orientationOptions; track option.value) {
+                    <option [value]="option.value" [selected]="layoutOf(column).orientation === option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+            }
+            @if (showsField('sideBySide')) {
+              <label class="checkbox-label align-start rcp-toggle">
+                <input type="checkbox" [id]="layoutFieldId(column, 'sideBySide')"
+                       [checked]="layoutOf(column).sideBySide" (change)="onLayoutToggle($event, column, 'sideBySide')">
+                <span>Side by side: consecutive half-width charts in one section form a row of two</span>
+              </label>
+            }
+            @if (showsField('labelPt')) {
+              <div class="rcp-field">
+                <label [for]="layoutFieldId(column, 'label')">Label size</label>
+                <select class="gh-input" [id]="layoutFieldId(column, 'label')"
+                        [attr.aria-describedby]="labelDescribedBy(column)"
+                        (change)="onLabelSizeChange($event, column)">
+                  @for (size of labelSizes; track size) {
+                    <option [value]="size" [selected]="layoutOf(column).labelPt === size"
+                            [attr.aria-disabled]="labelSizeRefusal(column, size) ? 'true' : null">{{ formatPoints(size) }} pt{{ labelSizeRefusal(column, size) ? ' (does not fit)' : '' }}</option>
+                  }
+                </select>
+                @if (refusedChoiceText(layoutFieldId(column, 'label')); as refused) {
+                  <p class="rcp-reason rcp-refused" role="status" [id]="layoutFieldId(column, 'label') + '-refused'">{{ refused }}</p>
                 }
-              </select>
-            </div>
-            <label class="checkbox-label align-start rcp-toggle">
-              <input type="checkbox" [id]="layoutFieldId(column, 'sideBySide')"
-                     [checked]="layoutOf(column).sideBySide" (change)="onLayoutToggle($event, column, 'sideBySide')">
-              <span>Side by side: consecutive half-width charts in one section form a row of two</span>
-            </label>
-            <div class="rcp-field">
-              <label [for]="layoutFieldId(column, 'label')">Label size</label>
-              <select class="gh-input" [id]="layoutFieldId(column, 'label')"
-                      [attr.aria-describedby]="labelDescribedBy(column)"
-                      (change)="onLabelSizeChange($event, column)">
-                @for (size of labelSizes; track size) {
-                  <option [value]="size" [selected]="layoutOf(column).labelPt === size"
-                          [attr.aria-disabled]="labelSizeRefusal(column, size) ? 'true' : null">{{ formatPoints(size) }} pt{{ labelSizeRefusal(column, size) ? ' (does not fit)' : '' }}</option>
-                }
-              </select>
-              @if (refusedChoiceText(layoutFieldId(column, 'label')); as refused) {
-                <p class="rcp-reason rcp-refused" role="status" [id]="layoutFieldId(column, 'label') + '-refused'">{{ refused }}</p>
-              }
-            </div>
-            <div class="rcp-field">
-              <label [for]="layoutFieldId(column, 'maxHeight')">Maximum height</label>
-              <select class="gh-input" [id]="layoutFieldId(column, 'maxHeight')"
-                      (change)="onLayoutSelect($event, column, 'maxHeightPercent')">
-                @for (percent of maxHeightPercents; track percent) {
-                  <option [value]="percent" [selected]="layoutOf(column).maxHeightPercent === percent">{{ percent }}% of the page</option>
-                }
-              </select>
-            </div>
-            <div class="rcp-field">
-              <label [for]="layoutFieldId(column, 'heading')">Heading inside the chart</label>
-              <select class="gh-input" [id]="layoutFieldId(column, 'heading')"
-                      (change)="onLayoutSelect($event, column, 'heading')">
-                @for (option of headingOptions; track option.value) {
-                  <option [value]="option.value" [selected]="layoutOf(column).heading === option.value">{{ option.label }}</option>
-                }
-              </select>
-            </div>
-            <label class="checkbox-label rcp-toggle">
-              <input type="checkbox" [id]="layoutFieldId(column, 'logo')"
-                     [checked]="layoutOf(column).logo" (change)="onLayoutToggle($event, column, 'logo')">
-              <span>GnollBench logo</span>
-            </label>
-            <div class="rcp-field">
-              <label [for]="layoutFieldId(column, 'theme')">Theme</label>
-              <select class="gh-input" [id]="layoutFieldId(column, 'theme')"
-                      (change)="onLayoutSelect($event, column, 'theme')">
-                @for (option of themeOptions; track option.value) {
-                  <option [value]="option.value" [selected]="layoutOf(column).theme === option.value">{{ option.label }}</option>
-                }
-              </select>
-            </div>
+              </div>
+            }
+            @if (showsField('maxHeightPercent')) {
+              <div class="rcp-field">
+                <label [for]="layoutFieldId(column, 'maxHeight')">Maximum height</label>
+                <select class="gh-input" [id]="layoutFieldId(column, 'maxHeight')"
+                        (change)="onLayoutSelect($event, column, 'maxHeightPercent')">
+                  @for (percent of maxHeightPercents; track percent) {
+                    <option [value]="percent" [selected]="layoutOf(column).maxHeightPercent === percent">{{ percent }}% of the page</option>
+                  }
+                </select>
+              </div>
+            }
+            @if (showsField('heading')) {
+              <div class="rcp-field">
+                <label [for]="layoutFieldId(column, 'heading')">Heading inside the chart</label>
+                <select class="gh-input" [id]="layoutFieldId(column, 'heading')"
+                        (change)="onLayoutSelect($event, column, 'heading')">
+                  @for (option of headingOptions; track option.value) {
+                    <option [value]="option.value" [selected]="layoutOf(column).heading === option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+            }
+            @if (showsField('logo')) {
+              <label class="checkbox-label rcp-toggle">
+                <input type="checkbox" [id]="layoutFieldId(column, 'logo')"
+                       [checked]="layoutOf(column).logo" (change)="onLayoutToggle($event, column, 'logo')">
+                <span>GnollBench logo</span>
+              </label>
+            }
+            @if (showsField('theme')) {
+              <div class="rcp-field">
+                <label [for]="layoutFieldId(column, 'theme')">Theme</label>
+                <select class="gh-input" [id]="layoutFieldId(column, 'theme')"
+                        (change)="onLayoutSelect($event, column, 'theme')">
+                  @for (option of themeOptions; track option.value) {
+                    <option [value]="option.value" [selected]="layoutOf(column).theme === option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+            }
             @let refusals = layoutRefusals(column);
             @if (refusals.length > 0) {
               <ul class="rcp-refusals" role="list" aria-label="Choices that do not fit">

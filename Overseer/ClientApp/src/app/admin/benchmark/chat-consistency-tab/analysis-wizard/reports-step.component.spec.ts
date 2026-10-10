@@ -7,17 +7,20 @@ import {
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
-  BenchmarkRunReportDocumentsStatus
+  BenchmarkRunReportDocumentsStatus,
+  ReportDocumentChartUpload
 } from '../../../../services/admin-benchmark.service';
 import { toModelPickerOptions } from '../../../../shared/model-picker/model-picker.component';
 import { PdfViewerRequest } from '../../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { groupOverseerEvents } from '../chat-consistency-events';
+import { CC_REPORT_CHART_STORAGE_KEY } from '../chat-consistency-report-chart-settings';
 import {
   CC_API,
   CC_BATTERY_SET_KEY,
   ccAnalysisResult,
   ccBatteryPoint,
   ccConfig,
+  ccEndpoint,
   ccPoint,
   ccReportEstimate,
   ccReportJob,
@@ -32,6 +35,9 @@ import {
   CC_PROVIDER_REPORT_UNKNOWN,
   CC_REPORTS_STORAGE_KEY,
   CC_REPORT_ESTIMATE_DEBOUNCE_MS,
+  CC_UPDATE_CHARTS_ATTACHING_REASON,
+  CC_UPDATE_CHARTS_NONE_REASON,
+  CC_UPDATE_CHARTS_WRITING_REASON,
   CcReportsStepComponent,
   ccReportIo
 } from './reports-step.component';
@@ -83,6 +89,11 @@ describe('CcReportsStepComponent', () => {
   const writer = ccConfig(30, { displayName: 'Claude writer', provider: 'Anthropic' });
 
   beforeEach(async () => {
+    try {
+      localStorage.removeItem(CC_REPORT_CHART_STORAGE_KEY);
+    } catch {
+      // No storage: the step starts from the default charts.
+    }
     await TestBed.configureTestingModule({
       imports: [CcReportsStepComponent],
       providers: chatConsistencyTestProviders()
@@ -109,6 +120,7 @@ describe('CcReportsStepComponent', () => {
     vi.restoreAllMocks();
     try {
       localStorage.removeItem(CC_REPORTS_STORAGE_KEY);
+      localStorage.removeItem(CC_REPORT_CHART_STORAGE_KEY);
     } catch {
       // No storage: nothing to clean.
     }
@@ -497,7 +509,168 @@ describe('CcReportsStepComponent', () => {
     fixture.detectChanges();
     expect(el.querySelector('.rp-job')).toBeNull();
     expect(el.querySelector('.rp-idle-note')).not.toBeNull();
-    expect(document.activeElement).toBe(el.querySelector('#cc-rep-progress-heading'));
+    expect(document.activeElement).toBe(el.querySelector('#cc-rep-new-heading'));
+  });
+
+  it('shows no visible progress heading or status line; the status stays a hidden polite live region', () => {
+    openAnalysis(ccReportJob());
+    expect(el.querySelector('#cc-rep-progress-heading')).toBeNull();
+    const status = el.querySelector('.cc-rep-status')!;
+    expect(status.tagName).toBe('P');
+    expect(status.classList).toContain('visually-hidden');
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    const heading = el.querySelector('#cc-rep-job-heading')!;
+    expect(heading.tagName).toBe('H5');
+    expect(el.querySelector('.rp-job')!.getAttribute('aria-labelledby')).toBe('cc-rep-job-heading');
+  });
+
+  describe('charts in PDF and Word', () => {
+    const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
+    const picker = () => el.querySelector<HTMLElement>('fieldset.cc-rep-charts-choice app-report-chart-picker')!;
+    const pill = (audience: BenchmarkReportAudience) => el.querySelector<HTMLButtonElement>(`#cc-rep-charts-tab-${audience}`)!;
+    const box = (audience: BenchmarkReportAudience, key: string) => el.querySelector<HTMLInputElement>(`#cc-rep-charts-${audience}-${key}`)!;
+    const updateButton = () => el.querySelector<HTMLButtonElement>('.cc-rep-update-charts-btn')!;
+    const stored = () => JSON.parse(localStorage.getItem(CC_REPORT_CHART_STORAGE_KEY)!) as {
+      version: number; selection: Record<string, string[]>; layout: Record<string, { maxHeightPercent: number; labelPt: number }>;
+    };
+    const choose = (select: HTMLSelectElement, value: string) => {
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+
+    it('offers the four figures for the four documents, with the sections, widths and the two layout fields', () => {
+      expect(textOf(el.querySelector('fieldset.cc-rep-charts-choice legend'))).toBe('Charts in PDF and Word');
+      const pills = Array.from(picker().querySelectorAll<HTMLElement>('[role="tab"]'));
+      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Researchers', 'Internal', 'Provider']);
+      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-count')))).toEqual(['2', '4', '2', '—']);
+      expect(textOf(pill(ProviderIssueReport).querySelector('.visually-hidden'))).toBe(', not chosen in New reports');
+
+      const titles = Array.from(picker().querySelectorAll('.rcp-figure-title')).map(title => textOf(title));
+      expect(titles).toEqual(['Intelligence per run', 'Time to first answer text', 'Output tokens per answer', 'Runs and events']);
+      const sections = () => Array.from(picker().querySelectorAll('.rcp-placement')).map(section => textOf(section));
+      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Results']);
+      expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-cc1-quality-width`)!.value).toBe('half');
+      expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-cc4-timeline-width`)!.value).toBe('twoThirds');
+      expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-label`)!.value).toBe('8');
+      expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-maxHeight`)!.value).toBe('50');
+      for (const field of ['orientation', 'sideBySide', 'heading', 'logo', 'theme']) {
+        expect(el.querySelector(`#cc-rep-charts-${ExecutiveSummary}-${field}`), field).toBeNull();
+      }
+
+      pill(TechnicalReport).click();
+      fixture.detectChanges();
+      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Events']);
+
+      pill(ProviderIssueReport).click();
+      fixture.detectChanges();
+      expect(box(ProviderIssueReport, 'cc2-speed').getAttribute('aria-disabled')).toBe('true');
+      expect(textOf(el.querySelector(`#cc-rep-charts-col-${ProviderIssueReport}-reason`))).toBe('Not chosen in New reports.');
+    });
+
+    it('remembers a change of figures and of layout in this browser', () => {
+      box(ExecutiveSummary, 'cc3-work').click();
+      fixture.detectChanges();
+      expect(stored().version).toBe(1);
+      expect(stored().selection[ExecutiveSummary]).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work']);
+      expect(stored().selection[InternalBrief]).toEqual(['cc1-quality', 'cc3-work']);
+
+      el.querySelector<HTMLDetailsElement>('details.rcp-layout')!.open = true;
+      choose(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-maxHeight`)!, '40');
+      expect(stored().layout[ExecutiveSummary].maxHeightPercent).toBe(40);
+      expect(stored().layout[TechnicalReport].maxHeightPercent).toBe(50);
+
+      const another = TestBed.createComponent(CcReportsStepComponent);
+      expect(another.componentInstance.chartSettings.selection[ExecutiveSummary]).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work']);
+      expect(another.componentInstance.chartSettings.layout[ExecutiveSummary]!.maxHeightPercent).toBe(40);
+      another.destroy();
+    });
+
+    it('lets a written document\'s charts be chosen, for Update charts', () => {
+      listDocuments([ccDoc(501, ProviderIssueReport)]);
+      expect(textOf(pill(ProviderIssueReport).querySelector('.rcp-tab-count'))).toBe('2');
+      pill(ProviderIssueReport).click();
+      fixture.detectChanges();
+      expect(box(ProviderIssueReport, 'cc2-speed').hasAttribute('aria-disabled')).toBe(false);
+    });
+
+    it('notes a figure whose endpoint the analysis could not compute', () => {
+      fixture.componentRef.setInput('result', ccAnalysisResult({
+        endpoints: [ccEndpoint('P1', { computed: false, notComputedReason: 'No common grader covers every run.' }), ccEndpoint('P2'), ccEndpoint('P4')]
+      }));
+      fixture.detectChanges();
+      const note = el.querySelector(`#cc-rep-charts-${ExecutiveSummary}-cc1-quality-note`)!;
+      expect(textOf(note)).toBe('P1 was not computable in this analysis; the chart\'s caption says it is not comparable.');
+      expect(box(ExecutiveSummary, 'cc1-quality').getAttribute('aria-describedby')).toContain(note.id);
+      expect(el.querySelector(`#cc-rep-charts-${ExecutiveSummary}-cc2-speed-note`)).toBeNull();
+      expect(component().chartInput().endpoints).toEqual(component().result.endpoints);
+    });
+
+    it('keeps Update charts aria-disabled, with its reason, while nothing is written, charts attach or a job writes', () => {
+      expect(updateButton().getAttribute('aria-disabled')).toBe('true');
+      expect(updateButton().disabled).toBe(false);
+      expect(updateButton().getAttribute('aria-describedby')).toBe('cc-rep-update-charts-reason');
+      expect(textOf(el.querySelector('#cc-rep-update-charts-reason'))).toBe(CC_UPDATE_CHARTS_NONE_REASON);
+      updateButton().click();
+      expect(component().chartState).toBe('idle');
+
+      listDocuments([ccDoc(501, ExecutiveSummary)]);
+      expect(updateButton().hasAttribute('aria-disabled')).toBe(false);
+      expect(el.querySelector('#cc-rep-update-charts-reason')).toBeNull();
+
+      const cdr = fixture.debugElement.injector.get(ChangeDetectorRef);
+      component().chartState = 'attaching';
+      cdr.markForCheck();
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('#cc-rep-update-charts-reason'))).toBe(CC_UPDATE_CHARTS_ATTACHING_REASON);
+      component().chartState = 'idle';
+
+      openAnalysis(ccReportJob());
+      listDocuments([ccDoc(511, ExecutiveSummary, { subjectKey: 'chat-consistency:8' })]);
+      expect(updateButton().getAttribute('aria-disabled')).toBe('true');
+      expect(textOf(el.querySelector('#cc-rep-update-charts-reason'))).toBe(CC_UPDATE_CHARTS_WRITING_REASON);
+    });
+
+    it('draws every written document\'s chosen charts again and uploads only those, with their layout', async () => {
+      listDocuments([ccDoc(501, ExecutiveSummary), ccDoc(502, TechnicalReport)]);
+      // The Executive Summary keeps Intelligence alone.
+      box(ExecutiveSummary, 'cc2-speed').click();
+      fixture.detectChanges();
+
+      updateButton().click();
+      fixture.detectChanges();
+      expect(component().chartState).toBe('attaching');
+      expect(textOf(el.querySelector('.cc-rep-update-charts-status'))).toBe('Updating the charts of 2 documents…');
+
+      const waitForPut = (id: number) =>
+        vi.waitFor(() => http.expectOne(r => r.method === 'PUT' && r.url === `${DOCUMENTS_URL}/${id}/charts`), { timeout: 20_000, interval: 50 });
+      const first = await waitForPut(501);
+      const keysOf = (request: TestRequest) => (request.request.body.charts as ReportDocumentChartUpload[]).map(chart => chart.figureKey);
+      expect(keysOf(first)).toEqual(['cc1-quality']);
+      expect(first.request.body.layout).toEqual({
+        version: 1, figures: [{ key: 'cc1-quality', widthShare: 0.5, rowGroup: null }], maxHeightShare: 0.5
+      });
+      const chart = (first.request.body.charts as ReportDocumentChartUpload[])[0];
+      expect(chart.naming).toBe('named');
+      expect(chart.settingsHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(chart.pngBase64.length).toBeGreaterThan(0);
+      first.flush({ chartCount: 1, figureKeys: ['cc1-quality'] });
+
+      const second = await waitForPut(502);
+      expect(keysOf(second)).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline']);
+      expect(second.request.body.layout.figures).toEqual([
+        { key: 'cc1-quality', widthShare: 0.5, rowGroup: 1 },
+        { key: 'cc2-speed', widthShare: 0.5, rowGroup: 1 },
+        { key: 'cc3-work', widthShare: 0.5, rowGroup: null },
+        { key: 'cc4-timeline', widthShare: 2 / 3, rowGroup: null }
+      ]);
+      second.flush({ chartCount: 4, figureKeys: ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline'] });
+
+      await vi.waitFor(() => expect(component().chartState).toBe('done'), { timeout: 5_000, interval: 20 });
+      fixture.detectChanges();
+      expect(textOf(el.querySelector('.cc-rep-update-charts-status'))).toBe('Charts updated on 2 documents.');
+    });
   });
 
   it('copies and downloads the diagnostics, LF only, named by the analysis, without the starting user', async () => {

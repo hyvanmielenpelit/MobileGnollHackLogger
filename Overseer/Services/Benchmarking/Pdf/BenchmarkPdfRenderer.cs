@@ -266,7 +266,7 @@ public static class BenchmarkPdfRenderer
                 col.Item().PaddingTop(4).Element(c => Facts(c, info));
             }
 
-            col.Item().Text($"Source {ShortHash(info.SourceSha256)} · PDF layout {LayoutVersion.ToString(CultureInfo.InvariantCulture)}")
+            col.Item().Text(SourceLine(info))
                 .FontSize(BenchmarkPdfStyle.SmallSize)
                 .FontColor(BenchmarkPdfStyle.Muted);
 
@@ -330,9 +330,48 @@ public static class BenchmarkPdfRenderer
             });
     }
 
-    /// <summary>Every page: the short classification, the source hash and layout version, and "Page X of Y". An artifact.</summary>
+    /// <summary>
+    /// The title block's source line: the source hash and layout version, or the layout version alone
+    /// for a document with its own <see cref="BenchmarkPdfDocumentInfo.FooterText"/>.
+    /// </summary>
+    private static string SourceLine(BenchmarkPdfDocumentInfo info)
+        => string.IsNullOrWhiteSpace(info.FooterText)
+            ? $"Source {ShortHash(info.SourceSha256)} · PDF layout {LayoutVersion.ToString(CultureInfo.InvariantCulture)}"
+            : $"PDF layout {LayoutVersion.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// Every page: the short classification, the source hash and layout version, and "Page X of Y"; with
+    /// a <see cref="BenchmarkPdfDocumentInfo.FooterText"/>, the classification, then that text and
+    /// "page X of Y". An artifact.
+    /// </summary>
     private static void Footer(IContainer container, BenchmarkPdfDocumentInfo info)
     {
+        if (!string.IsNullOrWhiteSpace(info.FooterText))
+        {
+            container.SemanticIgnore()
+                .BorderTop(BenchmarkPdfStyle.Hairline).BorderColor(BenchmarkPdfStyle.Rule)
+                .PaddingTop(4)
+                .DefaultTextStyle(s => s.FontSize(BenchmarkPdfStyle.SmallSize).FontColor(BenchmarkPdfStyle.Muted))
+                .Row(row =>
+                {
+                    row.Spacing(6);
+                    row.AutoItem().Text(t =>
+                    {
+                        BenchmarkPdfStyle.SemiboldSpan(t.Span(info.FooterClassification))
+                            .FontColor(BenchmarkPdfStyle.BannerText(info.Classification));
+                    });
+                    row.RelativeItem().Text(t =>
+                    {
+                        t.AlignRight();
+                        t.Span(info.FooterText + " · page ");
+                        t.CurrentPageNumber();
+                        t.Span(" of ");
+                        t.TotalPages();
+                    });
+                });
+            return;
+        }
+
         container.SemanticIgnore()
             .BorderTop(BenchmarkPdfStyle.Hairline).BorderColor(BenchmarkPdfStyle.Rule)
             .PaddingTop(4)

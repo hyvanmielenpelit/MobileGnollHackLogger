@@ -172,15 +172,27 @@ affected grades at Indicated.
 
 ### 5.2 Overseer events
 
-`DetectOverseerEvents` walks each series and records an event when one of these run fields changes
-against the subject's latest earlier run that recorded it (a null field is "not recorded" and neither
-starts nor ends an event):
+`DetectOverseerEvents` walks each series of **one subject on one suite** (the model axis and the suite
+id, else its name) and records an event when one of these run fields changes against the series'
+latest earlier run that recorded it (a null field is "not recorded" and neither starts nor ends an
+event):
 
 `CandidateSystemPromptSha256`, `ToolGuidesSha256`, `KnowledgeBaseHeadSha`, `WikiHeadSha`,
 `SourceCodeHeadSha`, `CorpusIndexFingerprintsJson`, `CandidatePromptOptionsJson` (compared in canonical
 form), `ToolIterationCapsJson`, `TotalModelCallCapsJson`, `QuestionTimeoutSecondsJson`,
 `MaxToolCallsPerQuestionUsed`, and `HarnessVersion` when the ledger impact between the two runs includes
 `CandidateInput`.
+
+**Per suite, then merged.** The member suites of a battery alternate run by run, and their runs can
+differ in what each suite sets (the game-snapshot prompt option, a per-suite system prompt hash). A
+series per model alone would read those differences between suites as Overseer changes going off, on
+and off again, so each suite is its own series. One change seen in several suites of a subject is then
+one event: events with the same subject, kind, before value and after value whose **spans** overlap
+are merged into the earliest of them (`MergeAcrossSuites`). An event's span runs from the previous
+run's start (exclusive) to its run's start (inclusive); a merged span grows to cover every event it
+absorbed, so a chain of overlapping spans becomes one event. The events are then ordered by time, run
+and kind. This is analysis code version 5 (§ 16); an analysis saved under version 4 or earlier keeps
+its stored events, which in a battery comparison can include suite alternation.
 
 An analysis takes the events between its first baseline and last comparison run, from the target series
 and every control series, one per kind and change.
@@ -191,10 +203,11 @@ the Analyze step's period cards and preview, and the *Before vs after an Oversee
 one. Each composite has one chart marker, `E<n>`, numbered in time order, and lists the kinds that
 changed with the number of runs that showed each. The grouping is presentation only: the analysis still
 takes the events one per kind and change, as above. Report charts are drawn the same way, and
-`CC_REPORT_CHART_VERSION` (4, in `chat-consistency-report-charts.ts`) enters their settings hash, so newly
-drawn report charts are told apart from those drawn before the grouping, the timeline numbering below,
-or the battery-run points, the validated palette and the GnollBench logo of version 4;
-documents already written keep their charts. An `E` number in an older report therefore need not match
+`CC_REPORT_CHART_VERSION` (6, in `chat-consistency-report-charts.ts`) enters their settings hash with the
+chart choices and their layout, so newly drawn report charts are told apart from those drawn before
+the grouping, the timeline numbering below, the battery-run points, the validated palette, the
+GnollBench logo, or the per-document choice and width of version 6 (§ 17.2, step 5);
+documents already written keep their charts until step 5's **Update charts** draws them again. An `E` number in an older report therefore need not match
 the one the tab shows today.
 
 The Results step's event list and period cards, and newly drawn report charts, take each composite's
@@ -219,8 +232,9 @@ way, the change fits our side; if the target moved and the control did not, it f
 - **Missing-control notes**: a period without any qualifying control gets one note per suite and
   build, naming the run that would close the gap — *"No control run for period comparison: make a run of
   \<model\> (a provider other than \<provider\>) on suite \<suite\> under the same Overseer build as run
-  #N (instrument \<12 hex\>)."* The model is the first of the request's `availableOtherProviderModels`
-  from another provider.
+  #N."* The model is the first of the request's `availableOtherProviderModels` from another provider.
+  Analyses saved before code version 5 end the note with *"(instrument \<12 hex\>)"*; the Results images
+  and the report documents strip it.
 - **Difference in differences** (`ItemDifferenceInDifferences`): per endpoint and control subject,
   item-paired (target change) − (control change) with a run-cluster bootstrap (items resampled too,
   except for the speed endpoints). Each effect records whether the DiD interval includes 0, whether it
@@ -271,7 +285,8 @@ Provider latency depends on load, and load on the hour. The analysis therefore c
   change of speed. Observations in strata one period alone sampled are excluded and their share
   reported.
 - **Scope**: the common strata as text — *weekdays 04–12 UTC; weekends 16–20 UTC*, *(one time stratum)*
-  when only one is shared, *no common time stratum* when none is.
+  when only one is shared, *no common time stratum* when none is. The headline ends *"within
+  \<scope\>"*, or, when the periods share no stratum, *"; the periods share no common time stratum"*.
 - **US business hours** are weekdays 14–22 UTC. A common stratum counts as inside them when it is a
   weekday block overlapping that window (12–16, 16–20 or 20–24 UTC), and outside them otherwise. A
   change is called **load-independent** only when the common strata include at least one block of each
@@ -524,13 +539,17 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 4; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
+currently 5; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
 streaming rate with its measurability bounds (§ 4.4), and the streaming-rate caveat counts the delivered
-answers with no measurable rate: *"k delivered answer(s) have no rate: the visible text arrived in one
+answers with no measurable rate: *"k delivered answers have no rate: the visible text arrived in one
 burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*; version 4 compares
 within a battery or a suite and records the compared set as `comparisonSet` (`kind`, `key`, `label`),
 `unitKind` (`run` or `batteryRun`) and `units` (each analyzed unit's id, kind, period, start and member
-run ids), with battery runs as the unit of a battery comparison, § 9). A stored analysis keeps the
+run ids), with battery runs as the unit of a battery comparison, § 9; version 5 detects Overseer events
+per model and suite and merges one change seen in several suites (§ 5.2), drops the instrument
+fingerprint from the missing-control notes (§ 6), writes real plurals (*1 day*, *2 battery runs*) in
+place of *(s)*, and ends a headline whose periods share no common time stratum with *"; the periods
+share no common time stratum"*). A stored analysis keeps the
 version it was computed under; its fingerprint and result do not change. **Run-mode invariance:** in a
 suite comparison, or with no compared set, every number of a version-4 analysis equals version 3's on
 the same runs; only the code version, the fingerprint and the new set and unit fields differ, and a test
@@ -556,25 +575,43 @@ Consistency wizard**, six steps in a full-screen dialog.
 
 ### 17.1 The launcher
 
-- **Open Chat Consistency Wizard** opens the wizard where it was left, on step 1 the first time.
-- **How chat consistency works**, a disclosure listing the six steps under the wizard's own titles,
-  open on the first visit and afterwards as the operator left it.
-- **The *Current model* card** (`chat-consistency-tab/current-model-card/`), while a model is chosen: a
-  full-width summary card between the hero and the saved analyses, on the shared `.bm-summary-card`
-  styles. Its title is the model's name with its thinking-level, provider and service-tier badges, its
-  meta line *Chosen in the wizard · remembered in this browser*, and its facts:
-  - **Runs** — *6 runs · 4 with call telemetry*;
-  - **Dates** — the dates as step 1 names them (*All dates*, *Last 30 days*, *2026-09-01 to
-    2026-10-05*), then *· N runs in these dates* unless they are *All dates*; a small spinner stands in
-    for the count while the runs load (shown after 0.3 s);
-  - **In the analysis** — the runs the analysis uses, only while step 1 narrows them;
-  - **First run** and **Latest run** (*#106 · 2026-10-01*);
-  - **Suites** — the suites the model's runs answered;
-  - **Compared** — the battery or suite step 1 compares within (*Two initial suites (revision 1)*);
-  - **Latest analysis** — *#7 · <name> · saved 2026-10-02* with its headline, or *None yet*.
+The launcher has three sections. From a launcher width of 64 rem, *New analysis* sits on the left,
+*Latest analysis* on the right, and *Analysis history* is a slim row across both; below that width
+they stack in that order.
 
-  Its actions are **Open latest run report** and, when an analysis exists, **Open analysis #N**. It is a
-  read-out; the wizard makes the choice. Its content is read from the database every time the tab loads.
+- **New analysis**: what the view does in two lines, **Open Chat Consistency Wizard**, which opens the
+  wizard where it was left (on step 1 the first time), and **How chat consistency works**, a disclosure
+  listing the six steps under the wizard's own titles, open on the first visit and afterwards as the
+  operator left it. The disclosure also says that a verdict is only as current as the last run someone
+  made.
+- **Latest analysis** (`chat-consistency-tab/latest-analysis-card/`): the newest saved analysis **of
+  any model**, the largest section, with a gold accent. It shows *#N · name*; the model with its
+  thinking-level, provider and service-tier badges, the kind of compared set (*Battery*, *Suite* or
+  *All suites*) and its label; the overall outcome with its detail (*Not enough evidence yet · 0 of 5
+  endpoints decided*); one static chip per endpoint (an icon, the id and a word, such as *P4
+  Inconclusive*); and the facts *Baseline* and *Comparison* (each with its period color, its dates and,
+  once the verdicts load, its count of runs or battery runs), *Saved* (the time and the protocol) and
+  *Reports* (*3 report documents* or *None yet*). Its actions are the gold **Open Analysis #N**, which
+  opens the wizard on **Results** (step 4), and **Documents (N)**, which opens it on step 6 and is
+  unavailable, with the reason *No report document has been written from this analysis.*, while there
+  is none. The outcome and the chips need the full result, which the tab reads once per newest
+  analysis (*Loading the verdicts…*; on failure *The verdicts of analysis #N could not be loaded.*).
+  With no saved analysis the section says how to make one.
+- **Analysis history**: a summary (*4 saved analyses of 2 models · the latest saved 2026-10-10 09:40 UTC
+  · 5 report documents*) and **Open Analysis History**, unavailable while no analysis is saved. The
+  **Analysis History** dialog (`chat-consistency-tab/analysis-history/`) lists every saved analysis as
+  a card, newest first: its number, saved time and protocol, the tags *N reports*, *Relaxed pooling*
+  and *Earlier analysis code* (saved under an analysis code version below the current one; *Analyze
+  again to apply version 5.*), its name, model and compared set, its periods, headline and endpoint
+  chips. It has a search (name, headline, model or `#id`), **Sort by** (*Newest first*, *Oldest first*,
+  *Model (A–Z)*, remembered in this browser) and the filters *Model*, *Provider*, *Compared* and
+  *Reports*, shows ten cards at a time, and offers per card **Open** and **Delete**. *Open* switches to
+  the analysis's model when it is another, closes the dialog once the analysis has loaded and opens the
+  wizard on **Results**; a failed open keeps the dialog open with the error. *Delete* asks first and is
+  unavailable while report documents written from the analysis exist (*Delete its 3 report documents
+  in step 6 first.*), which the server also refuses.
+- The summary fields the latest card and the history cards show come from `GET analyses`, which reads
+  the model (`subject`) and the endpoint verdicts (`endpoints`) from each stored result (§ 19).
 - **The remembered model.** The chosen model, its dates and the compared set are kept in this browser,
   in `localStorage['overseer.benchmark.chatConsistency.subject']` (`{ version: 2, modelKey, range,
   compare: { kind, key } }`; a version-1 record, `{ version: 1, modelKey, range }`, is read as one with
@@ -583,9 +620,6 @@ Consistency wizard**, six steps in a full-screen dialog.
   tab restores them: a rolling preset (*Last 30 days*) is moved to now, and a record whose model is no
   longer listed, or has no runs, is removed. The run selection, the step and the analysis are not
   remembered. Another browser, private browsing or cleared storage starts without a model.
-- **Saved analyses** — every analysis, newest first, each with its *Compared* set when it has one
-  (code version 4), with *Open* and *Delete* (refused while report documents exist). *Open* switches to the analysis's model when it is another and opens the wizard on
-  **Results**.
 
 ### 17.2 The wizard
 
@@ -675,7 +709,7 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
    different start times can be split, also on the same day. The sidebar has three tabs:
    - **Setup** — the subject, an optional **Name**, the **Split rule** with its note, and the span
      note. The subject is a small card: the **model** with its thinking, provider and service-tier
-     badges (the same badges as the launcher's *Current model* card) and its model id under the name,
+     badges (the same badges as the launcher's *Latest analysis* card) and its model id under the name,
      and **Compared** — a tag, *Battery*, *Suite* or *All suites*, then the set and what the units are:
      *Two initial suites (revision 1)* with *2 battery runs from step 1 · each analyzed as one unit,
      its member runs together*; a suite's name with *6 single-suite runs from step 1*; with no set,
@@ -798,10 +832,47 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
 4. **Results** — the stored result, read as it was saved, in six tabs. **It draws no charts**: step 2
    has them.
    - **The tabs** *Summary · Verdicts · Periods · Attribution · Next runs · Details*, *Next runs*
-     counting its cards. The tab is remembered in this browser
+     counting its cards. No tab shows a visible heading repeating its name; each panel keeps one for
+     screen readers. The tab is remembered in this browser
      (`localStorage['overseer.benchmark.chatConsistency.results']`, `{ version: 2, tab }`) and is not
      reset when another analysis is opened. Without a stored tab Results opens on *Summary*; a
      version-1 record, written before *Summary* existed, is ignored.
+   - **Section images.** Beside the tabs, icon-only **Copy** and **Download** turn the shown section
+     into an image, and **Image settings** opens a dialog that chooses what the images show and the
+     file they are written as. A status line under the tabs reports the outcome (*Verdicts section
+     copied as an image.*, *Image downloaded.*, a refusal, or *Nothing in the Verdicts section is
+     selected; use Image settings.*). The
+     image is **drawn from the stored result, not captured from the screen**
+     (`chat-consistency-tab/results-image/`), so it says what the tab says, and is laid out for the
+     chosen size:
+     - **What to show**, per section (a tab for each of the six), as a checklist with *All* / *None*:
+       *Summary* — the verdict and its detail, the model and compared set, the endpoint chips, scope and
+       protocol, the reliability notes, and each key figure; *Verdicts* — each computed endpoint's card,
+       *Not computable endpoints*, and per card *What it means*, *Smallest detectable change*,
+       *Compared*, *Warnings and notes* and *More about* details (off by default); *Periods* — the two
+       period cards and *Runs in the periods* (off by default); *Attribution* — the decisive changes,
+       the attribution by side and the unattributed note; *Next runs* — each run card, *Suggestions*
+       and *Reasons* (off by default); *Details* — limitations, data quality, the run selection, the
+       Overseer events and the analysis identity (number, saved time, protocol and code version). The
+       image details common to every section are the header (*Chat Consistency · {Section}* with the
+       GnollBench wide logo), the model line, the analysis line (*Analysis #4 · saved … · Protocol V1*)
+       and the footer (*GnollBench · Overseer {version} · exported {UTC time}*). **Colors** are *Dark,
+       as on screen* or *Light, for print*.
+     - **Image file**: PNG or WebP with the WebP quality (*Copy always places a PNG on the
+       clipboard.*), and the size — *Fit the content* (1280 px wide, as tall as the section needs) or a
+       preset or custom width × height, the pixel density and the text size. A box lays the section
+       out at its width and scales taller content down to no less than 70 %; below that the size is
+       refused (*The Verdicts section does not fit 1920 × 1080 px. Choose Fit the content, a taller
+       size, or include less.*), as is a bitmap over 16,384 px per side. Cards go two to a row from
+       1,100 layout px. The footer of the dialog states the result (*Downloads a WebP, 3840 × 2160
+       px.*).
+     - The file is named `chat-consistency-{id}_{model}_{section}_{yyyyMMdd_HHmmss}.{png|webp}`. **No
+       image carries a hash**: instrument notes and any hex token of twelve or more characters are
+       removed. The settings are remembered in this browser
+       (`localStorage['overseer.benchmark.chatConsistency.resultsImage']`, `{ version: 1, format,
+       webpQuality, size, scheme, excluded, detailsExcluded }`, storing what is left out so a new item
+       is included; the open state of the dialog's two file sections in
+       `….resultsImage.sections`).
      - **Summary** — the verdict on the chat, then the key figures, with no section title of its own:
        - **The verdict banner**, *Verdict on the Overseer chat*. Its title is derived from the server's
          verdicts alone and never names a cause: *The chat changed* (a decisive change on any
@@ -867,14 +938,16 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
        day*, *Run at another time of day*, *Run another provider's model*, *Re-grade with one common
        grader*), the suggestions and reasons, and a **Set up from run #N** button per run whose setup it
        repeats (§ 17.4). A control card lists *Suite*, *Same build as* and *Provider* (*not
-       Anthropic*), keeps the server's suggestion with its instrument fingerprint behind *Details*, and
+       Anthropic*), keeps the server's suggestion behind *Details* (with its instrument fingerprint in an
+       analysis saved before code version 5), and
        ends *Then choose a model from a provider other than Anthropic.*; a re-grade card has no button
        (*Re-grade from step 3: Controls → Re-grade.*).
      - **Details** — background that does not change the verdicts, each part a closed disclosure that
        is not remembered: the **Run selection**, *Events in the analyzed span (N)* as an event list
        (§ 17.3), *Limitations (N)*, *Data quality (N)* and *About this analysis* (the analysis id and
-       name, the server's **Headline** — the sentence the saved analyses and the launcher show — the
-       saved time, `InputSha256` and the analysis code version). The *Run selection* lists *Dates* (the
+       name, the server's **Headline** — the sentence the Analysis History cards show — the
+       saved time, `InputSha256` and the analysis code version; the hash is shown on screen only, never
+       in an image or a document). The *Run selection* lists *Dates* (the
        step-1 label with its UTC bounds, *Last 30 days · 2026-09-07 09:00 UTC to the last run*), *First
        run*, *Last run* and *Left out in step 1* (a run id or *none*), then *Not analyzed*: one line per
        reason with its runs and period (*Left out in step 1: #45 (baseline), #51 (comparison)*; *Not
@@ -885,8 +958,9 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
 5. **Write** — writes the Chat Consistency Report documents (§ 20), in the layout of Model
    Comparison's step 3: *Write reports*, *Analysis #7 · Chat consistency: <model>* and *Write AI reports
    about this analysis. Each document is written once.*, then a resizable **New reports** sidebar
-   beside **Report progress**, each scrolling on its own; the sidebar's width is remembered in this
-   browser (`localStorage['overseer.benchmark.chatConsistency.reports']`, `{ version: 1, sidebarWidth }`).
+   beside the report progress area (no visible heading), each scrolling on its own; the sidebar's width
+   is remembered in this browser (`localStorage['overseer.benchmark.chatConsistency.reports']`,
+   `{ version: 1, sidebarWidth }`).
    - **Documents** — the four documents. A written one shows *Written* (or *Written with warnings*),
      its writer, date, duration and cost, and icon-only **View** (the PDF viewer at the fullest
      disclosure it allows, the others offered as versions) and **Delete** (*Delete Document*, a
@@ -898,22 +972,51 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      document list loads. Delete is disabled while a job writes or charts are attached (*Wait for the
      reports and their charts to finish.*). With nothing left to write the list says *Every document of
      this analysis is written.*, and *Write Reports* stays focusable with the reason *Every document of
-     this analysis is written. Delete one to write it again.*
+     this analysis is written. Delete one to write it again.* Under the list, **Update charts** draws
+     the charts of every written document of the analysis again with the current choices below and
+     replaces them; a document whose type has no chart chosen loses the charts it had. It is
+     unavailable, with its reason shown, while a job writes (*Reports are being written. Update the
+     charts once they finish.*), while charts are being attached, or with no written document, and
+     reports its outcome in its own status line (*Charts updated on 3 documents.*). It is how a document
+     written earlier, whose prose is still wanted, gets the current charts.
+   - **Charts in PDF and Word** — which charts each document type carries, in Model Comparison's chart
+     picker: one segment per document type (*Executive*, *Researchers*, *Internal*, *Provider*), each
+     listing the four figures *Intelligence per run* (`cc1-quality`), *Time to first answer text*
+     (`cc2-speed`), *Output tokens per answer* (`cc3-work`) and *Runs and events* (`cc4-timeline`), each
+     with the section it prints in (*Results*, after the verdict table; *Events*, after the events
+     table, for cc4 outside the Executive Summary) and its width (*Full*, *Two-thirds* or *Half
+     column*), and a *Layout* disclosure with the label size and the maximum height. A figure whose
+     endpoint the analysis could not compute carries a note (*P1 was not computable in this analysis;
+     the chart's caption says it is not comparable.*). A document type neither checked nor written
+     cannot be changed (*Not chosen in New reports.*). The defaults: Executive Summary cc1 and cc2;
+     Researcher Report all four; Internal Brief cc1 and cc3; Provider Issue Report cc2 and cc4; cc1–cc3
+     half column, so two in a row at one place share it, cc4 two-thirds; 8 pt labels; at most 50 % of
+     the page tall. The charts always use the light print theme, no heading inside the image and no
+     logo. The choices are remembered in this browser
+     (`localStorage['overseer.benchmark.chatConsistency.reportCharts']`, `{ version: 1, selection,
+     layout }`).
    - **Report writer** — the model picker with *Choosing a report writer* behind an *i* button, a
      refusal or the same-provider warning under it, the estimate (*Estimated cost: about $0.04*, asked
      0.3 s after the last change) and **Write Reports** (*Write Report* for one), with the reason it is
      unavailable. A writer of the analyzed model's provider asks *Same-Provider Report Writer* on every
      write; *Write Anyway* goes on.
-   - **Report progress** — one polite status line, then, while a job runs, *Reports in progress*: the
+   - **Report progress** — a status line for screen readers only (the stage rail shows the phase), then,
+     while a job runs, *Reports in progress*: the
      stage rail (*Queued*, *Preparing*, one stage per document, *Done*), the stat strip (*Elapsed*, the
      writer with its badges, *Model calls*, *Tokens*, *Cost so far*, and *Estimate* when the job was
      started here), one row per document (status, duration, model calls, charts), *Log and
      diagnostics* (icon-only *Copy diagnostics* and *Download diagnostics*,
      `chat-consistency-reports_<id>_diagnostics_<yyyyMMdd-HHmmss>.txt`, and the job log) and *Cancel
      Writing*. A finished job is summarized as *Last reports* (*3 documents written · $0.04 · 1 min
-     12 s*) with **See the documents**, which opens step 6, and *Dismiss*. When a job ends, the
-     documents without charts get the analysis's report charts, drawn off-screen
-     (`chat-consistency-report-charts.ts`) and uploaded.
+     12 s*) with **See the documents**, which opens step 6, and *Dismiss*, which returns focus to *New
+     reports*. When a job ends, the documents without charts get the charts chosen for their type,
+     drawn off-screen (`chat-consistency-report-charts.ts`) and uploaded with the document's chart
+     layout. **Each figure is drawn at the width it prints at** in that document, with its labels at
+     the chosen size in points, so an 8 pt label prints at 8 pt; its time axis spans the plotted runs
+     (padded by 5 % or 30 minutes, whichever is more) rather than the whole periods; and a figure whose
+     endpoint is not computable opens its caption with *Not comparable across the periods: {reason}.*
+     Captions describe the points neutrally (*ranged from 81.7 to 82.0 across 4 runs*, *was 82.0 in all
+     4 runs*), never as *held*.
 
    The job status and the document list load when step 5 first shows, and a job already running for the
    analysis is found again; nothing spends until *Write Reports* is pressed. Polling goes on while
@@ -927,7 +1030,8 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
 Step 1 is always open; steps 2 and 3 need a model, step 4 a result, analyzed or opened from the
 saved analyses, and steps 5 and 6 a saved analysis (an `analysisId`). A step that cannot be opened
 stays in the tab row, marked unavailable, with its reason.
-A saved analysis opens on Results, and step 3 shows its runs under the *Manual* Split rule: each
+A saved analysis opens on Results (on Documents from the launcher's **Documents (N)**), and step 3
+shows its runs under the *Manual* Split rule: each
 period from the earliest to the latest of its runs still among the step-1 units; when none is, the
 bounds stay unset and step 3 says why, while Results shows the saved result as it was. Each step is kept once
 shown, so closing and reopening the wizard, or changing step, keeps a table's sort and page, the chart
@@ -1187,7 +1291,7 @@ routes, which use the run report-documents contract.
 | GET | `battery-runs?modelKey&from&to` | the battery runs with a non-superseded member on the model axis in the range, newest first, each with its definition hash and revision, `setKey`, `complete` and `incompleteReason`, harness versions, usable members and per-axis eligibility; validated alike |
 | GET | `comparison-sets?modelKey&from&to` | the batteries and suites the model can be compared within, batteries first, each group newest first (`kind`, `key`, `label`, `unitCount`, `memberRunCount`, `latestStartedAtUtc`), and `defaultKey`; validated alike |
 | POST | `analyses` | runs and saves an analysis; 200 with the result and `analysisId`; 400 for malformed or overlapping periods, a period without a usable run, or a malformed or contradictory `runSelection` (below); 499 when the client aborts |
-| GET | `analyses` | every saved analysis, newest first, without the results |
+| GET | `analyses` | every saved analysis, newest first, without the results; each summary carries `subject` (`displayName`, `provider`, `modelId`, `thinkingLevel`, `serviceTier`; null when the stored result lacks it) and `endpoints` (`id`, `name`, `computed`, `verdictLabel`, `grade` as `established` / `indicated` / `notEstablished`; `[]` when absent), read from the stored result |
 | GET | `analyses/{id}` | one saved analysis; 404 |
 | DELETE | `analyses/{id}` | 204; 404; 409 while report documents written from it exist |
 | POST | `analyses/{id}/report-documents/estimate` | the report cost estimate with `providerIssueReportAvailable` and `providerIssueReportReason`; no model call |
@@ -1267,12 +1371,27 @@ lettered peers — and carries at most 10 candidate-call request ids from the co
 Each document is written once: the server refuses one that is already written (409) until it is
 deleted, which the wizard's Write and Documents steps both offer (§ 17.2).
 
-The validator's chat consistency rules **C1–C7** (report-pack rules 22–28) hold the prose to the
+The validator's chat consistency rules **C1–C8** (report-pack rules 22–29) hold the prose to the
 method: a change claim needs the fact that shows it, an intent or mechanism claim needs a
-provider-confirmed cause, a causal claim needs an attribution, *established* needs an Established
-grade, an inconclusive endpoint needs its detectable effect, the document must cite its hours and may
-not claim all hours, and a Provider Issue Report may assert a model or serving change only from a
-provider-side attribution and must list every Overseer event it ruled out. Files are named
+provider-confirmed cause (and nothing may call the runs *monitoring*), a causal claim needs an
+attribution, *established* needs an Established grade, an inconclusive endpoint needs its detectable
+effect, the document must cite its hours and may not claim all hours, a Provider Issue Report may
+assert a model or serving change only from a provider-side attribution and must list every Overseer
+event it ruled out, and (C8, *readable text*) no paragraph may carry a hash, a hex revision, JSON or an
+internal event-field name.
+
+**The documents are written for readers.** The blocks the code prints differ per audience: the
+Executive Summary keeps the verdict, why nothing is decided yet, what was compared, the chosen charts,
+the written sections, this analysis's data-quality limitations and the evaluation terms; the Researcher
+Report keeps the method detail in compact tables of at most five columns; the Internal Brief keeps the
+team's detail without the reader's guide. No fact display carries a hash, JSON or an internal
+identifier: an Overseer event is shown in words (*harness 53 → 54*, *wiki revision a8fa85a → 4bb80dc*,
+*game snapshot: off → on*, *re-indexed: GnollHack wiki (file counts unchanged)*), formatted from the
+stored values, so
+documents written earlier render readably too; the input fingerprint stays out of every document. The
+PDF and Word footer reads *Chat consistency analysis #N · {document} · page N of M*, and the cover
+names the model, the compared set, the two periods, the controls and when the document was written.
+Each document's charts are those step 5 chose for its type, at the chosen width (§ 17.2). Files are named
 `chat-consistency-<id>_<model>_<kind>_<disclosure>_<peers>`, for example
 `chat-consistency-12_<model>_provider-issue-report_summary_anonymized.pdf`.
 

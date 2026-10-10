@@ -127,8 +127,12 @@ export function reportChartPlacementLabel(
 
 // --- The figure selection ---
 
-/** Per document type, the figures to include, in placement order. A missing audience means none. */
-export type ReportChartSelection = Readonly<Partial<Record<BenchmarkReportAudience, readonly ReportChartFigureKey[]>>>;
+/**
+ * Per document type, the figures to include, in placement order. A missing audience means none. `K`
+ * is the figure key: a Report Pack figure unless the chart picker is given figures of its own.
+ */
+export type ReportChartSelection<K extends string = ReportChartFigureKey> =
+  Readonly<Partial<Record<BenchmarkReportAudience, readonly K[]>>>;
 
 export const DEFAULT_CHART_SELECTION: ReportChartSelection = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: Object.freeze(['p1a-quality', 's2-quality-cost'] as ReportChartFigureKey[]),
@@ -291,12 +295,12 @@ export const REPORT_CHART_THEMES: readonly { readonly value: ReportChartTheme; r
   { value: 'asInStep2', label: 'As in step 2' }
 ];
 
-/** How one document type's charts are drawn and placed. */
-export interface ReportChartDocumentLayout {
+/** How one document type's charts are drawn and placed; `K` is the figure key, as for the selection. */
+export interface ReportChartDocumentLayout<K extends string = ReportChartFigureKey> {
   /** *As in step 2* takes step 2's choice, its *Automatic* resolved at the chart's own layout width. */
   readonly orientation: ReportChartOrientationSetting;
   /** Each figure's share of the text column; a figure missing here is full column. */
-  readonly widths: Readonly<Partial<Record<ReportChartFigureKey, ReportChartWidth>>>;
+  readonly widths: Readonly<Partial<Record<K, ReportChartWidth>>>;
   /** Consecutive half-width figures in the same section print as a row of two. */
   readonly sideBySide: boolean;
   /** The bar labels' printed size, one of {@link REPORT_CHART_LABEL_SIZES_PT}. */
@@ -322,7 +326,8 @@ export const DEFAULT_DOCUMENT_CHART_LAYOUT: ReportChartDocumentLayout = Object.f
 } as ReportChartDocumentLayout);
 
 /** Per document type. */
-export type ReportChartLayoutSettings = Readonly<Partial<Record<BenchmarkReportAudience, ReportChartDocumentLayout>>>;
+export type ReportChartLayoutSettings<K extends string = ReportChartFigureKey> =
+  Readonly<Partial<Record<BenchmarkReportAudience, ReportChartDocumentLayout<K>>>>;
 
 export const DEFAULT_CHART_LAYOUT_SETTINGS: ReportChartLayoutSettings = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: DEFAULT_DOCUMENT_CHART_LAYOUT,
@@ -375,9 +380,9 @@ export function documentChartRefusal(width: ReportChartWidth, labelPt: number, c
 }
 
 /** Why `labelPt` cannot be chosen while the document's selected figures have the widths they have, or null. */
-export function documentLabelSizeRefusal(
-  layout: ReportChartDocumentLayout,
-  figures: readonly ReportChartFigureKey[],
+export function documentLabelSizeRefusal<K extends string>(
+  layout: ReportChartDocumentLayout<K>,
+  figures: readonly K[],
   labelPt: number,
   columnPt: number = DOCUMENT_CHART_COLUMN_PT
 ): string | null {
@@ -387,12 +392,12 @@ export function documentLabelSizeRefusal(
 }
 
 /** The width a figure is composed and placed at: its own, or full column where its own is refused. */
-export function documentChartWidth(
-  layout: ReportChartDocumentLayout,
-  key: ReportChartFigureKey,
+export function documentChartWidth<K extends string>(
+  layout: ReportChartDocumentLayout<K>,
+  key: K,
   columnPt: number = DOCUMENT_CHART_COLUMN_PT
 ): ReportChartWidth {
-  const width = layout.widths[key] ?? 'full';
+  const width: ReportChartWidth = layout.widths[key] ?? 'full';
   return documentChartRefusal(width, layout.labelPt, columnPt) === null ? width : 'full';
 }
 
@@ -412,7 +417,7 @@ const DOCUMENT_CHART_ASPECTS: Readonly<Record<ReportChartWidth, { readonly chart
  * where its chrome needs more room than that aspect gives.
  */
 export function documentFigureLayout(
-  key: ReportChartFigureKey,
+  key: string,
   width: ReportChartWidth = 'full',
   labelPt: number = DEFAULT_DOCUMENT_CHART_LAYOUT.labelPt,
   columnPt: number = DOCUMENT_CHART_COLUMN_PT,
@@ -476,11 +481,13 @@ export function normalizeChartLayoutSettings(layout: ReportChartLayoutSettings |
 }
 
 /** One document type's layout; the defaults for an unknown type or none. */
-export function documentChartLayoutFor(
-  layout: ReportChartLayoutSettings | null | undefined,
+export function documentChartLayoutFor<K extends string = ReportChartFigureKey>(
+  layout: ReportChartLayoutSettings<K> | null | undefined,
   audience: BenchmarkReportAudience | null | undefined
-): ReportChartDocumentLayout {
-  return (audience !== null && audience !== undefined ? layout?.[audience] : undefined) ?? DEFAULT_DOCUMENT_CHART_LAYOUT;
+): ReportChartDocumentLayout<K> {
+  // The defaults name no width, so they fit any figure key.
+  return (audience !== null && audience !== undefined ? layout?.[audience] : undefined)
+    ?? DEFAULT_DOCUMENT_CHART_LAYOUT as unknown as ReportChartDocumentLayout<K>;
 }
 
 /**

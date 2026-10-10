@@ -1,0 +1,137 @@
+<!--
+  IMAGE SETTINGS
+
+  Nested in the analysis wizard's dialog, so its own close, cancel and click events stop here. Every
+  change applies at once; Done and the close button only close. Two columns from a 44 rem body: What to
+  show (a tab per section with its checklist, the image details and the colors) and Image file (format
+  and size); one column below.
+-->
+<dialog #imageDialog class="gh-dialog cc-rim-dialog" aria-labelledby="cc-rim-title" closedby="any"
+        (click)="onDialogClick($event)" (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #imageTitle id="cc-rim-title" tabindex="-1">Image settings</h3>
+      </div>
+      <button type="button" class="btn-icon-action cc-rim-close" aria-label="Close image settings"
+              interestfor="cc-rim-close-tip" [attr.style]="'anchor-name: --cc-rim-close-tip'" (click)="done()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="cc-rim-close-tip" [attr.style]="'position-anchor: --cc-rim-close-tip'">Close</div>
+    </div>
+    <div class="dialog-body cc-rim-body">
+      <div class="cc-rim-layout">
+        <div class="cc-rim-column cc-rim-show">
+          <h4 class="cc-rim-column-title" id="cc-rim-show-title">What to show</h4>
+          <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap cc-rim-tabs" role="tablist" aria-label="Sections">
+            @for (entry of sections; track entry.id; let i = $index) {
+              <button type="button" role="tab" class="gh-tab"
+                      [id]="'cc-rim-tab-' + entry.id"
+                      [attr.aria-controls]="'cc-rim-panel-' + entry.id"
+                      [attr.aria-selected]="section === entry.id"
+                      [attr.tabindex]="section === entry.id ? 0 : -1"
+                      (keydown)="onSectionKeydown($event, i)"
+                      (click)="selectSection(entry.id)">{{ entry.label }}</button>
+            }
+          </div>
+          @for (entry of sections; track entry.id) {
+            <div class="cc-rim-panel" role="tabpanel" [id]="'cc-rim-panel-' + entry.id"
+                 [attr.aria-labelledby]="'cc-rim-tab-' + entry.id" tabindex="0" [hidden]="section !== entry.id">
+              <div class="cc-rim-group" role="group" [attr.aria-labelledby]="'cc-rim-caption-' + entry.id">
+                <div class="cc-rim-group-head">
+                  <p class="cc-rim-caption" [id]="'cc-rim-caption-' + entry.id">{{ entry.label }} section</p>
+                  <span class="cc-rim-bulk">
+                    <button type="button" class="btn-link cc-rim-all" (click)="selectAll(entry.id)">All<span class="visually-hidden"> of the {{ entry.label }} section</span></button>
+                    <button type="button" class="btn-link cc-rim-none" (click)="selectNone(entry.id)">None<span class="visually-hidden"> of the {{ entry.label }} section</span></button>
+                  </span>
+                </div>
+                <ul class="cc-rim-list" role="list">
+                  @for (item of itemsOf(entry.id); track item.key) {
+                    <li class="cc-rim-item" [attr.data-item]="item.key">
+                      <label class="checkbox-label align-start cc-rim-row">
+                        <input type="checkbox" [id]="'cc-rim-' + entry.id + '-' + item.key"
+                               [checked]="isIncluded(entry.id, item.key)"
+                               (change)="onToggle(entry.id, item.key, $event)">
+                        <span class="cc-rim-text">
+                          <span class="cc-rim-label">{{ item.label }}</span>
+                          @if (item.value) {
+                            <span class="cc-rim-value"> — {{ item.value }}</span>
+                          }
+                        </span>
+                      </label>
+                    </li>
+                  }
+                </ul>
+              </div>
+              <p class="cc-rim-count" role="status">{{ countText(entry.id) }}</p>
+            </div>
+          }
+
+          <div class="cc-rim-group cc-rim-group-details" role="group" aria-labelledby="cc-rim-details-caption">
+            <div class="cc-rim-group-head">
+              <p class="cc-rim-caption" id="cc-rim-details-caption">Image details</p>
+              <span class="cc-rim-bulk">
+                <button type="button" class="btn-link cc-rim-details-all" (click)="selectAllDetails()">All<span class="visually-hidden"> image details</span></button>
+                <button type="button" class="btn-link cc-rim-details-none" (click)="selectNoDetails()">None<span class="visually-hidden"> of the image details</span></button>
+              </span>
+            </div>
+            <ul class="cc-rim-list" role="list">
+              @for (detail of details; track detail.key) {
+                <li class="cc-rim-item" [attr.data-detail]="detail.key">
+                  <label class="checkbox-label cc-rim-row">
+                    <input type="checkbox" [id]="'cc-rim-detail-' + detail.key"
+                           [checked]="isDetailIncluded(detail.key)"
+                           (change)="onDetailToggle(detail.key, $event)">
+                    {{ detail.label }}
+                  </label>
+                </li>
+              }
+            </ul>
+          </div>
+          <p class="cc-rim-count cc-rim-detail-count" role="status">{{ detailCountText }}</p>
+          <p class="cc-rim-hint">Around every section's image. Remembered in this browser for every analysis.</p>
+
+          <fieldset class="gh-choice cc-rim-scheme">
+            <legend>Colors</legend>
+            @for (option of schemes; track option.value) {
+              <label class="gh-radio">
+                <input type="radio" name="cc-rim-scheme" [id]="'cc-rim-scheme-' + option.value"
+                       [value]="option.value" [checked]="settings.scheme === option.value"
+                       (change)="onSchemeChange(option.value)">
+                {{ option.label }}
+              </label>
+            }
+          </fieldset>
+        </div>
+
+        <div class="cc-rim-column cc-rim-file">
+          <h4 class="cc-rim-column-title" id="cc-rim-file-title">Image file</h4>
+          <app-export-format-section idPrefix="cc-rim-fmt"
+                                     note="Copy always places a PNG on the clipboard."
+                                     [format]="settings.format" [webpQuality]="settings.webpQuality"
+                                     [open]="fileSections.format"
+                                     (formatChange)="onFormatChange($event)" (qualityChange)="onQualityChange($event)"
+                                     (openChange)="onFileSectionOpenChange('format', $event)" (reset)="onFormatReset()" />
+          <!-- [title] binds the input only, so the host element carries no native title tooltip. -->
+          <app-export-size-section [title]="'Image size'" idPrefix="cc-rim-size" [allowFit]="true"
+                                   fitLabel="Fit the content"
+                                   fitHint="The image is 1280 px wide and as tall as the section needs; density sets its sharpness."
+                                   [showTextSize]="true"
+                                   textSizeHint="A larger text size lays the section out in a smaller box at the same pixel size."
+                                   [displayDensity]="displayDensity" errorNoun="image" layoutRule="plain"
+                                   [settings]="settings.size" [defaults]="sizeDefaults" [open]="fileSections.size"
+                                   [refusal]="sizeRefusal"
+                                   (settingsChange)="onSizeChange($event)" (openChange)="onFileSectionOpenChange('size', $event)"
+                                   (reset)="onSizeReset()" />
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer cc-rim-footer">
+      <p class="cc-rim-summary" id="cc-rim-summary">{{ summary }}</p>
+      <button type="button" class="btn-gh btn-gh-cancel cc-rim-done" (click)="done()">Done</button>
+    </div>
+  </div>
+</dialog>

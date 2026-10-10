@@ -48,6 +48,9 @@ public class ChatConsistencyAnalysisServiceTests
         public bool Controls { get; init; } = true;
         public double ComparisonDurationFactor { get; init; } = 1.0;
 
+        /// <summary>Hours added to the start of every comparison-period run, its controls' included.</summary>
+        public double ComparisonHourOffset { get; init; }
+
         /// <summary>Six more runs of the subject inside the periods, #5–#10, for the run-selection tests.</summary>
         public bool SelectionRuns { get; init; }
     }
@@ -178,21 +181,23 @@ public class ChatConsistencyAnalysisServiceTests
         Func<int, int> steady = q => 85 + q % 5 - 2;
         Func<int, int> dropped = q => 55 + q % 5 - 2;
         DateTime baseline2 = scenario.BaselineOnOneDay ? BaselineDay1.AddHours(1) : BaselineDay2;
+        DateTime comparison1 = ComparisonDay1.AddHours(scenario.ComparisonHourOffset);
+        DateTime comparison2 = ComparisonDay2.AddHours(scenario.ComparisonHourOffset);
 
         var runs = new List<BenchmarkRun>
         {
             Run(1, BaselineDay1, subject, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"),
             Run(2, baseline2, subject, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gpt-test-2026-09-01"),
-            Run(3, ComparisonDay1, subject, assessor, guidesAfter, scenario.QualityDrop ? dropped : steady, scenario.Legacy, scenario.ComparisonDurationFactor, "gpt-test-2026-09-01"),
-            Run(4, ComparisonDay2, subject, assessor, guidesAfter, scenario.QualityDrop ? dropped : steady, scenario.Legacy, scenario.ComparisonDurationFactor, "gpt-test-2026-09-01")
+            Run(3, comparison1, subject, assessor, guidesAfter, scenario.QualityDrop ? dropped : steady, scenario.Legacy, scenario.ComparisonDurationFactor, "gpt-test-2026-09-01"),
+            Run(4, comparison2, subject, assessor, guidesAfter, scenario.QualityDrop ? dropped : steady, scenario.Legacy, scenario.ComparisonDurationFactor, "gpt-test-2026-09-01")
         };
 
         if (scenario.Controls)
         {
             runs.Add(Run(11, BaselineDay1.AddHours(1), control, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gemini-control-001"));
             runs.Add(Run(12, BaselineDay2.AddHours(1), control, assessor, GuidesBefore, steady, scenario.Legacy, 1.0, "gemini-control-001"));
-            runs.Add(Run(13, ComparisonDay1.AddHours(1), control, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gemini-control-001"));
-            runs.Add(Run(14, ComparisonDay2.AddHours(1), control, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gemini-control-001"));
+            runs.Add(Run(13, comparison1.AddHours(1), control, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gemini-control-001"));
+            runs.Add(Run(14, comparison2.AddHours(1), control, assessor, guidesAfter, steady, scenario.Legacy, 1.0, "gemini-control-001"));
         }
 
         if (scenario.SelectionRuns)
@@ -271,6 +276,54 @@ public class ChatConsistencyAnalysisServiceTests
     }
 
     [Fact]
+    public async Task ASummaryCarriesTheSubjectAndTheEndpointVerdictsOfItsResult()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var summary = Assert.Single(await service.ListAnalysesAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(5, summary.AnalysisCodeVersion);
+        Assert.NotNull(summary.Subject);
+        Assert.Equal(result.Subject.DisplayName, summary.Subject!.DisplayName);
+        Assert.Equal("OpenAI", summary.Subject.Provider);
+        Assert.Equal("gpt-test", summary.Subject.ModelId);
+        Assert.Equal(result.Subject.ThinkingLevel, summary.Subject.ThinkingLevel);
+        Assert.Equal(result.Subject.ServiceTier, summary.Subject.ServiceTier);
+        Assert.Equal(
+            result.Endpoints.Select(e => (e.Id, e.Name, e.Computed, e.VerdictLabel, e.Grade)).ToList(),
+            summary.Endpoints.Select(e => (e.Id, e.Name, e.Computed, e.VerdictLabel, e.Grade)).ToList());
+
+        var p1 = Assert.Single(summary.Endpoints, e => e.Id == ChatConsistencyEndpointIds.Quality);
+        Assert.Equal("degraded", p1.VerdictLabel);
+        Assert.Equal(ChatConsistencyEvidenceGrade.Indicated, p1.Grade);
+    }
+
+    [Fact]
+    public async Task ASummaryOfAStoredResultWithoutSubjectOrEndpointsHasNone()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true });
+        var service = Service(db);
+        var result = await service.AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
+        var json = JsonNode.Parse(row.ResultJson)!.AsObject();
+        Assert.True(json.Remove("subject"));
+        Assert.True(json.Remove("endpoints"));
+        row.ResultJson = json.ToJsonString();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var summary = Assert.Single(await service.ListAnalysesAsync(TestContext.Current.CancellationToken));
+
+        Assert.Null(summary.Subject);
+        Assert.Empty(summary.Endpoints);
+        Assert.Equal(result.Headline, summary.Headline);
+    }
+
+    [Fact]
     public async Task TwoAnalysesOfTheSameInputsStoreTheSameResultAndFingerprint()
     {
         using var db = NewDb();
@@ -303,6 +356,39 @@ public class ChatConsistencyAnalysisServiceTests
         Assert.Contains("; cost ", result.Headline);
         Assert.Contains(" within weekdays 08–12 UTC", result.Headline);
         Assert.True(result.Scope.OneTimeStratum);
+    }
+
+    [Fact]
+    public async Task WithoutACommonTimeStratumTheHeadlineSaysThePeriodsShareNone()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { ComparisonHourOffset = 12 });
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        Assert.Empty(result.Scope.StrataIndexes);
+        Assert.Contains("; cost ", result.Headline);
+        Assert.Contains("; the periods share no common time stratum", result.Headline);
+        Assert.DoesNotContain(" within ", result.Headline);
+    }
+
+    [Fact]
+    public async Task CountsInTheTextsAgreeWithTheirNumbers()
+    {
+        using var db = NewDb();
+        string key = Seed(db, new Scenario { QualityDrop = true, BaselineOnOneDay = true });
+
+        var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
+
+        var p1 = EndpointOf(result, ChatConsistencyEndpointIds.Quality);
+        Assert.StartsWith("baseline 2 runs on 1 day, comparison 2 runs on 2 days, 24 paired items; the minimum is ", p1.MinimumSampleDetail);
+        Assert.Contains(p1.RobustnessChecks, c => c.Name == "Runs on separate days"
+            && c.Detail == "Baseline 2 runs on 1 day; comparison 2 runs on 2 days.");
+        Assert.Contains(result.NextRuns, n => n.Period == "baseline" && n.Reason == "The baseline has 2 runs on 1 day.");
+
+        string json = JsonSerializer.Serialize(result, ChatConsistencyJson.Options);
+        Assert.DoesNotContain("(s)", json);
+        Assert.DoesNotContain(".).", json);
     }
 
     [Fact]
@@ -830,8 +916,8 @@ public class ChatConsistencyAnalysisServiceTests
 
         var result = await Service(db).AnalyzeAsync(Request(key) with { ComparisonSet = BatterySet() }, TestContext.Current.CancellationToken);
 
-        Assert.Equal(4, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
-        Assert.Equal(4, result.AnalysisCodeVersion);
+        Assert.Equal(5, ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion);
+        Assert.Equal(5, result.AnalysisCodeVersion);
         Assert.Equal(ChatConsistencyComparisonSetKinds.BatteryRunUnit, result.UnitKind);
         Assert.Equal(BatteryKey(TwoSuites()), result.ComparisonSet!.Key);
         Assert.Equal(BatteryName + " (revision 1)", result.ComparisonSet.Label);
@@ -852,7 +938,7 @@ public class ChatConsistencyAnalysisServiceTests
 
         var row = Assert.Single(db.ChatConsistencyAnalyses.ToList());
         Assert.Equal("[1,2,3,4,21,22,23,24]", row.TargetRunIdsJson);
-        Assert.Equal(4, row.AnalysisCodeVersion);
+        Assert.Equal(5, row.AnalysisCodeVersion);
 
         var summary = Assert.Single(await Service(db).ListAnalysesAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BatteryKey(TwoSuites()), summary.ComparisonSetKey);

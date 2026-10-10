@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.ChatConsistency;
@@ -12,27 +13,32 @@ using Overseer.Services.ChatConsistency;
 // The fact sheet of a chat consistency document: one saved chat consistency analysis, its model the
 // subject and its control models the peers, lettered A, B, … by control subject key (ordinal). Every
 // free text the analysis wrote is lettered as the comparison scope letters it, so a control's name
-// never reaches the writer. Indexed keys count from 1 in the analysis's own order.
+// never reaches the writer. Indexed keys count from 1 in the analysis's own order. Numbers print a
+// minus as U+2212 and keep their unit on the same line with a no-break space (U+00A0): "−7.6 %".
 //
 // Fact keys (sorted by key, ordinal, on the sheet):
 //
-//   analysis.id, .name, .inputSha256, .codeVersion, .relaxedPooling, .compared (code version 4 on, with a comparison set)
+//   analysis.id, .name, .inputSha256, .codeVersion, .savedAt, .relaxedPooling, .compared (code version 4 on, with a comparison set)
+//     analysis.inputSha256 stays on the sheet but never reaches the writer or a rendered block (WriterHidden)
 //   subject.label, .provider, .modelId, .thinkingLevel, .serviceTier
-//   verdict.overall, .quality, .headline, .reliabilityIncreases
+//   verdict.overall, .short, .quality, .headline, .reliabilityIncreases
 //   scope.hours, .excludedShare, .oneTimeStratum
 //   coverage.strata.count, coverage.strata.<n>, coverage.usBusinessHours, .outsideBusinessHours
-//   period.<baseline|comparison>.start, .end, .runs, .days, .items, .answers, .legacyRuns, .suites
+//   period.<baseline|comparison>.start, .end, .runs, .units, .unitNoun, .memberRuns, .days, .items, .answers, .legacyRuns, .suites
+//   sample.minimumUnits, .minimumDays, .minimumPairedItems, .met, .shortfall (only when not met)
 //   protocol.version, .label, .alpha, .overridden, protocol.margin.<P1..P5>
 //   n.targetRuns, n.controlRuns, n.answers
 //   endpoint.<P1..P5>.name, .verdict, .grade, .estimate, .percent (log scale), .ci95, .ci95Low, .ci95High,
-//     .ci90, .p, .adjustedP, .mde, .runsForMargin, .runs, .items, .legacyProxy, .commonGrader, .minimumSampleMet
+//     .ci90, .p, .adjustedP, .mde, .mdeNote, .runsForMargin, .runs, .items, .legacyProxy, .commonGrader, .minimumSampleMet
 //   quality.dimensions.<d>.*, quality.criticalErrors.*, flip.*   secondary results of the quality detail family
 //   quality.commonGrader
 //   grader.drift.count, grader.drift.<n>.anchorRun, .grader, .earliest, .latest, .drift, .items, .withinMargin
 //   reliability.<id>.name, .baseline, .comparison, .p, .adjustedP, .increased, .establishedIncrease
 //   tools.<id>.*                                   secondary results of the tool-use family
 //   secondary.<family>.<id>.*, secondary.<family>.note   every other secondary family
-//   events.count, events.<n>.at, .kind, .label, .from, .to, .run, .previousRun, .series
+//   events.count, events.<n>.at, .kind, .label, .change, .run, .previousRun, .series
+//     (sheets written before .change also stored the raw .from and .to; they never reach the writer)
+//   eventGroups.count, eventGroups.<n>.at, .run, .changes, .series   the events of one UTC day in one series
 //   controls.count, controls.<n>.model, .sameProvider, .runs, .periods   n is the control's letter, A = 1
 //   controls.missing.count, controls.missing.<n>.period, .suite, .suggestion, .targetRun
 //   did.count, did.<n>.endpoint, .model, .controlChange, .controlChangeCi95, .estimate, .ci95, .p,
@@ -89,8 +95,51 @@ public static class BenchmarkChatConsistencyReportFacts
 
     public const string ProviderIssueReportUnavailableReason = "No provider-side finding graded Established or Indicated in this analysis.";
 
+    /// <summary>The minus sign of every number display: U+2212, never a hyphen.</summary>
+    public const char Minus = '\u2212';
+
+    /// <summary>The space between a number and its unit: U+00A0, so the unit never wraps onto a line of its own.</summary>
+    public const char UnitSpace = '\u00A0';
+
+    /// <summary>The key of the analysis's input hash, kept on the sheet for the record only.</summary>
+    public const string InputSha256Key = "analysis.inputSha256";
+
     private const string Baseline = "baseline";
     private const string Comparison = "comparison";
+
+    private static readonly Regex InstrumentNote = new(@"\s*\(instrument [0-9a-fA-F]{12,}\)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex RawEventValueKey = new(@"^events\.\d+\.(?:from|to)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Whether a fact stays off the writer's fact list and out of every rendered block:
+    /// <see cref="InputSha256Key"/>, and the raw <c>events.&lt;n&gt;.from</c> and <c>.to</c> a sheet written
+    /// before <c>events.&lt;n&gt;.change</c> carries, whose values are hashes and JSON.
+    /// </summary>
+    public static bool WriterHidden(string? key)
+        => key != null && (string.Equals(key, InputSha256Key, StringComparison.Ordinal) || RawEventValueKey.IsMatch(key));
+
+    /// <summary>A control suggestion without its <c>(instrument &lt;hex&gt;)</c> note.</summary>
+    public static string WithoutInstrument(string? text)
+        => InstrumentNote.Replace(text ?? string.Empty, string.Empty);
+
+    /// <summary>
+    /// The analysis's outcome in a few words, as the Results tab titles it: <c>The chat changed</c> when an
+    /// endpoint's verdict decides a change, <c>Nothing could be computed</c>, <c>No meaningful change</c> or
+    /// <c>No change on the computed endpoints</c> when every computed endpoint stayed within its margin,
+    /// else <c>Not enough evidence yet</c>.
+    /// </summary>
+    public static string OutcomeTitle(IReadOnlyList<ChatConsistencyEndpointResult> endpoints)
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        var computed = endpoints.Where(e => e.Computed).ToList();
+        if (computed.Any(e => e.VerdictLabel is "degraded" or "improved" or "more work" or "less work")) return "The chat changed";
+        if (computed.Count == 0) return "Nothing could be computed";
+        if (computed.All(e => e.VerdictLabel is "equivalent" or "changed, negligible"))
+        {
+            return computed.Count == endpoints.Count ? "No meaningful change" : "No change on the computed endpoints";
+        }
+        return "Not enough evidence yet";
+    }
 
     /// <summary><c>Overseer Chat Consistency Report: &lt;model&gt;</c>.</summary>
     public static string Title(ChatConsistencyAnalysisResult result)
@@ -188,8 +237,9 @@ public static class BenchmarkChatConsistencyReportFacts
         AddVerdict(facts, result);
         AddScope(facts, result.Scope ?? new ChatConsistencyScope());
         AddCompared(facts, result);
-        AddPeriod(facts, Baseline, result.Baseline ?? new ChatConsistencyPeriodSummary());
-        AddPeriod(facts, Comparison, result.Comparison ?? new ChatConsistencyPeriodSummary());
+        AddPeriod(facts, Baseline, result.Baseline ?? new ChatConsistencyPeriodSummary(), result);
+        AddPeriod(facts, Comparison, result.Comparison ?? new ChatConsistencyPeriodSummary(), result);
+        AddSample(facts, result);
         AddProtocol(facts, result);
         AddCounts(facts, result);
         foreach (var endpoint in result.Endpoints) AddEndpoint(facts, endpoint);
@@ -198,6 +248,7 @@ public static class BenchmarkChatConsistencyReportFacts
         AddGraderDrift(facts, result.GraderDrift);
         AddReliability(facts, result.Reliability);
         AddEvents(facts, ctx);
+        AddEventGroups(facts, ctx);
         AddControls(facts, ctx, controls);
         AddRobustness(facts, ctx);
         AddServing(facts, result);
@@ -349,9 +400,10 @@ public static class BenchmarkChatConsistencyReportFacts
         if (!string.IsNullOrWhiteSpace(result.Name)) facts.Add("analysis.name", result.Name, result.Name);
         if (!string.IsNullOrWhiteSpace(result.InputSha256))
         {
-            facts.Add("analysis.inputSha256", result.InputSha256, result.InputSha256[..Math.Min(16, result.InputSha256.Length)]);
+            facts.Add(InputSha256Key, result.InputSha256, result.InputSha256[..Math.Min(16, result.InputSha256.Length)]);
         }
         facts.Add("analysis.codeVersion", result.AnalysisCodeVersion, Inv(result.AnalysisCodeVersion));
+        if (result.CreatedAtUtc is DateTime saved) facts.Add("analysis.savedAt", Iso(saved), When(saved));
 
         bool relaxed = result.Endpoints.Any(e => e.RelaxedPooling);
         facts.Add("analysis.relaxedPooling", relaxed, relaxed
@@ -390,8 +442,10 @@ public static class BenchmarkChatConsistencyReportFacts
     {
         string overall = OverallVerdict(result.Endpoints);
         var parts = result.Endpoints.Select(e => LowerFirst(e.Name) + " "
-            + (e.Computed ? e.VerdictLabel + " (" + GradeText(e.Grade) + ")" : "not computable"));
+            + (e.Computed ? e.VerdictLabel + " (" + GradeText(e.Grade).ToLowerInvariant() + ")" : "not computable"));
         facts.Add("verdict.overall", overall, UpperFirst(overall) + (result.Endpoints.Count > 0 ? ": " + string.Join("; ", parts) : string.Empty));
+        string outcome = OutcomeTitle(result.Endpoints);
+        facts.Add("verdict.short", outcome, outcome);
 
         var quality = result.Endpoints.FirstOrDefault(e => e.Id == ChatConsistencyEndpointIds.Quality);
         if (quality == null) facts.Unavailable("verdict.quality", "The analysis has no quality endpoint.");
@@ -458,12 +512,56 @@ public static class BenchmarkChatConsistencyReportFacts
         facts.Add("analysis.compared", set.Key, (battery ? "Battery " : "Suite ") + label + ", " + count);
     }
 
-    private static void AddPeriod(BenchmarkReportFacts.FactList facts, string name, ChatConsistencyPeriodSummary period)
+    /// <summary><c>battery run</c> when the analysis compares battery runs, else <c>run</c>.</summary>
+    public static string UnitNounOf(ChatConsistencyAnalysisResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return result.UnitKind == ChatConsistencyComparisonSetKinds.BatteryRunUnit ? "battery run" : "run";
+    }
+
+    /// <summary>The analyzed units of a period, ordered by start, then id; the period's runs as run units when the result lists none.</summary>
+    private static List<ChatConsistencyUnitView> UnitsOf(ChatConsistencyAnalysisResult result, string name, ChatConsistencyPeriodSummary period)
+    {
+        var units = (result.Units ?? Array.Empty<ChatConsistencyUnitView>())
+            .Where(u => string.Equals(u.Period, name, StringComparison.Ordinal))
+            .OrderBy(u => u.StartedAtUtc)
+            .ThenBy(u => u.UnitId)
+            .ToList();
+        if (units.Count > 0) return units;
+
+        return (period.RunIds ?? Array.Empty<long>()).Distinct().OrderBy(id => id)
+            .Select(id => new ChatConsistencyUnitView { UnitId = id, Kind = ChatConsistencyComparisonSetKinds.RunUnit, Period = name, MemberRunIds = new[] { id } })
+            .ToList();
+    }
+
+    /// <summary>The count of a period's analyzed units; its run count when the result lists neither units nor run ids.</summary>
+    private static int UnitCountOf(ChatConsistencyAnalysisResult result, string name, ChatConsistencyPeriodSummary period)
+    {
+        int units = UnitsOf(result, name, period).Count;
+        return units > 0 ? units : period.RunCount;
+    }
+
+    private static void AddPeriod(BenchmarkReportFacts.FactList facts, string name, ChatConsistencyPeriodSummary period, ChatConsistencyAnalysisResult result)
     {
         string p = "period." + name + ".";
         facts.Add(p + "start", Iso(period.StartUtc), When(period.StartUtc));
         facts.Add(p + "end", Iso(period.EndUtc), When(period.EndUtc));
         facts.Add(p + "runs", period.RunCount, Runs(period.RunCount));
+
+        string noun = UnitNounOf(result);
+        bool battery = noun == "battery run";
+        var units = UnitsOf(result, name, period);
+        int unitCount = UnitCountOf(result, name, period);
+        facts.Add(p + "units", unitCount, Plural(unitCount, noun));
+        facts.Add(p + "unitNoun", noun, noun);
+
+        var members = units.SelectMany(u => u.MemberRunIds).Distinct().ToList();
+        string memberText = units.Count == 0
+            ? "no run"
+            : battery
+                ? string.Join("; ", units.Select(u => "battery run #" + Inv(u.UnitId) + " (" + RunList(u.MemberRunIds) + ")"))
+                : RunList(members);
+        facts.Add(p + "memberRuns", members.Count, memberText);
         facts.Add(p + "days", period.Days.Count, period.Days.Count == 0
             ? "no run day"
             : Inv(period.Days.Count) + (period.Days.Count == 1 ? " day: " : " days: ") + string.Join(", ", period.Days));
@@ -471,6 +569,53 @@ public static class BenchmarkChatConsistencyReportFacts
         facts.Add(p + "answers", period.AnswerCount, Inv(period.AnswerCount) + (period.AnswerCount == 1 ? " answer" : " answers"));
         facts.Add(p + "legacyRuns", period.LegacyRunCount, Inv(period.LegacyRunCount) + " of " + Runs(period.RunCount) + " without call telemetry");
         facts.Add(p + "suites", period.SuiteNames.Count, period.SuiteNames.Count == 0 ? "no suite" : string.Join(", ", period.SuiteNames));
+    }
+
+    /// <summary>
+    /// The protocol's minimum sample for quality, work and cost (P1, P4, P5) against the analyzed units:
+    /// <c>sample.minimumUnits</c>, <c>.minimumDays</c>, <c>.minimumPairedItems</c>, <c>.met</c>, and while it
+    /// is not met <c>sample.shortfall</c>, <c>1 battery run per period on 1 day; the minimum is 2 battery
+    /// runs on 2 days per period and 20 paired items</c>. The paired items count only where one of those
+    /// endpoints was computed.
+    /// </summary>
+    private static void AddSample(BenchmarkReportFacts.FactList facts, ChatConsistencyAnalysisResult result)
+    {
+        var protocol = result.Protocol ?? ChatConsistencyProtocol.V1;
+        string noun = UnitNounOf(result);
+        var baseline = result.Baseline ?? new ChatConsistencyPeriodSummary();
+        var comparison = result.Comparison ?? new ChatConsistencyPeriodSummary();
+        int unitsB = UnitCountOf(result, Baseline, baseline);
+        int unitsC = UnitCountOf(result, Comparison, comparison);
+        int daysB = baseline.Days.Count;
+        int daysC = comparison.Days.Count;
+        int? paired = result.Endpoints
+            .Where(e => e.Computed && e.Id is ChatConsistencyEndpointIds.Quality or ChatConsistencyEndpointIds.Work or ChatConsistencyEndpointIds.Cost)
+            .Select(e => (int?)e.ItemCount)
+            .Max();
+
+        facts.Add("sample.minimumUnits", protocol.MinimumRunsPerPeriod, Plural(protocol.MinimumRunsPerPeriod, noun) + " per period");
+        facts.Add("sample.minimumDays", protocol.MinimumDaysPerPeriod, Plural(protocol.MinimumDaysPerPeriod, "day") + " per period");
+        facts.Add("sample.minimumPairedItems", protocol.MinimumPairedItems, Plural(protocol.MinimumPairedItems, "paired item"));
+
+        bool met = unitsB >= protocol.MinimumRunsPerPeriod && unitsC >= protocol.MinimumRunsPerPeriod
+                   && daysB >= protocol.MinimumDaysPerPeriod && daysC >= protocol.MinimumDaysPerPeriod
+                   && (paired is not int items || items >= protocol.MinimumPairedItems);
+        string minimum = Plural(protocol.MinimumRunsPerPeriod, noun) + " on " + Plural(protocol.MinimumDaysPerPeriod, "day")
+            + " per period and " + Plural(protocol.MinimumPairedItems, "paired item");
+        facts.Add("sample.met", met, met ? "met: at least " + minimum : "not met: the minimum is " + minimum);
+
+        if (met)
+        {
+            facts.Unavailable("sample.shortfall", "The runs meet the minimum sample of " + minimum + ".");
+            return;
+        }
+
+        string have = unitsB == unitsC && daysB == daysC
+            ? Plural(unitsB, noun) + " per period on " + Plural(daysB, "day")
+            : "the baseline has " + Plural(unitsB, noun) + " on " + Plural(daysB, "day") + " and the comparison "
+              + Plural(unitsC, noun) + " on " + Plural(daysC, "day");
+        if (paired is int pairedItems && pairedItems < protocol.MinimumPairedItems) have += ", with " + Plural(pairedItems, "paired item");
+        facts.Text("sample.shortfall", have + "; the minimum is " + minimum);
     }
 
     private static string ProtocolLabelOf(ChatConsistencyAnalysisResult result)
@@ -489,7 +634,10 @@ public static class BenchmarkChatConsistencyReportFacts
 
         foreach (var endpoint in protocol.Endpoints)
         {
-            facts.Add("protocol.margin." + endpoint.Id, endpoint.Margin, endpoint.MarginText);
+            // "±3 index points": the unit kept on the line of its number.
+            string margin = endpoint.MarginText;
+            int space = margin.IndexOf(' ', StringComparison.Ordinal);
+            facts.Add("protocol.margin." + endpoint.Id, endpoint.Margin, space > 0 ? margin[..space] + UnitSpace + margin[(space + 1)..] : margin);
         }
     }
 
@@ -523,7 +671,7 @@ public static class BenchmarkChatConsistencyReportFacts
             : "measured directly");
         facts.Add(p + "commonGrader", e.CommonGrader, e.CommonGrader ? "under one common grader" : "without a common grader");
         facts.Add(p + "minimumSampleMet", e.MinimumSampleMet, (e.MinimumSampleMet ? "met" : "not met")
-            + (string.IsNullOrWhiteSpace(e.MinimumSampleDetail) ? string.Empty : ": " + e.MinimumSampleDetail));
+            + (string.IsNullOrWhiteSpace(e.MinimumSampleDetail) ? string.Empty : ": " + e.MinimumSampleDetail.Trim().TrimEnd('.')));
 
         string[] figures = log
             ? new[] { "estimate", "percent", "ci95", "ci95Low", "ci95High", "ci90", "p", "adjustedP", "mde", "runsForMargin" }
@@ -535,15 +683,17 @@ public static class BenchmarkChatConsistencyReportFacts
             return;
         }
 
-        Func<double, string> change = log ? v => SignedPercent(PercentOf(v)) : v => BenchmarkReportFormat.SignedOneDecimal(v) + " " + e.Unit;
-        facts.Add(p + "estimate", estimate, log
-            ? SignedPercent(e.EstimatePercent ?? PercentOf(estimate)) + " (log ratio " + SignedThree(estimate) + ")"
-            : change(estimate));
+        // A change in the endpoint's unit, or in percent for a ratio; an interval names its unit once.
+        string unit = log ? "%" : e.Unit;
+        Func<double, string> number = log ? v => SignedOne(PercentOf(v)) : v => SignedOne(v);
+        Func<double, string> change = v => WithUnit(number(v), unit);
+        Func<ChatConsistencyInterval, string> interval = ci => WithUnit(number(ci.Lower) + " to " + number(ci.Upper), unit);
+        facts.Add(p + "estimate", estimate, log ? SignedPercent(e.EstimatePercent ?? PercentOf(estimate)) : change(estimate));
         if (log) facts.Add(p + "percent", e.EstimatePercent ?? PercentOf(estimate), SignedPercent(e.EstimatePercent ?? PercentOf(estimate)));
 
         if (e.Ci95 is { } ci95 && double.IsFinite(ci95.Lower) && double.IsFinite(ci95.Upper))
         {
-            facts.Text(p + "ci95", change(ci95.Lower) + " to " + change(ci95.Upper));
+            facts.Text(p + "ci95", interval(ci95));
             facts.Add(p + "ci95Low", ci95.Lower, change(ci95.Lower));
             facts.Add(p + "ci95High", ci95.Upper, change(ci95.Upper));
         }
@@ -552,7 +702,7 @@ public static class BenchmarkChatConsistencyReportFacts
             foreach (string figure in new[] { "ci95", "ci95Low", "ci95High" }) facts.Unavailable(p + figure, "No 95 % interval was computed.");
         }
 
-        if (e.Ci90 is { } ci90 && double.IsFinite(ci90.Lower) && double.IsFinite(ci90.Upper)) facts.Text(p + "ci90", change(ci90.Lower) + " to " + change(ci90.Upper));
+        if (e.Ci90 is { } ci90 && double.IsFinite(ci90.Lower) && double.IsFinite(ci90.Upper)) facts.Text(p + "ci90", interval(ci90));
         else facts.Unavailable(p + "ci90", "No 90 % interval was computed.");
 
         AddP(facts, p + "p", e.PValue, "No p-value was computed.");
@@ -563,7 +713,8 @@ public static class BenchmarkChatConsistencyReportFacts
             : e.MinimumDetectableEffect;
         if (mde is double value && double.IsFinite(value))
         {
-            facts.Add(p + "mde", value, BenchmarkReportFormat.OneDecimal(value) + (log ? " %" : " " + e.Unit));
+            facts.Add(p + "mde", value, WithUnit("±" + BenchmarkReportFormat.OneDecimal(Math.Abs(value)), unit));
+            if (!string.IsNullOrWhiteSpace(e.MinimumDetectableEffectNote)) facts.Text(p + "mdeNote", e.MinimumDetectableEffectNote.Trim());
         }
         else
         {
@@ -651,14 +802,13 @@ public static class BenchmarkChatConsistencyReportFacts
         unit = (unit ?? string.Empty).Trim();
         if (unit.StartsWith("share of", StringComparison.Ordinal))
         {
-            return (Share, v => BenchmarkReportFormat.SignedOneDecimal(v * 100.0) + " percentage points");
+            return (Share, v => WithUnit(SignedOne(v * 100.0), "percentage points"));
         }
         if (unit == "log ratio")
         {
             return (Number, v => SignedPercent(PercentOf(v)));
         }
-        string suffix = unit.Length == 0 ? string.Empty : " " + unit;
-        return (v => Number(v) + suffix, v => SignedTwo(v) + suffix);
+        return (v => WithUnit(Number(v), unit), v => WithUnit(SignedTwo(v), unit));
     }
 
     private static void AddCommonGrader(BenchmarkReportFacts.FactList facts, ChatConsistencyCommonGrader? grader)
@@ -688,7 +838,7 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Add(p + "grader", d.Display, d.Display);
             facts.Add(p + "earliest", Iso(d.EarliestAtUtc), When(d.EarliestAtUtc));
             facts.Add(p + "latest", Iso(d.LatestAtUtc), When(d.LatestAtUtc));
-            AddNumber(facts, p + "drift", d.Drift, v => BenchmarkReportFormat.SignedOneDecimal(v) + " index points");
+            AddNumber(facts, p + "drift", d.Drift, v => WithUnit(SignedOne(v), "index points"));
             facts.Add(p + "items", d.ItemCount, Items(d.ItemCount));
             facts.Add(p + "withinMargin", d.WithinMargin, d.WithinMargin ? "within the grader-drift margin" : "outside the grader-drift margin");
         }
@@ -734,14 +884,44 @@ public static class BenchmarkChatConsistencyReportFacts
             var e = events[i];
             string p = "events." + Inv(i + 1) + ".";
             facts.Add(p + "at", Iso(e.AtUtc), When(e.AtUtc));
-            facts.Add(p + "kind", e.Kind, e.Kind);
+            facts.Add(p + "kind", e.Kind, ChatConsistencyEventText.Label(e.Kind));
             facts.Add(p + "label", ctx.Lettered(e.Label), ctx.Lettered(e.Label));
-            if (!string.IsNullOrWhiteSpace(e.From)) facts.Add(p + "from", e.From, e.From);
-            if (!string.IsNullOrWhiteSpace(e.To)) facts.Add(p + "to", e.To, e.To);
+            facts.Text(p + "change", ChatConsistencyEventText.Describe(e.Kind, e.From, e.To));
             facts.Add(p + "run", e.RunId, RunText(e.RunId));
             facts.Add(p + "previousRun", e.PreviousRunId, RunText(e.PreviousRunId));
             string series = e.InTargetSeries ? "the model under test" : ModelOf(ctx, e.SubjectKey);
             facts.Add(p + "series", e.InTargetSeries ? "target" : "control", series);
+        }
+    }
+
+    /// <summary>
+    /// The events grouped into Overseer updates: one group per UTC day and series, in time order, its
+    /// time the earliest event's, its runs those the events were first seen at, and its changes the
+    /// events' <see cref="ChatConsistencyEventText.Describe"/>, joined with <c>; </c>.
+    /// </summary>
+    private static void AddEventGroups(BenchmarkReportFacts.FactList facts, Context ctx)
+    {
+        var groups = ctx.Result.Events
+            .GroupBy(e => (Day: e.AtUtc.Date, Series: e.InTargetSeries ? string.Empty : e.SubjectKey ?? string.Empty))
+            .Select(g => g.OrderBy(e => e.AtUtc).ThenBy(e => e.RunId).ToList())
+            .OrderBy(g => g[0].AtUtc)
+            .ThenBy(g => g[0].RunId)
+            .ThenBy(g => g[0].InTargetSeries ? 0 : 1)
+            .ToList();
+
+        facts.Add("eventGroups.count", groups.Count, groups.Count == 1 ? "1 Overseer update" : Inv(groups.Count) + " Overseer updates");
+        for (int i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            var first = group[0];
+            string p = "eventGroups." + Inv(i + 1) + ".";
+            var runs = group.Select(e => e.RunId).Distinct().OrderBy(id => id).ToList();
+            var changes = group.Select(e => ChatConsistencyEventText.Describe(e.Kind, e.From, e.To)).Distinct(StringComparer.Ordinal);
+
+            facts.Add(p + "at", Iso(first.AtUtc), When(first.AtUtc));
+            facts.Add(p + "run", runs[0], RunList(runs));
+            facts.Text(p + "changes", string.Join("; ", changes));
+            facts.Add(p + "series", first.InTargetSeries ? "target" : "control", first.InTargetSeries ? "the model under test" : ModelOf(ctx, first.SubjectKey));
         }
     }
 
@@ -766,14 +946,15 @@ public static class BenchmarkChatConsistencyReportFacts
         }
 
         var missing = (ctx.Result.Controls ?? new ChatConsistencyControls()).MissingControls;
-        facts.Add("controls.missing.count", missing.Count, missing.Count == 1 ? "1 period without a control" : Inv(missing.Count) + " periods without a control");
+        facts.Add("controls.missing.count", missing.Count, Plural(missing.Count, "missing-control note"));
         for (int i = 0; i < missing.Count; i++)
         {
             var m = missing[i];
             string p = "controls.missing." + Inv(i + 1) + ".";
+            string suggestion = ctx.Lettered(WithoutInstrument(m.SuggestedText));
             facts.Add(p + "period", m.Period, m.Period);
             facts.Add(p + "suite", m.SuiteName, m.SuiteName);
-            facts.Add(p + "suggestion", ctx.Lettered(m.SuggestedText), ctx.Lettered(m.SuggestedText));
+            facts.Add(p + "suggestion", suggestion, suggestion);
             facts.Add(p + "targetRun", m.TargetRunId, RunText(m.TargetRunId));
         }
 
@@ -786,9 +967,10 @@ public static class BenchmarkChatConsistencyReportFacts
             string p = "did." + Inv(i + 1) + ".";
             var endpoint = protocol.Endpoints.FirstOrDefault(x => x.Id == e.EndpointId);
             bool log = endpoint?.Scale == ChatConsistencyEffectScale.LogRatio;
-            Func<double, string> change = log
-                ? v => SignedPercent(PercentOf(v))
-                : v => BenchmarkReportFormat.SignedOneDecimal(v) + (endpoint == null ? string.Empty : " " + endpoint.Unit);
+            string unit = log ? "%" : endpoint?.Unit ?? string.Empty;
+            Func<double, string> number = log ? v => SignedOne(PercentOf(v)) : v => SignedOne(v);
+            Func<double, string> change = v => WithUnit(number(v), unit);
+            Func<ChatConsistencyInterval, string> interval = ci => WithUnit(number(ci.Lower) + " to " + number(ci.Upper), unit);
 
             facts.Add(p + "endpoint", e.EndpointId, endpoint == null ? e.EndpointId : endpoint.Name + " (" + e.EndpointId + ")");
             facts.Add(p + "model", ModelOf(ctx, e.ControlSubjectKey), ModelOf(ctx, e.ControlSubjectKey));
@@ -796,12 +978,12 @@ public static class BenchmarkChatConsistencyReportFacts
 
             if (e.ControlChange is double cc && double.IsFinite(cc)) facts.Add(p + "controlChange", cc, change(cc));
             else facts.Unavailable(p + "controlChange", "The control's own change could not be estimated.");
-            if (e.ControlChangeCi95 is { } cci && double.IsFinite(cci.Lower) && double.IsFinite(cci.Upper)) facts.Text(p + "controlChangeCi95", change(cci.Lower) + " to " + change(cci.Upper));
+            if (e.ControlChangeCi95 is { } cci && double.IsFinite(cci.Lower) && double.IsFinite(cci.Upper)) facts.Text(p + "controlChangeCi95", interval(cci));
             else facts.Unavailable(p + "controlChangeCi95", "No interval was computed for the control's own change.");
 
             if (e.DidEstimate is double d && double.IsFinite(d)) facts.Add(p + "estimate", d, change(d));
             else facts.Unavailable(p + "estimate", "The difference in differences could not be estimated.");
-            if (e.DidCi95 is { } dci && double.IsFinite(dci.Lower) && double.IsFinite(dci.Upper)) facts.Text(p + "ci95", change(dci.Lower) + " to " + change(dci.Upper));
+            if (e.DidCi95 is { } dci && double.IsFinite(dci.Lower) && double.IsFinite(dci.Upper)) facts.Text(p + "ci95", interval(dci));
             else facts.Unavailable(p + "ci95", "No interval was computed for the difference in differences.");
             AddP(facts, p + "p", e.DidPValue, "No p-value was computed.");
 
@@ -878,8 +1060,8 @@ public static class BenchmarkChatConsistencyReportFacts
             string p = "ownWaits." + w.Period + ".";
             if (w.OwnWaitShare is double share && double.IsFinite(share)) facts.Add(p + "share", share, Share(share));
             else facts.Unavailable(p + "share", "No answer of the " + w.Period + " period has call telemetry.");
-            facts.Add(p + "permitWait", w.PermitWaitMs, BenchmarkReportFormat.Seconds(w.PermitWaitMs));
-            facts.Add(p + "backoffWait", w.BackoffWaitMs, BenchmarkReportFormat.Seconds(w.BackoffWaitMs));
+            facts.Add(p + "permitWait", w.PermitWaitMs, Seconds(w.PermitWaitMs));
+            facts.Add(p + "backoffWait", w.BackoffWaitMs, Seconds(w.BackoffWaitMs));
             facts.Add(p + "retries", w.RetryAttemptCount, Inv(w.RetryAttemptCount) + (w.RetryAttemptCount == 1 ? " retry attempt" : " retry attempts"));
             facts.Add(p + "answersWithTelemetry", w.AnswersWithTelemetry, Inv(w.AnswersWithTelemetry) + (w.AnswersWithTelemetry == 1 ? " answer" : " answers"));
         }
@@ -981,8 +1163,8 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Add(p + "kind", r.Kind, r.Kind);
             if (!string.IsNullOrWhiteSpace(r.Period)) facts.Add(p + "period", r.Period, r.Period);
             if (!string.IsNullOrWhiteSpace(r.EndpointId)) facts.Add(p + "endpoint", r.EndpointId, r.EndpointId);
-            if (!string.IsNullOrWhiteSpace(r.Reason)) facts.Text(p + "reason", ctx.Lettered(r.Reason));
-            if (!string.IsNullOrWhiteSpace(r.Suggestion)) facts.Text(p + "suggestion", ctx.Lettered(r.Suggestion));
+            if (!string.IsNullOrWhiteSpace(r.Reason)) facts.Text(p + "reason", ctx.Lettered(WithoutInstrument(r.Reason)));
+            if (!string.IsNullOrWhiteSpace(r.Suggestion)) facts.Text(p + "suggestion", ctx.Lettered(WithoutInstrument(r.Suggestion)));
             if (r.RepeatRunId is long repeat) facts.Add(p + "repeatRun", repeat, RunText(repeat));
         }
     }
@@ -1060,11 +1242,12 @@ public static class BenchmarkChatConsistencyReportFacts
     /// <summary>100 · (e^x − 1).</summary>
     private static double PercentOf(double logRatio) => 100.0 * (Math.Exp(logRatio) - 1.0);
 
-    private static string SignedPercent(double percent) => BenchmarkReportFormat.SignedOneDecimal(percent) + " %";
+    private static string SignedPercent(double percent) => WithUnit(SignedOne(percent), "%");
 
-    private static string Share(double share) => BenchmarkReportFormat.OneDecimal(share * 100.0) + " %";
+    private static string Share(double share) => WithUnit(BenchmarkReportFormat.OneDecimal(share * 100.0), "%");
 
-    private static string SignedThree(double value) => Signed(value, 3, "0.000");
+    /// <summary><see cref="BenchmarkReportFormat.SignedOneDecimal"/> with its minus as U+2212: "+16.8", "−2.0", "0.0".</summary>
+    private static string SignedOne(double value) => WithMinus(BenchmarkReportFormat.SignedOneDecimal(value));
 
     private static string SignedTwo(double value) => Signed(value, 2, "0.00");
 
@@ -1072,7 +1255,7 @@ public static class BenchmarkChatConsistencyReportFacts
     {
         double rounded = Math.Round(value, decimals, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
-        string text = rounded.ToString(format, CultureInfo.InvariantCulture);
+        string text = WithMinus(rounded.ToString(format, CultureInfo.InvariantCulture));
         return rounded > 0 ? "+" + text : text;
     }
 
@@ -1080,15 +1263,40 @@ public static class BenchmarkChatConsistencyReportFacts
     private static string Number(double value)
     {
         double abs = Math.Abs(value);
-        if (abs >= 100) return BenchmarkReportFormat.Count(value);
-        if (abs >= 1) return BenchmarkReportFormat.OneDecimal(value);
+        if (abs >= 100) return WithMinus(BenchmarkReportFormat.Count(value));
+        if (abs >= 1) return WithMinus(BenchmarkReportFormat.OneDecimal(value));
         double rounded = Math.Round(value, 3, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
-        return rounded.ToString("0.000", CultureInfo.InvariantCulture);
+        return WithMinus(rounded.ToString("0.000", CultureInfo.InvariantCulture));
     }
+
+    /// <summary>A formatted number with a leading hyphen-minus printed as U+2212.</summary>
+    private static string WithMinus(string number)
+        => number.StartsWith('-') ? Minus + number[1..] : number;
+
+    /// <summary>The number and its unit joined by a no-break space; the number alone without a unit.</summary>
+    private static string WithUnit(string number, string? unit)
+        => string.IsNullOrWhiteSpace(unit) ? number : number + UnitSpace + unit.Trim();
+
+    private static string Seconds(double milliseconds) => WithUnit(BenchmarkReportFormat.OneDecimal(milliseconds / 1000.0), "s");
 
     private static string Usd(decimal value)
         => "$" + Math.Round(value, 4, MidpointRounding.AwayFromZero).ToString("0.00##", CultureInfo.InvariantCulture);
+
+    /// <summary><c>1 battery run</c>, <c>2 battery runs</c>.</summary>
+    private static string Plural(int count, string noun) => Inv(count) + " " + (count == 1 ? noun : noun + "s");
+
+    /// <summary><c>run #10</c>, <c>runs #10 and #11</c>, <c>runs #10, #11 and #12</c>; <c>no run</c> for none.</summary>
+    private static string RunList(IReadOnlyCollection<long> runIds)
+    {
+        var ids = runIds.Distinct().OrderBy(id => id).Select(id => "#" + id.ToString(CultureInfo.InvariantCulture)).ToList();
+        return ids.Count switch
+        {
+            0 => "no run",
+            1 => "run " + ids[0],
+            _ => "runs " + BenchmarkReportFormat.LetterList(ids)
+        };
+    }
 
     private static string Runs(int count) => Inv(count) + (count == 1 ? " run" : " runs");
 
@@ -1107,4 +1315,6 @@ public static class BenchmarkChatConsistencyReportFacts
         => text.Length > 0 ? char.ToUpperInvariant(text[0]) + text[1..] : text;
 
     private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static string Inv(long value) => value.ToString(CultureInfo.InvariantCulture);
 }
