@@ -228,6 +228,7 @@ you already read the label, it is noise; drop it.
 | calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*) | Decorative, `aria-hidden`, never a button: the field's label names it, and the glyph says only "type to find" |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}* |
+| arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
 importing brings suites from the server's catalog into the application, which is the same
@@ -531,6 +532,12 @@ and whose **All** / **None** are `.btn-link`s. The Write step's **Update charts*
 glass cards (§4e-2 `chipStyle="card"`, §4e-3), each keeping its icon-only remove `.action-btn` (*x*).
 A card that a warning names carries an amber note led by *alert-triangle*: a status icon beside a word,
 as in `.gh-field-warning`, not a button glyph. No glyph is new.*
+
+*Changed 2026-10-10 (admin alerts): each `app-admin-alerts` card is a glass card whose severity is a
+glyph and a word (*alert-triangle* with *Warning*, *alert-circle* with *Error*), and whose dismiss is
+an icon-only `.action-btn` (*x*). One glyph is new, *arrow-right*, trailing the alert's link: the
+control is a link styled as a call to action, not a button, so the arrow ends its label and says
+"go there" rather than leading it as an action glyph would.*
 
 **Leave the icon off when the label is already the whole message:**
 

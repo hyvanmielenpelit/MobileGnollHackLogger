@@ -5,10 +5,12 @@ import { AdminAlertService, SystemAlert } from '../services/admin-alert.service'
 import { Subscription, filter, map } from 'rxjs';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
 
-/** An alert and the in-app link it carries, if any. */
+/** An alert, the in-app link it carries, if any, and its severity. */
 export interface AdminAlertView {
   alert: SystemAlert;
   link: UrlTree | null;
+  severity: 'warning' | 'error';
+  severityLabel: string;
 }
 
 @Component({
@@ -26,7 +28,10 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
   popoverContainer!: ElementRef<HTMLElement>;
 
   alerts$ = this.adminAlertService.alerts$;
-  views$ = this.alerts$.pipe(map(alerts => alerts.map(alert => ({ alert, link: this.linkFor(alert) }))));
+  views$ = this.alerts$.pipe(map(alerts => alerts.map((alert): AdminAlertView => {
+    const severity = this.severityOf(alert);
+    return { alert, link: this.linkFor(alert), severity, severityLabel: severity === 'error' ? 'Error' : 'Warning' };
+  })));
 
   private latestCount = 0;
   private sub = new Subscription();
@@ -60,6 +65,11 @@ export class AdminAlertsComponent implements OnInit, OnDestroy {
     } catch {
       return null;
     }
+  }
+
+  /** The alert's severity; any type but `error` reads as a warning. */
+  private severityOf(alert: SystemAlert): 'warning' | 'error' {
+    return alert.type === 'error' ? 'error' : 'warning';
   }
 
   private syncPopover(): void {

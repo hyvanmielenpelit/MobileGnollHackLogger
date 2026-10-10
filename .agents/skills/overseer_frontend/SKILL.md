@@ -422,7 +422,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     user's own and was removed from or is not in the catalog.
 
 - **Admin Alerts Component (`admin-alerts.component.html`)**
-  - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users.
+  - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users. Each alert is a glass card (`article.admin-alert[data-severity]`) with a glyph and a word for its severity, the message in neutral text, an optional call-to-action link with a trailing arrow, and an `.action-btn` dismiss; its styles are component-local.
 
 - **Models Component (`models.component.html`)**
   - `#modelPickerDialog`: Model Picker

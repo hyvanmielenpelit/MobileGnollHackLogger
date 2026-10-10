@@ -38,15 +38,32 @@ describe('AdminAlertsComponent', () => {
     fixture.detectChanges();
   });
 
-  it('labels the alert with a hidden icon and the words "Admin alert:"', () => {
+  it('labels the alert with a hidden glyph, the words "Admin alert" and the severity', () => {
     alerts.next([alert()]);
     fixture.detectChanges();
 
-    const label = items()[0].querySelector('.admin-alert-label')!;
-    expect(label.textContent!.trim()).toBe('Admin alert:');
-    expect(label.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
-    expect(items()[0].textContent).toContain('2 system configurations use models that are not in the catalog.');
+    const card = items()[0];
+    const label = card.querySelector('.admin-alert-label')!;
+    expect(label.textContent!.trim()).toBe('Admin alert');
+    expect(card.querySelector('.admin-alert-glyph svg')!.getAttribute('aria-hidden')).toBe('true');
+    expect(card.querySelector('.admin-alert-severity')!.textContent!.trim()).toBe('Warning');
+    expect(card.getAttribute('data-severity')).toBe('warning');
+    expect(card.getAttribute('aria-labelledby')).toBe(label.id);
+    expect(card.textContent).toContain('2 system configurations use models that are not in the catalog.');
     expect(link()).toBeNull();
+  });
+
+  it('marks an error alert with its own glyph and word', () => {
+    alerts.next([alert({ id: 'e', type: 'error' }), alert({ id: 'n', type: 'notice' })]);
+    fixture.detectChanges();
+
+    const [error, unknown] = items();
+    expect(error.getAttribute('data-severity')).toBe('error');
+    expect(error.querySelector('.admin-alert-severity')!.textContent!.trim()).toBe('Error');
+    expect(error.querySelector('.admin-alert-glyph svg circle')).not.toBeNull();
+    expect(unknown.getAttribute('data-severity')).toBe('warning');
+    expect(unknown.querySelector('.admin-alert-severity')!.textContent!.trim()).toBe('Warning');
+    expect(unknown.querySelector('.admin-alert-glyph svg circle')).toBeNull();
   });
 
   it('renders the link after the message and navigates with its query parameter intact', async () => {
@@ -56,7 +73,9 @@ describe('AdminAlertsComponent', () => {
     const anchor = link()!;
     expect(anchor.textContent!.trim()).toBe('Review in System Configs');
     expect(anchor.getAttribute('href')).toBe('/admin?tab=configs');
-    const content = items()[0].querySelector('.alert-content')!.textContent!;
+    expect(anchor.parentElement!.classList).toContain('admin-alert-actions');
+    expect(anchor.querySelector('svg.admin-alert-link-arrow')!.getAttribute('aria-hidden')).toBe('true');
+    const content = items()[0].querySelector('.admin-alert-body')!.textContent!;
     expect(content.indexOf('not in the catalog.')).toBeLessThan(content.indexOf('Review in System Configs'));
 
     anchor.click();
@@ -83,7 +102,11 @@ describe('AdminAlertsComponent', () => {
 
     const button = items()[0].querySelector<HTMLButtonElement>('.dismiss-btn')!;
     expect(button.getAttribute('type')).toBe('button');
+    expect(button.classList).toContain('action-btn');
     expect(button.getAttribute('aria-label')).toBe('Dismiss alert');
+    const description = el().querySelector<HTMLElement>('#' + button.getAttribute('aria-describedby'))!;
+    expect(description.matches('p.admin-alert-message')).toBe(true);
+    expect(description.textContent!.trim()).toBe('2 system configurations use models that are not in the catalog.');
     expect(button.hasAttribute('title')).toBe(false);
     expect(el().querySelector('#' + button.getAttribute('interestfor'))!.getAttribute('popover')).toBe('hint');
 

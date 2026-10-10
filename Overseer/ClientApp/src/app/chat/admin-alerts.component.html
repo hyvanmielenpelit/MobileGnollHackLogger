@@ -1,18 +1,31 @@
 <div id="admin-alerts-popover" popover="manual" #popoverContainer class="admin-alerts-container">
   @if (views$ | async; as views) {
     @for (view of views; track view.alert.id; let i = $index) {
-      <div class="admin-alert" [ngClass]="view.alert.type">
-        <div class="alert-content" [id]="'admin-alert-message-' + i">
-          <strong class="admin-alert-label">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-            Admin alert:
-          </strong>
-          {{ view.alert.message }}
-          @if (view.link) {
-            &ngsp;<a class="admin-alert-link" [routerLink]="view.link">{{ view.alert.linkText }}</a>
+      <article class="admin-alert" [attr.data-severity]="view.severity"
+               [attr.aria-labelledby]="'admin-alert-title-' + i">
+        <div class="admin-alert-glyph">
+          @if (view.severity === 'error') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
           }
         </div>
-        <button type="button" class="dismiss-btn" aria-label="Dismiss alert"
+        <div class="admin-alert-body">
+          <div class="admin-alert-head">
+            <strong class="admin-alert-label" [id]="'admin-alert-title-' + i">Admin alert</strong>
+            <span class="admin-alert-severity">{{ view.severityLabel }}</span>
+          </div>
+          <p class="admin-alert-message" [id]="'admin-alert-message-' + i">{{ view.alert.message }}</p>
+          @if (view.link) {
+            <div class="admin-alert-actions">
+              <a class="admin-alert-link" [routerLink]="view.link">
+                {{ view.alert.linkText }}
+                <svg class="admin-alert-link-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+              </a>
+            </div>
+          }
+        </div>
+        <button type="button" class="action-btn dismiss-btn" aria-label="Dismiss alert"
                 [attr.aria-describedby]="'admin-alert-message-' + i"
                 [attr.interestfor]="'tip-dismiss-admin-alert-' + i"
                 [attr.style]="'anchor-name: --tip-dismiss-admin-alert-' + i"
@@ -24,7 +37,7 @@
         </button>
         <div popover="hint" class="gh-tooltip" [id]="'tip-dismiss-admin-alert-' + i"
              [attr.style]="'position-anchor: --tip-dismiss-admin-alert-' + i">Dismiss alert</div>
-      </div>
+      </article>
     }
   }
 </div>
