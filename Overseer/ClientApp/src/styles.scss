@@ -5794,6 +5794,144 @@ progress.job-progress {
     color: #e6e6e6;
     overflow-wrap: anywhere;
   }
+
+  /* The tag and the name; in a pill also the detail. */
+  .gh-multi-picker-chip-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-inline-size: 0;
+  }
+
+  /* app-model-option-badges is display: contents, so its badges are flex items here. */
+  .gh-multi-picker-chip-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .gh-multi-picker-chip-note {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+    min-inline-size: 0;
+    font-size: var(--text-xs);
+    color: #a1a1aa;
+    overflow-wrap: anywhere;
+
+    &.is-warning {
+      color: var(--color-warning);
+    }
+
+    svg {
+      flex: none;
+      margin-block-start: 0.125rem;
+    }
+  }
+
+  /* Card mode (chipStyle="card"): the field keeps the 44rem trigger width, All / None and the
+     count sit beside it, and each chip is a glass card in a grid spanning the host. The open
+     .selector-dropdown (z-index: 100) stays above the cards' backdrop-filter stacking contexts. */
+  &.gh-multi-picker--cards {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem 1rem;
+
+    .gh-multi-picker-field {
+      flex: 1 1 28rem;
+      max-inline-size: 44rem;
+    }
+
+    .gh-multi-picker-row {
+      display: contents;
+    }
+
+    .gh-multi-picker-actions {
+      flex: 0 0 auto;
+    }
+
+    .gh-multi-picker-count {
+      font-size: var(--text-secondary);
+      color: #a1a1aa;
+    }
+
+    .gh-multi-picker-chips {
+      flex: 1 0 100%;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+      align-items: stretch;
+      gap: 0.625rem;
+    }
+
+    .gh-multi-picker-chip {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas: "main remove" "badges badges" "note note";
+      align-content: start;
+      align-items: start;
+      gap: 0.375rem 0.5rem;
+      padding: 0.625rem 0.5rem 0.625rem 0.875rem;
+      border: 1px solid var(--border-glass);
+      border-inline-start: 3px solid var(--gh-chip-accent, var(--border-glass));
+      border-radius: 10px;
+      background: rgba(20, 20, 20, 0.55);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(8px) saturate(130%);
+      -webkit-backdrop-filter: blur(8px) saturate(130%);
+      transition: border-color 0.2s ease;
+
+      /* Only the block and inline-end sides, so the provider accent survives. */
+      &:hover,
+      &:focus-within {
+        border-block-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+        border-inline-end-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+      }
+
+      /* Decorative: the provider badge's word carries the meaning. */
+      &:has(.provider-badge--anthropic) { --gh-chip-accent: var(--provider-anthropic); }
+      &:has(.provider-badge--openai) { --gh-chip-accent: var(--provider-openai); }
+      &:has(.provider-badge--google) { --gh-chip-accent: var(--provider-google); }
+
+      /* Without a backdrop blur the translucent glass would show the page through it unblurred. */
+      @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+        background: rgba(20, 20, 20, 0.92);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        transition: none;
+      }
+
+      > .action-btn {
+        grid-area: remove;
+      }
+    }
+
+    .gh-multi-picker-chip-main {
+      grid-area: main;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .gh-multi-picker-chip-label {
+      font-size: var(--text-body);
+      font-weight: 600;
+      color: #f4f4f5;
+    }
+
+    .gh-multi-picker-chip-badges {
+      grid-area: badges;
+    }
+
+    .gh-multi-picker-chip-note {
+      grid-area: note;
+    }
+
+    .gh-multi-picker-chip-more {
+      align-self: center;
+    }
+  }
 }
 
 @media (forced-colors: active) {
@@ -5802,6 +5940,11 @@ progress.job-progress {
     .model-option[aria-selected="true"] .gh-multi-picker-check,
     .gh-multi-picker-chip {
       border-color: CanvasText;
+    }
+
+    /* The card's three-class border-inline-start would otherwise outrank the list above. */
+    &.gh-multi-picker--cards .gh-multi-picker-chip {
+      border-inline-start-color: CanvasText;
     }
 
     .model-option[aria-selected="true"] {

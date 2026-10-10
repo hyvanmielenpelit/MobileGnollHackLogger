@@ -11,11 +11,34 @@
   }
 </ng-template>
 
+<ng-template #modelChip let-option>
+  <span class="gh-multi-picker-chip-main">
+    @if (option.tag) {
+      <span class="model-option-tag">{{ option.tag }}</span>
+    }
+    <span class="gh-multi-picker-chip-label">{{ option.label }}</span>
+  </span>
+  @if (modelFor(option.key); as model) {
+    <span class="gh-multi-picker-chip-badges">
+      <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"></app-model-option-badges>
+    </span>
+  }
+  @if (option.detail) {
+    <span class="gh-multi-picker-chip-note" [class.is-warning]="detailTone === 'warning'">
+      @if (detailTone === 'warning') {
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span><span class="visually-hidden">Warning: </span>{{ option.detail }}</span>
+      } @else {
+        {{ option.detail }}
+      }
+    </span>
+  }
+</ng-template>
+
 <app-multi-picker summaryNoun="models"
                   [options]="pickerOptions" [selectedKeys]="selectedKeys"
                   [min]="min" [max]="max"
                   [labelledBy]="labelledBy" [label]="label" [describedBy]="describedBy"
                   [placeholder]="placeholder" [emptyHint]="emptyHint"
                   [chips]="chips" [maxChips]="maxChips" [showAllNone]="showAllNone" [dropsUp]="dropsUp"
-                  [optionTemplate]="modelOption"
+                  [optionTemplate]="modelOption" [chipTemplate]="modelChip" [chipStyle]="chipStyle"
                   (selectionChange)="onSelectionChange($event)"></app-multi-picker>

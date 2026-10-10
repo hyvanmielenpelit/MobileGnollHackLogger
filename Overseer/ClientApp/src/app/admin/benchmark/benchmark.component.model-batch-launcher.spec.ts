@@ -97,13 +97,17 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
     startModelBatch = vi.fn(() => of(batchRun()));
     Object.assign(benchmarkServiceMock, { preflightModelBatch: preflight, startModelBatch });
 
-    // Configuration 1 (Anthropic) is the assessor; 2 to 4 are candidates of three providers.
+    // Configuration 1 (Anthropic) is the assessor; 2 to 4 are candidates of three providers, each
+    // with what the picker's badges draw.
     const base = component.systemConfigs[0];
+    const badged = {
+      thinkingLevel: 'high', effectiveInputPricePerMillion: 5, effectiveOutputPricePerMillion: 25, parallelExecutionMode: 0
+    };
     component.systemConfigs = [
       base,
-      buildBenchmarkConfig(base, { id: 2, displayName: 'Second Model', provider: 'OpenAI', modelId: 'gpt-test' }),
-      buildBenchmarkConfig(base, { id: 3, displayName: 'Third Model', provider: 'Google', modelId: 'gemini-test' }),
-      buildBenchmarkConfig(base, { id: 4, displayName: 'Fourth Model', provider: 'Anthropic', modelId: 'claude-other' })
+      buildBenchmarkConfig(base, { id: 2, displayName: 'Second Model', provider: 'OpenAI', modelId: 'gpt-test', ...badged }),
+      buildBenchmarkConfig(base, { id: 3, displayName: 'Third Model', provider: 'Google', modelId: 'gemini-test', ...badged }),
+      buildBenchmarkConfig(base, { id: 4, displayName: 'Fourth Model', provider: 'Anthropic', modelId: 'claude-other', ...badged })
     ];
     ctx.launcher.setDefaultModelSelections();
     component.activeSubTab = 'run';
@@ -276,6 +280,27 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       const options = ctx.runTab().batchPickerOptions;
       expect(options.find(o => o.key === 4)!.detail).toBe('Same provider as the assessor');
       expect(options.find(o => o.key === 2)!.detail).toBeUndefined();
+      finish();
+    }));
+
+    it('draws the chosen models as glass cards with their badges, the warning on the one it names', fakeAsync(() => {
+      preflightResponse = { findings: [SAME_PROVIDER], projection: projection(), maxModels: 12 };
+      chooseBatch();
+      chooseModels([2, 4]);
+
+      expect(query('.batch-models-picker .gh-multi-picker')!.classList).toContain('gh-multi-picker--cards');
+      const cards = Array.from(fixture.nativeElement.querySelectorAll('.batch-models-picker .gh-multi-picker-chip')) as HTMLElement[];
+      expect(cards.length).toBe(2);
+      for (const chip of cards) {
+        for (const badge of ['.thinking-badge', '.provider-badge', '.price-badge', '.parallel-badge']) {
+          expect(chip.querySelector(badge), badge).not.toBeNull();
+        }
+      }
+      expect(text(cards[0].querySelector('.gh-multi-picker-chip-label'))).toBe('Second Model');
+      expect(cards[0].querySelector('app-provider-badge')!.classList).toContain('provider-badge--openai');
+      expect(cards[0].querySelector('.gh-multi-picker-chip-note')).toBeNull();
+      const note = cards[1].querySelector('.gh-multi-picker-chip-note.is-warning');
+      expect(text(note)).toBe('Warning: Same provider as the assessor');
       finish();
     }));
 

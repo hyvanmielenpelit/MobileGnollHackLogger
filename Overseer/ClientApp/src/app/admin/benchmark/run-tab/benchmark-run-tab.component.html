@@ -268,7 +268,7 @@
       <app-model-multi-picker class="batch-models-picker"
                               labelledBy="bmBatchModelsLabel"
                               [describedBy]="describedWithBatchLine('bmBatchModelsHint', 'models')"
-                              placeholder="Choose models"
+                              placeholder="Choose models" chipStyle="card" detailTone="warning"
                               [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
                               [max]="workspace.runLimits?.maxModelsPerBatch ?? launcher.maxModelsPerBatch" [maxChips]="12"
                               [options]="batchPickerOptions" [selectedKeys]="launcher.batchModelKeys"

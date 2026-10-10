@@ -95,6 +95,13 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `-severity`, `-item-title`, `-item-detail`, `-item-actions` and `.gh-readiness-ack`. Every severity is
   a word and a glyph, never a color alone, and forced-colors mode keeps the borders and words. Contract:
   [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4i.
+- **`.gh-multi-picker--cards`** (since 2026-10-10) — the card mode of `app-multi-picker`
+  (`chipStyle="card"`), global in `styles.scss`'s *Multi-select picker* block with the chip parts
+  `.gh-multi-picker-chip-main`, `-chip-badges` and `-chip-note` (`.is-warning`) and the count read-out
+  `.gh-multi-picker-count`: each chosen item is a frosted-glass card with a provider-colored start
+  edge, in a grid spanning the host. The model batch launcher's *Models Under Test* is the first user.
+  Global; never copied into a component. Contract:
+  [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4e-2 and § 4e-3.
 - Shared since 2026-09-29, and not to be copied back into a component: **`.run-stage-rail`** (the
   stage list of the run, multi-run, battery and AI report writing progress dialogs; `.is-done` /
   `.is-current`, plus `.is-skipped` (muted, dashed ring) and `.is-ended` (`--color-warning`) for a

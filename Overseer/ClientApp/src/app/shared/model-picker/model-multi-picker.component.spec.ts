@@ -30,8 +30,10 @@ const OPTIONS: ModelPickerOption<TestModel>[] = [
       <app-model-picker class="single" label="Single" [options]="singleOptions" [selectedKey]="null"></app-model-picker>
       <app-model-multi-picker class="multi" label="Models" [options]="options" [selectedKeys]="selected"
                               (selectionChange)="onChange($event)"></app-model-multi-picker>
-      <app-model-multi-picker class="multi-priced" label="Priced models" [options]="options" [selectedKeys]="[]"
+      <app-model-multi-picker class="multi-priced" label="Priced models" [options]="options" [selectedKeys]="pricedSelected"
                               [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
+      <app-model-multi-picker class="multi-warning" label="Warned models" [options]="options" [selectedKeys]="selected"
+                              detailTone="warning"></app-model-multi-picker>
     </div>
   `
 })
@@ -40,6 +42,7 @@ class HostComponent {
   singleOptions: ModelPickerOption<TestModel>[] = [{ key: 1, model: ALPHA }, { key: 2, model: BETA }];
   options: ModelPickerOption<TestModel>[] = OPTIONS;
   selected: ModelPickerKey[] = [];
+  pricedSelected: ModelPickerKey[] = [];
   changes: ModelMultiPickerSelection<TestModel>[] = [];
   outerKeys: string[] = [];
 
@@ -51,6 +54,11 @@ class HostComponent {
 
   select(keys: ModelPickerKey[]): void {
     this.selected = keys;
+    this.cdr.markForCheck();
+  }
+
+  selectPriced(keys: ModelPickerKey[]): void {
+    this.pricedSelected = keys;
     this.cdr.markForCheck();
   }
 }
@@ -110,6 +118,43 @@ describe('ModelMultiPickerComponent', () => {
     expect(options(priced)[0].querySelector('.price-badge')).not.toBeNull();
     expect(options(priced)[0].querySelector('.parallel-badge.badge-sequential')).not.toBeNull();
     expect(options(priced)[2].querySelector('.parallel-badge.badge-on-request')).not.toBeNull();
+  });
+
+  it('draws the same badges on a chip as on its option', () => {
+    const multi = part('.multi');
+    host.select(['run:1']);
+    fixture.detectChanges();
+    open(multi);
+    const optionBadges = options(multi)[0].querySelector('app-model-option-badges')!.innerHTML;
+    key(listbox(multi)!, 'Escape');
+    const chip = multi.querySelector<HTMLElement>('.gh-multi-picker-chip')!;
+    const chipBadges = chip.querySelector('.gh-multi-picker-chip-badges app-model-option-badges')!;
+    expect(chipBadges.innerHTML).toBe(optionBadges);
+    expect(chipBadges.querySelector('.thinking-badge')).not.toBeNull();
+    expect(chipBadges.querySelector('.provider-badge')).not.toBeNull();
+    expect(chipBadges.querySelector('.price-badge')).toBeNull();
+    expect(chip.querySelector('.gh-multi-picker-chip-label')!.textContent!.trim()).toBe('Alpha');
+  });
+
+  it('honors showPrice and showParallel on the chips', () => {
+    host.selectPriced(['run:1']);
+    fixture.detectChanges();
+    const chip = part('.multi-priced').querySelector<HTMLElement>('.gh-multi-picker-chip')!;
+    expect(chip.querySelector('.price-badge')).not.toBeNull();
+    expect(chip.querySelector('.parallel-badge.badge-sequential')).not.toBeNull();
+  });
+
+  it('draws a chip detail as a muted note, or as a warning with a hidden prefix', () => {
+    host.select(['run:1']);
+    fixture.detectChanges();
+    const muted = part('.multi').querySelector<HTMLElement>('.gh-multi-picker-chip-note')!;
+    expect(muted.classList).not.toContain('is-warning');
+    expect(muted.textContent!.replace(/\s+/g, ' ').trim()).toBe('Run #1');
+
+    const warning = part('.multi-warning').querySelector<HTMLElement>('.gh-multi-picker-chip-note')!;
+    expect(warning.classList).toContain('is-warning');
+    expect(warning.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+    expect(warning.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Warning: Run #1/);
   });
 
   it('offers two options of the same model as two options, each with its detail', () => {

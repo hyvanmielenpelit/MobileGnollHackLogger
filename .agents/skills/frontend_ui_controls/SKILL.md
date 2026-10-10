@@ -527,6 +527,11 @@ and a text-only `.btn-ghost` **Image settings**, whose dialog's six section tabs
 and whose **All** / **None** are `.btn-link`s. The Write step's **Update charts** is a text-only
 `.btn-ghost`, `aria-disabled` with a visible reason.*
 
+*Changed 2026-10-10 (GnollBench batch model cards): the Run Benchmark launcher's chosen batch models are
+glass cards (§4e-2 `chipStyle="card"`, §4e-3), each keeping its icon-only remove `.action-btn` (*x*).
+A card that a warning names carries an amber note led by *alert-triangle*: a status icon beside a word,
+as in `.gh-field-warning`, not a button glyph. No glyph is new.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -991,6 +996,8 @@ the input of a Generate, an export or a job. Never use one for the other's job.
 | `showAllNone` | Text-only **All** / **None** `.btn-link`s after the trigger (default on) |
 | `dropsUp` | Opens the popup upward |
 | `optionTemplate` | `TemplateRef<{ $implicit: MultiPickerOption; selected: boolean }>`: **the extension point**, rendered in place of the default tag, label and detail. It must render **text only** — never a button, link or input — because options live inside a listbox |
+| `chipTemplate` | The same context type (`selected` is always `true`): rendered in place of a chip's default tag, label and detail. **Non-interactive content only** — the remove button is the picker's own |
+| `chipStyle` | `'pill'` (default) or `'card'`. Card mode sets `.gh-multi-picker--cards` on the host: the field keeps a 44 rem trigger, All / None and a muted count read-out (*2 selected · max 12*, *2 selected* without `max`; ordinary visible text, rendered only with `showAllNone`) sit beside it, and each chip is a glass card in an `auto-fill` grid spanning the host |
 
 `selectionChange` emits `{ keys }`, the chosen keys in option order, **once per toggle, All, None or
 chip removal**.
@@ -1013,17 +1020,22 @@ chip removal**.
   *At least 2 sources must stay selected.*); their visually hidden completions (*All sources*, *None of
   the sources*) give each pair a distinct name (§4.1).
 - **Chips** are a `ul` (*Selected sources*) after the trigger, never inside it (buttons in a button are
-  invalid): each chip's tag, label and detail, and a remove `.action-btn` named *Remove <label>* (*Remove
-  <label> (<detail>)* when it has one) with an `interestfor` tooltip — *Remove from the selection*, or the
-  reason it cannot (`aria-disabled`). After a removal focus moves to the next chip's remove button, else
-  to the trigger.
+  invalid): each chip's content — by default its tag, label and detail inside
+  `.gh-multi-picker-chip-main`, replaced by `chipTemplate` when given — and a remove `.action-btn` named
+  *Remove <label>* (*Remove <label> (<detail>)* when it has one) with an `interestfor` tooltip — *Remove
+  from the selection*, or the reason it cannot (`aria-disabled`). After a removal focus moves to the next
+  chip's remove button, else to the trigger.
 - **One polite status line** (`role="status"`, visually hidden) announces each change with the count:
   *"Battery run #10 selected. 2 of 5 selected."*; a refused toggle announces its reason there. A repeated
   message alternates a trailing space so it is read again.
 - **Styles** live in `styles.scss` under `.gh-multi-picker` (the host's class), reusing
   `.custom-model-selector`, `.selector-trigger`, `.selector-dropdown`, `.model-option` and
-  `.model-option-tag` and adding only the check column, the chip row and forced-colors rules; the
-  component SCSS is `:host { display: block }`. Polyfills: `ensureOverlayPolyfills()` for the tooltips.
+  `.model-option-tag` and adding only the check column, the chip row and forced-colors rules, and
+  `.gh-multi-picker--cards` for card mode (the glass card: `--border-glass`, a `backdrop-filter` blur
+  with a near-opaque `@supports` fallback, a 3 px inline-start edge in the provider's hue chosen by
+  `:has(.provider-badge--…)`, decorative only); the component SCSS is `:host { display: block }`. The
+  open `.selector-dropdown` stays above the cards by its `z-index: 100`; never put a container query or
+  another stacking context around the picker. Polyfills: `ensureOverlayPolyfills()` for the tooltips.
   No `title` attribute anywhere (§4.2).
 - **Specs**: it is `OnPush`; drive a spec through real clicks and key events, or `markForCheck()`, never a
   bare property set and `detectChanges()`.
@@ -1032,7 +1044,11 @@ chip removal**.
 
 A thin wrapper over `app-multi-picker` in `app/shared/model-picker/` for choosing several **models**:
 each option is drawn as the model's name, the single picker's badges (`app-model-option-badges`) and a
-muted detail. It keeps every rule of §4e-2; only the option rendering (its `optionTemplate`) is its own.
+muted detail. It keeps every rule of §4e-2; only the option and chip rendering (its `optionTemplate`
+and `chipTemplate`) are its own. **Every chip carries the same badges as its option**
+(`.gh-multi-picker-chip-badges`), under the name, and the detail as a wrapping
+`.gh-multi-picker-chip-note`, so what was chosen — thinking level, price, sequential or not — stays
+visible once the list closes.
 The Model Comparison wizard's step 3 uses it to choose which models a report covers (labeled *Models*),
 and the Run Benchmark launcher's model batch mode to choose the models a batch runs (labeled *Models Under
 Test*, `.batch-models-picker`).
@@ -1041,7 +1057,9 @@ Test*, `.batch-models-picker`).
 |-------|---------|
 | `options` | `ModelPickerOption[]`, the single picker's type (§4e), whose optional `detail` and `disabledReason` only this picker honors; the label is the model's display name, else its model id |
 | `selectedKeys`, `min`, `max`, `labelledBy` / `label`, `describedBy`, `placeholder`, `emptyHint`, `chips`, `maxChips`, `showAllNone`, `dropsUp` | Passed through to `app-multi-picker`; `summaryNoun` is fixed to *models*, and with one model selected the trigger reads its name |
-| `showPrice` / `showParallel` | The price and parallel-execution badges, **both off by default** |
+| `showPrice` / `showParallel` | The price and parallel-execution badges, **both off by default**; they apply to the chips too |
+| `chipStyle` | Passed through to `app-multi-picker` (default `'pill'`) |
+| `detailTone` | `'muted'` (default) or `'warning'`: a chip's `detail` drawn as an amber `.is-warning` line with a 12 px *alert-triangle* (`aria-hidden`) and a visually hidden *Warning:* prefix, so color never carries it alone |
 
 `selectionChange` emits `{ keys, models }`, the chosen keys and their `ModelPickerModel`s in option order.
 
@@ -1052,8 +1070,10 @@ Test*, `.batch-models-picker`).
   spend on and to compare. The model batch picker is the one so far. It also uses the two option fields
   only this picker honors: `disabledReason` for a model the batch cannot run as a candidate (*Grades this
   batch*, *Writes its reports*: a blocker made unselectable at the source, §4i), and `detail` for a short
-  note on a chosen model's chip that a warning names (*Same provider as the assessor*). Its `max` is the
-  server's `maxModelsPerBatch` and its `maxChips` that maximum, so every chosen model stays visible.
+  note on a chosen model's chip that a warning names (*Same provider as the assessor*, with
+  `detailTone="warning"`). Its `max` is the server's `maxModelsPerBatch` and its `maxChips` that maximum,
+  so every chosen model stays visible, and it uses `chipStyle="card"`: the chosen models are glass cards
+  filling the panel's width beside and under a trigger of the usual 44 rem.
 - **Keys stay the host's units.** Step 3 keys each option by comparison entry (`run:` / `group:` /
   `battery:`), so two entries of one model are two options; where two options would look identical,
   each carries its source as `detail` (*Battery run #10*), and only then.

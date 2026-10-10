@@ -12,7 +12,7 @@ const OPTIONS: MultiPickerOption[] = [
   { key: 'e', label: 'Delta' }
 ];
 
-type HostState = Pick<HostComponent, 'options' | 'selected' | 'min' | 'max' | 'chips' | 'maxChips' | 'useTemplate'>;
+type HostState = Pick<HostComponent, 'options' | 'selected' | 'min' | 'max' | 'chips' | 'maxChips' | 'useTemplate' | 'chipStyle'>;
 
 /** Feeds every emitted selection back into `selectedKeys`, the way a real host does. */
 @Component({
@@ -24,14 +24,18 @@ type HostState = Pick<HostComponent, 'options' | 'selected' | 'min' | 'max' | 'c
       <label id="pickLabel">Sources</label>
       <app-multi-picker class="picker" labelledBy="pickLabel" describedBy="pickHint" summaryNoun="sources"
                         [options]="options" [selectedKeys]="selected" [min]="min" [max]="max"
-                        [chips]="chips" [maxChips]="maxChips"
+                        [chips]="chips" [maxChips]="maxChips" [chipStyle]="chipStyle"
                         [optionTemplate]="useTemplate ? custom : null"
+                        [chipTemplate]="useTemplate ? customChip : null"
                         (selectionChange)="onChange($event)"></app-multi-picker>
       <span id="pickHint">Hint</span>
       <button type="button" class="outside">Outside</button>
     </div>
     <ng-template #custom let-option let-selected="selected">
       <span class="custom-row">{{ option.label }} is {{ selected ? 'on' : 'off' }}</span>
+    </ng-template>
+    <ng-template #customChip let-option>
+      <span class="custom-chip">{{ option.label }} chip</span>
     </ng-template>
     <dialog class="dlg" (keydown)="dialogKeys.push($any($event).key)">
       <app-multi-picker class="dialog-picker" label="In dialog" [options]="options" [selectedKeys]="selected"
@@ -48,6 +52,7 @@ class HostComponent {
   chips: 'none' | 'selected' = 'selected';
   maxChips = 6;
   useTemplate = false;
+  chipStyle: 'pill' | 'card' = 'pill';
   changes: MultiPickerSelection[] = [];
   outerKeys: string[] = [];
   dialogKeys: string[] = [];
@@ -478,6 +483,28 @@ describe('MultiPickerComponent', () => {
         .toBe('At least 2 sources must stay selected.');
       click(button);
       expect(host.changes.length).toBe(0);
+    });
+
+    it('render the chip template in place of the default content, keeping the remove button', () => {
+      update({ useTemplate: true, selected: ['a'] });
+      const chip = picker().querySelector<HTMLElement>('.gh-multi-picker-chip')!;
+      expect(chip.querySelector('.custom-chip')!.textContent!.trim()).toBe('Alpha chip');
+      expect(chip.querySelector('.gh-multi-picker-chip-label')).toBeNull();
+      expect(chipButtons().map(b => b.getAttribute('aria-label'))).toEqual(['Remove Alpha (Run #1)']);
+    });
+
+    it('in card mode mark the host and show the selection count beside All and None', () => {
+      const count = () => picker().querySelector<HTMLElement>('.gh-multi-picker-actions .gh-multi-picker-count');
+      update({ selected: ['a', 'b'], max: 5 });
+      expect(picker().classList).not.toContain('gh-multi-picker--cards');
+      expect(count()).toBeNull();
+
+      update({ chipStyle: 'card' });
+      expect(picker().classList).toContain('gh-multi-picker--cards');
+      expect(count()!.textContent!.trim()).toBe('2 selected · max 5');
+
+      update({ max: null });
+      expect(count()!.textContent!.trim()).toBe('2 selected');
     });
   });
 

@@ -88,7 +88,7 @@ code fallbacks equal the shipped values, and a User Secrets key overrides both.
 `MAX_COMPARISON_SOURCES` = 24 sources and a batch adds one per model; the daily cap of 120 launches holds
 12 models on a two-suite battery at up to 5 runs per suite (12 × 2 × 5 = 120), or on a single suite at up
 to 10 runs per model. What grows with the model count is wall time and spend, which MB-W09 and MB-T02
-state before Start; the multi-model picker shows all 12 chips and the progress dialog's member list
+state before Start; the multi-model picker shows all 12 cards and the progress dialog's member list
 scrolls.
 
 ## 3. The Guardrails
@@ -414,11 +414,15 @@ recorded, and the instrument keys on which that differs from the batch's first m
 Admin → GnollBench → **Run Benchmark**. The card opens with **Models**, a radio group: *One model* (the
 default) or *Model batch*. *Model batch* replaces *Model Under Test* with **Models Under Test**, the
 multi-model picker (`app-model-multi-picker`, with price and parallel badges, at most `MaxModels`, 12
-chips): a model that is currently a scoring grader or the report writer is an unavailable option (*Grades
+models): a model that is currently a scoring grader or the report writer is an unavailable option (*Grades
 this batch*, *Writes its reports*, MB-B03 and MB-B04 derived in the browser from the same configuration
-ids), and a chosen model a warning names carries a short note on its chip (*Same provider as the
-assessor*, *Same provider as the report writer*, *Checks its own answers*, *Settings differ*, *Selected
-twice*). The rest of the launcher is the one a run uses, with these differences:
+ids). Each chosen model is a glass card under the trigger, in a grid that fills the panel's width: its
+name, a remove button in the corner, the same badges the list shows (thinking level, reasoning mode,
+provider, price, parallel mode) and a start edge in the provider's color. A chosen model a warning names
+carries an amber note on its card, led by a warning glyph (*Same provider as the assessor*, *Same
+provider as the report writer*, *Checks its own answers*, *Settings differ*, *Selected twice*). Beside
+the trigger, after *All* and *None*, the count reads *2 selected · max 12*. The rest of the launcher is
+the one a run uses, with these differences:
 
 - **Run Target** works as before: a suite, or a battery. On a suite, **Runs per model** (R; 1 runs each
   model once, 2 or more a replicate series per model); on a battery, *Runs per Suite*.
@@ -449,7 +453,7 @@ MB-B04 options.
 The guidance comes in four layers, each carrying less text than the one before:
 
 1. **At the source — the picker.** A blocker cannot be selected in the first place, and a warned model
-   carries its chip note.
+   carries its note on its card.
 2. **Inline, one line per field.** Under a field, its first blocker as a `.gh-field-error` line, else its
    first warning as a `.gh-field-warning` line, linked by the field's `aria-describedby`. Advice is never
    inline.

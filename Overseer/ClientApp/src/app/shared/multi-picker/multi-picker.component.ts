@@ -62,7 +62,8 @@ let nextUid = 0;
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'class': 'gh-multi-picker',
-    '[class.drops-up]': 'dropsUp'
+    '[class.drops-up]': 'dropsUp',
+    '[class.gh-multi-picker--cards]': "chipStyle === 'card'"
   }
 })
 export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked, OnDestroy {
@@ -96,6 +97,13 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   @Input() dropsUp = false;
   /** Replaces the default tag, label and detail rendering of an option; text only. */
   @Input() optionTemplate: TemplateRef<MultiPickerOptionContext> | null = null;
+  /**
+   * Rendered in place of a chip's tag, label and detail; non-interactive content only, the remove
+   * button is the picker's.
+   */
+  @Input() chipTemplate: TemplateRef<MultiPickerOptionContext> | null = null;
+  /** `card` draws each chip as a glass card in a grid that spans the host (`.gh-multi-picker--cards`). */
+  @Input() chipStyle: 'pill' | 'card' = 'pill';
 
   /** Once per toggle, All, None or chip removal. */
   @Output() selectionChange = new EventEmitter<MultiPickerSelection>();
@@ -149,6 +157,12 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
     const count = this.selectedEntries.length;
     const total = this.flat.length;
     return count === total ? `All ${total} ${this.summaryNoun}` : `${count} of ${total} ${this.summaryNoun}`;
+  }
+
+  /** The card-mode read-out beside All and None: `2 selected · max 12`. */
+  get selectionCountText(): string {
+    const count = this.selectedEntries.length;
+    return this.max === null ? `${count} selected` : `${count} selected · max ${this.max}`;
   }
 
   get maxValue(): number { return this.max ?? Number.POSITIVE_INFINITY; }

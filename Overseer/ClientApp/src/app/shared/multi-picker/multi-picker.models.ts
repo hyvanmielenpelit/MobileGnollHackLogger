@@ -20,7 +20,7 @@ export interface MultiPickerSelection {
   keys: MultiPickerKey[];
 }
 
-/** The context of a host's `optionTemplate`, which must render text only. */
+/** The context of a host's `optionTemplate` or `chipTemplate`, which must render text only. */
 export interface MultiPickerOptionContext {
   $implicit: MultiPickerOption;
   selected: boolean;

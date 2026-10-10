@@ -108,6 +108,9 @@
           <div popover="hint" class="gh-tooltip" [id]="uid + '-none-tip'"
                [attr.style]="'position-anchor: --' + uid + '-none'">{{ noneReason }}</div>
         }
+        @if (chipStyle === 'card' && selectedEntries.length > 0) {
+          <span class="gh-multi-picker-count">{{ selectionCountText }}</span>
+        }
       </div>
     }
     @if (chips === 'selected' && selectedEntries.length > 0) {
@@ -115,12 +118,19 @@
         @for (entry of shownChips; track entry.option.key) {
           @let chipReason = chipBlockedReason(entry);
           <li class="gh-multi-picker-chip">
-            @if (entry.option.tag) {
-              <span class="model-option-tag">{{ entry.option.tag }}</span>
-            }
-            <span class="gh-multi-picker-chip-label">{{ entry.option.label }}</span>
-            @if (entry.option.detail) {
-              <span class="gh-multi-picker-detail">{{ entry.option.detail }}</span>
+            @if (chipTemplate) {
+              <ng-container [ngTemplateOutlet]="chipTemplate"
+                            [ngTemplateOutletContext]="{ $implicit: entry.option, selected: true }"></ng-container>
+            } @else {
+              <span class="gh-multi-picker-chip-main">
+                @if (entry.option.tag) {
+                  <span class="model-option-tag">{{ entry.option.tag }}</span>
+                }
+                <span class="gh-multi-picker-chip-label">{{ entry.option.label }}</span>
+                @if (entry.option.detail) {
+                  <span class="gh-multi-picker-detail">{{ entry.option.detail }}</span>
+                }
+              </span>
             }
             <button type="button" class="action-btn" [id]="chipRemoveId(entry.index)"
                     [attr.aria-label]="chipRemoveLabel(entry.option)"

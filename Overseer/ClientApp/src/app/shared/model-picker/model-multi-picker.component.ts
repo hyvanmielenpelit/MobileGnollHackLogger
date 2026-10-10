@@ -22,7 +22,8 @@ export interface ModelMultiPickerSelection<M extends ModelPickerModel = ModelPic
 
 /**
  * A multi-select model picker: `app-multi-picker` with each option drawn as the model's name and
- * the single model picker's badges (`app-model-option-badges`), then a muted detail. Price and
+ * the single model picker's badges (`app-model-option-badges`), then a muted detail; each chip
+ * carries the same badges under the name, and the detail as a note. Price and
  * parallel-execution badges are off by default, since choosing which models something covers is
  * not choosing what to run. Presentational: the host owns the selection.
  */
@@ -51,6 +52,12 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   @Input() dropsUp = false;
   @Input() showPrice = false;
   @Input() showParallel = false;
+  @Input() chipStyle: 'pill' | 'card' = 'pill';
+  /**
+   * How a chip's `detail` is drawn — muted, or as an amber warning line with the alert-triangle
+   * glyph and a hidden "Warning:" prefix.
+   */
+  @Input() detailTone: 'muted' | 'warning' = 'muted';
 
   /** Once per toggle, All, None or chip removal. */
   @Output() selectionChange = new EventEmitter<ModelMultiPickerSelection<M>>();
