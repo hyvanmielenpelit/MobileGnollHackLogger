@@ -333,6 +333,14 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
 - `/debug-log` (`debug-log.component`): Developer debug logs.
 - `/login` (`login.component`): Authentication entry point.
 
+Only `/chat`, the landing page, and `/login`, the signed-out entry page, are eager (`component:`);
+every other route uses `loadComponent`. Code reachable from the chat or the bootstrap
+(`app.config.ts`, `app.routes.ts`) never imports from `admin/`, `chart.js` or `ng2-charts`: chart
+registration is provided by `AdminComponent` (`provideCharts` in its `providers`), and a type the
+chat needs from an admin service is imported with `import type`. The `initial` budget in
+`angular.json` (1.5 MB warning, 2 MB error) is the tripwire; to see what `main` contains, run
+`ng build --stats-json` and load the stats file into the esbuild bundle analyzer.
+
 ### Popups (`<dialog>` elements)
 To find specific popups, look in the corresponding component's `.html` template:
 

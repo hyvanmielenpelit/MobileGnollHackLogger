@@ -17,7 +17,7 @@ import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '.
 import { ModelAvailabilityNoticeComponent } from '../shared/model-availability/model-availability-notice.component';
 import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
 import { ModelResolutionResult, isResolutionDeletion, needsAttention } from '../shared/model-availability/model-availability';
-import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
+import { AttachedSnapshotService, type AttachedSnapshotInfo } from '../services/attached-snapshot.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { parseServerUtcDate } from '../utils/date.util';
 import * as signalR from '@microsoft/signalr';
@@ -266,7 +266,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   route = inject(ActivatedRoute);
   cdr = inject(ChangeDetectorRef);
   clientBridge = inject(ClientBridgeService);
-  adminBenchmarkService = inject(AdminBenchmarkService);
+  private attachedSnapshots = inject(AttachedSnapshotService);
   
   readonly CLIENT_TOOL_TIMEOUT_MS = 14000;
   pendingRequests = new Map<string, ReturnType<typeof setTimeout>>();
@@ -1205,7 +1205,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
 
     /* A failure here leaves the form usable: the info informs the save, it does not gate it. */
-    this.captureInfoSub = this.adminBenchmarkService.getAttachedSnapshotInfo(sessionRef).subscribe({
+    this.captureInfoSub = this.attachedSnapshots.getAttachedSnapshotInfo(sessionRef).subscribe({
       next: (info) => {
         this.isLoadingCaptureInfo = false;
         this.captureBoardInfo = info;
@@ -1279,7 +1279,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       sourceGnollHackVersion: this.captureBoardVersion.trim() || undefined
     };
 
-    const call$ = this.adminBenchmarkService.saveAttachedSnapshot(req);
+    const call$ = this.attachedSnapshots.saveAttachedSnapshot(req);
 
     call$.subscribe({
       next: (res) => {

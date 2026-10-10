@@ -243,7 +243,7 @@ public class AgentLoopRunner
                 ReasoningSummarySent = request.ReasoningSummary,
                 ServiceTierRequested = request.ServiceTier,
                 MaxOutputTokensSent = effectiveMaxOutputTokens,
-                EndpointKind = request.Endpoint?.IsCustom == true ? "custom" : "official"
+                EndpointKind = request.Endpoint.IsCustom ? "custom" : "official"
             };
             result.ModelCalls.Add(callRecord);
             var call = new ModelCallTracker(callRecord);

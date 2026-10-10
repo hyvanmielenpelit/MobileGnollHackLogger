@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
+import { NG_CHARTS_CONFIGURATION } from 'ng2-charts';
+import { APP_CHART_REGISTRABLES } from '../chart-registrables';
 import { AdminComponent } from './admin.component';
 import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DefaultApiKeyStatus } from '../services/admin.service';
 import { buildSystemConfig, spyAdminService } from './admin.component.testing';
@@ -36,6 +38,10 @@ describe('AdminComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('provides the application\'s chart registrables to the admin page', () => {
+    expect(fixture.debugElement.injector.get(NG_CHARTS_CONFIGURATION).registerables).toEqual(APP_CHART_REGISTRABLES);
   });
 
   describe('loadData', () => {

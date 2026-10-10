@@ -119,7 +119,7 @@ import { ChatService, ChatSessionDetailResponse, PrivateBadge, PrivateBadgeState
 import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
 import { AuthService } from '../services/auth.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
-import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
+import { AttachedSnapshotService, AttachedSnapshotInfo } from '../services/attached-snapshot.service';
 import { isSentryConfidentialSessionActive, setSentryConfidentialSession } from '../utils/sentry-filter.util';
 
 // ChatComponent.ngOnInit opens a real SignalR connection to /chathub, which under the test runner
@@ -1708,7 +1708,7 @@ describe('ChatComponent context window indicator', () => {
   });
 
   describe('the save attached snapshot dialog', () => {
-    let adminBenchmark: AdminBenchmarkService;
+    let attachedSnapshots: AttachedSnapshotService;
     let clientBridge: ClientBridgeService;
     let chatService: ChatService;
 
@@ -1724,7 +1724,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     beforeEach(() => {
-      adminBenchmark = TestBed.inject(AdminBenchmarkService);
+      attachedSnapshots = TestBed.inject(AttachedSnapshotService);
       clientBridge = TestBed.inject(ClientBridgeService);
       chatService = TestBed.inject(ChatService);
       component.currentSessionId = '42';
@@ -1744,11 +1744,11 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('prefills the version the client reported', () => {
-      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info({ detectedGnollHackVersion: '0.9.4' })));
+      vi.spyOn(attachedSnapshots,'getAttachedSnapshotInfo').mockReturnValue(of(info({ detectedGnollHackVersion: '0.9.4' })));
 
       component.openCaptureBoardModal();
 
-      expect(adminBenchmark.getAttachedSnapshotInfo).toHaveBeenCalledWith('42');
+      expect(attachedSnapshots.getAttachedSnapshotInfo).toHaveBeenCalledWith('42');
       expect(component.captureBoardVersion).toBe('0.9.4');
       expect(component.captureBoardVersionDetected).toBe(true);
       expect(component.captureBoardInfo?.hasSnapshot).toBe(true);
@@ -1756,7 +1756,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('leaves the version empty when the client reported none', () => {
-      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info()));
+      vi.spyOn(attachedSnapshots,'getAttachedSnapshotInfo').mockReturnValue(of(info()));
 
       component.openCaptureBoardModal();
 
@@ -1765,7 +1765,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('shows an info failure and keeps the dialog open', () => {
-      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(throwError(() => ({ error: { error: 'A confidential chat cannot be imported as a benchmark board.' } })));
+      vi.spyOn(attachedSnapshots,'getAttachedSnapshotInfo').mockReturnValue(throwError(() => ({ error: { error: 'A confidential chat cannot be imported as a benchmark board.' } })));
 
       component.openCaptureBoardModal();
 
@@ -1775,7 +1775,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('disables saving when the chat no longer has a snapshot', () => {
-      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info({ hasSnapshot: false })));
+      vi.spyOn(attachedSnapshots,'getAttachedSnapshotInfo').mockReturnValue(of(info({ hasSnapshot: false })));
 
       component.openCaptureBoardModal();
 
@@ -1783,7 +1783,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('keeps the dialog open on Escape while a save is in flight', () => {
-      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info()));
+      vi.spyOn(attachedSnapshots,'getAttachedSnapshotInfo').mockReturnValue(of(info()));
       component.openCaptureBoardModal();
       component.isCapturingBoard = true;
 
@@ -1796,7 +1796,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('does not save from a confidential chat', () => {
-      const saveSpy = vi.spyOn(adminBenchmark, 'saveAttachedSnapshot').mockReturnValue(undefined as any);
+      const saveSpy = vi.spyOn(attachedSnapshots,'saveAttachedSnapshot').mockReturnValue(undefined as any);
       component.isConfidentialSession = true;
       component.captureBoardName = 'Board';
 

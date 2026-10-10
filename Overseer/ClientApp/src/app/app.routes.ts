@@ -1,11 +1,7 @@
 import { Routes } from '@angular/router';
 import { LoginComponent } from './login/login.component';
 import { ChatComponent } from './chat/chat.component';
-import { SettingsComponent } from './settings/settings.component';
-import { DebugLogComponent } from './debug-log/debug-log.component';
-import { ApiKeysComponent } from './api-keys/api-keys.component';
-import { ModelsComponent } from './models/models.component';
-import { PrivacyComponent } from './privacy/privacy.component';
+import type { SettingsComponent } from './settings/settings.component';
 import { inject } from '@angular/core';
 import { AuthService } from './services/auth.service';
 import { Router } from '@angular/router';
@@ -46,7 +42,7 @@ export const routes: Routes = [
   },
   { 
     path: 'debug-log', 
-    component: DebugLogComponent,
+    loadComponent: () => import('./debug-log/debug-log.component').then(m => m.DebugLogComponent),
     canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);
@@ -77,19 +73,19 @@ export const routes: Routes = [
   },
   {
     path: 'settings',
-    component: SettingsComponent,
+    loadComponent: () => import('./settings/settings.component').then(m => m.SettingsComponent),
     canActivate: settingsCanActivate,
     canDeactivate: settingsCanDeactivate
   },
   {
     path: 'settings/:section',
-    component: SettingsComponent,
+    loadComponent: () => import('./settings/settings.component').then(m => m.SettingsComponent),
     canActivate: settingsCanActivate,
     canDeactivate: settingsCanDeactivate
   },
   { 
     path: 'api-keys', 
-    component: ApiKeysComponent,
+    loadComponent: () => import('./api-keys/api-keys.component').then(m => m.ApiKeysComponent),
     canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);
@@ -104,7 +100,7 @@ export const routes: Routes = [
   },
   { 
     path: 'models', 
-    component: ModelsComponent,
+    loadComponent: () => import('./models/models.component').then(m => m.ModelsComponent),
     canActivate: [(route: any, state: any) => {
       const auth = inject(AuthService);
       const router = inject(Router);
@@ -119,7 +115,7 @@ export const routes: Routes = [
   },
 
   // No auth guard: a privacy notice has to be readable by someone who has not signed in.
-  { path: 'privacy', component: PrivacyComponent },
+  { path: 'privacy', loadComponent: () => import('./privacy/privacy.component').then(m => m.PrivacyComponent) },
 
   { path: '', redirectTo: '/chat', pathMatch: 'full' }
 ];

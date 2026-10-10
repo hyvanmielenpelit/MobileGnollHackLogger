@@ -5,6 +5,8 @@ import { AdminApiKeysComponent } from './admin-api-keys/admin-api-keys.component
 import { AdminBenchmarkComponent, BenchmarkNavigationRequest } from './benchmark/benchmark.component';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
 import { Subscription } from 'rxjs';
+import { provideCharts } from 'ng2-charts';
+import { APP_CHART_REGISTRABLES } from '../chart-registrables';
 import { AdminPageStore } from './admin-page.store';
 import { AdminUsersTabComponent } from './users-tab/admin-users-tab.component';
 import { AdminGroupsTabComponent } from './groups-tab/admin-groups-tab.component';
@@ -27,7 +29,7 @@ export type AdminTabId =
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss',
-    providers: [AdminPageStore]
+    providers: [AdminPageStore, provideCharts({ registerables: APP_CHART_REGISTRABLES })]
 })
 export class AdminComponent implements OnInit, OnDestroy {
   readonly store = inject(AdminPageStore);
