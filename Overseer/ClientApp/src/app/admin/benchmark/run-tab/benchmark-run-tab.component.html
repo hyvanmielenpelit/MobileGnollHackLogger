@@ -272,6 +272,7 @@
                               [emptyHint]="workspace.benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
                               [max]="workspace.runLimits?.maxModelsPerBatch ?? launcher.maxModelsPerBatch" [maxChips]="12"
                               [options]="batchPickerOptions" [selectedKeys]="launcher.batchModelKeys"
+                              [status]="batchModelsStatus"
                               (selectionChange)="onBatchModelsChange($event.keys)"></app-model-multi-picker>
       <span id="bmBatchModelsHint" class="form-hint">{{ batchModelsHintText }}</span>
       <ng-container *ngTemplateOutlet="batchLine; context: { $implicit: 'models' }"></ng-container>

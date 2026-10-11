@@ -543,6 +543,11 @@ control is a link styled as a call to action, not a button, so the arrow ends it
 each, and a blocker on the card is a red line led by *alert-circle*, the glyph `.gh-field-error` already
 uses for an error — a status icon beside a word, not a button glyph. No glyph is new.*
 
+*Changed 2026-10-11 (batch picker check status, follow-up A): the model batch picker's read-out beside
+its count uses the shared `.dc-ring` while the check runs, and the status glyphs alert-circle,
+alert-triangle and check-circle after it — status icons beside words, not button glyphs. No glyph is
+new.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -1009,6 +1014,7 @@ the input of a Generate, an export or a job. Never use one for the other's job.
 | `optionTemplate` | `TemplateRef<{ $implicit: MultiPickerOption; selected: boolean }>`: **the extension point**, rendered in place of the default tag, label and detail. It must render **text only** — never a button, link or input — because options live inside a listbox |
 | `chipTemplate` | The same context type (`selected` is always `true`), plus `noteId`: rendered in place of a chip's default tag, label and detail. **Non-interactive content only**, text or a list — the remove button is the picker's own. When the option has a `detail`, the element that shows it takes `[id]="noteId"`, because the remove button names that id as its description |
 | `chipStyle` | `'pill'` (default) or `'card'`. Card mode sets `.gh-multi-picker--cards` on the host: the field keeps a 44 rem trigger, All / None and a muted count read-out (*2 selected · max 12*, *2 selected* without `max`; ordinary visible text, rendered only with `showAllNone`) sit beside it, and each chip is a glass card as wide as its name or badge row plus its remove button (at least 15 rem, at most the host's width), in a row that wraps; a narrower host moves cards to the next line rather than narrowing them |
+| `status` | `MultiPickerStatus` `{ tone: 'busy' \| 'ok' \| 'warning' \| 'error', text }` or `null` (default): a read-out after the count (and after All / None in pill mode) with a glyph, the `.dc-ring` spinner for `busy`; its id joins the trigger's `aria-describedby`. **Not a live region.** `busy` sets `data-checking` on the chips `ul`, which dims each chip's note or note list once; never `aria-busy`, which may hide the remove buttons |
 
 `selectionChange` emits `{ keys }`, the chosen keys in option order, **once per toggle, All, None or
 chip removal**.
@@ -1057,6 +1063,11 @@ chip removal**.
   open `.selector-dropdown` stays above the cards by its `z-index: 100`; never put a container query or
   another stacking context around the picker. Polyfills: `ensureOverlayPolyfills()` for the tooltips.
   No `title` attribute anywhere (§4.2).
+- **Status styles**: `.gh-multi-picker-status` reserves `min-inline-size: 18rem`, enough for its longest
+  text, so a change of text never re-wraps the row and moves the chips; its tint follows `data-tone`, the
+  glyph and words carry the meaning. Its spinner is the shared `.dc-ring` with `.dc-ring--inline`, a
+  thicker stroke for 14 px; under forced colors every `.dc-ring` draws a `GrayText` track and a
+  `CanvasText` arc, so the rotation stays visible.
 - **Specs**: it is `OnPush`; drive a spec through real clicks and key events, or `markForCheck()`, never a
   bare property set and `detectChanges()`.
 
@@ -1080,7 +1091,7 @@ Test*, `.batch-models-picker`).
 | Input | Meaning |
 |-------|---------|
 | `options` | `ModelPickerOption[]`, the single picker's type (§4e), whose optional `detail`, `disabledReason` and `notes` (`{ text, tone: 'warning' \| 'error' }[]`) only this picker honors; the label is the model's display name, else its model id |
-| `selectedKeys`, `min`, `max`, `labelledBy` / `label`, `describedBy`, `placeholder`, `emptyHint`, `chips`, `maxChips`, `showAllNone`, `dropsUp` | Passed through to `app-multi-picker`; `summaryNoun` is fixed to *models*, and with one model selected the trigger reads its name |
+| `selectedKeys`, `min`, `max`, `labelledBy` / `label`, `describedBy`, `placeholder`, `emptyHint`, `chips`, `maxChips`, `showAllNone`, `dropsUp`, `status` | Passed through to `app-multi-picker`; `summaryNoun` is fixed to *models*, and with one model selected the trigger reads its name |
 | `showPrice` / `showParallel` | The price and parallel-execution badges, **both off by default**; they apply to the chips too |
 | `chipStyle` | Passed through to `app-multi-picker` (default `'pill'`) |
 
@@ -1098,7 +1109,10 @@ Test*, `.batch-models-picker`).
   no note text of its own (§4i); and `detail` for an unchosen model that is the reader or the claim
   verifier (*Reference reader · claim verifier*). Its `max` is the server's `maxModelsPerBatch` and its `maxChips` that maximum,
   so every chosen model stays visible, and it uses `chipStyle="card"`: the chosen models are glass cards,
-  each as wide as its content, wrapping under a trigger of the usual 44 rem.
+  each as wide as its content, wrapping under a trigger of the usual 44 rem. `status` is the run tab's
+  `batchModelsStatus` (check pending, failed, or what the cards carry; nothing under two models or while
+  a models blocker no card shows is the only finding), and the field's inline line omits a `models`
+  finding a card already shows — a rule that holds only because `maxChips` shows every chosen card.
 - **Keys stay the host's units.** Step 3 keys each option by comparison entry (`run:` / `group:` /
   `battery:`), so two entries of one model are two options; where two options would look identical,
   each carries its source as `detail` (*Battery run #10*), and only then.

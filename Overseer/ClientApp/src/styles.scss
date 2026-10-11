@@ -4820,6 +4820,11 @@ progress.job-progress {
   }
 }
 
+/* At 14 px the default stroke is a hairline. */
+.dc-ring--inline circle {
+  stroke-width: 6;
+}
+
 .dc-ring-track {
   stroke: rgba(255, 255, 255, 0.12);
 }
@@ -4844,6 +4849,17 @@ progress.job-progress {
 
   to {
     stroke-dasharray: 75 100;
+  }
+}
+
+@media (forced-colors: active) {
+  /* SVG strokes are not forced; a track and an arc of one color would be one still circle. */
+  .dc-ring-track {
+    stroke: GrayText;
+  }
+
+  .dc-ring-arc {
+    stroke: CanvasText;
   }
 }
 
@@ -5843,6 +5859,51 @@ progress.job-progress {
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  /* The status read-out after the count: the glyph and the text carry the meaning, the tint
+     follows them. The reserved width keeps a text change from re-wrapping the row. */
+  .gh-multi-picker-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-inline-size: 18rem;
+    font-size: var(--text-secondary);
+    color: #a1a1aa;
+
+    svg {
+      flex: none;
+    }
+
+    &[data-tone="busy"] {
+      color: var(--primary-color);
+    }
+
+    &[data-tone="warning"] {
+      color: var(--color-warning);
+    }
+
+    &[data-tone="error"] {
+      color: var(--color-error-text);
+    }
+
+    &[data-tone="ok"] svg {
+      color: var(--color-success);
+    }
+  }
+
+  /* While a check runs, a chip's notes dim; the direct child only, so a list and its items are
+     not both dimmed. */
+  .gh-multi-picker-chip > :is(.gh-multi-picker-chip-note, .gh-multi-picker-chip-notes) {
+    transition: opacity 0.2s ease;
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
+    }
+  }
+
+  .gh-multi-picker-chips[data-checking] .gh-multi-picker-chip > :is(.gh-multi-picker-chip-note, .gh-multi-picker-chip-notes) {
+    opacity: 0.55;
   }
 
   /* Card mode (chipStyle="card"): the field keeps the 44rem trigger width, All / None and the

@@ -462,11 +462,18 @@ MB-B04 options.
 The guidance comes in four layers, each carrying less text than the one before:
 
 1. **At the source — the picker.** A blocker cannot be selected in the first place, and a chosen model a
-   blocker or warning is about carries the server's notes on its card.
+   blocker or warning is about carries the server's notes on its card. From the second chosen model on, a
+   read-out beside the selection count says what the check is doing: while one is pending, a gold ring and
+   *Checking the models for warnings…*, the cards' notes dim and nothing is blocked; once it answers,
+   *No warnings on these models*, *Warnings on {n} models* or *{n} models blocked · warnings on {n}
+   models*, or *Could not check the models; trying again* while a retry is pending. It is part of the
+   picker trigger's description and not announced; with one chosen model the MB-B01 line below the picker
+   speaks instead.
 2. **Inline, one line per field.** Under a field, its first blocker as a `.gh-field-error` line, else its
    first warning as a `.gh-field-warning` line, linked by the field's `aria-describedby`; when the field
-   has more blockers and warnings, the line ends in a muted *· {n} more in Batch Readiness*. Advice is
-   never inline.
+   has more blockers and warnings, the line ends in a muted *· {n} more in Batch Readiness* — except a
+   `models` finding that a chosen model's card already shows; such findings are not counted in the more
+   part either. Advice is never inline.
 3. **The Batch Readiness card** (`app-model-batch-readiness`), shown once a model is chosen (or at once
    for a blocker that exists from the start, such as a busy server): a summary row with a status word and
    glyph — *Ready*, *{n} to review*, *{n} blocking* — and count chips (*Blocking n*, *To review n*,

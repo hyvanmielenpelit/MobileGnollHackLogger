@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 
 import { MultiPickerComponent } from '../multi-picker/multi-picker.component';
-import { MultiPickerOption, MultiPickerSelection } from '../multi-picker/multi-picker.models';
+import { MultiPickerOption, MultiPickerSelection, MultiPickerStatus } from '../multi-picker/multi-picker.models';
 import { ModelOptionBadgesComponent } from './model-option-badges.component';
 import { ModelPickerKey, ModelPickerModel, ModelPickerNote, ModelPickerOption } from './model-picker.component';
 
@@ -26,7 +26,7 @@ export interface ModelMultiPickerSelection<M extends ModelPickerModel = ModelPic
  * carries the same badges under the name, and its `notes` as a list (else the detail as a muted
  * note). Price and
  * parallel-execution badges are off by default, since choosing which models something covers is
- * not choosing what to run. Presentational: the host owns the selection.
+ * not choosing what to run. Presentational: the host owns the selection and `status`, passed through.
  */
 @Component({
   selector: 'app-model-multi-picker',
@@ -54,6 +54,7 @@ export class ModelMultiPickerComponent<M extends ModelPickerModel = ModelPickerM
   @Input() showPrice = false;
   @Input() showParallel = false;
   @Input() chipStyle: 'pill' | 'card' = 'pill';
+  @Input() status: MultiPickerStatus | null = null;
 
   /** Once per toggle, All, None or chip removal. */
   @Output() selectionChange = new EventEmitter<ModelMultiPickerSelection<M>>();

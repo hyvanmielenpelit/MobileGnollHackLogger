@@ -41,7 +41,7 @@
           [attr.aria-expanded]="open"
           [attr.aria-controls]="open ? listboxId : null"
           [attr.aria-labelledby]="triggerLabelledBy"
-          [attr.aria-describedby]="describedBy"
+          [attr.aria-describedby]="triggerDescribedBy"
           (click)="toggle()" (keydown)="onTriggerKeydown($event)">
     @if (selectedEntries.length === 0) {
       <span class="model-name gh-multi-picker-summary text-muted">{{ placeholderText }}</span>
@@ -84,7 +84,7 @@
   }
 </div>
 
-@if (showAllNone || (chips === 'selected' && selectedEntries.length > 0)) {
+@if (showAllNone || status || (chips === 'selected' && selectedEntries.length > 0)) {
   <div class="gh-multi-picker-row">
     @if (showAllNone) {
       <div class="gh-multi-picker-actions">
@@ -113,8 +113,31 @@
         }
       </div>
     }
+    @if (status; as s) {
+      <span class="gh-multi-picker-status" [id]="statusId" [attr.data-tone]="s.tone">
+        @switch (s.tone) {
+          @case ('busy') {
+            <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+              <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+              <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+            </svg>
+          }
+          @case ('error') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          }
+          @case ('warning') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          }
+          @default {
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          }
+        }
+        <span>{{ s.text }}</span>
+      </span>
+    }
     @if (chips === 'selected' && selectedEntries.length > 0) {
-      <ul class="gh-multi-picker-chips" [attr.aria-label]="'Selected ' + summaryNoun">
+      <ul class="gh-multi-picker-chips" [attr.aria-label]="'Selected ' + summaryNoun"
+          [attr.data-checking]="status?.tone === 'busy' ? '' : null">
         @for (entry of shownChips; track entry.option.key) {
           @let chipReason = chipBlockedReason(entry);
           <li class="gh-multi-picker-chip">

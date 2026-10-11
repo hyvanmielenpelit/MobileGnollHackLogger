@@ -20,6 +20,12 @@ export interface MultiPickerSelection {
   keys: MultiPickerKey[];
 }
 
+/** A one-line read-out beside the selection count, about the chosen items. */
+export interface MultiPickerStatus {
+  tone: 'busy' | 'ok' | 'warning' | 'error';
+  text: string;
+}
+
 /**
  * The context of a host's `optionTemplate`, which must render text only, or `chipTemplate`, which
  * renders non-interactive content: text or a list.

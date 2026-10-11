@@ -20,7 +20,13 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
-import { MultiPickerKey, MultiPickerOption, MultiPickerOptionContext, MultiPickerSelection } from './multi-picker.models';
+import {
+  MultiPickerKey,
+  MultiPickerOption,
+  MultiPickerOptionContext,
+  MultiPickerSelection,
+  MultiPickerStatus
+} from './multi-picker.models';
 
 /** One row of the listbox. */
 export interface MultiPickerEntry {
@@ -105,6 +111,11 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   @Input() chipTemplate: TemplateRef<MultiPickerOptionContext> | null = null;
   /** `card` draws each chip as a glass card in a grid that spans the host (`.gh-multi-picker--cards`). */
   @Input() chipStyle: 'pill' | 'card' = 'pill';
+  /**
+   * Shown beside the count and appended to the trigger's description; not announced. `busy` adds a
+   * spinner and dims the chips' notes.
+   */
+  @Input() status: MultiPickerStatus | null = null;
 
   /** Once per toggle, All, None or chip removal. */
   @Output() selectionChange = new EventEmitter<MultiPickerSelection>();
@@ -141,6 +152,14 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   get triggerLabelledBy(): string | null {
     return this.labelIdValue ? `${this.labelIdValue} ${this.triggerId}` : null;
+  }
+
+  get statusId(): string { return `${this.uid}-status`; }
+
+  /** The host's hint, then the status while one shows. */
+  get triggerDescribedBy(): string | null {
+    const ids = [this.describedBy, this.status ? this.statusId : null].filter(id => !!id);
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   get listboxId(): string { return `${this.uid}-listbox`; }

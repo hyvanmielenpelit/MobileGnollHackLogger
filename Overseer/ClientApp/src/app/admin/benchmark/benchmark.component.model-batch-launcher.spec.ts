@@ -57,6 +57,16 @@ const REFUSED: BenchmarkModelBatchFindingDto = {
   modelNotes: [{ modelConfigurationId: 4, text: 'Refused: see Batch Readiness' }]
 };
 
+const TOO_FEW: BenchmarkModelBatchFindingDto = {
+  code: 'MB-B01', name: 'TooFewModels', severity: 'Blocker', field: 'models', title: 'Choose at least two models',
+  detail: 'A model batch compares two or more models.', modelConfigurationIds: []
+};
+
+const TOO_MANY: BenchmarkModelBatchFindingDto = {
+  code: 'MB-B02', name: 'TooManyModels', severity: 'Blocker', field: 'models', title: 'At most 12 models in one batch',
+  detail: 'Remove models until 12 or fewer remain.', modelConfigurationIds: []
+};
+
 const ADVICE: BenchmarkModelBatchFindingDto = {
   code: 'MB-A01', name: 'SingleRunPerModel', severity: 'Advice', field: 'runsPerModel', title: 'One run per model',
   detail: 'Differences under about 2 index points are noise; use 2–3 runs to rank.', modelConfigurationIds: []
@@ -161,6 +171,8 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
     discardPeriodicTasks();
     flush();
   }
+
+  const modelsStatus = '.batch-models-picker .gh-multi-picker-status';
 
   const startButton = (): HTMLButtonElement => query<HTMLButtonElement>('.model-batch-actions .start-model-batch')!;
 
@@ -353,14 +365,31 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       finish();
     }));
 
-    it('counts the field\'s other findings on its inline line', fakeAsync(() => {
+    it('leaves the models line to the cards when they show the finding', fakeAsync(() => {
       preflightResponse = { findings: [SETTINGS_DIFFER, DUPLICATE], projection: projection(), maxModels: 12 };
       chooseBatch();
       chooseModels([2, 3, 4]);
 
+      expect(query('#mbLine-models')).toBeNull();
+      const status = query(modelsStatus)!;
+      const describedBy = query('.batch-models-picker .selector-trigger')!.getAttribute('aria-describedby')!.split(' ');
+      expect(describedBy).not.toContain('mbLine-models');
+      expect(describedBy).toContain(status.id);
+      expect(text(status)).toBe('Warnings on 3 models');
+      finish();
+    }));
+
+    it('keeps the models line for a finding no card shows', fakeAsync(() => {
+      preflightResponse = { findings: [TOO_MANY, SETTINGS_DIFFER], projection: projection(), maxModels: 12 };
+      chooseBatch();
+      chooseModels([2, 3, 4]);
+
       const line = query('#mbLine-models')!;
-      expect(text(line)).toBe('Service tier differs between models· 1 more in Batch Readiness');
-      expect(text(line.querySelector('.mb-field-line-more'))).toBe('· 1 more in Batch Readiness');
+      expect(text(line)).toBe(TOO_MANY.title);
+      // The card-covered warning is not counted.
+      expect(line.querySelector('.mb-field-line-more')).toBeNull();
+      // A models blocker never suppresses a warning count.
+      expect(text(query(modelsStatus))).toBe('Warnings on 1 model');
       finish();
     }));
 
@@ -415,6 +444,76 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       query<HTMLButtonElement>('app-model-batch-readiness .gh-readiness-go')!.click();
 
       expect(document.activeElement).toBe(query('.assessor-model-selector .selector-trigger'));
+      finish();
+    }));
+  });
+
+  describe('Models Under Test status', () => {
+    const modelsTrigger = () => query('.batch-models-picker .selector-trigger')!;
+    const cardList = () => query('.batch-models-picker ul.gh-multi-picker-chips')!;
+
+    it('shows that the models are being checked, then what the check found', fakeAsync(() => {
+      chooseBatch();
+      preflightResponse = { findings: [SAME_PROVIDER], projection: projection(), maxModels: 12 };
+      ctx.runTab().onBatchModelsChange([2, 4]);
+      ctx.refresh();
+
+      let status = query(modelsStatus)!;
+      expect(status.getAttribute('data-tone')).toBe('busy');
+      expect(text(status)).toBe('Checking the models for warnings…');
+      expect(cardList().hasAttribute('data-checking')).toBe(true);
+
+      settle();
+
+      status = query(modelsStatus)!;
+      expect(status.getAttribute('data-tone')).toBe('warning');
+      expect(text(status)).toBe('Warnings on 1 model');
+      expect(cardList().hasAttribute('data-checking')).toBe(false);
+      expect(modelsTrigger().getAttribute('aria-describedby')).toBe(`bmBatchModelsHint ${status.id}`);
+      finish();
+    }));
+
+    it('says when the chosen models have no warnings', fakeAsync(() => {
+      chooseBatch();
+      chooseModels([2, 3]);
+
+      const status = query(modelsStatus)!;
+      expect(status.getAttribute('data-tone')).toBe('ok');
+      expect(text(status)).toBe('No warnings on these models');
+      finish();
+    }));
+
+    it('counts blocked and warned models separately', fakeAsync(() => {
+      preflightResponse = { findings: [REFUSED, SETTINGS_DIFFER, DUPLICATE], projection: projection(), maxModels: 12 };
+      chooseBatch();
+      chooseModels([2, 3, 4]);
+
+      const status = query(modelsStatus)!;
+      expect(status.getAttribute('data-tone')).toBe('error');
+      expect(text(status)).toBe('1 model blocked · warnings on 2 models');
+      finish();
+    }));
+
+    it('says when the check failed', fakeAsync(() => {
+      preflight.mockReturnValueOnce(throwError(() => new Error('x')));
+      chooseBatch();
+      chooseModels([2, 3]);
+
+      const status = query(modelsStatus)!;
+      expect(status.getAttribute('data-tone')).toBe('error');
+      expect(text(status)).toBe('Could not check the models; trying again');
+      // Runs the retry: it asks again and the default answer settles.
+      finish();
+    }));
+
+    it('shows nothing for one chosen model, whose blocker is the line under the picker', fakeAsync(() => {
+      preflightResponse = { findings: [TOO_FEW], projection: projection(), maxModels: 12 };
+      chooseBatch();
+      chooseModels([2]);
+
+      expect(query(modelsStatus)).toBeNull();
+      expect(text(query('#mbLine-models'))).toBe(TOO_FEW.title);
+      expect(modelsTrigger().getAttribute('aria-describedby')).toBe('bmBatchModelsHint mbLine-models');
       finish();
     }));
   });

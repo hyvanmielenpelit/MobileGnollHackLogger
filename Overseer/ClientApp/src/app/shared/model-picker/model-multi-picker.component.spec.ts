@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { ModelMultiPickerComponent, ModelMultiPickerSelection } from './model-multi-picker.component';
 import { ModelPickerComponent, ModelPickerKey, ModelPickerModel, ModelPickerOption } from './model-picker.component';
+import { MultiPickerStatus } from '../multi-picker/multi-picker.models';
 
 interface TestModel extends ModelPickerModel {
   id: number;
@@ -60,7 +61,8 @@ const NOTED_OPTIONS: ModelPickerOption<TestModel>[] = [
       <app-model-multi-picker class="multi-noted" label="Noted models" [options]="notedOptions"
                               [selectedKeys]="notedSelected"></app-model-multi-picker>
       <app-model-multi-picker class="multi-cards" label="Card models" [options]="cardOptions" [selectedKeys]="cardSelected"
-                              chipStyle="card" [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
+                              chipStyle="card" [showPrice]="true" [showParallel]="true"
+                              [status]="status"></app-model-multi-picker>
     </div>
   `
 })
@@ -74,6 +76,7 @@ class HostComponent {
   cardSelected: ModelPickerKey[] = [];
   notedOptions: ModelPickerOption<TestModel>[] = NOTED_OPTIONS;
   notedSelected: ModelPickerKey[] = ['noted:1', 'noted:2'];
+  status: MultiPickerStatus | null = null;
   changes: ModelMultiPickerSelection<TestModel>[] = [];
   outerKeys: string[] = [];
 
@@ -95,6 +98,11 @@ class HostComponent {
 
   selectCards(keys: ModelPickerKey[]): void {
     this.cardSelected = keys;
+    this.cdr.markForCheck();
+  }
+
+  setStatus(status: MultiPickerStatus | null): void {
+    this.status = status;
     this.cdr.markForCheck();
   }
 }
@@ -289,6 +297,15 @@ describe('ModelMultiPickerComponent', () => {
     expect(listbox(multi)).toBeNull();
     expect(host.outerKeys).not.toContain('Escape');
     expect(document.activeElement).toBe(trigger(multi));
+  });
+
+  it('passes its status through to the picker', () => {
+    host.selectCards(['card:short', 'card:beta']);
+    host.setStatus({ tone: 'warning', text: 'Warnings on 1 model' });
+    fixture.detectChanges();
+    const status = part('.multi-cards').querySelector<HTMLElement>('.gh-multi-picker-status')!;
+    expect(status.textContent!.trim()).toBe('Warnings on 1 model');
+    expect(status.getAttribute('data-tone')).toBe('warning');
   });
 
   describe('card mode layout', () => {

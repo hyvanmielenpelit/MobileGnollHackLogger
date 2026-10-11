@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 
 import { MultiPickerComponent } from './multi-picker.component';
-import { MultiPickerKey, MultiPickerOption, MultiPickerSelection } from './multi-picker.models';
+import { MultiPickerKey, MultiPickerOption, MultiPickerSelection, MultiPickerStatus } from './multi-picker.models';
 
 const OPTIONS: MultiPickerOption[] = [
   { key: 'a', label: 'Alpha', tag: 'Run', detail: 'Run #1' },
@@ -12,7 +12,8 @@ const OPTIONS: MultiPickerOption[] = [
   { key: 'e', label: 'Delta' }
 ];
 
-type HostState = Pick<HostComponent, 'options' | 'selected' | 'min' | 'max' | 'chips' | 'maxChips' | 'useTemplate' | 'chipStyle'>;
+type HostState = Pick<HostComponent,
+  'options' | 'selected' | 'min' | 'max' | 'chips' | 'maxChips' | 'useTemplate' | 'chipStyle' | 'status' | 'showAllNone'>;
 
 /** Feeds every emitted selection back into `selectedKeys`, the way a real host does. */
 @Component({
@@ -25,6 +26,7 @@ type HostState = Pick<HostComponent, 'options' | 'selected' | 'min' | 'max' | 'c
       <app-multi-picker class="picker" labelledBy="pickLabel" describedBy="pickHint" summaryNoun="sources"
                         [options]="options" [selectedKeys]="selected" [min]="min" [max]="max"
                         [chips]="chips" [maxChips]="maxChips" [chipStyle]="chipStyle"
+                        [status]="status" [showAllNone]="showAllNone"
                         [optionTemplate]="useTemplate ? custom : null"
                         [chipTemplate]="useTemplate ? customChip : null"
                         (selectionChange)="onChange($event)"></app-multi-picker>
@@ -56,6 +58,8 @@ class HostComponent {
   maxChips = 6;
   useTemplate = false;
   chipStyle: 'pill' | 'card' = 'pill';
+  status: MultiPickerStatus | null = null;
+  showAllNone = true;
   changes: MultiPickerSelection[] = [];
   outerKeys: string[] = [];
   dialogKeys: string[] = [];
@@ -519,6 +523,46 @@ describe('MultiPickerComponent', () => {
 
       update({ max: null });
       expect(count()!.textContent!.trim()).toBe('2 selected');
+    });
+  });
+
+  describe('status', () => {
+    const status = () => picker().querySelector<HTMLElement>('.gh-multi-picker-status');
+    const chipList = () => picker().querySelector<HTMLElement>('ul.gh-multi-picker-chips')!;
+
+    it('is absent by default, leaving the trigger described by the host hint alone', () => {
+      update({ selected: ['a', 'b'] });
+      expect(status()).toBeNull();
+      expect(trigger().getAttribute('aria-describedby')).toBe('pickHint');
+      expect(chipList().hasAttribute('data-checking')).toBe(false);
+    });
+
+    it('while busy shows a ring and the text, describes the trigger and marks the chips as checking, unannounced', () => {
+      update({ selected: ['a', 'b'], status: { tone: 'busy', text: 'Checking the sources' } });
+      const s = status()!;
+      expect(s.getAttribute('data-tone')).toBe('busy');
+      expect(s.querySelector('.dc-ring')).not.toBeNull();
+      expect(s.textContent!.trim()).toBe('Checking the sources');
+      expect(trigger().getAttribute('aria-describedby')).toBe(`pickHint ${s.id}`);
+      expect(chipList().hasAttribute('data-checking')).toBe(true);
+      expect(s.hasAttribute('role')).toBe(false);
+      expect(s.hasAttribute('aria-live')).toBe(false);
+    });
+
+    it('with a warning shows the triangle glyph and no ring, and the chips are not checking', () => {
+      update({ selected: ['a', 'b'], status: { tone: 'warning', text: 'Warnings on 1 source' } });
+      const s = status()!;
+      expect(s.querySelector('.dc-ring')).toBeNull();
+      expect(s.querySelector('svg path')).not.toBeNull();
+      expect(s.querySelector('svg circle')).toBeNull();
+      expect(chipList().hasAttribute('data-checking')).toBe(false);
+    });
+
+    it('renders without chips or All and None', () => {
+      update({ selected: ['a'], chips: 'none', showAllNone: false, status: { tone: 'ok', text: 'All clear' } });
+      expect(picker().querySelector('.gh-multi-picker-actions')).toBeNull();
+      expect(picker().querySelector('.gh-multi-picker-chips')).toBeNull();
+      expect(status()!.textContent!.trim()).toBe('All clear');
     });
   });
 

@@ -23,6 +23,7 @@ import {
   ModelPickerOption
 } from '../../../shared/model-picker/model-picker.component';
 import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-multi-picker.component';
+import { MultiPickerStatus } from '../../../shared/multi-picker/multi-picker.models';
 import { ReorderableListComponent, ReorderableListItem } from '../../../shared/reorderable-list/reorderable-list.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
@@ -1142,6 +1143,66 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     return notes;
   }
 
+  private batchModelsStatusCache: {
+    isModelBatch: boolean;
+    loading: boolean;
+    error: string | null;
+    answered: boolean;
+    findings: BenchmarkModelBatchFindingDto[];
+    models: number[];
+    status: MultiPickerStatus | null;
+  } | null = null;
+
+  /**
+   * The Models Under Test read-out: the check in flight, or what the latest one found on the chosen
+   * models' cards; nothing under two models.
+   */
+  get batchModelsStatus(): MultiPickerStatus | null {
+    const launcher = this.launcher;
+    const cached = this.batchModelsStatusCache;
+    if (cached && cached.isModelBatch === launcher.isModelBatch && cached.loading === launcher.preflightLoading
+        && cached.error === launcher.preflightError && cached.answered === launcher.preflightAnswered
+        && cached.findings === launcher.findings && cached.models === launcher.batchModelKeys) {
+      return cached.status;
+    }
+    const status = this.computeBatchModelsStatus();
+    this.batchModelsStatusCache = {
+      isModelBatch: launcher.isModelBatch, loading: launcher.preflightLoading, error: launcher.preflightError,
+      answered: launcher.preflightAnswered, findings: launcher.findings, models: launcher.batchModelKeys, status
+    };
+    return status;
+  }
+
+  private computeBatchModelsStatus(): MultiPickerStatus | null {
+    const launcher = this.launcher;
+    if (!launcher.isModelBatch || launcher.batchModelKeys.length < 2) return null;
+    if (launcher.preflightLoading) return { tone: 'busy', text: 'Checking the models for warnings…' };
+    if (launcher.preflightError) return { tone: 'error', text: 'Could not check the models; trying again' };
+    if (!launcher.preflightAnswered) return null;
+    let blocked = 0;
+    let warned = 0;
+    for (const id of launcher.batchModelKeys) {
+      const notes = this.batchChipNotes(id);
+      if (notes.some(n => n.tone === 'error')) {
+        blocked++;
+      } else if (notes.some(n => n.tone === 'warning')) {
+        warned++;
+      }
+    }
+    if (blocked === 0 && warned === 0) {
+      // A models blocker no card shows speaks on the line under the picker instead.
+      return this.batchFieldLine('models')?.severity === 'Blocker'
+        ? null
+        : { tone: 'ok', text: 'No warnings on these models' };
+    }
+    const parts = [
+      ...(blocked > 0 ? [`${blocked} ${blocked === 1 ? 'model' : 'models'} blocked`] : []),
+      ...(warned > 0 ? [`warnings on ${warned} ${warned === 1 ? 'model' : 'models'}`] : [])
+    ];
+    const text = parts.join(' · ');
+    return { tone: blocked > 0 ? 'error' : 'warning', text: text[0].toUpperCase() + text.slice(1) };
+  }
+
   private batchOrderCache: { keys: number[]; source: SystemAiConfigDto[]; items: ReorderableListItem[] } | null = null;
 
   /** The chosen models in the As listed order, for the reorderable list. Memoized like the picker options. */
@@ -1163,9 +1224,12 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     return config?.displayName || config?.modelId || `Configuration #${configId}`;
   }
 
-  private batchFieldLinesCache: (BatchFieldLines & { findings: BenchmarkModelBatchFindingDto[] }) | null = null;
+  private batchFieldLinesCache: (BatchFieldLines & { findings: BenchmarkModelBatchFindingDto[]; models: number[] }) | null = null;
 
-  /** Each field's inline line: its first blocker, else its first warning. Advice is never inline. */
+  /**
+   * Each field's inline line: its first blocker, else its first warning. Advice is never inline, nor
+   * a models finding a card already shows.
+   */
   get batchFieldLines(): Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> {
     return this.batchFieldLineState().lines;
   }
@@ -1173,7 +1237,8 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
   private batchFieldLineState(): BatchFieldLines {
     if (!this.launcher.isModelBatch) return { lines: {}, more: {} };
     const findings = this.launcher.findings;
-    if (this.batchFieldLinesCache?.findings === findings) {
+    const models = this.launcher.batchModelKeys;
+    if (this.batchFieldLinesCache?.findings === findings && this.batchFieldLinesCache.models === models) {
       return this.batchFieldLinesCache;
     }
     const lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> = {};
@@ -1182,6 +1247,9 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
       for (const finding of findings) {
         const field = modelBatchFieldOf(finding.field);
         if (finding.severity !== severity || !field) continue;
+        if (field === 'models' && finding.modelNotes?.some(n => !!n.text && models.includes(n.modelConfigurationId))) {
+          continue;
+        }
         if (lines[field]) {
           more[field] = (more[field] ?? 0) + 1;
         } else {
@@ -1189,7 +1257,7 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
         }
       }
     }
-    this.batchFieldLinesCache = { findings, lines, more };
+    this.batchFieldLinesCache = { findings, models, lines, more };
     return this.batchFieldLinesCache;
   }
 
