@@ -428,10 +428,11 @@ Admin → GnollBench → **Run Benchmark**, *Test Setup* fieldset:
 - **Wait when the run cap blocks the next run** — shown for every battery; required when the planned
   launches exceed the daily cap. Chosen for each start and never remembered; the Battery Projection
   shows whether the launches fit under the cap.
-- **Battery Projection** (*K suites × R = n runs*) — projected wall time and cost as *R* × the sum of
-  each suite's recent mean run duration and cost, the remaining daily headroom, and a warning when the
-  launches exceed the daily cap (*… so this battery spans at least d days*) or the current headroom.
-  A projection row says so when some suite has no completed or priced run to project from.
+- **Battery Projection** — a *Planned runs* row (*n* with *K suites × R runs per suite*), projected wall
+  time and cost as *R* × the sum of each suite's recent mean run duration and cost, the remaining daily
+  headroom, and a warning when the launches exceed the daily cap (*… so this battery spans at least d
+  days*) or the current headroom. A projection row says so when some suite has no completed or priced run
+  to project from.
 - **Reuse earlier runs** — a checkbox, off by default and never remembered (reuse is a per-start
   decision). When checked, the launcher calls the reuse preview on every change of battery, model or
   grader field, and the projection reads *Reusing n earlier runs (#ids); launching m.*, or says that

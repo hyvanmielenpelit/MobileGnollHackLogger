@@ -1780,11 +1780,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     chip notes as `detail`), *Runs per model* (suite) or *Runs per Suite* (battery), the **Model order**
     radios (`fieldset.gh-choice.batch-order-choice`) with an `app-reorderable-list` under *As listed*,
     *Batch Options*, the **Batch Projection** fieldset (`.series-projection-fieldset.batch-projection`,
-    with a *Per-model basis* `gh-disclosure`), and `.model-batch-actions`: `app-model-batch-readiness`
+    its first row *Planned runs* `.batch-planned-runs-row` with the run arithmetic in its note, and a
+    *Per-model basis* `gh-disclosure`), and `.model-batch-actions`: `app-model-batch-readiness`
     above **Start Model Batch** (`aria-disabled` with `#startModelBatchHint`), which opens
-    `#modelBatchConfirmDialog` (*Start model batch?*, the plan as a `gh-table`; its **Start Model Batch**
-    sends). Each finding's inline line is the `#batchLine` template under its field (`mbLine-<field>`,
-    added to the field's `aria-describedby` by `describedWithBatchLine`); the server's `field` names map
+    `#modelBatchConfirmDialog` (*Start a batch of {n} models?*, a summary: a `run-stat-strip` of figures,
+    the models with their `runFactBadges`, target and grading sections, the acknowledged warnings; the
+    title is focused on open; `mbc-` classes in the run tab's SCSS; its **Start Model Batch** sends).
+    Each finding's inline line is the `#batchLine` template under its field (`mbLine-<field>`, added to
+    the field's `aria-describedby` by `describedWithBatchLine`); the server's `field` names map
     to the launcher's through `modelBatchFieldOf`. The preflight is asked through
     `BenchmarkLauncherState.requestPreflight()` from every batch change handler (300 ms debounce,
     `switchMap`, retry with backoff), never computed in the browser. The banner (`.model-batch-banner`,

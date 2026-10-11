@@ -159,7 +159,10 @@ describe('AdminBenchmarkComponent', () => {
         expect(ctx.launcher.maxRunsPerSuite).toBe(3);
         expect(ctx.launcher.effectiveRunCount).toBe(3);
         expect(query('#runCountInput')!.getAttribute('max')).toBe('3');
-        expect(query('#batteryProjectionLegend')!.textContent).toContain('2 suites × 3 = 6 runs');
+        expect(query('#batteryProjectionLegend')!.textContent!.trim()).toBe('Battery Projection');
+        const planned = query('.battery-projection .battery-planned-runs-row')!;
+        expect(planned.querySelector('.projection-value')!.textContent!.trim()).toBe('6');
+        expect(planned.querySelector('.projection-note')!.textContent!.trim()).toBe('(2 suites × 3 runs per suite)');
 
         query<HTMLInputElement>('#runTargetSuite')!.click();
         fixture.detectChanges();

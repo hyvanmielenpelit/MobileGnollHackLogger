@@ -1061,10 +1061,15 @@
                 <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
                 </svg>
-                <span>Series Projection ({{ launcher.effectiveRunCount }} runs)</span>
+                <span>Series Projection</span>
               </legend>
 
               <div class="projection-grid" role="list">
+                <div class="projection-row series-planned-runs-row" role="listitem">
+                  <span class="projection-label">Planned runs:</span>
+                  <span class="projection-value"><strong>{{ launcher.effectiveRunCount }}</strong></span>
+                </div>
+
                 <div class="projection-row" role="listitem">
                   <span class="projection-label">Projected wall time:</span>
                   @if (projectedSeriesDurationLabel) {
@@ -1118,10 +1123,16 @@
                 <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
                 </svg>
-                <span>{{ batchProjectionLegend }}</span>
+                <span>Batch Projection</span>
               </legend>
 
               <div class="projection-grid" role="list">
+                <div class="projection-row batch-planned-runs-row" role="listitem">
+                  <span class="projection-label">Planned runs:</span>
+                  <span class="projection-value"><strong>{{ batchPlannedRunCount }}</strong></span>
+                  <span class="projection-note text-muted">({{ batchPlanText }})</span>
+                </div>
+
                 <div class="projection-row" role="listitem">
                   <span class="projection-label">Projected wall time:</span>
                   @if (projectedBatchWallLabel) {
@@ -1230,10 +1241,16 @@
                 <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
                 </svg>
-                <span>Battery Projection ({{ launcher.selectedBattery.suites.length }} suites × {{ launcher.effectiveRunCount }} = {{ batteryLaunchCount }} runs)</span>
+                <span>Battery Projection</span>
               </legend>
 
               <div class="projection-grid" role="list">
+                <div class="projection-row battery-planned-runs-row" role="listitem">
+                  <span class="projection-label">Planned runs:</span>
+                  <span class="projection-value"><strong>{{ batteryLaunchCount }}</strong></span>
+                  <span class="projection-note text-muted">({{ batteryPlanText }})</span>
+                </div>
+
                 <div class="projection-row" role="listitem">
                   <span class="projection-label">Projected wall time:</span>
                   @if (projectedBatteryDurationLabel) {
@@ -1368,85 +1385,192 @@
   }
 </div>
 
-<!-- MODEL BATCH START CONFIRMATION: the plan in one table; nothing is sent until it is confirmed. -->
+<!-- MODEL BATCH START CONFIRMATION: the plan as a summary; nothing is sent until it is confirmed. -->
 <dialog #modelBatchConfirmDialog class="gh-dialog benchmark-form-dialog model-batch-confirm-dialog"
-        aria-labelledby="modelBatchConfirmTitle">
-  <div class="dialog-content flex-col">
-    <div class="dialog-header">
-      <div class="dialog-title-group">
-        <h3 id="modelBatchConfirmTitle">Start model batch?</h3>
+        aria-labelledby="modelBatchConfirmTitle" (close)="onModelBatchConfirmClosed()">
+  <!-- A model's badges, as the model batch progress dialog shows them. -->
+  <ng-template #mbcBadges let-badges>
+    @for (badge of badges; track badge.kind) {
+      @switch (badge.kind) {
+        @case ('provider') {
+          <app-provider-badge [provider]="badge.provider" />
+        }
+        @case ('thinking') {
+          <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+        }
+        @case ('reasoning') {
+          <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+        }
+        @default {
+          <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+        }
+      }
+    }
+  </ng-template>
+
+  <!-- A model under test: its name, its badges and, when another entry reads the same, its configuration id. -->
+  <ng-template #mbcModel let-model>
+    <div class="mbc-model-line">
+      <span class="mbc-model-name">{{ model.name }}</span>
+      <ng-container [ngTemplateOutlet]="mbcBadges" [ngTemplateOutletContext]="{ $implicit: model.badges }" />
+      @if (model.idNote) {
+        <span class="mbc-model-id">{{ model.idNote }}</span>
+      }
+    </div>
+  </ng-template>
+
+  @if (modelBatchConfirmOpen) {
+    @let models = batchConfirmModels;
+    <div class="dialog-content flex-col">
+      <div class="dialog-header">
+        <div class="rr-identity mbc-identity">
+          <!-- Decorative: the title beside it names the batch. -->
+          <img class="gnollbench-emblem rr-emblem mbc-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="48" height="48">
+          <div class="dialog-title-group">
+            <!-- Focused on open, so the close button's hint does not open by itself. -->
+            <h3 id="modelBatchConfirmTitle" tabindex="-1" autofocus>{{ batchConfirmTitle }}</h3>
+            <p class="dialog-subtitle mbc-subtitle">{{ batchConfirmSubtitle }}</p>
+          </div>
+        </div>
+        <button type="button" class="btn-icon-action" aria-label="Close the model batch confirmation"
+                interestfor="modelBatchConfirmCloseTip" [attr.style]="'anchor-name: --modelBatchConfirmCloseTip'"
+                (click)="closeModelBatchConfirm()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="modelBatchConfirmCloseTip"
+             [attr.style]="'position-anchor: --modelBatchConfirmCloseTip'">Close without starting</div>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close the model batch confirmation"
-              interestfor="modelBatchConfirmCloseTip" [attr.style]="'anchor-name: --modelBatchConfirmCloseTip'"
-              (click)="closeModelBatchConfirm()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-      <div popover="hint" class="gh-tooltip" id="modelBatchConfirmCloseTip"
-           [attr.style]="'position-anchor: --modelBatchConfirmCloseTip'">Close without starting</div>
-    </div>
-    <div class="dialog-body">
-      <table class="gh-table model-batch-plan">
-        <caption class="visually-hidden">The model batch to start</caption>
-        <tbody>
-          <tr>
-            <th scope="row">Models</th>
-            <td>
-              <ol class="model-batch-plan-models">
-                @for (name of batchConfirmModels; track $index) {
-                  <li>{{ name }}</li>
-                }
-              </ol>
-              <span class="text-muted model-batch-plan-order">{{ batchConfirmOrderText }}</span>
-            </td>
-          </tr>
-          <tr>
-            <th scope="row">Target</th>
-            <td>{{ batchConfirmTargetText }}</td>
-          </tr>
-          <tr>
-            <th scope="row">{{ launcher.isBatteryTarget ? 'Runs per suite' : 'Runs per model' }}</th>
-            <td>{{ launcher.batchRunsPerMember }}</td>
-          </tr>
-          <tr>
-            <th scope="row">Planned runs</th>
-            <td>{{ batchPlannedRunCount }}</td>
-          </tr>
-          <tr>
-            <th scope="row">Projected cost</th>
-            <td>{{ projectedBatchCostLabel ?? 'Not projected: not every model has a priced run' }}</td>
-          </tr>
-          <tr>
-            <th scope="row">Projected wall time</th>
-            <td>{{ projectedBatchWallLabel ?? 'Not projected: not every model has a completed run' }}</td>
-          </tr>
-          <tr>
-            <th scope="row">Graders</th>
-            <td>{{ batchConfirmGraders }}</td>
-          </tr>
-          @if (launcher.acknowledgedBatchWarnings.length > 0) {
-            <tr>
-              <th scope="row">Acknowledged</th>
-              <td>
-                <ul class="model-batch-plan-acknowledged">
-                  @for (warning of launcher.acknowledgedBatchWarnings; track warning.acknowledgmentKey) {
-                    <li>{{ warning.title }}</li>
-                  }
-                </ul>
-              </td>
-            </tr>
+
+      <!-- An inline-size container: grading sits beside the target and the acknowledged warnings when it is wide. -->
+      <div class="dialog-body mbc-body">
+        <dl class="run-stat-strip mbc-figures">
+          <div class="run-stat mbc-figure-runs">
+            <dt>Runs</dt>
+            <dd>{{ batchPlannedRunCount }} <span class="mbc-figure-note">{{ batchPlanText }}</span></dd>
+          </div>
+          <div class="run-stat mbc-figure-cost">
+            <dt>Projected cost</dt>
+            <dd>
+              @if (projectedBatchCostLabel; as cost) {
+                {{ cost }}
+              } @else {
+                <span class="mbc-figure-note">Not projected: not every model has a priced run</span>
+              }
+            </dd>
+          </div>
+          <div class="run-stat mbc-figure-wall">
+            <dt>Projected wall time</dt>
+            <dd>
+              @if (projectedBatchWallLabel; as wall) {
+                {{ wall }}
+              } @else {
+                <span class="mbc-figure-note">Not projected: not every model has a completed run</span>
+              }
+            </dd>
+          </div>
+          @if (batchDaySpan != null) {
+            <div class="run-stat mbc-figure-day-span">
+              <dt>Day span</dt>
+              <dd>≥ {{ batchDaySpan }} <span class="mbc-figure-note">rolling 24-hour windows</span></dd>
+            </div>
           }
-        </tbody>
-      </table>
+        </dl>
+
+        <section class="mbc-section mbc-models" aria-labelledby="mbcModelsHeading">
+          <div class="mbc-section-head">
+            <h4 id="mbcModelsHeading">Models under test ({{ models.length }})</h4>
+            <span class="mbc-section-note">{{ batchConfirmOrderText }}</span>
+          </div>
+          @if (launcher.batchOrder === 'asListed') {
+            <ol class="mbc-model-list">
+              @for (model of models; track model.key) {
+                <li class="mbc-model"><ng-container [ngTemplateOutlet]="mbcModel" [ngTemplateOutletContext]="{ $implicit: model }" /></li>
+              }
+            </ol>
+          } @else {
+            <ul class="mbc-model-list">
+              @for (model of models; track model.key) {
+                <li class="mbc-model"><ng-container [ngTemplateOutlet]="mbcModel" [ngTemplateOutletContext]="{ $implicit: model }" /></li>
+              }
+            </ul>
+          }
+        </section>
+
+        <div class="mbc-columns">
+          <section class="mbc-section mbc-target" aria-labelledby="mbcTargetHeading">
+            <div class="mbc-section-head">
+              <h4 id="mbcTargetHeading">Target</h4>
+            </div>
+            @if (launcher.isBatteryTarget) {
+              <p class="mbc-target-name"><span class="gh-tag mbc-kind-tag">Battery</span> {{ launcher.selectedBattery?.name }}</p>
+              @if (batchConfirmSuiteNames) {
+                <p class="mbc-target-suites">{{ batchConfirmSuiteNames }}</p>
+              }
+            } @else {
+              <p class="mbc-target-name"><span class="gh-tag mbc-kind-tag">Suite</span> {{ launcher.selectedSuite?.name ?? 'None selected' }}</p>
+            }
+          </section>
+
+          <section class="mbc-section mbc-grading" aria-labelledby="mbcGradingHeading">
+            <div class="mbc-section-head">
+              <h4 id="mbcGradingHeading">Grading</h4>
+            </div>
+            <dl class="mbc-graders">
+              @for (row of batchConfirmGraderRows; track row.role) {
+                <div>
+                  <dt>{{ row.role }}</dt>
+                  <dd class="mbc-grader-model">
+                    <span class="mbc-model-name">{{ row.name }}</span>
+                    <ng-container [ngTemplateOutlet]="mbcBadges" [ngTemplateOutletContext]="{ $implicit: row.badges }" />
+                    @if (row.note) {
+                      <span class="mbc-grader-note">{{ row.note }}</span>
+                    }
+                  </dd>
+                </div>
+              }
+            </dl>
+            <dl class="mbc-settings">
+              <div>
+                <dt>Scoring profile</dt>
+                <dd>{{ batchConfirmProfileName }}</dd>
+              </div>
+              <div>
+                <dt>Response style</dt>
+                <dd>{{ batchConfirmResponseStyle }}</dd>
+              </div>
+            </dl>
+          </section>
+          @if (launcher.acknowledgedBatchWarnings.length > 0) {
+            <section class="mbc-section mbc-acknowledged" aria-labelledby="mbcAcknowledgedHeading">
+              <div class="mbc-section-head">
+                <h4 id="mbcAcknowledgedHeading">Acknowledged warnings ({{ launcher.acknowledgedBatchWarnings.length }})</h4>
+              </div>
+              <ul class="mbc-acknowledged-list">
+                @for (warning of launcher.acknowledgedBatchWarnings; track warning.acknowledgmentKey) {
+                  <li>
+                    <svg class="mbc-warning-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <span>{{ warning.title }}</span>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModelBatchConfirm()">Cancel</button>
+        <button type="button" class="btn-gh confirm-model-batch" [attr.aria-disabled]="startingModelBatch ? 'true' : null"
+                (click)="confirmModelBatchStart()"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Model Batch</button>
+      </div>
     </div>
-    <div class="dialog-footer">
-      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeModelBatchConfirm()">Cancel</button>
-      <button type="button" class="btn-gh confirm-model-batch" [attr.aria-disabled]="startingModelBatch ? 'true' : null"
-              (click)="confirmModelBatchStart()"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Start Model Batch</button>
-    </div>
-  </div>
+  }
 </dialog>
 
 

@@ -526,7 +526,12 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       chooseModels([2, 3]);
 
       const block = query('fieldset.batch-projection')!;
-      expect(text(block.querySelector('legend'))).toBe('Batch Projection (2 models × 2 = 4 runs)');
+      expect(text(block.querySelector('legend'))).toBe('Batch Projection');
+      const planned = block.querySelector('.projection-grid > .batch-planned-runs-row')!;
+      expect(planned).toBe(block.querySelector('.projection-grid')!.firstElementChild);
+      expect(text(planned.querySelector('.projection-label'))).toBe('Planned runs:');
+      expect(text(planned.querySelector('.projection-value'))).toBe('4');
+      expect(text(planned.querySelector('.projection-note'))).toBe('(2 models × 2 runs per model)');
       const rows = text(block.querySelector('.projection-grid'));
       expect(rows).toContain('Projected wall time:');
       expect(rows).toContain('$1.5000');
@@ -585,14 +590,24 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
 
       const dialog = query<HTMLDialogElement>('dialog.model-batch-confirm-dialog')!;
       expect(dialog.open).toBe(true);
-      expect(text(query(`#${dialog.getAttribute('aria-labelledby')}`))).toBe('Start model batch?');
-      expect(Array.from(dialog.querySelectorAll('.model-batch-plan-models li')).map(li => text(li)))
+      expect(text(query(`#${dialog.getAttribute('aria-labelledby')}`))).toBe('Start a batch of 2 models?');
+      expect(text(dialog.querySelector('.mbc-subtitle')))
+        .toBe('2 runs on the suite Default Suite. Nothing runs until you start it.');
+      expect(Array.from(dialog.querySelectorAll('.mbc-models .mbc-model-name')).map(name => text(name)))
         .toEqual(['Second Model', 'Third Model']);
-      const plan = text(dialog.querySelector('.model-batch-plan'));
-      expect(plan).toContain('Random order');
-      expect(plan).toContain('Suite: Default Suite');
-      expect(plan).toContain('Assessor: Test Model');
-      expect(text(dialog.querySelector('.model-batch-plan-acknowledged'))).toBe(WARNING.title);
+      expect(dialog.querySelector('ul.mbc-model-list')).toBeTruthy();
+      expect(dialog.querySelector('ol.mbc-model-list')).toBeNull();
+      expect(text(dialog.querySelector('.mbc-models .mbc-section-note'))).toBe('Order drawn at random when the batch starts');
+      expect(text(dialog.querySelector('.mbc-figure-runs dd'))).toBe('2 2 models × 1 run per model');
+      expect(text(dialog.querySelector('.mbc-target-name'))).toBe('Suite Default Suite');
+      const assessor = dialog.querySelector('.mbc-graders > div')!;
+      expect(text(assessor.querySelector('dt'))).toBe('Assessor');
+      expect(text(assessor.querySelector('dd'))).toContain('Test Model');
+      const settings = Array.from(dialog.querySelectorAll('.mbc-settings > div'));
+      expect(settings.map(row => text(row.querySelector('dt')))).toEqual(['Scoring profile', 'Response style']);
+      expect(text(settings[1].querySelector('dd'))).toBe('Concise — production default');
+      expect(text(dialog.querySelector('.mbc-acknowledged-list'))).toBe(WARNING.title);
+      expect(dialog.querySelector('table')).toBeNull();
       expect(startModelBatch).not.toHaveBeenCalled();
 
       dialog.querySelector<HTMLButtonElement>('.dialog-footer .btn-gh-cancel')!.click();
@@ -649,6 +664,100 @@ describe('AdminBenchmarkComponent: model batch launcher', () => {
       fixture.detectChanges();
 
       expect(query<HTMLDialogElement>('dialog.model-batch-confirm-dialog')!.open).toBe(false);
+      finish();
+    }));
+
+    /** Opens the confirmation for a batch that may start, and returns it. */
+    function openConfirm(): HTMLDialogElement {
+      startButton().click();
+      fixture.detectChanges();
+      const dialog = query<HTMLDialogElement>('dialog.model-batch-confirm-dialog')!;
+      expect(dialog.open).toBe(true);
+      return dialog;
+    }
+
+    it('shows each model with its badges', fakeAsync(() => {
+      readyToStart();
+      const dialog = openConfirm();
+
+      const items = Array.from(dialog.querySelectorAll('.mbc-model-list > li'));
+      expect(items.length).toBe(2);
+      for (const item of items) {
+        expect(text(item.querySelector('.thinking-badge'))).toContain('High');
+        expect(item.querySelector('app-provider-badge')).toBeTruthy();
+        expect(item.querySelector('.mbc-model-id')).toBeNull();
+      }
+      finish();
+    }));
+
+    it('numbers the models only when they run as listed', fakeAsync(() => {
+      readyToStart();
+      query<HTMLInputElement>('#batchOrderAsListed')!.click();
+      settle();
+      const dialog = openConfirm();
+
+      expect(dialog.querySelector('ol.mbc-model-list')).toBeTruthy();
+      expect(dialog.querySelector('ul.mbc-model-list')).toBeNull();
+      expect(text(dialog.querySelector('.mbc-models .mbc-section-note'))).toBe('Run order');
+      finish();
+    }));
+
+    it('puts each grader on its own row, with the reader\'s coverage', fakeAsync(() => {
+      ctx.launcher.claimVerifierConfigId = 4;
+      ctx.launcher.secondOpinionConfigId = 4;
+      readyToStart();
+      const dialog = openConfirm();
+
+      const rows = Array.from(dialog.querySelectorAll('.mbc-graders > div'));
+      expect(rows.map(row => text(row.querySelector('dt')))).toEqual(['Assessor', 'Second reader', 'Claim verifier']);
+      expect(text(rows[2].querySelector('.mbc-grader-model'))).toContain('Fourth Model');
+      expect(rows[2].querySelector('app-provider-badge')).toBeTruthy();
+      const coverage = ctx.launcher.secondOpinionModeOptions.find(o => o.value === ctx.launcher.secondOpinionMode)!.label;
+      expect(text(rows[1].querySelector('.mbc-grader-note'))).toBe(coverage);
+      expect(rows[2].querySelector('.mbc-grader-note')).toBeNull();
+      finish();
+    }));
+
+    it('tells identical entries apart by their configuration id', fakeAsync(() => {
+      component.systemConfigs = [
+        ...component.systemConfigs,
+        buildBenchmarkConfig(component.systemConfigs[1], { id: 5 })
+      ];
+      ctx.refresh();
+      preflightResponse = { findings: [], projection: projection(), maxModels: 12 };
+      chooseBatch();
+      chooseModels([2, 5, 3]);
+      const dialog = openConfirm();
+
+      expect(Array.from(dialog.querySelectorAll('.mbc-model-list > li')).map(li => text(li.querySelector('.mbc-model-id'))))
+        .toEqual(['#2', '#5', '']);
+      finish();
+    }));
+
+    it('focuses the title on open, so the close button\'s hint stays shut', fakeAsync(() => {
+      readyToStart();
+      const dialog = openConfirm();
+
+      expect(document.activeElement).toBe(dialog.querySelector('#modelBatchConfirmTitle'));
+      expect(dialog.querySelector('#modelBatchConfirmCloseTip')!.matches(':popover-open')).toBe(false);
+      finish();
+    }));
+
+    it('shows the day span only when the batch needs more than one window', fakeAsync(() => {
+      readyToStart();
+      let dialog = openConfirm();
+      expect(dialog.querySelector('.mbc-figure-day-span')).toBeNull();
+      dialog.querySelector<HTMLButtonElement>('.dialog-footer .btn-gh-cancel')!.click();
+      fixture.detectChanges();
+
+      preflightResponse = {
+        findings: [],
+        projection: projection({ limits: limits({ daySpan: 2, minimumWallMs: 24 * 3600 * 1000 }) }),
+        maxModels: 12
+      };
+      chooseModels([2, 4]);
+      dialog = openConfirm();
+      expect(text(dialog.querySelector('.mbc-figure-day-span dd'))).toBe('≥ 2 rolling 24-hour windows');
       finish();
     }));
   });

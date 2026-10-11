@@ -26,6 +26,8 @@ import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-mu
 import { MultiPickerStatus } from '../../../shared/multi-picker/multi-picker.models';
 import { ReorderableListComponent, ReorderableListItem } from '../../../shared/reorderable-list/reorderable-list.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { reportWriterRefusal, reportWriterWarning } from '../run-ai-reports/report-writer-policy';
 import {
@@ -80,6 +82,24 @@ const MODEL_BATCH_FIELD_ALIASES: Readonly<Record<string, ModelBatchField>> = {
   order: 'order'
 };
 
+/** A model in the Start Model Batch confirmation. */
+interface BatchConfirmModel {
+  key: string;
+  name: string;
+  badges: RunFactBadge[];
+  /** `#<configuration id>` when another entry has the same name and badges; else null. */
+  idNote: string | null;
+}
+
+/** A grading role in the Start Model Batch confirmation. */
+interface BatchConfirmGraderRow {
+  role: string;
+  name: string;
+  badges: RunFactBadge[];
+  /** The reader's coverage; null for the other roles. */
+  note: string | null;
+}
+
 /** Per field, the finding its inline line shows and how many more blockers and warnings it has. */
 interface BatchFieldLines {
   lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>>;
@@ -93,6 +113,11 @@ const MODEL_BATCH_BASIS_TEXT: Readonly<Record<string, string>> = {
   TargetMean: 'the target\'s mean over other models: it has no run of its own here',
   None: 'no basis: neither it nor the target has a completed run'
 };
+
+/** *1 model*, *3 models*. */
+function countText(count: number, noun: string): string {
+  return `${count} ${count === 1 ? noun : `${noun}s`}`;
+}
 
 /** The launcher field a finding's `field` names, or null when it names none the launcher shows. */
 export function modelBatchFieldOf(field: string | null | undefined): ModelBatchField | null {
@@ -125,7 +150,7 @@ export interface LauncherAvailabilityLine {
   standalone: true,
   imports: [
     CommonModule, DecimalPipe, FormsModule, ModelPickerComponent, ModelMultiPickerComponent, ReorderableListComponent,
-    InfoTipComponent, ModelBatchReadinessComponent
+    InfoTipComponent, ModelBatchReadinessComponent, ProviderBadgeComponent
   ],
   templateUrl: './benchmark-run-tab.component.html',
   styleUrls: ['./benchmark-run-tab.component.scss']
@@ -676,6 +701,12 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
   /** K × R: the launches the battery run plans. */
   get batteryLaunchCount(): number {
     return (this.launcher.selectedBattery?.suites.length ?? 0) * this.launcher.effectiveRunCount;
+  }
+
+  /** The Battery Projection's Planned runs arithmetic: *2 suites × 3 runs per suite*. */
+  get batteryPlanText(): string {
+    const suites = this.launcher.selectedBattery?.suites.length ?? 0;
+    return `${countText(suites, 'suite')} × ${countText(this.launcher.effectiveRunCount, 'run')} per suite`;
   }
 
   /** The selected battery's suites with the declared scheme's normalized weights, for the select's info tip. */
@@ -1332,13 +1363,13 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
       ?? this.launcher.batchModelKeys.length * this.batchSuiteCount * this.launcher.batchRunsPerMember;
   }
 
-  get batchProjectionLegend(): string {
-    const models = this.launcher.batchModelKeys.length;
-    const modelsText = `${models} ${models === 1 ? 'model' : 'models'}`;
-    const runs = this.launcher.batchRunsPerMember;
+  /** The Planned runs arithmetic: *10 models × 2 suites × 1 run per suite*, or *2 models × 2 runs per model*. */
+  get batchPlanText(): string {
+    const models = countText(this.launcher.batchModelKeys.length, 'model');
+    const runs = countText(this.launcher.batchRunsPerMember, 'run');
     return this.launcher.isBatteryTarget
-      ? `Batch Projection (${modelsText} × ${this.batchSuiteCount} suites × ${runs} = ${this.batchPlannedRunCount} runs)`
-      : `Batch Projection (${modelsText} × ${runs} = ${this.batchPlannedRunCount} runs)`;
+      ? `${models} × ${countText(this.batchSuiteCount, 'suite')} × ${runs} per suite`
+      : `${models} × ${runs} per model`;
   }
 
   get batchLimits(): BenchmarkModelBatchLimitsDto | null {
@@ -1460,15 +1491,25 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     return '';
   }
 
+  /** The confirmation is open; its content renders only then. */
+  modelBatchConfirmOpen = false;
+
   /** Start Model Batch: shows the plan for confirmation; nothing is sent yet. */
   openModelBatchConfirm(): void {
     if (!this.canStartModelBatch || !this.launcher.buildModelBatchRequest()) return;
+    this.modelBatchConfirmOpen = true;
     this.cdr.detectChanges();
     this.modelBatchConfirmDialog?.nativeElement.showModal();
   }
 
   closeModelBatchConfirm(): void {
     this.modelBatchConfirmDialog?.nativeElement.close();
+  }
+
+  /** The dialog's close event, however it closed. */
+  onModelBatchConfirmClosed(): void {
+    this.modelBatchConfirmOpen = false;
+    this.cdr.markForCheck();
   }
 
   /**
@@ -1511,37 +1552,99 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     });
   }
 
-  /** The confirmation's run order: the As listed order, or the chosen models under a random order. */
-  get batchConfirmModels(): string[] {
-    return this.launcher.batchRunOrderIds.map(id => this.batchModelName(id));
+  /**
+   * The confirmation's models in request order, each with the badges the progress dialog gives it.
+   * Entries alike in name and badges also show their configuration id.
+   */
+  get batchConfirmModels(): BatchConfirmModel[] {
+    const rows = this.launcher.batchRunOrderIds.map(id => {
+      const config = this.workspace.benchmarkCapableConfigs.find(c => c.id === id);
+      const name = this.batchModelName(id);
+      const badges = runFactBadges({
+        name,
+        provider: config?.provider || null,
+        thinkingLevel: config?.thinkingLevel ?? null,
+        reasoningMode: config?.reasoningMode ?? null,
+        serviceTier: config?.serviceTier ?? null,
+        customEndpoint: !!config?.baseUrl?.trim()
+      });
+      return { id, name, badges, sameAs: [name, ...badges.map(b => b.text)].join('\u0000') };
+    });
+    return rows.map(row => ({
+      key: String(row.id),
+      name: row.name,
+      badges: row.badges,
+      idNote: rows.some(other => other.id !== row.id && other.sameAs === row.sameAs) ? `#${row.id}` : null
+    }));
   }
 
+  /** The models section's heading note. */
   get batchConfirmOrderText(): string {
-    return this.launcher.batchOrder === 'asListed'
-      ? 'As listed'
-      : 'Random order, drawn when the batch starts; the progress dialog shows the order and its seed';
+    return this.launcher.batchOrder === 'asListed' ? 'Run order' : 'Order drawn at random when the batch starts';
   }
 
-  get batchConfirmTargetText(): string {
-    if (this.launcher.isBatteryTarget) {
-      const battery = this.launcher.selectedBattery;
-      return battery ? `Battery: ${battery.name} (${battery.suites.length} suites)` : 'Battery';
-    }
-    return `Suite: ${this.launcher.selectedSuite?.name ?? 'none selected'}`;
+  get batchConfirmTitle(): string {
+    return `Start a batch of ${this.launcher.batchModelKeys.length} models?`;
   }
 
-  /** Every grading role in one line, with its model. */
-  get batchConfirmGraders(): string {
-    const parts: string[] = [];
-    const add = (role: string, model: SystemAiConfigDto | undefined): void => {
-      if (model) parts.push(`${role}: ${model.displayName || model.modelId}`);
+  get batchConfirmSubtitle(): string {
+    const target = this.launcher.isBatteryTarget
+      ? `the battery ${this.launcher.selectedBattery?.name ?? ''}`
+      : `the suite ${this.launcher.selectedSuite?.name ?? ''}`;
+    return `${this.batchPlannedRunCount} runs on ${target.trim()}. Nothing runs until you start it.`;
+  }
+
+  /** The battery's suites, in its order; empty for a suite target. */
+  get batchConfirmSuiteNames(): string {
+    return this.launcher.isBatteryTarget
+      ? (this.launcher.selectedBattery?.suites ?? []).map(s => s.suiteName).join(' · ')
+      : '';
+  }
+
+  /** One row per grading role that is set, each with its model's badges; the reader also with its coverage. */
+  get batchConfirmGraderRows(): BatchConfirmGraderRow[] {
+    const rows: BatchConfirmGraderRow[] = [];
+    const add = (role: string, model: SystemAiConfigDto | undefined, note: string | null = null): void => {
+      if (!model) return;
+      const name = model.displayName || model.modelId;
+      rows.push({
+        role,
+        name,
+        badges: runFactBadges({
+          name,
+          provider: model.provider || null,
+          thinkingLevel: model.thinkingLevel ?? null,
+          reasoningMode: model.reasoningMode ?? null,
+          serviceTier: null,
+          customEndpoint: false
+        }),
+        note
+      });
     };
+    const panel = this.launcher.isPanelLaunch;
     add('Assessor', this.selectedAssessorModel);
     add('Co-assessor', this.selectedCoAssessorModel);
-    add(this.launcher.isPanelLaunch ? 'Reference reader' : 'Second reader', this.selectedSecondOpinionModel);
+    add(
+      panel ? 'Reference reader' : 'Second reader',
+      this.selectedSecondOpinionModel,
+      panel
+        ? 'Every answer, blind'
+        : this.secondOpinionModeOptions.find(o => o.value === this.launcher.secondOpinionMode)?.label ?? null
+    );
     add('Claim verifier', this.selectedClaimVerifierModel);
     add('Report writer', this.selectedReportWriterModel);
-    return parts.join(' · ');
+    return rows;
+  }
+
+  /** The scoring profile as its select names it. */
+  get batchConfirmProfileName(): string {
+    const profile = this.launcher.selectedScoringProfile;
+    return profile ? this.formatProfileOption(profile) : 'None selected';
+  }
+
+  /** The response style as its select names it. */
+  get batchConfirmResponseStyle(): string {
+    return this.launcher.candidateVerboseMode ? 'Detailed — diagnostic' : 'Concise — production default';
   }
 
   // --- Model batches: the banner ---

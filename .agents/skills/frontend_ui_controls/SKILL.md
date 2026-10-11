@@ -1377,8 +1377,9 @@ the start button, not a stack of alerts and never a popup. The model batch launc
    completion names the finding, focusing the control), and for a warning an **I understand** checkbox
    (`.checkbox-label`, described by the line's title and sentence). A visually hidden `role="status"` line
    announces **only the counts**, once per settled check, never each finding.
-4. **The confirmation dialog.** The start button opens a `<dialog>` with the plan in one table and the
-   acknowledged warnings listed by title; only its confirm button sends.
+4. **The confirmation dialog.** The start button opens a `<dialog>` that summarizes the plan — figures,
+   the chosen items with their badges, the settings it runs under — and lists the acknowledged warnings by
+   title; its title takes focus on open; only its confirm button sends.
 
 **Rules.**
 

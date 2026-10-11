@@ -442,11 +442,11 @@ the one a run uses, with these differences:
 - **Batch Options** — *Wait when the run cap blocks the next run* (required when the batch plans more
   launches than the daily cap), and on a battery the note *Reuse earlier runs: not available for a model
   batch.*
-- **Batch Projection** (*n models × R = L runs*, or *n models × K suites × R = L runs*) — projected wall
-  time and cost (*each model at its recent mean run duration / cost on this target*, or why it is not
-  projected), the remaining daily headroom with the runs in the last 24 hours and the last hour, the day
-  span when the batch needs more than one window, a *Per-model basis* disclosure, and the alerts for the
-  daily cap, the daily headroom and the hourly cap.
+- **Batch Projection** — a *Planned runs* row (*L* with *n models × R runs per model*, or *n models × K
+  suites × R runs per suite*), projected wall time and cost (*each model at its recent mean run duration /
+  cost on this target*, or why it is not projected), the remaining daily headroom with the runs in the
+  last 24 hours and the last hour, the day span when the batch needs more than one window, a *Per-model
+  basis* disclosure, and the alerts for the daily cap, the daily headroom and the hourly cap.
 - **Batch Readiness** — the card above **Start Model Batch** (§ 7.1).
 
 The batch settings are remembered with the launcher's (`runMode`, `batchModelIds`, `batchOrder`,
@@ -482,10 +482,15 @@ The guidance comes in four layers, each carrying less text than the one before:
    the rationale, **Go to field**, and for a warning an **I understand** checkbox; the advice sits in a
    nested, closed *{n} tips* disclosure. A visually hidden `role="status"` line announces only the counts,
    once per settled check.
-4. **The confirmation dialog** — *Start model batch?* with the plan in one table: the models in run order
-   (with the order and seed rule), the target, runs per model or per suite, planned runs, projected cost
-   and wall time, the graders, and the acknowledged warnings by title; **Cancel** and **Start Model
-   Batch**. Nothing is sent before it is confirmed. A refusal that carries findings refreshes the card.
+4. **The confirmation dialog** — *Start a batch of {n} models?*, with the subtitle *{L} runs on the
+   battery {name}. Nothing runs until you start it.* (*on the suite {name}* for a suite). It summarizes
+   the plan: the figures (runs with their arithmetic, projected cost, projected wall time, and the day
+   span when the batch needs more than one rolling 24-hour window); the models with their badges, numbered
+   only under *As listed* (under *Randomized* the order is drawn at Start), and a muted configuration id
+   on entries whose name and badges are identical; the target, with a battery's suites; the graders, one
+   per row with their badges and the reader's coverage; the scoring profile and response style; and the
+   acknowledged warnings by title. The title takes focus on open. **Cancel** and **Start Model Batch**.
+   Nothing is sent before it is confirmed. A refusal that carries findings refreshes the card.
 
 *Start Model Batch* is `aria-disabled`, with its reason under it, until two models are chosen, a target
 and an assessor are set, the check has answered, no blocker remains and every warning is acknowledged.

@@ -614,8 +614,8 @@ Rules for writing a `RUN` step:
   `Reuse earlier runs` is not offered in batch mode, and `Number of Runs` is not shown on a suite
   target. The estimate is the *Batch Projection*'s, per model and in total (its *Per-model basis*
   names the basis of each), compared with the step's own as in § 4 *Cost and time*; the confirmation
-  dialog *Start model batch?* repeats the plan, and its run order under *Randomized* is drawn only at
-  Start, so the step names the models, never their positions. The criteria are read per member in
+  dialog *Start a batch of {n} models?* repeats the plan, and its run order under *Randomized* is drawn
+  only at Start, so the step names the models, never their positions. The criteria are read per member in
   **Model Comparison** (the progress dialog's **Open in Model Comparison**) and the step names the
   batch's diagnostics (**Batch diagnostics**, **Download**) as a capture to save.
 - **A battery `RUN` step's estimate is summed over its suites**: for each suite, its analysed or recent
