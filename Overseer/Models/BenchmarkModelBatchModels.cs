@@ -79,11 +79,24 @@ public class BenchmarkModelBatchFindingDto
     /// <summary>The model configurations the finding is about, ascending.</summary>
     public List<long> ModelConfigurationIds { get; set; } = new();
 
+    /// <summary>Per affected model, a short note naming the cause; at most 60 characters.</summary>
+    public List<BenchmarkModelBatchModelNoteDto> ModelNotes { get; set; } = new();
+
     /// <summary>
     /// What a warning's acknowledgment is sent as: the code, an optional discriminator, and the sorted
     /// affected configuration ids. Null for a blocker and for advice.
     /// </summary>
     public string? AcknowledgmentKey { get; set; }
+}
+
+/// <summary>A finding's note on one model's card in the launcher.</summary>
+public class BenchmarkModelBatchModelNoteDto
+{
+    /// <summary>One of the finding's <see cref="BenchmarkModelBatchFindingDto.ModelConfigurationIds"/>.</summary>
+    public long ModelConfigurationId { get; set; }
+
+    /// <summary>At most 60 characters.</summary>
+    public string Text { get; set; } = string.Empty;
 }
 
 /// <summary>The run caps and the whole batch measured against them (guardrails § 3.5).</summary>

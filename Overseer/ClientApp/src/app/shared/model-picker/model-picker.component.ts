@@ -47,6 +47,14 @@ export interface ModelPickerOption<M extends ModelPickerModel = ModelPickerModel
   detail?: string;
   /** Makes the option unavailable, with this reason under it; honored by `app-model-multi-picker` only. */
   disabledReason?: string;
+  /** A chip's notes, one line each, in this order; shown by `app-model-multi-picker` only. */
+  notes?: readonly ModelPickerNote[];
+}
+
+/** One line of a chip's notes: a blocker in the error tone, or a warning. */
+export interface ModelPickerNote {
+  text: string;
+  tone: 'warning' | 'error';
 }
 
 export interface ModelPickerSelection<M extends ModelPickerModel = ModelPickerModel> {

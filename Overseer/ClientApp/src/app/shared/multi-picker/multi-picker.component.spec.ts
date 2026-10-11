@@ -34,8 +34,11 @@ type HostState = Pick<HostComponent, 'options' | 'selected' | 'min' | 'max' | 'c
     <ng-template #custom let-option let-selected="selected">
       <span class="custom-row">{{ option.label }} is {{ selected ? 'on' : 'off' }}</span>
     </ng-template>
-    <ng-template #customChip let-option>
+    <ng-template #customChip let-option let-noteId="noteId">
       <span class="custom-chip">{{ option.label }} chip</span>
+      @if (option.detail) {
+        <span class="custom-note" [id]="noteId">{{ option.detail }}</span>
+      }
     </ng-template>
     <dialog class="dlg" (keydown)="dialogKeys.push($any($event).key)">
       <app-multi-picker class="dialog-picker" label="In dialog" [options]="options" [selectedKeys]="selected"
@@ -440,8 +443,15 @@ describe('MultiPickerComponent', () => {
       expect(list.getAttribute('aria-label')).toBe('Selected sources');
       expect(trigger().querySelector('.gh-multi-picker-chip')).toBeNull();
       const buttons = chipButtons();
-      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Remove Alpha (Run #1)', 'Remove Beta', 'Remove Charlie']);
-      const tip = picker().querySelector<HTMLElement>(`#${buttons[1].getAttribute('interestfor')}`)!;
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Remove Alpha', 'Remove Beta', 'Remove Charlie']);
+      // Only an option with a detail is described, by the chip's detail span.
+      const detail = picker().querySelector<HTMLElement>(`#${buttons[0].getAttribute('aria-describedby')}`)!;
+      expect(detail.classList).toContain('gh-multi-picker-detail');
+      expect(detail.textContent!.trim()).toBe('Run #1');
+      expect(detail.id).not.toBe(buttons[0].id);
+      expect(detail.id).not.toBe(buttons[0].getAttribute('interestfor'));
+      expect(buttons[1].hasAttribute('aria-describedby')).toBe(false);
+      const tip =picker().querySelector<HTMLElement>(`#${buttons[1].getAttribute('interestfor')}`)!;
       expect(tip.getAttribute('popover')).toBe('hint');
       expect(tip.textContent!.trim()).toBe('Remove from the selection');
     });
@@ -490,7 +500,11 @@ describe('MultiPickerComponent', () => {
       const chip = picker().querySelector<HTMLElement>('.gh-multi-picker-chip')!;
       expect(chip.querySelector('.custom-chip')!.textContent!.trim()).toBe('Alpha chip');
       expect(chip.querySelector('.gh-multi-picker-chip-label')).toBeNull();
-      expect(chipButtons().map(b => b.getAttribute('aria-label'))).toEqual(['Remove Alpha (Run #1)']);
+      expect(chipButtons().map(b => b.getAttribute('aria-label'))).toEqual(['Remove Alpha']);
+      // The template's context carries the id its detail element takes.
+      const note = chip.querySelector<HTMLElement>('.custom-note')!;
+      expect(note.id).toBeTruthy();
+      expect(chipButtons()[0].getAttribute('aria-describedby')).toBe(note.id);
     });
 
     it('in card mode mark the host and show the selection count beside All and None', () => {

@@ -98,8 +98,9 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   /** Replaces the default tag, label and detail rendering of an option; text only. */
   @Input() optionTemplate: TemplateRef<MultiPickerOptionContext> | null = null;
   /**
-   * Rendered in place of a chip's tag, label and detail; non-interactive content only, the remove
-   * button is the picker's.
+   * Rendered in place of a chip's tag, label and detail; non-interactive content only, text or a
+   * list, the remove button is the picker's. When the option has a `detail`, the element showing it
+   * takes the context's `noteId`.
    */
   @Input() chipTemplate: TemplateRef<MultiPickerOptionContext> | null = null;
   /** `card` draws each chip as a glass card in a grid that spans the host (`.gh-multi-picker--cards`). */
@@ -229,6 +230,9 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
 
   chipRemoveId(index: number): string { return `${this.uid}-chip-${index}`; }
 
+  /** The chip's detail element, the remove button's description. */
+  chipNoteId(index: number): string { return `${this.uid}-chip-${index}-note`; }
+
   isSelected(key: MultiPickerKey): boolean { return this.selectedSet.has(key); }
 
   /** Why a chip cannot be removed, or null when it can. */
@@ -239,7 +243,7 @@ export class MultiPickerComponent implements OnInit, OnChanges, AfterViewChecked
   }
 
   chipRemoveLabel(option: MultiPickerOption): string {
-    return option.detail ? `Remove ${option.label} (${option.detail})` : `Remove ${option.label}`;
+    return `Remove ${option.label}`;
   }
 
   toggle(): void {

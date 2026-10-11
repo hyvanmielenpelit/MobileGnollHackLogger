@@ -19,6 +19,7 @@ import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkCompletionSoundKind, BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
   ModelPickerComponent,
+  ModelPickerNote,
   ModelPickerOption
 } from '../../../shared/model-picker/model-picker.component';
 import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-multi-picker.component';
@@ -78,6 +79,12 @@ const MODEL_BATCH_FIELD_ALIASES: Readonly<Record<string, ModelBatchField>> = {
   order: 'order'
 };
 
+/** Per field, the finding its inline line shows and how many more blockers and warnings it has. */
+interface BatchFieldLines {
+  lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>>;
+  more: Partial<Record<ModelBatchField, number>>;
+}
+
 /** A projection basis in words. */
 const MODEL_BATCH_BASIS_TEXT: Readonly<Record<string, string>> = {
   OwnRuns: 'its own recent runs on this target',
@@ -91,15 +98,6 @@ export function modelBatchFieldOf(field: string | null | undefined): ModelBatchF
   if (!field) return null;
   return MODEL_BATCH_FIELD_ALIASES[field.toLowerCase().replace(/[^a-z]/g, '')] ?? null;
 }
-
-/** The short note a selected candidate's chip carries for a warning about it, by code. */
-const MODEL_BATCH_CHIP_NOTES: Readonly<Record<string, string>> = {
-  'MB-W02': 'Checks its own answers',
-  'MB-W05': 'Settings differ',
-  'MB-W06': 'Selected twice',
-  'MB-W08': 'Same provider as the report writer',
-  'MB-W10': 'Same provider as the assessor'
-};
 
 /** The id of each role's availability line, `bm<Role>ModelAvailability`, beside its `bm<Role>ModelHint`. */
 const ROLE_AVAILABILITY_IDS: Readonly<Record<BenchmarkLauncherRole, string>> = {
@@ -1066,6 +1064,8 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     source: ModelPickerOption<SystemAiConfigDto>[];
     assessorId: number | null;
     coAssessorId: number | null;
+    secondOpinionId: number | null;
+    claimVerifierId: number | null;
     reportWriterId: number | null;
     findings: BenchmarkModelBatchFindingDto[];
     models: number[];
@@ -1074,48 +1074,72 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
 
   /**
    * The Models Under Test options: every benchmark-capable model, a scoring grader or the report
-   * writer unavailable with the reason (MB-B03, MB-B04), and a chosen model that a warning names
-   * carrying a short note. Memoized on its inputs, so the picker sees a new array only when one changes.
+   * writer unavailable with the reason (MB-B03, MB-B04), an unchosen reader or claim verifier with
+   * its role as a muted detail, and a chosen model that a blocker or warning names carrying the
+   * server's notes. Memoized on its inputs, so the picker sees a new array only when one changes.
    */
   get batchPickerOptions(): ModelPickerOption<SystemAiConfigDto>[] {
     const source = this.workspace.benchmarkPickerOptions;
     const launcher = this.launcher;
     const cached = this.batchPickerCache;
     if (cached && cached.source === source && cached.assessorId === launcher.assessorConfigId
-        && cached.coAssessorId === launcher.coAssessorConfigId && cached.reportWriterId === launcher.reportWriterConfigId
+        && cached.coAssessorId === launcher.coAssessorConfigId
+        && cached.secondOpinionId === launcher.secondOpinionConfigId && cached.claimVerifierId === launcher.claimVerifierConfigId
+        && cached.reportWriterId === launcher.reportWriterConfigId
         && cached.findings === launcher.findings && cached.models === launcher.batchModelKeys) {
       return cached.options;
     }
     const assessor = this.selectedAssessorModel;
     const coAssessor = this.selectedCoAssessorModel;
+    const reader = this.selectedSecondOpinionModel;
+    const verifier = this.selectedClaimVerifierModel;
     const writer = this.selectedReportWriterModel;
+    const readerRole = launcher.isPanelLaunch ? 'Reference reader' : 'Second reader';
     const options = source.map(option => {
       const model = option.model;
       const reason = BenchmarkRunTabComponent.sameModel(model, assessor) || BenchmarkRunTabComponent.sameModel(model, coAssessor)
         ? 'Grades this batch'
         : BenchmarkRunTabComponent.sameModel(model, writer) ? 'Writes its reports' : '';
-      const detail = this.batchChipNote(model.id);
-      return {
-        ...option,
-        ...(detail ? { detail } : {}),
-        ...(reason ? { disabledReason: reason } : {})
-      };
+      if (launcher.batchModelKeys.includes(model.id)) {
+        const notes = this.batchChipNotes(model.id);
+        return {
+          ...option,
+          ...(notes.length > 0 ? { notes } : {}),
+          ...(reason ? { disabledReason: reason } : {})
+        };
+      }
+      if (reason) {
+        return { ...option, disabledReason: reason };
+      }
+      const roles = [
+        ...(BenchmarkRunTabComponent.sameModel(model, reader) ? [readerRole] : []),
+        ...(BenchmarkRunTabComponent.sameModel(model, verifier) ? ['claim verifier'] : [])
+      ];
+      if (roles.length === 0) return option;
+      const detail = roles.join(' · ');
+      return { ...option, detail: detail[0].toUpperCase() + detail.slice(1) };
     });
     this.batchPickerCache = {
       source, assessorId: launcher.assessorConfigId, coAssessorId: launcher.coAssessorConfigId,
+      secondOpinionId: launcher.secondOpinionConfigId, claimVerifierId: launcher.claimVerifierConfigId,
       reportWriterId: launcher.reportWriterConfigId, findings: launcher.findings, models: launcher.batchModelKeys, options
     };
     return options;
   }
 
-  /** The warnings that name this chosen model, as the short notes its chip shows. */
-  private batchChipNote(configId: number): string {
-    if (!this.launcher.batchModelKeys.includes(configId)) return '';
-    const notes = this.launcher.batchWarnings
-      .filter(f => f.modelConfigurationIds?.includes(configId))
-      .map(f => MODEL_BATCH_CHIP_NOTES[modelBatchFindingCode(f)])
-      .filter((note): note is string => !!note);
-    return notes.filter((note, i) => notes.indexOf(note) === i).join(' · ');
+  /** The server's notes on this model, blockers first, each text once. */
+  private batchChipNotes(configId: number): ModelPickerNote[] {
+    const notes: ModelPickerNote[] = [];
+    for (const [findings, tone] of [[this.launcher.batchBlockers, 'error'], [this.launcher.batchWarnings, 'warning']] as const) {
+      for (const finding of findings) {
+        for (const note of finding.modelNotes ?? []) {
+          if (note.modelConfigurationId === configId && note.text && !notes.some(n => n.text === note.text)) {
+            notes.push({ text: note.text, tone });
+          }
+        }
+      }
+    }
+    return notes;
   }
 
   private batchOrderCache: { keys: number[]; source: SystemAiConfigDto[]; items: ReorderableListItem[] } | null = null;
@@ -1139,31 +1163,44 @@ export class BenchmarkRunTabComponent implements OnInit, AfterViewInit, OnDestro
     return config?.displayName || config?.modelId || `Configuration #${configId}`;
   }
 
-  private batchFieldLinesCache: { findings: BenchmarkModelBatchFindingDto[]; lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> } | null = null;
+  private batchFieldLinesCache: (BatchFieldLines & { findings: BenchmarkModelBatchFindingDto[] }) | null = null;
 
   /** Each field's inline line: its first blocker, else its first warning. Advice is never inline. */
   get batchFieldLines(): Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> {
-    if (!this.launcher.isModelBatch) return {};
+    return this.batchFieldLineState().lines;
+  }
+
+  private batchFieldLineState(): BatchFieldLines {
+    if (!this.launcher.isModelBatch) return { lines: {}, more: {} };
     const findings = this.launcher.findings;
     if (this.batchFieldLinesCache?.findings === findings) {
-      return this.batchFieldLinesCache.lines;
+      return this.batchFieldLinesCache;
     }
     const lines: Partial<Record<ModelBatchField, BenchmarkModelBatchFindingDto>> = {};
+    const more: Partial<Record<ModelBatchField, number>> = {};
     for (const severity of ['Blocker', 'Warning'] as const) {
       for (const finding of findings) {
         const field = modelBatchFieldOf(finding.field);
-        if (finding.severity === severity && field && !lines[field]) {
+        if (finding.severity !== severity || !field) continue;
+        if (lines[field]) {
+          more[field] = (more[field] ?? 0) + 1;
+        } else {
           lines[field] = finding;
         }
       }
     }
-    this.batchFieldLinesCache = { findings, lines };
-    return lines;
+    this.batchFieldLinesCache = { findings, lines, more };
+    return this.batchFieldLinesCache;
   }
 
   /** The finding shown inline under `field`, if any. */
   batchFieldLine(field: ModelBatchField): BenchmarkModelBatchFindingDto | undefined {
     return this.batchFieldLines[field];
+  }
+
+  /** The blockers and warnings on `field` beyond the one its inline line shows. */
+  batchFieldMore(field: ModelBatchField): number {
+    return this.batchFieldLineState().more[field] ?? 0;
   }
 
   /** The id of the field's inline line. */

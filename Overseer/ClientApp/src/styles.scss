@@ -5824,10 +5824,25 @@ progress.job-progress {
       color: var(--color-warning);
     }
 
+    &.is-error {
+      color: var(--color-error-text);
+    }
+
     svg {
       flex: none;
       margin-block-start: 0.125rem;
     }
+  }
+
+  /* A chip's notes, one line each: blockers, then warnings. */
+  .gh-multi-picker-chip-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
   /* Card mode (chipStyle="card"): the field keeps the 44rem trigger width, All / None and the
@@ -5897,6 +5912,18 @@ progress.job-progress {
         border-inline-end-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
       }
 
+      /* A noted card; after the hover rule so the tint stays, error last so it wins. The glyph
+         and the hidden word carry the meaning. */
+      &:has(.gh-multi-picker-chip-note.is-warning) {
+        border-block-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+        border-inline-end-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+      }
+
+      &:has(.gh-multi-picker-chip-note.is-error) {
+        border-block-color: color-mix(in srgb, var(--color-error) 55%, transparent);
+        border-inline-end-color: color-mix(in srgb, var(--color-error) 55%, transparent);
+      }
+
       /* Decorative: the provider badge's word carries the meaning. */
       &:has(.provider-badge--anthropic) { --gh-chip-accent: var(--provider-anthropic); }
       &:has(.provider-badge--openai) { --gh-chip-accent: var(--provider-openai); }
@@ -5933,7 +5960,8 @@ progress.job-progress {
       grid-area: badges;
     }
 
-    .gh-multi-picker-chip-note {
+    .gh-multi-picker-chip-note,
+    .gh-multi-picker-chip-notes {
       grid-area: note;
       contain: inline-size;
     }
@@ -5952,9 +5980,13 @@ progress.job-progress {
       border-color: CanvasText;
     }
 
-    /* The card's three-class border-inline-start would otherwise outrank the list above. */
-    &.gh-multi-picker--cards .gh-multi-picker-chip {
+    /* The card's three-class border-inline-start and the noted-card tints would otherwise outrank
+       the list above; the :has() keeps this rule's specificity level with the tints'. */
+    &.gh-multi-picker--cards .gh-multi-picker-chip,
+    &.gh-multi-picker--cards .gh-multi-picker-chip:has(.gh-multi-picker-chip-note.is-warning, .gh-multi-picker-chip-note.is-error) {
       border-inline-start-color: CanvasText;
+      border-block-color: CanvasText;
+      border-inline-end-color: CanvasText;
     }
 
     .model-option[aria-selected="true"] {

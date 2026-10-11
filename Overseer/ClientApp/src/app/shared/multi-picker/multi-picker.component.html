@@ -120,7 +120,7 @@
           <li class="gh-multi-picker-chip">
             @if (chipTemplate) {
               <ng-container [ngTemplateOutlet]="chipTemplate"
-                            [ngTemplateOutletContext]="{ $implicit: entry.option, selected: true }"></ng-container>
+                            [ngTemplateOutletContext]="{ $implicit: entry.option, selected: true, noteId: chipNoteId(entry.index) }"></ng-container>
             } @else {
               <span class="gh-multi-picker-chip-main">
                 @if (entry.option.tag) {
@@ -128,12 +128,13 @@
                 }
                 <span class="gh-multi-picker-chip-label">{{ entry.option.label }}</span>
                 @if (entry.option.detail) {
-                  <span class="gh-multi-picker-detail">{{ entry.option.detail }}</span>
+                  <span class="gh-multi-picker-detail" [id]="chipNoteId(entry.index)">{{ entry.option.detail }}</span>
                 }
               </span>
             }
             <button type="button" class="action-btn" [id]="chipRemoveId(entry.index)"
                     [attr.aria-label]="chipRemoveLabel(entry.option)"
+                    [attr.aria-describedby]="entry.option.detail ? chipNoteId(entry.index) : null"
                     [attr.aria-disabled]="chipReason ? 'true' : null"
                     [attr.interestfor]="chipRemoveId(entry.index) + '-tip'"
                     [attr.style]="'anchor-name: --' + chipRemoveId(entry.index)"

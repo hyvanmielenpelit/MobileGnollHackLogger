@@ -86,6 +86,7 @@ public static class BenchmarkModelBatchGuardrails
 {
     public const int TitleMaxLength = 60;
     public const int DetailMaxLength = 140;
+    public const int NoteMaxLength = 60;
 
     /// <summary>Thinking levels a profile fit check treats as deliberating (MB-A08).</summary>
     private static readonly string[] DeliberatingLevels = { "high", "max" };
@@ -130,9 +131,11 @@ public static class BenchmarkModelBatchGuardrails
         var projection = ctx.Projection;
 
         void Add(string code, string name, string severity, string? field, string title, string detail,
-                 IEnumerable<long>? ids = null, string? discriminator = null, bool clipDetail = true)
+                 IEnumerable<long>? ids = null, string? discriminator = null, bool clipDetail = true,
+                 IEnumerable<(long Id, string Text)>? notes = null)
         {
             var sorted = (ids ?? Array.Empty<long>()).Distinct().OrderBy(id => id).ToList();
+            var affected = new HashSet<long>(sorted);
             findings.Add(new BenchmarkModelBatchFindingDto
             {
                 Code = code,
@@ -142,6 +145,11 @@ public static class BenchmarkModelBatchGuardrails
                 Title = Clip(title, TitleMaxLength),
                 Detail = clipDetail ? Clip(detail, DetailMaxLength) : detail,
                 ModelConfigurationIds = sorted,
+                ModelNotes = (notes ?? Array.Empty<(long Id, string Text)>())
+                    .Where(n => affected.Contains(n.Id))
+                    .OrderBy(n => n.Id)
+                    .Select(n => new BenchmarkModelBatchModelNoteDto { ModelConfigurationId = n.Id, Text = Clip(n.Text, NoteMaxLength) })
+                    .ToList(),
                 AcknowledgmentKey = severity == BenchmarkModelBatchSeverity.Warning
                     ? AcknowledgmentKey(code, sorted, discriminator)
                     : null
@@ -182,7 +190,8 @@ public static class BenchmarkModelBatchGuardrails
                 Add("MB-B03", "GraderIsCandidate", Blocker, field,
                     $"{Label(candidate)} cannot grade itself",
                     $"Choose another {role}: a scoring grader must not be a model under test.",
-                    new[] { candidate.Id });
+                    new[] { candidate.Id },
+                    notes: new[] { (candidate.Id, $"Is the {role}: cannot grade itself") });
             }
         }
 
@@ -195,7 +204,8 @@ public static class BenchmarkModelBatchGuardrails
                 Add("MB-B04", "ReportWriterIsCandidate", Blocker, FieldReportWriter,
                     $"{Label(candidate)} cannot write its own report",
                     "Choose another report writer, or None.",
-                    new[] { candidate.Id });
+                    new[] { candidate.Id },
+                    notes: new[] { (candidate.Id, "Is the report writer: cannot report on itself") });
             }
         }
 
@@ -235,7 +245,8 @@ public static class BenchmarkModelBatchGuardrails
             Add("MB-B06", "MemberRefused", Blocker, FieldModels,
                 $"{Label(candidate)} is refused",
                 $"{Label(candidate)}: {refusal}",
-                new[] { candidate.Id }, clipDetail: false);
+                new[] { candidate.Id }, clipDetail: false,
+                notes: new[] { (candidate.Id, "Refused: see Batch Readiness") });
         }
 
         foreach (string refusal in ctx.TargetRefusals)
@@ -308,10 +319,12 @@ public static class BenchmarkModelBatchGuardrails
             if (ctx.Verifier != null && guard.IsSameModel(candidate, ctx.Verifier)) roles.Add(("claim verifier", FieldVerifier));
             if (roles.Count == 0) continue;
 
+            string roleList = string.Join(" and ", roles.Select(r => r.Role));
             Add("MB-W02", "AnchorIsCandidate", Warning, roles[0].Field,
                 $"{Label(candidate)} checks its own answers",
-                $"Its {string.Join(" and ", roles.Select(r => r.Role))} findings on its own run are not independent.",
-                new[] { candidate.Id });
+                $"Its {roleList} findings on its own run are not independent.",
+                new[] { candidate.Id },
+                notes: new[] { (candidate.Id, $"Also the {roleList}") });
         }
 
         if (ctx.Verifier == null)
@@ -357,12 +370,23 @@ public static class BenchmarkModelBatchGuardrails
                     .ToList();
                 if (groups.Count < 2) continue;
 
-                var odd = groups.Count == candidates.Count ? groups.SelectMany(g => g) : groups.Skip(1).SelectMany(g => g);
+                // Without a strict largest group no value is the norm, so every model deviates.
+                bool strictMajority = groups[0].Count() > groups[1].Count();
+                var odd = (strictMajority ? groups.Skip(1).SelectMany(g => g) : candidates).ToList();
                 string models = string.Join(", ", odd.Select(c => $"{Label(c)} ({value(c)})"));
+                string? majority = strictMajority ? value(groups[0].First()) : null;
+                string detail = majority != null
+                    ? $"{models}; the other {Inv(groups[0].Count())} use {majority}."
+                    : $"{attribute} differs: {models}; the comparison mixes it with the model.";
+                string NoteValue(string v)
+                    => attribute == "Endpoint" && !string.Equals(v, "official", StringComparison.OrdinalIgnoreCase) ? "custom endpoint" : v;
                 Add("MB-W05", "CandidateSettingsDiffer", Warning, FieldModels,
-                    "Models differ in more than the model",
-                    $"{attribute} differs: {models}; the comparison mixes it with the model.",
-                    candidateIds, discriminator: string.Concat(attribute.Split(' ').Select(word => char.ToUpperInvariant(word[0]) + word[1..])));
+                    $"{attribute} differs between models",
+                    detail,
+                    odd.Select(c => c.Id), discriminator: string.Concat(attribute.Split(' ').Select(word => char.ToUpperInvariant(word[0]) + word[1..])),
+                    notes: odd.Select(c => (c.Id, majority != null
+                        ? $"{attribute} {NoteValue(value(c))}; the others use {NoteValue(majority)}"
+                        : $"{attribute} {NoteValue(value(c))}; no majority")));
             }
         }
 
@@ -376,7 +400,8 @@ public static class BenchmarkModelBatchGuardrails
             Add("MB-W06", "DuplicateConfiguration", Warning, FieldModels,
                 $"{Label(group[0])} is selected twice",
                 "For repeats, use Runs per model instead.",
-                group.Select(c => c.Id));
+                group.Select(c => c.Id),
+                notes: group.Select(c => (c.Id, $"Same configuration as {JoinLabels(group.Where(o => o.Id != c.Id).ToList())}")));
         }
 
         if (run.VerboseMode == true)
@@ -397,7 +422,8 @@ public static class BenchmarkModelBatchGuardrails
                 Add("MB-W08", "ReportWriterSharesFamily", Warning, FieldReportWriter,
                     $"{Label(ctx.ReportWriter)} reports on its own provider",
                     $"{JoinLabels(sameFamily)}' documents come from a same-provider writer.",
-                    sameFamily.Select(c => c.Id));
+                    sameFamily.Select(c => c.Id),
+                    notes: sameFamily.Select(c => (c.Id, "Same provider as the report writer")));
             }
         }
 
@@ -425,7 +451,8 @@ public static class BenchmarkModelBatchGuardrails
                 Add("MB-W10", "SameProviderAssessor", Warning, FieldAssessor,
                     $"{Label(ctx.Assessor)} grades its own provider's models",
                     $"{JoinLabels(sameProvider)} are graded by a same-provider assessor.",
-                    sameProvider.Select(c => c.Id));
+                    sameProvider.Select(c => c.Id),
+                    notes: sameProvider.Select(c => (c.Id, "Same provider as the assessor")));
             }
         }
 

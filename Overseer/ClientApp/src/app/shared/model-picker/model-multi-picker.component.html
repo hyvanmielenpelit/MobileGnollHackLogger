@@ -11,7 +11,7 @@
   }
 </ng-template>
 
-<ng-template #modelChip let-option>
+<ng-template #modelChip let-option let-noteId="noteId">
   <span class="gh-multi-picker-chip-main">
     @if (option.tag) {
       <span class="model-option-tag">{{ option.tag }}</span>
@@ -23,14 +23,21 @@
       <app-model-option-badges [model]="model" [showPrice]="showPrice" [showParallel]="showParallel"></app-model-option-badges>
     </span>
   }
-  @if (option.detail) {
-    <span class="gh-multi-picker-chip-note" [class.is-warning]="detailTone === 'warning'">
-      @if (detailTone === 'warning') {
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span><span class="visually-hidden">Warning: </span>{{ option.detail }}</span>
-      } @else {
-        {{ option.detail }}
+  @let notes = notesFor(option.key);
+  @if (notes.length > 0) {
+    <ul class="gh-multi-picker-chip-notes" [id]="noteId">
+      @for (note of notes; track $index) {
+        <li class="gh-multi-picker-chip-note" [class.is-error]="note.tone === 'error'" [class.is-warning]="note.tone === 'warning'">
+          @if (note.tone === 'error') {
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg><span><span class="visually-hidden">Blocking: </span>{{ note.text }}</span>
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span><span class="visually-hidden">Warning: </span>{{ note.text }}</span>
+          }
+        </li>
       }
-    </span>
+    </ul>
+  } @else if (option.detail) {
+    <span class="gh-multi-picker-chip-note" [id]="noteId">{{ option.detail }}</span>
   }
 </ng-template>
 

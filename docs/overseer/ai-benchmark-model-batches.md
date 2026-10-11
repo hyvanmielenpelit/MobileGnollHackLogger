@@ -115,8 +115,9 @@ Each finding (`BenchmarkModelBatchFindingDto`) has a stable `code` (`MB-W01`), a
 is about (`models`, `assessor`, `coAssessor`, `reader`, `verifier`, `reportWriter`, `profile`,
 `responseStyle`, `sourceReferences`, `runsPerModel`, `order`, `capWait`, `target`, or none), a `title`
 clipped to 60 characters, a one-sentence `detail` clipped to 140 characters (except where a launcher or
-spend-guard refusal is quoted whole), the affected `modelConfigurationIds` (ascending), and for a warning
-an `acknowledgmentKey`. The list comes back blockers first, then warnings, then advice, each group in
+spend-guard refusal is quoted whole), the affected `modelConfigurationIds` (ascending), `modelNotes` —
+for an affected model, a note of at most 60 characters naming the cause, which the launcher shows on that
+model's card (§ 7) — and for a warning an `acknowledgmentKey`. The list comes back blockers first, then warnings, then advice, each group in
 evaluation order. Model names are the configurations' display names (else their model ids); no family or
 version is written into a rule's text.
 
@@ -161,7 +162,7 @@ affected models), and the launcher drops it (`applyFindings`), so an old check n
 | MB-W02 AnchorIsCandidate | The second or reference reader, or the claim verifier, is the same model as a candidate | *{model} checks its own answers* / *Its {reader / claim verifier} findings on its own run are not independent.* |
 | MB-W03 NoClaimVerifier | No claim verifier | *No claim verifier* / *Refuted claims go unchecked, and a panel split on a critical error stays unresolved.* |
 | MB-W04 GraderEffortTooHigh | A grader role at `xhigh` or `max`; one finding per configuration, naming every role it holds | *{Role} at {level} effort* / *Very high effort slows graders and breaks their JSON; medium is recommended.* |
-| MB-W05 CandidateSettingsDiffer | Candidates differ in parallel mode, service tier, endpoint (official or a custom endpoint's fingerprint) or max output tokens; one finding per attribute, naming the models outside the largest group (every model when no two agree) | *Models differ in more than the model* / *{Attribute} differs: {models}; the comparison mixes it with the model.* |
+| MB-W05 CandidateSettingsDiffer | Candidates differ in parallel mode, service tier, endpoint (official or a custom endpoint's fingerprint) or max output tokens; one finding per attribute, affecting only the models outside the strict largest group — every model when there is none (all values distinct, or a tie for largest) | *{Attribute} differs between models* / *{models with their values}; the other {n} use {value}.*, or without a strict largest group *{Attribute} differs: {models}; the comparison mixes it with the model.* |
 | MB-W06 DuplicateConfiguration | Two candidates match on provider, model id, thinking level, service tier, parallel mode and endpoint | *{model} is selected twice* / *For repeats, use Runs per model instead.* |
 | MB-W07 DetailedStyle | Response style *Detailed* | *Detailed style is not the production chat* / *Results will not compare with Concise runs of these models.* |
 | MB-W08 ReportWriterSharesFamily | The report writer shares a provider with one or more candidates (the per-run same-provider writer warning, asked once for the batch) | *{writer} reports on its own provider* / *{models}' documents come from a same-provider writer.* |
@@ -418,10 +419,18 @@ models): a model that is currently a scoring grader or the report writer is an u
 this batch*, *Writes its reports*, MB-B03 and MB-B04 derived in the browser from the same configuration
 ids). Each chosen model is a glass card under the trigger, as wide as its name and badges, in a row that wraps: its
 name, a remove button in the corner, the same badges the list shows (thinking level, reasoning mode,
-provider, price, parallel mode) and a start edge in the provider's color. A chosen model a warning names
-carries an amber note on its card, led by a warning glyph (*Same provider as the assessor*, *Same
-provider as the report writer*, *Checks its own answers*, *Settings differ*, *Selected twice*). Beside
-the trigger, after *All* and *None*, the count reads *2 selected · max 12*. The rest of the launcher is
+provider, price, parallel mode) and a start edge in the provider's color. A chosen model a blocker or
+a warning is about carries the server's `modelNotes` on its card, one line each, blockers first: a
+blocker in red with an alert-circle glyph and the hidden prefix *Blocking:* (*Is the assessor: cannot
+grade itself*, *Is the report writer: cannot report on itself*, *Refused: see Batch Readiness*), a warning
+in amber with an alert-triangle glyph and the hidden prefix *Warning:* (*Also the reference reader and
+claim verifier*, *Max output tokens 8192; the others use default*, *Same configuration as {models}*, *Same
+provider as the assessor*, *Same provider as the report writer*). Such a card's top, bottom and end
+borders take the tone's tint, red over amber; the provider edge stays. The card's remove button is named
+*Remove {model}* and described by its notes. A model that is not chosen but is the reader or the claim
+verifier shows its role as a muted detail in the list (*Reference reader · claim verifier*), so the
+overlap is visible before it is chosen. Beside the trigger, after *All* and *None*, the count reads
+*2 selected · max 12*. The rest of the launcher is
 the one a run uses, with these differences:
 
 - **Run Target** works as before: a suite, or a battery. On a suite, **Runs per model** (R; 1 runs each
@@ -452,11 +461,12 @@ MB-B04 options.
 
 The guidance comes in four layers, each carrying less text than the one before:
 
-1. **At the source — the picker.** A blocker cannot be selected in the first place, and a warned model
-   carries its note on its card.
+1. **At the source — the picker.** A blocker cannot be selected in the first place, and a chosen model a
+   blocker or warning is about carries the server's notes on its card.
 2. **Inline, one line per field.** Under a field, its first blocker as a `.gh-field-error` line, else its
-   first warning as a `.gh-field-warning` line, linked by the field's `aria-describedby`. Advice is never
-   inline.
+   first warning as a `.gh-field-warning` line, linked by the field's `aria-describedby`; when the field
+   has more blockers and warnings, the line ends in a muted *· {n} more in Batch Readiness*. Advice is
+   never inline.
 3. **The Batch Readiness card** (`app-model-batch-readiness`), shown once a model is chosen (or at once
    for a blocker that exists from the start, such as a busy server): a summary row with a status word and
    glyph — *Ready*, *{n} to review*, *{n} blocking* — and count chips (*Blocking n*, *To review n*,

@@ -181,6 +181,59 @@ public class BenchmarkModelBatchGuardrailsTests
         Assert.Equal(ranks.OrderBy(r => r).ToList(), ranks);
     }
 
+    private static readonly Dictionary<string, Func<BenchmarkModelBatchGuardContext>> NoteContexts = new()
+    {
+        ["many"] = () =>
+        {
+            var many = Enumerable.Range(1, 14)
+                .Select(i => Config(i, i % 2 == 0 ? "Anthropic" : "OpenAI", $"model-with-a-rather-long-identifier-{i % 4}",
+                    tier: i % 3 == 0 ? "priority" : null, displayName: $"A Configuration With A Very Long Display Name {i}",
+                    maxOutput: i % 5 == 0 ? 123456 : null))
+                .ToList();
+            return Context(many, Request(many, runsPerModel: 1), c => c with
+            {
+                CoAssessor = null,
+                Assessor = Config(10, "Anthropic", "assessor-model", "medium", "Assessor Model"),
+                ReportWriter = Config(20, "OpenAI", "writer-model", displayName: "Writer Model With A Long Name")
+            });
+        },
+        ["graders"] = () => Context(change: c => c with
+        {
+            Assessor = Config(10, "Anthropic", "claude-opus-5", "medium"),
+            ReportWriter = Config(20, "OpenAI", "gpt-5"),
+            Reader = Config(12, "Anthropic", "claude-opus-5"),
+            Verifier = Config(13, "Anthropic", "claude-opus-5")
+        }),
+        ["refused"] = () => Context(change: c => c with
+        {
+            CandidateRefusals = new Dictionary<long, string> { [1] = "no.", [2] = "no." },
+            MissingCandidateIds = new long[] { 44 }
+        }),
+        ["endpoint"] = () => Context(new[]
+        {
+            CandidateA,
+            Config(2, "OpenAI", "gpt-5", displayName: "GPT", baseUrl: "https://example.test/v1"),
+            Config(3, "Mistral", "mistral-medium", displayName: "Mistral", baseUrl: "https://example.test/v2")
+        })
+    };
+
+    [Theory]
+    [InlineData("many")]
+    [InlineData("graders")]
+    [InlineData("refused")]
+    [InlineData("endpoint")]
+    public void EveryModelNote_KeepsTheLengthLimit_AndIsOnAnAffectedModel(string name)
+    {
+        var findings = Evaluate(NoteContexts[name]());
+
+        Assert.Contains(findings, f => f.ModelNotes.Count > 0);
+        Assert.All(findings, f => Assert.All(f.ModelNotes, n =>
+        {
+            Assert.True(n.Text.Length <= BenchmarkModelBatchGuardrails.NoteMaxLength, n.Text);
+            Assert.Contains(n.ModelConfigurationId, f.ModelConfigurationIds);
+        }));
+    }
+
     [Fact]
     public void AcknowledgmentKey_IsTheCodeAndTheSortedAffectedIds_AndChangesWithThem()
     {
@@ -250,9 +303,13 @@ public class BenchmarkModelBatchGuardrailsTests
         Assert.Equal("Opus cannot grade itself", finding.Title);
         Assert.Contains("Choose another assessor", finding.Detail);
         Assert.Equal(new long[] { 1 }, finding.ModelConfigurationIds);
+        var note = Assert.Single(finding.ModelNotes);
+        Assert.Equal(1, note.ModelConfigurationId);
+        Assert.Equal("Is the assessor: cannot grade itself", note.Text);
 
         var coAssessor = Single(Context(change: c => c with { CoAssessor = Config(11, "OpenAI", "gpt-5", "medium") }), "MB-B03");
         Assert.Equal("coAssessor", coAssessor.Field);
+        Assert.Equal("Is the co-assessor: cannot grade itself", Assert.Single(coAssessor.ModelNotes).Text);
 
         Assert.DoesNotContain("MB-B03", Codes(Context()));
     }
@@ -263,6 +320,9 @@ public class BenchmarkModelBatchGuardrailsTests
         var finding = Single(Context(change: c => c with { ReportWriter = Config(20, "OpenAI", "gpt-5") }), "MB-B04");
         Assert.Equal("reportWriter", finding.Field);
         Assert.Equal("GPT cannot write its own report", finding.Title);
+        var note = Assert.Single(finding.ModelNotes);
+        Assert.Equal(2, note.ModelConfigurationId);
+        Assert.Equal("Is the report writer: cannot report on itself", note.Text);
 
         Assert.DoesNotContain("MB-B04", Codes(Context(change: c => c with { ReportWriter = Config(20, "xAI", "grok") })));
     }
@@ -288,9 +348,14 @@ public class BenchmarkModelBatchGuardrailsTests
         }), "MB-B06");
         Assert.Equal("GPT: its custom endpoint is not allowed by the endpoint policy.", refused.Detail);
         Assert.Equal(new long[] { 2 }, refused.ModelConfigurationIds);
+        var note = Assert.Single(refused.ModelNotes);
+        Assert.Equal(2, note.ModelConfigurationId);
+        Assert.Equal("Refused: see Batch Readiness", note.Text);
 
+        // A missing configuration has no card to carry a note.
         var missing = Single(Context(change: c => c with { MissingCandidateIds = new long[] { 44 } }), "MB-B06");
         Assert.Contains("#44", missing.Detail);
+        Assert.Empty(missing.ModelNotes);
 
         Assert.DoesNotContain("MB-B06", Codes(Context()));
     }
@@ -366,6 +431,17 @@ public class BenchmarkModelBatchGuardrailsTests
         var finding = Single(Context(change: c => c with { Verifier = Config(13, "Anthropic", "claude-opus-5") }), "MB-W02");
         Assert.Equal("Opus checks its own answers", finding.Title);
         Assert.Contains("claim verifier", finding.Detail);
+        var note = Assert.Single(finding.ModelNotes);
+        Assert.Equal(1, note.ModelConfigurationId);
+        Assert.Equal("Also the claim verifier", note.Text);
+
+        var both = Single(Context(change: c => c with
+        {
+            Reader = Config(12, "Anthropic", "claude-opus-5"),
+            Verifier = Config(13, "Anthropic", "claude-opus-5")
+        }), "MB-W02");
+        Assert.Equal("Also the reference reader and claim verifier", Assert.Single(both.ModelNotes).Text);
+
         Assert.DoesNotContain("MB-W02", Codes(Context()));
     }
 
@@ -389,13 +465,60 @@ public class BenchmarkModelBatchGuardrailsTests
     [Fact]
     public void W05_CandidateSettingsDiffer()
     {
+        // Two models, two values: a tie, so neither is the norm and both are named.
         var tiered = new[] { CandidateA, Config(2, "OpenAI", "gpt-5", displayName: "GPT", tier: "priority") };
-        var finding = Single(Context(tiered), "MB-W05");
-        Assert.Equal("Models differ in more than the model", finding.Title);
-        Assert.StartsWith("Service tier differs:", finding.Detail);
-        Assert.StartsWith("MB-W05/ServiceTier:", finding.AcknowledgmentKey);
+        var tie = Single(Context(tiered), "MB-W05");
+        Assert.Equal("Service tier differs between models", tie.Title);
+        Assert.StartsWith("Service tier differs:", tie.Detail);
+        Assert.Equal(new long[] { 1, 2 }, tie.ModelConfigurationIds);
+        Assert.Equal("MB-W05/ServiceTier:1,2", tie.AcknowledgmentKey);
+        Assert.Equal("Service tier priority; no majority", Assert.Single(tie.ModelNotes, n => n.ModelConfigurationId == 2).Text);
+
+        // Two against one: only the deviating model is affected.
+        var third = Config(3, "Mistral", "mistral-medium", displayName: "Mistral");
+        var finding = Single(Context(new[] { CandidateA, tiered[1], third }), "MB-W05");
+        Assert.Equal("Service tier differs between models", finding.Title);
+        Assert.Equal(new long[] { 2 }, finding.ModelConfigurationIds);
+        Assert.Equal("MB-W05/ServiceTier:2", finding.AcknowledgmentKey);
+        Assert.EndsWith("; the other 2 use default.", finding.Detail);
+        var note = Assert.Single(finding.ModelNotes);
+        Assert.Equal(2, note.ModelConfigurationId);
+        Assert.Equal("Service tier priority; the others use default", note.Text);
 
         Assert.DoesNotContain("MB-W05", Codes(Context()));
+    }
+
+    [Fact]
+    public void W05_TieNamesEveryModel()
+    {
+        var models = new[]
+        {
+            CandidateA,
+            CandidateB,
+            Config(3, "Mistral", "mistral-medium", displayName: "Mistral", maxOutput: 8192),
+            Config(4, "xAI", "grok", displayName: "Grok", maxOutput: 8192)
+        };
+
+        var finding = Single(Context(models), "MB-W05");
+
+        Assert.Equal("Max output tokens differs between models", finding.Title);
+        Assert.Equal(new long[] { 1, 2, 3, 4 }, finding.ModelConfigurationIds);
+        Assert.Equal(new long[] { 1, 2, 3, 4 }, finding.ModelNotes.Select(n => n.ModelConfigurationId));
+        Assert.Equal("Max output tokens 8192; no majority", finding.ModelNotes[2].Text);
+        Assert.Equal("Max output tokens default; no majority", finding.ModelNotes[0].Text);
+    }
+
+    [Fact]
+    public void W05_EndpointNote_SaysCustomEndpoint_AndTheDetailKeepsTheFingerprint()
+    {
+        var custom = Config(3, "Mistral", "mistral-medium", displayName: "Mistral", baseUrl: "https://example.test/v1");
+        var finding = Single(Context(new[] { CandidateA, CandidateB, custom }), "MB-W05");
+
+        Assert.Equal("Endpoint differs between models", finding.Title);
+        Assert.Equal(new long[] { 3 }, finding.ModelConfigurationIds);
+        Assert.Contains("Mistral (custom-", finding.Detail);
+        Assert.EndsWith("; the other 2 use official.", finding.Detail);
+        Assert.Equal("Endpoint custom endpoint; the others use official", Assert.Single(finding.ModelNotes).Text);
     }
 
     [Fact]
@@ -405,6 +528,8 @@ public class BenchmarkModelBatchGuardrailsTests
         var finding = Single(Context(new[] { CandidateA, CandidateB, twin }), "MB-W06");
         Assert.Equal("Opus is selected twice", finding.Title);
         Assert.Equal(new long[] { 1, 3 }, finding.ModelConfigurationIds);
+        Assert.Equal("Same configuration as Opus copy", Assert.Single(finding.ModelNotes, n => n.ModelConfigurationId == 1).Text);
+        Assert.Equal("Same configuration as Opus", Assert.Single(finding.ModelNotes, n => n.ModelConfigurationId == 3).Text);
 
         var otherLevel = Config(3, "Anthropic", "claude-opus-5", "medium", "Opus medium");
         Assert.DoesNotContain("MB-W06", Codes(Context(new[] { CandidateA, CandidateB, otherLevel })));
@@ -424,6 +549,9 @@ public class BenchmarkModelBatchGuardrailsTests
         var finding = Single(Context(change: c => c with { ReportWriter = Config(20, "OpenAI", "gpt-5-mini", displayName: "GPT Mini") }), "MB-W08");
         Assert.Equal("GPT Mini reports on its own provider", finding.Title);
         Assert.Equal(new long[] { 2 }, finding.ModelConfigurationIds);
+        var note = Assert.Single(finding.ModelNotes);
+        Assert.Equal(2, note.ModelConfigurationId);
+        Assert.Equal("Same provider as the report writer", note.Text);
 
         Assert.DoesNotContain("MB-W08", Codes(Context(change: c => c with { ReportWriter = Config(20, "xAI", "grok") })));
     }
@@ -447,6 +575,9 @@ public class BenchmarkModelBatchGuardrailsTests
         var finding = Single(Context(change: c => c with { CoAssessor = null, Assessor = anthropicAssessor }), "MB-W10");
         Assert.Equal("Sonnet grades its own provider's models", finding.Title);
         Assert.Equal("Opus are graded by a same-provider assessor.", finding.Detail);
+        var note = Assert.Single(finding.ModelNotes);
+        Assert.Equal(1, note.ModelConfigurationId);
+        Assert.Equal("Same provider as the assessor", note.Text);
 
         // A panel is balanced by construction: no same-provider gate.
         Assert.DoesNotContain("MB-W10", Codes(Context(change: c => c with { Assessor = anthropicAssessor })));

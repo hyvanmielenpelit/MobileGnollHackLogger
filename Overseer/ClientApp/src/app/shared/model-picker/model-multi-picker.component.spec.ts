@@ -22,8 +22,27 @@ const OPTIONS: ModelPickerOption<TestModel>[] = [
 
 const CARD_OPTIONS: ModelPickerOption<TestModel>[] = [
   { key: 'card:short', model: ALPHA, detail: 'Run #1' },
-  { key: 'card:long', model: ALPHA, detail: 'Same provider as the report writer, and its settings differ from the others' },
-  { key: 'card:beta', model: BETA }
+  {
+    key: 'card:long', model: ALPHA,
+    detail: 'Same provider as the report writer, and its settings differ from the others in parallel mode and service tier'
+  },
+  { key: 'card:beta', model: BETA },
+  {
+    key: 'card:noted', model: ALPHA, notes: [
+      { text: 'Is the report writer: cannot report on itself', tone: 'error' },
+      { text: 'Max output tokens 8192; the others use default', tone: 'warning' }
+    ]
+  }
+];
+
+const NOTED_OPTIONS: ModelPickerOption<TestModel>[] = [
+  {
+    key: 'noted:1', model: ALPHA, detail: 'Run #1', notes: [
+      { text: 'Is the assessor: cannot grade itself', tone: 'error' },
+      { text: 'Same provider as the report writer', tone: 'warning' }
+    ]
+  },
+  { key: 'noted:2', model: BETA }
 ];
 
 /** Both pickers over the same models, each feeding its selection back. */
@@ -38,10 +57,10 @@ const CARD_OPTIONS: ModelPickerOption<TestModel>[] = [
                               (selectionChange)="onChange($event)"></app-model-multi-picker>
       <app-model-multi-picker class="multi-priced" label="Priced models" [options]="options" [selectedKeys]="pricedSelected"
                               [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
-      <app-model-multi-picker class="multi-warning" label="Warned models" [options]="options" [selectedKeys]="selected"
-                              detailTone="warning"></app-model-multi-picker>
+      <app-model-multi-picker class="multi-noted" label="Noted models" [options]="notedOptions"
+                              [selectedKeys]="notedSelected"></app-model-multi-picker>
       <app-model-multi-picker class="multi-cards" label="Card models" [options]="cardOptions" [selectedKeys]="cardSelected"
-                              chipStyle="card" detailTone="warning" [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
+                              chipStyle="card" [showPrice]="true" [showParallel]="true"></app-model-multi-picker>
     </div>
   `
 })
@@ -53,6 +72,8 @@ class HostComponent {
   pricedSelected: ModelPickerKey[] = [];
   cardOptions: ModelPickerOption<TestModel>[] = CARD_OPTIONS;
   cardSelected: ModelPickerKey[] = [];
+  notedOptions: ModelPickerOption<TestModel>[] = NOTED_OPTIONS;
+  notedSelected: ModelPickerKey[] = ['noted:1', 'noted:2'];
   changes: ModelMultiPickerSelection<TestModel>[] = [];
   outerKeys: string[] = [];
 
@@ -159,17 +180,50 @@ describe('ModelMultiPickerComponent', () => {
     expect(chip.querySelector('.parallel-badge.badge-sequential')).not.toBeNull();
   });
 
-  it('draws a chip detail as a muted note, or as a warning with a hidden prefix', () => {
+  it('draws a chip detail as a muted note the remove button is described by', () => {
     host.select(['run:1']);
     fixture.detectChanges();
-    const muted = part('.multi').querySelector<HTMLElement>('.gh-multi-picker-chip-note')!;
+    const chip = part('.multi').querySelector<HTMLElement>('.gh-multi-picker-chip')!;
+    const muted = chip.querySelector<HTMLElement>('.gh-multi-picker-chip-note')!;
+    expect(muted.tagName).toBe('SPAN');
     expect(muted.classList).not.toContain('is-warning');
     expect(muted.textContent!.replace(/\s+/g, ' ').trim()).toBe('Run #1');
+    const remove = chip.querySelector<HTMLElement>('.action-btn')!;
+    expect(remove.getAttribute('aria-label')).toBe('Remove Alpha');
+    expect(remove.getAttribute('aria-describedby')).toBe(muted.id);
+  });
 
-    const warning = part('.multi-warning').querySelector<HTMLElement>('.gh-multi-picker-chip-note')!;
-    expect(warning.classList).toContain('is-warning');
-    expect(warning.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
-    expect(warning.textContent!.replace(/\s+/g, ' ').trim()).toMatch(/^Warning: Run #1/);
+  it('draws a chip\'s notes as a list, one line each, with the tone\'s glyph and hidden prefix', () => {
+    const [noted, plain] = Array.from(part('.multi-noted').querySelectorAll<HTMLElement>('.gh-multi-picker-chip'));
+    const list = noted.querySelector<HTMLElement>('ul.gh-multi-picker-chip-notes')!;
+    const items = Array.from(list.querySelectorAll<HTMLElement>(':scope > li.gh-multi-picker-chip-note'));
+    expect(items.length).toBe(2);
+    expect(items[0].classList).toContain('is-error');
+    expect(items[0].querySelector('svg circle')).not.toBeNull();
+    expect(items[1].classList).toContain('is-warning');
+    expect(items[1].querySelector('svg path')).not.toBeNull();
+    for (const item of items) {
+      expect(item.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(items.map(i => i.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+      'Blocking: Is the assessor: cannot grade itself',
+      'Warning: Same provider as the report writer'
+    ]);
+    // The notes replace the detail on the chip.
+    expect(noted.textContent).not.toContain('Run #1');
+
+    const remove = noted.querySelector<HTMLElement>('.action-btn')!;
+    expect(remove.getAttribute('aria-label')).toBe('Remove Alpha');
+    expect(remove.getAttribute('aria-describedby')).toBe(list.id);
+    expect(plain.querySelector('.gh-multi-picker-chip-note, .gh-multi-picker-chip-notes')).toBeNull();
+    expect(plain.querySelector('.action-btn')!.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('shows a chosen model\'s notes, joined, as the muted detail of its option', () => {
+    const noted = part('.multi-noted');
+    open(noted);
+    expect(options(noted)[0].querySelector('.gh-multi-picker-detail')!.textContent!.trim())
+      .toBe('Is the assessor: cannot grade itself · Same provider as the report writer');
   });
 
   it('offers two options of the same model as two options, each with its detail', () => {
@@ -242,7 +296,7 @@ describe('ModelMultiPickerComponent', () => {
     let picker: HTMLElement;
 
     beforeEach(() => {
-      host.selectCards(['card:short', 'card:long', 'card:beta']);
+      host.selectCards(['card:short', 'card:long', 'card:beta', 'card:noted']);
       fixture.detectChanges();
       picker = part('.multi-cards');
     });
@@ -257,7 +311,7 @@ describe('ModelMultiPickerComponent', () => {
       const narrow = cards().map(c => box(c).width);
       sized(46);
       const wide = cards().map(c => box(c).width);
-      expect(narrow.length).toBe(3);
+      expect(narrow.length).toBe(4);
       wide.forEach((width, i) => expect(Math.abs(width - narrow[i])).toBeLessThanOrEqual(0.5));
     });
 
@@ -301,6 +355,16 @@ describe('ModelMultiPickerComponent', () => {
       const shortNote = box(short.querySelector('.gh-multi-picker-chip-note')!);
       const longNote = box(long.querySelector('.gh-multi-picker-chip-note')!);
       expect(longNote.height).toBeGreaterThan(shortNote.height * 1.5);
+    });
+
+    it('puts a note list in the note row without widening its card', () => {
+      sized(60);
+      const short = card(0);
+      const noted = card(3);
+      expect(Math.abs(box(noted).width - box(short).width)).toBeLessThanOrEqual(1);
+      const list = box(noted.querySelector('.gh-multi-picker-chip-notes')!);
+      expect(list.top).toBeGreaterThanOrEqual(box(noted.querySelector('.gh-multi-picker-chip-badges')!).bottom);
+      expect(list.right).toBeLessThanOrEqual(box(noted).right);
     });
 
     it('fits a card into a narrow picker and wraps its badges', () => {

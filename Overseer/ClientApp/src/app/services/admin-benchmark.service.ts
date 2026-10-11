@@ -2553,6 +2553,14 @@ export interface StartBenchmarkModelBatchRequest {
   acknowledgedFindingKeys: string[];
 }
 
+/** A finding's note on one candidate's card. */
+export interface BenchmarkModelBatchModelNoteDto {
+  /** One of the finding's `modelConfigurationIds`. */
+  modelConfigurationId: number;
+  /** At most 60 characters. */
+  text: string;
+}
+
 /** One guardrail finding, as the preflight, the start refusal and the stored batch report it. */
 export interface BenchmarkModelBatchFindingDto {
   /** The stable guardrail code, such as `MB-W01`. */
@@ -2574,6 +2582,8 @@ export interface BenchmarkModelBatchFindingDto {
   rationale?: string | null;
   /** The candidates the finding is about; empty when it is about none in particular. */
   modelConfigurationIds: number[];
+  /** Per affected candidate, a short note naming the cause, for its card; absent in batches stored before notes existed. */
+  modelNotes?: BenchmarkModelBatchModelNoteDto[] | null;
   /** A warning's acknowledgment key; it changes when the affected models do. Null for blockers and advice. */
   acknowledgmentKey?: string | null;
 }

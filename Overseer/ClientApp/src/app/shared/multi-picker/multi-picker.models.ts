@@ -20,8 +20,16 @@ export interface MultiPickerSelection {
   keys: MultiPickerKey[];
 }
 
-/** The context of a host's `optionTemplate` or `chipTemplate`, which must render text only. */
+/**
+ * The context of a host's `optionTemplate`, which must render text only, or `chipTemplate`, which
+ * renders non-interactive content: text or a list.
+ */
 export interface MultiPickerOptionContext {
   $implicit: MultiPickerOption;
   selected: boolean;
+  /**
+   * Chip templates only: the id to give the element that shows the option's `detail`, which the
+   * remove button names as its description.
+   */
+  noteId?: string;
 }
