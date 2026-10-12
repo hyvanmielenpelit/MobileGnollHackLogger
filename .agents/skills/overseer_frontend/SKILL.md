@@ -2024,8 +2024,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     selection (N)*) comes before the chips; after it focus moves to the label. The chips
     (`ul#mc-selection-chips`) are one row that scrolls sideways; while they overflow it (`chipsOverflow`,
     from a `ResizeObserver`) a `.btn-link` **Show all N** / **Show fewer** (`chipsExpanded`,
-    `aria-expanded`) wraps them in a box of up to 30 dvh. The other notices stay below the line as
-    `.alert-compact`s. Each chip (`li.mc-selection-chip`, from
+    `aria-expanded`) wraps them in a box of up to 30 dvh. While they are expanded
+    (`.mc-selection-line--stacked`), the label and Clear selection stack in a column at the start of
+    the line, so the rows get its width; their wrapper `.mc-selection-lead` is `display: contents`
+    otherwise. The other notices stay below the line as `.alert-compact`s. Each chip (`li.mc-selection-chip`, from
     `BenchmarkComparisonState.comparisonSelectedSources`) holds its detail — a run's or a battery
     run's *#13*, the battery one with a visually hidden *Battery run* prefix, a group's *N runs* — then
     an `app-model-identity` (`shared/model-identity/`) with the source's name, thinking level,

@@ -2304,6 +2304,13 @@ the height.
   measured by a `ResizeObserver` on the row, followed in and out of the DOM from `ngAfterViewChecked`,
   plus a measurement after every change of the selection, since a new chip grows the row's scroll width
   without resizing it. Clearing the selection drops the expanded state.
+- **While the chips are expanded, Clear selection stacks under the summary.** The label and the button
+  share an always-rendered wrapper (`.mc-selection-lead`): `display: contents` on the collapsed line,
+  so that line is unchanged, and a `flex: none` column, left-aligned, while `.mc-selection-line--stacked`
+  is on, so the wrapped rows get the line's width. The class follows `chipsExpanded`, which only the
+  operator toggles, **never the overflow itself**: freeing width can end the overflow, which would
+  unstack the column and bring the overflow back. The wrapper has no role and is never conditional,
+  so the `role="status"` label is never re-created.
 - **Each chip's remove button** is a 32 × 32 `.action-btn` with the *x* glyph, named for its subject
   (*Remove {detail} {label} from the selection*) with a hint tooltip (§4). Removing a chip moves
   focus to the **next chip's** remove button, else to **Clear selection**, else to the label.

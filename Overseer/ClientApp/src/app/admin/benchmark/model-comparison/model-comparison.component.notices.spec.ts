@@ -277,6 +277,10 @@ describe('ModelComparisonComponent', () => {
     expect(empty.closest('.alert')).toBeNull();
     expect(fixture.debugElement.query(By.css('.mc-selection-bar .alert'))).toBeNull();
     expect(fixture.debugElement.query(By.css('.mc-selection-chips'))).toBeNull();
+    // The wrapper of the clipped summary takes no room: the warning starts the line.
+    const line = fixture.debugElement.query(By.css('.mc-selection-line')).nativeElement as HTMLElement;
+    expect(line.classList).not.toContain('mc-selection-line--stacked');
+    expect(empty.getBoundingClientRect().left - line.getBoundingClientRect().left).toBeLessThanOrEqual(1);
   });
 
   it('shows the summary text once something is selected, its prefix visually hidden', () => {
@@ -315,6 +319,10 @@ describe('ModelComparisonComponent', () => {
     // Before the chips, so it is reached first by keyboard.
     const chips = fixture.debugElement.query(By.css('.mc-selection-chips')).nativeElement as HTMLElement;
     expect(button.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    // Collapsed: beside the summary on the line, not under it.
+    const label = fixture.debugElement.query(By.css('#mc-selection-label')).nativeElement as HTMLElement;
+    expect(getComputedStyle(label.parentElement!).display).toBe('contents');
+    expect(button.getBoundingClientRect().left).toBeGreaterThanOrEqual(label.getBoundingClientRect().right);
     button.click();
 
     expect(cleared.length).toBe(1);
@@ -590,6 +598,36 @@ describe('ModelComparisonComponent', () => {
       fixture.detectChanges();
       expect(more.getAttribute('aria-expanded')).toBe('false');
       expect(getComputedStyle(chips).flexWrap).toBe('nowrap');
+    });
+
+    it('stacks Clear selection under the summary while the chips are expanded, and only then', async () => {
+      band({ runs: 20, sources: runSources(20), notices: [] });
+      await settle();
+
+      const line = fixture.debugElement.query(By.css('.mc-selection-line')).nativeElement as HTMLElement;
+      const label = fixture.debugElement.query(By.css('#mc-selection-label')).nativeElement as HTMLElement;
+      const clear = fixture.debugElement.query(By.css('.mc-selection-clear')).nativeElement as HTMLElement;
+      const chips = fixture.debugElement.query(By.css('#mc-selection-chips')).nativeElement as HTMLElement;
+      expect(line.classList).not.toContain('mc-selection-line--stacked');
+      expect(clear.getBoundingClientRect().left).toBeGreaterThanOrEqual(label.getBoundingClientRect().right);
+
+      moreButton()!.click();
+      fixture.detectChanges();
+
+      expect(line.classList).toContain('mc-selection-line--stacked');
+      expect(clear.parentElement).toBe(label.parentElement);
+      const labelBox = label.getBoundingClientRect();
+      const clearBox = clear.getBoundingClientRect();
+      expect(clearBox.top).toBeGreaterThanOrEqual(labelBox.bottom);
+      expect(Math.abs(clearBox.left - labelBox.left)).toBeLessThanOrEqual(1);
+      // The column sits beside the rows, which take the rest of the line.
+      expect(chips.getBoundingClientRect().left).toBeGreaterThanOrEqual(Math.max(labelBox.right, clearBox.right));
+
+      moreButton()!.click();
+      fixture.detectChanges();
+
+      expect(line.classList).not.toContain('mc-selection-line--stacked');
+      expect(clear.getBoundingClientRect().left).toBeGreaterThanOrEqual(label.getBoundingClientRect().right);
     });
 
     it('drops Show all and the expanded state when the selection is cleared', async () => {

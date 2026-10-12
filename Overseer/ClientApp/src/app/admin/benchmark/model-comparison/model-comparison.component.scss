@@ -679,8 +679,9 @@
   }
 }
 
-/* The summary, Clear selection, the chips and Show all, on one line of 32 px controls; on a phone,
-   where they cannot share it, the chips take a line of their own. */
+/* The summary, Clear selection, the chips and Show all, on one line of 32 px controls; with the
+   chips expanded, the summary over Clear selection. On a phone, where they cannot share the
+   line, the chips take a line of their own. */
 .mc-selection-line {
   display: flex;
   flex-wrap: wrap;
@@ -688,6 +689,20 @@
   gap: 8px 12px;
   min-block-size: 32px;
   min-width: 0;
+}
+
+/* The summary and Clear selection: items of the line itself, or a column while the chips are
+   expanded so the rows get the line's width. */
+.mc-selection-lead {
+  display: contents;
+}
+
+.mc-selection-line--stacked .mc-selection-lead {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 /* Sentence case rather than a tracked uppercase eyebrow, and the bar's label for assistive

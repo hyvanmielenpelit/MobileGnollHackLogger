@@ -1699,9 +1699,11 @@
 
     One line, always rendered on step 1: the summary, then Clear selection, then the chips naming
     every selected source in one row that scrolls sideways, and Show all N while they overflow it.
-    Each chip carries a remove button, so a source can be dropped without going back to the card it
-    was ticked on. Clear selection comes before the chips, so it is seen and reached by keyboard
-    first, and appears only once something is selected.
+    While Show all is on and the chips wrap, Clear selection stacks under the summary in a column
+    of their own, so the rows get the line's width. Each chip carries a remove button, so a source
+    can be dropped without going back to the card it was ticked on. Clear selection comes before
+    the chips, so it is seen and reached by keyboard first, and appears only once something is
+    selected.
 
     With nothing selected the summary is visually hidden and one warning line is the visible
     message; a screen reader still hears the summary. The label is also the programmatic focus
@@ -1727,20 +1729,25 @@
   -->
   @if (step === 1) {
     <div class="mc-selection-bar" role="region" aria-labelledby="mc-selection-label">
-      <div class="mc-selection-line" [class.mc-selection-line--empty]="selectedSourceCount === 0">
-        <p class="mc-selection-label" id="mc-selection-label" role="status" tabindex="-1" #selectionLabel>
-          <span class="visually-hidden">Your selection — </span>{{ selectionSummary }}
-        </p>
+      <div class="mc-selection-line" [class.mc-selection-line--empty]="selectedSourceCount === 0"
+           [class.mc-selection-line--stacked]="chipsExpanded">
+        <div class="mc-selection-lead">
+          <p class="mc-selection-label" id="mc-selection-label" role="status" tabindex="-1" #selectionLabel>
+            <span class="visually-hidden">Your selection — </span>{{ selectionSummary }}
+          </p>
+          @if (selectedSources.length > 0) {
+            <!-- Drops the selection and deletes nothing, as removing one chip does. -->
+            <button type="button" class="btn-ghost mc-selection-clear" #clearSelectionButton
+                    (click)="onClearSelection()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+              Clear selection<span class="visually-hidden"> ({{ selectedSourceCount }})</span>
+            </button>
+          }
+        </div>
         @if (selectedSources.length > 0) {
-          <!-- Drops the selection and deletes nothing, as removing one chip does. -->
-          <button type="button" class="btn-ghost mc-selection-clear" #clearSelectionButton
-                  (click)="onClearSelection()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-            Clear selection<span class="visually-hidden"> ({{ selectedSourceCount }})</span>
-          </button>
           <ul id="mc-selection-chips" class="mc-selection-chips" aria-label="Selected sources" #selectionChips
               [class.is-expanded]="chipsExpanded" [class.is-overflowing]="chipsOverflow && !chipsExpanded">
             @for (source of selectedSources; track source.kind + source.id) {
