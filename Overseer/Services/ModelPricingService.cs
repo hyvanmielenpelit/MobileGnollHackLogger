@@ -529,6 +529,32 @@ public class ModelPricingService
     }
 
     /// <summary>
+    /// Costs one agent run: per call when the provider reported per-call usage, otherwise flat-rate from
+    /// the run's aggregates. <paramref name="uncachedInputTokens"/> still contains the cache writes, as
+    /// <see cref="Agents.AgentRunResult.UncachedInputTokens"/> does.
+    /// </summary>
+    public static decimal ComputeRunCost(
+        ModelPricing pricing,
+        IReadOnlyList<TokenUsageReport> calls,
+        string? actualServiceTier, string? requestedServiceTier,
+        int uncachedInputTokens, int outputTokens,
+        long cacheReadTokens, long cacheCreationTokens)
+    {
+        // Per-call costing wherever the provider reported usage: a long-context rate card is keyed on a
+        // single request's prompt size, and a turn's summed tokens cross any threshold routinely while
+        // no individual call comes close. The aggregate overload remains the fallback for a turn whose
+        // provider reported no per-call usage, and is flat-rate by definition.
+        return calls.Count > 0
+            ? ComputeCost(pricing, calls, actualServiceTier, requestedServiceTier)
+            // Cache writes are billed at the write rate by the same call, so they are excluded
+            // from the base-input figure handed to it.
+            : ComputeCost(
+                pricing,
+                Math.Max(0, uncachedInputTokens - (int)cacheCreationTokens),
+                outputTokens, cacheReadTokens, cacheCreationTokens);
+    }
+
+    /// <summary>
     /// Estimates one prospective request with no cache reads or writes, priced through the per-call
     /// overload so a prompt over the card's long-context threshold is estimated at that card. Token
     /// counts beyond <see cref="int.MaxValue"/> are clamped.

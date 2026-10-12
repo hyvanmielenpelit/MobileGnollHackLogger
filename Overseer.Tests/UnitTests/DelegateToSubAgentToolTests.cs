@@ -696,6 +696,235 @@ public class DelegateToSubAgentToolTests
         Assert.DoesNotContain(sinkEvents, e => e.Type == "debug");
     }
 
+    private static List<TokenUsageReport> OneUsage() => new()
+    {
+        new TokenUsageReport { TotalPromptTokens = 12_000, UncachedInputTokens = 12_000, CacheReadTokens = 3_000, OutputTokens = 800 }
+    };
+
+    private static (string ciphertext, string nonce, string tag) EncryptUserKey(string plain, string userId)
+    {
+        var keyBytes = new byte[32];
+        keyBytes[0] = 42;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { { "AesEncryptionKey", Convert.ToBase64String(keyBytes) } }).Build();
+        return new CryptoService(config).Encrypt(plain, userId);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AppSettingsFallback_PricesRunAsOperatorFundedCatalogCost()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var usages = OneUsage();
+        provider.UsagePerCall = usages;
+        db.ChatSession.Add(new ChatSession { Id = 300, AspNetUserId = "user300", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(300), ToolCallId = "call-300", AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.True(run.IsOperatorFunded);
+        Assert.Null(run.SystemModelId);
+        Assert.Equal("wiki_researcher", run.AgentName);
+        Assert.Equal("call-300", run.ToolCallId);
+        Assert.Equal(1, run.ModelCallCount);
+
+        var card = new ModelPricingService(new ModelMetadataService(), db).ResolveDefault("OpenAI", "gpt-5.6-luna");
+        Assert.NotNull(card);
+        Assert.Equal(ModelPricingService.ComputeCost(card, usages), run.EstimatedCost);
+        Assert.Equal("catalog", run.PricingSource);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ActiveUserModelOnUserKey_PricesRunOnTheUsersCustomRates()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var usages = OneUsage();
+        provider.UsagePerCall = usages;
+        var (enc, nonce, tag) = EncryptUserKey("user-key-301", "user301");
+        var userModel = new UserAiModel
+        {
+            Id = 301, AspNetUserId = "user301", Provider = "OpenAI", ModelId = "gpt-5.6-luna", OrderIndex = 0,
+            PricingMode = "custom", InputPricePerMillion = 7m, OutputPricePerMillion = 21m
+        };
+        db.UserAiModels.Add(userModel);
+        db.UserAiApiKeys.Add(new UserAiApiKey { AspNetUserId = "user301", Provider = "OpenAI", EncryptedApiKey = enc, ApiKeyNonce = nonce, ApiKeyTag = tag });
+        db.ChatSession.Add(new ChatSession { Id = 301, AspNetUserId = "user301", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(301), ActiveUserModelId = 301, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.Equal("user-key-301", provider.LastApiKey);
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.False(run.IsOperatorFunded);
+        Assert.Equal("custom", run.PricingSource);
+        var customCard = new ModelPricingService(new ModelMetadataService(), db).Resolve(userModel)!;
+        Assert.Equal(ModelPricingSource.Custom, customCard.Source);
+        Assert.Equal(ModelPricingService.ComputeCost(customCard, usages), run.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ActiveUserModelOnServerKey_IsOperatorFundedAtCatalogPrice()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var usages = OneUsage();
+        provider.UsagePerCall = usages;
+        var userModel = new UserAiModel
+        {
+            Id = 302, AspNetUserId = "user302", Provider = "OpenAI", ModelId = "gpt-5.6-luna", OrderIndex = 0,
+            PricingMode = "custom", InputPricePerMillion = 7m, OutputPricePerMillion = 21m
+        };
+        db.UserAiModels.Add(userModel);
+        db.ChatSession.Add(new ChatSession { Id = 302, AspNetUserId = "user302", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(302), ActiveUserModelId = 302, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        // No user key for the provider: the run fell back to the AI:APIKey server key.
+        Assert.Equal("test-key", provider.LastApiKey);
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.True(run.IsOperatorFunded);
+        Assert.Equal("catalog", run.PricingSource);
+
+        var pricingService = new ModelPricingService(new ModelMetadataService(), db);
+        var catalogCard = pricingService.ResolveDefault("OpenAI", "gpt-5.6-luna");
+        Assert.NotNull(catalogCard);
+        Assert.Equal(ModelPricingService.ComputeCost(catalogCard, usages), run.EstimatedCost);
+        Assert.NotEqual(ModelPricingService.ComputeCost(pricingService.Resolve(userModel)!, usages), run.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ActiveSystemModel_IsOperatorFundedWithSystemModelId()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var usages = OneUsage();
+        provider.UsagePerCall = usages;
+        var (sysKey, sysNonce, sysTag) = EncryptUserKey("system-secret-key", "SYSTEM_API_KEY");
+        var sysConfig = new SystemAiApiConfiguration
+        {
+            Id = 303, DisplayName = "System Model", Provider = "OpenAI", ModelId = "gpt-5.6-luna",
+            IsEnabled = true, IsSystemWide = true, ModelRole = 3,
+            EncryptedApiKey = sysKey, ApiKeyNonce = sysNonce, ApiKeyTag = sysTag,
+            PricingMode = "custom", InputPricePerMillion = 3m, OutputPricePerMillion = 9m
+        };
+        db.SystemAiApiConfigurations.Add(sysConfig);
+        db.ChatSession.Add(new ChatSession { Id = 303, AspNetUserId = "user303", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(303), ActiveSystemModelId = 303, AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.Equal("system-secret-key", provider.LastApiKey);
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.True(run.IsOperatorFunded);
+        Assert.Equal(303, run.SystemModelId);
+        Assert.Equal("custom", run.PricingSource);
+        var card = new ModelPricingService(new ModelMetadataService(), db).Resolve(sysConfig)!;
+        Assert.Equal(ModelPricingService.ComputeCost(card, usages), run.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LongContextModel_PricesEachCallOnItsOwnCard()
+    {
+        var catalog = new ModelMetadataService();
+        string? providerName = null;
+        string? modelId = null;
+        foreach (var p in new[] { "OpenAI", "Google", "Anthropic" })
+        {
+            var entry = catalog.GetCatalogEntries(p).FirstOrDefault(e =>
+                e.Pricing?.LongContext != null && e.Pricing.LongContext.ThresholdInputTokens > 0 &&
+                e.SupportsSubAgentExecution && e.Prefixes.Count > 0 && !string.IsNullOrEmpty(e.Prefixes[0]) &&
+                catalog.GetMetadata(p, e.Prefixes[0]).DefaultPricing?.LongContext != null);
+            if (entry != null)
+            {
+                providerName = p;
+                modelId = entry.Prefixes[0];
+                break;
+            }
+        }
+        Assert.NotNull(providerName);
+        Assert.NotNull(modelId);
+
+        var (tool, db, provider, _) = CreateTestSetup(
+            providerName: providerName,
+            customConfig: new Dictionary<string, string?> { { "AI:Model", modelId } });
+
+        var card = new ModelPricingService(new ModelMetadataService(), db).ResolveDefault(providerName, modelId);
+        Assert.NotNull(card);
+        Assert.NotNull(card.LongContext);
+        int threshold = card.LongContext.ThresholdInputTokens;
+
+        var usages = new List<TokenUsageReport>
+        {
+            new() { TotalPromptTokens = threshold + 5_000, UncachedInputTokens = threshold + 5_000, OutputTokens = 1_500 },
+            new() { TotalPromptTokens = 2_000, UncachedInputTokens = 2_000, OutputTokens = 300 }
+        };
+        provider.UsagePerCall = usages;
+        provider.EmitToolCallOnFirstIteration = true;
+        db.ChatSession.Add(new ChatSession { Id = 304, AspNetUserId = "user304", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(304), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.Equal(2, run.ModelCallCount);
+        decimal perCall = ModelPricingService.ComputeCost(card, usages);
+        decimal flat = ModelPricingService.ComputeCost(card,
+            usages.Sum(u => (long)u.UncachedInputTokens), usages.Sum(u => (long)u.OutputTokens));
+        Assert.Equal(perCall, run.EstimatedCost);
+        Assert.NotEqual(flat, run.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProviderErrorAfterUsage_StillCarriesTheBilledCall()
+    {
+        var (tool, db, provider, _) = CreateTestSetup();
+        var usages = OneUsage();
+        provider.UsagePerCall = usages;
+        provider.StreamErrorAfterUsage = "invalid_request_error: unsupported parameter";
+        db.ChatSession.Add(new ChatSession { Id = 305, AspNetUserId = "user305", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(305), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        var run = Assert.Single(result.DelegatedRunCosts!);
+        Assert.Equal(1, run.ModelCallCount);
+        var card = new ModelPricingService(new ModelMetadataService(), db).ResolveDefault("OpenAI", "gpt-5.6-luna")!;
+        Assert.Equal(ModelPricingService.ComputeCost(card, usages), run.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnknownProvider_CarriesNoRunCost()
+    {
+        var (tool, db, _, _) = CreateTestSetup(customConfig: new Dictionary<string, string?> { { "AI:Provider", "NoSuchProvider" } });
+        db.ChatSession.Add(new ChatSession { Id = 306, AspNetUserId = "user306", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(306), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Contains("is not available", result.ErrorMessage);
+        Assert.Null(result.DelegatedRunCosts);
+    }
+
     private class EmptySubAgentCatalogService : SubAgentCatalogService
     {
         public EmptySubAgentCatalogService(IConfiguration config, ILogger<SubAgentCatalogService> logger)
@@ -920,6 +1149,7 @@ public class DelegateToSubAgentToolTests
         services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
         services.AddSingleton<Overseer.Services.Privacy.ConfidentialityPostureService>();
         services.AddSingleton<AgentLoopRunner>();
+        services.AddScoped<ModelPricingService>();
         if (alertService != null)
         {
             services.AddSingleton(alertService);
@@ -954,7 +1184,17 @@ public class DelegateToSubAgentToolTests
 
         /// <summary>When set, every stream yields only this provider error event.</summary>
         public string? StreamErrorBeforeChunks { get; set; }
+
+        /// <summary>When set, call n also yields a usage report of UsagePerCall[n - 1], if there is one.</summary>
+        public List<TokenUsageReport>? UsagePerCall { get; set; }
+
+        /// <summary>When set, every stream yields its usage report and then only this provider error event:
+        /// a call that was billed and then failed.</summary>
+        public string? StreamErrorAfterUsage { get; set; }
         private int _streamCallCount = 0;
+
+        private TokenUsageReport? UsageFor(int call) =>
+            UsagePerCall != null && call <= UsagePerCall.Count ? UsagePerCall[call - 1] : null;
 
         public void AppendAssistantToolCallsToHistory(List<object> messageHistory, string iterationText, List<JsonElement> toolCalls, List<JsonElement>? providerHistoryItems = null)
         {
@@ -998,8 +1238,17 @@ public class DelegateToSubAgentToolTests
                 yield return new ChatEvent { Type = "error", Data = StreamErrorBeforeChunks };
                 yield break;
             }
+            if (StreamErrorAfterUsage != null)
+            {
+                if (UsageFor(call) is { } billed)
+                    yield return new ChatEvent { Type = "usage", UsageReport = billed };
+                yield return new ChatEvent { Type = "error", Data = StreamErrorAfterUsage };
+                yield break;
+            }
             yield return new ChatEvent { Type = "debug", Data = "subagent-debug-line" };
             yield return new ChatEvent { Type = "chunk", Data = "subagent-chunk-prose" };
+            if (UsageFor(call) is { } usage)
+                yield return new ChatEvent { Type = "usage", UsageReport = usage };
 
             if (EmitToolCallOnFirstIteration && call == 1)
             {

@@ -1606,60 +1606,68 @@ public class ChatService
                     }
                 }
 
-                // The cost of an operator-funded turn is an operator figure. A regular user is shown no price at all
-                // for it — not zero, which would read as "this reply was free to produce".
-                // Replies saved before SystemAiConfigurationIdUsed existed carry null attribution and are therefore
-                // treated as user-funded, so they still show operator cost to a regular user. Known and accepted
-                // (D1 option A); also recorded in the AddChatCostAttributionAndTieredPricing migration and in
-                // chat.service.ts.
+                // What a viewer may see of the cost is decided in ChatCostDisclosure, which the history loads use too.
                 string? requesterUserName = await dbContext.Users
                     .Where(u => u.Id == userId).Select(u => u.UserName)
                     .FirstOrDefaultAsync(CancellationToken.None);
                 bool requesterIsAdmin = _configuration.IsAdmin(requesterUserName);
                 bool isOperatorFunded = systemModelId.HasValue;
-                bool discloseCost = requesterIsAdmin || !isOperatorFunded;
 
-                decimal? estimatedCost = null;
+                decimal? mainCost = null;
                 string? pricingSource = null;
 
                 if (resolvedPricing != null)
                 {
-                    // Per-call costing wherever the provider reported usage: a long-context rate card is keyed on a
-                    // single request's prompt size, and a turn's summed tokens cross any threshold routinely while
-                    // no individual call comes close. The aggregate overload remains the fallback for a turn whose
-                    // provider reported no per-call usage, and is flat-rate by definition.
-                    estimatedCost = runResult.ModelCallUsages.Count > 0
-                        ? ModelPricingService.ComputeCost(
-                            resolvedPricing, runResult.ModelCallUsages,
-                            actualServiceTier: runResult.ActualServiceTier,
-                            requestedServiceTier: serviceTier)
-                        // Cache writes are billed at the write rate by the same call, so they are excluded
-                        // from the base-input figure handed to it.
-                        : ModelPricingService.ComputeCost(
-                            resolvedPricing,
-                            Math.Max(0, wholeTurnInputTokens - (int)cacheCreationTokens),
-                            wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
+                    mainCost = ModelPricingService.ComputeRunCost(
+                        resolvedPricing, runResult.ModelCallUsages,
+                        runResult.ActualServiceTier, serviceTier,
+                        wholeTurnInputTokens, wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
                     pricingSource = resolvedPricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
+                }
+
+                // Sub-agent runs are priced on their own models inside DelegateToSubAgentTool; the token
+                // counts below stay the main model's.
+                var turnCost = ChatTurnCost.Combine(mainCost, pricingSource, isOperatorFunded, runResult.DelegatedRunCosts);
+
+                if (resolvedPricing != null)
+                {
+                    var disclosed = ChatCostDisclosure.For(requesterIsAdmin, turnCost.EstimatedCost, turnCost.PricingSource,
+                        systemModelId, turnCost.OperatorEstimatedCost, turnCost.SubAgentEstimatedCost);
 
                     // The event is still emitted when the price is withheld, with the price removed. That is what
                     // lets the client tell "withheld because the operator paid" from "this model has no configured
                     // price": suppressing the event would raise the PARTIAL badge on every operator-funded turn.
                     // Token counts stay: they are the user's own context accounting, not a price.
-                    // Only the wire object is scrubbed — estimatedCost itself must reach the entity and the
+                    // Only the wire object is scrubbed — turnCost itself must reach the entity and the
                     // accumulator unscrubbed, or every admin total is permanently corrupted.
                     yield return new ChatEvent
                     {
                         Type = "cost",
                         Data = JsonSerializer.Serialize(new
                         {
-                            estimatedCost = discloseCost ? estimatedCost : null,
-                            source = discloseCost ? pricingSource : null,
+                            estimatedCost = disclosed.EstimatedCost,
+                            source = disclosed.PricingSource,
                             inputTokens = wholeTurnInputTokens,
                             outputTokens = wholeTurnOutputTokens,
                             cacheReadTokens = cacheReadTokens,
                             cacheCreationTokens = cacheCreationTokens,
-                            isOperatorCost = isOperatorFunded
+                            isOperatorCost = disclosed.IsOperatorCost,
+                            operatorCost = disclosed.OperatorCost,
+                            subAgentCost = disclosed.SubAgentCost,
+                            subAgentRuns = turnCost.SubAgentRuns
                         })
+                    };
+                }
+
+                if (_showDebugLog && turnCost.SubAgentRuns > 0)
+                {
+                    static string Usd(decimal? v) => v.HasValue ? "$" + v.Value.ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture) : "unpriced";
+                    yield return new ChatEvent
+                    {
+                        Type = "debug",
+                        Data = turnCost.EstimatedCost.HasValue
+                            ? $"[Main Chat] Turn cost: main {Usd(mainCost)} + sub-agents {Usd(turnCost.SubAgentEstimatedCost)} ({turnCost.SubAgentRuns} runs) = {Usd(turnCost.EstimatedCost)}, operator share {Usd(turnCost.OperatorEstimatedCost ?? 0m)}"
+                            : $"[Main Chat] Turn cost: unpriced (main {Usd(mainCost)}, {turnCost.SubAgentRuns} sub-agent runs, at least one part has no price card)"
                     };
                 }
 
@@ -1698,9 +1706,11 @@ public class ChatService
                     OutputTokens = wholeTurnOutputTokens,
                     CacheReadTokens = (int)Math.Min(int.MaxValue, cacheReadTokens),
                     CacheCreationTokens = (int)Math.Min(int.MaxValue, cacheCreationTokens),
-                    EstimatedCost = estimatedCost,
-                    PricingSource = pricingSource,
-                    SystemAiConfigurationIdUsed = systemModelId
+                    EstimatedCost = turnCost.EstimatedCost,
+                    PricingSource = turnCost.PricingSource,
+                    SystemAiConfigurationIdUsed = systemModelId,
+                    SubAgentEstimatedCost = turnCost.SubAgentEstimatedCost,
+                    OperatorEstimatedCost = turnCost.OperatorEstimatedCost
                 };
                 /* THE encryption choke point for the assistant turn, and the reason
                    AgentLoopRunner never sees a key.
@@ -1725,7 +1735,7 @@ public class ChatService
                 }
 
                 session.LastMessageUtc = DateTime.UtcNow;
-                ChatSessionCostAccumulator.Apply(session, estimatedCost, isOperatorFunded);
+                ChatSessionCostAccumulator.Apply(session, turnCost.EstimatedCost, turnCost.OperatorEstimatedCost);
 
                 if (systemModelId.HasValue)
                 {

@@ -103,6 +103,12 @@ export interface ChatCostEventData {
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   isOperatorCost?: boolean;
+  /** The operator-funded share of `estimatedCost`. Sent to admins only. */
+  operatorCost?: number | null;
+  /** The delegated sub-agent runs' share of `estimatedCost`; null when the viewer may not see the whole turn. */
+  subAgentCost?: number | null;
+  /** Delegated runs of the turn that made a model call, priced or not. */
+  subAgentRuns?: number;
 }
 
 export interface ChatMessage {
@@ -137,6 +143,10 @@ export interface ChatMessage {
   estimatedCost?: number | null;
   pricingSource?: string | null;
   isOperatorCost?: boolean;
+  /** The operator-funded share of `estimatedCost`. Sent to admins only. */
+  operatorCost?: number | null;
+  /** The delegated sub-agent runs' share of `estimatedCost`; null when the viewer may not see the whole turn. */
+  subAgentCost?: number | null;
 }
 
 /**

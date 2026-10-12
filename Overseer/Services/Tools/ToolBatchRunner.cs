@@ -29,6 +29,7 @@ public sealed class ToolBatchOutcome
     public string? TerminationStatus { get; init; }
     public bool BudgetExhausted { get; init; }
     public int? RemainingBudget { get; init; }
+    public List<Agents.DelegatedRunCost>? DelegatedRunCosts { get; init; }
 }
 
 public static class ToolBatchRunner
@@ -101,7 +102,8 @@ public static class ToolBatchRunner
                             NestedToolCalls = res.NestedToolCalls,
                             TerminationStatus = res.TerminationStatus ?? (res.Success ? "completed" : "error"),
                             BudgetExhausted = res.BudgetExhausted,
-                            RemainingBudget = res.RemainingBudget
+                            RemainingBudget = res.RemainingBudget,
+                            DelegatedRunCosts = res.DelegatedRunCosts
                         };
                         events.TryWrite(outcome);
                         return outcome;

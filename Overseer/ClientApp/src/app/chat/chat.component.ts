@@ -201,6 +201,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   showChatCost = true;
   liveCost: number | null = null;
   liveIsOperatorCost: boolean = false;
+  liveOperatorCost: number | null = null;
+  liveSubAgentCost: number | null = null;
   sessionTotalCost: number | null = null;
   
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
@@ -504,6 +506,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const cents = cost * 100;
     if (cost > 0 && cents < 0.01) return '<0.01¢';
     return `${cents.toFixed(2)}¢`;
+  }
+
+  /**
+   * The operator tag beside a reply's cost: `(operator)` when the operator paid the whole figure shown,
+   * `(0.40¢ operator)` when it paid part of it, and nothing when it paid none. `operatorCost` reaches admins only.
+   */
+  operatorCostLabel(estimated: number | null | undefined, operator: number | null | undefined): string {
+    if (operator == null || operator <= 0 || estimated == null) return '';
+    if (operator >= estimated) return '(operator)';
+    return `(${this.formatCost(operator)} operator)`;
   }
 
   /** True if any loaded assistant turn, or the in-flight turn, carries a resolved price. */
@@ -1961,6 +1973,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         const d = JSON.parse(evt.data);
         this.liveCost = d.estimatedCost ?? null;
         this.liveIsOperatorCost = d.isOperatorCost;
+        this.liveOperatorCost = d.operatorCost ?? null;
+        this.liveSubAgentCost = d.subAgentCost ?? null;
         this.cdr.detectChanges();
       } catch { }
     } else if (evt.type === 'context') {
@@ -2239,7 +2253,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             contextWindowTokens: this.contextUsage?.windowTokens,
             contextInputLimitTokens: this.contextUsage?.inputLimitTokens,
             estimatedCost: this.liveCost,
-            isOperatorCost: this.liveIsOperatorCost
+            isOperatorCost: this.liveIsOperatorCost,
+            operatorCost: this.liveOperatorCost,
+            subAgentCost: this.liveSubAgentCost
           });
 
           // Fold only here, on normal completion. Cancel and error paths deliberately do not
@@ -2256,6 +2272,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.timeToFirstTokenMs = null;
     this.liveCost = null;
     this.liveIsOperatorCost = false;
+    this.liveOperatorCost = null;
+    this.liveSubAgentCost = null;
           this.totalDurationMs = null;
           this.showSpinner = false;
           this.currentStatusText = 'Generation complete.';
@@ -2654,6 +2672,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.timeToFirstTokenMs = null;
     this.liveCost = null;
     this.liveIsOperatorCost = false;
+    this.liveOperatorCost = null;
+    this.liveSubAgentCost = null;
     this.totalDurationMs = null;
     this.contextUsage = null;
     this.hasOngoingGeneration = false;
@@ -3773,6 +3793,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.timeToFirstTokenMs = null;
     this.liveCost = null;
     this.liveIsOperatorCost = false;
+    this.liveOperatorCost = null;
+    this.liveSubAgentCost = null;
     this.totalDurationMs = null;
     this.lastSeenSeqNo = -1; // [NEW] Reset sequence tracker for new generation
 

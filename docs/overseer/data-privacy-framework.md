@@ -1622,7 +1622,7 @@ What the rule exposes, grouped by what a reader could actually learn:
 |---|---|---|
 | **Timing and lifecycle** | `ChatSession.CreatedUtc`, `LastMessageUtc`, `IsPinned`, `IsDeleted`, `DeletedUtc`, `DeletionReason`; `ChatMessage.TimestampUtc`, `TimeToFirstTokenMs`, `TotalDurationMs` | When you worked, and for how long |
 | **Volume** | `ChatMessage.TokensUsed`, the four `Context*Tokens`, `InputTokens`, `OutputTokens`, `CacheReadTokens`, `CacheCreationTokens` | Message count and message sizes — a good proxy for how much you wrote |
-| **Cost** | `ChatSession.TotalEstimatedCost`, `TotalUserEstimatedCost`; `ChatMessage.EstimatedCost`, `PricingSource` | Conversation volume again, in currency |
+| **Cost** | `ChatSession.TotalEstimatedCost`, `TotalUserEstimatedCost`; `ChatMessage.EstimatedCost`, `PricingSource`, `SubAgentEstimatedCost`, `OperatorEstimatedCost` | Conversation volume again, in currency |
 | **Routing** | `ChatMessage.ProviderUsed`, `ModelUsed`, `ThinkingLevelUsed`, `ReasoningModeUsed`, `ServiceTierUsed`, `ActualServiceTierUsed`, `ModelDisplayNameUsed`, `SystemAiConfigurationIdUsed` | **Which provider saw the content** — the most consequential entry in this table |
 | **Structure** | `ChatMessage.Role`, `IsHidden`, `IsGameSnapshot`, `IsMessageHistory` | Almost nothing |
 | **Tool activity** | `ChatMessageToolCall.Name`, `DisplayName`, `Status`, `AgentName`, `ParentToolCallId`, `Depth`, `BatchIndex`, timings | Which tools ran, and **which sub-agent ran them** — that `search_server_dumplogs` was called, for instance |

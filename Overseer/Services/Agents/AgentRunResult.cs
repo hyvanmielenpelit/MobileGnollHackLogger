@@ -51,6 +51,10 @@ public class AgentRunResult
     /// </summary>
     public List<ModelCallRecord> ModelCalls { get; set; } = new();
 
+    /// <summary>Spend of the delegated runs this run started, each priced on its own model; not included
+    /// in any token field above.</summary>
+    public List<DelegatedRunCost> DelegatedRunCosts { get; set; } = new();
+
     /// <summary>Time this turn waited for Overseer's own request-governor permits, summed over its calls.</summary>
     public long PermitWaitMs { get; set; }
 

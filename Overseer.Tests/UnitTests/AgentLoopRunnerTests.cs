@@ -273,6 +273,94 @@ public class AgentLoopRunnerTests
         }
     }
 
+    private class OneToolCallMockProvider : MockAiProvider
+    {
+        private int _callCount = 0;
+
+        public override async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            _callCount++;
+            if (_callCount == 1)
+            {
+                var tcJson = JsonSerializer.Serialize(new { id = "call_1", name = "mock_tool", arguments = "{}" });
+                yield return new ChatEvent { Type = "tool_call_complete", Data = tcJson };
+            }
+            else
+            {
+                yield return new ChatEvent { Type = "chunk", Data = "Final summary" };
+            }
+            await Task.CompletedTask;
+        }
+
+        public override object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => new { };
+    }
+
+    private class CostCarryingToolHandler : IToolHandler
+    {
+        public static readonly DelegatedRunCost First = new("wiki_researcher", "call_1", "OpenAI", "model-a", null, true, 0.01m, "catalog", 2, 1000, 100, 0, 0);
+        public static readonly DelegatedRunCost Second = new("source_investigator", "call_1", "Google", "model-b", 7, false, 0.02m, "custom", 1, 500, 50, 0, 0);
+
+        public string ToolName => "mock_tool";
+        public string Description { get; set; } = "A mock tool whose result carries delegated run costs";
+        public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
+        public ToolCategory Category => ToolCategory.InformationRetrieval;
+        public int TimeoutSeconds => 10;
+        public JsonElement ParameterSchema => JsonSerializer.SerializeToElement(new { type = "object" });
+        public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new ToolResult
+            {
+                Success = true,
+                Content = "Delegated.",
+                DelegatedRunCosts = new List<DelegatedRunCost> { First, Second }
+            });
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_ToolResultDelegatedRunCosts_ReachTheRunResult()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var sp = services.BuildServiceProvider();
+
+        var provider = new OneToolCallMockProvider();
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+
+        var clientBridge = new NullClientBridge();
+        var handlers = new List<IToolHandler> { new CostCarryingToolHandler() };
+        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
+        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
+
+        var runner = new AgentLoopRunner(
+            new[] { provider },
+            toolRegistry,
+            toolExecutor,
+            new MockHttpClientFactory(),
+            config,
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            new ModelMetadataService(),
+            NullLogger<AgentLoopRunner>.Instance,
+            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
+
+        var request = new AgentRunRequest
+        {
+            ProviderName = "MockProvider",
+            ModelId = "mock-model",
+            ApiKey = "test-key",
+            SeedHistory = new List<object> { new { role = "user", content = "Delegate" } },
+            AiProvider = provider
+        };
+
+        var result = new AgentRunResult();
+        await foreach (var _ in runner.RunAsync(request, null, result, CancellationToken.None)) { }
+
+        Assert.Equal("Final summary", result.FinalText);
+        Assert.Equal(new[] { CostCarryingToolHandler.First, CostCarryingToolHandler.Second }, result.DelegatedRunCosts);
+    }
+
     [Fact]
     public async Task RunAsync_WhenIterationLimitReached_SetsIterationLimitTerminationReason()
     {

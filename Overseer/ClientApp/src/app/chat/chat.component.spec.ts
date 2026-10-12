@@ -608,18 +608,86 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should render estimatedCost in the bottom-left footer of a loaded message', () => {
-      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, isOperatorCost: true } as any];
+      component.messages = [{ role: 'assistant', content: 'test', timeToFirstTokenMs: 1000, estimatedCost: 0.015, isOperatorCost: true, operatorCost: 0.015 } as any];
       component.showChatCost = true;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
       const footer = compiled.querySelector('.message-box.assistant .msg-cost-footer');
       expect(footer).toBeTruthy();
       expect(footer?.textContent).toContain('1.50¢');
-      expect(footer?.querySelector('.msg-cost-operator')).toBeTruthy();
+      expect(footer?.querySelector('.msg-cost-operator')?.textContent).toBe('(operator)');
 
       // The cost has left the top-right timing line entirely.
       const ttft = compiled.querySelector('.message-box.assistant .ttft-container');
       expect(ttft?.textContent).not.toContain('¢');
+    });
+
+    it('should show no operator tag beside a regular user\'s own share, which carries no operatorCost', () => {
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.015, isOperatorCost: true } as any];
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const footer = (fixture.nativeElement as HTMLElement).querySelector('.message-box.assistant .msg-cost-footer');
+      expect(footer?.textContent).toContain('1.50¢');
+      expect(footer?.querySelector('.msg-cost-operator')).toBeFalsy();
+    });
+
+    it('should name the operator share when the operator paid part of the reply', () => {
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.02, isOperatorCost: true, operatorCost: 0.005 } as any];
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const tag = (fixture.nativeElement as HTMLElement).querySelector('.message-box.assistant .msg-cost-footer .msg-cost-operator');
+      expect(tag?.textContent).toContain('operator');
+      expect(tag?.textContent).toContain('0.50¢');
+    });
+
+    it('should show the sub-agent share inside the reply footer', () => {
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.0125, subAgentCost: 0.004 } as any];
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const footer = (fixture.nativeElement as HTMLElement).querySelector('.message-box.assistant .msg-cost-footer');
+      expect(footer?.textContent).toContain('1.25¢');
+      expect(footer?.querySelector('.msg-cost-subagents')?.textContent).toContain('sub-agents 0.40¢');
+    });
+
+    it('should show no sub-agent share when it is absent or zero', () => {
+      component.messages = [
+        { role: 'assistant', content: 'a', estimatedCost: 0.0125 } as any,
+        { role: 'assistant', content: 'b', estimatedCost: 0.0125, subAgentCost: 0 } as any
+      ];
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelectorAll('.message-box.assistant .msg-cost-footer').length).toBe(2);
+      expect(compiled.querySelector('.msg-cost-subagents')).toBeFalsy();
+    });
+
+    it('should carry the operator and sub-agent shares from the cost event onto the completed message', () => {
+      vi.useFakeTimers();
+      try {
+        component.showChatCost = true;
+        component.isStreaming = true;
+        component.streamingMessage = 'Hello from Overseer';
+
+        component.processChatEvent({
+          type: 'cost',
+          data: JSON.stringify({ estimatedCost: 0.02, isOperatorCost: true, operatorCost: 0.005, subAgentCost: 0.004, subAgentRuns: 1 })
+        });
+        expect(component.liveOperatorCost).toBe(0.005);
+        expect(component.liveSubAgentCost).toBe(0.004);
+
+        // Past the longest avatar loop, which the done animation waits out.
+        component.processChatEvent({ type: 'done', data: '' });
+        vi.advanceTimersByTime(5000);
+
+        expect(component.messages.length).toBe(1);
+        expect(component.messages[0].operatorCost).toBe(0.005);
+        expect(component.messages[0].subAgentCost).toBe(0.004);
+        expect(component.liveOperatorCost).toBeNull();
+        expect(component.liveSubAgentCost).toBeNull();
+      }
+      finally {
+        vi.useRealTimers();
+      }
     });
 
     it('should render no footer, and no PARTIAL badge, for an operator-funded reply a regular user may not price', () => {

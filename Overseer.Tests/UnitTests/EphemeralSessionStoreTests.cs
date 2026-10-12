@@ -213,6 +213,8 @@ public class EphemeralSessionStoreTests
             EstimatedCost = 0.0042m,
             PricingSource = "catalog",
             SystemAiConfigurationIdUsed = 9,
+            SubAgentEstimatedCost = 0.0011m,
+            OperatorEstimatedCost = 0.0031m,
             IsGameSnapshot = true
         };
         source.ToolCalls.Add(new ChatMessageToolCall
@@ -233,6 +235,8 @@ public class EphemeralSessionStoreTests
         Assert.Equal("GPT X", stored.ModelDisplayNameUsed);
         Assert.Equal(0.0042m, stored.EstimatedCost);
         Assert.Equal(9, stored.SystemAiConfigurationIdUsed);
+        Assert.Equal(0.0011m, stored.SubAgentEstimatedCost);
+        Assert.Equal(0.0031m, stored.OperatorEstimatedCost);
         Assert.True(stored.IsGameSnapshot);
 
         var call = Assert.Single(stored.ToolCalls);
@@ -247,6 +251,8 @@ public class EphemeralSessionStoreTests
         Assert.Equal(source.Content, back.Content);
         Assert.Equal(source.ProviderUsed, back.ProviderUsed);
         Assert.Equal(source.EstimatedCost, back.EstimatedCost);
+        Assert.Equal(source.SubAgentEstimatedCost, back.SubAgentEstimatedCost);
+        Assert.Equal(source.OperatorEstimatedCost, back.OperatorEstimatedCost);
     }
 
     [Fact]

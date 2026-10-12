@@ -119,7 +119,8 @@ public class ChatMessage
     /// </summary>
     public decimal? EstimatedCost { get; set; }
 
-    /// <summary>"custom" or "catalog" — which price produced <see cref="EstimatedCost"/>.</summary>
+    /// <summary>"custom" or "catalog" — which price produced <see cref="EstimatedCost"/> — or "mixed" when
+    /// the main loop and a delegated run were priced from different sources.</summary>
     [MaxLength(16)]
     public string? PricingSource { get; set; }
 
@@ -130,4 +131,15 @@ public class ChatMessage
     /// not cascade into chat history or rewrite what a reply cost.
     /// </summary>
     public long? SystemAiConfigurationIdUsed { get; set; }
+
+    /// <summary>The share of <see cref="EstimatedCost"/> spent by delegated sub-agent runs, each priced on
+    /// its own model. Null when the turn delegated nothing that reached a provider. Token fields above count
+    /// the main model only.</summary>
+    public decimal? SubAgentEstimatedCost { get; set; }
+
+    /// <summary>The share of <see cref="EstimatedCost"/> charged to the operator: the main model when it ran
+    /// on a system configuration, plus every operator-funded sub-agent run. Null when the operator paid
+    /// nothing, and on rows saved before this column existed — those are read through
+    /// <see cref="SystemAiConfigurationIdUsed"/>.</summary>
+    public decimal? OperatorEstimatedCost { get; set; }
 }

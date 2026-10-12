@@ -3145,6 +3145,10 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<decimal?>("OperatorEstimatedCost")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("decimal(18,8)");
+
                     b.Property<int?>("OutputTokens")
                         .HasColumnType("int");
 
@@ -3167,6 +3171,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("ServiceTierUsed")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<decimal?>("SubAgentEstimatedCost")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("decimal(18,8)");
 
                     b.Property<long?>("SystemAiConfigurationIdUsed")
                         .HasColumnType("bigint");

@@ -40,6 +40,7 @@ namespace Overseer.Services.Tools
         public string? TerminationStatus { get; set; }
         public bool BudgetExhausted { get; set; }
         public int? RemainingBudget { get; set; }
+        public List<Agents.DelegatedRunCost>? DelegatedRunCosts { get; set; }
     }
 
     public class ToolExecutionContext

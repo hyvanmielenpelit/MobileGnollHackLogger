@@ -61,6 +61,8 @@ public sealed class EphemeralMessage
     public decimal? EstimatedCost { get; init; }
     public string? PricingSource { get; init; }
     public long? SystemAiConfigurationIdUsed { get; init; }
+    public decimal? SubAgentEstimatedCost { get; init; }
+    public decimal? OperatorEstimatedCost { get; init; }
 
     private byte[] _content = Array.Empty<byte>();
 
@@ -106,7 +108,9 @@ public sealed class EphemeralMessage
         CacheCreationTokens = CacheCreationTokens,
         EstimatedCost = EstimatedCost,
         PricingSource = PricingSource,
-        SystemAiConfigurationIdUsed = SystemAiConfigurationIdUsed
+        SystemAiConfigurationIdUsed = SystemAiConfigurationIdUsed,
+        SubAgentEstimatedCost = SubAgentEstimatedCost,
+        OperatorEstimatedCost = OperatorEstimatedCost
     };
 
     /// <summary>
@@ -150,6 +154,8 @@ public sealed class EphemeralMessage
             EstimatedCost = source.EstimatedCost,
             PricingSource = source.PricingSource,
             SystemAiConfigurationIdUsed = source.SystemAiConfigurationIdUsed,
+            SubAgentEstimatedCost = source.SubAgentEstimatedCost,
+            OperatorEstimatedCost = source.OperatorEstimatedCost,
             Content = source.Content ?? ""
         };
 

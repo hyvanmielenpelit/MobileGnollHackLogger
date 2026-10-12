@@ -703,6 +703,12 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<ChatMessage>()
                 .Property(m => m.EstimatedCost).HasPrecision(18, 8);
 
+            modelBuilder.Entity<ChatMessage>()
+                .Property(m => m.SubAgentEstimatedCost).HasPrecision(18, 8);
+
+            modelBuilder.Entity<ChatMessage>()
+                .Property(m => m.OperatorEstimatedCost).HasPrecision(18, 8);
+
             modelBuilder.Entity<ChatSession>()
                 .Property(s => s.TotalEstimatedCost).HasPrecision(18, 8);
 

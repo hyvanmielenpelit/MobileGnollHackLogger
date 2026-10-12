@@ -489,7 +489,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 
-  .msg-cost-operator {
+  .msg-cost-operator,
+  .msg-cost-subagents {
     margin-inline-start: 5px;
     font-family: inherit;
     opacity: 0.75;

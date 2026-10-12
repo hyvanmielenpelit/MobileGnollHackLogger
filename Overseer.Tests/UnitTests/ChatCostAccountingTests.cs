@@ -334,4 +334,83 @@ public class ChatCostAccountingTests
             (200_000 / 1_000_000m * 1m),
             cost);
     }
+
+    [Fact]
+    public void Accumulator_NullOperatorShare_CountsTheWholeTurnInBothTotals()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.05m, operatorFundedCost: null);
+
+        Assert.Equal(0.05m, session.TotalEstimatedCost);
+        Assert.Equal(0.05m, session.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_PartialOperatorShare_CountsOnlyTheUserShareInTheUserTotal()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.05m, operatorFundedCost: 0.02m);
+
+        Assert.Equal(0.05m, session.TotalEstimatedCost);
+        Assert.Equal(0.03m, session.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_FullOperatorShare_LeavesTheUserTotalUntouched()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.05m, operatorFundedCost: 0.05m);
+
+        Assert.Equal(0.05m, session.TotalEstimatedCost);
+        Assert.Null(session.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void Accumulator_MixedOperatorShares_KeepUserTotalAtOrBelowTheFullTotal()
+    {
+        var session = new ChatSession { Title = "S", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+
+        ChatSessionCostAccumulator.Apply(session, 0.10m, operatorFundedCost: null);
+        ChatSessionCostAccumulator.Apply(session, 0.08m, operatorFundedCost: 0.03m);
+        ChatSessionCostAccumulator.Apply(session, 0.04m, operatorFundedCost: 0.04m);
+        ChatSessionCostAccumulator.Apply(session, null, operatorFundedCost: null);
+        ChatSessionCostAccumulator.Apply(session, 0.02m, isOperatorFunded: true);
+
+        Assert.Equal(0.24m, session.TotalEstimatedCost);
+        Assert.Equal(0.15m, session.TotalUserEstimatedCost);
+        Assert.True(session.TotalUserEstimatedCost <= session.TotalEstimatedCost);
+        Assert.Equal(0.09m, session.TotalEstimatedCost - session.TotalUserEstimatedCost);
+    }
+
+    [Fact]
+    public void ComputeRunCost_WithPerCallUsage_EqualsThePerCallOverload()
+    {
+        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m,
+            LongContext: new LongContextPricing(200_000, 20m, 75m, 2m, 25m),
+            ServiceTierMultipliers: new Dictionary<string, decimal> { ["priority"] = 2m });
+        var calls = new List<TokenUsageReport>
+        {
+            new() { TotalPromptTokens = 250_000, UncachedInputTokens = 250_000, OutputTokens = 4_000 },
+            new() { TotalPromptTokens = 30_000, UncachedInputTokens = 20_000, CacheReadTokens = 10_000, OutputTokens = 900 }
+        };
+
+        decimal runCost = ModelPricingService.ComputeRunCost(
+            pricing, calls, "priority", null, 270_000, 4_900, 10_000, 0);
+
+        Assert.Equal(ModelPricingService.ComputeCost(pricing, calls, "priority", null), runCost);
+    }
+
+    [Fact]
+    public void ComputeRunCost_WithNoPerCallUsage_EqualsTheAggregateOverloadWithoutCacheWrites()
+    {
+        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m);
+
+        decimal runCost = ModelPricingService.ComputeRunCost(
+            pricing, new List<TokenUsageReport>(), null, null, 140_000, 15_000, 200_000, 40_000);
+
+        Assert.Equal(ModelPricingService.ComputeCost(pricing, 100_000, 15_000, 200_000, 40_000), runCost);
+    }
 }

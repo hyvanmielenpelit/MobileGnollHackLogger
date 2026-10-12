@@ -430,8 +430,8 @@
               }
               <div [innerHTML]="msg.content | markdown" class="markdown-body"></div>
               @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
-                <div class="msg-cost-footer" title="Estimated cost of this response">
-                  {{ formatCost(msg.estimatedCost) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+                <div class="msg-cost-footer" title="Estimated cost of this response, sub-agent runs included">
+                  {{ formatCost(msg.estimatedCost) }}@if (operatorCostLabel(msg.estimatedCost, msg.operatorCost); as op) {<span class="msg-cost-operator">{{ op }}</span>}@if (msg.subAgentCost) {<span class="msg-cost-subagents">· sub-agents {{ formatCost(msg.subAgentCost) }}</span>}
                 </div>
               }
               @if (msg.role === 'assistant' && msg.id && !isConfidentialSession && !isEphemeralSession) {
@@ -569,8 +569,8 @@
               }
               <div [innerHTML]="streamingMessage | markdown" class="markdown-body" [style.display]="(isStreaming && (showThoughtsAndTools === 0 || showThoughtsAndTools === 1) && !hasRealContent) ? 'none' : 'block'"></div>
               @if (showChatCost && liveCost != null) {
-                <div class="msg-cost-footer" title="Estimated cost of this response">
-                  {{ formatCost(liveCost) }}@if (liveIsOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+                <div class="msg-cost-footer" title="Estimated cost of this response, sub-agent runs included">
+                  {{ formatCost(liveCost) }}@if (operatorCostLabel(liveCost, liveOperatorCost); as op) {<span class="msg-cost-operator">{{ op }}</span>}@if (liveSubAgentCost) {<span class="msg-cost-subagents">· sub-agents {{ formatCost(liveSubAgentCost) }}</span>}
                 </div>
               }
               <button class="copy-btn" (click)="copyToClipboard(streamingMessage, null)" title="Copy">

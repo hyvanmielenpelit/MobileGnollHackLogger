@@ -51,6 +51,32 @@ When a chat turn completes, `ModelPricingService` resolves pricing in priority o
 > field, and `ChatMessage.CostCurrency` was dropped by migration
 > `RemoveChatMessageCostCurrency`. Every amount is rendered with a leading `$`.
 
+### Sub-Agent Runs
+
+A turn that calls `delegate_to_subagent` runs a second agent loop, on its own `AgentRunResult`, and
+possibly on a different model funded by a different payer. Its spend is part of the turn:
+
+- `DelegateToSubAgentTool` prices each delegated run on **its own** model's card, per call
+  (`ModelPricingService.ComputeRunCost`), so long-context cards and service-tier multipliers apply as
+  for the main loop. The card follows the payer: a system configuration's own card; the user's
+  `UserAiModel` card only when the user's own key funded the run; otherwise the catalog default, since
+  a user's custom override describes the user's account and the operator's server key bills at list
+  price.
+- The result travels back as a `DelegatedRunCost` on the tool result, through `ToolBatchOutcome`, into
+  `AgentRunResult.DelegatedRunCosts`. It survives the success, canceled, error and "Result too large"
+  paths.
+- `ChatTurnCost.Combine` adds the delegated runs to the main loop's cost. A run that made no model
+  call is ignored. **A turn is either fully priced or unpriced**: if the main model or any delegated
+  run that made a model call has no price card, the whole turn is unpriced (`null`), because keeping
+  the priced parts would quietly understate it.
+
+The four token fields of the turn (`InputTokens`, `OutputTokens`, `CacheReadTokens`,
+`CacheCreationTokens`) stay **main model only**: they are the main model's context accounting, and
+summing tokens of different models prices nothing. Never price a turn from
+`runResult.ModelCallUsages` alone.
+
+GnollBench is unaffected: every benchmark path sets `EnableSubAgents = false`.
+
 ### Streaming `cost` Event
 
 During stream completion (in `ChatService.cs`), Overseer broadcasts a dedicated streaming event alongside the existing `context` event:
@@ -61,16 +87,23 @@ yield return new ChatEvent
     Type = "cost",
     Data = JsonSerializer.Serialize(new
     {
-        estimatedCost,
-        source = pricing.Source, // "custom" | "catalog"
-        inputTokens,
+        estimatedCost = disclosed.EstimatedCost,   // the whole turn, sub-agent runs included, as this viewer may see it
+        source = disclosed.PricingSource,          // "custom" | "catalog" | "mixed"
+        inputTokens,                               // main model only, like the three below
         outputTokens,
         cacheReadTokens,
         cacheCreationTokens,
-        isOperatorCost // true when executing on a system configuration
+        isOperatorCost = disclosed.IsOperatorCost,
+        operatorCost = disclosed.OperatorCost,     // the operator-funded share; admins only
+        subAgentCost = disclosed.SubAgentCost,     // the delegated runs' share
+        subAgentRuns = turnCost.SubAgentRuns       // delegated runs that made a model call, priced or not
     })
 };
 ```
+
+The event is emitted whenever the main model has a price card, with `estimatedCost: null` when a
+delegated run's model has none and the turn is therefore unpriced. `source` is `"mixed"` when the
+main loop and a delegated run were priced from different sources.
 
 The `cost` event is separated from the `context` event because context window measurement requires known model limits and prompt token counts, whereas cost estimation requires resolved pricing.
 
@@ -83,17 +116,55 @@ When an assistant turn executes using an operator-provided system model (`system
 
 When executing via a user's personal API key (`UserAiModel`), `isOperatorCost` is `false`, displaying the personal cost (e.g. `4.00¢`).
 
+#### Funding is per run
+
+The main loop is operator-funded exactly when it ran on a system configuration. A delegated run is
+decided per resolution branch (`ResolvedSubAgentModel.IsOperatorFunded`): a system configuration, and
+any `AI:*` server key — including a user model whose provider has no user key and fell back to it —
+count as operator-funded; a run on the user's own key does not. The turn's **operator share**
+(`OperatorEstimatedCost`) is the main loop when it ran on a system configuration plus every
+operator-funded delegated run, and `null` when the operator paid nothing.
+
+#### What each viewer is shown
+
+`ChatCostDisclosure.For` is the single rule, used by the `cost` event and by both history loads
+(persistent and ephemeral sessions). A row's operator share is `OperatorEstimatedCost` when set;
+otherwise — every row saved before the column existed — the whole cost when
+`SystemAiConfigurationIdUsed` is set.
+
+| Viewer | `estimatedCost` | `operatorCost` | `subAgentCost` |
+|--------|-----------------|----------------|----------------|
+| Admin | the whole turn | the operator share | the delegated share |
+| Regular user | the user-funded share (whole − operator share); `null` when that is not above 0 | always `null` | the delegated share only when the operator paid nothing |
+
+`isOperatorCost`, for both viewers, is `SystemAiConfigurationIdUsed` set **or** an operator share
+above 0. The first term keeps an unpriced turn on a system configuration from raising the PARTIAL
+glyph; the second covers a user-model turn whose sub-agent the operator funded. A regular user's
+`estimatedCost` is by construction what `ChatSessionCostAccumulator` adds to
+`TotalUserEstimatedCost`, so the client's fold of the live cost into its header total agrees with
+the total served on reload. Known limit: a user share priced at exactly 0 beside an operator share
+is shown as withheld rather than as `0.00¢`.
+
 ### Database Persistence Model
 
 In `ChatMessage` (`GnollHackServer.Data`):
 ```csharp
-public decimal? EstimatedCost { get; set; }       // precision: (18, 8)
-public string? PricingSource { get; set; }       // "custom" | "catalog"
-public long? InputTokens { get; set; }
+public decimal? EstimatedCost { get; set; }          // precision: (18, 8); the whole turn, sub-agent runs included
+public string? PricingSource { get; set; }          // "custom" | "catalog" | "mixed"
+public long? InputTokens { get; set; }              // this and the three below: main model only
 public long? OutputTokens { get; set; }
 public long? CacheReadTokens { get; set; }
 public long? CacheCreationTokens { get; set; }
+public decimal? SubAgentEstimatedCost { get; set; }  // precision: (18, 8); the delegated runs' share of EstimatedCost
+public decimal? OperatorEstimatedCost { get; set; }  // precision: (18, 8); the operator-funded share of EstimatedCost
 ```
+
+`SubAgentEstimatedCost` and `OperatorEstimatedCost` are **shares** of `EstimatedCost`, never
+additions to it. `SubAgentEstimatedCost` is `null` when the turn delegated nothing that reached a
+provider; `OperatorEstimatedCost` is `null` when the operator paid nothing, and on every row saved
+before migration `AddChatMessageSubAgentAndOperatorCost` — those rows are read through
+`SystemAiConfigurationIdUsed`, and no backfill is attempted. `SystemAiConfigurationIdUsed` names the
+configuration that funded the **main** model.
 
 Costs and token counts are **snapshotted at turn completion and never recomputed on read**. If catalog pricing or configuration overrides change in the future, historical message costs remain accurate to the time of generation.
 
@@ -102,7 +173,8 @@ Costs and token counts are **snapshotted at turn completion and never recomputed
 `ChatSession.TotalEstimatedCost` (`decimal(18, 8)`, nullable) holds the running total of the
 session's assistant turns in USD. `ChatSessionCostAccumulator.Apply` folds each completed turn's
 cost into it inside the **same** `SaveChangesAsync` that persists the assistant message, so the
-message and the total cannot drift apart. An unpriced turn is skipped entirely: the total is
+message and the total cannot drift apart. `TotalUserEstimatedCost` receives only the user-funded
+share — the turn less its `OperatorEstimatedCost`. An unpriced turn is skipped entirely: the total is
 never nudged to zero by a model with no configured pricing, and a session with no priced turn at
 all stays `NULL`.
 
@@ -140,19 +212,25 @@ matter.
 ### UI Presentation Surfaces
 
 1. **Per-Reply Cost**:
-   The bottom-left corner of each assistant message box, in `.msg-cost-footer`, with an
-   `(operator)` suffix when the hosting operator paid. It is **no longer** in the top-right
-   `.ttft-container`, which now carries timing only:
+   The bottom-left corner of each assistant message box, in `.msg-cost-footer`. It is **no
+   longer** in the top-right `.ttft-container`, which now carries timing only. The first figure
+   is the whole cost the viewer may see, sub-agent runs included; the delegated share follows it,
+   inside the reply's cost rather than beside it — `1.25¢ · sub-agents 0.40¢`:
    ```html
    @if (msg.role === 'assistant' && showChatCost && msg.estimatedCost != null) {
-     <div class="msg-cost-footer" title="Estimated cost of this response">
-       {{ formatCost(msg.estimatedCost) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
+     <div class="msg-cost-footer" title="Estimated cost of this response, sub-agent runs included">
+       {{ formatCost(msg.estimatedCost) }}@if (operatorCostLabel(msg.estimatedCost, msg.operatorCost); as op) {<span class="msg-cost-operator">{{ op }}</span>}@if (msg.subAgentCost) {<span class="msg-cost-subagents">· sub-agents {{ formatCost(msg.subAgentCost) }}</span>}
      </div>
    }
    ```
+   The operator tag is driven by `operatorCost`, not `isOperatorCost`: `(operator)` when the
+   operator paid the whole figure shown, `(0.40¢ operator)` when it paid part of it, nothing when
+   it paid none. `operatorCost` reaches admins only, so a regular user never sees an operator tag
+   beside their own share.
 2. **Live Streaming Cost**:
-   The same `.msg-cost-footer`, on the streaming message box, driven by `liveCost` /
-   `liveIsOperatorCost` once the `cost` event arrives.
+   The same `.msg-cost-footer`, on the streaming message box, driven by `liveCost`,
+   `liveOperatorCost` and `liveSubAgentCost` once the `cost` event arrives; all three are copied
+   onto the finished message.
 3. **Chat Total**:
    `Total 1.85¢` in the chat header, right-aligned beside the title and sharing that space with
    the context window indicator. The value is `ChatSession.TotalEstimatedCost` plus the in-flight

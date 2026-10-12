@@ -416,7 +416,9 @@ public class ChatController : ControllerBase
                 m.CacheCreationTokens,
                 m.EstimatedCost,
                 m.PricingSource,
-                m.SystemAiConfigurationIdUsed
+                m.SystemAiConfigurationIdUsed,
+                m.SubAgentEstimatedCost,
+                m.OperatorEstimatedCost
             })
             .ToListAsync();
         swDb.Stop();
@@ -545,6 +547,9 @@ public class ChatController : ControllerBase
                 })
                 .ToList();
 
+            var cost = ChatCostDisclosure.For(isAdmin, m.EstimatedCost, m.PricingSource,
+                m.SystemAiConfigurationIdUsed, m.OperatorEstimatedCost, m.SubAgentEstimatedCost);
+
             return new {
                 m.Id,
                 m.Role,
@@ -567,14 +572,12 @@ public class ChatController : ControllerBase
                 m.OutputTokens,
                 m.CacheReadTokens,
                 m.CacheCreationTokens,
-                // An operator-funded reply's cost is an operator figure: a regular user is shown no price at
-                // all for it, never zero, which would read as "this reply was free to produce". IsOperatorCost
-                // travels beside it so the client can tell "withheld" from "unpriced" and keep the PARTIAL
-                // badge off. Replies saved before SystemAiConfigurationIdUsed existed carry null attribution
-                // and are therefore treated as user-funded — the accepted D1-A limitation.
-                EstimatedCost = (isAdmin || !m.SystemAiConfigurationIdUsed.HasValue) ? m.EstimatedCost : null,
-                PricingSource = (isAdmin || !m.SystemAiConfigurationIdUsed.HasValue) ? m.PricingSource : null,
-                IsOperatorCost = m.SystemAiConfigurationIdUsed.HasValue
+                // What this viewer may see of the cost; the rule, and its D1-A limitation, are in ChatCostDisclosure.
+                EstimatedCost = cost.EstimatedCost,
+                PricingSource = cost.PricingSource,
+                IsOperatorCost = cost.IsOperatorCost,
+                OperatorCost = cost.OperatorCost,
+                SubAgentCost = cost.SubAgentCost
             };
         }).ToList();
         swAsm.Stop();
@@ -706,50 +709,58 @@ public class ChatController : ControllerBase
         var messages = held.Messages
             .Where(m => m.Role != "system" && !m.IsHidden)
             .OrderBy(m => m.TimestampUtc)
-            .Select(m => new
+            .Select(m =>
             {
-                m.Id,
-                m.Role,
-                Content = m.Content,
-                m.TimestampUtc,
-                m.TimeToFirstTokenMs,
-                m.TotalDurationMs,
-                Attachments = attachments
-                    .Where(a => a.ChatMessageId == m.Id)
-                    .Select(a => new { a.Id, a.FileName, a.ContentType })
-                    .ToList(),
-                ToolCalls = m.ToolCalls
-                    .OrderBy(tc => tc.SortOrder)
-                    .Select(tc => new
-                    {
-                        id = tc.ToolCallId,
-                        name = tc.Name,
-                        displayName = tc.DisplayName,
-                        argsText = tc.ArgsText,
-                        status = tc.Status,
-                        result = tc.Result,
-                        error = tc.Error,
-                        agentName = tc.AgentName,
-                        parentToolCallId = tc.ParentToolCallId,
-                        depth = tc.Depth
-                    })
-                    .ToList(),
-                ModelDisplayName = m.ModelDisplayNameUsed ?? m.ModelUsed,
-                ThinkingLevel = m.ThinkingLevelUsed,
-                ReasoningMode = m.ReasoningModeUsed,
-                ServiceTier = m.ServiceTierUsed,
-                ActualServiceTier = m.ActualServiceTierUsed,
-                m.ContextPromptTokens,
-                m.ContextOutputTokens,
-                m.ContextWindowTokens,
-                m.ContextInputLimitTokens,
-                m.InputTokens,
-                m.OutputTokens,
-                m.CacheReadTokens,
-                m.CacheCreationTokens,
-                EstimatedCost = (isAdmin || !m.SystemAiConfigurationIdUsed.HasValue) ? m.EstimatedCost : null,
-                PricingSource = (isAdmin || !m.SystemAiConfigurationIdUsed.HasValue) ? m.PricingSource : null,
-                IsOperatorCost = m.SystemAiConfigurationIdUsed.HasValue
+                var cost = ChatCostDisclosure.For(isAdmin, m.EstimatedCost, m.PricingSource,
+                    m.SystemAiConfigurationIdUsed, m.OperatorEstimatedCost, m.SubAgentEstimatedCost);
+
+                return new
+                {
+                    m.Id,
+                    m.Role,
+                    Content = m.Content,
+                    m.TimestampUtc,
+                    m.TimeToFirstTokenMs,
+                    m.TotalDurationMs,
+                    Attachments = attachments
+                        .Where(a => a.ChatMessageId == m.Id)
+                        .Select(a => new { a.Id, a.FileName, a.ContentType })
+                        .ToList(),
+                    ToolCalls = m.ToolCalls
+                        .OrderBy(tc => tc.SortOrder)
+                        .Select(tc => new
+                        {
+                            id = tc.ToolCallId,
+                            name = tc.Name,
+                            displayName = tc.DisplayName,
+                            argsText = tc.ArgsText,
+                            status = tc.Status,
+                            result = tc.Result,
+                            error = tc.Error,
+                            agentName = tc.AgentName,
+                            parentToolCallId = tc.ParentToolCallId,
+                            depth = tc.Depth
+                        })
+                        .ToList(),
+                    ModelDisplayName = m.ModelDisplayNameUsed ?? m.ModelUsed,
+                    ThinkingLevel = m.ThinkingLevelUsed,
+                    ReasoningMode = m.ReasoningModeUsed,
+                    ServiceTier = m.ServiceTierUsed,
+                    ActualServiceTier = m.ActualServiceTierUsed,
+                    m.ContextPromptTokens,
+                    m.ContextOutputTokens,
+                    m.ContextWindowTokens,
+                    m.ContextInputLimitTokens,
+                    m.InputTokens,
+                    m.OutputTokens,
+                    m.CacheReadTokens,
+                    m.CacheCreationTokens,
+                    EstimatedCost = cost.EstimatedCost,
+                    PricingSource = cost.PricingSource,
+                    IsOperatorCost = cost.IsOperatorCost,
+                    OperatorCost = cost.OperatorCost,
+                    SubAgentCost = cost.SubAgentCost
+                };
             })
             .ToList();
 

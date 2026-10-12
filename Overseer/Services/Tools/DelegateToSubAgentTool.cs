@@ -167,13 +167,16 @@ public class DelegateToSubAgentTool : IToolHandler
         _ongoingChatManager.TryRegisterSubAgent(context.SessionId, toolCallId, subAgentCts);
 
         var subAgentResult = new AgentRunResult();
+        ResolvedSubAgentModel? resolved = null;
+        ModelPricing? pricing = null;
+        string? resolvedServiceTier = null;
 
         try
         {
             using var scope = _scopeFactory.CreateScope();
 
             // 1. Resolve Provider, Model, and API Key
-            var resolved = await ResolveModelAndCredentialsAsync(subAgentDef, scope.ServiceProvider, context, cancellationToken);
+            resolved = await ResolveModelAndCredentialsAsync(subAgentDef, scope.ServiceProvider, context, cancellationToken);
 
             var providers = scope.ServiceProvider.GetServices<IAiProvider>();
             var aiProvider = providers.FirstOrDefault(p => string.Equals(p.ProviderName, resolved.Provider, StringComparison.OrdinalIgnoreCase));
@@ -201,7 +204,7 @@ public class DelegateToSubAgentTool : IToolHandler
             string? resolvedThinkingLevel = subAgentDef.ThinkingLevel ?? resolved.ThinkingLevel;
             string? resolvedReasoningMode = resolved.ReasoningMode;
             string? resolvedReasoningSummary = resolved.ReasoningSummary;
-            string? resolvedServiceTier = resolved.ServiceTier;
+            resolvedServiceTier = resolved.ServiceTier;
 
             if (!resolvedMaxOutputTokens.HasValue && metadata.MaxOutputTokens > 0)
             {
@@ -262,9 +265,11 @@ public class DelegateToSubAgentTool : IToolHandler
             var endpointPolicy = scope.ServiceProvider.GetRequiredService<Overseer.Services.Privacy.EndpointPolicy>();
             var endpointDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var subAgentEndpoint = Overseer.Services.Providers.AiEndpointDescriptor.Official;
+            SystemAiApiConfiguration? fundingConfig = null;
+            string? fundingUserId = null;
             if (resolved.SystemModelId.HasValue)
             {
-                var fundingConfig = await endpointDb.SystemAiApiConfigurations
+                fundingConfig = await endpointDb.SystemAiApiConfigurations
                     .FirstOrDefaultAsync(c => c.Id == resolved.SystemModelId.Value, cancellationToken);
                 subAgentEndpoint = endpointPolicy.Resolve(fundingConfig);
             }
@@ -273,7 +278,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 /* The session row is consulted for one thing, its owner, and an ephemeral
                    session has no row to name one -- so the owner is read from the execution
                    context, where the turn recorded it in either case. */
-                string? fundingUserId = context.SessionId.IsPersistent
+                fundingUserId = context.SessionId.IsPersistent
                     ? await endpointDb.ChatSession
                         .Where(s => s.Id == context.SessionId.PersistentId)
                         .Select(s => s.AspNetUserId)
@@ -286,6 +291,36 @@ public class DelegateToSubAgentTool : IToolHandler
                         cancellationToken);
                     subAgentEndpoint = endpointPolicy.Resolve(fundingKey);
                 }
+            }
+
+            /* The card follows the payer: a user's custom override describes the user's own account,
+               so it prices only a run the user funded; the operator's server key bills at list price. */
+            try
+            {
+                var pricingService = scope.ServiceProvider.GetRequiredService<ModelPricingService>();
+                if (resolved.SystemModelId.HasValue)
+                {
+                    pricing = fundingConfig != null ? pricingService.Resolve(fundingConfig) : null;
+                }
+                else if (resolved.UserModelId.HasValue && !resolved.IsOperatorFunded)
+                {
+                    long userModelId = resolved.UserModelId.Value;
+                    var userModel = await endpointDb.UserAiModels.FirstOrDefaultAsync(
+                        m => m.Id == userModelId && m.AspNetUserId == fundingUserId, cancellationToken);
+                    pricing = userModel != null
+                        ? pricingService.Resolve(userModel)
+                        : pricingService.ResolveDefault(resolved.Provider, resolved.ModelId);
+                }
+                else
+                {
+                    pricing = pricingService.ResolveDefault(resolved.Provider, resolved.ModelId);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Failed to resolve pricing for subagent {AgentName} ({Provider}/{ModelId}); the run is unpriced.",
+                    agentName, resolved.Provider, resolved.ModelId);
+                pricing = null;
             }
 
             var subAgentExecContext = context.CloneFor(toolCallId);
@@ -377,6 +412,18 @@ public class DelegateToSubAgentTool : IToolHandler
                 }
             }
 
+            var ownCost = BuildRunCost(subAgentDef, toolCallId, resolved, pricing, resolvedServiceTier, subAgentResult);
+            var runCosts = CollectRunCosts(ownCost, subAgentResult);
+
+            if (context.ShowDebugLog && context.EventSink != null)
+            {
+                await context.EventSink.Invoke(new ChatEvent
+                {
+                    Type = "debug",
+                    Data = BuildCostDebugLine(agentName, resolved, ownCost)
+                });
+            }
+
             string status = subAgentResult.TerminationReason ?? "completed";
             bool completed = status == "completed";
             bool aborted = status == "canceled" || status == "error";
@@ -422,7 +469,8 @@ public class DelegateToSubAgentTool : IToolHandler
                     ? (completed ? null : $"Subagent terminated with status: {status}")
                     : null,
                 NestedToolCalls = subAgentResult.ToolCalls,
-                TerminationStatus = status
+                TerminationStatus = status,
+                DelegatedRunCosts = runCosts
             };
         }
         catch (OperationCanceledException) when (subAgentCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -441,7 +489,8 @@ public class DelegateToSubAgentTool : IToolHandler
                 ErrorMessage = string.IsNullOrWhiteSpace(content) ? "Subagent execution was canceled by the user." : null,
                 Content = content,
                 NestedToolCalls = subAgentResult.ToolCalls,
-                TerminationStatus = "canceled"
+                TerminationStatus = "canceled",
+                DelegatedRunCosts = CollectRunCosts(BuildRunCost(subAgentDef, toolCallId, resolved, pricing, resolvedServiceTier, subAgentResult), subAgentResult)
             };
         }
         catch (Exception ex)
@@ -460,7 +509,8 @@ public class DelegateToSubAgentTool : IToolHandler
                 ErrorMessage = string.IsNullOrWhiteSpace(content) ? $"Subagent execution error: {ex.Message}" : null,
                 Content = content,
                 NestedToolCalls = subAgentResult.ToolCalls,
-                TerminationStatus = "error"
+                TerminationStatus = "error",
+                DelegatedRunCosts = CollectRunCosts(BuildRunCost(subAgentDef, toolCallId, resolved, pricing, resolvedServiceTier, subAgentResult), subAgentResult)
             };
         }
         finally
@@ -473,6 +523,59 @@ public class DelegateToSubAgentTool : IToolHandler
         }
     }
 
+    /// <summary>The run's own cost, when it reached a provider, followed by those of the runs it delegated.</summary>
+    private static List<DelegatedRunCost>? CollectRunCosts(DelegatedRunCost? own, AgentRunResult run)
+    {
+        var costs = new List<DelegatedRunCost>();
+        if (own != null) costs.Add(own);
+        costs.AddRange(run.DelegatedRunCosts);
+        return costs.Count > 0 ? costs : null;
+    }
+
+    /// <summary>Null when nothing was sent to a provider.</summary>
+    private static DelegatedRunCost? BuildRunCost(
+        SubAgentDefinition def, string toolCallId, ResolvedSubAgentModel? resolved,
+        ModelPricing? pricing, string? requestedServiceTier, AgentRunResult run)
+    {
+        if (resolved == null || run.ModelCalls.Count == 0) return null;
+
+        int outputTokens = run.OutputTokens > 0 ? run.OutputTokens : run.EstimatedOutputTokens;
+
+        decimal? cost = pricing == null
+            ? null
+            : ModelPricingService.ComputeRunCost(
+                pricing, run.ModelCallUsages, run.ActualServiceTier, requestedServiceTier,
+                run.UncachedInputTokens, outputTokens, run.CacheReadTokens, run.CacheCreationTokens);
+
+        return new DelegatedRunCost(
+            AgentName: def.Name,
+            ToolCallId: toolCallId,
+            Provider: resolved.Provider,
+            ModelId: resolved.ModelId,
+            SystemModelId: resolved.SystemModelId,
+            IsOperatorFunded: resolved.IsOperatorFunded,
+            EstimatedCost: cost,
+            PricingSource: pricing == null ? null : pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog",
+            ModelCallCount: run.ModelCalls.Count,
+            UncachedInputTokens: run.UncachedInputTokens,
+            OutputTokens: outputTokens,
+            CacheReadTokens: run.CacheReadTokens,
+            CacheCreationTokens: run.CacheCreationTokens);
+    }
+
+    private static string BuildCostDebugLine(string? agentName, ResolvedSubAgentModel resolved, DelegatedRunCost? own)
+    {
+        string costText = own?.EstimatedCost is decimal cost
+            ? $"${cost.ToString("0.000000", System.Globalization.CultureInfo.InvariantCulture)} ({own.PricingSource})"
+            : own == null ? "none (no model call)" : "unpriced";
+
+        return $"[SubAgent:{agentName} - Cost] Model: {resolved.Provider}/{resolved.ModelId} | " +
+               $"Funded by: {(resolved.IsOperatorFunded ? "operator" : "user")} | " +
+               $"Calls: {own?.ModelCallCount ?? 0} | Cost: {costText}";
+    }
+
+    /// <param name="IsOperatorFunded">True when the operator's account is charged: a system configuration,
+    /// or a server key from the AI:* configuration.</param>
     private sealed record ResolvedSubAgentModel(
         string Provider,
         string ModelId,
@@ -484,7 +587,8 @@ public class DelegateToSubAgentTool : IToolHandler
         string? ReasoningSummary,
         string? ServiceTier,
         long? SystemModelId,
-        long? UserModelId = null);
+        long? UserModelId,
+        bool IsOperatorFunded);
 
     private async Task<ResolvedSubAgentModel> ResolveModelAndCredentialsAsync(
         SubAgentDefinition definition,
@@ -547,7 +651,8 @@ public class DelegateToSubAgentTool : IToolHandler
                                 matchingSys.ReasoningSummary,
                                 matchingSys.ServiceTier,
                                 matchingSys.Id,
-                                null);
+                                null,
+                                IsOperatorFunded: true);
                         }
                     }
                     catch (Exception ex)
@@ -574,7 +679,8 @@ public class DelegateToSubAgentTool : IToolHandler
                     null,
                     null,
                     null,
-                    null);
+                    null,
+                    IsOperatorFunded: true);
             }
 
             // 1.3 Try User Custom Key for this provider
@@ -602,7 +708,8 @@ public class DelegateToSubAgentTool : IToolHandler
                                 null,
                                 null,
                                 null,
-                                null);
+                                null,
+                                IsOperatorFunded: false);
                         }
                     }
                     catch (Exception ex)
@@ -637,7 +744,8 @@ public class DelegateToSubAgentTool : IToolHandler
                             sysConfig.ReasoningSummary,
                             sysConfig.ServiceTier,
                             sysConfig.Id,
-                            null);
+                            null,
+                            IsOperatorFunded: true);
                     }
                 }
                 catch (Exception ex)
@@ -674,6 +782,9 @@ public class DelegateToSubAgentTool : IToolHandler
                     }
                 }
 
+                // False when the AI:* server key below stands in, which the operator pays for.
+                bool fromUserKey = !string.IsNullOrWhiteSpace(userApiKey);
+
                 if (string.IsNullOrWhiteSpace(userApiKey))
                 {
                     userApiKey = _configuration[$"AI:{activeUserModel.Provider}:APIKey"] ??
@@ -693,7 +804,8 @@ public class DelegateToSubAgentTool : IToolHandler
                         activeUserModel.ReasoningSummary,
                         activeUserModel.ServiceTier,
                         null,
-                        activeUserModel.Id);
+                        activeUserModel.Id,
+                        IsOperatorFunded: !fromUserKey);
                 }
             }
         }
@@ -724,6 +836,9 @@ public class DelegateToSubAgentTool : IToolHandler
                     }
                 }
 
+                // False when the AI:* server key below stands in, which the operator pays for.
+                bool fromUserKey = !string.IsNullOrWhiteSpace(userApiKey);
+
                 if (string.IsNullOrWhiteSpace(userApiKey))
                 {
                     userApiKey = _configuration[$"AI:{defaultUserModel.Provider}:APIKey"] ??
@@ -743,7 +858,8 @@ public class DelegateToSubAgentTool : IToolHandler
                         defaultUserModel.ReasoningSummary,
                         defaultUserModel.ServiceTier,
                         null,
-                        defaultUserModel.Id);
+                        defaultUserModel.Id,
+                        IsOperatorFunded: !fromUserKey);
                 }
             }
         }
@@ -772,7 +888,8 @@ public class DelegateToSubAgentTool : IToolHandler
                             firstSys.ReasoningSummary,
                             firstSys.ServiceTier,
                             firstSys.Id,
-                            null);
+                            null,
+                            IsOperatorFunded: true);
                     }
                 }
                 catch (Exception ex)
@@ -798,6 +915,7 @@ public class DelegateToSubAgentTool : IToolHandler
             null,
             null,
             null,
-            null);
+            null,
+            IsOperatorFunded: true);
     }
 }

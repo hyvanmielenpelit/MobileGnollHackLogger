@@ -542,6 +542,9 @@ public class AgentLoopRunner
 
                 var outcomes = await batchTask;
 
+                foreach (var o in outcomes)
+                    if (o.DelegatedRunCosts is { Count: > 0 } costs) result.DelegatedRunCosts.AddRange(costs);
+
                 result.ToolTimeMs += (long)System.Diagnostics.Stopwatch
                     .GetElapsedTime(batchStartTimestamp).TotalMilliseconds;
 

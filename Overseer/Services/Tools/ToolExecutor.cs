@@ -284,7 +284,8 @@ namespace Overseer.Services.Tools
                                     QueueWaitMs = result.QueueWaitMs,
                                     ExecutionMs = result.ExecutionMs,
                                     NestedToolCalls = result.NestedToolCalls,
-                                    TerminationStatus = result.TerminationStatus
+                                    TerminationStatus = result.TerminationStatus,
+                                    DelegatedRunCosts = result.DelegatedRunCosts
                                 };
                             }
                             catch

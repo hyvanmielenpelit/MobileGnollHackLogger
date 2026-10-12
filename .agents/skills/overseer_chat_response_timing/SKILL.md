@@ -242,6 +242,9 @@ Chat turn costs are computed from the **summed token counts across all tool iter
 > [!WARNING]
 > Never cost from `LastPromptTokens` or `LastOutputTokens`. Those represent the final call in the tool loop and exist solely to measure remaining context window capacity. In multi-turn tool sessions, final-call costing would dramatically understate actual API usage.
 
+### Sub-Agent Spend
+A `delegate_to_subagent` call runs a second agent loop, possibly on another model and funded by another payer, and its spend is part of the turn. `DelegateToSubAgentTool` prices each delegated run on **its own** model's card, per call, and returns it as a `DelegatedRunCost` on the tool result; it reaches `AgentRunResult.DelegatedRunCosts`, and `ChatTurnCost.Combine` folds it into the turn. **Never price a turn from `runResult.ModelCallUsages` alone** — that is the main loop only. A turn is fully priced or unpriced: one delegated run that made a model call on an unpriced model makes the whole turn `null`. The four token counts stay main model only.
+
 ### Streaming `cost` Event
 Emitted by `ChatService` when response generation finishes:
 ```csharp
@@ -250,22 +253,25 @@ yield return new ChatEvent
     Type = "cost",
     Data = JsonSerializer.Serialize(new
     {
-        estimatedCost,
-        source = pricing.Source, // "custom" | "catalog"
-        inputTokens,
+        estimatedCost = disclosed.EstimatedCost,   // whole turn, sub-agents included, as this viewer may see it
+        source = disclosed.PricingSource,          // "custom" | "catalog" | "mixed"
+        inputTokens,                               // main model only, like the three below
         outputTokens,
         cacheReadTokens,
         cacheCreationTokens,
-        isOperatorCost // true when executing on a system configuration
+        isOperatorCost = disclosed.IsOperatorCost,
+        operatorCost = disclosed.OperatorCost,     // operator-funded share; admins only
+        subAgentCost = disclosed.SubAgentCost,     // delegated runs' share
+        subAgentRuns = turnCost.SubAgentRuns
     })
 };
 ```
 
-### Operator Cost Distinction (`isOperatorCost`)
-When a user chats using an operator-provided system model, `isOperatorCost` is `true`. The UI displays `(operator)` next to the cost figure so users clearly understand that server operator credits were used, not personal user billing.
+### Operator Cost Distinction (`isOperatorCost`, `operatorCost`)
+Funding is decided per run: the main loop is operator-funded on a system configuration; a delegated run on a system configuration or on any `AI:*` server key is operator-funded too. The turn's operator share is stored as `OperatorEstimatedCost`. `ChatCostDisclosure.For` is the single disclosure rule for the `cost` event and both history loads: an admin sees the whole turn and both shares; a regular user sees only the user-funded share (no price at all when the operator paid the whole turn) and never `operatorCost`. `isOperatorCost` is `SystemAiConfigurationIdUsed` set or an operator share above 0, which keeps the PARTIAL glyph off for withheld figures. The UI's `(operator)` / `(0.40¢ operator)` tag is driven by `operatorCost`.
 
 ### Persistence & UI
-- Persisted on `ChatMessage`: `EstimatedCost` (precision 18, 8), `PricingSource`, and the four token counts. Snapshotted on completion; never recomputed on read.
+- Persisted on `ChatMessage`: `EstimatedCost` (precision 18, 8), `PricingSource`, `SubAgentEstimatedCost` and `OperatorEstimatedCost` (both precision 18, 8, shares of `EstimatedCost`), and the four token counts. Snapshotted on completion; never recomputed on read.
 - Gated in UI by user preference `showChatCost` (under Settings).
-- Rendered in `.ttft-container` in message headers and in the streaming footer.
+- Rendered in the bottom-left `.msg-cost-footer` of each assistant message and of the streaming bubble, as `1.25¢ · sub-agents 0.40¢` when the turn delegated.
 - Running conversation total in footer is explicitly labelled as `Total cost (loaded)` to prevent confusion when older messages have been pruned by chat retention policies.
